@@ -49,6 +49,7 @@ export interface ModelBroker {
     identity: BrokerIdentity,
     request: GuestModelRequest,
     signal?: AbortSignal,
+    onEvent?: (event: unknown) => Promise<void>,
   ): Promise<HostModelResult>;
   revoke(): void;
 }
@@ -75,7 +76,7 @@ export function createModelBroker(
   let revoked = false;
   const liveControllers = new Set<AbortController>();
   return {
-    async execute(identity, request, signal) {
+    async execute(identity, request, signal, onEvent) {
       if (
         revoked ||
         now() >= lease.expiresAt ||
@@ -97,9 +98,11 @@ export function createModelBroker(
       const controller = new AbortController();
       const abort = (): void => controller.abort(signal?.reason);
       signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted === true) abort();
       liveControllers.add(controller);
       active += 1;
       try {
+        controller.signal.throwIfAborted();
         const events: unknown[] = [];
         let outputBytes = 0;
         for await (const event of execute(request, {
@@ -123,10 +126,18 @@ export function createModelBroker(
             throw brokerError("resource_exhausted", "model output exceeds the lease bound");
           }
           outputBytes += eventBytes;
-          events.push(bounded.value);
+          if (
+            onEvent !== undefined &&
+            (bounded.value as { type?: unknown } | null)?.type === "stream"
+          ) {
+            await onEvent(bounded.value);
+          } else {
+            events.push(bounded.value);
+          }
         }
         return { events, outputBytes };
       } finally {
+        controller.abort(new Error("model broker call closed"));
         signal?.removeEventListener("abort", abort);
         liveControllers.delete(controller);
         active -= 1;

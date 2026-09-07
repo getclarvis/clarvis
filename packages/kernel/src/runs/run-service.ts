@@ -20,6 +20,7 @@ import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import type { SteerQueue } from "./steer-queue.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -27,7 +28,12 @@ import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
 
 /** Placement-neutral execution port; native remains the lazy default. */
-export type RunExecutorArgs = ExecuteRunArgs;
+export type RunExecutorArgs = Omit<ExecuteRunArgs, "steer"> & {
+  /** Kernel queues transfer acknowledgements across placement without prematurely draining them. */
+  readonly steer?: NonNullable<ExecuteRunArgs["steer"]> & Partial<Pick<SteerQueue, "take">>;
+  /** Host-admitted parent whose same-guest child composition owns this run's controls and budget. */
+  readonly runtimeParentRunId?: string;
+};
 export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
 
 /** Configuration for {@link createRunService}. */

@@ -123,6 +123,12 @@ plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
 
+Docker and Podman do not disable this policy. The kernel's private hook bridge invokes the admitted
+host lifecycle callbacks, retaining command/environment filtering and native gate/rewriting order.
+Only configured fire points and validated event contexts cross that bridge; the guest never supplies
+a hook command. MCP hooks acquire an admitted host server connection rather than exposing credentials
+to the guest. See the [isolated runtime contract](../../specs/hosts/isolated-agent-runtime.md).
+
 ## Usage
 
 ```ts

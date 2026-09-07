@@ -87,6 +87,72 @@ function coordinator(options: {
 }
 
 describe("lazy runtime coordinator", () => {
+  it("surfaces failed shutdown and retries retained cleanup without reopening admission", async () => {
+    let attempts = 0;
+    const c = coordinator({
+      factory: async () => ({
+        closed: false,
+        info: info("retry-cleanup"),
+        executeRun: async () => outcome,
+        async close() {
+          attempts += 1;
+          if (attempts === 1) throw new Error("engine remove temporarily failed");
+        },
+      }),
+    });
+    await c.value.executeRun(args);
+    const first = await Promise.allSettled([c.value.close(), c.value.close()]);
+    expect(first.map((result) => result.status)).toEqual(["rejected", "rejected"]);
+    expect(attempts).toBe(1);
+    await expect(c.value.executeRun(args)).rejects.toThrow("coordinator is closed");
+    await c.value.close();
+    await c.value.close();
+    expect(attempts).toBe(2);
+  });
+
+  it("retains a failed retired generation while replacing the same selection", async () => {
+    let creates = 0;
+    let retiredCloses = 0;
+    let replacementCloses = 0;
+    let dead = false;
+    const c = coordinator({
+      factory: async () => {
+        creates += 1;
+        if (creates > 1)
+          return {
+            closed: false,
+            info: info("replacement"),
+            executeRun: async () => outcome,
+            async close() {
+              replacementCloses += 1;
+            },
+          };
+        return {
+          get closed() {
+            return dead;
+          },
+          info: info("retired"),
+          async executeRun() {
+            dead = true;
+            throw new Error("channel closed");
+          },
+          async close() {
+            retiredCloses += 1;
+            if (retiredCloses === 1) throw new Error("remove failed");
+          },
+        };
+      },
+    });
+    await expect(c.value.executeRun(args)).rejects.toThrow("channel closed");
+    await expect(c.value.executeRun(args)).resolves.toBe(outcome);
+    expect(c.value.current()).toMatchObject({ generation: "replacement" });
+    await c.value.close();
+    expect({ retiredCloses, replacementCloses }).toEqual({
+      retiredCloses: 2,
+      replacementCloses: 1,
+    });
+  });
+
   it("forwards linked-worktree Git metadata only when the host discovered it", async () => {
     let commonDir: string | undefined;
     const c = coordinator({

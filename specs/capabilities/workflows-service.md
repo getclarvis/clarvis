@@ -33,6 +33,18 @@ run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
 ## 2. Surface
 
+For container managers, the kernel's admitted `runtime.workflows` bridge leaves canonical request
+assembly and durable callbacks on the host, while the guest owns the live scheduler and shared child
+budget. Validated sequence checkpoints and monotonic spend projections call the existing
+`WorkflowCtx.onSequenceState`, `onBudgetExhausted` and host ledger; they do not create a guest-owned
+workflow store or bypass the host's completion barrier.
+
+Production: `createHostWorkflowBridge` and `consumeGuestWorkflowEvent` in
+`packages/kernel/src/runtime/workflows-bridge.ts`; `createLocalContainerRuntime` in
+`packages/kernel/src/runtime/local-podman-runtime.ts`.
+Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (manager/leader
+execution, host ledger and durable workflow edge).
+
 ### `@clarvis/workflows` — `./artifact` entry
 
 | Symbol | Kind | Location | Contract |
@@ -67,7 +79,7 @@ run (the `WorkflowCtx` construction in `createWorkflowsService`).
 | `LeaderSpec` | interface | `packages/workflows/src/types.ts` | `{title, prompt, profile?, expectSchema?}` — the manager-controlled subset of a leader's run request |
 | `LeaderStatus` | type | `packages/workflows/src/types.ts` | `"completed" \| "budget_exhausted" \| "cancelled" \| "soft_limit_declined" \| "interrupted" \| "error"` |
 | `LeaderResult` | interface | `packages/workflows/src/types.ts` | `{runId, status, result, usage, error?}` |
-| `LeaderRequestAssembler` | type | `packages/workflows/src/types.ts` | `(spec, {parentRunId}) => RunRequest`; MUST strip the `workflow` grant and force `plans: "off"` plus `memory: "off"` (`packages/workflows/src/types.ts`) |
+| `LeaderRequestAssembler` | type | `packages/workflows/src/types.ts` | `(spec, {parentRunId, runId?}) => RunRequest \| Promise<RunRequest>`; MUST strip the `workflow` grant and force `plans: "off"` plus `memory: "off"` (`packages/workflows/src/types.ts`) |
 | `WorkflowRunDeps` | interface | `packages/workflows/src/types.ts` | `{generateExecutionId(), executeRun(args)}` — the loop surface a workflow needs |
 | `WorkflowCtx` | interface | `packages/workflows/src/types.ts` | Workflow context: execution deps, semaphore, token ledger, cumulative `leaderCount`, manager identity, assembler/signals/catalogue, and optional leader/sequence callbacks including `onSequenceState` |
 | `WorkflowSequenceState` / `WorkflowSequenceStatus` | interface/type | `packages/workflows/src/types.ts` | Internal camel-case checkpoint snapshot and its six-state lifecycle; the kernel maps it to persisted/wire snake case |

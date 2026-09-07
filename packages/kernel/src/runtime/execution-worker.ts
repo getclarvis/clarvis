@@ -10,7 +10,12 @@ import { RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
 
 /** Narrow host authority visible to guest execution code. */
 export interface GuestExecutionBridge {
-  model(callId: string, request: GuestModelRequest, signal?: AbortSignal): Promise<HostModelResult>;
+  model(
+    callId: string,
+    request: GuestModelRequest,
+    signal?: AbortSignal,
+    onEvent?: (event: unknown) => void,
+  ): Promise<HostModelResult>;
   capability(
     callId: string,
     request: GuestCapabilityRequest,
@@ -78,13 +83,11 @@ export function serveExecutionWorker(options: {
         signal.addEventListener("abort", abort, { once: true });
         runs.set(runId, controller);
         const bridge: GuestExecutionBridge = {
-          model: (callId, request, requestSignal) =>
-            peer.request(
-              "host.model",
-              { generation: options.generation, runId, callId },
-              request,
-              requestSignal === undefined ? undefined : { signal: requestSignal },
-            ),
+          model: (callId, request, requestSignal, onEvent) =>
+            peer.request("host.model", { generation: options.generation, runId, callId }, request, {
+              ...(requestSignal === undefined ? {} : { signal: requestSignal }),
+              ...(onEvent === undefined ? {} : { onEvent }),
+            }),
           capability: (callId, request, requestSignal) =>
             peer.request(
               "host.capability",

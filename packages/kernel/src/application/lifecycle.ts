@@ -20,7 +20,7 @@ export interface KernelLifecycle {
    * @returns a function that releases ownership after natural disposal.
    */
   register(resource: KernelResource): () => void;
-  /** Close all registered resources exactly once. */
+  /** Close all resources, retaining failed disposals for a later retry without reopening admission. */
   close(): Promise<void>;
 }
 
@@ -28,7 +28,8 @@ export interface KernelLifecycle {
  * Create an idempotent resource registry.
  *
  * @returns an open lifecycle whose first `close` stops admission and disposes
- *   resources in reverse registration order; later calls await the same promise.
+ *   resources in reverse registration order. Concurrent calls share an attempt;
+ *   failed resources remain owned and later calls retry only those failures.
  */
 export function createKernelLifecycle(logger: Logger = NOOP_LOGGER): KernelLifecycle {
   let state: KernelLifecycleState = "open";
@@ -56,19 +57,22 @@ export function createKernelLifecycle(logger: Logger = NOOP_LOGGER): KernelLifec
       if (closing !== undefined) return closing;
       state = "closing";
       const snapshot = [...resources].reverse();
-      resources.clear();
       closing = (async () => {
         const outcomes = await Promise.allSettled(
-          snapshot.map(async (resource) => resource.close()),
+          snapshot.map(async (resource) => {
+            await resource.close();
+            resources.delete(resource);
+          }),
         );
-        state = "closed";
         const failures: unknown[] = [];
         for (const outcome of outcomes) {
           if (outcome.status === "rejected") failures.push(outcome.reason as unknown);
         }
         if (failures.length > 0) {
+          closing = undefined;
           throw new AggregateError(failures, "one or more kernel resources failed to close");
         }
+        state = "closed";
       })();
       return closing;
     },

@@ -243,7 +243,8 @@ describe("local Podman runtime composition", () => {
             exitCode: 0,
             stdout: JSON.stringify([
               {
-                Digest: digest,
+                Id: digest,
+                Digest: `sha256:${"e".repeat(64)}`,
                 Config: {
                   Labels: { "io.clarvis.runtime.protocol": RUNTIME_PROTOCOL_REVISION },
                 },

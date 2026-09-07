@@ -800,11 +800,18 @@ Production `packages/kernel/src/runs/managed-run.ts`. Test `packages/kernel/test
 before that drain, or steering begins after settlement, `steer` throws `not_found`; `compact` also
 throws `not_found` after settlement. A protocol success therefore cannot mean only that a transient
 queue accepted data.
+Container transfer uses `take()` without resolving the pending acknowledgement. Its delivery handle
+settles only after the guest confirms a loop drain; closing either queue or refusing a late guest
+RPC settles the message as undelivered. A refused control request does not overwrite a successful
+run result, and authority teardown is unconditional even if the control pump rejects.
 Production: `packages/kernel/src/runs/steer-queue.ts` (`push`, `drain`, `close`),
 `packages/kernel/src/runs/managed-run.ts` (`RunHandle.steer`, `RunHandle.compact`), and
 `packages/kernel/src/runs/compaction-queue.ts` (`push`). Tests:
 `packages/kernel/tests/unit/run-control-queues.test.ts` (drain acknowledgement and close refusal) and
 `packages/kernel/tests/unit/managed-run.test.ts` (close-before-drain and post-settlement refusal).
+Production: `createIsolatedRunExecutor` in `packages/kernel/src/runtime/isolated-run-executor.ts`.
+Test: `packages/kernel/tests/integration/isolated-run-executor.test.ts` (guest acknowledgement,
+completion race and unconditional authority teardown).
 
 Both queues also expose `undrained()`, which inspects queued-but-not-yet-drained messages without
 consuming them (`packages/kernel/src/runs/steer-queue.ts`; `packages/kernel/src/runs/compaction-queue.ts`). The handle's `compact`

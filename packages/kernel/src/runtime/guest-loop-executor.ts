@@ -12,7 +12,7 @@ import {
   type SteerMessage,
 } from "@clarvis/capability";
 import { buildExecuteRunDeps } from "@clarvis/loop/host";
-import { executeRun } from "@clarvis/loop";
+import { executeRun, type ExecuteRunArgs } from "@clarvis/loop";
 import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
 import { createGuardResolver, type GuardSettings } from "../guard/resolver.ts";
@@ -22,6 +22,15 @@ import { createGuestPlanFactory } from "./plan-bridge.ts";
 import { createPlansCapability } from "@clarvis/plan/capability";
 import { plansSettingsSpec } from "@clarvis/plan/settings";
 import { memorySettingsSpec } from "@clarvis/memory/settings";
+import { createTasksCapability } from "@clarvis/tasks/capability";
+import { tasksSettingsSpec } from "@clarvis/tasks/settings";
+import { createGuestTaskResolver } from "./tasks-bridge.ts";
+import { createGuestHooksCapabilities, type RuntimeHooksDescriptor } from "./hooks-bridge.ts";
+import {
+  createGuestWorkflowCapabilities,
+  type RuntimeWorkflowDescriptor,
+} from "./workflows-bridge.ts";
+import { createLeaderOutputBudgetCapability, createWorkflowLedger } from "@clarvis/workflows";
 import {
   createGuestSkillsCapability,
   type RuntimeSkillBootstrapEntry,
@@ -42,6 +51,10 @@ interface GuestRunEnvelope {
   readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
   readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
   readonly memory?: MemoryRuntimeDescriptor;
+  readonly hooks?: RuntimeHooksDescriptor;
+  readonly workflow?: RuntimeWorkflowDescriptor;
+  readonly parentRunId?: string;
+  readonly outputBudgets?: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
 }
 
 interface GuestRunControl {
@@ -113,7 +126,7 @@ function validControlInput(value: unknown): value is GuestControlInput {
 }
 
 function guestControlError(
-  code: "conflict" | "invalid_request" | "not_found",
+  code: "conflict" | "invalid_request" | "not_found" | "unauthorized",
   message: string,
 ): Error {
   return Object.assign(new Error(message), { code });
@@ -197,21 +210,9 @@ function guestModelProvider(
 ): LLMProvider {
   return {
     async call(params): Promise<LLMCallResult> {
-      const result = await bridge.model(
-        randomUUID(),
-        {
-          leaseId,
-          provider: params.provider,
-          model: params.model,
-          requestId: randomUUID(),
-          conversationId: runId,
-          body: modelBody(params),
-        },
-        params.signal,
-      );
       let final: unknown;
-      for (const event of result.events) {
-        if (typeof event !== "object" || event === null) continue;
+      const consume = (event: unknown): void => {
+        if (typeof event !== "object" || event === null) return;
         const value = event as {
           type?: unknown;
           channel?: unknown;
@@ -227,7 +228,21 @@ function guestModelProvider(
         ) {
           params.onStreamDelta?.({ channel: value.channel, text: value.text, reset: value.reset });
         } else if (value.type === "result") final = value.result;
-      }
+      };
+      const result = await bridge.model(
+        randomUUID(),
+        {
+          leaseId,
+          provider: params.provider,
+          model: params.model,
+          requestId: randomUUID(),
+          conversationId: runId,
+          body: modelBody(params),
+        },
+        params.signal,
+        consume,
+      );
+      for (const event of result.events) consume(event);
       if (typeof final !== "object" || final === null) {
         throw new Error("host model broker returned no terminal model result");
       }
@@ -257,9 +272,20 @@ export function createGuestLoopExecutor(
   const workspaceRoot = options.workspaceRoot ?? "/workspace";
   const scratchRoot = options.scratchRoot ?? "/tmp/clarvis-runtime";
   const controls = new Map<string, GuestRunControl>();
+  const children = new Map<string, { parentRunId: string; args: ExecuteRunArgs }>();
   return {
     async execute(runId, envelope, bridge, signal) {
       if (!validEnvelope(envelope)) throw new Error("guest run envelope is invalid");
+      const child = children.get(runId);
+      if (
+        envelope.parentRunId !== undefined &&
+        (child === undefined || child.parentRunId !== envelope.parentRunId)
+      ) {
+        throw guestControlError("unauthorized", "guest workflow child composition is not admitted");
+      }
+      if (child !== undefined && child.parentRunId !== envelope.parentRunId) {
+        throw guestControlError("unauthorized", "guest workflow parent identity mismatches");
+      }
       if (controls.has(runId)) throw guestControlError("conflict", "guest run already exists");
       const control: GuestRunControl = {
         steer: createSteerQueue(),
@@ -318,20 +344,64 @@ export function createGuestLoopExecutor(
             ...(plans === undefined ? [] : [plans]),
             ...(skills === undefined ? [] : [skills]),
             memory,
+            ...(envelope.hooks === undefined
+              ? []
+              : createGuestHooksCapabilities(envelope.hooks, bridge)),
+            createTasksCapability({
+              ...(envelope.hostCapabilities?.includes("tasks") === true
+                ? { resolver: createGuestTaskResolver(bridge) }
+                : {}),
+            }),
           ],
         });
-        if (plans !== undefined) built.deps.capabilityRegistry?.register(plansSettingsSpec);
+        built.deps.capabilityRegistry?.register(plansSettingsSpec);
         built.deps.capabilityRegistry?.register(memorySettingsSpec);
+        built.deps.capabilityRegistry?.register(tasksSettingsSpec);
         built.deps.llm = guestModelProvider(runId, envelope.modelLeaseId, bridge);
         built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
+        const extraCapabilities = [
+          ...(child?.args.capabilities ?? []),
+          ...(envelope.outputBudgets ?? []).map((budget) =>
+            createLeaderOutputBudgetCapability(
+              createWorkflowLedger(budget.tokens),
+              budget.maxParallelSubagents,
+            ),
+          ),
+          ...(envelope.workflow === undefined
+            ? []
+            : createGuestWorkflowCapabilities({
+                descriptor: envelope.workflow,
+                bridge,
+                runId,
+                owner: envelope.owner,
+                deps: built.deps,
+                signal,
+                enqueueEvent,
+                registerChild(childRunId, args) {
+                  if (children.has(childRunId) || controls.has(childRunId))
+                    throw new Error("duplicate guest workflow child");
+                  const admission = { parentRunId: runId, args };
+                  children.set(childRunId, admission);
+                  return () => {
+                    if (children.get(childRunId) === admission) children.delete(childRunId);
+                  };
+                },
+              })),
+        ];
         let sequence = 0;
         try {
           const outcome = await executeRun({
             rawBody: envelope.rawBody,
             owner: envelope.owner,
             deps: built.deps,
+            capabilities: extraCapabilities,
             externalSignal: signal,
-            steer: control.steer,
+            steer:
+              child?.args.steer === undefined
+                ? control.steer
+                : {
+                    drain: () => [...control.steer.drain(), ...child.args.steer!.drain()],
+                  },
             compaction: control.compaction,
             elicit: (params, opts) =>
               bridge.capability(
@@ -344,6 +414,7 @@ export function createGuestLoopExecutor(
                 opts.signal,
               ) as ReturnType<NonNullable<Parameters<typeof executeRun>[0]["elicit"]>>,
             onEvent: (event) => {
+              child?.args.onEvent?.(event);
               enqueueEvent({ channel: "trace", event });
             },
             onCapabilityEvent: (event) => {
@@ -355,8 +426,11 @@ export function createGuestLoopExecutor(
           await bridge.checkpoint({ sequence, terminal: false, state: { outcome } });
           return outcome;
         } finally {
-          await eventTail;
-          await built.dispose();
+          try {
+            await eventTail;
+          } finally {
+            await built.dispose();
+          }
         }
       } finally {
         control.steer.close();

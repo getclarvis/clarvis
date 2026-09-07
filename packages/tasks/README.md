@@ -10,6 +10,11 @@ External systems remain authoritative; the only durable Clarvis state is the
 minimal task binding and content-free uncertain-write replay metadata stored
 with a run.
 
+For Docker/Podman placement the kernel registers this same capability and request schema in the guest,
+backed by a per-run host provider bridge. Provider resolution, connections and credentials remain on
+the host; active binding, strict tool inputs, provider errors and write gates are preserved. This
+does not add a dependency from Tasks to the kernel or loop.
+
 ## Contract
 
 The canonical domain, provider protocol, schemas, errors, MCP adapter, and conformance harness are

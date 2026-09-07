@@ -68,7 +68,8 @@ function fakeControl(
           exitCode: 0,
           stdout: JSON.stringify([
             {
-              Digest: overrides.imageDigest ?? digest,
+              Id: overrides.imageDigest ?? digest,
+              Digest: `sha256:${"e".repeat(64)}`,
               Config: {
                 Labels: {
                   "io.clarvis.runtime.protocol":
@@ -160,7 +161,7 @@ function fakeControl(
 }
 
 describe("Podman runtime backend", () => {
-  it("creates, verifies, attaches and negotiates before exposing a session", async () => {
+  it("admits the local image ID even when its manifest digest differs, then negotiates a session", async () => {
     const fake = fakeControl();
     const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
     await expect(backend.inspect()).resolves.toEqual({
@@ -365,7 +366,8 @@ describe("Podman runtime backend", () => {
             stdout:
               args[0] === "image"
                 ? JSON.stringify({
-                    Digest: digest,
+                    Id: digest,
+                    Digest: `sha256:${"e".repeat(64)}`,
                     Config: {
                       Labels: { "io.clarvis.runtime.protocol": RUNTIME_PROTOCOL_REVISION },
                     },

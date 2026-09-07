@@ -18,6 +18,53 @@ function pair() {
 }
 
 describe("private runtime execution RPC", () => {
+  it.each(["duplicate", "wrong-call", "unknown-field", "non-model"])(
+    "refuses %s incremental model frames",
+    async (violation) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const guest = createExecutionPeer({
+        role: "guest",
+        generation: "gen",
+        input,
+        output,
+        handlers: {},
+      });
+      const events: unknown[] = [];
+      const pending = guest.request(
+        violation === "non-model" ? "host.capability" : "host.model",
+        { generation: "gen", runId: "run", callId: "call" },
+        {},
+        {
+          onEvent: (event) => {
+            events.push(event);
+          },
+        },
+      );
+      void pending.catch(() => undefined);
+      const frame = {
+        type: "event",
+        id: 1,
+        generation: "gen",
+        runId: "run",
+        callId: "call",
+        sequence: 1,
+        event: { text: "partial" },
+      };
+      if (violation === "duplicate") input.write(`${JSON.stringify(frame)}\n`);
+      input.write(
+        `${JSON.stringify({
+          ...frame,
+          ...(violation === "wrong-call" ? { callId: "forged" } : {}),
+          ...(violation === "unknown-field" ? { surprise: true } : {}),
+        })}\n`,
+      );
+      await expect(pending).rejects.toBeInstanceOf(Error);
+      expect(guest.closed).toBe(true);
+      expect(events).toHaveLength(violation === "duplicate" ? 1 : 0);
+    },
+  );
+
   it("allows only the closed vocabulary in the correct direction", async () => {
     const io = pair();
     const guest = createExecutionPeer({

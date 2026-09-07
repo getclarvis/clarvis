@@ -1053,7 +1053,11 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     host/LAN services may be reached; `none` is the explicit offline policy and unenforced
     public-only `internet` is refused. Mise-installed toolchains execute only from `/mise`: Podman
     supplies disposable scratch, while Docker supplies a labelled local volume derived from owner,
-    project, workspace and exact image. The guest can mutate that cache and later guests in the same
+    project, workspace, effective UID/GID and exact image. Rootful Docker selects the operator's
+    numeric identity rather than root without DAC capabilities; rootless Docker uses its
+    operator-mapped root and rootful user namespace remapping is refused. A fixed networkless
+    initializer receives only the cache, seeds image content with `CHOWN`, and keeps its marker
+    outside the guest's mounted `data` subdirectory. The guest can mutate that cache and later guests in the same
     workspace/image can observe it, but the Clarvis host process does not mount or execute its
     contents and other workspace identities cannot select it.
     A preview request supplies only a guest port and display scheme: the host owns a
@@ -1080,7 +1084,19 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     and prompt, and the host rejects a forged mutation even when its provider is writable.
     Cancellation keeps `runtime.start` pending until the guest settles; a matching late result for
     another locally cancelled RPC is consumed through a bounded identity tombstone, while a dead
-    process/channel retires the generation before the next run. Production: `.dockerignore`;
+    process/channel retires the generation before the next run. Control-pump rejection cannot skip
+    model/capability revocation or snapshot disposal. Failed runtime cleanup remains owned and is
+    retried by a later close rather than silently reported as success. Configured hook commands and
+    MCP hooks remain admitted host callbacks; guest event contexts cannot select commands or policy.
+    Tasks keeps its canonical guest capability over a strict host provider port with identity/write
+    gates. Workflow children use host-assembled requests and one shared guest budget; unprojectable
+    host capabilities refuse placement. Model leases admit exact profile, vision and effective judge
+    pairs, with bounded, correlated progress frames and a separate terminal result.
+    Production: `createHostHooksBridge` in `packages/kernel/src/runtime/hooks-bridge.ts`;
+    `createHostTasksGrant` in `packages/kernel/src/runtime/tasks-bridge.ts`;
+    `createHostWorkflowBridge` in `packages/kernel/src/runtime/workflows-bridge.ts`;
+    `runtimeModelPairs` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `streamHostModelCall` in `packages/kernel/src/runtime/model-stream.ts`; `.dockerignore`;
     `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`; `readOnlyWorkspacePaths` in
     `packages/kernel/src/runtime/local-podman-runtime.ts`;
     `prepareRuntimeCapabilityRoot` in
@@ -1108,6 +1124,11 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/tests/unit/lazy-runtime.test.ts`;
     `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
     `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
+    `packages/kernel/tests/integration/runtime-capability-composition.test.ts`;
+    `packages/kernel/tests/integration/runtime-model-stream.test.ts`;
+    `packages/kernel/tests/unit/runtime-tasks-bridge.test.ts`;
+    `packages/kernel/tests/integration/runtime-docker-identity.e2e.test.ts` (gated Linux engine DAC
+    canary);
     `packages/kernel/tests/unit/runtime-skills-bridge.test.ts`;
     `packages/kernel/tests/unit/runtime-memory-bridge.test.ts`;
     `packages/kernel/tests/integration/runtime-guest-loop.test.ts`;

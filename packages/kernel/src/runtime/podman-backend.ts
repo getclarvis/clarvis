@@ -185,9 +185,7 @@ function validImageInspect(value: unknown, imageDigest: string): boolean {
   const root = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
   const config = asRecord(root?.Config);
   const labels = asRecord(config?.Labels);
-  return (
-    root?.Digest === imageDigest && labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION
-  );
+  return root?.Id === imageDigest && labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION;
 }
 
 async function successful(

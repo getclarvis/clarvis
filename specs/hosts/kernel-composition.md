@@ -84,7 +84,10 @@ files, memory, plans, workflows, skills, sessions, tasks, and storage. These are
 surfaces are composed separately by the loop capabilities.
 
 An owner handle is acquired lazily and cached only within this one kernel. Closing the kernel stops
-new acquisitions, settles owners/resources, and attempts every close even when one fails.
+new acquisitions, settles owners/resources, and attempts every close even when one fails. Concurrent
+close calls share the current attempt. Failed resources remain registered in `closing` state, and a
+later close retries them without repeating successful resources or reopening admission. The file
+host closes its other dependencies even when container removal fails.
 
 Production: `packages/kernel/src/kernel.ts` (`InProcessKernel`, `createInProcessKernel`);
 `packages/kernel/src/application/scope-policy.ts`.
@@ -162,9 +165,13 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    Production: `packages/kernel/src/git-workspace.ts`.
    Test: `packages/kernel/tests/integration/git-workspace.test.ts`.
 
-4. **Closing attempts all resources and never admits a new owner afterward.**
-   Production: `packages/kernel/src/kernel.ts`; `packages/kernel/src/application/lifecycle.ts`.
-   Test: `packages/kernel/tests/unit/lifecycle.test.ts`.
+4. **Closing attempts all resources and never admits a new owner afterward. Failed resources remain
+   owned for retry; only a successful complete disposal reaches `closed`.**
+   Production: `packages/kernel/src/kernel.ts`; `packages/kernel/src/application/lifecycle.ts`;
+   `packages/kernel/src/file-kernel.ts`.
+   Test: `packages/kernel/tests/unit/lifecycle.test.ts`;
+   `packages/kernel/tests/integration/file-kernel.test.ts` (`retries failed container removal through
+   the public kernel close path`).
 
 5. **The kernel exposes no worktree lifecycle service or cross-workspace kernel cache.**
    Production: `packages/protocol/src/client.ts`; `packages/kernel/src/bootstrap.ts`.
@@ -205,7 +212,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 | A remote MCP server requires interactive OAuth and the host supplied no browser opener | explicit `MCPInteractiveAuthorizationUnavailableError`; the URL is not opened implicitly and no credential is moved through the protocol |
 | OAuth callback, state, authorization URL or persisted store is invalid | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available |
 | Orphan recovery fails | warning and degraded recovery count; kernel continues booting |
-| A lifecycle resource fails to close | remaining resources still close; aggregate failure returned |
+| A lifecycle resource fails to close | remaining resources still close; aggregate failure returned; failed resources retained for later close retry |
 | Owner cache is exhausted | `resource_exhausted` |
 | Workspace file escapes or is unreadable | `invalid_request` or `not_found` through the workspace service |
 

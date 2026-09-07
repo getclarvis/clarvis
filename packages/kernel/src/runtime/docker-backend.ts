@@ -51,6 +51,8 @@ export interface DockerBackendOptions {
   readonly logger?: Logger;
   readonly hostPlatform?: NodeJS.Platform;
   readonly stopTimeoutSeconds?: number;
+  /** Numeric host identity seam; production inherits the invoking operator, never an image's USER. */
+  readonly hostUser?: { readonly uid: number; readonly gid: number };
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -74,11 +76,12 @@ interface MiseCacheIdentity {
   readonly digest: string;
   readonly name: string;
 }
-function miseCacheIdentity(spec: RuntimeLaunchSpec): MiseCacheIdentity {
+function miseCacheIdentity(spec: RuntimeLaunchSpec, user: string): MiseCacheIdentity {
   const digest = `sha256:${createHash("sha256")
     .update(
       JSON.stringify({
-        schema: 1,
+        schema: 2,
+        user,
         ownerId: spec.ownerId,
         projectId: spec.project.id,
         workspaceId: spec.workspace.id,
@@ -86,7 +89,7 @@ function miseCacheIdentity(spec: RuntimeLaunchSpec): MiseCacheIdentity {
       }),
     )
     .digest("hex")}`;
-  return { digest, name: `clarvis-mise-v1-${digest.slice("sha256:".length)}` };
+  return { digest, name: `clarvis-mise-v2-${digest.slice("sha256:".length)}` };
 }
 function network(spec: RuntimeLaunchSpec): string {
   if (spec.network === "none") return "none";
@@ -116,6 +119,7 @@ function createArgs(
   spec: RuntimeLaunchSpec,
   name: string,
   cache: MiseCacheIdentity,
+  user: string,
 ): readonly string[] {
   return [
     "create",
@@ -126,6 +130,8 @@ function createArgs(
     "--label",
     `io.clarvis.generation=${spec.generation}`,
     "--interactive",
+    "--user",
+    user,
     "--read-only",
     "--cap-drop",
     "ALL",
@@ -142,7 +148,7 @@ function createArgs(
     "--tmpfs",
     `/tmp:rw,nosuid,nodev,noexec,size=${String(spec.limits.storageBytes)}`,
     "--mount",
-    `type=volume,source=${cache.name},target=/mise`,
+    `type=volume,source=${cache.name},target=/mise,volume-subpath=data,volume-nocopy`,
     ...bindMountArgs(spec),
     "--workdir",
     "/workspace",
@@ -153,7 +159,12 @@ function createArgs(
     spec.imageDigest,
   ];
 }
-function validInspect(value: unknown, spec: RuntimeLaunchSpec, cache: MiseCacheIdentity): boolean {
+function validInspect(
+  value: unknown,
+  spec: RuntimeLaunchSpec,
+  cache: MiseCacheIdentity,
+  user: string,
+): boolean {
   const root = record(Array.isArray(value) ? value[0] : value);
   const host = record(root?.HostConfig);
   const config = record(root?.Config);
@@ -175,7 +186,13 @@ function validInspect(value: unknown, spec: RuntimeLaunchSpec, cache: MiseCacheI
       : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
   ];
   const miseMounts = mounts.filter((item) => record(item)?.Destination === "/mise");
+  const configuredMounts: unknown[] = Array.isArray(host?.Mounts) ? host.Mounts : [];
+  const cacheConfig = configuredMounts.find((mount) => record(mount)?.Target === "/mise");
+  const volumeOptions = record(record(cacheConfig)?.VolumeOptions);
   return (
+    config?.User === user &&
+    volumeOptions?.Subpath === "data" &&
+    volumeOptions?.NoCopy === true &&
     host?.Privileged === false &&
     host?.ReadonlyRootfs === true &&
     String(host?.NetworkMode).toLowerCase() === network(spec) &&
@@ -218,7 +235,7 @@ function validMiseCache(value: unknown, cache: MiseCacheIdentity): boolean {
     root?.Driver === "local" &&
     root?.Scope === "local" &&
     labels?.["io.clarvis.runtime.mise-cache"] === "true" &&
-    labels?.["io.clarvis.runtime.mise-cache.schema"] === "1" &&
+    labels?.["io.clarvis.runtime.mise-cache.schema"] === "2" &&
     labels?.["io.clarvis.runtime.mise-cache.identity"] === cache.digest
   );
 }
@@ -234,7 +251,7 @@ async function prepareMiseCache(control: DockerControl, cache: MiseCacheIdentity
         "--label",
         "io.clarvis.runtime.mise-cache=true",
         "--label",
-        "io.clarvis.runtime.mise-cache.schema=1",
+        "io.clarvis.runtime.mise-cache.schema=2",
         "--label",
         `io.clarvis.runtime.mise-cache.identity=${cache.digest}`,
         cache.name,
@@ -255,11 +272,72 @@ async function prepareMiseCache(control: DockerControl, cache: MiseCacheIdentity
   }
 }
 
+/** Initialize only a private volume subdirectory from the immutable image; never mount a workspace. */
+async function prepareCacheOwnership(
+  control: DockerControl,
+  spec: RuntimeLaunchSpec,
+  cache: MiseCacheIdentity,
+  user: string,
+): Promise<void> {
+  const name = `${nameFor(spec.generation)}-cache-init`;
+  const script = [
+    "if [ ! -e /cache/ready ]; then",
+    "  test ! -L /cache/data",
+    "  mkdir -p /cache/data",
+    "  if [ -d /mise ]; then cp -a /mise/. /cache/data/; fi",
+    '  chown -hR -- "$1" /cache/data',
+    "  : > /cache/ready",
+    "fi",
+    "test ! -L /cache/data && test -d /cache/data",
+    'test "$(stat -c %u:%g /cache/data)" = "$1"',
+  ].join("\n");
+  try {
+    await successful(
+      control,
+      [
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "none",
+        "--read-only",
+        "--user",
+        "0:0",
+        "--cap-drop",
+        "ALL",
+        "--cap-add",
+        "CHOWN",
+        "--security-opt",
+        "no-new-privileges=true",
+        "--pids-limit",
+        "32",
+        "--memory",
+        "67108864",
+        "--mount",
+        `type=volume,source=${cache.name},target=/cache,volume-nocopy`,
+        "--entrypoint",
+        "/bin/sh",
+        spec.imageDigest,
+        "-euc",
+        script,
+        "clarvis-cache-init",
+        user,
+      ],
+      "docker mise cache ownership initialization",
+    );
+  } catch (error) {
+    await control.run(["rm", "--force", name]).catch(() => undefined);
+    throw error;
+  }
+}
+
 /** Create the strict Docker reference backend, suitable for Docker Desktop or Colima. */
 export function createDockerRuntimeBackend(options: DockerBackendOptions): RuntimeBackend {
   const logger = options.logger ?? NOOP_LOGGER;
   const stopSeconds = Math.max(1, Math.min(30, Math.floor(options.stopTimeoutSeconds ?? 5)));
   let version: string | undefined;
+  let rootless = false;
   return {
     async inspect(): Promise<RuntimeAvailability> {
       if ((options.hostPlatform ?? process.platform) === "win32")
@@ -285,10 +363,22 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
           reason: "unsupported_policy",
           message: "the selected Docker context is not a Linux engine",
         };
-      version = candidate;
-      const rootless =
+      rootless =
         Array.isArray(info?.SecurityOptions) &&
         info.SecurityOptions.some((v) => String(v).includes("rootless"));
+      if (
+        !rootless &&
+        Array.isArray(info?.SecurityOptions) &&
+        info.SecurityOptions.some((value) => String(value).includes("userns"))
+      ) {
+        version = undefined;
+        return {
+          available: false,
+          reason: "unsupported_policy",
+          message: "Docker userns-remap cannot preserve the operator workspace identity",
+        };
+      }
+      version = candidate;
       return { available: true, engineVersion: version, rootless };
     },
     async start(spec): Promise<RuntimeSession> {
@@ -298,7 +388,17 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
           "Docker must be inspected before start",
         );
       const name = nameFor(spec.generation);
-      const cache = miseCacheIdentity(spec);
+      network(spec);
+      const uid = rootless ? 0 : (options.hostUser?.uid ?? process.getuid?.());
+      const gid = rootless ? 0 : (options.hostUser?.gid ?? process.getgid?.());
+      if (!Number.isSafeInteger(uid) || !Number.isSafeInteger(gid) || uid! < 0 || gid! < 0) {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "Docker requires an explicit compatible numeric UID and GID",
+        );
+      }
+      const user = `${uid}:${gid}`;
+      const cache = miseCacheIdentity(spec, user);
       let created = false;
       let attached: DockerAttachedProcess | undefined;
       try {
@@ -323,14 +423,15 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
             "Docker resolved image identity or runtime protocol did not match admission",
           );
         await prepareMiseCache(options.control, cache);
-        await successful(options.control, createArgs(spec, name, cache), "docker create");
+        await prepareCacheOwnership(options.control, spec, cache, user);
+        await successful(options.control, createArgs(spec, name, cache, user), "docker create");
         created = true;
         const effective = await successful(
           options.control,
           ["container", "inspect", name],
           "docker container inspect",
         );
-        if (!validInspect(parse(effective.stdout, "docker container inspect"), spec, cache))
+        if (!validInspect(parse(effective.stdout, "docker container inspect"), spec, cache, user))
           throw new RuntimeLaunchError(
             "unsupported_policy",
             "Docker effective configuration did not match the admitted isolation policy",

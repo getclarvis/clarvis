@@ -50,6 +50,9 @@ function fixture(
     miseCacheDriver?: string;
     miseCacheMissing?: boolean;
     rmFailures?: number;
+    user?: string;
+    rootless?: boolean;
+    userns?: boolean;
   } = {},
   runtimeSpec: RuntimeLaunchSpec = spec,
 ) {
@@ -61,6 +64,7 @@ function fixture(
   let miseCacheName = "";
   let volumeInspections = 0;
   let rmAttempts = 0;
+  let user = "";
   const control: DockerControl = {
     async run(args) {
       calls.push([...args]);
@@ -70,7 +74,11 @@ function fixture(
           stdout: JSON.stringify({
             ServerVersion: "29.2.1",
             OSType: "linux",
-            SecurityOptions: ["name=seccomp"],
+            SecurityOptions: [
+              "name=seccomp",
+              ...(overrides.rootless === true ? ["name=rootless"] : []),
+              ...(overrides.userns === true ? ["name=userns"] : []),
+            ],
           }),
           stderr: "",
         };
@@ -99,7 +107,7 @@ function fixture(
           return { exitCode: 1, stdout: "", stderr: "missing" };
         }
         const name = args[2] ?? "";
-        const identity = `sha256:${name.slice("clarvis-mise-v1-".length)}`;
+        const identity = `sha256:${name.slice("clarvis-mise-v2-".length)}`;
         return {
           exitCode: 0,
           stdout: JSON.stringify([
@@ -109,7 +117,7 @@ function fixture(
               Scope: "local",
               Labels: {
                 "io.clarvis.runtime.mise-cache": "true",
-                "io.clarvis.runtime.mise-cache.schema": "1",
+                "io.clarvis.runtime.mise-cache.schema": "2",
                 "io.clarvis.runtime.mise-cache.identity": overrides.miseCacheLabel ?? identity,
               },
             },
@@ -118,6 +126,7 @@ function fixture(
         };
       }
       if (args[0] === "create") {
+        user = args[args.indexOf("--user") + 1] ?? "";
         const cacheMount = args.find((value) => value.includes("target=/mise"));
         miseCacheName = cacheMount?.match(/source=([^,]+)/u)?.[1] ?? "";
       }
@@ -137,8 +146,12 @@ function fixture(
                 CapDrop: ["ALL"],
                 PidsLimit: runtimeSpec.limits.processCount,
                 Memory: runtimeSpec.limits.memoryBytes,
+                Mounts: [{ Target: "/mise", VolumeOptions: { Subpath: "data", NoCopy: true } }],
               },
-              Config: { Labels: { "io.clarvis.generation": runtimeSpec.generation } },
+              Config: {
+                User: overrides.user ?? user,
+                Labels: { "io.clarvis.generation": runtimeSpec.generation },
+              },
               Mounts: [
                 {
                   Type: "bind",
@@ -227,6 +240,57 @@ function fixture(
 }
 
 describe("Docker runtime backend", () => {
+  it("selects the operator identity on rootful Linux and partitions its prepared cache by user", async () => {
+    const caches: string[] = [];
+    for (const uid of [1001, 1002]) {
+      const fake = fixture();
+      const backend = createDockerRuntimeBackend({
+        control: fake.control,
+        hostPlatform: "linux",
+        hostUser: { uid, gid: 100 },
+      });
+      await backend.inspect();
+      const session = await backend.start(spec);
+      const create = fake.calls.find((call) => call[0] === "create")!;
+      expect(create[create.indexOf("--user") + 1]).toBe(`${uid}:100`);
+      caches.push(create.find((arg) => arg.includes("target=/mise"))!);
+      const helper = fake.calls.find((call) => call[0] === "run")!;
+      expect(helper).toContain("CHOWN");
+      expect(helper).toContain("none");
+      expect(helper.some((arg) => arg.includes(spec.workspaceRoot))).toBe(false);
+      expect(helper.at(-1)).toBe(`${uid}:100`);
+      await session.stop();
+      fake.close();
+    }
+    expect(caches[0]).not.toBe(caches[1]);
+  });
+
+  it("maps rootless root to its operator and refuses incompatible effective identities or remapping", async () => {
+    const fake = fixture({ rootless: true });
+    const backend = createDockerRuntimeBackend({
+      control: fake.control,
+      hostUser: { uid: 1001, gid: 100 },
+    });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    const create = fake.calls.find((call) => call[0] === "create")!;
+    expect(create[create.indexOf("--user") + 1]).toBe("0:0");
+    await session.stop();
+    fake.close();
+    const wrong = fixture({ user: "0:0" });
+    const mismatch = createDockerRuntimeBackend({
+      control: wrong.control,
+      hostUser: { uid: 1001, gid: 100 },
+    });
+    await mismatch.inspect();
+    await expect(mismatch.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    expect(wrong.calls.some((call) => call[0] === "start")).toBe(false);
+    const remapped = createDockerRuntimeBackend({ control: fixture({ userns: true }).control });
+    await expect(remapped.inspect()).resolves.toMatchObject({
+      available: false,
+      reason: "unsupported_policy",
+    });
+  });
   it("verifies policy, negotiates the guest and exposes Docker placement", async () => {
     const fake = fixture();
     const backend = createDockerRuntimeBackend({ control: fake.control, hostPlatform: "darwin" });
@@ -250,7 +314,9 @@ describe("Docker runtime backend", () => {
     );
     expect(create.find((value) => value.startsWith("/mise:"))).toBeUndefined();
     expect(create).toContainEqual(
-      expect.stringMatching(/^type=volume,source=clarvis-mise-v1-[a-f0-9]{64},target=\/mise$/u),
+      expect.stringMatching(
+        /^type=volume,source=clarvis-mise-v2-[a-f0-9]{64},target=\/mise,volume-subpath=data,volume-nocopy$/u,
+      ),
     );
     const workspaceMount = create.find((value) => value.includes("target=/workspace"));
     expect(workspaceMount).toBe(`type=bind,source=${spec.workspaceRoot},target=/workspace`);
@@ -374,7 +440,7 @@ describe("Docker runtime backend", () => {
     const session = await backend.start(spec);
     const createVolume = fake.calls.find((call) => call[0] === "volume" && call[1] === "create");
     expect(createVolume).toContain("io.clarvis.runtime.mise-cache=true");
-    expect(createVolume).toContain("io.clarvis.runtime.mise-cache.schema=1");
+    expect(createVolume).toContain("io.clarvis.runtime.mise-cache.schema=2");
     expect(createVolume).toContainEqual(
       expect.stringMatching(/^io\.clarvis\.runtime\.mise-cache\.identity=sha256:[a-f0-9]{64}$/u),
     );
@@ -414,7 +480,7 @@ describe("Docker runtime backend", () => {
       await session.stop();
       fake.close();
     }
-    expect(names.every((name) => /^clarvis-mise-v1-[a-f0-9]{64}$/u.test(name))).toBe(true);
+    expect(names.every((name) => /^clarvis-mise-v2-[a-f0-9]{64}$/u.test(name))).toBe(true);
     expect(new Set(names).size).toBe(variants.length);
   });
 

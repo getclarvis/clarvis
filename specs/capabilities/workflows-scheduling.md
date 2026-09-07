@@ -402,7 +402,7 @@ the second's spend.
 | Step | Effect | File |
 | --- | --- | --- |
 | reservation | uses `heldReservation` or takes one; `null` → `budget_exhausted` with `EMPTY_USAGE`, no assemble, no run | `packages/workflows/src/run-leader.ts` |
-| assemble | `ctx.assemble(spec, {parentRunId: ctx.managerRunId})`, then `execution_id` is overwritten with `runId` | `packages/workflows/src/run-leader.ts` |
+| assemble | await `ctx.assemble(spec, {parentRunId: ctx.managerRunId, runId})`, then `execution_id` is overwritten with `runId` | `packages/workflows/src/run-leader.ts` |
 | channels | `elicitForLeader(runId)`, `steerForLeader(runId)`, `onLeaderEvent` wrapped to tag the run id | `packages/workflows/src/run-leader.ts` |
 | execute | `ctx.runDeps.executeRun({rawBody, owner, deps, externalSignal: ctx.signal, capabilities:[budget-only capability]})` | `packages/workflows/src/run-leader.ts` |
 | account | `reservation.reconcile(response.usage)` | `packages/workflows/src/run-leader.ts` |
@@ -1118,6 +1118,22 @@ widens a mutator to unscoped (`packages/workflows/src/schedule.ts`) — visible 
 `workflow.schedule_derived`'s `unscoped_writers` count (`packages/workflows/src/schedule-log.ts`).
 
 ## 7. Coupling
+
+Container placement keeps this package's scheduler, registry and shared leader/subagent output
+budget together in the guest. The host still assembles each canonical leader request, admits it once
+to the parent's runtime generation and persists progress. `LeaderRequestAssembler` accepts a
+synchronous request or promise and receives the allocated child identity. `workflowContextOf` and
+`workflowOutputBudgetOf` recognize only factory-created capability objects by identity; they are
+trusted host projection seams, not a guest-selected capability registry. The kernel refuses an
+unprojectable host capability rather than dropping its policy.
+
+Production: `workflowContextOf` in `packages/workflows/src/capability.ts`;
+`workflowOutputBudgetOf`, `createLeaderOutputBudgetCapability` and `runLeader` in
+`packages/workflows/src/run-leader.ts`; `LeaderRequestAssembler` in
+`packages/workflows/src/types.ts`; `createHostWorkflowBridge` and `createGuestWorkflowCapabilities`
+in `packages/kernel/src/runtime/workflows-bridge.ts`.
+Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
+(`runs an Admiral and its leader through the same guest registry and subtree budget`).
 
 ### 7.1 What this package depends on
 

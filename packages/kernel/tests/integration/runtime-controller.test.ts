@@ -50,7 +50,7 @@ function info(spec: RuntimeLaunchSpec): RuntimeInfo {
     hostPlatform: "linux",
     guestPlatform: "linux",
     imageDigest: spec.imageDigest,
-    runtimeProtocolRevision: "4",
+    runtimeProtocolRevision: "5",
     network: spec.network,
     limits: spec.limits,
     lifecycle: "ready",

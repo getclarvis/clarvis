@@ -5,6 +5,7 @@ import type { ExecuteRunDeps } from "@clarvis/loop";
 import type { PluginBootstrapSkill } from "@clarvis/loop/host";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import type { PlanFactory } from "@clarvis/plan";
+import type { TaskProviderResolver } from "@clarvis/tasks";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { ProjectRef, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
 import type { GuardSettings } from "../guard/resolver.ts";
@@ -27,6 +28,8 @@ export interface RuntimeHostInput {
   readonly deps: ExecuteRunDeps;
   /** Canonical host plan provider exposed to the guest through an exact per-run bridge. */
   readonly planFactory?: PlanFactory;
+  /** Shared host selector used by the native and guest Tasks capabilities. */
+  readonly taskResolver?: TaskProviderResolver;
   /** Immutable host-admitted skill view disclosed through a read-only runtime bridge. */
   readonly skillsProvider?: SkillsProvider;
   /** Active plugins' bootstrap declarations, resolved against the admitted skill snapshot. */
@@ -155,6 +158,7 @@ export function createLazyRuntimeCoordinator(options: {
   readonly deps: ExecuteRunDeps;
   readonly planFactory?: PlanFactory;
   readonly skillsProvider?: SkillsProvider;
+  readonly taskResolver?: TaskProviderResolver;
   readonly skillBootstraps?: () => readonly PluginBootstrapSkill[];
   readonly memoryFactory?: MemoryFactory;
   readonly loadGuardSettings?: () => GuardSettings;
@@ -165,9 +169,11 @@ export function createLazyRuntimeCoordinator(options: {
 }): LazyRuntimeCoordinator {
   const logger = options.logger ?? NOOP_LOGGER;
   const slots = new Map<string, RuntimeSlot>();
+  const ownedSlots = new Set<RuntimeSlot>();
   const launches = new Map<string, Promise<RuntimeSlot>>();
   const fallback = new Map<string, string>();
   let closed = false;
+  let closing: Promise<void> | undefined;
   let status: RuntimeStatus = (() => {
     const selected = options.selection().settings;
     return selected.backend === "native"
@@ -187,16 +193,22 @@ export function createLazyRuntimeCoordinator(options: {
 
   const closeSlot = async (slot: RuntimeSlot): Promise<void> => {
     if (slot.closing !== undefined) return slot.closing;
-    slot.closing = slot.host.close().finally(() => {
-      if (slots.get(slot.key) === slot) slots.delete(slot.key);
-    });
+    slot.closing = Promise.resolve()
+      .then(() => slot.host.close())
+      .then(() => {
+        if (slots.get(slot.key) === slot) slots.delete(slot.key);
+        ownedSlots.delete(slot);
+      })
+      .finally(() => {
+        slot.closing = undefined;
+      });
     return slot.closing;
   };
 
   const retireIdleSlots = async (keep: string): Promise<void> => {
     await Promise.all(
-      [...slots.values()]
-        .filter((slot) => slot.key !== keep && slot.active === 0)
+      [...ownedSlots]
+        .filter((slot) => (slot.retire || slot.key !== keep) && slot.active === 0)
         .map((slot) => closeSlot(slot)),
     );
   };
@@ -224,6 +236,7 @@ export function createLazyRuntimeCoordinator(options: {
       extensionRevision: selection.extensionRevision,
       deps: options.deps,
       ...(options.planFactory === undefined ? {} : { planFactory: options.planFactory }),
+      ...(options.taskResolver === undefined ? {} : { taskResolver: options.taskResolver }),
       ...(options.skillsProvider === undefined ? {} : { skillsProvider: options.skillsProvider }),
       ...(options.skillBootstraps === undefined
         ? {}
@@ -235,6 +248,7 @@ export function createLazyRuntimeCoordinator(options: {
       ...(options.guardAudit === undefined ? {} : { guardAudit: options.guardAudit }),
     });
     const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0, retire: false };
+    ownedSlots.add(slot);
     slots.set(slot.key, slot);
     publish(readyStatus(host.info));
     return slot;
@@ -377,13 +391,19 @@ export function createLazyRuntimeCoordinator(options: {
       }
     },
     async close() {
-      if (closed) return;
+      if (closing !== undefined) return closing;
       closed = true;
-      const pending = await Promise.allSettled(launches.values());
-      for (const result of pending) {
-        if (result.status === "fulfilled") slots.set(result.value.key, result.value);
-      }
-      await Promise.allSettled([...slots.values()].map((slot) => closeSlot(slot)));
+      closing = (async () => {
+        await Promise.allSettled(launches.values());
+        const results = await Promise.allSettled([...ownedSlots].map((slot) => closeSlot(slot)));
+        const failures = results.flatMap((result) =>
+          result.status === "rejected" ? [result.reason as unknown] : [],
+        );
+        if (failures.length > 0) throw new AggregateError(failures, "runtime cleanup failed");
+      })().finally(() => {
+        closing = undefined;
+      });
+      return closing;
     },
   };
 }

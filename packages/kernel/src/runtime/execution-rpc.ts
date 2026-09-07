@@ -35,6 +35,14 @@ export interface ExecutionRequest extends ExecutionIdentity {
   readonly method: ExecutionMethod;
   readonly payload?: unknown;
   readonly signal: AbortSignal;
+  /** Incremental, ordered model events; the handler's return value remains terminal. */
+  readonly emit?: (event: unknown) => Promise<void>;
+}
+
+/** Local cancellation and incremental delivery for one private RPC call. */
+export interface ExecutionRequestOptions {
+  readonly signal?: AbortSignal;
+  readonly onEvent?: (event: unknown) => void;
 }
 
 /** Handler for one admitted private execution method. */
@@ -46,7 +54,7 @@ export interface ExecutionPeer {
     method: ExecutionMethod,
     identity: ExecutionIdentity,
     payload?: unknown,
-    options?: { readonly signal?: AbortSignal },
+    options?: ExecutionRequestOptions,
   ): Promise<T>;
   close(reason?: Error): void;
   readonly closed: boolean;
@@ -71,7 +79,14 @@ interface CancelFrame extends ExecutionIdentity {
   readonly id: number;
 }
 
-type ExecutionFrame = RequestFrame | ResultFrame | CancelFrame;
+interface EventFrame extends ExecutionIdentity {
+  readonly type: "event";
+  readonly id: number;
+  readonly sequence: number;
+  readonly event: unknown;
+}
+
+type ExecutionFrame = RequestFrame | ResultFrame | CancelFrame | EventFrame;
 
 export const MAX_EXECUTION_FRAME_BYTES = 4 * 1024 * 1024;
 export const MAX_EXECUTION_QUEUE_FRAMES = 256;
@@ -133,6 +148,15 @@ export function decodeExecutionFrame(value: unknown): ExecutionFrame | null {
   if (value.type === "cancel") {
     return only(value, ["type", "id", "generation", "runId", "callId"]) && validId(value.id)
       ? (value as unknown as CancelFrame)
+      : null;
+  }
+  if (value.type === "event") {
+    return only(value, ["type", "id", "generation", "runId", "callId", "sequence", "event"]) &&
+      validId(value.id) &&
+      validId(value.sequence) &&
+      validMethodIdentity("host.model", value) &&
+      Object.hasOwn(value, "event")
+      ? (value as unknown as EventFrame)
       : null;
   }
   if (
@@ -197,6 +221,9 @@ export function createExecutionPeer(options: {
       readonly resolve: (value: unknown) => void;
       readonly reject: (error: unknown) => void;
       readonly detach: () => void;
+      readonly onEvent?: (event: unknown) => void;
+      readonly method: ExecutionMethod;
+      eventSequence: number;
     }
   >();
   const cancelled = new Map<number, ExecutionIdentity>();
@@ -281,12 +308,12 @@ export function createExecutionPeer(options: {
       close(new Error("execution generation mismatch"));
       return;
     }
-    if (frame.type === "result") {
+    if (frame.type === "result" || frame.type === "event") {
       const request = pending.get(frame.id);
       if (request === undefined) {
         const tombstone = cancelled.get(frame.id);
         if (tombstone !== undefined && sameIdentity(tombstone, frame)) {
-          cancelled.delete(frame.id);
+          if (frame.type === "result") cancelled.delete(frame.id);
           return;
         }
         close(new Error("unexpected execution result"));
@@ -294,6 +321,19 @@ export function createExecutionPeer(options: {
       }
       if (!sameIdentity(request, frame)) {
         close(new Error("unexpected execution result"));
+        return;
+      }
+      if (frame.type === "event") {
+        if (request.method !== "host.model" || frame.sequence !== request.eventSequence + 1) {
+          close(new Error("unexpected execution event"));
+          return;
+        }
+        request.eventSequence = frame.sequence;
+        try {
+          request.onEvent?.(frame.event);
+        } catch {
+          close(new Error("execution event consumer failed"));
+        }
         return;
       }
       pending.delete(frame.id);
@@ -329,6 +369,7 @@ export function createExecutionPeer(options: {
       return;
     }
     const controller = new AbortController();
+    let eventSequence = 0;
     controllers.set(frame.id, { identity: frame, value: controller });
     void handler({
       method: frame.method,
@@ -337,6 +378,22 @@ export function createExecutionPeer(options: {
       ...(frame.callId === undefined ? {} : { callId: frame.callId }),
       ...(Object.prototype.hasOwnProperty.call(frame, "payload") ? { payload: frame.payload } : {}),
       signal: controller.signal,
+      ...(frame.method !== "host.model"
+        ? {}
+        : {
+            emit: (event: unknown) => {
+              controller.signal.throwIfAborted();
+              return send({
+                type: "event",
+                id: frame.id,
+                generation: frame.generation,
+                runId: frame.runId!,
+                callId: frame.callId!,
+                sequence: ++eventSequence,
+                event,
+              });
+            },
+          }),
     })
       .then(
         (result) =>
@@ -417,7 +474,7 @@ export function createExecutionPeer(options: {
       method: ExecutionMethod,
       identity: ExecutionIdentity,
       payload?: unknown,
-      requestOptions?: { readonly signal?: AbortSignal },
+      requestOptions?: ExecutionRequestOptions,
     ): Promise<T> {
       if (!outboundMethods.has(method) || identity.generation !== options.generation) {
         return Promise.reject(
@@ -455,6 +512,9 @@ export function createExecutionPeer(options: {
           resolve: resolve as (value: unknown) => void,
           reject,
           detach,
+          method,
+          eventSequence: 0,
+          ...(requestOptions?.onEvent === undefined ? {} : { onEvent: requestOptions.onEvent }),
         });
         void send({ type: "request", id, method, ...identity, payload }).catch(close);
       });

@@ -34,6 +34,19 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
+Docker and Podman retain the admitted host hook callbacks through the kernel's private
+`runtime.hooks` bridge. Commands, plugin environment filtering and MCP connections execute on the
+host, not in the guest. The guest can invoke only configured lifecycle indices/methods with strict
+event contexts; it cannot submit a hook command or replace the resolver. Native ordering, blocking
+verdicts, rewrites and subsequent tool-schema/guard checks remain effective. The guest's disabled
+local hook built-in avoids executing host commands there; it does not disable the projected policy.
+
+Production: `createHostHooksBridge` and `createGuestHooksCapabilities` in
+`packages/kernel/src/runtime/hooks-bridge.ts`; `createGuestLoopExecutor` in
+`packages/kernel/src/runtime/guest-loop-executor.ts`.
+Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
+(`enforces the same configured blocking hook natively and through guest dispatch`).
+
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 
 | Symbol | Kind | File |

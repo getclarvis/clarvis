@@ -112,69 +112,97 @@ export function createIsolatedRunExecutor(options: {
     }
     const runId = raw.execution_id;
     const authority = await options.authority(args, runId);
-    if (args.externalSignal?.aborted === true) {
-      authority.model.revoke();
-      authority.capabilities.revoke();
-      await authority.dispose?.();
-      args.externalSignal.throwIfAborted();
-    }
-    const release = options.router.bind(
-      runId,
-      createRuntimeHostHandlers({
-        workspaceRoot: options.workspaceRoot,
-        generation: options.generation,
-        runId,
-        ...authority,
-        ...(options.roots === undefined ? {} : { roots: options.roots }),
-        appendEvent: async (value) => {
-          if (typeof value !== "object" || value === null) {
-            throw Object.assign(new Error("runtime event envelope is invalid"), {
-              code: "invalid_request",
-            });
-          }
-          const event = value as { channel?: unknown; event?: unknown };
-          if (event.channel === "trace") args.onEvent?.(event.event as TraceEvent);
-          else if (event.channel === "capability") {
-            args.onCapabilityEvent?.(event.event as CapabilityEvent);
-          } else if (event.channel === "trace_record") {
-            const record = (value as { record?: unknown }).record as ExecutionRecord;
-            if (record?.id !== runId || record.owner_key_name !== args.owner) {
-              throw Object.assign(new Error("runtime trace identity mismatch"), {
-                code: "unauthorized",
-              });
-            }
-            await args.deps.traceStore.insert(record);
-          } else if ((await options.consumeGuestEvent?.(args, runId, value)) === true) {
-            return;
-          } else {
-            throw Object.assign(new Error("runtime event channel is invalid"), {
-              code: "invalid_request",
-            });
-          }
-        },
-      }),
-    );
+    let release: (() => void) | undefined;
     let finished = false;
-    const pump = async (): Promise<void> => {
-      while (!finished) {
-        for (const message of args.steer?.drain() ?? []) {
-          await options.session.steer(runId, { kind: "steer", message });
-        }
-        for (const request of args.compaction?.drain() ?? []) {
-          await options.session.steer(runId, { kind: "compact", request });
-        }
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(resolve, pollIntervalMs);
-          timer.unref?.();
-        });
-      }
-    };
+    const controls = new AbortController();
+    let pumpTask = Promise.resolve();
+    let listeningForAbort = false;
     const abort = (): void => {
       void options.session.cancel(runId).catch(() => undefined);
     };
-    let pumpTask = Promise.resolve();
-    let listeningForAbort = false;
     try {
+      args.externalSignal?.throwIfAborted();
+      release = options.router.bind(
+        runId,
+        createRuntimeHostHandlers({
+          workspaceRoot: options.workspaceRoot,
+          generation: options.generation,
+          runId,
+          ...authority,
+          ...(options.roots === undefined ? {} : { roots: options.roots }),
+          appendEvent: async (value) => {
+            if (typeof value !== "object" || value === null) {
+              throw Object.assign(new Error("runtime event envelope is invalid"), {
+                code: "invalid_request",
+              });
+            }
+            const event = value as { channel?: unknown; event?: unknown };
+            if (event.channel === "trace") args.onEvent?.(event.event as TraceEvent);
+            else if (event.channel === "capability") {
+              args.onCapabilityEvent?.(event.event as CapabilityEvent);
+            } else if (event.channel === "trace_record") {
+              const record = (value as { record?: unknown }).record as ExecutionRecord;
+              if (record?.id !== runId || record.owner_key_name !== args.owner) {
+                throw Object.assign(new Error("runtime trace identity mismatch"), {
+                  code: "unauthorized",
+                });
+              }
+              await args.deps.traceStore.insert(record);
+            } else if ((await options.consumeGuestEvent?.(args, runId, value)) === true) {
+              return;
+            } else {
+              throw Object.assign(new Error("runtime event channel is invalid"), {
+                code: "invalid_request",
+              });
+            }
+          },
+        }),
+      );
+      const forwardControl = async (input: unknown): Promise<boolean> => {
+        if (controls.signal.aborted) return false;
+        let stop!: () => void;
+        const stopped = new Promise<boolean>((resolve) => {
+          stop = () => resolve(false);
+          controls.signal.addEventListener("abort", stop, { once: true });
+        });
+        const delivered = Promise.resolve()
+          .then(async () => {
+            if (controls.signal.aborted) return false;
+            await options.session.steer(runId, input, controls.signal);
+            return !controls.signal.aborted;
+          })
+          .catch(() => {
+            if (!controls.signal.aborted) {
+              args.deps.logger?.warn(
+                { event: "runtime.control_delivery_refused", run_id: runId },
+                "the guest refused a pending run control request",
+              );
+            }
+            return false;
+          });
+        try {
+          return await Promise.race([delivered, stopped]);
+        } finally {
+          controls.signal.removeEventListener("abort", stop);
+        }
+      };
+      const pump = async (): Promise<void> => {
+        while (!finished) {
+          const deliveries =
+            args.steer?.take?.() ??
+            (args.steer?.drain() ?? []).map((message) => ({ message, settle: () => undefined }));
+          for (const delivery of deliveries) {
+            delivery.settle(await forwardControl({ kind: "steer", message: delivery.message }));
+          }
+          for (const request of args.compaction?.drain() ?? []) {
+            await forwardControl({ kind: "compact", request });
+          }
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, pollIntervalMs);
+            timer.unref?.();
+          });
+        }
+      };
       const startTask = options.session.startRun(runId, {
         rawBody: args.rawBody,
         owner: args.owner,
@@ -183,7 +211,12 @@ export function createIsolatedRunExecutor(options: {
       args.externalSignal?.addEventListener("abort", abort, { once: true });
       listeningForAbort = args.externalSignal !== undefined;
       if (args.externalSignal?.aborted === true) abort();
-      pumpTask = pump();
+      pumpTask = pump().catch(() => {
+        args.deps.logger?.warn(
+          { event: "runtime.control_pump_failed", run_id: runId },
+          "the isolated run control source failed",
+        );
+      });
       const result = await startTask;
       if (!isOutcome(result) || result.executionId !== runId) {
         throw Object.assign(new Error("guest returned an invalid execution result"), {
@@ -216,12 +249,22 @@ export function createIsolatedRunExecutor(options: {
       return result;
     } finally {
       finished = true;
+      controls.abort();
       if (listeningForAbort) args.externalSignal?.removeEventListener("abort", abort);
+      try {
+        release?.();
+      } finally {
+        try {
+          authority.model.revoke();
+        } finally {
+          try {
+            authority.capabilities.revoke();
+          } finally {
+            await authority.dispose?.();
+          }
+        }
+      }
       await pumpTask;
-      release();
-      authority.model.revoke();
-      authority.capabilities.revoke();
-      await authority.dispose?.();
     }
   };
 }

@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOME_ENV } from "@clarvis/paths";
+import { createSteerQueue } from "../../src/runs/steer-queue.ts";
 import {
   createCapabilityBroker,
   createIsolatedRunExecutor,
@@ -13,12 +14,128 @@ import {
 } from "../../src/index.ts";
 
 const directories: string[] = [];
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((accept) => {
+    resolve = accept;
+  });
+  return { promise, resolve };
+}
 afterEach(async () => {
   for (const directory of directories.splice(0))
     await rm(directory, { recursive: true, force: true });
 });
 
 describe("isolated run executor", () => {
+  it.each(["delivered", "refused", "settled"] as const)(
+    "settles steering only on guest delivery and always revokes authority: %s",
+    async (delivery) => {
+      const root = await mkdtemp(join(tmpdir(), "clarvis-steer-authority-"));
+      directories.push(root);
+      const router = createRuntimeAuthorityRouter("generation");
+      const steer = createSteerQueue();
+      const received = deferred();
+      const deliver = deferred();
+      const finish = deferred();
+      const revoked: string[] = [];
+      let acknowledged: boolean | undefined;
+      const acknowledgement = steer.push({ content: "steer payload" }).then((value) => {
+        acknowledged = value;
+        return value;
+      });
+      const executor = createIsolatedRunExecutor({
+        generation: "generation",
+        workspaceRoot: join(root, "workspace"),
+        roots: { env: { [HOME_ENV]: join(root, "home") } },
+        router,
+        pollIntervalMs: 5,
+        session: {
+          closed: false,
+          info: {} as RuntimeInfo,
+          async startRun(runId) {
+            await finish.promise;
+            await router.handlers["host.checkpoint"]!({
+              method: "host.checkpoint",
+              generation: "generation",
+              runId,
+              signal: new AbortController().signal,
+              payload: { sequence: 1, terminal: false, state: {} },
+            });
+            return { executionId: runId, response: { status: "completed" } };
+          },
+          async steer() {
+            received.resolve();
+            await deliver.promise;
+            if (delivery !== "delivered")
+              throw Object.assign(new Error("guest finished"), { code: "not_found" });
+          },
+          async cancel() {},
+          async stop() {},
+          async exposePort() {
+            throw new Error("not exercised");
+          },
+        },
+        authority: () => ({
+          model: {
+            async execute() {
+              return { events: [], outputBytes: 0 };
+            },
+            revoke() {
+              revoked.push("model");
+            },
+          },
+          capabilities: {
+            async invoke() {},
+            revoke() {
+              revoked.push("capabilities");
+            },
+          },
+          terminalParticipants: () =>
+            (["session", "trace", "capabilities"] as const).map((name) => ({
+              name,
+              async commit() {},
+            })),
+          dispose() {
+            revoked.push("snapshot");
+          },
+        }),
+      });
+      const running = executor({
+        rawBody: { execution_id: "run" },
+        owner: "owner",
+        deps: {} as never,
+        steer,
+      });
+      try {
+        await received.promise;
+        expect(acknowledged).toBeUndefined();
+        if (delivery === "settled") finish.resolve();
+        else {
+          deliver.resolve();
+          expect(await acknowledgement).toBe(delivery === "delivered");
+          finish.resolve();
+        }
+        await expect(running).resolves.toMatchObject({ response: { status: "completed" } });
+        expect(await acknowledgement).toBe(delivery === "delivered");
+        expect(revoked).toEqual(["model", "capabilities", "snapshot"]);
+        await expect(
+          router.handlers["host.event"]!({
+            method: "host.event",
+            generation: "generation",
+            runId: "run",
+            signal: new AbortController().signal,
+            payload: { channel: "trace", event: {} },
+          }),
+        ).rejects.toMatchObject({ code: "unauthorized" });
+      } finally {
+        deliver.resolve();
+        finish.resolve();
+        steer.close();
+        await running.catch(() => undefined);
+      }
+    },
+  );
+
   it("keeps the authority router generation- and run-bound", async () => {
     const router = createRuntimeAuthorityRouter("generation-1");
     const signal = new AbortController().signal;

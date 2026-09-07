@@ -90,7 +90,10 @@ requested dependencies. Cancelling an active run asks the guest to settle that s
 request instead of cancelling its transport frame; if the attached process or private channel
 nevertheless dies, that generation is retired and the next run lazily starts a fresh one.
 Mid-run steering crosses the private `runtime.steer` operation into a guest-owned run queue and is
-acknowledged only after the real loop drains it, matching native `RunHandle.steer`. Explicit
+acknowledged only after the real loop drains it, matching native `RunHandle.steer`. Transfer to the
+guest leaves the host acknowledgement pending; a late refusal reports undelivered steering without
+replacing a completed run's result. Authority revocation and snapshot disposal still run if the
+control pump fails. Explicit
 compaction uses the same RPC method with a different exact discriminant but enters its own queue, so
 its optional request never becomes transcript content. Unknown fields, malformed message content and
 late run IDs are rejected at the guest boundary.
@@ -116,6 +119,17 @@ writable. After the completed trace is durable on the host, the guest's lifecycl
 host to execute the canonical post-run enqueue there. The resulting dedicated indexing pass uses
 the file host's direct Loop executor, not the container coordinator, so Memory mutation remains a
 host-only operation throughout.
+
+Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook commands
+and MCP hooks execute on the host through admitted callbacks; the guest cannot supply a command or
+replace policy. Tasks uses its canonical guest capability and strict request schema over a host-owned
+provider port, retaining binding, write gates and provider errors. Admiral scheduling and its shared
+leader/subagent budget stay together in the guest, while the host assembles each leader request and
+admits execution to the same generation. An unknown host capability that cannot be projected refuses
+container placement instead of silently disappearing. Model leases include exact profile, vision and
+resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
+including partial output before a provider failure; the terminal result is separate. These bridges
+require runtime protocol revision 5 and a rebuilt compatible worker image.
 
 The selected canonical workspace is mounted read-write at guest `/workspace`; guest changes are
 therefore visible on the host immediately. Clarvis does not create a second workspace copy or own an
@@ -173,7 +187,12 @@ context; `executable` and `connection` override those choices. Its backend requi
 uses the resulting local image ID as `runtime.image_digest`, makes the image root read-only,
 bounds the non-executable `/tmp`, and admits the selected workspace bind, its exact read-only
 overlays, optional linked-worktree Git metadata, plus the labelled workspace/image-specific `/mise`
-volume. It deliberately uses a private bridge rather than host networking. The volume is
+volume. It deliberately uses a private bridge rather than host networking. The cache is partitioned
+by effective UID/GID as well as workspace and image. Rootful Docker runs as the invoking operator's
+numeric UID/GID; rootless Docker uses its operator-mapped root. Rootful `userns-remap` is refused
+because the bind identity cannot be preserved. A bounded, networkless initializer with only the cache
+mounted seeds immutable image mise content and assigns ownership; only its `data` subdirectory reaches
+the guest. Effective user and volume-subpath inspection must match admission. The volume is
 engine-owned rebuildable cache, is not covered by `storage_bytes`, is not exposed as a host-path
 bind or reused by another workspace identity, and is not removed with the disposable container.
 `storage_bytes` also does not bound the direct host workspace bind. An agent with `run_commands` can
@@ -203,7 +222,11 @@ commands, installed files or output may persist outside Clarvis.
 
 Normal runtime close stops and force-removes only that generation's disposable engine container
 after closing its preview listeners. Removal failure is returned and a later close retries the
-removal without repeating guest shutdown. The selected workspace remains untouched by runtime
+removal without repeating guest shutdown. The coordinator retains failed generations, reports an
+aggregate shutdown failure and lets subsequent `close()` calls retry them, including retired
+generations with the same configuration key. The outer kernel lifecycle likewise retains failed
+resources for retry and never reopens admission; other file-host resources still close if runtime
+cleanup fails. The selected workspace remains untouched by runtime
 cleanup, while Docker intentionally retains the separately labelled `/mise` cache. A crash can
 still leave an engine container because external orphan reconciliation is not implemented.
 

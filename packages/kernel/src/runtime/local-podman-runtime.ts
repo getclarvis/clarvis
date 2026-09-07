@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { NOOP_LOGGER } from "@clarvis/capability";
+import { NOOP_LOGGER, type RunRequest } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
@@ -41,6 +41,21 @@ import {
 } from "@clarvis/paths";
 import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
 import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
+import { resolveGuardMode, type GuardSettings } from "../guard/resolver.ts";
+import { streamHostModelCall } from "./model-stream.ts";
+import { createHostTasksGrant, RUNTIME_TASKS_METHOD } from "./tasks-bridge.ts";
+import {
+  createHostHooksBridge,
+  RUNTIME_HOOKS_METHOD,
+  type RuntimeHooksDescriptor,
+} from "./hooks-bridge.ts";
+import { workflowContextOf, workflowOutputBudgetOf, type WorkflowCtx } from "@clarvis/workflows";
+import {
+  consumeGuestWorkflowEvent,
+  createHostWorkflowBridge,
+  RUNTIME_WORKFLOWS_METHOD,
+  type RuntimeWorkflowDescriptor,
+} from "./workflows-bridge.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
 type ResolvedLocalRuntimeInput = Omit<LocalRuntimeInput, "settings"> & {
@@ -158,14 +173,28 @@ async function readOnlyWorkspacePaths(
   return [...new Set(existing)];
 }
 
-function modelPairs(rawBody: unknown): Set<string> {
-  const raw = rawBody as { profiles?: Array<{ model?: unknown }> };
+/** Exact models the assembled request can use, including its resolved auxiliary paths. */
+export function runtimeModelPairs(rawBody: unknown, guardSettings: GuardSettings): Set<string> {
+  const raw = rawBody as {
+    profiles?: Array<{ model?: unknown }>;
+    vision_model?: unknown;
+    guard_mode?: Parameters<typeof resolveGuardMode>[0];
+    guard_judge?: { model?: string };
+  };
   const pairs = new Set<string>();
-  for (const profile of raw.profiles ?? []) {
-    if (typeof profile.model !== "string") continue;
-    const slash = profile.model.indexOf("/");
-    if (slash > 0 && slash < profile.model.length - 1) {
-      pairs.add(`${profile.model.slice(0, slash)}\0${profile.model.slice(slash + 1)}`);
+  const models = [
+    ...(raw.profiles ?? []).map((profile) => profile.model),
+    raw.vision_model,
+    ...(resolveGuardMode(raw.guard_mode, guardSettings.guard) === "auto" &&
+    raw.guard_judge !== undefined
+      ? [raw.guard_judge.model ?? guardSettings.defaultModel]
+      : []),
+  ];
+  for (const model of models) {
+    if (typeof model !== "string") continue;
+    const slash = model.indexOf("/");
+    if (slash > 0 && slash < model.length - 1) {
+      pairs.add(`${model.slice(0, slash)}\0${model.slice(slash + 1)}`);
     }
   }
   return pairs;
@@ -204,12 +233,14 @@ function hostModelBroker(
   args: ExecuteRunArgs,
   runId: string,
   leaseId: string,
+  guardSettings: GuardSettings,
 ): ModelBroker {
-  const admitted = modelPairs(args.rawBody);
+  const admitted = runtimeModelPairs(args.rawBody, guardSettings);
   const brokers = new Map<string, ModelBroker>();
+  let revoked = false;
   const brokerFor = (provider: string, model: string): ModelBroker => {
     const key = `${provider}\0${model}`;
-    if (!admitted.has(key))
+    if (revoked || !admitted.has(key))
       throw Object.assign(new Error("model is outside the run snapshot"), { code: "unauthorized" });
     const existing = brokers.get(key);
     if (existing !== undefined) return existing;
@@ -226,32 +257,33 @@ function hostModelBroker(
         maxInputBytes: input.settings.limits.output_bytes,
         maxOutputBytes: input.settings.limits.output_bytes,
       },
-      async function* (request, authority) {
+      (request, authority) => {
         const body = request.body as LLMCallParams;
-        const deltas: unknown[] = [];
-        const result = await args.deps.llm.call({
-          ...body,
-          provider: request.provider,
-          model: request.model,
-          providerConfig: providerConfig(
-            args.rawBody,
-            request.provider,
-          ) as LLMCallParams["providerConfig"],
-          signal: authority.signal,
-          onStreamDelta: (delta) => deltas.push({ type: "stream", ...delta }),
-        });
-        for (const delta of deltas) yield delta;
-        yield { type: "result", result };
+        return streamHostModelCall(
+          args.deps.llm,
+          {
+            ...body,
+            provider: request.provider,
+            model: request.model,
+            providerConfig: providerConfig(
+              args.rawBody,
+              request.provider,
+            ) as LLMCallParams["providerConfig"],
+            signal: authority.signal,
+          },
+          input.settings.limits.output_bytes,
+        );
       },
     );
     brokers.set(key, broker);
     return broker;
   };
   return {
-    execute(identity, request, signal) {
-      return brokerFor(request.provider, request.model).execute(identity, request, signal);
+    execute(identity, request, signal, onEvent) {
+      return brokerFor(request.provider, request.model).execute(identity, request, signal, onEvent);
     },
     revoke() {
+      revoked = true;
       for (const broker of brokers.values()) broker.revoke();
       brokers.clear();
     },
@@ -347,8 +379,11 @@ export async function createLocalContainerRuntime(
     readOnlyWorkspacePaths: protectedPaths,
     capabilityMethods: [
       "runtime.elicit",
+      RUNTIME_HOOKS_METHOD,
+      RUNTIME_WORKFLOWS_METHOD,
       RUNTIME_PREVIEW_METHOD,
       ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
+      ...(input.taskResolver === undefined ? [] : [RUNTIME_TASKS_METHOD]),
       ...(input.skillsProvider === undefined ? [] : [RUNTIME_SKILLS_METHOD]),
       ...(input.memoryFactory === undefined ? [] : [RUNTIME_MEMORY_METHOD]),
     ],
@@ -356,6 +391,11 @@ export async function createLocalContainerRuntime(
   });
   interface RunSnapshot {
     readonly leaseId: string;
+    readonly guardSettings: GuardSettings;
+    readonly hooks?: RuntimeHooksDescriptor;
+    readonly workflow?: RuntimeWorkflowDescriptor;
+    readonly workflowContext?: WorkflowCtx;
+    readonly outputBudgets: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
     readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
     readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
     readonly memory?: MemoryRuntimeDescriptor;
@@ -375,6 +415,7 @@ export async function createLocalContainerRuntime(
         modelLeaseId: snapshot.leaseId,
         hostCapabilities: [
           ...(input.planFactory === undefined ? [] : ["plans"]),
+          ...(input.taskResolver === undefined ? [] : ["tasks"]),
           ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
           ...(snapshot.memory === undefined ? [] : ["memory"]),
         ],
@@ -385,21 +426,70 @@ export async function createLocalContainerRuntime(
               skillBootstraps: snapshot.skillBootstraps ?? [],
             }),
         ...(snapshot.memory === undefined ? {} : { memory: snapshot.memory }),
-        guardSettings: (() => {
-          const settings = input.loadGuardSettings?.() ?? {};
-          return {
-            ...(settings.guard === undefined ? {} : { guard: settings.guard }),
-            ...(settings.defaultModel === undefined ? {} : { defaultModel: settings.defaultModel }),
-          };
-        })(),
+        guardSettings: snapshot.guardSettings,
+        ...(snapshot.hooks === undefined ? {} : { hooks: snapshot.hooks }),
+        ...(snapshot.workflow === undefined ? {} : { workflow: snapshot.workflow }),
+        ...(args.runtimeParentRunId === undefined ? {} : { parentRunId: args.runtimeParentRunId }),
+        outputBudgets: snapshot.outputBudgets,
         ...(typeof raw.continue_from === "string"
           ? { priorExecution: args.deps.traceStore.getById(args.owner, raw.continue_from) }
           : {}),
       };
     },
     authority: async (args, runId) => {
+      const admittedCapabilities = [
+        ...(args.deps.capabilities ?? []),
+        ...(args.capabilities ?? []),
+      ];
+      const workflowContext = admittedCapabilities
+        .map(workflowContextOf)
+        .find((context) => context !== undefined);
+      for (const capability of admittedCapabilities) {
+        if (
+          ![
+            "hooks",
+            "tools",
+            "ask-user",
+            "skills",
+            "plans",
+            "memory",
+            "tasks",
+            "delegation",
+          ].includes(capability.name) &&
+          workflowContextOf(capability) === undefined &&
+          workflowOutputBudgetOf(capability) === undefined
+        ) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            `runtime cannot preserve capability '${capability.name}'`,
+          );
+        }
+      }
+      const workflow =
+        workflowContext === undefined
+          ? undefined
+          : createHostWorkflowBridge(workflowContext, executeRun);
+      const outputBudgets = admittedCapabilities.flatMap((capability) => {
+        const budget = workflowOutputBudgetOf(capability);
+        if (budget === undefined) return [];
+        const remaining = budget.outputBudget.remaining();
+        return [
+          {
+            tokens: Number.isFinite(remaining) ? remaining : null,
+            maxParallelSubagents: budget.maxParallelSubagents,
+          },
+        ];
+      });
       const leaseId = randomUUID();
-      const model = hostModelBroker(input, args, runId, leaseId);
+      const hooks = await createHostHooksBridge(args, runId);
+      const loadedGuardSettings = input.loadGuardSettings?.() ?? {};
+      const guardSettings: GuardSettings = structuredClone({
+        ...(loadedGuardSettings.guard === undefined ? {} : { guard: loadedGuardSettings.guard }),
+        defaultModel:
+          loadedGuardSettings.defaultModel ??
+          (args.deps.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
+      });
+      const model = hostModelBroker(input, args, runId, leaseId, guardSettings);
       const skillCatalog =
         input.skillsProvider === undefined
           ? undefined
@@ -426,12 +516,6 @@ export async function createLocalContainerRuntime(
                 ? {}
                 : { onCapabilityEvent: args.onCapabilityEvent }),
             });
-      snapshots.set(runId, {
-        leaseId,
-        ...(skillCatalog === undefined ? {} : { skillCatalog }),
-        ...(skillBootstraps === undefined ? {} : { skillBootstraps }),
-        ...(memory === undefined ? {} : { memory: memory.descriptor }),
-      });
       const capabilities = createCapabilityBroker({
         generation: input.generation,
         runId,
@@ -469,13 +553,42 @@ export async function createLocalContainerRuntime(
           ...(input.planFactory === undefined
             ? []
             : [createHostPlansGrant(input.planFactory, args.owner)]),
+          ...(input.taskResolver === undefined
+            ? []
+            : [
+                createHostTasksGrant(
+                  input.taskResolver,
+                  args.owner,
+                  runId,
+                  args.rawBody,
+                  typeof (args.rawBody as RunRequest).continue_from === "string"
+                    ? args.deps.traceStore.getById(
+                        args.owner,
+                        (args.rawBody as RunRequest).continue_from!,
+                      )?.capability_state?.tasks
+                    : undefined,
+                ),
+              ]),
           ...(input.skillsProvider === undefined
             ? []
             : [createHostSkillsGrant(input.skillsProvider, skillCatalog ?? [])]),
           ...(memory === undefined ? [] : [memory.grant]),
+          ...(hooks === undefined ? [] : [hooks.grant]),
+          ...(workflow === undefined ? [] : [workflow.grant]),
         ],
         maxArgumentsBytes: 256 * 1024,
         maxResultBytes: 256 * 1024,
+      });
+      snapshots.set(runId, {
+        leaseId,
+        guardSettings,
+        ...(hooks === undefined ? {} : { hooks: hooks.descriptor }),
+        ...(workflow === undefined ? {} : { workflow: workflow.descriptor }),
+        ...(workflowContext === undefined ? {} : { workflowContext }),
+        outputBudgets,
+        ...(skillCatalog === undefined ? {} : { skillCatalog }),
+        ...(skillBootstraps === undefined ? {} : { skillBootstraps }),
+        ...(memory === undefined ? {} : { memory: memory.descriptor }),
       });
       return {
         model,
@@ -498,6 +611,7 @@ export async function createLocalContainerRuntime(
       };
     },
     consumeGuestEvent: (args, runId, value) =>
+      consumeGuestWorkflowEvent(snapshots.get(runId)?.workflowContext, value) ||
       forwardGuestGuardAudit(value, input.guardAudit ?? NOOP_LOGGER, runId, args.owner),
   });
   return {

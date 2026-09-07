@@ -956,6 +956,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       : {}),
     deps,
     planFactory: planning.planFactory,
+    ...(tasksEnabled ? { taskResolver: taskProviderFactory } : {}),
     ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
     ...(built.skills === undefined ? {} : { skillBootstraps: pluginSkillBootstraps }),
     ...(memoryFactory === undefined ? {} : { memoryFactory }),
@@ -1025,16 +1026,19 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();
-        await runtimeCoordinator.close();
-        extensionProfileManager.close();
-        pluginContributions.close();
         try {
-          await capabilityExecutables.close();
+          await runtimeCoordinator.close();
         } finally {
+          extensionProfileManager.close();
+          pluginContributions.close();
           try {
-            await built.dispose();
+            await capabilityExecutables.close();
           } finally {
-            await subscriptionManager?.close();
+            try {
+              await built.dispose();
+            } finally {
+              await subscriptionManager?.close();
+            }
           }
         }
       },

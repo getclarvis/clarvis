@@ -793,6 +793,23 @@ array copies: `taskRefFromDto`, `taskRefDto`, `taskActorDto`, `taskSummaryDto`, 
 
 ### 4.13 Host composition
 
+Docker/Podman placement registers the same canonical Tasks capability and strict `task` request
+schema in the guest. Its provider resolver proxies only exact `runtime.tasks` operations; provider
+connections and credentials remain on the host. Host admission binds provider identity, run/owner,
+continuation state, write settings and grants. Lifecycle writes target the active binding, including
+review's composed comment/artifact writes; a continuation cannot turn inspect mode into work mode.
+Provider errors retain their typed code, current revision and task so conflict and uncertain-write
+handling still runs in the native capability. No permissive schema or second Tasks implementation is
+introduced.
+
+Production: `createHostTasksGrant` and `createGuestTaskResolver` in
+`packages/kernel/src/runtime/tasks-bridge.ts`; `createGuestLoopExecutor` in
+`packages/kernel/src/runtime/guest-loop-executor.ts`; `createFileKernel` in
+`packages/kernel/src/file-kernel.ts`.
+Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (bound Tasks run);
+`packages/kernel/tests/unit/runtime-tasks-bridge.test.ts` (strict inputs, provider identity, grants,
+review composition and continuation mode).
+
 `createFileKernel` computes `tasksEnabled = opts.builtins?.tasks !== false`
 (`packages/kernel/src/file-kernel.ts`), then, in order: builds the server port over the shared MCP
 `connections`, builds the factory with the config store, that port, plugin contributions,

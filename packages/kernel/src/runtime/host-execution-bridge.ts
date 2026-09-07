@@ -60,6 +60,7 @@ export function createRuntimeHostHandlers(
         identity(request),
         payloadRecord(request.payload) as unknown as GuestModelRequest,
         request.signal,
+        request.emit,
       ),
     "host.capability": (request) =>
       options.capabilities.invoke(

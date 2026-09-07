@@ -1,5 +1,4 @@
-import { createRequire } from "node:module";
-import type { ValidateFunction } from "ajv";
+import { Ajv, type ValidateFunction } from "ajv";
 import { ToolError, serializeError } from "./errors.ts";
 import { bound } from "./lib/output.ts";
 import { tools, getTool, selectSurface } from "./tools/registry.ts";
@@ -34,17 +33,6 @@ function protectSkillPackages(
     assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
   }
 }
-
-interface AjvInstance {
-  compile(schema: unknown): ValidateFunction;
-  errorsText(errors?: unknown, opts?: { separator?: string }): string;
-}
-
-interface AjvModule {
-  default: new (opts?: Record<string, unknown>) => AjvInstance;
-}
-
-const Ajv = (createRequire(import.meta.url)("ajv") as AjvModule).default;
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();

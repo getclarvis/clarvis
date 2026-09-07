@@ -86,8 +86,8 @@ export interface AppCommandDeps {
   effects: Pick<
     InteractionEffects,
     | "openAgentPicker"
-    | "openSafetyPresetPicker"
-    | "cycleGuardMode"
+    | "openIsolationPicker"
+    | "openReviewPicker"
     | "openDiff"
     | "openPlan"
     | "quit"
@@ -111,6 +111,7 @@ export interface AppCommandDeps {
   refreshAgentProfiles: () => Promise<void>;
   keys: KeysAdapter;
   reconnectBackend: () => Promise<{ ok: boolean; message: string }>;
+  retryRuntime?: () => void;
   env: EnvView;
   preview: ThemePreview;
   platform: Platform;
@@ -352,16 +353,29 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
 
   commands.registerAction({
-    name: "safety.picker",
-    title: "Safety preset",
-    desc: "Choose the sandbox and command-review posture for the next run",
+    name: "isolation.picker",
+    title: "Isolation",
+    desc: "Choose Host, Sandbox or lazy Docker isolation for the next run",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
-    footerLabel: "safety",
+    footerLabel: "isolation",
     hintPriority: 42,
     hintGroup: "navigation",
-    run: () => effects.openSafetyPresetPicker(),
+    run: () => effects.openIsolationPicker(),
+  });
+
+  commands.registerAction({
+    name: "review.picker",
+    title: "Command review",
+    desc: "Choose Off, Approval or Auto without changing isolation",
+    surface: "internal",
+    group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "review",
+    hintPriority: 41,
+    hintGroup: "navigation",
+    run: () => effects.openReviewPicker(),
   });
 
   commands.registerAction({
@@ -478,14 +492,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     },
   });
 
-  commands.registerAction({
-    name: "guard.cycle",
-    title: "Cycle guard mode",
-    desc: `Cycle the guard mode: off ${glyph("arrowRight")} on ${glyph("arrowRight")} auto`,
-    surface: "internal",
-    group: "actions",
-    run: () => effects.cycleGuardMode(),
-  });
   commands.registerView({
     name: "storage.open",
     title: "Storage",
@@ -635,7 +641,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Safety presets, sandbox, guard, memory and plan retention for the next run",
+    desc: "Isolation, command review, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -649,6 +655,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           notify,
           runActive: deps.runActive,
           openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
+          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
         });
     }),
   });

@@ -1,6 +1,11 @@
 import { describe, it, expect } from "bun:test";
 import { isAbsolute, relative, resolve } from "node:path";
-import { type ShellFacts, type GuardContext, type GuardDecision } from "@clarvis/tools/guard";
+import {
+  analyzeShell,
+  type ShellFacts,
+  type GuardContext,
+  type GuardDecision,
+} from "@clarvis/tools/guard";
 import type {
   Elicit,
   ElicitRequest,
@@ -129,6 +134,15 @@ describe("createShellGuard (kernel copy)", () => {
     expect(await guard(makeCtx("shell", { command: "rm -rf out.txt" }))).toMatchObject({
       verdict: "ask",
     });
+  });
+
+  it("admits the mise x bootstrap form without mistaking it for shell exec", async () => {
+    const command = "mise x node@24.20.0 -- node --version";
+    const facts = analyzeShell(command);
+    expect(facts.undecidable).toBe(false);
+    expect(
+      await createShellGuard({ allowedCommands: ["mise x"] })(makeCtx("shell", { command }, facts)),
+    ).toEqual<GuardDecision>({ verdict: "allow" });
   });
 
   it("treats a blank allow-list entry as matching no command", async () => {

@@ -63,7 +63,7 @@ directories route behavioral documents; their folder names do not override the p
 Every workspace has one primary architectural role:
 
 | Role | Packages | Responsibility | Permitted downward dependencies |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | foundation | `capability`, `paths` | Stable vocabulary, ports and filesystem ownership used by higher layers | No internal package dependency |
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
 | execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
@@ -105,7 +105,7 @@ as its package. Create a package only when at least one of these boundaries is r
 4. the unit has independent lifecycle, security or platform ownership;
 5. multiple consumers need one cohesive implementation that belongs below all of them.
 
-Line count, directory size, a desire for a shorter import, or a single shared helper do not justify
+Implementation size, directory size, a desire for a shorter import, or a single shared helper do not justify
 a package. A proposed package must name its owner, consumers, allowed dependencies, public entries,
 README, owning spec and architecture test before it is added.
 
@@ -327,7 +327,7 @@ MCP Client, and Server.
 ## 6. Failure modes and degradation
 
 | Change | Current result | Required response |
-|---|---|---|
+| --- | --- | --- |
 | Declared or compilation cycle | `check:graph` fails with the strongly connected component | Remove or invert the edge; dynamic or optional loading is not a waiver |
 | Undeclared internal import or unused internal dependency | `check:graph` fails with package and source location | Align ownership, source and manifest rather than suppressing the finding |
 | Runtime import declared only in `devDependencies` | `check:graph` fails | Move it to a runtime field or remove the runtime edge |

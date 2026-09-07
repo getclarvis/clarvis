@@ -43,7 +43,7 @@ import { kernelError } from "../core/errors.ts";
 import { capabilityEventToProto, engineEventToProto } from "../runs/map-events.ts";
 import { DEFAULT_INGEST_CLOSE_GRACE_MS } from "../runs/memory-ingest-phase.ts";
 import { engineResultToProto } from "../runs/map-result.ts";
-import type { RunRequestAssembler } from "../runs/run-service.ts";
+import type { RunExecutor, RunExecutorArgs, RunRequestAssembler } from "../runs/run-service.ts";
 import { createManagedRun } from "../runs/managed-run.ts";
 import {
   WORKFLOW_MAX_EDGES,
@@ -85,6 +85,8 @@ export interface WorkflowsRuntimeSettings {
 export interface WorkflowsServiceConfig {
   /** Engine deps `executeRun` drives (shared with the run service). */
   deps: ExecuteRunDeps;
+  /** Placement-neutral loop executor used by manager and leader runs. */
+  executeRun?: RunExecutor;
   /** Owner scope every run and record is keyed under. */
   owner: string;
   /** Workspace label stamped on each {@link WorkflowRecord}. */
@@ -174,6 +176,10 @@ function auxiliaryWorkflowRunDeps(deps: ExecuteRunDeps): ExecuteRunDeps {
  *   grant stripped + planning forced off, which fixes the three-level topology.
  */
 export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkflowsService {
+  const runDeps: WorkflowRunDeps = {
+    executeRun: cfg.executeRun ?? WORKFLOW_RUN_DEPS.executeRun,
+    generateExecutionId,
+  };
   const { deps, owner, assembleRunRequest, store } = cfg;
   const ingestGraceMs = cfg.ingestGraceMs ?? DEFAULT_INGEST_CLOSE_GRACE_MS;
 
@@ -493,7 +499,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         }) as RunRequestBody;
         const workflowContext: WorkflowCtx = {
           deps: workflowDeps,
-          runDeps: WORKFLOW_RUN_DEPS,
+          runDeps,
           owner,
           semaphore,
           ledger,
@@ -551,7 +557,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             title: generated,
           });
         });
-        const runTask = WORKFLOW_RUN_DEPS.executeRun({
+        const managerArgs: RunExecutorArgs = {
           rawBody: managerBody,
           owner,
           deps,
@@ -568,7 +574,8 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: mux.manager,
-        });
+        };
+        const runTask = runDeps.executeRun(managerArgs);
         const [run] = await Promise.allSettled([runTask, titleTask]);
         if (run.status === "rejected") throw run.reason;
         const outcome = run.value;

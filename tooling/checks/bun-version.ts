@@ -85,9 +85,9 @@ export function bunVersionFailures(snapshot) {
   }
 
   const releasePins = setupBunPins(snapshot.release);
-  if (releasePins.length !== 2) {
+  if (releasePins.length !== 4) {
     failures.push(
-      `.github/workflows/release.yml: expected two setup-bun pins, found ${String(releasePins.length)}`,
+      `.github/workflows/release.yml: expected four setup-bun pins, found ${String(releasePins.length)}`,
     );
   }
   for (const pin of releasePins) {
@@ -98,9 +98,9 @@ export function bunVersionFailures(snapshot) {
     }
   }
   const releaseEvidence = runtimeEvidenceCount(snapshot.release);
-  if (releaseEvidence !== 2) {
+  if (releaseEvidence !== 4) {
     failures.push(
-      `.github/workflows/release.yml: expected two Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
+      `.github/workflows/release.yml: expected four Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
     );
   }
 
@@ -131,6 +131,21 @@ export function bunVersionFailures(snapshot) {
         `packages/server/Dockerfile: base image observed ${observed(`oven/bun:${pin}`)}, expected oven/bun:${version}-slim`,
       );
     }
+  }
+
+  const runtimeBuildPins = [
+    ...snapshot.runtimeDevelopmentContainerfile.matchAll(
+      /^ARG\s+BUILD_IMAGE=docker\.io\/oven\/bun:([^\s@]+)@(sha256:[a-f0-9]{64})\s*$/gm,
+    ),
+  ];
+  if (runtimeBuildPins.length !== 1) {
+    failures.push(
+      `Containerfile.runtime-development: expected one digest-pinned oven/bun build image, found ${String(runtimeBuildPins.length)}`,
+    );
+  } else if (runtimeBuildPins[0][1] !== `${version}-debian`) {
+    failures.push(
+      `Containerfile.runtime-development: build image observed ${observed(`oven/bun:${runtimeBuildPins[0][1]}`)}, expected oven/bun:${version}-debian`,
+    );
   }
 
   const rootManifest = parseJson("package.json", snapshot.rootManifest, failures);
@@ -183,6 +198,7 @@ export function readBunVersionSnapshot(root) {
     release: read(".github/workflows/release.yml"),
     canary: read(".github/workflows/segfault-canary.yml"),
     docker: read("packages/server/Dockerfile"),
+    runtimeDevelopmentContainerfile: read("Containerfile.runtime-development"),
     rootManifest,
     workspaceManifests: workspaces.map((workspace) => ({
       path: `${workspace}/package.json`,

@@ -233,6 +233,28 @@ describe("mergeSettings — enabledPlugins", () => {
   });
 });
 
+describe("mergeSettings — marketplaces", () => {
+  it("concatenates distinct locations in first-seen order", () => {
+    const merged = mergeSettings([
+      operator({ marketplaces: ["getclarvis/core", "company/internal"] }),
+      operator({ marketplaces: ["company/internal", "company/research"] }),
+    ]);
+    expect(merged.marketplaces).toEqual([
+      "getclarvis/core",
+      "company/internal",
+      "company/research",
+    ]);
+  });
+
+  it("bounds the aggregate marketplace list across scopes", () => {
+    const marketplaces = Array.from(
+      { length: 257 },
+      (_, index) => `company/market-${String(index)}`,
+    );
+    expect(() => mergeSettings([operator({ marketplaces })])).toThrow("merged list exceeds");
+  });
+});
+
 describe("mergeSettings — aggregate limits", () => {
   it("rejects provider and enabled-plugin unions that exceed their aggregate ceilings", () => {
     const providers = Array.from({ length: 1_001 }, (_, index) => ({

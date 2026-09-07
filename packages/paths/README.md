@@ -81,8 +81,11 @@ g.subscriptionsFile; //         …/subscriptions.json (renewable subscription c
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
 g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
+g.runtimeRecipesDir; //               …/runtime-recipes (operator-authored Docker scripts)
 g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
 g.updateCheckCacheFile; //             …/cache/update-check.json (discardable version-check result)
+g.runtimeRecipeStateDir; //            …/state/runtime-recipes (host build coordination)
+g.runtimeRecipeLeaseFile("sha256:…"); // …/state/runtime-recipes/<segment>.lock
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -107,11 +110,19 @@ wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segme
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
+The sibling `runtimes/` tree owns only host-accepted per-run checkpoints beneath each encoded
+isolated-runtime generation. Runtime and run IDs pass through `ownerSegment`; no workspace copy,
+baseline, apply journal, transaction staging, registry or lifecycle record is stored there. The
+container mounts the already-selected workspace directly, so that checkout remains outside runtime
+state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
-user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
-`cache/` (including the models.dev snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
+`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
+records, Docker runtime recipes, `guard-judge.md`, `auth.json` — and nests only what a user never
+edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, content-addressed
+runtime-recipe build leases, the per-workspace machinery above), `cache/` (including the models.dev
+snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
+it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.

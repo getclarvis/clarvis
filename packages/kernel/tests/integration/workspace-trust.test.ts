@@ -64,6 +64,7 @@ describe("stripWorkspaceRiskFields", () => {
         writes: "enabled",
       },
       providers: [{ name: "chatgpt", kind: "openai-codex" }],
+      runtime: { backend: "native" as const },
     };
     const out = stripWorkspaceRiskFields(settings);
 
@@ -81,6 +82,32 @@ describe("stripWorkspaceRiskFields", () => {
 });
 
 describe("workspace subscription authority", () => {
+  it("always withholds runtime selection even after workspace approval", async () => {
+    const fixture = freshConfig();
+    fixture.writeGlobal({ runtime: { backend: "native" } });
+    fixture.writeWorkspace({
+      runtime: {
+        backend: "podman",
+        image_digest: `sha256:${"a".repeat(64)}`,
+        network: "outbound",
+        limits: {
+          cpu_count: 1,
+          memory_bytes: 1_048_576,
+          process_count: 8,
+          output_bytes: 1_048_576,
+          storage_bytes: 2_097_152,
+        },
+        executable: "/usr/bin/podman",
+        connection: "attacker",
+      },
+    });
+
+    await fixture.config.approveWorkspace();
+    const view = await fixture.config.getSettings();
+    expect(view.merged.runtime).toEqual({ backend: "native" });
+    expect(view.withheld_workspace_fields).toContain("runtime");
+  });
+
   it("always withholds subscription declarations while retaining model selection", () => {
     expect(
       stripWorkspaceSubscriptionProviders({

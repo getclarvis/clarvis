@@ -35,6 +35,7 @@ import {
   memoryToolParameters,
   type MemoryToolName,
 } from "./tool-contract.ts";
+import type { MemoryToolResult } from "./types.ts";
 
 export { MEMORY_CAPABILITY_NAME, MEMORY_INGEST_EVENT } from "./settings.ts";
 export { buildMemoryToolsHandler, type MemoryToolsHandlerDeps } from "./handler.ts";
@@ -50,6 +51,12 @@ export {
   MEMORY_WRITE_TOOL_NAMES,
   type MemoryProvider,
 } from "./provider.ts";
+export {
+  MEMORY_TOOL_CONTRACTS,
+  memoryToolParameters,
+  type MemoryToolName,
+} from "./tool-contract.ts";
+export type { MemoryToolDef, MemoryToolResult } from "./types.ts";
 export { wikiMemoryProvider, WIKI_PROVIDER_KIND } from "./wiki-provider.ts";
 export type { MemoryServerPort, MemoryServerPortResolver } from "./mcp-provider.ts";
 export type { MemoryPluginPort } from "./provider-registry.ts";
@@ -113,41 +120,7 @@ export function createMemoryCapability(
     reservedWireNames: MEMORY_TOOL_WIRE_NAMES,
     toolEffects: MEMORY_TOOL_EFFECTS,
     async forRun(ctx): Promise<RunCapability | null> {
-      if (ctx.requestParam(MEMORY_CAPABILITY_NAME) === "off") return null;
-      const memory = factory?.forOwnerControlPlane(ctx.owner);
-
-      if (factory?.providerFor !== undefined) {
-        const resolved = await factory.providerFor(ctx.owner);
-        if (resolved === undefined) return null;
-        if (!resolved.ok) {
-          ctx.logger?.warn(
-            { cause: resolved.failure.reason, provider: resolved.failure.kind },
-            "memory_provider_unavailable: the run continues with no memory at all — it is " +
-              "never silently served from a different store than the one declared",
-          );
-          return null;
-        }
-        return createMemoryRunCapability(
-          memory,
-          resolved.provider,
-          resolved.key,
-          resolved.seedMaxChars,
-          ctx,
-          factory,
-          opts,
-        );
-      }
-
-      if (memory === undefined) return null;
-      return createMemoryRunCapability(
-        memory,
-        wikiMemoryProvider(memory),
-        "wiki:local",
-        SEED_MAX_CHARS,
-        ctx,
-        factory,
-        opts,
-      );
+      return (await prepareMemoryRunInternal(factory, ctx, opts))?.capability ?? null;
     },
   };
 }
@@ -173,6 +146,137 @@ export interface MemoryCapabilityOptions {
   enqueueOnRunEnd?: boolean;
 }
 
+/** Host-path-free description of the exact read-only memory surface admitted for one run. */
+export interface MemoryRuntimeDescriptor {
+  /** Stable digest used in the prompt prefix without disclosing provider configuration. */
+  readonly providerDigest: string;
+  /** Maximum size of the safely wrapped seed block. */
+  readonly seedMaxChars: number;
+  /** Canonical read operations supplied by the selected provider. */
+  readonly readTools: readonly MemoryToolName[];
+}
+
+/**
+ * Host-owned execution lease for projecting memory into another execution placement.
+ *
+ * @remarks The lease exposes no store, provider configuration, credential, filesystem path, or
+ * mutating operation. A host may serialize {@link descriptor} and proxy `seed`/read-only `invoke`,
+ * while `finish` keeps durable post-run ingestion on the host against the host-persisted record.
+ */
+export interface PreparedMemoryRuntime {
+  readonly descriptor: MemoryRuntimeDescriptor;
+  seed(task?: string): Promise<string | null>;
+  accepts(name: string, args: unknown): boolean;
+  invoke(
+    name: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<MemoryToolResult>;
+  finish(record: ExecutionRecord): Promise<void>;
+}
+
+interface PreparedMemoryRunInternal extends PreparedMemoryRuntime {
+  readonly capability: RunCapability;
+}
+
+function providerDigest(providerKey: string): string {
+  return (
+    /^[^:]+:([a-f0-9]{64})$/.exec(providerKey)?.[1] ??
+    createHash("sha256").update(providerKey).digest("hex")
+  );
+}
+
+async function prepareMemoryRunInternal(
+  factory: MemoryFactory | undefined,
+  ctx: RunCapabilityContext,
+  opts: MemoryCapabilityOptions,
+): Promise<PreparedMemoryRunInternal | null> {
+  if (ctx.requestParam(MEMORY_CAPABILITY_NAME) === "off") return null;
+  const memory = factory?.forOwnerControlPlane(ctx.owner);
+  let provider: MemoryProvider;
+  let providerKey: string;
+  let seedMaxChars: number;
+
+  if (factory?.providerFor !== undefined) {
+    const resolved = await factory.providerFor(ctx.owner);
+    if (resolved === undefined) return null;
+    if (!resolved.ok) {
+      ctx.logger?.warn(
+        { cause: resolved.failure.reason, provider: resolved.failure.kind },
+        "memory_provider_unavailable: the run continues with no memory at all — it is " +
+          "never silently served from a different store than the one declared",
+      );
+      return null;
+    }
+    provider = resolved.provider;
+    providerKey = resolved.key;
+    seedMaxChars = resolved.seedMaxChars;
+  } else {
+    if (memory === undefined) return null;
+    provider = wikiMemoryProvider(memory);
+    providerKey = "wiki:local";
+    seedMaxChars = SEED_MAX_CHARS;
+  }
+
+  const seed = async (task?: string): Promise<string | null> => {
+    try {
+      return await provider.seed(task);
+    } catch (err) {
+      ctx.logger?.warn(
+        { cause: err instanceof Error ? err.message : String(err) },
+        "memory_seed_failed: the run continues without the memory block",
+      );
+      return null;
+    }
+  };
+  const capability = createMemoryRunCapability(
+    memory,
+    provider,
+    providerKey,
+    seedMaxChars,
+    seed,
+    ctx,
+    factory,
+    opts,
+  );
+  const tools = new Map(provider.readTools.map((tool) => [tool.name, tool]));
+  const accepts = (name: string, args: unknown): boolean => {
+    const contract = MEMORY_TOOL_CONTRACTS[name as MemoryToolName];
+    return tools.has(name) && contract !== undefined && contract.schema.safeParse(args).success;
+  };
+  return {
+    capability,
+    descriptor: {
+      providerDigest: providerDigest(providerKey),
+      seedMaxChars,
+      readTools: provider.readTools.map((tool) => tool.name as MemoryToolName),
+    },
+    seed,
+    accepts,
+    async invoke(name, args, signal) {
+      if (!accepts(name, args)) return { text: `invalid memory tool '${name}'`, isError: true };
+      return tools.get(name)!.execute(args, signal);
+    },
+    async finish(record) {
+      await capability.onRunEnd?.(record);
+    },
+  };
+}
+
+/**
+ * Resolve one run's memory provider and bind a host-owned runtime lease.
+ *
+ * @returns `null` under the same gates as {@link createMemoryCapability}; otherwise a bounded,
+ * provider-opaque, read-only lease suitable for an isolated guest bridge.
+ */
+export async function prepareMemoryRuntime(
+  factory: MemoryFactory | undefined,
+  ctx: RunCapabilityContext,
+  opts: MemoryCapabilityOptions = {},
+): Promise<PreparedMemoryRuntime | null> {
+  return prepareMemoryRunInternal(factory, ctx, opts);
+}
+
 /** Writes are not rate-limited — the agent should record freely; the read
  * budget exists only to keep drill-down navigation bounded. */
 const WRITE_CALL_LIMIT = Number.MAX_SAFE_INTEGER;
@@ -182,6 +286,7 @@ function createMemoryRunCapability(
   provider: MemoryProvider,
   providerKey: string,
   seedMaxChars: number,
+  seed: (task?: string) => Promise<string | null>,
   ctx: RunCapabilityContext,
   factory: MemoryFactory | undefined,
   opts: MemoryCapabilityOptions,
@@ -204,22 +309,12 @@ function createMemoryRunCapability(
     (provider.writeTools ?? []).map(canonical),
     WRITE_CALL_LIMIT,
   );
-  const providerDigest =
-    /^[^:]+:([a-f0-9]{64})$/.exec(providerKey)?.[1] ??
-    createHash("sha256").update(providerKey).digest("hex");
+  const resolvedProviderDigest = providerDigest(providerKey);
   return {
     name: MEMORY_CAPABILITY_NAME,
     async seedBlock(): Promise<string | undefined> {
-      try {
-        const raw = await provider.seed(firstUserText(ctx.request.messages));
-        return raw === null ? undefined : (wrapMemorySeed(raw, seedMaxChars) ?? undefined);
-      } catch (err) {
-        ctx.logger?.warn(
-          { cause: err instanceof Error ? err.message : String(err) },
-          "memory_seed_failed: the run continues without the memory block",
-        );
-        return undefined;
-      }
+      const raw = await seed(firstUserText(ctx.request.messages));
+      return raw === null ? undefined : (wrapMemorySeed(raw, seedMaxChars) ?? undefined);
     },
     /**
      * The standing instruction that this workspace has a memory wiki, present
@@ -260,8 +355,8 @@ function createMemoryRunCapability(
         "`<topic>/<sub>/MEMORY.md` (full detail). Navigate it with query_memories, " +
         "list_memories and read_memory. It may be stale — treat a procedure as a " +
         "hypothesis and verify it cheaply before relying on it.";
-      const identity = `\n\n<!-- memory-provider:${providerDigest} -->`;
-      if (!id.entry) return `${navigate}${identity}`;
+      const identity = `\n\n<!-- memory-provider:${resolvedProviderDigest} -->`;
+      if (!id.entry || provider.writeTools === undefined) return `${navigate}${identity}`;
       return (
         `${navigate}\n\n` +
         "Do NOT call write_memory, edit_memory or delete_memory on your own initiative. " +

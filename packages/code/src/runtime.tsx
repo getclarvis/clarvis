@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
 import { getTreeSitterClient, RGBA } from "@opentui/core";
 import { batch, createEffect, createRoot, createSignal } from "solid-js";
-import type { RunDetail, RunEvent } from "@clarvis/protocol";
+import type { RunDetail, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import { formatToolCall } from "./views/tools/signature.ts";
 import { mutationStats, type DiffStats } from "./views/tools/mutation-gate.ts";
 import {
@@ -96,10 +96,7 @@ import {
   type KernelRunClient,
   type KernelRunClientCallbacks,
 } from "./adapters/kernel-run-client.ts";
-import {
-  loadFileKernelFactory,
-  WorkspaceClientManager,
-} from "./adapters/workspace-client-manager.ts";
+import { WorkspaceClientManager } from "./adapters/workspace-client-manager.ts";
 import { createTasksController } from "./features/tasks/controller.ts";
 import {
   createWorkspaceCallbackTarget,
@@ -168,9 +165,10 @@ const describeToolCall = (input: {
  * @returns the booted kernel (the caller must call `.close()` on it) and its
  *   session store, already loaded for the process-wide `owner`.
  *
- * @remarks `runPrintMode` boots its own kernel instead of this one: it needs
- * `keySources` and `memory: true`, neither of which a silent listing/delete
- * command has any use for.
+ * @remarks `runPrintMode` creates its own manager instead of using this helper:
+ *   it needs `keySources` and `memory: true`, neither of which a silent
+ *   listing/delete command has any use for. Every path still goes through the
+ *   manager so a selected container backend receives its local runtime factory.
  */
 async function bootSilentSessionStore(): Promise<{
   manager: WorkspaceClientManager;
@@ -230,7 +228,6 @@ async function runPrintMode(opts: {
   agent?: string;
   format: PrintFormat;
 }): Promise<never> {
-  const createFileKernel = await loadFileKernelFactory();
   const printDirs: ClarvisDirs = {
     global: globalPaths(),
     workspace: workspacePaths(workspace),
@@ -240,7 +237,7 @@ async function runPrintMode(opts: {
   createRoot(() => {
     code = createCodeConfigStore(printDirs);
   });
-  const kernel = await createFileKernel({
+  const manager = await WorkspaceClientManager.create({
     workspaceRoot: workspace,
     globalDir: printDirs.global.root,
     keySources: code.keySources(),
@@ -249,10 +246,20 @@ async function runPrintMode(opts: {
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
   });
+  let opened: Awaited<ReturnType<WorkspaceClientManager["open"]>> | undefined;
+  const close = async (): Promise<void> => {
+    try {
+      await opened?.release();
+    } finally {
+      await manager.close();
+    }
+  };
   try {
+    opened = await manager.open();
+    const kernel = opened.client;
     let agent = opts.agent;
     if (agent === undefined) {
-      const available = await kernel.listAgents();
+      const available = await kernel.config.listAgents();
       const files = await loadAgentFiles(kernel.config);
       const settingsView = await kernel.config.getSettings();
       const env = readEnvView();
@@ -287,7 +294,7 @@ async function runPrintMode(opts: {
         process.stderr.write(
           `no interactive entry agent configured ${glyph("emDash")} pass --agent or set a default\n`,
         );
-        await kernel.close();
+        await close();
         process.exit(1);
       }
     }
@@ -342,7 +349,7 @@ async function runPrintMode(opts: {
     finish();
     disposeStore?.();
     await drained;
-    await kernel.close();
+    await close();
     if (result.status !== "completed") {
       const reason = result.error?.message ?? result.ended_reason ?? result.status;
       process.stderr.write(`run ${result.status}: ${reason}\n`);
@@ -351,7 +358,7 @@ async function runPrintMode(opts: {
     process.exit(0);
   } catch (e) {
     process.stderr.write(`print failed: ${errorText(e)}\n`);
-    await kernel.close().catch(() => undefined);
+    await close().catch(() => undefined);
     process.exit(1);
   }
 }
@@ -384,16 +391,19 @@ async function runDeleteMode(id: SessionId): Promise<never> {
 }
 
 async function runRefreshMode(): Promise<never> {
+  let manager: WorkspaceClientManager | undefined;
+  let opened: Awaited<ReturnType<WorkspaceClientManager["open"]>> | undefined;
   try {
-    const createFileKernel = await loadFileKernelFactory();
-    const kernel = await createFileKernel({
+    manager = await WorkspaceClientManager.create({
       workspaceRoot: workspace,
       globalDir: globalRoot(),
       ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
       logger: activeDiagnosticLogger() ?? createLogger("silent"),
     });
-    const cat = await kernel.models.refresh();
-    await kernel.close();
+    opened = await manager.open();
+    const cat = await opened.client.models.refresh();
+    await opened.release();
+    await manager.close();
     const models = cat.providers.reduce((n, p) => n + p.models.length, 0);
     process.stdout.write(
       `models.dev refreshed ${glyph("emDash")} ${cat.providers.length} providers / ${models} models\n`,
@@ -401,6 +411,8 @@ async function runRefreshMode(): Promise<never> {
     process.exit(0);
   } catch (e) {
     process.stderr.write(`refresh failed: ${errorText(e)}\n`);
+    await opened?.release().catch(() => undefined);
+    await manager?.close().catch(() => undefined);
     process.exit(1);
   }
 }
@@ -502,11 +514,17 @@ async function runApp(
   };
   const attention = createAttention(renderer);
   let extensionProfileDriftSequence = 0;
+  let runtimePlacementSequence = 0;
   const [extensionProfileDriftNotice, setExtensionProfileDriftNotice] = createSignal<{
     sequence: number;
     kind: "skill" | "plugin_runtime";
     name: string;
     source?: string;
+  } | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = createSignal<RuntimeStatus | undefined>(undefined);
+  const [runtimePlacementNotice, setRuntimePlacementNotice] = createSignal<{
+    sequence: number;
+    message: string;
   } | null>(null);
   const workspaceManager = await diagnosticAsync(
     "boot.workspace-manager",
@@ -546,6 +564,16 @@ async function runApp(
     },
   );
   platform.onShutdown(unsubscribeExtensionProfileDrift);
+  const unsubscribeRuntimePlacement = workspaceManager.subscribeRuntimePlacement((notice) => {
+    setRuntimeStatus(notice.status);
+    if (notice.message !== undefined) {
+      setRuntimePlacementNotice({
+        sequence: ++runtimePlacementSequence,
+        message: notice.message,
+      });
+    }
+  });
+  platform.onShutdown(unsubscribeRuntimePlacement);
   const owner = workspaceManager.defaultOwner;
   const activeWorkspace = workspaceManager.current;
   const activeWorkspacePath = activeWorkspace.path ?? workspace;
@@ -1307,6 +1335,7 @@ async function runApp(
     workflowActivity: () => runHost.workflowActivity(),
     mcpStartupNotice: () => runHost.mcpStartupNotice(),
     extensionProfileDriftNotice,
+    runtimePlacementNotice,
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),
@@ -1414,6 +1443,8 @@ async function runApp(
     get storage() {
       return runClient.storage;
     },
+    runtime: runtimeStatus,
+    retryRuntime: () => workspaceManager.retryRuntime(),
     reconnect: reconnectBackend,
   };
 

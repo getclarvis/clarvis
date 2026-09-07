@@ -144,7 +144,7 @@ change mutates it.
 The official Clarvis marketplace is virtual and precedes configured and discovered sources. Adding
 a marketplace writes only its URL to global settings and refreshes catalogs. It installs no plugin.
 The Add Marketplace collection accepts a Git repository that publishes `marketplace.json` or
-`.agents/marketplace.json`. `g` remains the explicit direct-plugin Git path and asks which compatible
+`<marketplace-root>/.agents/marketplace.json`. `g` remains the explicit direct-plugin Git path and asks which compatible
 inventory convention owns the checkout.
 
 Marketplace entries may resolve to Git (including subdirectory plus ref/SHA selectors), a confined

@@ -18,7 +18,7 @@ import type {
 } from "@clarvis/capability";
 import type { ToolHandler, HandlerVerdict } from "@clarvis/capability";
 import { handlerBaseOf, type HandlerBase } from "@clarvis/capability";
-import { handleLoadSkillCall } from "./call.ts";
+import { handleLoadSkillCall, handleReadSkillResourceCall } from "./call.ts";
 import {
   resolveBootstrapSkills,
   type PluginBootstrapSkill,
@@ -26,19 +26,27 @@ import {
 } from "./bootstrap.ts";
 import {
   LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
   loadSkillTool,
+  readSkillResourceTool,
   renderSkillsSection,
   type SkillsProvider,
 } from "./tool.ts";
 
 export {
   LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
   SKILL_RESOURCE_MAX_CHARS,
   loadSkillTool,
+  readSkillResourceTool,
   renderSkillsSection,
   type SkillsProvider,
 } from "./tool.ts";
-export { handleLoadSkillCall, type LoadSkillCallResult } from "./call.ts";
+export {
+  handleLoadSkillCall,
+  handleReadSkillResourceCall,
+  type LoadSkillCallResult,
+} from "./call.ts";
 export {
   resolveBootstrapSkills,
   BOOTSTRAP_SKILL_MAX_CHARS,
@@ -55,7 +63,7 @@ export const SKILLS_CAPABILITY_NAME = "skills";
 export const USE_SKILLS_GRANT = "use_skills";
 
 /** The capability metadata is derived from the same descriptor it advertises. */
-const SKILLS_TOOLS = [loadSkillTool] as const;
+const SKILLS_TOOLS = [loadSkillTool, readSkillResourceTool] as const;
 const SKILLS_TOOL_WIRE_NAMES: readonly string[] = SKILLS_TOOLS.map((tool) => tool.wireName);
 const SKILLS_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.fromEntries(
   SKILLS_TOOLS.map((tool) => [tool.wireName, "control"] as const),
@@ -81,7 +89,8 @@ export interface SkillsCapabilityOptions {
  * @returns A {@link Capability} whose `forRun` returns null unless
  *   `CLARVIS_SKILLS_ENABLED` is set and a provider is present; when active it
  *   renders any plugin bootstrap bodies and the catalog into the system prompt and
- *   exposes `load_skill` for any agent carrying the `use_skills` grant.
+ *   exposes the body and resource readers for any agent carrying the
+ *   `use_skills` grant.
  */
 export function createSkillsCapability(
   provider?: SkillsProvider,
@@ -169,8 +178,8 @@ function createSkillsRunCapability(
     /**
      * @remarks The section is omitted when it would be empty, which a non-empty
      *   catalog can still produce: every skill in it may be withheld from the
-     *   model's catalog. The `load_skill` tool is *not* withheld with it —
-     *   suppression hides a skill from the listing, never from an explicit call.
+     *   model's catalog. The skill tools are *not* withheld with it — suppression
+     *   hides a skill from the listing, never from an explicit call.
      */
     systemSection(id): string | undefined {
       const listed = catalogFor(id.grants);
@@ -183,7 +192,7 @@ function createSkillsRunCapability(
       return {
         attach(bc) {
           return {
-            tools: [loadSkillTool],
+            tools: [loadSkillTool, readSkillResourceTool],
             handlers: [buildSkillsHandler({ base: handlerBaseOf(bc), skills: provider })],
             advertised: false,
           };
@@ -194,16 +203,15 @@ function createSkillsRunCapability(
 }
 
 /**
- * The `load_skill` tool handler: resolves a skill's body/resources via the
- * provider and returns a result whose `progress` is true unless the outcome
- * carried an error.
+ * The skills handler routes each closed tool operation to its provider adapter.
  */
 function buildSkillsHandler(deps: { base: HandlerBase; skills: SkillsProvider }): ToolHandler {
   const { base } = deps;
   return {
-    matches: (call) => call.name === LOAD_SKILL_TOOL_NAME,
+    matches: (call) =>
+      call.name === LOAD_SKILL_TOOL_NAME || call.name === READ_SKILL_RESOURCE_TOOL_NAME,
     handle(call, iteration): Promise<HandlerVerdict> {
-      const oc = handleLoadSkillCall({
+      const common = {
         call,
         skills: deps.skills,
         trace: base.trace,
@@ -213,7 +221,11 @@ function buildSkillsHandler(deps: { base: HandlerBase; skills: SkillsProvider })
           : {}),
         iteration,
         ...(base.validateArgs !== undefined ? { validateArgs: base.validateArgs } : {}),
-      });
+      };
+      const oc =
+        call.name === LOAD_SKILL_TOOL_NAME
+          ? handleLoadSkillCall(common)
+          : handleReadSkillResourceCall(common);
       return Promise.resolve({ kind: "result", text: oc.text, progress: !oc.error });
     },
   };

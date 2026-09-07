@@ -11,8 +11,8 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
-    safetyPreset: "isolated",
-    guardMode: "off",
+    isolation: "sandbox",
+    review: "off",
     memoryConfigured: true,
     memory: "on",
     plans: { mode: "on", retention: "discard", configured: true },
@@ -23,16 +23,16 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
   };
 }
 
-async function frame(input: HeaderInput): Promise<string[]> {
+async function frame(input: HeaderInput, renderWidth = input.width): Promise<string[]> {
   const t = await openRender(
     () => (
-      <box flexDirection="column" width={input.width} height={5}>
+      <box flexDirection="column" width={renderWidth} height={5}>
         <HeaderRows plan={() => projectHeader(input)} />
         <text>{"-".repeat(input.width)}</text>
         <text>BODY</text>
       </box>
     ),
-    { width: input.width, height: 5 },
+    { width: renderWidth, height: 5 },
   );
   await t.renderOnce();
   const rows = t.captureCharFrame().split("\n");
@@ -45,7 +45,8 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("demo_01");
   expect(rows[0]).toContain("coder");
   expect(rows[0]).toContain("grok-4.5");
-  expect(rows[0]).toContain("Safety: isolated");
+  expect(rows[0]).toContain("Isolation: Sandbox");
+  expect(rows[0]).toContain("Review: Off");
   expect(rows[0]).toContain("Memory: on");
   expect(rows[0]?.trimEnd()).toEndWith("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
@@ -56,6 +57,22 @@ test("header is one line carrying identity and the run's governing configuration
 test("memory off is stated, not merely absent", async () => {
   const rows = await frame(baseInput({ memory: "off" }));
   expect(rows[0]).toContain("Memory: off");
+});
+
+test("the right-anchored version keeps its gutter when the configuration chips fill the row", async () => {
+  const rows = await frame(
+    baseInput({
+      width: 119,
+      version: "0.1.1",
+      agentName: "marshall",
+      model: "chatgpt/gpt-5.6-terra",
+      isolation: "docker",
+      review: "on",
+      workspace: "/tmp/clarvis-development-temp/workspace-gAmvlw",
+    }),
+    120,
+  );
+  expect(rows[0]).toContain("Memory: on v0.1.1");
 });
 
 test("urgent connection state remains visible on the stable header", async () => {

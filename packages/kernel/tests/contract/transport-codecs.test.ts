@@ -101,6 +101,13 @@ describe("wire handshake", () => {
       { ...HELLO, wire_version: 1 },
       { ...HELLO, unexpected: true },
       { ...HELLO, workspace: { ...HELLO.workspace, kind: "unknown" } },
+      {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: { kind: "container", engine: "podman", generation: "forged" },
+        },
+      },
     ]) {
       const transport = new FakeTransport();
       transport.helloResult = helloResult;
@@ -108,6 +115,37 @@ describe("wire handshake", () => {
         "invalid or unsupported Clarvis wire contract",
       );
       expect(transport.closeCount).toBe(1);
+    }
+  });
+
+  it("preserves a complete effective runtime status", async () => {
+    for (const engine of ["podman", "docker"] as const) {
+      const transport = new FakeTransport();
+      transport.helloResult = {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: {
+            kind: "container",
+            generation: "generation-1",
+            engine,
+            engine_version: "5.4.0",
+            host_platform: "linux",
+            guest_platform: "linux",
+            image_digest: `sha256:${"a".repeat(64)}`,
+            runtime_protocol_revision: "1",
+            network: "none",
+            lifecycle: "ready",
+          },
+        },
+      };
+      const client = await connectKernelClient(transport);
+      expect(client.capabilities.runtime).toMatchObject({
+        kind: "container",
+        engine,
+        guest_platform: "linux",
+      });
+      await client.close();
     }
   });
 

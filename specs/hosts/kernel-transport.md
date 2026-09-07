@@ -7,7 +7,7 @@
 
 `packages/kernel/src/transport/` is the RPC seam between a Clarvis *kernel* and a *client* of the
 `KernelClient` contract. It is JSON-RPC-*shaped* but carries Clarvis's own method vocabulary rather
-than MCP's (`packages/protocol/src/transport.ts:1-9`, `packages/kernel/src/transport/wire.ts:17-26`).
+than MCP's (`packages/protocol/src/transport.ts`, `packages/kernel/src/transport/wire.ts`).
 Seven modules divide the job: `wire.ts` names the methods and notification payloads, `operations.ts`
 is the single table mapping every method onto a protocol service call, `server.ts` dispatches a
 connection's requests and pumps a run's events out as notifications, `client.ts` builds a
@@ -18,46 +18,46 @@ schema registry.
 
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
 `wire.ts` is not a literal table: every entry reads its value out of `OPERATIONS` or
-`SPECIAL_OPERATIONS` (`packages/kernel/src/transport/wire.ts:27-60`), and both the client proxy
-(`createServiceProxy` in `packages/kernel/src/transport/operations.ts`) and the server dispatch map (`packages/kernel/src/transport/server.ts:328`) are built
+`SPECIAL_OPERATIONS` (`packages/kernel/src/transport/wire.ts`), and both the client proxy
+(`createServiceProxy` in `packages/kernel/src/transport/operations.ts`) and the server dispatch map (`packages/kernel/src/transport/server.ts`) are built
 from that same catalog. A wire name therefore cannot drift between the two halves.
 
 The second property is that both directions of the boundary are treated as untrusted. Inbound frames
 go through a strict structural decoder that returns `null` rather than coercing
-(`packages/kernel/src/transport/stdio.ts:126-162`); inbound run events go through per-discriminator `zod` schemas that are all
+(`packages/kernel/src/transport/stdio.ts`); inbound run events go through per-discriminator `zod` schemas that are all
 `.strict()` (`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`); inbound request parameter envelopes are checked against
 the key set the operation's own encoder produces (`decodeOperationParams` in
 `packages/kernel/src/transport/operations.ts`); and an error travelling
 outbound is size-bounded, control-character-stripped and secret-redacted before it is serialized
-(`packages/kernel/src/transport/stdio.ts:349-381`).
+(`packages/kernel/src/transport/stdio.ts`).
 
 ## 2. Surface
 
 ### 2.1 Exported from `@clarvis/kernel`
 
-Re-exported by `packages/kernel/src/index.ts:58-87`:
+Re-exported by `packages/kernel/src/index.ts`:
 
 | Symbol | Kind | Declared at | What it is |
 | --- | --- | --- | --- |
-| `createKernelServer(kernel, opts?)` | value | `packages/kernel/src/transport/server.ts:280` | Builds the server side over an `InProcessKernel` |
-| `KernelServer`, `KernelConnection`, `KernelServerOptions`, `KernelAuthorizationContext`, `KernelConnectionContext`, `NotificationSender`, `TransportDisconnect` | types | `packages/kernel/src/transport/server.ts:202,183,214,232,244,31,50` | Server-side shapes |
-| `connectKernelClient(transport, opts?)` | value | `packages/kernel/src/transport/client.ts:144` | Performs `hello`, returns a `RemoteKernel` |
-| `RemoteKernel`, `ConnectKernelClientOptions` | types | `packages/kernel/src/transport/client.ts:55-74,76-93` | Client-side shapes |
-| `createLoopbackTransport(server, logger?)` | value | `packages/kernel/src/transport/loopback.ts:22` | In-process transport |
-| `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:405` | Client-side NDJSON transport |
-| `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:528` | Server-side NDJSON pump |
-| `WIRE_METHODS` (`M`), `WIRE_NOTIFICATIONS` (`N`) | values | `packages/kernel/src/transport/wire.ts:27,70` | Named method / notification constants |
+| `createKernelServer(kernel, opts?)` | value | `packages/kernel/src/transport/server.ts` | Builds the server side over an `InProcessKernel` |
+| `KernelServer`, `KernelConnection`, `KernelServerOptions`, `KernelAuthorizationContext`, `KernelConnectionContext`, `NotificationSender`, `TransportDisconnect` | types | `packages/kernel/src/transport/server.ts` | Server-side shapes |
+| `connectKernelClient(transport, opts?)` | value | `packages/kernel/src/transport/client.ts` | Performs `hello`, returns a `RemoteKernel` |
+| `RemoteKernel`, `ConnectKernelClientOptions` | types | `packages/kernel/src/transport/client.ts` | Client-side shapes |
+| `createLoopbackTransport(server, logger?)` | value | `packages/kernel/src/transport/loopback.ts` | In-process transport |
+| `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Client-side NDJSON transport |
+| `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Server-side NDJSON pump |
+| `WIRE_METHODS` (`M`), `WIRE_NOTIFICATIONS` (`N`) | values | `packages/kernel/src/transport/wire.ts` | Named method / notification constants |
 | `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts` (same-named symbols) | The operation catalog |
 | `KernelOperation`, `KernelOperationMetadata`, `KernelServices` | types | `packages/kernel/src/transport/operations.ts` (same-named symbols) | Catalog shapes |
 
 Exported from their module but **not** re-exported by `src/index.ts`: `CLARVIS_WIRE_VERSION`
-(`packages/kernel/src/transport/wire.ts:15`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts:42,126`), `ORDINARY_OPERATIONS`,
+(`packages/kernel/src/transport/wire.ts`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts`), `ORDINARY_OPERATIONS`,
 `decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts`, same-named symbols), `decodeRunEvent`
 (`packages/kernel/src/transport/run-event-codec.ts`). The tests reach them by relative path
-(`packages/kernel/tests/contract/stdio-codec.test.ts:5-10`, `packages/kernel/tests/contract/transport-codecs.test.ts:3-14`).
+(`packages/kernel/tests/contract/stdio-codec.test.ts`, `packages/kernel/tests/contract/transport-codecs.test.ts`).
 
-`RemoteKernel.listAgents()` (`packages/kernel/src/transport/client.ts:67-69`) is documented on the interface as "a convenience
-alias for `config.listAgents`", but its implementation (`packages/kernel/src/transport/client.ts:562-563`) is a direct
+`RemoteKernel.listAgents()` (`packages/kernel/src/transport/client.ts`) is documented on the interface as "a convenience
+alias for `config.listAgents`", but its implementation (`packages/kernel/src/transport/client.ts`) is a direct
 `transport.request(M.listAgents, {})` — it bypasses the `config` service proxy entirely rather than
 delegating to `config.listAgents()`.
 
@@ -72,8 +72,8 @@ onNotification(method: string, handler: (params: unknown) => void): () => void
 onClose?(handler: (reason?: unknown) => void): () => void
 close(): Promise<void>
 ```
-(`packages/protocol/src/transport.ts:29-68`.) `KernelRequestOptions` carries exactly one field,
-`signal` (`packages/protocol/src/transport.ts:24-27`).
+(`packages/protocol/src/transport.ts`.) `KernelRequestOptions` carries exactly one field,
+`signal` (`packages/protocol/src/transport.ts`).
 
 ### 2.3 The operation catalog
 
@@ -217,46 +217,46 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 
 | Constant | Wire name | Payload interface | Declared at |
 | --- | --- | --- | --- |
-| `runEvent` | `run.event` | `RunEventNote { execution_id, event }` | `packages/kernel/src/transport/wire.ts:115-119` |
-| `runElicitation` | `run.elicitation` | `RunElicitationNote { request }` | `packages/kernel/src/transport/wire.ts:128-130` |
-| `runResult` | `run.result` | `RunResultNote { execution_id, result }` | `packages/kernel/src/transport/wire.ts:139-142` |
-| `runStreamEnd` | `run.stream_end` | `RunStreamEndNote { execution_id }` | `packages/kernel/src/transport/wire.ts:145-147` |
-| `configChange` | `config.change` | `ConfigChangeNote { subscription_id, change }` | `packages/kernel/src/transport/wire.ts:153-156` |
+| `runEvent` | `run.event` | `RunEventNote { execution_id, event }` | `packages/kernel/src/transport/wire.ts` |
+| `runElicitation` | `run.elicitation` | `RunElicitationNote { request }` | `packages/kernel/src/transport/wire.ts` |
+| `runResult` | `run.result` | `RunResultNote { execution_id, result }` | `packages/kernel/src/transport/wire.ts` |
+| `runStreamEnd` | `run.stream_end` | `RunStreamEndNote { execution_id }` | `packages/kernel/src/transport/wire.ts` |
+| `configChange` | `config.change` | `ConfigChangeNote { subscription_id, change }` | `packages/kernel/src/transport/wire.ts` |
 
 `run.elicitation` carries no `execution_id` of its own — the run is identified by
-`request.execution_id` (`packages/kernel/src/transport/wire.ts:121-127`, consumed at `packages/kernel/src/transport/client.ts:306`).
+`request.execution_id` (`packages/kernel/src/transport/wire.ts`, consumed at `packages/kernel/src/transport/client.ts`).
 
 ### 2.5 Server options
 
-`KernelServerOptions` (`packages/kernel/src/transport/server.ts:214-229`):
+`KernelServerOptions` (`packages/kernel/src/transport/server.ts`):
 
 | Field | Effect |
 | --- | --- |
-| `capabilities?: Partial<KernelCapabilities>` | Merged over `kernel.capabilities` and advertised in `hello` (`packages/kernel/src/transport/server.ts:288`) |
-| `authorize?(ctx): boolean \| Promise<boolean>` | Consulted before every operation **except** `hello` (`packages/kernel/src/transport/server.ts:438-447`, `457-468`) |
-| `resolveConnection?(params): KernelConnectionContext` | Host authentication / owner binding, run inside the `hello` case (`packages/kernel/src/transport/server.ts:498-506`) |
-| `notificationTimeoutMs?: number` | Per-notification sink budget; defaults to 30 000 (`packages/kernel/src/transport/server.ts:33,284`) and must be positive and finite or the constructor throws `RangeError` (`packages/kernel/src/transport/server.ts:285-287`) |
+| `capabilities?: Partial<KernelCapabilities>` | Merged over `kernel.capabilities` and advertised in `hello` (`packages/kernel/src/transport/server.ts`) |
+| `authorize?(ctx): boolean \| Promise<boolean>` | Consulted before every operation **except** `hello` (`packages/kernel/src/transport/server.ts`, request authorization branch) |
+| `resolveConnection?(params): KernelConnectionContext` | Host authentication / owner binding, run inside the `hello` case (`packages/kernel/src/transport/server.ts`) |
+| `notificationTimeoutMs?: number` | Per-notification sink budget; defaults to 30 000 (`packages/kernel/src/transport/server.ts`) and must be positive and finite or the constructor throws `RangeError` (`packages/kernel/src/transport/server.ts`) |
 
-`KernelConnectionContext` (`packages/kernel/src/transport/server.ts:244-257`) supplies `principal?`, `workspace`, `project`,
+`KernelConnectionContext` (`packages/kernel/src/transport/server.ts`) supplies `principal?`, `workspace`, `project`,
 `services` ("Complete workspace-scoped service set; never borrowed from the primary kernel",
-`packages/kernel/src/transport/server.ts:251`), `capabilities?` and `close?`.
+`packages/kernel/src/transport/server.ts`), `capabilities?` and `close?`.
 
 ### 2.6 Client connect options
 
-`ConnectKernelClientOptions` (`packages/kernel/src/transport/client.ts:78-93`):
+`ConnectKernelClientOptions` (`packages/kernel/src/transport/client.ts`):
 
 | Field | Effect |
 | --- | --- |
-| `clientInfo?: { name, version? }` | Echoed into `HelloParams.clientInfo` for the kernel's bookkeeping (`packages/kernel/src/transport/client.ts:80`) |
-| `workspace?: string` | Workspace to bind to; the kernel decides how to resolve it (`packages/kernel/src/transport/client.ts:82`) |
-| `auth?: string` | Opaque auth token, forwarded when the transport requires one (`packages/kernel/src/transport/client.ts:84`) |
-| `logger?: Logger` | Where a **detached** wire operation's failure is reported — an unsubscribe, cancel or close that never lands. Its doc comment notes it replaced seven `process.emitWarning` call sites in this file (`packages/kernel/src/transport/client.ts:86-92`) |
+| `clientInfo?: { name, version? }` | Echoed into `HelloParams.clientInfo` for the kernel's bookkeeping (`packages/kernel/src/transport/client.ts`) |
+| `workspace?: string` | Workspace to bind to; the kernel decides how to resolve it (`packages/kernel/src/transport/client.ts`) |
+| `auth?: string` | Opaque auth token, forwarded when the transport requires one (`packages/kernel/src/transport/client.ts`) |
+| `logger?: Logger` | Where a **detached** wire operation's failure is reported — an unsubscribe, cancel or close that never lands. Its doc comment notes it replaced seven `process.emitWarning` call sites in this file (`packages/kernel/src/transport/client.ts`) |
 
 ## 3. Data and formats
 
 ### 3.1 Frame shapes
 
-The wire is newline-delimited JSON. Four frame types (`packages/kernel/src/transport/stdio.ts:13-39`):
+The wire is newline-delimited JSON. Four frame types (`packages/kernel/src/transport/stdio.ts`):
 
 | `t` | Fields | Direction | Response? |
 | --- | --- | --- | --- |
@@ -265,9 +265,9 @@ The wire is newline-delimited JSON. Four frame types (`packages/kernel/src/trans
 | `note` | `method: string`, `params?: unknown` | server→client | no |
 | `cancel` | `id: number` | client→server | no |
 
-`ErrorEnvelope` is `{ code: KernelErrorCode; message: string; details?: unknown }` (`packages/kernel/src/transport/stdio.ts:8-12`).
+`ErrorEnvelope` is `{ code: KernelErrorCode; message: string; details?: unknown }` (`packages/kernel/src/transport/stdio.ts`).
 
-Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-codec.test.ts:40-42`):
+Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-codec.test.ts`):
 
 ```
 {"t":"note","method":"probe.note","params":{"part":1}}
@@ -277,40 +277,39 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.2 Structural validity
 
-`decodeFrame` (`packages/kernel/src/transport/stdio.ts:126-162`) is total and returns `null` on anything it does not recognise:
+`decodeFrame` (`packages/kernel/src/transport/stdio.ts`) is total and returns `null` on anything it does not recognise:
 
-- the value must be a non-array object with a string `t` (`:127`);
+- the value must be a non-array object with a string `t`;
 - `req` permits only the keys `t,id,method,params` — `hasOnly` rejects an extra field, while the
-  optional `params` key may be absent (`:129`, helper at `:112-115`);
-- an id must be a **safe positive integer** (`validId`, `:117-119`);
-- a method must be a non-empty string of at most 256 characters (`validMethod`, `:121-123`);
-- `cancel` admits only `t,id` (`:135-139`); `note` permits only `t,method,params`, with `params`
-  optional (`:140-144`);
-- `res` must carry exactly one of `result`/`error` — `hasResult === hasError` is a rejection
-  (`:148-150`), tested for both the neither and the both case
-  (`packages/kernel/tests/contract/stdio-codec.test.ts:53-54`);
+  optional `params` key may be absent (helper);
+- an id must be a **safe positive integer** (`validId`);
+- a method must be a non-empty string of at most 256 characters (`validMethod`);
+- `cancel` admits only `t,id`; `note` permits only `t,method,params`, with `params`
+  optional;
+- `res` must carry exactly one of `result`/`error` — `hasResult === hasError` is a rejection, tested for both the neither and the both case
+  (`packages/kernel/tests/contract/stdio-codec.test.ts`);
 - an error envelope must have only `code,message,details`, a `code` drawn from the eleven
-  `KernelErrorCode` members, and a `message` string of at most 16 384 characters (`:152-160`).
+  `KernelErrorCode` members, and a `message` string of at most 16 384 characters.
 
-`ERROR_CODE_MEMBERS` (`packages/kernel/src/transport/stdio.ts:49-61`) is pinned to the protocol union by
+`ERROR_CODE_MEMBERS` (`packages/kernel/src/transport/stdio.ts`) is pinned to the protocol union by
 `satisfies Record<KernelErrorCode, true>`, so adding a code in
-`packages/protocol/src/common.ts:87-98` without adding it here is a compile error.
+`packages/protocol/src/common.ts` without adding it here is a compile error.
 
 ### 3.3 Size and queue budgets
 
 | Constant | Value | Declared at |
 | --- | --- | --- |
-| `MAX_WIRE_FRAME_BYTES` | 8 MiB | `packages/kernel/src/transport/stdio.ts:42` |
-| `MAX_WRITER_QUEUE_FRAMES` | 1 024 | `packages/kernel/src/transport/stdio.ts:43` |
-| `MAX_WRITER_QUEUE_BYTES` | 16 MiB | `packages/kernel/src/transport/stdio.ts:44` |
-| `WRITER_TIMEOUT_MS` | 30 000 | `packages/kernel/src/transport/stdio.ts:45` |
-| `MAX_ERROR_MESSAGE_CHARS` | 16 384 | `packages/kernel/src/transport/stdio.ts:46` |
-| `MAX_ERROR_DETAILS_BYTES` | 64 KiB | `packages/kernel/src/transport/stdio.ts:47` |
-| `MAX_CLASSIFICATION_VALUE_CHARS` | 1 024 | `packages/kernel/src/transport/stdio.ts:48` |
-| `DEFAULT_NOTIFICATION_TIMEOUT_MS` | 30 000 | `packages/kernel/src/transport/server.ts:33` |
-| `MAX_NOTIFICATION_QUEUE_FRAMES` | 1 024 | `packages/kernel/src/transport/server.ts:34` |
-| `MAX_NOTIFICATION_QUEUE_BYTES` | 16 MiB | `packages/kernel/src/transport/server.ts:35` |
-| client run-event buffer | 1 024 events / 8 MiB | `packages/kernel/src/runs/coalesce-events.ts:10,13`, used at `packages/kernel/src/transport/client.ts:389-394` |
+| `MAX_WIRE_FRAME_BYTES` | 8 MiB | `packages/kernel/src/transport/stdio.ts` |
+| `MAX_WRITER_QUEUE_FRAMES` | 1 024 | `packages/kernel/src/transport/stdio.ts` |
+| `MAX_WRITER_QUEUE_BYTES` | 16 MiB | `packages/kernel/src/transport/stdio.ts` |
+| `WRITER_TIMEOUT_MS` | 30 000 | `packages/kernel/src/transport/stdio.ts` |
+| `MAX_ERROR_MESSAGE_CHARS` | 16 384 | `packages/kernel/src/transport/stdio.ts` |
+| `MAX_ERROR_DETAILS_BYTES` | 64 KiB | `packages/kernel/src/transport/stdio.ts` |
+| `MAX_CLASSIFICATION_VALUE_CHARS` | 1 024 | `packages/kernel/src/transport/stdio.ts` |
+| `DEFAULT_NOTIFICATION_TIMEOUT_MS` | 30 000 | `packages/kernel/src/transport/server.ts` |
+| `MAX_NOTIFICATION_QUEUE_FRAMES` | 1 024 | `packages/kernel/src/transport/server.ts` |
+| `MAX_NOTIFICATION_QUEUE_BYTES` | 16 MiB | `packages/kernel/src/transport/server.ts` |
+| client run-event buffer | 1 024 events / 8 MiB | `packages/kernel/src/runs/coalesce-events.ts`, used at `packages/kernel/src/transport/client.ts` |
 
 ### 3.4 Handshake payloads
 
@@ -321,23 +320,22 @@ string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIR
 `HelloResult` = `{ wire_version: 3; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
-`packages/kernel/tests/contract/transport-codecs.test.ts:16-33`.
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 ### 3.5 Request ids
 
-Client-side ids are a per-transport monotonic counter, `++seq` starting at 1 (`packages/kernel/src/transport/stdio.ts:409,470`).
+Client-side ids are a per-transport monotonic counter, `++seq` starting at 1 (`packages/kernel/src/transport/stdio.ts`).
 They are transport-private: nothing above `stdio.ts` sees them, and the loopback has none at all.
 
 Run identities are minted client-side before the start request is sent: `params.execution_id ??
-randomUUID()` (`packages/kernel/src/transport/client.ts:381`). Config subscription ids are
-`randomUUID()` per `subscribe` call (`packages/kernel/src/transport/client.ts:503-508`).
+randomUUID()` (`packages/kernel/src/transport/client.ts`). Config subscription ids are
+`randomUUID()` per `subscribe` call (`packages/kernel/src/transport/client.ts`).
 
 ### 3.6 The run-event registry
 
 `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds **39** entries, one per `RunEvent`
 discriminator, closed by `satisfies Record<RunEvent["type"], z.ZodType>`. Shared fragments:
-`attributed` = `{ at, agent, subagent_id? }` (`:8-12`), `planProjection` (`:30-39`), `planTask`
-(`:15-27`), `memoryIngestDetail` as a five-phase discriminated union (`:41-67`). Every object schema
+`attributed` = `{ at, agent, subagent_id? }`, `planProjection`, `planTask`, `memoryIngestDetail` as a five-phase discriminated union. Every object schema
 is `.strict()`.
 
 The complete discriminator list: `run_started`, `run_ended`, `iteration_started`,
@@ -362,50 +360,47 @@ because their streams may interleave. Production: `RUN_EVENT_SCHEMAS.tool_input_
 
 ### 4.1 Connect and handshake (`connectKernelClient`)
 
-In the order the function runs (`packages/kernel/src/transport/client.ts:144-409`):
+In the order the function runs (`packages/kernel/src/transport/client.ts`):
 
-1. Allocate per-connection state: `clientRuns`, `configSubs`, `notificationOffs`
-   (`:148-153`).
+1. Allocate per-connection state: `clientRuns`, `configSubs`, `notificationOffs`.
 2. Register `transport.onClose` **before** anything else, so a disconnect during the handshake is
-   observed (`:202-207`). Its handler sets `closed`, settles every live run `unavailable`, clears the
+   observed. Its handler sets `closed`, settles every live run `unavailable`, clears the
    subscription maps and detaches the observers.
-3. Register the five notification observers, each with its own validator (`:210-327`).
-4. Build `HelloParams` and issue `M.hello` (`:361-369`).
+3. Register the five notification observers, each with its own validator.
+4. Build `HelloParams` and issue `M.hello`.
 5. On a throw: mark closed, clear subscriptions, detach observers, `await transport.close()` inside a
    `try/catch` whose comment reads "Teardown is secondary and no client was returned", then rethrow
-   the **original** error (`:370-380`).
+   the **original** error.
 6. On a structurally invalid result: same teardown, then throw
-   `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` `` (`:381-408`).
+   `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` ``.
    The checks are `hasOnly` over the five permitted keys, `wire_version === 3`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.
-7. Build the thirteen ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`
-   (`:507-607`), and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
-   `hello.workspace` and, when present, `hello.principal` (`:609-638`).
+7. Build the thirteen ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`, and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
+   `hello.workspace` and, when present, `hello.principal`.
 
 ### 4.2 Server-side dispatch (`KernelConnection.handle`)
 
-`packages/kernel/src/transport/server.ts:424-608`, in order:
+`packages/kernel/src/transport/server.ts`, in order:
 
-| Step | Line | Effect |
+| Step | File | Effect |
 | --- | --- | --- |
-| `assertConnectionOpen()` | `:425` (helper `:314-316`) | Throws `unavailable` "kernel connection is closed" |
-| Pre-hello gate | `:426-428` | Any method but `hello` before `helloCompleted` throws `unauthorized` |
-| Ordinary lookup | `:429` | `ordinary` map built once at `:294` from `ORDINARY_OPERATIONS` |
-| Envelope decode | `:431-437` | `decodeOperationParams`; `null` → `invalid_request` "has an invalid parameter envelope" |
-| Authorize | `:438-445` | `opts.authorize({ method, metadata, principal?, workspace })` |
-| Re-check open | `:446` | The authorize hop may have awaited across a `close()` |
-| Deny | `:447` | `unauthorized` `operation '<m>' is not allowed` |
-| Invoke | `:448-449` | `operation.invoke(services(), p, signal)`; an `undefined` result becomes `{}` |
-| Special envelope | `:452` | `specialParams` — object required, keys from a per-method allowlist (`:330-341`) |
-| Special authorize | `:454-468` | Same policy hop, skipped for `hello` (`:457`) |
+| `assertConnectionOpen()` | (helper) | Throws `unavailable` "kernel connection is closed" |
+| Pre-hello gate | — | Any method but `hello` before `helloCompleted` throws `unauthorized` |
+| Ordinary lookup | — | `ordinary` map built once from `ORDINARY_OPERATIONS` |
+| Envelope decode | — | `decodeOperationParams`; `null` → `invalid_request` "has an invalid parameter envelope" |
+| Authorize | — | `opts.authorize({ method, metadata, principal?, workspace })` |
+| Re-check open | — | The authorize hop may have awaited across a `close()` |
+| Deny | — | `unauthorized` `operation '<m>' is not allowed` |
+| Invoke | — | `operation.invoke(services(), p, signal)`; an `undefined` result becomes `{}` |
+| Special envelope | — | `specialParams` — object required, keys from a per-method allowlist |
+| Special authorize | — | Same policy hop, skipped for `hello` |
 | Switch | server special-operation switch | The eight special cases; `default` throws `invalid_request` `unknown method '<m>'` |
 
-`services()` throws `unauthorized` "connection has not completed hello" when no context is bound
-(`:318-323`), which is the second guard behind the pre-hello gate.
+`services()` throws `unauthorized` "connection has not completed hello" when no context is bound, which is the second guard behind the pre-hello gate.
 
-`specialParams`'s per-method allowed-key table (`packages/kernel/src/transport/server.ts:330-341`) in full:
+`specialParams`'s per-method allowed-key table (`packages/kernel/src/transport/server.ts`) in full:
 
 | Method | Allowed keys |
 | --- | --- |
@@ -419,33 +414,32 @@ In the order the function runs (`packages/kernel/src/transport/client.ts:144-409
 | `configUnsubscribe` | `subscription_id` |
 
 A method not in this table (there is none among the eight special operations) would fall to an empty
-allowed set, rejecting any key at all (`packages/kernel/src/transport/server.ts:342-344`).
+allowed set, rejecting any key at all (`packages/kernel/src/transport/server.ts`).
 
-`hello` (`:471-515`): one-shot (`helloStarted` → `invalid_request` "hello has already started on this
-connection", `:472-478`); `wire_version !== 3` → `unsupported` (`:479-484`); malformed identity
-fields → `invalid_request` "hello has invalid identity parameters" (`:485-497`); then
-`resolveConnection` (or the default context built at `:289-293`); if the connection closed while
-resolving, the resolved context's `close?.()` is called and `unavailable` is thrown (`:502-505`);
+`hello` : one-shot (`helloStarted` → `invalid_request` "hello has already started on this
+connection"); `wire_version !== 3` → `unsupported`; malformed identity
+fields → `invalid_request` "hello has invalid identity parameters"; then
+`resolveConnection` (or the default context built); if the connection closed while
+resolving, the resolved context's `close?.()` is called and `unavailable` is thrown;
 otherwise `context` is bound, `helloCompleted` set, and the result assembled with
-`context.capabilities ?? capabilities` (`:506-514`).
+`context.capabilities ?? capabilities`.
 
 ### 4.3 Starting and pumping a run
 
-`runs.start` on the server (`packages/kernel/src/transport/server.ts:517-533`): call `services().runs.start(p.params)`; if the
-connection closed while awaiting, cancel the handle and throw `unavailable` (`:522-525`); otherwise
+`runs.start` on the server (`packages/kernel/src/transport/server.ts`): call `services().runs.start(p.params)`; if the
+connection closed while awaiting, cancel the handle and throw `unavailable`; otherwise
 record `{ handle, resultSettled: false, streamSettled: false }` in `live`, call `pump(handle)`, and
 answer `{ execution_id }`.
 
-`pump` (`packages/kernel/src/transport/server.ts:349-413`) attaches four things to the handle:
+`pump` (`packages/kernel/src/transport/server.ts`) attaches four things to the handle:
 
-1. `onElicit` → `N.runElicitation` with `{ request }` (`:363-368`).
+1. `onElicit` → `N.runElicitation` with `{ request }`.
 2. An async loop over `handle.events` awaiting `notifications.notify(N.runEvent, …)` per event, whose
    `finally` marks `streamSettled`, releases the `live` entry if both halves settled, and sends
-   `N.runStreamEnd` (`:369-385`).
+   `N.runStreamEnd`.
 3. `handle.done` → `N.runResult`. A rejected `done` is still sent as a result, synthesized as
-   `status: "failed"` with `code: "internal"` and a `sanitizeErrorMessage`'d message
-   (`:386-408`).
-4. `handle.closed` → drop the `live` entry unconditionally (`:409-412`).
+   `status: "failed"` with `code: "internal"` and a `sanitizeErrorMessage`'d message.
+4. `handle.closed` → drop the `live` entry unconditionally.
 
 `liveOrThrow` (`packages/kernel/src/transport/server.ts`, `liveOrThrow`) governs
 `runs.steer`, `runs.cancel`, and `runs.respond`: it treats a missing connection-local entry or one
@@ -471,30 +465,29 @@ settled continuation before a model switch".
 path.** There is no separate wire method for starting a workflow: the kernel routes a manager run
 through `runs.start` by the entry profile's `workflow` grant, and it lands in the same `live` map, so
 its steer/compact/cancel/respond dispatch through the same `runs.*` special-operation cases above
-(`packages/kernel/src/transport/server.ts:300-308`, `:549-590`). The client side is symmetric: `streamingStart` (§4.4) is the same function a
+(`packages/kernel/src/transport/server.ts`). The client side is symmetric: `streamingStart` (§4.4) is the same function a
 workflow's start goes through, "since the kernel routes a manager run through `runs.start`"
-(`packages/kernel/src/transport/client.ts:367-380`, `:485-496`). Only `workflows.get`/`workflows.list`/`workflows.delete` remain
+(`packages/kernel/src/transport/client.ts`). Only `workflows.get`/`workflows.list`/`workflows.delete` remain
 workflow-specific operations (`OPERATIONS.workflows` in `packages/kernel/src/transport/operations.ts`) — everything else a workflow needs (event
 streaming, elicitation, steer/compact/cancel/respond) is the run machinery this section and §4.4-4.5
 document, unmodified.
 
 ### 4.4 Client-side run handle
 
-`streamingStart` (`packages/kernel/src/transport/client.ts:377-470`):
+`streamingStart` (`packages/kernel/src/transport/client.ts`):
 
-1. `executionId = params.execution_id ?? randomUUID()` (`:424`).
-2. A duplicate live id throws an `Error` carrying `code: "conflict"` **before** any request is sent
-   (`:425-431`).
-3. Build the bounded event stream (`:432-451`). Saturation and abandonment each fire a detached
-   `runs.cancel` for this execution (`:439-450`).
-4. Register the `ClientRun` in `clientRuns` *before* issuing `runs.start` (`:454-462`) — which is what
+1. `executionId = params.execution_id ?? randomUUID()`.
+2. A duplicate live id throws an `Error` carrying `code: "conflict"` **before** any request is sent.
+3. Build the bounded event stream. Saturation and abandonment each fire a detached
+   `runs.cancel` for this execution.
+4. Register the `ClientRun` in `clientRuns` *before* issuing `runs.start` — which is what
    lets a notification emitted during the start call find its run.
-5. `await transport.request(methods.start, { params: { ...params, execution_id } })` (`:464`). On a
+5. `await transport.request(methods.start, { params: {...params, execution_id } })`. On a
    throw, `done` resolves as a `failed` result carrying `kerr.code ?? "internal"` and `kerr.message ??
-   "run failed"`, the stream closes, `closed` resolves and the entry is deleted (`:465-476`).
+   "run failed"`, the stream closes, `closed` resolves and the entry is deleted.
 6. Return the handle whose `steer`/`compact`/`cancel`/`respond` each issue the matching wire request
-   with `execution_id` attached (`:480-494`), and whose `onElicit` flushes `pendingElicits` on
-   attachment (`:495-501`).
+   with `execution_id` attached, and whose `onElicit` flushes `pendingElicits` on
+   attachment.
 
 The service-level `RemoteKernel.runs.compact(executionId, request?, options?)` is a separate wrapper
 around the same special method and forwards `options` when supplied
@@ -506,13 +499,13 @@ only through the service-level call for a settled run.
 
 | Notification | Validation | Routing |
 | --- | --- | --- |
-| `run.event` | `hasOnly(["execution_id","event"])`, string id, `decodeRunEvent(params.event) !== null` (`packages/kernel/src/transport/client.ts:223-236`) | `clientRuns.get(id)?.stream.push(event)` |
-| `run.result` | `hasOnly(["execution_id","result"])`, `result.execution_id === execution_id`, status in `completed\|failed\|cancelled` (`:236-254`) | resolve `done`, set `resultReceived`, delete the entry if the stream already ended |
-| `run.stream_end` | `hasOnly(["execution_id"])` (`:255-271`) | close the stream, resolve `closed`, delete the entry if the result already arrived |
+| `run.event` | `hasOnly(["execution_id","event"])`, string id, `decodeRunEvent(params.event) !== null` (`packages/kernel/src/transport/client.ts`) | `clientRuns.get(id)?.stream.push(event)` |
+| `run.result` | `hasOnly(["execution_id","result"])`, `result.execution_id === execution_id`, status in `completed\|failed\|cancelled` | resolve `done`, set `resultReceived`, delete the entry if the stream already ended |
+| `run.stream_end` | `hasOnly(["execution_id"])` | close the stream, resolve `closed`, delete the entry if the result already arrived |
 | `run.elicitation` | `hasOnly(["request"])`; string `request.id`/`execution_id`/`kind`/`prompt`; when `detail` is present, `isCommandDetail` requires exactly `command`, `cwd`, `reason`, `warning?`, with the first three strings and `warning` absent or a string (`packages/kernel/src/transport/client.ts`, `isCommandDetail` and the `N.runElicitation` observer) | buffer into `pendingElicits` when no handler yet, else fan out |
-| `config.change` | `hasOnly(["subscription_id","change"])`, change `hasOnly(["kind","scope","at"])`, kind in `settings\|agents\|context`, finite `at`, scope `global\|workspace` or absent (`:310-328`) | `configSubs.get(id)?.(change)` |
+| `config.change` | `hasOnly(["subscription_id","change"])`, change `hasOnly(["kind","scope","at"])`, kind in `settings\|agents\|context`, finite `at`, scope `global\|workspace` or absent | `configSubs.get(id)?.(change)` |
 
-Every failure calls `protocolViolation(message)` (`:209-220`), which is fail-closed: mark closed,
+Every failure calls `protocolViolation(message)`, which is fail-closed: mark closed,
 settle every live run `unavailable` with the message `kernel wire protocol violation: <message>`,
 clear subscriptions, detach observers, and close the transport through `detachObserved`.
 
@@ -533,104 +526,100 @@ unsubscribing an unknown id is a silent no-op. Production:
 
 ### 4.7 NDJSON reading
 
-`readFrames` (`packages/kernel/src/transport/stdio.ts:171-222`) sets `utf8` encoding, accumulates into a string buffer, tracks
-`bufferBytes`, and once `invalid` is latched ignores every later chunk (`:182`). Per chunk: if the
-buffer exceeds the cap with no newline in it, drop as `oversize_unterminated` and terminate (`:185-190`).
-Then per complete line: blank lines are skipped (`:196`), an over-cap line is `oversize` (`:197-202`),
-a `JSON.parse` throw is `invalid_json` (`:203-211`), a `decodeFrame` `null` is `invalid_shape`
-(`:212-218`), and only a decoded frame reaches `onFrame` (`:219`).
+`readFrames` (`packages/kernel/src/transport/stdio.ts`) sets `utf8` encoding, accumulates into a string buffer, tracks
+`bufferBytes`, and once `invalid` is latched ignores every later chunk. Per chunk: if the
+buffer exceeds the cap with no newline in it, drop as `oversize_unterminated` and terminate.
+Then per complete line: blank lines are skipped, an over-cap line is `oversize`,
+a `JSON.parse` throw is `invalid_json`, a `decodeFrame` `null` is `invalid_shape`, and only a decoded frame reaches `onFrame`.
 
 ### 4.8 NDJSON writing
 
-`createFrameWriter` (`packages/kernel/src/transport/stdio.ts:260-346`) serializes writes behind a `tail` promise and applies, in
+`createFrameWriter` (`packages/kernel/src/transport/stdio.ts`) serializes writes behind a `tail` promise and applies, in
 order, on every `send`:
 
-| Check | Line | Outcome |
-| --- | --- | --- |
-| writer closed | `:280` | reject with the shared `closedError` |
-| a prior failure latched | `:281` | reject with that failure |
-| `JSON.stringify` throws | `:282-291` | log `outbound/serialization`, latch, reject |
-| line > 8 MiB | `:292-298` | log `outbound/oversize`, latch, reject |
-| queue full (1 024 frames or 16 MiB) | `:299-304` | log `outbound/queue_full`, latch, reject |
-| stalled write | `:318-323` | after 30 s reject `wire writer stalled for 30000ms` and latch |
-| stream write error | `:324-330` | latch and reject |
+| Check | Outcome |
+| --- | --- |
+| writer closed | reject with the shared `closedError` |
+| a prior failure latched | reject with that failure |
+| `JSON.stringify` throws | log `outbound/serialization`, latch, reject |
+| line > 8 MiB | log `outbound/oversize`, latch, reject |
+| queue full (1 024 frames or 16 MiB) | log `outbound/queue_full`, latch, reject |
+| stalled write | after 30 s reject `wire writer stalled for 30000ms` and latch |
+| stream write error | latch and reject |
 
-`fail` invokes `onFailure` exactly once (`:272-276`). The queued write re-checks `closed` and
-`failure` **inside** the promise (`:310-317`), which is why a frame queued before `close()` is never
-written. The `tail` swallows both outcomes (`:333-336`) so a later queued send still makes progress.
+`fail` invokes `onFailure` exactly once. The queued write re-checks `closed` and
+`failure` **inside** the promise, which is why a frame queued before `close()` is never
+written. The `tail` swallows both outcomes so a later queued send still makes progress.
 
 ### 4.9 Server pump over stdio
 
 `serveKernelOverStdio` (`packages/kernel/src/transport/stdio.ts`, `serveKernelOverStdio`). `close()` aborts every tracked controller with
-`new Error("transport closed")`, clears the map, closes the writer and closes the connection
-(`:536-543`). `disconnect()` additionally destroys **both** streams, with the in-source note that
+`new Error("transport closed")`, clears the map, closes the writer and closes the connection. `disconnect()` additionally destroys **both** streams, with the in-source note that
 "Normal `close()` leaves caller-owned streams alone. A failed wire cannot: closing both sides is what
-makes the peer's `onClose` settle live handles" (`:544-550`). Per inbound frame (`:558-579`):
+makes the peer's `onClose` settle live handles". Per inbound frame :
 
 | Frame | Effect |
 | --- | --- |
-| anything, after `closed` | ignored (`:559`) |
-| `cancel` | `controllers.get(id)?.abort(new Error("request cancelled"))` (`:560-563`) |
-| not `req` | ignored — including `note` (`:564`) |
-| `req` with an id already in flight | `close()` and return, **without dispatching** (`:565-568`) |
-| `req` | new `AbortController`, dispatch `conn.handle(method, params, signal)`, answer `res` with `result` or `toEnvelope(err)`, `.catch(close)`, `finally` delete the controller (`:569-578`) |
+| anything, after `closed` | ignored |
+| `cancel` | `controllers.get(id)?.abort(new Error("request cancelled"))` |
+| not `req` | ignored — including `note` |
+| `req` with an id already in flight | `close()` and return, **without dispatching** |
+| `req` | new `AbortController`, dispatch `conn.handle(method, params, signal)`, answer `res` with `result` or `toEnvelope(err)`, `.catch(close)`, `finally` delete the controller |
 
 ### 4.10 Client transport state machine
 
-`terminate` (`packages/kernel/src/transport/stdio.ts:418-433`) is idempotent (`closed` guard) and, once: builds an `unavailable`
+`terminate` (`packages/kernel/src/transport/stdio.ts`) is idempotent (`closed` guard) and, once: builds an `unavailable`
 error from the reason, rejects every pending request after detaching its abort listener, clears the
 map, closes the writer and fans out to every `onClose` handler before clearing that set. It is wired
-to `readFrames`'s invalid callback (`packages/kernel/src/transport/stdio.ts:451`) and to `input.end`, `input.error`,
-`input.close` and `output.error` (`packages/kernel/src/transport/stdio.ts:454-457`).
+to `readFrames`'s invalid callback (`packages/kernel/src/transport/stdio.ts`) and to `input.end`, `input.error`,
+`input.close` and `output.error` (`packages/kernel/src/transport/stdio.ts`).
 
 | State | Event | Next | Effect |
 | --- | --- | --- | --- |
-| open | `request(m,p)` | open | `++seq`, register pending, `writer.send({t:"req",…})`; a send rejection calls `terminate` (`:471-490`) |
-| open | `request` with an already-aborted signal | open | reject `cancelled` "request cancelled" immediately, no frame (`:468-470`) |
-| open | signal aborts | open | delete the pending entry, send `{t:"cancel",id}`, reject `cancelled` (`:474-481`) |
-| open | `res` with a known id | open | resolve `result`, or reject `fromEnvelope(error)` (`:440-446`) |
-| open | `res` with an unknown id | open | silently ignored (`:442`) |
-| open | `note` | open | fan out to that method's handlers (`:447-449`) |
+| open | `request(m,p)` | open | `++seq`, register pending, `writer.send({t:"req",…})`; a send rejection calls `terminate` |
+| open | `request` with an already-aborted signal | open | reject `cancelled` "request cancelled" immediately, no frame |
+| open | signal aborts | open | delete the pending entry, send `{t:"cancel",id}`, reject `cancelled` |
+| open | `res` with a known id | open | resolve `result`, or reject `fromEnvelope(error)` |
+| open | `res` with an unknown id | open | silently ignored |
+| open | `note` | open | fan out to that method's handlers |
 | open | any invalid frame / EOF / stream error | closed | `terminate`: all pending reject `unavailable` |
-| closed | `request` | closed | reject `unavailable` "transport closed" (`:465-467`) |
-| closed | `notify` | closed | no-op (`:493`) |
-| closed | `close()` | closed | idempotent (`:510-512`) |
+| closed | `request` | closed | reject `unavailable` "transport closed" |
+| closed | `notify` | closed | no-op |
+| closed | `close()` | closed | idempotent |
 
 ### 4.11 Notification channel (server)
 
-`createNotificationChannel` (`packages/kernel/src/transport/server.ts:58-177`) is a serialized, bounded queue with three states
-`open | failed | closed` (`:65`). `notify` (`:145-172`) returns a resolved promise when not open,
-measures the frame with `JSON.stringify({method, params})` and fails the channel if that throws
-(`:147-153`), fails it if the frame alone exceeds 16 MiB or the queue is at 1 024 frames / 16 MiB
-(`:154-161`), otherwise enqueues and starts the drain if idle. `drain` (`:88-142`) races the sink's
+`createNotificationChannel` (`packages/kernel/src/transport/server.ts`) is a serialized, bounded queue with three states
+`open | failed | closed`. `notify` returns a resolved promise when not open,
+measures the frame with `JSON.stringify({method, params})` and fails the channel if that throws, fails it if the frame alone exceeds 16 MiB or the queue is at 1 024 frames / 16 MiB, otherwise enqueues and starts the drain if idle. `drain` races the sink's
 delivery against a `timeoutMs` timer and an interrupt, and any outcome other than `delivered` other
-than `interrupted` calls `stop("failed", reason)` (`:134-137`). `stop` (`:76-86`) fires every
+than `interrupted` calls `stop("failed", reason)`. `stop` fires every
 interrupt, drains and resolves every queued notification, and on `failed` calls `onFailure` — which
-is `failConnection` (`:299-301`), which closes the connection and then calls the transport's
+is `failConnection`, which closes the connection and then calls the transport's
 `disconnect` inside a `try/catch` whose comment reads "A broken transport close cannot keep the
-kernel connection alive" (`:623-630`).
+kernel connection alive".
 
-`packages/kernel/tests/integration/transport.test.ts:567-631` pins that both a *rejecting* and a *stalling* sink
+`packages/kernel/tests/integration/transport.test.ts` pins that both a *rejecting* and a *stalling* sink
 disconnect once, close the host context once, and are called exactly once — the circuit opens
 permanently rather than retaining one pending delivery per event.
-`packages/kernel/tests/integration/transport.test.ts:656-722` pins that `connection.close()` releases a run's event
+`packages/kernel/tests/integration/transport.test.ts` pins that `connection.close()` releases a run's event
 stream without waiting on an infinite send.
 
 ### 4.12 Connection teardown
 
-`KernelConnection.close` (`packages/kernel/src/transport/server.ts:609-621`) is idempotent and, in order: close the notification
+`KernelConnection.close` (`packages/kernel/src/transport/server.ts`) is idempotent and, in order: close the notification
 channel, `off()` every subscription and clear the map, `cancel()` every live handle and clear `live`,
 call `context?.close?.()` (releasing the host lease), then release the lifecycle registration. The
-connection registers itself with `kernel.lifecycle` at connect time (`packages/kernel/src/transport/server.ts:631`), so closing the
+connection registers itself with `kernel.lifecycle` at connect time (`packages/kernel/src/transport/server.ts`), so closing the
 kernel closes every open connection.
 
 ### 4.13 Loopback
 
-`createLoopbackTransport` (`packages/kernel/src/transport/loopback.ts:22-81`) opens exactly one `server.connect` for its lifetime
-(`:39-42`) and deep-clones every payload crossing the seam with `JSON.parse(JSON.stringify(v))`,
-guarding `undefined` (`:26-27`). `request` clones params in and result out (`:45-56`); `notify`
-dispatches into `conn.handle` detached and discards the result (`:57-62`); `close` is idempotent and
-fans out to `onClose` (`:32-38`, `:77-79`).
+`createLoopbackTransport` (`packages/kernel/src/transport/loopback.ts`) opens exactly one `server.connect` for its lifetime
+ and deep-clones every payload crossing the seam with `JSON.parse(JSON.stringify(v))`,
+guarding `undefined`. `request` clones params in and result out; `notify`
+dispatches into `conn.handle` detached and discards the result; `close` is idempotent and
+fans out to `onClose`.
 
 ## 5. Invariants
 
@@ -639,21 +628,21 @@ INV-205–INV-224 are the numbered invariants this document owns; INV-T* are der
 **INV-205.** `decodeFrame` fail-closes: `null` for a non-object or primitive, for a `req` with an
 extra field, and for a `res` carrying neither or both of `result`/`error`; a request pending when
 such a frame — or one past `MAX_WIRE_FRAME_BYTES` — arrives rejects `unavailable`.
-Production: `packages/kernel/src/transport/stdio.ts:126-162`, `packages/kernel/src/transport/stdio.ts:185-218`, `packages/kernel/src/transport/stdio.ts:418-433`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:49-65`.
+Production: `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-206.** A server-thrown error crosses the wire with its `code`, `message` and `details` intact,
 domain codes such as `resource_exhausted` included.
-Production: `toEnvelope` `packages/kernel/src/transport/stdio.ts:372-381`, `fromEnvelope` `packages/kernel/src/transport/stdio.ts:384-389`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:67-91`, `:93-117`.
+Production: `toEnvelope` `packages/kernel/src/transport/stdio.ts`, `fromEnvelope` `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-207.** An untrusted server error is normalized before crossing: ANSI escapes and terminal
 control bytes stripped, the message bounded to 16 384 characters, a credential-shaped detail key
 (e.g. `authorization`) redacted to `"Bearer [redacted]"`, and a code the server did not construct
 through `kernelError` collapsed to `internal`.
-Production: `terminalSafe` `packages/kernel/src/transport/stdio.ts:64-71`, `safeErrorDetails` `packages/kernel/src/transport/stdio.ts:349-369`, `toEnvelope`
-`packages/kernel/src/transport/stdio.ts:377-378`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:119-152`. The underlying two rule sets
+Production: `terminalSafe` `packages/kernel/src/transport/stdio.ts`, `safeErrorDetails` `packages/kernel/src/transport/stdio.ts`, `toEnvelope`
+`packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`. The underlying two rule sets
 (`sanitizeDeep`/`sanitizeErrorMessage`) belong to
 [cross-cutting/security.md](../cross-cutting/security.md) §5; this invariant is the wire's own
 application of them.
@@ -662,64 +651,64 @@ application of them.
 `outcome_unknown` (boolean) plus the string keys `task_code`, `memory_code`,
 `current_revision`, `expectedRevision`, `actualRevision`, each `terminalSafe`'d and sliced to 1 024
 characters, and a `truncated: true` marker is added.
-Production: `PRESERVED_ERROR_STRING_DETAILS` `packages/kernel/src/transport/stdio.ts:73-80`, `preservedErrorDetails`
-`packages/kernel/src/transport/stdio.ts:83-106`, `packages/kernel/src/transport/stdio.ts:359-364`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:154-188`.
+Production: `PRESERVED_ERROR_STRING_DETAILS` `packages/kernel/src/transport/stdio.ts`, `preservedErrorDetails`
+`packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-209.** A request queued before `close()` is never written to the output stream.
-Production: `packages/kernel/src/transport/stdio.ts:310-317` (the in-promise `closed` re-check) and `terminate`'s `writer.close()`
-at `packages/kernel/src/transport/stdio.ts:430`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:190-206`.
+Production: `packages/kernel/src/transport/stdio.ts` (the in-promise `closed` re-check) and `terminate`'s `writer.close()`
+at `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-210.** A frame that cannot be JSON-serialized fails its request cleanly with `unavailable`
 rather than crashing the transport.
-Production: `packages/kernel/src/transport/stdio.ts:282-291` (reject) → `packages/kernel/src/transport/stdio.ts:489` `.catch(terminate)` → `packages/kernel/src/transport/stdio.ts:421-424`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:208-219`.
+Production: `packages/kernel/src/transport/stdio.ts` (reject) → `packages/kernel/src/transport/stdio.ts` `.catch(terminate)` → `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-211.** Every request still pending at input EOF is rejected `unavailable`.
-Production: `packages/kernel/src/transport/stdio.ts:454` (`input.once("end", …)`) → `packages/kernel/src/transport/stdio.ts:425-428`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:221-230`.
+Production: `packages/kernel/src/transport/stdio.ts` (`input.once("end", …)`) → `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-212.** Cancelling one in-flight request rejects only that request with `cancelled`, propagates
 the abort to the server handler's own signal, and does not close the connection.
-Production: client `onAbort` `packages/kernel/src/transport/stdio.ts:474-481`; server `cancel` handling `packages/kernel/src/transport/stdio.ts:560-563`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:232-266`.
+Production: client `onAbort` `packages/kernel/src/transport/stdio.ts`; server `cancel` handling `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-213.** A duplicate in-flight request id is fatal to the server connection: the handler is
 invoked once, the first call's signal is aborted, and the connection closes.
-Production: `packages/kernel/src/transport/stdio.ts:565-568` combined with `close()`'s controller abort at `packages/kernel/src/transport/stdio.ts:539`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:268-297`.
+Production: `packages/kernel/src/transport/stdio.ts` combined with `close()`'s controller abort at `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`.
 
 **INV-214.** `transport.frame_dropped` names the specific bound: inbound
 `oversize_unterminated` / `oversize` / `invalid_json` / `invalid_shape`, outbound `oversize` and
 `queue_full`.
-Production: `reportFrameDropped` `packages/kernel/src/transport/stdio.ts:237-247`; call sites `packages/kernel/src/transport/stdio.ts:187,199,208,215,288,295,301`.
-Test: `packages/kernel/tests/contract/stdio-codec.test.ts:313-370`. The sixth reason, `serialization`
-(`packages/kernel/src/transport/stdio.ts:288`), is **not** asserted by any `frame_dropped` test.
+Production: `reportFrameDropped` `packages/kernel/src/transport/stdio.ts`; call sites `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/stdio-codec.test.ts`. The sixth reason, `serialization`
+(`packages/kernel/src/transport/stdio.ts`), is **not** asserted by any `frame_dropped` test.
 
 `reportFrameDropped`'s own TSDoc is explicit that this detail never crosses the wire: "Every one of
 these also terminates the connection, so the peer sees *something*. What it never sees is which of
 five bounds was hit, and on the outbound side neither does the caller — a saturated writer rejects
-one `send` with a sentence nobody reads" (`packages/kernel/src/transport/stdio.ts:232-236`). The `reason` field is local-only,
+one `send` with a sentence nobody reads" (`packages/kernel/src/transport/stdio.ts`). The `reason` field is local-only,
 recorded in this process's own log.
 
 **INV-215.** The client handshake rejects a `hello` result with the wrong `wire_version`, an
 unexpected extra field, or an invalid nested `workspace.kind`, and closes the transport exactly once
 in every case.
-Production: `packages/kernel/src/transport/client.ts:382-409`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:98-112`.
+Production: `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-216.** When the handshake itself rejects, the transport is still closed exactly once and every
 notification observer is detached.
-Production: `packages/kernel/src/transport/client.ts:371-381` with `detachTransportObservers` `packages/kernel/src/transport/client.ts:190-194`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:114-125`.
+Production: `packages/kernel/src/transport/client.ts` with `detachTransportObservers` `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-217.** `KNOWN_METHODS` holds no duplicate, and every ordinary operation's `invoke` genuinely
 reaches the matching service method in catalog order.
 Production: `OPERATIONS`, each operation's `invoke`, and `ORDINARY_OPERATIONS`/`KNOWN_METHODS` in
 `packages/kernel/src/transport/operations.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:129-145` (each fake service method throws
-`RECORDED_OPERATION`, `packages/kernel/tests/helpers/recording-kernel-services.ts:5,16-19`).
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (each fake service method throws
+`RECORDED_OPERATION`, `packages/kernel/tests/helpers/recording-kernel-services.ts`).
 
 **INV-218.** A transport-level cancellation signal reaches the signal-aware service call for
 `sessions.listPage` and `workflows.list` unchanged — via a locally-cast widened method signature that
@@ -727,54 +716,54 @@ never appears on the public wire `SessionService` contract.
 Production: `listSessionPage` and `listWorkflows` in
 `packages/kernel/src/transport/operations.ts`, wired at `OPERATIONS.sessions.listPage` and
 `OPERATIONS.workflows.list`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:185-211` (session and workflow catalog
-cases); `packages/kernel/tests/integration/session-service.test.ts:168-183` corroborates from the
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (session and workflow catalog
+cases); `packages/kernel/tests/integration/session-service.test.ts` corroborates from the
 service side — the session service itself honors an aborted signal mid-scan, not merely relays it.
 
 **INV-219.** A remote run's `done` settles independently of `events`/`closed`: events keep arriving
 until `run.stream_end`, at which point `closed` resolves; a `runs.start` rejection settles `done` as
 `failed` carrying the transport's own error code, with `closed` resolved and `events` empty.
-Production: `packages/kernel/src/transport/client.ts:237-272` and `packages/kernel/src/transport/client.ts:466-477`; server side `packages/kernel/src/transport/server.ts:369-408`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:215-244`, `:246-271`.
+Production: `packages/kernel/src/transport/client.ts` and `packages/kernel/src/transport/client.ts`; server side `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-220.** Starting a run whose execution id is already live is rejected `conflict` and does not
 replace the first handle.
-Production: `packages/kernel/src/transport/client.ts:426-432`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:273-289`.
+Production: `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-221.** `steer`/`compact`/`cancel`/`respond` each forward with the handle's own `execution_id`
 under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.respond`.
-Production: `packages/kernel/src/transport/client.ts:481-495`, names bound at `packages/kernel/src/transport/client.ts:513-519`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:291-332`.
+Production: `packages/kernel/src/transport/client.ts`, names bound at `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-222.** An elicitation emitted before `runs.start` resolves is buffered and delivered to a
 handler registered afterwards.
-Production: registration of the `ClientRun` before the start request (`packages/kernel/src/transport/client.ts:455-465`), the
-buffer at `packages/kernel/src/transport/client.ts:308`, the flush at `packages/kernel/src/transport/client.ts:500-501`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:334-360`.
+Production: registration of the `ClientRun` before the start request (`packages/kernel/src/transport/client.ts`), the
+buffer at `packages/kernel/src/transport/client.ts`, the flush at `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-223.** On transport disconnect every live run handle settles `failed` with an `unavailable`
 error carrying the disconnect reason.
-Production: `settleRunsUnavailable` `packages/kernel/src/transport/client.ts:171-188`, wired at `packages/kernel/src/transport/client.ts:203-208`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:362-374`.
+Production: `settleRunsUnavailable` `packages/kernel/src/transport/client.ts`, wired at `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-224.** A malformed run-event notification fails the run's `done` as `unavailable` with a
 "protocol violation" message and closes the transport — for a bad field type, an incomplete
 required-field set, and an inherited object key (`toString`, `constructor`, `__proto__`) used as the
 discriminator.
 Production: `decodeRunEvent` in `packages/kernel/src/transport/run-event-codec.ts` (its `Object.hasOwn` guard is
-what rejects inherited keys), `protocolViolation` `packages/kernel/src/transport/client.ts:210-221`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:376-442`.
+what rejects inherited keys), `protocolViolation` `packages/kernel/src/transport/client.ts`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-T1.** A wire method name is declared exactly once, in `KernelOperation.method`; `M` reads its
 values from the catalog rather than restating them.
-Production: `packages/kernel/src/transport/wire.ts:27-60` (every value is an `OPERATIONS.*.method` or `SPECIAL_OPERATIONS.*.method`),
+Production: `packages/kernel/src/transport/wire.ts` (every value is an `OPERATIONS.*.method` or `SPECIAL_OPERATIONS.*.method`),
 `KernelOperation.method` in `packages/kernel/src/transport/operations.ts`. Pinned indirectly by the uniqueness assertion at
-`packages/kernel/tests/contract/transport-codecs.test.ts:130`; no test asserts that `M` cannot contain a literal.
+`packages/kernel/tests/contract/transport-codecs.test.ts`; no test asserts that `M` cannot contain a literal.
 
 **INV-T2.** The `res` error envelope's `code` set is pinned to the protocol union at compile time.
-Production: `packages/kernel/src/transport/stdio.ts:49-61` (`satisfies Record<KernelErrorCode, true>`) against
-`packages/protocol/src/common.ts:87-98`. Compile-time only; unpinned by a test.
+Production: `packages/kernel/src/transport/stdio.ts` (`satisfies Record<KernelErrorCode, true>`) against
+`packages/protocol/src/common.ts`. Compile-time only; unpinned by a test.
 
 **INV-T3.** `RUN_EVENT_SCHEMAS` must carry an entry for every `RunEvent` discriminator.
 Production: `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`
@@ -797,49 +786,49 @@ checkpoint contract`).
 **INV-T4.** A request parameter envelope may carry no key the operation's own encoder does not
 produce; the allowed key set is derived once per operation by invoking `encode` with `undefined`
 placeholders and memoized in a `WeakMap`.
-Production: `decodeOperationParams` in `packages/kernel/src/transport/operations.ts`, enforced at `packages/kernel/src/transport/server.ts:461-480`.
-Test: `packages/kernel/tests/integration/transport.test.ts:433-447` (`listAgents` with `{ unexpected: true }` →
+Production: `decodeOperationParams` in `packages/kernel/src/transport/operations.ts`, enforced at `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts` (`listAgents` with `{ unexpected: true }` →
 `invalid_request`).
 
 **INV-T5.** A special operation's parameters are checked against a per-method allowlist and must be a
 non-array object.
-Production: `specialParams` `packages/kernel/src/transport/server.ts:359-379`.
-Test: `packages/kernel/tests/integration/transport.test.ts:469-474` (a string body and an extra key on `runs.cancel`
+Production: `specialParams` `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts` (a string body and an extra key on `runs.cancel`
 both `invalid_request`).
 
 **INV-T6.** No ordinary or special operation is served before `hello` completes.
-Production: `packages/kernel/src/transport/server.ts:426-428`, backed by `services()` `packages/kernel/src/transport/server.ts:318-323`.
-Test: `packages/kernel/tests/integration/transport.test.ts:435-447`.
+Production: `packages/kernel/src/transport/server.ts`, backed by `services()` `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T7.** `hello` binds a connection exactly once; a second `hello` is `invalid_request` and does
 not re-run `resolveConnection`.
-Production: `helloStarted` `packages/kernel/src/transport/server.ts:472-478`.
-Test: `packages/kernel/tests/integration/transport.test.ts:401-433` (asserts `resolutions === 1`).
+Production: `helloStarted` `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts` (asserts `resolutions === 1`).
 
 **INV-T8.** A `hello` whose `wire_version` is missing or not `3` is `unsupported`.
 Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`).
-Test: `packages/kernel/tests/integration/transport.test.ts:449-459`.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T9.** `hello` identity fields are validated before `resolveConnection` runs.
-Production: `packages/kernel/src/transport/server.ts:485-497` precedes `:498-501`.
-Test: `packages/kernel/tests/integration/transport.test.ts:485-495`.
+Production: `packages/kernel/src/transport/server.ts` precedes.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T10.** Owner services come only from the host-resolved `hello` context, never from a
 caller-supplied workspace parameter.
-Production: `packages/kernel/src/transport/server.ts:302-303,318-323,506`; `KernelConnectionContext.services` documented as "never
-borrowed from the primary kernel" (`packages/kernel/src/transport/server.ts:251`).
-Test: `packages/kernel/tests/integration/transport.test.ts:349-399` — a session saved through the wire is readable
+Production: `packages/kernel/src/transport/server.ts`; `KernelConnectionContext.services` documented as "never
+borrowed from the primary kernel" (`packages/kernel/src/transport/server.ts`).
+Test: `packages/kernel/tests/integration/transport.test.ts` — a session saved through the wire is readable
 under the *authenticated* owner and `null` under the caller-requested one.
 
 **INV-T11.** `opts.authorize` sees the catalog's `metadata`, is not consulted for `hello`, and an
 unknown method is `invalid_request` rather than a policy question.
-Production: `packages/kernel/src/transport/server.ts:438-447`, `packages/kernel/src/transport/server.ts:457-468` (the `special !== SPECIAL_OPERATIONS.hello`
-guard), `packages/kernel/src/transport/server.ts:605-606`.
-Test: `packages/kernel/tests/integration/transport.test.ts:497-517`.
+Production: `packages/kernel/src/transport/server.ts`, `packages/kernel/src/transport/server.ts` (the `special !== SPECIAL_OPERATIONS.hello`
+guard), `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T12.** A config subscription whose authorization completes after the connection closed is
 never installed, and an authorization hop cannot resurrect a closed connection.
-Production: the post-await `assertConnectionOpen()` at `packages/kernel/src/transport/server.ts:446` and `:466`.
+Production: the post-await `assertConnectionOpen()` at `packages/kernel/src/transport/server.ts`.
 Test: `packages/kernel/tests/integration/transport.test.ts` (asserts no subscription was installed).
 
 **INV-T13.** Config subscription ids are unique per connection: a duplicate is `conflict`, and an
@@ -863,31 +852,31 @@ a settled continuation before a model switch".
 
 **INV-T15.** A failing notification sink opens the circuit permanently and disconnects exactly once;
 a client's live handles then settle `unavailable`.
-Production: `createNotificationChannel` `packages/kernel/src/transport/server.ts:76-86,134-137`, `failConnection` `packages/kernel/src/transport/server.ts:623-630`.
-Test: `packages/kernel/tests/integration/transport.test.ts:567-631`, `:633-654`.
+Production: `createNotificationChannel` `packages/kernel/src/transport/server.ts`, `failConnection` `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T16.** `connection.close()` does not wait on an in-flight notification send; the run's event
 stream is released and the handle cancelled.
-Production: `stop`'s interrupt fan-out `packages/kernel/src/transport/server.ts:79-80`, `close` `packages/kernel/src/transport/server.ts:609-621`.
-Test: `packages/kernel/tests/integration/transport.test.ts:656-722`.
+Production: `stop`'s interrupt fan-out `packages/kernel/src/transport/server.ts`, `close` `packages/kernel/src/transport/server.ts`.
+Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T17.** The loopback transport deep-clones every payload in both directions, so neither side can
 retain a mutable reference into the other's state.
-Production: `packages/kernel/src/transport/loopback.ts:26-27,40,50-55,58`.
-Test: `packages/kernel/tests/unit/loopback-transport.test.ts:5-37` (mutating the caller's object after `notify`
+Production: `packages/kernel/src/transport/loopback.ts`.
+Test: `packages/kernel/tests/unit/loopback-transport.test.ts` (mutating the caller's object after `notify`
 leaves the observed params at the pre-mutation value).
 
 **INV-T18.** `transport/` must not import file-backed composition (`/adapters/`, `file-kernel`).
 Production: the absence of such imports in `transport/*.ts`.
-Test: `packages/kernel/tests/architecture/dependency-direction.test.ts:40-45`.
+Test: `packages/kernel/tests/architecture/dependency-direction.test.ts`.
 
 **INV-T19.** An ordinary operation whose service returns `undefined` answers `{}` on the wire.
-Production: `packages/kernel/src/transport/server.ts:449`. Unpinned by a direct assertion.
+Production: `packages/kernel/src/transport/server.ts`. Unpinned by a direct assertion.
 
 **INV-T20.** `serveFileKernelOverStdio` refuses at construction a logger writing to the same file
 descriptor as the NDJSON wire.
-Production: `refuseLoggerOnWire` `packages/kernel/src/serve.ts:81-90`, called first at `packages/kernel/src/serve.ts:103`.
-Test: `packages/kernel/tests/integration/serve.test.ts:34` — `describe("serveFileKernelOverStdio refuses a logger
+Production: `refuseLoggerOnWire` `packages/kernel/src/serve.ts`, called first at `packages/kernel/src/serve.ts`.
+Test: `packages/kernel/tests/integration/serve.test.ts` — `describe("serveFileKernelOverStdio refuses a logger
 bound to its own wire", …)`. The composition around it belongs to the kernel-bootstrap document.
 
 **INV-T21.** A Tasks operation's client-supplied `AbortSignal` is extracted by the operation's own
@@ -899,7 +888,7 @@ signal into `invoke` server-side with no client-side `requestOptions` involved a
 cursor/id fields inside a Tasks operation's `input` (e.g. `next_cursor`) pass through the wire
 unmodified.
 Production: `taskRequestOptions` in `packages/kernel/src/transport/operations.ts`.
-Test: `packages/kernel/tests/contract/transport-codecs.test.ts:445-483` — `tasks.create`'s `request_id`/
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts` — `tasks.create`'s `request_id`/
 `provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
 and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
@@ -917,25 +906,25 @@ as plugin-sensitive with exact read/write access").
 
 | Code | Raised at | Situation |
 | --- | --- | --- |
-| `unavailable` | `packages/kernel/src/transport/server.ts:315` | any dispatch on a closed connection |
-| `unavailable` | `packages/kernel/src/transport/server.ts:504`, `:524` | connection closed while `hello` / `runs.start` was awaiting |
-| `unavailable` | `packages/kernel/src/transport/stdio.ts:421-424`, `:466` | transport terminated, or a request after close |
-| `unavailable` | `packages/kernel/src/transport/client.ts:178` | a live run settled by disconnect or protocol violation |
-| `unauthorized` | `packages/kernel/src/transport/server.ts:320`, `:427` | call before `hello` completed |
-| `unauthorized` | `packages/kernel/src/transport/server.ts:447`, `:467` | host policy denied the operation |
-| `invalid_request` | `packages/kernel/src/transport/server.ts:328`, `:344` | special params not an object / unknown key |
-| `invalid_request` | `packages/kernel/src/transport/server.ts:434` | ordinary parameter envelope refused |
-| `invalid_request` | `packages/kernel/src/transport/server.ts:474`, `:496` | second `hello`, or bad identity fields |
+| `unavailable` | `packages/kernel/src/transport/server.ts` | any dispatch on a closed connection |
+| `unavailable` | `packages/kernel/src/transport/server.ts` | connection closed while `hello` / `runs.start` was awaiting |
+| `unavailable` | `packages/kernel/src/transport/stdio.ts` | transport terminated, or a request after close |
+| `unavailable` | `packages/kernel/src/transport/client.ts` | a live run settled by disconnect or protocol violation |
+| `unauthorized` | `packages/kernel/src/transport/server.ts` | call before `hello` completed |
+| `unauthorized` | `packages/kernel/src/transport/server.ts` | host policy denied the operation |
+| `invalid_request` | `packages/kernel/src/transport/server.ts` | special params not an object / unknown key |
+| `invalid_request` | `packages/kernel/src/transport/server.ts` | ordinary parameter envelope refused |
+| `invalid_request` | `packages/kernel/src/transport/server.ts` | second `hello`, or bad identity fields |
 | `invalid_request` | `packages/kernel/src/transport/server.ts`, `M.runsCompact`; `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact` | mechanical target supplied for a connection-live run, or a non-positive/non-integer target supplied after delegation |
-| `invalid_request` | `packages/kernel/src/transport/server.ts:606` | unknown method |
+| `invalid_request` | `packages/kernel/src/transport/server.ts` | unknown method |
 | `unsupported` | `packages/kernel/src/transport/server.ts` (`createKernelServer`) | `wire_version` not 3 |
 | `conflict` | `packages/kernel/src/transport/server.ts` (config subscribe case) | duplicate subscription id |
-| `conflict` | `packages/kernel/src/transport/client.ts:430` | duplicate live execution id, client-side |
+| `conflict` | `packages/kernel/src/transport/client.ts` | duplicate live execution id, client-side |
 | `not_found` | `packages/kernel/src/transport/server.ts`, `liveOrThrow` | steer/cancel/respond target absent or result-settled on this connection |
 | `not_found` | `packages/kernel/src/transport/server.ts`, `M.runsCompact`; `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact` | compact target absent from owner persistence after connection-live release, or a terminal live handle whose compaction channel has already closed |
-| `cancelled` | `packages/kernel/src/transport/stdio.ts:469`, `:480` | request aborted before or during flight |
-| `internal` | `packages/kernel/src/transport/stdio.ts:377` | any thrown value whose `code` is not a `KernelErrorCode` |
-| `internal` | `packages/kernel/src/transport/server.ts:399` | a rejected `handle.done`, reported as a failed `RunResult` |
+| `cancelled` | `packages/kernel/src/transport/stdio.ts` | request aborted before or during flight |
+| `internal` | `packages/kernel/src/transport/stdio.ts` | any thrown value whose `code` is not a `KernelErrorCode` |
+| `internal` | `packages/kernel/src/transport/server.ts` | a rejected `handle.done`, reported as a failed `RunResult` |
 
 ### 6.2 What degrades vs. what fails hard
 
@@ -943,23 +932,23 @@ as plugin-sensitive with exact read/write access").
 non-JSON line, a duplicate in-flight request id, an unserializable or over-cap outbound frame, a
 saturated writer queue, a 30 s stalled write, an inbound EOF or stream error. All of these route to
 `terminate`/`disconnect` and settle every pending request `unavailable`
-(`packages/kernel/src/transport/stdio.ts:185-218`, `:280-330`, `:418-433`, `:544-550`, `:565-568`).
+(`packages/kernel/src/transport/stdio.ts`).
 
 **Fails hard (client side).** Any notification whose payload fails validation — including a run event
 whose schema does not accept it — calls `protocolViolation`, which closes the transport
-(`packages/kernel/src/transport/client.ts:210-221`, `:223-360`). This is the fail-closed choice: an unrecognised event is never
+(`packages/kernel/src/transport/client.ts`). This is the fail-closed choice: an unrecognised event is never
 dropped silently.
 
 **Fails hard (one connection, not the process).** A notification sink that rejects, stalls past
 `notificationTimeoutMs`, produces an unserializable payload, or overflows the queue permanently
-opens the circuit and disconnects that connection (`packages/kernel/src/transport/server.ts:134-137`, `:147-161`).
+opens the circuit and disconnects that connection (`packages/kernel/src/transport/server.ts`).
 
-**Degrades.** A `res` for an unknown id is ignored (`packages/kernel/src/transport/stdio.ts:442`). A `note` on the server's input is
-ignored (`packages/kernel/src/transport/stdio.ts:564`). An unsubscribe for an unknown id is a no-op (`packages/kernel/src/transport/server.ts:573`, `:600`).
+**Degrades.** A `res` for an unknown id is ignored (`packages/kernel/src/transport/stdio.ts`). A `note` on the server's input is
+ignored (`packages/kernel/src/transport/stdio.ts`). An unsubscribe for an unknown id is a no-op (`packages/kernel/src/transport/server.ts`).
 `safeErrorDetails` returns `undefined` and drops the details entirely if bounding or sanitizing
-throws (`packages/kernel/src/transport/stdio.ts:366-368`); `preservedErrorDetails` returns `{}` on any property-descriptor throw
-(`packages/kernel/src/transport/stdio.ts:102-104`). Error details are bounded to depth 16, 1 024 nodes and 64 KiB before any
-recursive sanitizer sees them (`packages/kernel/src/transport/stdio.ts:352-357`, `packages/kernel/src/core/bounded-json.ts:23-27`).
+throws (`packages/kernel/src/transport/stdio.ts`); `preservedErrorDetails` returns `{}` on any property-descriptor throw
+(`packages/kernel/src/transport/stdio.ts`). Error details are bounded to depth 16, 1 024 nodes and 64 KiB before any
+recursive sanitizer sees them (`packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/core/bounded-json.ts`).
 
 **Detached, logged, never retried.** Subscribe, unsubscribe, saturation-cancel, abandonment-cancel
 and loopback `notify` all go through `detachObserved` with an `observationSink`
@@ -967,13 +956,13 @@ and loopback `notify` all go through `detachObserved` with an `observationSink`
 `streamingStart`, and `config.subscribe`; `packages/kernel/src/transport/loopback.ts`,
 `createLoopbackTransport`'s `notify`).
 The sink stamps a fixed event name and the message "a detached kernel operation failed; nothing
-retries it, and whatever it was releasing may still be held" (`packages/kernel/src/core/observed.ts:30-38`). Names
+retries it, and whatever it was releasing may still be held" (`packages/kernel/src/core/observed.ts`). Names
 used here: `transport.close_failed`, `transport.cancel_failed`, `transport.subscribe_failed`,
 `transport.unsubscribe_failed`, `transport.notify_failed`.
 
 **Client run-event backpressure.** The client's stream is bounded at 1 024 events / 8 MiB
-(`packages/kernel/src/transport/client.ts:434-435`); when it saturates on non-droppable items, or when the consumer abandons the
-iterator, the client cancels the run remotely (`packages/kernel/src/transport/client.ts:440-451`). The coalescing/droppability
+(`packages/kernel/src/transport/client.ts`); when it saturates on non-droppable items, or when the consumer abandons the
+iterator, the client cancels the run remotely (`packages/kernel/src/transport/client.ts`). The coalescing/droppability
 policy itself belongs to **kernel-run-service-and-events**.
 
 **No retries anywhere.** Neither transport retries a frame, a request or a notification.
@@ -984,15 +973,15 @@ policy itself belongs to **kernel-run-service-and-events**.
 resolved to *permit* in both cases:
 
 - **`authorize`.** The guard is written `opts.authorize === undefined || (await opts.authorize({…}))`
-  — identically on the ordinary path (`packages/kernel/src/transport/server.ts:438-445`) and the
-  special path (`:458-465`) — so `allowed` is `true` before any policy runs. The `unauthorized` throw
-  at `:447` / `:467` that §6.1 records is therefore unreachable in every configuration this
+  — identically on the ordinary path (`packages/kernel/src/transport/server.ts`) and the
+  special path — so `allowed` is `true` before any policy runs. The `unauthorized` throw
+   / that §6.1 records is therefore unreachable in every configuration this
   repository builds.
 - **`resolveConnection`.** With none supplied, the connection is bound to `defaultContext` at
-  `connect` time rather than at `hello` (`:302-303`), and `hello` takes that same value instead of
-  calling out (`:498-501`). `defaultContext` is the server's own kernel: `kernel.project`,
-  `kernel.workspace`, and services assembled as `{ ...kernel.operatorServices, providerAuth:
-  createUnavailableProviderAuthService(), ...kernel.defaultOwnerServices }`
+  `connect` time rather than at `hello`, and `hello` takes that same value instead of
+  calling out. `defaultContext` is the server's own kernel: `kernel.project`,
+  `kernel.workspace`, and services assembled as `{...kernel.operatorServices, providerAuth:
+  createUnavailableProviderAuthService()...kernel.defaultOwnerServices }`
   (`packages/kernel/src/transport/server.ts`, `defaultContext`). The explicit replacement is a
   security boundary: subscription credentials and authorization controls are not projected onto a
   default remote connection. `providerAuth.list` reports both supported schemes unavailable and
@@ -1001,25 +990,24 @@ resolved to *permit* in both cases:
   authentication explicitly unavailable on a remote connection".
 
 **Nothing in the repository supplies either.** `authorize` appears in `packages/*/src` only where it
-is declared and called (`packages/kernel/src/transport/server.ts:218`, `:439-440`, `:459-460`); its
-sole exerciser is INV-T11's test (`packages/kernel/tests/integration/transport.test.ts:497-517`).
+is declared and called (`packages/kernel/src/transport/server.ts`); its
+sole exerciser is INV-T11's test (`packages/kernel/tests/integration/transport.test.ts`).
 `resolveConnection` is likewise referenced only by its implementation and transport tests; the
 current single-workspace host builds `createFileKernel` directly and has no project-host connection
-resolver (`packages/code/src/adapters/workspace-client-manager.ts:32-62`).
+resolver (`packages/code/src/adapters/workspace-client-manager.ts`).
 `KernelOperationMetadata.sensitivity`, the marker that would let a policy tell `secrets.*` from
 `models.get`, is written by the `read()` / `write()` helpers in
 `packages/kernel/src/transport/operations.ts` and carried onto `KernelAuthorizationContext`
-(`packages/kernel/src/transport/server.ts:235`) — and read by nothing. No `src` file in any package
+(`packages/kernel/src/transport/server.ts`) — and read by nothing. No `src` file in any package
 branches on it.
 
-**A `hello` `auth` token is accepted and then dropped.** `auth` is in the special-params allowlist
-(`:331`), is type-checked as a string (`:487`), and is documented on `HelloParams` as "Opaque auth
-token, when the transport requires one" (`packages/kernel/src/transport/wire.ts:92-93`). On the
-`defaultContext` branch nothing reads it (`:498-501`), and `hello` answers with a successful
-`HelloResult` carrying no `principal` (`:508-514`). The client accepts that answer — `principal` is
-optional in its handshake validation (`packages/kernel/src/transport/client.ts:394-395`). A client
+**A `hello` `auth` token is accepted and then dropped.** `auth` is in the special-params allowlist, is type-checked as a string, and is documented on `HelloParams` as "Opaque auth
+token, when the transport requires one" (`packages/kernel/src/transport/wire.ts`). On the
+`defaultContext` branch nothing reads it, and `hello` answers with a successful
+`HelloResult` carrying no `principal`. The client accepts that answer — `principal` is
+optional in its handshake validation (`packages/kernel/src/transport/client.ts`). A client
 that presents a credential therefore cannot distinguish a kernel that authenticated it from one that
-ignored it. **Resolved 2026-08-22**: the code now says. `KernelServerOptions.authorize` and
+ignored it. **Resolved**: the code now says. `KernelServerOptions.authorize` and
 `KernelServerOptions.resolveConnection` each carry a `@remarks` stating that no production host
 supplies one, what that leaves open (`secrets.set` reachable by any connection that completed
 `hello`; a credential accepted, type-checked and dropped), and why it is inert rather than an
@@ -1032,14 +1020,14 @@ the owner's decision and remains open.
 into the wire parameter object — `encode: (name, value) => ({ name, value })` in
 `OPERATIONS.secrets.set` — and `invoke` hands both to `services.secrets.set`, which reaches
 `createFileSecretStore`'s `set`
-(`packages/kernel/src/secrets/secret-store.ts:111-117`) and rewrites the whole file through
-`writeFileAtomicSync` (`:104-106`) at `0o600` inside a `0o700` directory
-(`packages/paths/src/constants.ts:52`, `:40`). No redaction touches it: `sanitizeDeep`/`terminalSafe`
+(`packages/kernel/src/secrets/secret-store.ts`) and rewrites the whole file through
+`writeFileAtomicSync` at `0o600` inside a `0o700` directory
+(`packages/paths/src/constants.ts`). No redaction touches it: `sanitizeDeep`/`terminalSafe`
 are reached only from `safeErrorDetails`, on the outbound **error** path
-(`packages/kernel/src/transport/stdio.ts:348-369`, `:372-381`); request params go to `conn.handle`
-exactly as decoded (`:571-572`); and the one log line about a frame records direction, reason and
-byte count, never content (`:239-247`). The reachability path is the ordinary one: `hello`, then any
-`secrets.set` request frame — INV-T6's pre-`hello` gate (`:426-428`) is the only thing in front of
+(`packages/kernel/src/transport/stdio.ts`); request params go to `conn.handle`
+exactly as decoded; and the one log line about a frame records direction, reason and
+byte count, never content. The reachability path is the ordinary one: `hello`, then any
+`secrets.set` request frame — INV-T6's pre-`hello` gate is the only thing in front of
 it.
 
 **The trust model the code actually implements.** The exposure is bounded by what a peer must
@@ -1047,23 +1035,23 @@ already hold to open a connection at all, and the source states the posture rath
 to inference. `SecretService`'s module doc records both the direction and the deployment it is
 scoped to: "Values only ever flow client → kernel; listing returns names, never values" and "Secrets
 travel over the transport on `set`. That is fine over local stdio (same user/host); a hosted kernel
-needs TLS plus at-rest protection" (`packages/protocol/src/secrets.ts:4-9`). The catalog matches the
+needs TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`). The catalog matches the
 first half — `listNames` / `set` / `delete` and no `get`
 (`OPERATIONS.secrets` in `packages/kernel/src/transport/operations.ts`) — so a peer that can write a secret still
 cannot read one back over the wire.
 
 The second half holds because the wire has exactly one production host. `serveFileKernelOverStdio`
 is the only `createKernelServer` call outside tests and passes `capabilities` alone
-(`packages/kernel/src/serve.ts:105-107`); its streams default to the process's own `process.stdin` /
-`process.stdout` (`:111-112`); and its only caller is the `clarvis-kernel` binary
-(`packages/kernel/src/bin.ts:20`, declared at `packages/kernel/package.json:45`). `packages/kernel/src`
+(`packages/kernel/src/serve.ts`); its streams default to the process's own `process.stdin` /
+`process.stdout`; and its only caller is the `clarvis-kernel` binary
+(`packages/kernel/src/bin.ts`, declared at `packages/kernel/package.json`). `packages/kernel/src`
 contains no socket, listener or HTTP server for this wire, so the peer is whoever was handed that
 process's pipes. Neither client of the kernel uses the transport at all: `@clarvis/code` wraps one
 in-process `createFileKernel` result as a `KernelClient`
-(`packages/code/src/adapters/workspace-client-manager.ts:32-62`) and `@clarvis/server` builds a
-`createFileKernel` directly (`packages/server/src/bin.ts:318`) behind a facade structurally narrowed
+(`packages/code/src/adapters/workspace-client-manager.ts`) and `@clarvis/server` builds a
+`createFileKernel` directly (`packages/server/src/bin.ts`) behind a facade structurally narrowed
 to `runs.start`, with "no reachable path to config, secrets, files or cross-owner run listing"
-(`packages/server/src/host/run-host.ts:7-10`) — §7.2 records that neither package references any
+(`packages/server/src/host/run-host.ts`) — §7.2 records that neither package references any
 transport symbol.
 
 **The accurate statement is therefore the narrow one.** The fail-open default is real, and today it
@@ -1076,7 +1064,7 @@ permitting; neither is required at construction, so `createKernelServer` cannot 
 omits them; and the one machine-readable marker a policy would key on has no reader. A host that
 puts `createKernelServer` behind a socket and forgets either hook gets a fully unauthenticated
 kernel with no construction-time error and no runtime signal — which is the case
-`packages/protocol/src/secrets.ts:8-9` names as needing TLS and at-rest protection, and which
+`packages/protocol/src/secrets.ts` names as needing TLS and at-rest protection, and which
 nothing in the tree builds yet.
 
 ## 7. Coupling
@@ -1086,16 +1074,16 @@ nothing in the tree builds yet.
 | Target | Kind | Forced by |
 | --- | --- | --- |
 | `@clarvis/protocol` (`KernelTransport`, `KernelClient`, all service interfaces, `RunEvent`, `KernelError*`) | type-only | imports in `packages/kernel/src/transport/operations.ts`, `packages/kernel/src/transport/client.ts`, `packages/kernel/src/transport/server.ts`, `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/wire.ts`, `packages/kernel/src/transport/loopback.ts`, and `packages/kernel/src/transport/run-event-codec.ts` — every one is `import type` |
-| `zod` | runtime | `packages/kernel/src/transport/run-event-codec.ts:2` — the only third-party runtime dependency in `transport/` |
-| `@clarvis/capability` (`NOOP_LOGGER`, `Logger`, `sanitizeDeep`, `sanitizeErrorMessage`, `detachObserved`, `suppressSecondaryRejection`) | runtime | `packages/kernel/src/transport/stdio.ts:2`, `packages/kernel/src/transport/server.ts:13`, `packages/kernel/src/transport/client.ts:2`, `packages/kernel/src/transport/loopback.ts:2` |
-| `node:crypto` (`randomUUID`) | runtime | `packages/kernel/src/transport/client.ts:1` |
-| `node:stream` (`Readable`, `Writable`) | type-only | `packages/kernel/src/transport/stdio.ts:1` |
-| `../core/bounded-json.ts` | runtime | `packages/kernel/src/transport/stdio.ts:4` |
-| `../core/errors.ts` (`kernelError`) | runtime | `packages/kernel/src/transport/server.ts:14` |
-| `../core/event-stream.ts` | runtime | `packages/kernel/src/transport/client.ts:30` |
-| `../core/observed.ts` | runtime | `packages/kernel/src/transport/client.ts:3`, `packages/kernel/src/transport/loopback.ts:3` |
-| `../runs/coalesce-events.ts` | runtime | `packages/kernel/src/transport/client.ts:44-51` |
-| `../kernel.ts` (`InProcessKernel`) | **type-only** | `packages/kernel/src/transport/server.ts:12` — the kernel instance arrives as an argument, so `server.ts` holds no runtime edge to kernel composition |
+| `zod` | runtime | `packages/kernel/src/transport/run-event-codec.ts` — the only third-party runtime dependency in `transport/` |
+| `@clarvis/capability` (`NOOP_LOGGER`, `Logger`, `sanitizeDeep`, `sanitizeErrorMessage`, `detachObserved`, `suppressSecondaryRejection`) | runtime | `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/server.ts`, `packages/kernel/src/transport/client.ts`, `packages/kernel/src/transport/loopback.ts` |
+| `node:crypto` (`randomUUID`) | runtime | `packages/kernel/src/transport/client.ts` |
+| `node:stream` (`Readable`, `Writable`) | type-only | `packages/kernel/src/transport/stdio.ts` |
+| `../core/bounded-json.ts` | runtime | `packages/kernel/src/transport/stdio.ts` |
+| `../core/errors.ts` (`kernelError`) | runtime | `packages/kernel/src/transport/server.ts` |
+| `../core/event-stream.ts` | runtime | `packages/kernel/src/transport/client.ts` |
+| `../core/observed.ts` | runtime | `packages/kernel/src/transport/client.ts`, `packages/kernel/src/transport/loopback.ts` |
+| `../runs/coalesce-events.ts` | runtime | `packages/kernel/src/transport/client.ts` |
+| `../kernel.ts` (`InProcessKernel`) | **type-only** | `packages/kernel/src/transport/server.ts` — the kernel instance arrives as an argument, so `server.ts` holds no runtime edge to kernel composition |
 
 `operations.ts` imports the fifteen service interfaces purely as types and derives `KernelServices`
 as a `Pick` of `KernelClient` (`KernelServices` in `packages/kernel/src/transport/operations.ts`). That `Pick` is the type constraint that forces
@@ -1106,9 +1094,9 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 
 | Consumer | Edge |
 | --- | --- |
-| `packages/kernel/src/index.ts:63-87` | re-exports the public surface |
-| `packages/kernel/src/serve.ts:3-4` | `createKernelServer` + `serveKernelOverStdio`, the stdio host |
-| `packages/kernel/src/bin.ts:5` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
+| `packages/kernel/src/index.ts` | re-exports the public surface |
+| `packages/kernel/src/serve.ts` | `createKernelServer` + `serveKernelOverStdio`, the stdio host |
+| `packages/kernel/src/bin.ts` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
 | `tests/contract/*`, `tests/integration/transport.test.ts`, `tests/integration/stdio-transport.test.ts`, `tests/unit/loopback-transport.test.ts` | the only exercisers of the client half in-repo |
 
 `packages/code` and `packages/server` contain **no** reference to `connectKernelClient`,
@@ -1118,28 +1106,28 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 ### 7.3 The direction the code forces
 
 - `transport/` may not import `/adapters/` or `file-kernel`
-  (`packages/kernel/tests/architecture/dependency-direction.test.ts:40-45`), so the wire is composable over any
+  (`packages/kernel/tests/architecture/dependency-direction.test.ts`), so the wire is composable over any
   kernel instance.
 - `server.ts` takes `InProcessKernel` only as a type and reads five members from it —
   `capabilities`, `project`, `workspace`, `operatorServices`, `defaultOwnerServices`
-  (`packages/kernel/src/transport/server.ts:288-293`) — plus `lifecycle.register` (`packages/kernel/src/transport/server.ts:631`, contract at
-  `packages/kernel/src/application/lifecycle.ts:14-25`).
+  (`packages/kernel/src/transport/server.ts`) — plus `lifecycle.register` (`packages/kernel/src/transport/server.ts`, contract at
+  `packages/kernel/src/application/lifecycle.ts`).
 - `client.ts` never imports `server.ts`, and `server.ts` never imports `client.ts`; the two meet only
   through `wire.ts` and `operations.ts`.
-- `loopback.ts` and `stdio.ts` both import `KernelServer` as a **type** (`packages/kernel/src/transport/loopback.ts:4`,
-  `packages/kernel/src/transport/stdio.ts:5`), so a transport can host any structurally compatible server.
+- `loopback.ts` and `stdio.ts` both import `KernelServer` as a **type** (`packages/kernel/src/transport/loopback.ts`,
+  `packages/kernel/src/transport/stdio.ts`), so a transport can host any structurally compatible server.
 
 ## 8. Open questions
 
-~~**A confirmed schema drift: `run_ended.code` is rejected by the client codec.**~~ **Resolved
-2026-08-22.** The diagnosis held exactly as written. The protocol declared `code?: string`
+~~**A confirmed schema drift: `run_ended.code` is rejected by the client codec.**~~ **Resolved.**
+The diagnosis held exactly as written. The protocol declared `code?: string`
 (`run_ended` in `RunEvent`), the kernel's engine mapper emitted it whenever the trace
-entry carried one (`packages/kernel/src/runs/map-events.ts:403-409`), and
+entry carried one (`packages/kernel/src/runs/map-events.ts`), and
 `RUN_EVENT_SCHEMAS.run_ended` was `.strict()` over `type/at/status/reason` alone — so a failed run's
 error code decoded to `null`, the client read that as a protocol violation, and one field nobody had
 ever round-tripped settled every live run `unavailable` and closed the transport. The
 `RUN_EVENT_SCHEMAS.run_ended` schema now declares `code: text.optional()`, and
-`packages/kernel/tests/contract/transport-codecs.test.ts:377` — "carries a failed run's error code
+`packages/kernel/tests/contract/transport-codecs.test.ts` — "carries a failed run's error code
 instead of killing the connection" — holds both halves: the event survives `decodeRunEvent`
 unchanged, and the transport's `closeCount` stays `0`. The field's own remark now states what it is
 for (`run_ended.code` in `RunEvent`): a resumed session is rebuilt from the persisted trace
@@ -1160,7 +1148,7 @@ The trap for whoever edits that type next is recorded on `RunEventVariant`.
 and it is the wrong one: a member may declare a *union* discriminator, a union is not assignable to
 one of its own literals, so `Extract` answers `never`, `keyof never` widens to
 `string | number | symbol`, and the guard reports drift on a variant that has none. `RunEventVariant`
-(`:435`-`:441`) asks instead whether `K` is one of the member's own types, which is the question that
+ asks instead whether `K` is one of the member's own types, which is the question that
 survives a shared member. One correction to that remark, which names two such members: `RunEvent`
 carries exactly one today — `delegation_completed | delegation_failed`
 (`RunEvent` in `packages/protocol/src/runs.ts`). The "workflow pair" it also names does not exist; every
@@ -1169,17 +1157,17 @@ gives each its own schema. The trap is real and the guard is right to avoid `Ext
 count is off.
 
 **`notify`'s cross-transport asymmetry is dead surface, not an undecided design.** `createStdioTransport.notify`
-writes a `note` frame (`packages/kernel/src/transport/stdio.ts:492-495`) that `serveKernelOverStdio` discards, because it
-only handles `cancel` and `req` (`packages/kernel/src/transport/stdio.ts:560-564`, itself documented: "Non-`req` frames on the
+writes a `note` frame (`packages/kernel/src/transport/stdio.ts`) that `serveKernelOverStdio` discards, because it
+only handles `cancel` and `req` (`packages/kernel/src/transport/stdio.ts`, itself documented: "Non-`req` frames on the
 input are ignored"). `createLoopbackTransport.notify` instead dispatches straight into `conn.handle`
-(`packages/kernel/src/transport/loopback.ts:57-62`) — the *same* dispatch path `request()` uses — so, unlike stdio, it would
+(`packages/kernel/src/transport/loopback.ts`) — the *same* dispatch path `request()` uses — so, unlike stdio, it would
 actually execute whatever real `KernelServer` operation the method name happens to name, with side
 effects, before discarding the result. This is a genuinely divergent implementation of one interface
 member, but it has no live consequence today: a repo-wide search of `packages/kernel/src`,
 `packages/code/src` and `packages/server/src` for a client-side call to `KernelTransport.notify`
 (as opposed to the unrelated `deps.notify`/UI toast helper of the same name in `@clarvis/code`, or the
-*server-side* `notifications.notify` used to push `run.event`/`config.change`/etc. — `packages/kernel/src/transport/server.ts:365-584`)
-finds none; the only exerciser is `packages/kernel/tests/unit/loopback-transport.test.ts:27`'s isolated unit test. §7 of
+*server-side* `notifications.notify` used to push `run.event`/`config.change`/etc. — `packages/kernel/src/transport/server.ts`)
+finds none; the only exerciser is `packages/kernel/tests/unit/loopback-transport.test.ts`'s isolated unit test. §7 of
 this document already establishes that `connectKernelClient`/`createLoopbackTransport`/`createStdioTransport`
 are used only by kernel tests, with no in-repo production consumer at all — so this is not two live
 readings of an intended feature; it is two independently-written implementations of an unused
@@ -1196,17 +1184,17 @@ arbitrary asymmetry.** `run.event` is validated by a strict `zod` discriminated-
 `RunEvent` union). `config.change` applies `hasOnly` to its nested payload because `ConfigChange` is a
 closed, fixed-key shape over a closed enum (`ConfigChangeKind`, `packages/protocol/src/config.ts`).
 `run.elicitation` applies `hasOnly` only at the top level and checks four scalar fields of `request`
-without constraining its key set (`packages/kernel/src/transport/client.ts:292-301`) precisely because `ElicitationRequest`
+without constraining its key set (`packages/kernel/src/transport/client.ts`) precisely because `ElicitationRequest`
 is declared open on purpose: `kind` is `"ask_user" | "guard_confirm" | "plan_review" | "workflow_review"
-| (string & {})`, documented "so a kernel may add kinds without a protocol bump"
+| (string & {})`, documented "so a kernel may add kinds without a protocol bump" |
 (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
-Schema passed through opaquely" (`packages/protocol/src/common.ts:82-83`). Applying a closed `hasOnly` to `request`
+Schema passed through opaquely" (`packages/protocol/src/common.ts`). Applying a closed `hasOnly` to `request`
 today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
 was made open for — so the omission is the correct reading, not an arbitrary weakening.
 
 ~~**One narrower residual is not explained by either the open-`kind` or opaque-`schema` reasoning:
-`ElicitationRequest.detail` gets no structural check at all — not even `isRecord`.**~~ **Resolved
-2026-08-22.** The residual was correctly identified, and the argument for closing it was weaker than
+`ElicitationRequest.detail` gets no structural check at all — not even `isRecord`.**~~ **Resolved.**
+The residual was correctly identified, and the argument for closing it was weaker than
 the case deserved. `detail` (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`, carrying
 `command`/`cwd`/`reason`/`warning?`) shares neither property that keeps the request around it open,
 so a nested `hasOnly` costs nothing in forward-compatibility — but "it costs nothing" is not why it
@@ -1214,19 +1202,19 @@ has to be there. `detail` is what a human reads when approving a command, and it
 to render it directly rather than parse `prompt`, so a `detail` whose `command` is absent
 or not a string reaches an approval dialog as `undefined` and the approval is then given for a
 command nobody was shown. That is the reasoning now recorded at `isCommandDetail`
-(`packages/kernel/src/transport/client.ts:273-283`), which checks the closed key set and every
-member's type (`:283-289`) and is consulted only when `detail` is present (`:299`). `kind` and
+(`packages/kernel/src/transport/client.ts`), which checks the closed key set and every
+member's type and is consulted only when `detail` is present. `kind` and
 `schema` stay untouched, for exactly the reasons above. Five malformed shapes — not a record, a
 missing `command`, a non-string `command`, a non-string `warning`, an unknown key — close the
 transport fail-closed under `it.each` at
-`packages/kernel/tests/contract/transport-codecs.test.ts:455` ("closes fail-closed on a
-guard_confirm detail with %s"), with a well-formed `detail` delivered intact at `:381` and a
-control at `:440` asserting that an unknown `kind` and an opaque `schema` still pass through
+`packages/kernel/tests/contract/transport-codecs.test.ts` ("closes fail-closed on a
+guard_confirm detail with %s"), with a well-formed `detail` delivered intact and a
+control asserting that an unknown `kind` and an opaque `schema` still pass through
 unexamined.
 
 **`transport.frame_dropped` with `reason: "serialization"` is unpinned.** It is emitted at
-`packages/kernel/src/transport/stdio.ts:288` and is the only one of the six reasons absent from the drop-reason suite
-(`packages/kernel/tests/contract/stdio-codec.test.ts:313-370`). INV-210 covers the *behaviour* (a clean
+`packages/kernel/src/transport/stdio.ts` and is the only one of the six reasons absent from the drop-reason suite
+(`packages/kernel/tests/contract/stdio-codec.test.ts`). INV-210 covers the *behaviour* (a clean
 `unavailable`) but not the log record.
 
 **`decodeOperationParams` validates only the key set** — it checks no required key is missing and no
@@ -1235,13 +1223,13 @@ value's type; `invoke` then casts (`decodeOperationParams` and `OPERATIONS` in
 remain responsible for their nested DTOs" is not merely asserted: it is verified true
 for at least two representative operations, one on each side of the read/write split. `runs.start`'s
 `invoke` passes the cast params straight into `startReserved` → `assembleRunRequest` →
-`executeRun({ rawBody, … })` (`packages/kernel/src/runs/run-service.ts:103-107`), and `executeRun` calls
+`executeRun({ rawBody, … })` (`packages/kernel/src/runs/run-service.ts`), and `executeRun` calls
 `validateBody(rawBody, deps.env, requestRegistry)` before doing anything else with it
-(`packages/loop/src/runtime/execute-run.ts:298`) — a real schema pass, exercised by
+(`packages/loop/src/runtime/execute-run.ts`) — a real schema pass, exercised by
 `packages/loop/tests/component/request-schema-facade.test.ts` and others. `config.updateSettings`'s
 `invoke` reaches `ConfigService.updateSettings`, whose merge closure runs
 `kernelSettingsSchema.safeParse(next)` and throws `invalid_request` on failure
-(`packages/kernel/src/config/config-service.ts:428-438`). So the two-layer design the TSDoc describes is real,
+(`packages/kernel/src/config/config-service.ts`). So the two-layer design the TSDoc describes is real,
 not aspirational: the transport layer's job is exactly and only the closed top-level envelope (which
 `decodeOperationParams` does check), and the domain service one layer down is where wrong-typed values
 are actually rejected — with its own dedicated tests, not the transport's. No test *at the
@@ -1252,22 +1240,21 @@ whether such validation happens at all.
 **The `MAX_NOTIFICATION_QUEUE_BYTES` (16 MiB) vs. `MAX_WIRE_FRAME_BYTES` (8 MiB) gap is not a
 coordinated ratio between comparable bounds** — the two constants are scoped to different layers with
 different jobs, which is why nothing pins a 2× relationship between them. `MAX_WIRE_FRAME_BYTES`
-(`packages/kernel/src/transport/stdio.ts:42`) is the stdio wire's universal per-frame ceiling, applied identically to
-every frame type — `req`, `res` and `note` alike (`:185-200` on read, `:293` on write) — because it
+(`packages/kernel/src/transport/stdio.ts`) is the stdio wire's universal per-frame ceiling, applied identically to
+every frame type — `req`, `res` and `note` alike ( on read on write) — because it
 bounds what a single NDJSON line may cost to buffer and parse. `MAX_NOTIFICATION_QUEUE_BYTES`
-(`packages/kernel/src/transport/server.ts:35`) instead bounds the **notification backpressure channel's cumulative
-pending backlog** — `pendingBytes + bytes > MAX_NOTIFICATION_QUEUE_BYTES` (`:157`) sums *every still-undelivered*
+(`packages/kernel/src/transport/server.ts`) instead bounds the **notification backpressure channel's cumulative
+pending backlog** — `pendingBytes + bytes > MAX_NOTIFICATION_QUEUE_BYTES` sums *every still-undelivered*
 notification, not just the one being enqueued — and this channel is shared verbatim by both
 transports: loopback has no wire frame, no buffer, and no `MAX_WIRE_FRAME_BYTES` concept at all
-(`packages/kernel/src/transport/loopback.ts:36-39` dispatches synchronously into `conn.handle`, no serialization step), so the
+(`packages/kernel/src/transport/loopback.ts` dispatches synchronously into `conn.handle`, no serialization step), so the
 notification channel's own byte cap is the *only* size bound loopback ever applies. Setting it to
 match the stdio-specific wire cap would import an 8 MiB ceiling with no wire underneath it to justify.
 The one place the gap has an observable, if minor, consequence: over stdio, a single notification
-between 8 and 16 MiB passes the `notify()`-level admission check (`bytes > MAX_NOTIFICATION_QUEUE_BYTES`,
-`:155`, false) and is queued, occupying backpressure budget, before failing later when `drain()`
+between 8 and 16 MiB passes the `notify()`-level admission check (`bytes > MAX_NOTIFICATION_QUEUE_BYTES`, false) and is queued, occupying backpressure budget, before failing later when `drain()`
 reaches it and the stdio writer's own `MAX_WIRE_FRAME_BYTES` check rejects it
-(`packages/kernel/src/transport/stdio.ts:293-295`) — rather than being rejected immediately at `notify()` time with
-"notification backpressure queue is full" (`packages/kernel/src/transport/server.ts:158`). Both paths still fail the
+(`packages/kernel/src/transport/stdio.ts`) — rather than being rejected immediately at `notify()` time with
+"notification backpressure queue is full" (`packages/kernel/src/transport/server.ts`). Both paths still fail the
 connection; only the failure's timing and reported reason differ.
 
 **Not exercised by any in-repo consumer.** `connectKernelClient`, `createLoopbackTransport` and

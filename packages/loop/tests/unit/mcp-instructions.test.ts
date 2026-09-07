@@ -45,4 +45,15 @@ describe("MCP initialize instructions", () => {
     expect(renderMcpInstructions([opened("empty")])).toBeUndefined();
     expect(createMcpInstructionsRunCapability([opened("empty")])).toBeUndefined();
   });
+
+  it("exposes a rendered section through a prompt-only run capability", () => {
+    const capability = createMcpInstructionsRunCapability([
+      opened("docs", "Search before answering."),
+    ]);
+    expect(capability).toMatchObject({ name: "mcp-instructions" });
+    expect(capability?.systemSection?.({ agent: "subagent", entry: true, grants: [] })).toContain(
+      "Search before answering.",
+    );
+    expect(capability?.forAgent({ agent: "subagent", entry: true, grants: [] })).toBeNull();
+  });
 });

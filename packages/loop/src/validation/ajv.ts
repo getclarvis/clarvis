@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
-import type { ErrorObject, Options, ValidateFunction } from "ajv";
+import type { Ajv, ErrorObject, Options, ValidateFunction } from "ajv";
+import type { FormatsPlugin } from "ajv-formats";
 
 /**
  * The narrow slice of Ajv's surface this module exposes: compiling a JSON Schema
@@ -17,8 +18,8 @@ export interface AjvInstance {
 }
 
 interface AjvModules {
-  Ajv: new (opts?: Options) => AjvInstance;
-  addFormats: (ajv: AjvInstance) => unknown;
+  readonly Ajv: typeof Ajv;
+  readonly addFormats: FormatsPlugin;
 }
 
 let modules: AjvModules | undefined;
@@ -39,11 +40,28 @@ function load(): AjvModules {
   if (modules === undefined) {
     const require = createRequire(import.meta.url);
     modules = {
-      Ajv: require("ajv") as new (opts?: Options) => AjvInstance,
-      addFormats: require("ajv-formats") as (ajv: AjvInstance) => unknown,
+      Ajv: require("ajv") as typeof Ajv,
+      addFormats: require("ajv-formats") as FormatsPlugin,
     };
   }
   return modules;
+}
+
+/**
+ * Supply statically bundled Ajv modules to a standalone composition root.
+ *
+ * @param bundledModules - the exact modules included by the standalone build entry.
+ * @throws when dependency resolution already happened or a composition root tries
+ *   to replace an earlier installation.
+ * @remarks This source-internal seam lets a compiled executable close over its
+ *   dependency graph without changing the normal host contract: ordinary imports
+ *   still defer both module resolution and instance construction until first use.
+ */
+export function installBundledAjvModules(bundledModules: AjvModules): void {
+  if (modules !== undefined) {
+    throw new Error("Ajv runtime modules are already installed");
+  }
+  modules = bundledModules;
 }
 
 /**

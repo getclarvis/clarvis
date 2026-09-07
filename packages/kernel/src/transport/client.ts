@@ -285,7 +285,8 @@ export async function connectKernelClient(
       typeof params.request.execution_id !== "string" ||
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
-      (params.request.detail !== undefined && !isCommandDetail(params.request.detail))
+      (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
+      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
     ) {
       protocolViolation("invalid run.elicitation notification");
       return;
@@ -335,11 +336,58 @@ export async function connectKernelClient(
     }
     throw error;
   }
+  const runtime =
+    isRecord(hello) && isRecord(hello.capabilities) ? hello.capabilities.runtime : undefined;
+  const validRuntime =
+    runtime === undefined ||
+    (isRecord(runtime) &&
+      ((runtime.kind === "native" &&
+        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle", "fallback_from"]) &&
+        typeof runtime.host_platform === "string" &&
+        (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
+        (runtime.lifecycle === "ready" || runtime.lifecycle === "fallback") &&
+        (runtime.fallback_from === undefined ||
+          runtime.fallback_from === "docker" ||
+          runtime.fallback_from === "podman")) ||
+        (runtime.kind === "container" &&
+          hasOnly(runtime, [
+            "kind",
+            "generation",
+            "engine",
+            "engine_version",
+            "host_platform",
+            "guest_platform",
+            "image_digest",
+            "runtime_protocol_revision",
+            "network",
+            "lifecycle",
+          ]) &&
+          (runtime.engine === "podman" || runtime.engine === "docker") &&
+          typeof runtime.host_platform === "string" &&
+          runtime.guest_platform === "linux" &&
+          (runtime.generation === undefined || typeof runtime.generation === "string") &&
+          (runtime.engine_version === undefined || typeof runtime.engine_version === "string") &&
+          (runtime.image_digest === undefined || typeof runtime.image_digest === "string") &&
+          (runtime.runtime_protocol_revision === undefined ||
+            typeof runtime.runtime_protocol_revision === "string") &&
+          ["none", "internet", "outbound"].includes(String(runtime.network)) &&
+          [
+            "cold",
+            "inspecting",
+            "preparing",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "disconnected",
+            "failed",
+          ].includes(String(runtime.lifecycle)))));
   if (
     !isRecord(hello) ||
     !hasOnly(hello, ["wire_version", "capabilities", "project", "workspace", "principal"]) ||
     hello.wire_version !== CLARVIS_WIRE_VERSION ||
     !isRecord(hello.capabilities) ||
+    !validRuntime ||
     !isRecord(hello.project) ||
     !isRecord(hello.workspace) ||
     typeof hello.project.id !== "string" ||

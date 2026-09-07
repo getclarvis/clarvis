@@ -199,6 +199,23 @@ It is absent for older and unguarded calls and is part of replay when present.
   actor, execution identity and the provider idempotency key.
 - Optional features are announced through `KernelCapabilities`.
 
+## Runtime projection
+
+The optional handshake runtime projection reports effective native or container placement. Native
+status identifies Host versus Sandbox and whether Docker fell back; container status always reports
+the engine, Linux guest, effective network and lifecycle, while generation, engine version, image
+digest and private protocol revision appear once known. It is informational only: runtime selection
+and the private guest protocol remain host/kernel contracts.
+
+`SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` input plus advanced
+overrides, while Podman remains fully explicit. Omitted Docker fields receive host-owned defaults;
+an omitted network selects ordinary routable `outbound` access. The optional Docker `recipe` DTO
+carries only a safe name, an absolute script path under the global operator recipe directory and
+optional `none`/`outbound` build networking; it is operator configuration, not a guest grant or an
+image-build protocol operation. `RuntimeStatus.network` is never omitted for a container because it
+reports the effective policy; `outbound` may reach host/LAN peers and must not be presented as
+public-only internet access.
+
 ## Development
 
 The package has no runtime behavior to execute. Its contract suite is compile-time only:

@@ -1,0 +1,70 @@
+# syntax=docker/dockerfile:1
+
+ARG RUNTIME_ARTIFACT=ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:0000000000000000000000000000000000000000000000000000000000000000
+ARG BASE_IMAGE=docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+
+FROM ${BASE_IMAGE} AS mise
+
+ARG MISE_VERSION=2026.8.2
+ARG MISE_SHA256_AMD64=62899928f45a7d8e623f30663f490b0dbc90c4e1fc8935863b87c56626cf5950
+ARG MISE_SHA256_ARM64=aa47c61c3de911ece9e8d4486495370f9600d0b4d767de004eb5380b0906be78
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+    && case "$(dpkg --print-architecture)" in \
+      amd64) mise_arch=x64; mise_sha256="$MISE_SHA256_AMD64" ;; \
+      arm64) mise_arch=arm64; mise_sha256="$MISE_SHA256_ARM64" ;; \
+      *) echo "unsupported mise architecture" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL \
+      "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-${mise_arch}.tar.xz" \
+      -o /tmp/mise.tar.xz \
+    && echo "$mise_sha256  /tmp/mise.tar.xz" | sha256sum -c - \
+    && mkdir -p /out \
+    && tar -xJf /tmp/mise.tar.xz -C /out --strip-components=2 mise/bin/mise \
+    && tar -xJf /tmp/mise.tar.xz -C /out --strip-components=1 mise/LICENSE \
+    && chmod 0555 /out/mise
+
+FROM ${RUNTIME_ARTIFACT} AS runtime
+
+FROM ${BASE_IMAGE}
+
+ARG RUNTIME_ARTIFACT
+ARG RUNTIME_VERSION
+ARG SOURCE_REVISION
+ARG DEVELOPMENT=false
+ARG MISE_VERSION=2026.8.2
+
+LABEL org.opencontainers.image.title="Clarvis isolated runtime" \
+      org.opencontainers.image.description="Headless Clarvis agent runtime" \
+      org.opencontainers.image.source="https://github.com/getclarvis/clarvis" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${RUNTIME_VERSION}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      io.clarvis.runtime="true" \
+      io.clarvis.runtime.protocol="5" \
+      io.clarvis.runtime.artifact="${RUNTIME_ARTIFACT}" \
+      io.clarvis.runtime.development="${DEVELOPMENT}" \
+      io.clarvis.runtime.mise="${MISE_VERSION}"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && git --version
+
+COPY --from=mise --chmod=0555 /out/mise /usr/local/bin/mise
+COPY --from=mise /out/LICENSE /usr/share/licenses/mise/LICENSE
+COPY --from=runtime --chmod=0555 /clarvis-runtime /usr/local/bin/clarvis-runtime
+COPY --from=runtime /licenses /usr/share/licenses/clarvis
+
+RUN MISE_QUIET=1 mise --version
+
+ENV HOME=/tmp/clarvis-runtime \
+    MISE_QUIET=1 \
+    MISE_DATA_DIR=/mise \
+    MISE_CACHE_DIR=/mise/cache \
+    MISE_CONFIG_DIR=/mise/config \
+    MISE_STATE_DIR=/mise/state \
+    PATH=/mise/shims:${PATH}
+WORKDIR /workspace
+ENTRYPOINT ["/usr/local/bin/clarvis-runtime"]

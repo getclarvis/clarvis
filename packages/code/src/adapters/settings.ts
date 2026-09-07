@@ -12,6 +12,7 @@ import {
 } from "@clarvis/kernel/config";
 import type {
   ConfigService,
+  RuntimeConfig,
   SandboxInspection,
   SettingsData,
   SettingsRepairPlan,
@@ -82,6 +83,11 @@ function noteUnparsedModelRef(site: string, error: unknown): void {
 
 export { mergeProviders, mergeSettings };
 export type { SettingsFile } from "@clarvis/kernel/config";
+
+/** Settings patch accepted by the UI, including minimal Docker input before kernel defaults. */
+export type SettingsPatch = Partial<Omit<SettingsFile, "runtime">> & {
+  runtime?: RuntimeConfig;
+};
 
 /** The planning settings shape consumed by Code configuration surfaces. */
 export type PlansSettingsBlock = NonNullable<SettingsFile["plans"]>;
@@ -170,7 +176,7 @@ export interface SettingsAdapter {
    */
   knownGrants(): readonly string[] | undefined;
   sources(): { global: string; workspace?: string };
-  write(scope: Scope, patch: Partial<SettingsFile>): Promise<void>;
+  write(scope: Scope, patch: SettingsPatch): Promise<void>;
   validateProviders(
     s: SettingsFile,
     resolveAgainst?: ProviderConfig[],
@@ -392,7 +398,7 @@ export async function createSettingsAdapter(
     }
   }
 
-  function write(scope: Scope, patch: Partial<SettingsFile>): Promise<void> {
+  function write(scope: Scope, patch: SettingsPatch): Promise<void> {
     const stagedPatch = structuredClone(patch);
     const keys = Object.keys(stagedPatch).sort().join(",");
     return publishInOrder(async () => {
@@ -404,7 +410,7 @@ export async function createSettingsAdapter(
         );
       }
       const current = read(scope) ?? {};
-      const next: SettingsFile = { ...current, ...stagedPatch };
+      const next = { ...current, ...stagedPatch };
       const validated = kernelSettingsSchema.safeParse(next);
       if (!validated.success) {
         rejectSave(scope, validated.error.issues.length, issueFields(validated.error), "invalid");

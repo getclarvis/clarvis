@@ -46,21 +46,20 @@ export function createElicitBridge(executionId: string): ElicitBridge {
     }
   };
 
-  const elicit: Elicit = (params, opts) =>
+  const enqueue = (
+    request: Omit<ElicitationRequest, "id" | "execution_id">,
+    signal?: AbortSignal,
+  ): Promise<ElicitRawResult> =>
     new Promise<ElicitRawResult>((resolve) => {
       const id = `${executionId}:elicit:${seq++}`;
-      const { detail } = params as GuardElicitParams;
       const req: ElicitationRequest = {
         id,
         execution_id: executionId,
-        kind: params.kind ?? "ask_user",
-        prompt: params.message,
-        schema: params.requestedSchema as unknown as Record<string, unknown>,
-        ...(detail !== undefined ? { detail } : {}),
+        ...request,
       };
       pending.set(id, { request: req, resolve });
       for (const h of handlers) deliver(h, req);
-      opts.signal?.addEventListener("abort", () => {
+      signal?.addEventListener("abort", () => {
         const item = pending.get(id);
         if (item !== undefined) {
           pending.delete(id);
@@ -68,6 +67,19 @@ export function createElicitBridge(executionId: string): ElicitBridge {
         }
       });
     });
+
+  const elicit: Elicit = (params, opts) => {
+    const { detail } = params as GuardElicitParams;
+    return enqueue(
+      {
+        kind: params.kind ?? "ask_user",
+        prompt: params.message,
+        schema: params.requestedSchema as unknown as Record<string, unknown>,
+        ...(detail !== undefined ? { detail } : {}),
+      },
+      opts.signal,
+    );
+  };
 
   return {
     elicit,

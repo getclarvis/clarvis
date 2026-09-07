@@ -1,4 +1,4 @@
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import { generateExecutionId } from "@clarvis/trace";
 import type {
   Page,
@@ -20,11 +20,21 @@ import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import type { SteerQueue } from "./steer-queue.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
  */
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
+
+/** Placement-neutral execution port; native remains the lazy default. */
+export type RunExecutorArgs = Omit<ExecuteRunArgs, "steer"> & {
+  /** Kernel queues transfer acknowledgements across placement without prematurely draining them. */
+  readonly steer?: NonNullable<ExecuteRunArgs["steer"]> & Partial<Pick<SteerQueue, "take">>;
+  /** Host-admitted parent whose same-guest child composition owns this run's controls and budget. */
+  readonly runtimeParentRunId?: string;
+};
+export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
 
 /** Configuration for {@link createRunService}. */
 export interface RunServiceConfig {
@@ -64,6 +74,8 @@ export interface RunServiceConfig {
   lifecycle?: KernelLifecycle;
   /** Where an event with no protocol projection is reported. */
   logger?: Logger;
+  /** Executes the loop natively or through an explicitly configured isolated runtime. */
+  executeRun?: RunExecutor;
 }
 
 /**
@@ -111,7 +123,9 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
         const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
-        const { executeRun } = await import("@clarvis/loop");
+        const executeRun =
+          cfg.executeRun ??
+          (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
         const outcome = await executeRun({
           rawBody,
           owner,

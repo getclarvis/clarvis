@@ -17,6 +17,9 @@ export const CLARVIS_DIR = ".clarvis";
  */
 export const AGENTS_DIR = ".agents";
 
+/** Git metadata entry used when classifying a workspace or linked worktree. */
+export const GIT_DIR = ".git";
+
 /**
  * The directory a plugin marketplace's listings live under, inside
  * {@link AGENTS_DIR}.
@@ -91,7 +94,7 @@ export const CONTEXT_FILENAMES: readonly string[] = ["CLARVIS.md", "AGENTS.md"];
  * not because they drifted.
  */
 export const INTERNAL_SKIP_DIRS: readonly string[] = [
-  ".git",
+  GIT_DIR,
   "node_modules",
   "dist",
   CLARVIS_DIR,
@@ -107,4 +110,4 @@ export const INTERNAL_SKIP_DIRS: readonly string[] = [
  * {@link AGENTS_DIR} is deliberately absent: it is the user's own content, and
  * `grep`/`glob` are expected to see it.
  */
-export const INTERNAL_IGNORE_PATTERNS: readonly string[] = [".git", CLARVIS_DIR, TMP_GLOB];
+export const INTERNAL_IGNORE_PATTERNS: readonly string[] = [GIT_DIR, CLARVIS_DIR, TMP_GLOB];

@@ -183,14 +183,14 @@ test("keyboard profiles persist globally by opaque environment id and preserve U
       profile: "manual",
       clientPlatform: "macos",
       verdicts: { super: "supported" },
-      bindings: { "safety.picker": ["f8"] },
+      bindings: { "isolation.picker": ["f8"] },
     });
 
     expect(code.keyboardConfig().environments[environmentId]).toEqual({
       profile: "manual",
       clientPlatform: "macos",
       verdicts: { super: "supported" },
-      bindings: { "safety.picker": ["f8"] },
+      bindings: { "isolation.picker": ["f8"] },
     });
     expect(readCfg(dirs.global.codeConfigFile).ui?.ascii).toBe(false);
     expect(readCfg(dirs.state.codeConfigFile).ui?.keyboard).toBeDefined();

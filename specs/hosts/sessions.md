@@ -7,10 +7,10 @@
 
 ## 1. Purpose
 
-A `Session` (`packages/protocol/src/sessions.ts:68`) is a conversation index: an ordered list of
+A `Session` (`packages/protocol/src/sessions.ts`) is a conversation index: an ordered list of
 turns, each optionally pointing at a run (`execution_id`) whose full transcript lives in the runs
 service, plus running token/cost totals and any not-yet-delivered "pending" observations
-(`packages/protocol/src/sessions.ts:84-88`). The session document itself never carries the
+(`packages/protocol/src/sessions.ts`). The session document itself never carries the
 transcript — only enough to look up and re-render it. Each turn may also carry the id and fingerprint
 of the resolved [Extension Profile](extension-profiles.md) under which it began; this is historical
 identity, not a request to reactivate that Extension Profile during resume.
@@ -53,7 +53,7 @@ does not define a renderer commit boundary.
 ### `SessionService` (kernel-side, `packages/protocol/src/sessions.ts`, symbol `SessionService`)
 
 | Method | Signature | Declaration |
-|---|---|---|
+| --- | --- | --- |
 | `listPage` | `(page?: CursorPagination) => Promise<CursorPage<SessionSummary>>` | `SessionService.listPage` |
 | `list` | `() => Promise<Session[]>` | `SessionService.list` |
 | `get` | `(id: string) => Promise<Session \| null>` | `SessionService.get` |
@@ -77,33 +77,33 @@ the wire-level `CursorPagination` DTO never grows a `signal` field.
 ### Wire methods (`OPERATIONS.sessions` in `packages/kernel/src/transport/operations.ts`)
 
 | Method | Access | Encode | Cite |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `sessions.listPage` | read | `{ page }` | `OPERATIONS.sessions.listPage` |
 | `sessions.list` | read | `{}` | `OPERATIONS.sessions.list` |
 | `sessions.get` | read | `{ id }` | `OPERATIONS.sessions.get` |
 | `sessions.save` | write | `{ session }` | `OPERATIONS.sessions.save` |
 | `sessions.delete` | write | `{ id }` | `OPERATIONS.sessions.delete` |
 
-`packages/code/src/adapters/kernel-run-client.ts:504-510` is a bare passthrough of these five
+`packages/code/src/adapters/kernel-run-client.ts` is a bare passthrough of these five
 methods onto `requireKernel().sessions`, exposed on the client at `sessions`
-(`packages/code/src/adapters/kernel-run-client.ts:112,581`).
+(`packages/code/src/adapters/kernel-run-client.ts`).
 
 ### `Session` / `SessionSummary` DTOs (`packages/protocol/src/sessions.ts`)
 
 ```ts
-interface Session {                       // packages/protocol/src/sessions.ts:68
+interface Session {                       // packages/protocol/src/sessions.ts
   id: string; title: string; project_id: string; workspace: string;
   created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turns: SessionTurn[]; totals: SessionTotals; pending?: Message[];
 }
-interface SessionTurn {                   // packages/protocol/src/sessions.ts:44
+interface SessionTurn {                   // packages/protocol/src/sessions.ts
   kind: "conversation"|"transcript";
   user_preview: string; execution_id?: string;
   extension_profile?: ExtensionProfileRunRef;
   status: "pending"|"running"|"done"|"error"|"cancelled"|"interrupted";
   started_at?: Timestamp; ended_at?: Timestamp;
 }
-interface SessionSummary {                // packages/protocol/src/sessions.ts:92 — never carries turns/pending
+interface SessionSummary {                // packages/protocol/src/sessions.ts — never carries turns/pending
   id: string; title: string; project_id: string; workspace: string;
   created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turn_count: number; last_status?: SessionTurnStatus;
@@ -130,18 +130,18 @@ createSessionService(opts: {
 ### Code-side session functions covered by this document
 
 | Symbol | Signature | Cite |
-|---|---|---|
+| --- | --- | --- |
 | `resumeSession` | `(meta, deps: ResumeDeps, opts?: ResumeOptions) => Promise<ResumedSession>` | `packages/code/src/adapters/session.ts` (`resumeSession`) |
 | `deleteSession` | `(meta, store: SessionStore, deleteRun: (id) => Promise<boolean>) => Promise<{session, traces}>` | `packages/code/src/adapters/session.ts` (`deleteSession`) |
 | `buildRecoveredContext` | `(events, planRef?, selectedPlanProviderKey?) => string \| null` | `packages/code/src/adapters/session.ts` (`buildRecoveredContext`) |
 | `createSession` | `(deps: SessionDeps, init?: SessionInit) => Session` (the code-side turn tracker, distinct name from the protocol DTO) | `packages/code/src/adapters/session.ts` (`createSession`) |
 | `isContinuationUnavailable` | `(envelope: RunResult \| undefined) => boolean` | `packages/code/src/adapters/session.ts` (`isContinuationUnavailable`) |
 
-### CLI surface touching sessions (declared at `packages/code/src/cli-args.ts:85-88`)
+### CLI surface touching sessions (declared at `packages/code/src/cli-args.ts`)
 
 | Flag | Value | Cite (behavior) |
-|---|---|---|
-| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1418-1433`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
+| --- | --- | --- |
+| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
 | `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight; interactive resume resolves the same metadata in `runApp` (`packages/code/src/runtime.tsx`) |
 | `--list` | — | `runListMode`, `packages/code/src/runtime.tsx` |
 | `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/runtime.tsx` |
@@ -162,11 +162,11 @@ For an owner-scoped `SessionService` built with `dir`/`owner`, files live under:
 
 `ownerDir = join(globalPaths(opts.dir).sessionsDir, ownerSegment(opts.owner))`
 (`createSessionService` in `packages/kernel/src/sessions/session-service.ts`); `globalPaths(...).sessionsDir` is `join(base, "state", "sessions")`
-(`packages/paths/src/global.ts:130`, with `state = join(base, "state")` at `packages/paths/src/global.ts:109`).
+(`packages/paths/src/global.ts`, with `state = join(base, "state")` at `packages/paths/src/global.ts`).
 `fileFor`/`summaryFor` append `${ownerSegment(id)}.json` / `.summary.json`
 (`fileFor` and `summaryFor` in `packages/kernel/src/sessions/session-service.ts`). `ownerSegment` percent-encodes an arbitrary string into one safe
 path segment, or falls back to `h_<sha256hex>` past a 200-byte encoded length
-(`packages/paths/src/roots.ts:130,139-144,163-168`) — so an owner or session id of unbounded length
+(`packages/paths/src/roots.ts`) — so an owner or session id of unbounded length
 or containing `/`/`.`/`..` cannot escape the owner directory or collide with a sibling segment.
 
 Both files are written with `writeFileAtomicSync` — tmp file + `rename`, **no `fsync`**
@@ -174,13 +174,13 @@ Both files are written with `writeFileAtomicSync` — tmp file + `rename`, **no 
 `durable = false`) — so a concurrent reader observes either the old file or the complete new one,
 never a partial write, but a power loss can still lose the write entirely (`save` in
 `packages/kernel/src/sessions/session-service.ts`). The `fsync`-of-payload-plus-directory-`fsync` variant is a **separate** function,
-`writeFileDurableSync` (`packages/paths/src/atomic.ts:513-519`), whose doc remark (`packages/paths/src/atomic.ts:481-497`) states this
+`writeFileDurableSync` (`packages/paths/src/atomic.ts`), whose doc remark (`packages/paths/src/atomic.ts`) states this
 durability guarantee is why it is "a separate function rather than a flag" on `writeFileAtomic`.
 `session-service.ts` imports and calls only `writeFileAtomicSync` (the import and `save` in
 `packages/kernel/src/sessions/session-service.ts`)
 and never calls `writeFileDurableSync`.
 
-### Example `Session` document (from the test fixture, `packages/kernel/tests/integration/session-service.test.ts:11-22`)
+### Example `Session` document (from the test fixture, `packages/kernel/tests/integration/session-service.test.ts`)
 
 ```json
 {
@@ -208,7 +208,7 @@ two representations at the storage boundary:
   `started_at`, `ended_at`, `cost_usd`) field by field, each optional field present only when its
   source has it (spread-guarded, e.g. `...(t.executionId !== undefined ? { executionId: ... } : {})`).
   Pinned round-trip: "metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)"
-  (`packages/code/tests/component/session-store.test.ts:80-107`).
+  (`packages/code/tests/component/session-store.test.ts`).
 - **Cache-detail absence survives both conversion directions.** `metaToSession`, `sessionToMeta` and
   `sessionSummaryToMeta` include `cached` only when their source includes it; no boundary replaces
   missing detail with zero. Production: `packages/code/src/adapters/session-store.ts`
@@ -273,7 +273,7 @@ empty id string are all rejected).
 ### Bounds and defaults
 
 | Constant | Value | Cite |
-|---|---|---|
+| --- | --- | --- |
 | `SESSION_MAX_BYTES` | 8 MiB (full document) | symbol in `packages/kernel/src/sessions/session-service.ts` |
 | `SESSION_SUMMARY_MAX_BYTES` | 8 KiB (summary sidecar) | symbol in `packages/kernel/src/sessions/session-service.ts` |
 | `SESSION_PAGE_DEFAULT` | 50 | symbol in `packages/kernel/src/sessions/session-service.ts` |
@@ -572,40 +572,40 @@ currently-selected plan provider differs from `plan_ref.provider_key`.
 ### 4.12 What is live-only and therefore absent from a rehydrated session
 
 The engine trace (read on rehydration, mapped by `engineEventToProto`,
-`packages/kernel/src/runs/map-events.ts:389`) and the loop's capability channel (live-only, mapped
-by `capabilityEventToProto`, `packages/kernel/src/runs/map-events.ts:335`) are two distinct sources a client receives events
+`packages/kernel/src/runs/map-events.ts`) and the loop's capability channel (live-only, mapped
+by `capabilityEventToProto`, `packages/kernel/src/runs/map-events.ts`) are two distinct sources a client receives events
 from; **rehydration reads only the persisted trace and then applies `RUN_EVENT_POLICY`
 durability**, per `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`. This second filter
 matters because the loop may retain one first `tool_input_delta` announcement per provider attempt
 as a bounded raw diagnostic breadcrumb; it must not return to the TUI as an eternally composing tool
 after restart. The doc remark on `engineEventToProto`
 ("any event a rehydrated session must show has to be mapped here, since rehydration reads only the
-persisted trace", `packages/kernel/src/runs/map-events.ts:378-379`). Concretely, in this repository's `code` client:
+persisted trace", `packages/kernel/src/runs/map-events.ts`). Concretely, in this repository's `code` client:
 
-- **The plan overlay/sidebar/inline block is live-only.** `packages/code/src/adapters/store.ts:1683-1685`:
+- **The plan overlay/sidebar/inline block is live-only.** `packages/code/src/adapters/store.ts`:
   "Plan capability events are intentionally live-only, so the stored trace replay cannot regenerate
   this node." The transcript-reconciliation code explicitly retains the *prior* live plan node at
-  its old position across a trace replay rather than trying to rebuild it (`packages/code/src/adapters/store.ts:1673-1705`).
-  `packages/code/src/adapters/activity-store.ts:320-322` states the same for the activity-store's
+  its old position across a trace replay rather than trying to rebuild it (`packages/code/src/adapters/store.ts`).
+  `packages/code/src/adapters/activity-store.ts` states the same for the activity-store's
   plan projection: "Capability events are live-only and therefore absent from the stored trace used
   for the end-of-run replay," and the code keeps whatever plan state the live stream already
-  delivered rather than clearing it on replay (`packages/code/src/adapters/activity-store.ts:324-325`).
+  delivered rather than clearing it on replay (`packages/code/src/adapters/activity-store.ts`).
 - **`appendRunFailure` (the live path's inline error node) never reaches a rehydrated run** — a
   restored run instead gets whatever the persisted `run_ended` event's `code` field carries, via
-  `engineEventToProto`'s mapping of `run_ended` (`packages/kernel/src/runs/map-events.ts:403-410`); `packages/code/src/adapters/store.ts:1615-1619`
+  `engineEventToProto`'s mapping of `run_ended` (`packages/kernel/src/runs/map-events.ts`); `packages/code/src/adapters/store.ts`
   states this directly ("`appendRunFailure` ... is a runtime append that never reaches
   [rehydration]. The trace does carry the failure's code, so a restored run says why it ended
   rather than only that it did.").
 - Any event a mapper does not recognize is dropped with a rate-limited `debug` log
-  (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts:50-69`) rather than surfaced to the client at all — the doc
+  (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts`) rather than surfaced to the client at all — the doc
   comment on `reportUnmapped` names this "the documented rehydration hazard made visible": a format skew
   between the writer and the reader silently deletes events from a restored session with no signal
   at either end (log-only, sampled). The sampling is a **module-level** `createSampler()` instance
-  (`sampleUnmapped`, `packages/kernel/src/runs/map-events.ts:32`), keyed by `` `${path}\0${capability ?? ""}\0${kind}` `` — one
+  (`sampleUnmapped`, `packages/kernel/src/runs/map-events.ts`), keyed by `` `${path}\0${capability ?? ""}\0${kind}` `` — one
   budget per distinct `(path, capability, kind)` triple, shared across every rehydration in the
   process, not reset per run or per session. It is not a first-few-then-silence cutoff: `createSampler`
   admits the first 8 occurrences of a key and then only every power of two thereafter
-  (`packages/capability/src/log.ts:250-260`), so a long-lived format skew keeps producing
+  (`packages/capability/src/log.ts`), so a long-lived format skew keeps producing
   exponentially rarer log lines rather than none at all — but on any single short rehydration pass,
   a key with more than 8 dropped events past the first 8 still produces no further signal until the
   16th, 32nd, ... occurrence.
@@ -932,7 +932,7 @@ continuation base.
 ## 6. Failure modes and degradation
 
 | Condition | Handling | Cite |
-|---|---|---|
+| --- | --- | --- |
 | Owner directory missing | `listPage`/`list` return empty, not an error | `sessionEntries` in `packages/kernel/src/sessions/session-service.ts` (`opendirSync` catch) |
 | Directory entry unreadable mid-scan (`readSync` throws) | Scan stops (returns) rather than throwing | `sessionEntries` in `packages/kernel/src/sessions/session-service.ts` |
 | A `.json` file over `SESSION_MAX_BYTES` | `readOne` returns `null` (skipped) | `readOne` in `packages/kernel/src/sessions/session-service.ts` |
@@ -953,7 +953,7 @@ continuation base.
 | An individual trace-delete resolves `false` (e.g. `not_found`) during `deleteSession` | Recorded as `{ executionId, deleted: false }`; the cascade continues and the session record is still deleted | `deleteSession` in `packages/code/src/adapters/session.ts`; `packages/code/tests/component/session.test.ts` ("records a missing trace") |
 | An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/runtime.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |
 | An individual trace-delete rejects, but the caller's `deleteRun` catches every error into `false` | Cascade continues as if the delete had simply failed; session record is still deleted | CLI `runDeleteMode` in `packages/code/src/runtime.tsx` |
-| An event reaches a mapper with no recognized projection (rehydration or live) | Dropped; a rate-limited `debug` log names the path/kind/capability/reason, but nothing is sent to the client | `packages/kernel/src/runs/map-events.ts:50-69,397-402,676-679` |
+| An event reaches a mapper with no recognized projection (rehydration or live) | Dropped; a rate-limited `debug` log names the path/kind/capability/reason, but nothing is sent to the client | `packages/kernel/src/runs/map-events.ts` |
 
 ## 7. Coupling
 
@@ -966,17 +966,17 @@ continuation base.
   a behavioral one.
 - **The kernel constructs one `SessionService` per owner**, via
   `createSessionService({ dir: globalDir, owner: scope.owner, projectId: scope.projectId,
-  workspaceId: scope.workspaceId, logger: runLogger })` in `packages/kernel/src/kernel.ts:515-520` —
+  workspaceId: scope.workspaceId, logger: runLogger })` in `packages/kernel/src/kernel.ts` —
   this is the registration point that forces the project/workspace scope check in §5's invariant 1:
   the service is *handed* the scope it will enforce, it does not discover it.
   `packages/kernel/src/file-kernel.ts` does not build this per-owner service itself; it reaches
   `kernel.ts`'s builder only indirectly, through `createInProcessKernel` (imported at
-  `packages/kernel/src/file-kernel.ts:72`, called at `packages/kernel/src/file-kernel.ts:877`).
+  `packages/kernel/src/file-kernel.ts`, called at `packages/kernel/src/file-kernel.ts`).
 - **The transport layer (`packages/kernel/src/transport/operations.ts`) depends on the file-backed
   service's *widened* `listPage` shape**, not just the protocol `SessionService` interface, via the
   locally-cast `SignalAwareSessionListPage` type in `packages/kernel/src/transport/operations.ts` — a structural,
   compile-time-only coupling (a duck-typed cast, not an imported type) that a test
-  (`packages/kernel/tests/contract/transport-codecs.test.ts:185-198`) is the only thing verifying still holds against the real
+  (`packages/kernel/tests/contract/transport-codecs.test.ts`) is the only thing verifying still holds against the real
   service.
 - **`packages/code/src/adapters/session.ts`'s `resumeSession`/`deleteSession` depend only on the
   small `ResumeDeps`/`deleteRun` function-shaped parameters they are given** — not on
@@ -995,7 +995,7 @@ continuation base.
   behavior is `loadSessions(sessions, owner)` in `packages/code/src/adapters/session-store.ts`, which seeds a
   `createSessionStore` cache with exactly one `sessions.listPage({ limit: 200 })` call — pinned by
   "loadSessions seeds bounded summaries and fetches a full document only on demand"
-  (`packages/code/tests/component/session-store.test.ts:382-390`) and "loadSessions requests at most
+  (`packages/code/tests/component/session-store.test.ts`) and "loadSessions requests at most
   one 200-row catalog page" in that test file. `listSessionsForWorkspace(store, workspace)` in
   `packages/code/src/adapters/session-store.ts` is the workspace-scoping filter applied on top of
   that cache, pinned by "listSessionsForWorkspace filters by exact workspace" in

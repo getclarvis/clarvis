@@ -687,7 +687,7 @@ export interface ElicitationRequest {
   /**
    * Why the run is asking: `ask_user` (a free question), `guard_confirm` (a
    * command awaiting approval), `plan_review` (a proposed plan awaiting
-   * approval) or `workflow_review` (an installed workflow preflight).
+   * approval), or `workflow_review` (an installed workflow preflight).
    * Open-ended (`string & {}`) so a kernel may add kinds without a
    * protocol bump.
    */

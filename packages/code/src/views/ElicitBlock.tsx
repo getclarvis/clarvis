@@ -361,7 +361,6 @@ export function ElicitBlock(props: {
           )}
         </Show>
       </box>
-
       <Show when={form.mode === "url"}>
         <box paddingTop={1} flexShrink={0}>
           <text fg={tokens.muted}>{"Open this URL to continue:"}</text>

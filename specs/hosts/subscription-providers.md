@@ -153,8 +153,8 @@ existing-provider path. The retained real-PTY evidence selected no login action,
 that both safe picker rows render and resize correctly. No live login, refresh, entitlement,
 inference, billing, or packaged-artifact
 canary is retained in this repository. Such canaries require provider-approved eligible accounts and
-may record only status and a one-way account hash. The no-secret picker transcript is retained in
-[`subscription-provider-picker-2026-08-22.txt`](../evidence/subscription-provider-picker-2026-08-22.txt).
+may record only status and a one-way account hash. No no-secret picker transcript is retained in this
+repository.
 
 ## 7. Model calls and billing
 
@@ -172,16 +172,16 @@ the configured model entry by `addModelFromCatalog`; `supportedReasoningEfforts`
 metadata, and `buildCallTuning` sends the selected effort through the OpenAI Responses provider
 option for both subscription kinds. For a legacy configured model without saved levels,
 `EffortView` obtains only the authenticated entitled catalog; it never substitutes public-catalog
-metadata (`packages/code/src/features/providers/controller.ts:343-358`,
-`packages/code/src/adapters/effort-levels.ts:23-35`,
+metadata (`packages/code/src/features/providers/controller.ts`,
+`packages/code/src/adapters/effort-levels.ts`,
 `packages/code/src/views/config/EffortView.tsx`,
-`packages/llm/src/ai-sdk/request-options.ts:187-194`). A successful call reports
+`packages/llm/src/ai-sdk/request-options.ts`). A successful call reports
 `billing_source: "subscription"` and no synthetic monetary cost. Internal context-summary calls do
 not force Clarvis's `off` effort through this mapping: because an entitled subscription model may
 publish only reasoning levels such as `low` and `high`, the loop omits the compaction override for
 both subscription kinds and lets the provider select a supported default
-(`packages/loop/src/runtime/context/llm-compaction.ts:219-228,254-256`; pinned by
-`packages/loop/tests/unit/llm-compaction.test.ts:485-502`). This prevents a rejected summarizer call
+(`packages/loop/src/runtime/context/llm-compaction.ts`; pinned by
+`packages/loop/tests/unit/llm-compaction.test.ts`). This prevents a rejected summarizer call
 from degrading into the scheduled path's mechanical eviction fallback.
 
 With `store: false`, every provider-issued assistant text item is retained with its item id and

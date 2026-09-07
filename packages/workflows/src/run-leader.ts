@@ -21,12 +21,12 @@ import type { LeaderResult, LeaderSpec, WorkflowCtx } from "./types.ts";
 const EMPTY_USAGE: Usage = { iterations_used: 0, elapsed_ms: 0, by_agent: [] };
 
 /** A tool-free capability that carries only the leader subtree's budget. */
-function createLeaderOutputBudgetCapability(
+export function createLeaderOutputBudgetCapability(
   outputBudget: OutputTokenBudget,
   maxParallelSubagents: number,
 ): Capability {
   const name = "workflows.output-budget";
-  return {
+  const capability: Capability = {
     name,
     forRun: () => ({
       name,
@@ -37,6 +37,20 @@ function createLeaderOutputBudgetCapability(
       }),
     }),
   };
+  outputBudgets.set(capability, { outputBudget, maxParallelSubagents });
+  return capability;
+}
+
+const outputBudgets = new WeakMap<
+  Capability,
+  { outputBudget: OutputTokenBudget; maxParallelSubagents: number }
+>();
+
+/** Preserve a leader's reserved subtree limit when a trusted host changes execution placement. */
+export function workflowOutputBudgetOf(
+  capability: Capability,
+): { outputBudget: OutputTokenBudget; maxParallelSubagents: number } | undefined {
+  return outputBudgets.get(capability);
 }
 
 /**
@@ -73,7 +87,7 @@ export async function runLeader(
     };
   }
   try {
-    const base = ctx.assemble(spec, { parentRunId: ctx.managerRunId });
+    const base = await ctx.assemble(spec, { parentRunId: ctx.managerRunId, runId });
     const rawBody: RunRequest = { ...base, execution_id: runId };
     const elicit = ctx.elicitForLeader?.(runId);
     const steer = ctx.steerForLeader?.(runId);

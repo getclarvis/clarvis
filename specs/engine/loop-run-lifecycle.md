@@ -1,6 +1,6 @@
 # The run loop: iterations, model calls, steering, cancellation and termination
 
-> Implemented at `packages/loop/src/runtime/**`. Every claim below is anchored to a file and line.
+> Implemented at `packages/loop/src/runtime/**`. Every claim below is anchored to a file and a named symbol or test.
 > Open questions are collected in the final section.
 
 ## 1. Purpose
@@ -11,22 +11,22 @@ which owns a different question:
 
 | Layer | Entry point | Owns |
 | --- | --- | --- |
-| Run | `executeRun` — `packages/loop/src/runtime/execute-run.ts:276` | Validation, execution-id reservation, continuation load, journal, persistence, capability run-end |
-| Orchestration | `runOrchestrator` — `packages/loop/src/runtime/orchestrator.ts:188` | Capability activation, trace construction, seed, `run_started`/`run_ended`, MCP pool, clock/timeout |
-| Agent | `runAgent` → `runAgentLoop` — `packages/loop/src/runtime/loop/run-agent.ts:124`, `packages/loop/src/runtime/loop/loop.ts:886` | The iteration loop itself: compact, call model, classify, dispatch, guard, checkpoint |
+| Run | `executeRun` — `packages/loop/src/runtime/execute-run.ts` | Validation, execution-id reservation, continuation load, journal, persistence, capability run-end |
+| Orchestration | `runOrchestrator` — `packages/loop/src/runtime/orchestrator.ts` | Capability activation, trace construction, seed, `run_started`/`run_ended`, MCP pool, clock/timeout |
+| Agent | `runAgent` → `runAgentLoop` — `packages/loop/src/runtime/loop/run-agent.ts`, `packages/loop/src/runtime/loop/loop.ts` | The iteration loop itself: compact, call model, classify, dispatch, guard, checkpoint |
 
-The loop layer is an unbounded `for (;;)` (`packages/loop/src/runtime/loop/loop.ts:902`) with no
+The loop layer is an unbounded `for (;;)` (`packages/loop/src/runtime/loop/loop.ts`) with no
 iteration counter of its own — every stop condition is delegated to an injected probe or factory
 (`LoopDerived.maybeCancelled`, `.checkpoint`, `.results`, `.finalize` —
-`packages/loop/src/runtime/loop/loop.ts:172-177`). `runAgentLoop` never constructs a terminal result:
-it selects one from `AgentLoopResults` (`packages/loop/src/runtime/loop/loop.ts:94-105`) or returns
+`packages/loop/src/runtime/loop/loop.ts`). `runAgentLoop` never constructs a terminal result:
+it selects one from `AgentLoopResults` (`packages/loop/src/runtime/loop/loop.ts`) or returns
 what a handler, gate or checkpoint handed it.
 
 The same three layers serve both run shapes. `subagent-only` runs the entry profile directly;
 `lead-subagent` runs the entry profile as a lead that gains the delegation capability
-(`packages/loop/src/runtime/entry-inputs.ts:175-206`). The shape is derived once
-(`packages/loop/src/runtime/run-shape.ts:67`) from whether the entry profile declares a non-empty
-`can_spawn` (`packages/loop/src/validation/request/run-shape.ts:19`).
+(`packages/loop/src/runtime/entry-inputs.ts`). The shape is derived once
+(`packages/loop/src/runtime/run-shape.ts`) from whether the entry profile declares a non-empty
+`can_spawn` (`packages/loop/src/validation/request/run-shape.ts`).
 
 ## 2. Surface
 
@@ -34,23 +34,23 @@ The same three layers serve both run shapes. `subagent-only` runs the entry prof
 
 | Symbol | Kind | Signature / shape | Source |
 | --- | --- | --- | --- |
-| `executeRun` | function | `(args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>` | `packages/loop/src/lib.ts:8`, `packages/loop/src/runtime/execute-run.ts:276` |
-| `ExecuteRunArgs` | type | see §2.2 | `packages/loop/src/runtime/execute-run.ts:85` |
-| `ExecuteRunDeps` | type | see §2.3 | `packages/loop/src/runtime/execute-run.ts:53` |
-| `ExecuteRunOutcome` | type | `{ executionId: string; response: RunResponse }` | `packages/loop/src/runtime/execute-run.ts:107` |
+| `executeRun` | function | `(args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>` | `packages/loop/src/lib.ts`, `packages/loop/src/runtime/execute-run.ts` |
+| `ExecuteRunArgs` | type | see §2.2 | `packages/loop/src/runtime/execute-run.ts` |
+| `ExecuteRunDeps` | type | see §2.3 | `packages/loop/src/runtime/execute-run.ts` |
+| `ExecuteRunOutcome` | type | `{ executionId: string; response: RunResponse }` | `packages/loop/src/runtime/execute-run.ts` |
 
 `runOrchestrator`, `runAgent`, `runAgentLoop`, `runWithClockAndTimeout`, `buildEntrySeed`,
 `createEntryInput`, `traceBridge`, `loopResultToResponse` and `mapErrorToResponse` are **not** in
 `packages/loop/src/lib.ts` — they are internal to the package and are imported by tests through
-relative paths (e.g. `packages/loop/tests/integration/orchestrator.test.ts:3`,
-`packages/loop/tests/unit/run-timeout.test.ts:2`).
+relative paths (e.g. `packages/loop/tests/integration/orchestrator.test.ts`,
+`packages/loop/tests/unit/run-timeout.test.ts`).
 
-`collectCapabilityState` is exported from its module (`packages/loop/src/runtime/execute-run.ts:196`)
+`collectCapabilityState` is exported from its module (`packages/loop/src/runtime/execute-run.ts`)
 but is not re-exported by `lib.ts`; its only non-test consumer is `executeRun` itself
-(`packages/loop/src/runtime/execute-run.ts:419`).
+(`packages/loop/src/runtime/execute-run.ts`).
 
 `BUILTIN_CAPABILITY_NAMES` is exported from the orchestrator module
-(`packages/loop/src/runtime/orchestrator.ts:140`) and is a deliberate literal duplicate of three
+(`packages/loop/src/runtime/orchestrator.ts`) and is a deliberate literal duplicate of three
 capability names, locked by `packages/loop/tests/architecture/builtin-capability-names.test.ts`
 (see INV-068 in [loop-capability-composition](capability-composition.md), which owns it).
 
@@ -58,37 +58,37 @@ capability names, locked by `packages/loop/tests/architecture/builtin-capability
 
 | Field | Type | Meaning | Source |
 | --- | --- | --- | --- |
-| `rawBody` | `unknown` | the un-validated request body | `packages/loop/src/runtime/execute-run.ts:86` |
-| `owner` | `string` | scoping key for persistence and capability activation | `:87` |
-| `deps` | `ExecuteRunDeps` | the long-lived collaborators | `:88` |
-| `onEvent?` | `(e: TraceEvent) => void` | live wire-event sink | `:89` |
-| `externalSignal?` | `AbortSignal` | caller cancellation | `:90` |
-| `elicit?` | `Elicit` | human channel | `:91` |
-| `steer?` | `SteerSource` | mid-run user messages | `:92` |
-| `compaction?` | `CompactionSource` | explicit compaction requests | `:94` |
-| `capabilities?` | `Capability[]` | per-run capabilities, activated *after* the deps-level ones | `:97` |
-| `onCapabilityEvent?` | `CapabilityEventListener` | capability out-of-band notices | `:100` |
+| `rawBody` | `unknown` | the un-validated request body | `packages/loop/src/runtime/execute-run.ts` |
+| `owner` | `string` | scoping key for persistence and capability activation | `packages/loop/src/runtime/execute-run.ts` |
+| `deps` | `ExecuteRunDeps` | the long-lived collaborators | `packages/loop/src/runtime/execute-run.ts` |
+| `onEvent?` | `(e: TraceEvent) => void` | live wire-event sink | `packages/loop/src/runtime/execute-run.ts` |
+| `externalSignal?` | `AbortSignal` | caller cancellation | `packages/loop/src/runtime/execute-run.ts` |
+| `elicit?` | `Elicit` | human channel | `packages/loop/src/runtime/execute-run.ts` |
+| `steer?` | `SteerSource` | mid-run user messages | `packages/loop/src/runtime/execute-run.ts` |
+| `compaction?` | `CompactionSource` | explicit compaction requests | `packages/loop/src/runtime/execute-run.ts` |
+| `capabilities?` | `Capability[]` | per-run capabilities, activated *after* the deps-level ones | `packages/loop/src/runtime/execute-run.ts` |
+| `onCapabilityEvent?` | `CapabilityEventListener` | capability out-of-band notices | `packages/loop/src/runtime/execute-run.ts` |
 
 ### 2.3 `ExecuteRunDeps` — the long-lived collaborators
 
 `env`, `llm`, `connections`, `traceStore`, `logger?`, `workspaceRoot`, `capabilities?`,
 `capabilityRegistry?`, `persistedTraceProjectors?`, `extensionAdmission?`, and optional opaque
 `hostMetadata?`
-(`packages/loop/src/runtime/execute-run.ts:53-78`). `hostMetadata` is evaluated once after request
+(`packages/loop/src/runtime/execute-run.ts`). `hostMetadata` is evaluated once after request
 validation and is never interpreted by the engine.
 
 ### 2.4 `OrchestratorDeps` / `OrchestratorResult`
 
-`OrchestratorDeps` (`packages/loop/src/runtime/orchestrator.ts:87-124`) is a trimmed slice of
+`OrchestratorDeps` (`packages/loop/src/runtime/orchestrator.ts`) is a trimmed slice of
 `ExecuteRunDeps` plus the per-run channels, plus five fields `executeRun` computes and hands down:
 `requestView`, `grantDeclarations`, `persistedTraceProjectors`, `emitCapabilityEvent`, and the
-`openJournal(wallStartedAt)` factory (`:123`).
+`openJournal(wallStartedAt)` factory.
 
-`OrchestratorResult` (`:152-159`) is `{ response, trace, wallStartedAt, finalContext?, runCapabilities }`.
+`OrchestratorResult` is `{ response, trace, wallStartedAt, finalContext?, runCapabilities }`.
 
 ### 2.5 `RunShape` — the derived run shape
 
-`RunShape` (`packages/loop/src/runtime/run-shape.ts:40-50`) is the read-only summary
+`RunShape` (`packages/loop/src/runtime/run-shape.ts`) is the read-only summary
 `deriveRunShape` computes once; every downstream builder (seed, entry input, accounting) reads its
 role and settings from here rather than re-deriving them:
 
@@ -104,9 +104,9 @@ role and settings from here rather than re-deriving them:
 | `fullRegistry` | every resolved subagent profile the request declared |
 | `primarySubagentModel` | the model surfaced in `run_started` telemetry (see below) |
 
-`deriveRunShape` (`:67-98`) derives `primarySubagentModel` as: for a lead, the profile named by
+`deriveRunShape` derives `primarySubagentModel` as: for a lead, the profile named by
 `entryProfile.default_spawn`, or else the first spawnable profile's model; for a non-lead, the entry
-profile's own model (`:84-87`). `resolveConfig` (`:20-27`) is the sibling function that produces the
+profile's own model. `resolveConfig` is the sibling function that produces the
 run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 `request.budget.on_exceed === "stop"`, and `timeout_ms`. It carries no iteration cap — it declared a
 `max_iterations` fixed at `Number.POSITIVE_INFINITY` for every run, and that field has been removed.
@@ -115,17 +115,17 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 
 | Type | Purpose | Source |
 | --- | --- | --- |
-| `LoopCore` | what `runAgentLoop` reads directly — agent identity, `target`, `budget`, `runtime`, `compaction`, `hooks`, `clock`, `computeRegion`, `spillToolResult`, `allToolsUnavailable`, `onStart` | `packages/loop/src/runtime/loop/loop.ts:115-150` |
-| `LoopDerived` | what `runAgent` assembles on top — `ctx`, `tools`, `handlers`, `guards`, `progress`, `anchor?`, `maybeCancelled`, `checkpoint`, `results`, `finalize`, and nine optional hook slots | `:163-212` |
-| `RunAgentInput` | `LoopCore` + seed `messages` and persona knobs — see the field table below | `packages/loop/src/runtime/loop/run-agent.ts:52-105` |
-| `FinalizePolicy` | `fastAcceptSubmit?` and `onTextOnly` | `packages/loop/src/runtime/loop/loop.ts:71-88` |
-| `AgentLoopResults` | five terminal factories: `allToolsUnavailable`, `budgetExhausted`, `emptyResponse`, `noProgress`, `guardTrip` | `:94-105` |
-| `AgentResult` | the agent-layer terminal outcome (owned by `@clarvis/capability`) | `packages/capability/src/agent-result.ts:49-56` |
-| `ProgressTracker` | the no-progress streak tracker: `bump(true)` resets the streak to `0` and never trips; `bump(false)` increments it and trips (returns `true`) only once the streak reaches `limit`; `reset()` clears it | `packages/loop/src/runtime/loop/progress.ts:6-39`. Tests: `packages/loop/tests/unit/progress.test.ts:4-37` |
-| `LlmTarget` / `toLlmTarget` | a fully resolved model-call target (model/provider identity plus the optional per-call knobs); `toLlmTarget(llm, src)` copies only the knobs `src` defines, so an unset optional field is **omitted** from the built target rather than copied through as `undefined` | `packages/loop/src/runtime/loop/loop-shared.ts:30-71`. Test: `packages/loop/tests/unit/loop-shared.test.ts:7-18` (`"reasoningEffort" in withoutEffort === false`) |
-| `LoopAgentBuildContext` / `EngineTerminalVerdict` / `EngineHandlerVerdict` | the engine's own widened build-context and verdict types: `LoopAgentBuildContext` is the capability `AgentBuildContext` plus `ctx`/`trace`/`budget`, which no capability reads; `EngineTerminalVerdict` widens a terminal `HandlerVerdict` with an optional `text` only the engine's own handlers populate; assignability runs one way — every capability-produced verdict satisfies the engine type, never the reverse | `packages/loop/src/runtime/loop/loop-contract.ts:39-74`. This is the type mechanism behind invariant 33. |
+| `LoopCore` | what `runAgentLoop` reads directly — agent identity, `target`, `budget`, `runtime`, `compaction`, `hooks`, `clock`, `computeRegion`, `spillToolResult`, `allToolsUnavailable`, `onStart` | `packages/loop/src/runtime/loop/loop.ts` |
+| `LoopDerived` | what `runAgent` assembles on top — `ctx`, `tools`, `handlers`, `guards`, `progress`, `anchor?`, `maybeCancelled`, `checkpoint`, `results`, `finalize`, and nine optional hook slots | `packages/loop/src/runtime/loop/run-agent.ts` |
+| `RunAgentInput` | `LoopCore` + seed `messages` and persona knobs — see the field table below | `packages/loop/src/runtime/loop/run-agent.ts` |
+| `FinalizePolicy` | `fastAcceptSubmit?` and `onTextOnly` | `packages/loop/src/runtime/loop/loop.ts` |
+| `AgentLoopResults` | five terminal factories: `allToolsUnavailable`, `budgetExhausted`, `emptyResponse`, `noProgress`, `guardTrip` | `packages/loop/src/runtime/loop/run-agent.ts` |
+| `AgentResult` | the agent-layer terminal outcome (owned by `@clarvis/capability`) | `packages/capability/src/agent-result.ts` |
+| `ProgressTracker` | the no-progress streak tracker: `bump(true)` resets the streak to `0` and never trips; `bump(false)` increments it and trips (returns `true`) only once the streak reaches `limit`; `reset()` clears it | `packages/loop/src/runtime/loop/progress.ts`. Tests: `packages/loop/tests/unit/progress.test.ts` |
+| `LlmTarget` / `toLlmTarget` | a fully resolved model-call target (model/provider identity plus the optional per-call knobs); `toLlmTarget(llm, src)` copies only the knobs `src` defines, so an unset optional field is **omitted** from the built target rather than copied through as `undefined` | `packages/loop/src/runtime/loop/loop-shared.ts`. Test: `packages/loop/tests/unit/loop-shared.test.ts` (`"reasoningEffort" in withoutEffort === false`) |
+| `LoopAgentBuildContext` / `EngineTerminalVerdict` / `EngineHandlerVerdict` | the engine's own widened build-context and verdict types: `LoopAgentBuildContext` is the capability `AgentBuildContext` plus `ctx`/`trace`/`budget`, which no capability reads; `EngineTerminalVerdict` widens a terminal `HandlerVerdict` with an optional `text` only the engine's own handlers populate; assignability runs one way — every capability-produced verdict satisfies the engine type, never the reverse | `packages/loop/src/runtime/loop/loop-contract.ts`. This is the type mechanism behind invariant 33. |
 
-`RunAgentInput`'s persona-knob fields (`packages/loop/src/runtime/loop/run-agent.ts:52-105`), beyond `LoopCore` and `messages`:
+`RunAgentInput`'s persona-knob fields (`packages/loop/src/runtime/loop/run-agent.ts`), beyond `LoopCore` and `messages`:
 
 | Field | Purpose |
 | --- | --- |
@@ -152,58 +152,58 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 
 | Key | Default | Read at |
 | --- | --- | --- |
-| `CLARVIS_DEFAULT_TIMEOUT_MS` | `300000` (`packages/capability/src/env.ts:64`) | `packages/loop/src/runtime/run-shape.ts:21` |
-| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `200` (`packages/capability/src/env.ts:69`) | `packages/loop/src/runtime/orchestrator.ts:605-607` |
-| `CLARVIS_DEFAULT_ELICIT_WAIT_MS` | `1_800_000` (`packages/capability/src/env.ts:68`) | `packages/loop/src/runtime/orchestrator.ts:437` |
-| `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | `5000`, capped at `60_000` (`packages/capability/src/env.ts:153`) | `packages/loop/src/runtime/orchestrator.ts:239` |
-| `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `2000` (`packages/capability/src/env.ts:165`) | `packages/loop/src/runtime/execute-run.ts` (`executeRun`, `raceWithBudget`); `packages/loop/src/runtime/orchestrator.ts` (`wrap`) |
-| `CLARVIS_RUN_ABORT_SETTLE_MS` | `2000` (`packages/capability/src/env.ts:204`) | `packages/loop/src/runtime/orchestrator.ts:639` |
-| `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` | `true` (`packages/capability/src/env.ts:106`) | `packages/loop/src/runtime/entry-inputs.ts:255-257` |
-| `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` (`packages/capability/src/env.ts:95`) | `packages/loop/src/runtime/entry-inputs.ts:262` |
-| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | — | `packages/loop/src/runtime/orchestrator.ts:608` |
-| `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS` (+`_RUN_END_CALLS`, `_CALLS_PER_OPERATION`) | — | `packages/loop/src/runtime/extension-admission.ts:236-238` |
+| `CLARVIS_DEFAULT_TIMEOUT_MS` | `300000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/run-shape.ts` |
+| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `200` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_DEFAULT_ELICIT_WAIT_MS` | `1_800_000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | `5000`, capped at `60_000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `2000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/execute-run.ts` (`executeRun`, `raceWithBudget`); `packages/loop/src/runtime/orchestrator.ts` (`wrap`) |
+| `CLARVIS_RUN_ABORT_SETTLE_MS` | `2000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` | `true` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/entry-inputs.ts` |
+| `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/entry-inputs.ts` |
+| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | — | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS` (+`_RUN_END_CALLS`, `_CALLS_PER_OPERATION`) | — | `packages/loop/src/runtime/extension-admission.ts` |
 
 ### 2.8 Loop-level constants
 
 | Constant | Value | Source |
 | --- | --- | --- |
-| `MAX_CONSECUTIVE_EMPTY_RESPONSES` | `2` | `packages/loop/src/runtime/loop/loop.ts:230` |
-| `MAX_OVERFLOW_RECOVERIES` | `3` | `packages/loop/src/runtime/loop/loop-iteration.ts:7` |
-| `REWRITE_NOTE_MAX_CHARS` | `2_000` | `packages/loop/src/runtime/loop/loop.ts:492` |
-| `LIFECYCLE_HOOK_TIMEOUT_MS` | `5_000` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:16` |
-| `LIFECYCLE_GATE_HOOK_TIMEOUT_MS` | `30_000` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:18` |
-| `LEAD_NO_PROGRESS_LIMIT` / `SUBAGENT_NO_PROGRESS_LIMIT` | `6` / `6` | `packages/loop/src/runtime/loop/loop-shared.ts:8,10` |
-| `CACHE_PREFIX_LOSS` | `0.1` | `packages/loop/src/runtime/loop/iteration-metrics.ts:68` |
+| `MAX_CONSECUTIVE_EMPTY_RESPONSES` | `2` | `packages/loop/src/runtime/loop/loop.ts` |
+| `MAX_OVERFLOW_RECOVERIES` | `3` | `packages/loop/src/runtime/loop/loop-iteration.ts` |
+| `REWRITE_NOTE_MAX_CHARS` | `2_000` | `packages/loop/src/runtime/loop/loop.ts` |
+| `LIFECYCLE_HOOK_TIMEOUT_MS` | `5_000` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts` |
+| `LIFECYCLE_GATE_HOOK_TIMEOUT_MS` | `30_000` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts` |
+| `LEAD_NO_PROGRESS_LIMIT` / `SUBAGENT_NO_PROGRESS_LIMIT` | `6` / `6` | `packages/loop/src/runtime/loop/loop-shared.ts` |
+| `CACHE_PREFIX_LOSS` | `0.1` | `packages/loop/src/runtime/loop/iteration-metrics.ts` |
 
 ## 3. Data and formats
 
 ### 3.1 Execution id
 
 Either the request's `execution_id` verbatim, or one minted by `generateExecutionId()`
-(`packages/loop/src/runtime/execute-run.ts:318-326`). Generated ids are prefixed `exec_` and satisfy
+(`packages/loop/src/runtime/execute-run.ts`). Generated ids are prefixed `exec_` and satisfy
 the format constants — charset `[A-Za-z0-9._:-]`, length `1..128` — pinned by
-`packages/loop/tests/unit/execution-id.test.ts:13-45`. `packages/loop/tests/component/execute-run.test.ts:42-49`
+`packages/loop/tests/unit/execution-id.test.ts`. `packages/loop/tests/component/execute-run.test.ts`
 asserts `expect(executionId).toMatch(/^exec_/)`.
 
 ### 3.2 The terminal `RunResponse`
 
-Discriminated by `status` (`packages/capability/src/run.ts:286-292`):
+Discriminated by `status` (`packages/capability/src/run.ts`):
 
 | status | payload | produced by |
 | --- | --- | --- |
-| `completed` | `result: ResultValue` | `loopResultToResponse` — structured result if present, else `text ?? partialText` (`packages/loop/src/runtime/run-response-mapping.ts:95-102`) |
-| `budget_exhausted` | `result` = partial (structured if any, else text) | `:104` |
-| `cancelled` | `result` = partial | `:106`, and `mapErrorToResponse` when the signal aborted (`:47-49`) |
-| `soft_limit_declined` | `result` = partial | `:108` |
-| `error` | `error: ErrorBody` | `:109-112`, `errorResponse` (`packages/loop/src/runtime/support/run-response.ts:13`) |
-| `interrupted` | `result` | never produced here — `packages/capability/src/execution-status.ts:11` states it is only produced by `TraceStore.recoverOrphans` |
+| `completed` | `result: ResultValue` | `loopResultToResponse` — structured result if present, else `text ?? partialText` (`packages/loop/src/runtime/run-response-mapping.ts`) |
+| `budget_exhausted` | `result` = partial (structured if any, else text) | `packages/loop/src/runtime/run-response-mapping.ts` |
+| `cancelled` | `result` = partial | `loopResultToResponse` and `mapErrorToResponse` in `packages/loop/src/runtime/run-response-mapping.ts` |
+| `soft_limit_declined` | `result` = partial | `packages/loop/src/runtime/run-response-mapping.ts` |
+| `error` | `error: ErrorBody` | `errorResponse` (`packages/loop/src/runtime/support/run-response.ts`) |
+| `interrupted` | `result` | never produced here — `packages/capability/src/execution-status.ts` states it is only produced by `TraceStore.recoverOrphans` |
 
 Every variant carries `usage: Usage` = `{ iterations_used, elapsed_ms, by_agent, warnings? }`
-(`packages/capability/src/run.ts:110-116`).
+(`packages/capability/src/run.ts`).
 
 ### 3.3 Provider-error → `ErrorCode` mapping
 
-`PROVIDER_ERROR_CODES` (`packages/loop/src/runtime/run-response-mapping.ts:25-29`):
+`PROVIDER_ERROR_CODES` (`packages/loop/src/runtime/run-response-mapping.ts`):
 
 | `ProviderError.kind` | `ErrorCode` |
 | --- | --- |
@@ -213,31 +213,31 @@ Every variant carries `usage: Usage` = `{ iterations_used, elapsed_ms, by_agent,
 | anything else (`transient`, `client`, `auth`) | `provider_error` |
 
 `details` always carries `{ kind, status?, retry_after_ms? }`
-(`packages/loop/src/runtime/run-response-mapping.ts:9-14`), pinned by
-`packages/loop/tests/unit/run-response-mapping.test.ts:39-46`. A `CodedError` keeps its own `code`
-and gets `sanitizeDeep`'d details (`:58-65`), pinned at `packages/loop/tests/unit/run-response-mapping.test.ts:61-81`.
-Anything else becomes `internal_error` (`:66-70`).
+(`packages/loop/src/runtime/run-response-mapping.ts`), pinned by
+`packages/loop/tests/unit/run-response-mapping.test.ts`. A `CodedError` keeps its own `code`
+and gets `sanitizeDeep`'d details, pinned at `packages/loop/tests/unit/run-response-mapping.test.ts`.
+Anything else becomes `internal_error`.
 
 ### 3.4 The `init` trace detail
 
-`InitDetail` (`packages/loop/src/runtime/run-trace.ts:15-19`) is `{ config, modelProvider, mode }` —
+`InitDetail` (`packages/loop/src/runtime/run-trace.ts`) is `{ config, modelProvider, mode }` —
 the run's resolved `ResolvedConfig`, the model provider name, and the `ExecutionMode`.
-`deriveInitDetail(config, modelProvider, mode)` (`:47-53`) builds it verbatim, and it is recorded on
-the `init` entry at `packages/loop/src/runtime/orchestrator.ts:381`
+`deriveInitDetail(config, modelProvider, mode)` builds it verbatim, and it is recorded on
+the `init` entry at `packages/loop/src/runtime/orchestrator.ts`
 (`traceHandle.record("init", deriveInitDetail(config, provider, mode))`). Per §3.7, `init` is never
 wire-visible.
 
 ### 3.5 `run_started` / `run_ended` trace detail
 
-`deriveRunStartedDetail` (`packages/loop/src/runtime/run-trace.ts:69-80`) emits
+`deriveRunStartedDetail` (`packages/loop/src/runtime/run-trace.ts`) emits
 `{ mode, lead_model?, subagent_model, max_tokens? }` — the token cap only when finite. It also emitted
 a `max_iterations`, which `resolveConfig` fixed at `Number.POSITIVE_INFINITY` for every run, so the
 finiteness test was always false and the field never reached a trace; it is gone from `ResolvedConfig`
 and from both trace-detail types. `ResolvedConfig` is now `max_tokens` + `timeout_ms`
-(`packages/loop/src/runtime/run-shape.ts:20-29`). The run's real iteration cap is `entryMax`, resolved
+(`packages/loop/src/runtime/run-shape.ts`). The run's real iteration cap is `entryMax`, resolved
 from the agent profile in the orchestrator.
 
-`deriveRunEndedDetail` (`packages/loop/src/runtime/run-trace.ts:91-103`):
+`deriveRunEndedDetail` (`packages/loop/src/runtime/run-trace.ts`):
 
 | response | `reason` | `code` |
 | --- | --- | --- |
@@ -248,13 +248,13 @@ from the agent profile in the orchestrator.
 
 `GUARD_TRIP_CODES` = `no_progress`, `tool_failure_loop`, `stagnation_detected`, `agents_unfinished`,
 `background_children_failing`, `all_tools_unavailable`, `empty_response`
-(`packages/loop/src/runtime/run-trace.ts:26-34`). Every row of this table is pinned by
-`packages/loop/tests/unit/run-trace.test.ts:19-80`, including that a capability-contributed code maps
-to `guard_trip` **only** when the capability supplied it (`:48-68`).
+(`packages/loop/src/runtime/run-trace.ts`). Every row of this table is pinned by
+`packages/loop/tests/unit/run-trace.test.ts`, including that a capability-contributed code maps
+to `guard_trip` **only** when the capability supplied it.
 
 ### 3.6 Per-iteration trace events
 
-`recordIterationMetrics` (`packages/loop/src/runtime/loop/iteration-metrics.ts:163-209`) records, once
+`recordIterationMetrics` (`packages/loop/src/runtime/loop/iteration-metrics.ts`) records, once
 per iteration after the model call returns, a `lead_iteration` or `subagent_iteration` entry (chosen by
 `agent`) carrying `{ subagent_instance_id?, iteration, started_at, ended_at, model, input_tokens,
 output_tokens, cached_tokens, cache_write_tokens, cache_read_ratio, response, response_phase? }`,
@@ -262,81 +262,77 @@ where `response` is `llmResult.text ?? ""` and `response_phase` is the last decl
 result's retained assistant text parts. When the result carries `reasoning`, it additionally records a
 `model_reasoning` entry: `{ agent, subagent_instance_id?, iteration, model, text }`. A paired
 `lead_iteration_started` / `subagent_iteration_started` marker — `{ subagent_instance_id?, iteration,
-started_at, model }` — is recorded at the *top* of the iteration by `recordIterationStarted`
-(`:247-262`), called from `startIteration` inside `runIterationPreamble`. Every field of both entry
-kinds is pinned by `packages/loop/tests/unit/iteration-metrics.test.ts:50-75` (lead),
-`:76-98` (subagent), and `model_reasoning`'s conditional `subagent_instance_id` by `:100-121`.
+started_at, model }` — is recorded at the *top* of the iteration by `recordIterationStarted`, called
+from `startIteration` inside `runIterationPreamble`. Every field of both entry kinds, including the
+conditional `subagent_instance_id` that is present for a subagent and absent for the lead, is pinned
+by `packages/loop/tests/unit/iteration-metrics.test.ts`.
 Assistant text parts are appended through `LiveContext.appendAssistant` or
 `appendAssistantToolCalls` and survive snapshots unchanged; `packages/loop/tests/unit/context-snapshot.test.ts`
 pins both phase and opaque item metadata.
-(present for a subagent) and `:122-144` (absent for the lead).
 
 `model_call_error` is recorded strictly before `run_ended` on a provider-error termination —
-`packages/loop/tests/integration/run-lifecycle-events.test.ts:225-257` pins one classified
+`packages/loop/tests/integration/run-lifecycle-events.test.ts` pins one classified
 `model_call_error` entry (`agent`, `kind`, `status`) followed by a `run_ended` entry whose `reason` is
 `"error"` and whose `code` is `"provider_error"`, with the error entry's index strictly less than the
 ended entry's.
 
 ### 3.7 Durable vs live trace entries
 
-`createTrace` (`packages/trace/src/in-memory-trace.ts:41`) exposes two writers: `record` pushes onto
-`trace.entries` and calls the sink with `durable = true` (`:48-53`); `signal` calls the sink with
-`durable = false` and pushes nothing (`:54-58`). After `seal()` both are no-ops (`:49,55,60-62`).
+`createTrace` (`packages/trace/src/in-memory-trace.ts`) exposes two writers: `record` pushes onto
+`trace.entries` and calls the sink with `durable = true`; `signal` calls the sink with
+`durable = false` and pushes nothing. After `seal()` both are no-ops.
 
-`traceBridge` (`packages/loop/src/runtime/run-trace.ts:138-180`) is the sink: it pokes the clock
-first (`:148`), feeds `ingest` (the agent registry) inside a try/catch (`:149-161`), then maps once
-via `mapEntry` and hands the *same* object to `journal` (durable only) and `emitEvent` (`:162-167`).
-`packages/loop/tests/unit/run-trace.test.ts:181-195` asserts `journalled[0]` is the identical object
+`traceBridge` (`packages/loop/src/runtime/run-trace.ts`) is the sink: it pokes the clock
+first, feeds `ingest` (the agent registry) inside a try/catch, then maps once
+via `mapEntry` and hands the *same* object to `journal` (durable only) and `emitEvent`.
+`packages/loop/tests/unit/run-trace.test.ts` asserts `journalled[0]` is the identical object
 as `emitted[0]`.
 
 `init` and `terminate` entries map to `null` in `mapEntry`
-(`packages/trace/src/trace-mapper.ts:506-512`), so they exist in the in-memory trace but never in the
-persisted `trace.events` — which is why `packages/loop/tests/integration/run-lifecycle-events.test.ts:55`
+(`packages/trace/src/trace-mapper.ts`), so they exist in the in-memory trace but never in the
+persisted `trace.events` — which is why `packages/loop/tests/integration/run-lifecycle-events.test.ts`
 can assert `run_started` is the *first* persisted event even though `init` was recorded before it
-(`packages/loop/src/runtime/orchestrator.ts:381-382`).
+(`packages/loop/src/runtime/orchestrator.ts`).
 
 ### 3.8 The entry seed
 
-`buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts:126`) composes, in order
-(`:174-179`):
+`buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts`) composes, in order
+:
 
 1. one `system` message — `buildSystemSections({ workspaceRoot, basePrompt?, capabilitySections? })`
-   joined with `"\n\n"` (`:142-149`);
-2. the filtered continuation history (`:156-160`), image-collapsed when the entry agent lacks `vision`
-   (`:176`, `:77-85`);
-3. the pinned capability seed blocks the continuation did not already carry, as `user` entries
-   (`:167-172`);
-4. this turn's request `messages` (`:178`).
+   joined with `"\n\n"`;
+2. the filtered continuation history, image-collapsed when the entry agent lacks `vision`;
+3. the pinned capability seed blocks the continuation did not already carry, as `user` entries;
+4. this turn's request `messages`.
 
 The filter drops (a) restored *volatile* entries — those with `canonical === true` or a `note_kind`
-(`:70-72`, applied at `:157`) — and (b) any restored entry whose leading marker belongs to a
-capability that contributed no fresh block this run (`:158-159`). A marker still live is *kept*, and
-the freshly rendered block for that marker is *discarded* (`:162-172`).
+ — and (b) any restored entry whose leading marker belongs to a
+capability that contributed no fresh block this run. A marker still live is *kept*, and
+the freshly rendered block for that marker is *discarded*.
 
-Worked example, from `packages/loop/tests/unit/entry-seed-markers.test.ts:99-116`: with a carried
+Worked example, from `packages/loop/tests/unit/entry-seed-markers.test.ts`: with a carried
 block `<cap-block>\nwhat the session started with\n</cap-block>` and a fresh `SEED` for the same
 marker, the composed texts after the system head are
 `[carried, "a normal earlier message", "do the thing"]` and the fresh `SEED` is absent.
 
 `EntrySeed` is `{ entryMessages, turnImages, entryStripsImages }`
-(`packages/loop/src/runtime/entry-seed.ts:30-34`).
+(`packages/loop/src/runtime/entry-seed.ts`).
 
 ### 3.9 `final_context`
 
 The entry agent's `LiveContext` is captured through `onContext`
-(`packages/loop/src/runtime/orchestrator.ts:632-634`), read *after* the loop settles
-(`:667`), and attached only when non-empty (`:668-670`). It excludes the system head — asserted at
-`packages/loop/tests/integration/final-context-capture.test.ts:72-83`
+(`packages/loop/src/runtime/orchestrator.ts`), read *after* the loop settles, and attached only when non-empty. It excludes the system head — asserted at
+`packages/loop/tests/integration/final-context-capture.test.ts`
 (`expect(snap.some((e) => e.message.role === "system")).toBe(false)`). It is captured even on a
-non-`completed` exit (`:87-119`, a `budget_exhausted` run).
+non-`completed` exit (a `budget_exhausted` run).
 
 ### 3.10 `capability_state`
 
-`collectCapabilityState` (`packages/loop/src/runtime/execute-run.ts:196`) returns
-`Record<string, unknown> | undefined`, keyed by capability `name` (`:244-245`), seeded from the continued
-run's prior state (`:203`) so a capability that did not run this turn keeps its slot
-(`packages/loop/tests/unit/capability-state.test.ts:99-106`). It returns `undefined` when nothing
-contributed, so the record stays clean (`:247`, pinned at `:38-41`).
+`collectCapabilityState` (`packages/loop/src/runtime/execute-run.ts`) returns
+`Record<string, unknown> | undefined`, keyed by capability `name`, seeded from the continued
+run's prior state so a capability that did not run this turn keeps its slot
+(`packages/loop/tests/unit/capability-state.test.ts`). It returns `undefined` when nothing
+contributed, so the record stays clean.
 
 ## 4. Behavior
 
@@ -344,204 +340,200 @@ contributed, so the record stays clean (`:247`, pinned at `:38-41`).
 
 | # | Step | Source |
 | --- | --- | --- |
-| 1 | resolve the extension-admission controller (host's, else a per-`deps` memoized fallback — `extensionAdmissionFor`, `packages/loop/src/runtime/extension-admission.ts:232-244`) | `packages/loop/src/runtime/execute-run.ts:288` |
-| 2 | concatenate `deps.capabilities` then `args.capabilities` — deps-level first | `:289` |
-| 3 | compose the persisted-trace projector registry from host + every capability | `:290-293`, `packages/loop/src/runtime/run-trace.ts:37-45` |
-| 4 | compose the capability registry with every capability's `grants` | `:294-297` |
-| 5 | `validateBody(rawBody, env, requestRegistry)` | `:298` |
-| 6 | build the request view, capture optional host metadata once, then ask every capability `requiresUserInput?` | `:299-303` |
-| 7 | `deriveRunShape(parsed, capabilityNeedsHuman)` and derive `runMode` | `:304-305` |
-| 8 | **throw** `ValidationError("elicitation_not_supported")` if `userInputEnabled` and no `elicit` | `:306-312` |
-| 9 | compile the result contract when `output_schema` is present | `:315-316` |
-| 10 | choose the execution id; **throw** `ConflictError` if `traceStore.existsForOwner` | `:318-326` |
-| 11 | bind the run-scoped logger with `execution_id`, `owner_key_name`, `mode` | `:339-342` |
-| 12 | reserve the id in the per-store in-flight set | `:344` |
-| 13 | derive `promptCacheKey = prompt_cache_key ?? executionId`, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `:346-347` |
-| 14 | load the continuation; **throw** `ContinuationUnavailableError` if absent/empty | `:349-360` |
-| 15 | build the swallowing capability-event emitter | `:363-369` |
-| 16 | create the run's `AbortController` and forward `externalSignal` (including an already-aborted one) | `:371-378` |
-| 17 | `runOrchestrator(parsed, {...})` with the prompt-cache-defaulted LLM | `:382-417`, `:398` |
-| 18 | `collectCapabilityState(runCapabilities, response.status, continuation?.capability_state, …)` | `:419-425` |
-| 19 | `buildRecord({...})` with `mapTrace(trace.entries, wallStartedAt, projectors)` and the same host metadata used in the journal header | `:386-391`, `:426-436` |
-| 20 | `traceStore.insert(record)`; on success `journal.discard()` | `:438-440` |
-| 21 | fire every capability's `onRunEnd(record)`, collecting returned promises | `:459-487` |
-| 22 | await them under `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` via `raceWithBudget` | `:488-497` |
-| 23 | return `{ executionId, response }` | `:500` |
-| — | `finally`: remove the abort listener, `journal.close()` | `:501-504` |
-| — | outer `finally`: release the execution-id reservation | `:505-507` |
+| 1 | resolve the extension-admission controller (host's, else a per-`deps` memoized fallback — `extensionAdmissionFor`, `packages/loop/src/runtime/extension-admission.ts`) | `packages/loop/src/runtime/execute-run.ts` |
+| 2 | concatenate `deps.capabilities` then `args.capabilities` — deps-level first | `packages/loop/src/runtime/execute-run.ts` |
+| 3 | compose the persisted-trace projector registry from host + every capability | `packages/loop/src/runtime/run-trace.ts` |
+| 4 | compose the capability registry with every capability's `grants` | `packages/loop/src/runtime/execute-run.ts` |
+| 5 | `validateBody(rawBody, env, requestRegistry)` | `packages/loop/src/runtime/execute-run.ts` |
+| 6 | build the request view, capture optional host metadata once, then ask every capability `requiresUserInput?` | `packages/loop/src/runtime/execute-run.ts` |
+| 7 | `deriveRunShape(parsed, capabilityNeedsHuman)` and derive `runMode` | `packages/loop/src/runtime/execute-run.ts` |
+| 8 | **throw** `ValidationError("elicitation_not_supported")` if `userInputEnabled` and no `elicit` | `packages/loop/src/runtime/execute-run.ts` |
+| 9 | compile the result contract when `output_schema` is present | `packages/loop/src/runtime/execute-run.ts` |
+| 10 | choose the execution id; **throw** `ConflictError` if `traceStore.existsForOwner` | `packages/loop/src/runtime/execute-run.ts` |
+| 11 | bind the run-scoped logger with `execution_id`, `owner_key_name`, `mode` | `packages/loop/src/runtime/execute-run.ts` |
+| 12 | reserve the id in the per-store in-flight set | `packages/loop/src/runtime/execute-run.ts` |
+| 13 | derive `promptCacheKey = prompt_cache_key ?? executionId`, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `packages/loop/src/runtime/execute-run.ts` |
+| 14 | load the continuation; **throw** `ContinuationUnavailableError` if absent/empty | `packages/loop/src/runtime/execute-run.ts` |
+| 15 | build the swallowing capability-event emitter | `packages/loop/src/runtime/execute-run.ts` |
+| 16 | create the run's `AbortController` and forward `externalSignal` (including an already-aborted one) | `packages/loop/src/runtime/execute-run.ts` |
+| 17 | `runOrchestrator(parsed, {...})` with the prompt-cache-defaulted LLM | `packages/loop/src/runtime/execute-run.ts` |
+| 18 | `collectCapabilityState(runCapabilities, response.status, continuation?.capability_state, …)` | `packages/loop/src/runtime/execute-run.ts` |
+| 19 | `buildRecord({...})` with `mapTrace(trace.entries, wallStartedAt, projectors)` and the same host metadata used in the journal header | `packages/loop/src/runtime/execute-run.ts` |
+| 20 | `traceStore.insert(record)`; on success `journal.discard()` | `packages/loop/src/runtime/execute-run.ts` |
+| 21 | fire every capability's `onRunEnd(record)`, collecting returned promises | `packages/loop/src/runtime/execute-run.ts` |
+| 22 | await them under `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` via `raceWithBudget` | `packages/loop/src/runtime/execute-run.ts` |
+| 23 | return `{ executionId, response }` | `packages/loop/src/runtime/execute-run.ts` |
+| — | `finally`: remove the abort listener, `journal.close()` | `packages/loop/src/runtime/execute-run.ts` |
+| — | outer `finally`: release the execution-id reservation | `packages/loop/src/runtime/execute-run.ts` |
 
 Step 8's error carries `{ capability: "elicitation" }` details and is pinned by
-`packages/loop/tests/component/execute-run.test.ts:100-109`.
+`packages/loop/tests/component/execute-run.test.ts`.
 
 ### 4.2 `runOrchestrator`, in order
 
 | # | Step | Source |
 | --- | --- | --- |
-| 1 | `startedAt = performance.now()`, `wallStartedAt = Date.now()` | `packages/loop/src/runtime/orchestrator.ts:192-193` |
-| 2 | `resolveConfig`, `resolveSubagentProfiles`, capability tool metadata, projectors, request view | `:194-200` |
-| 3 | `deriveRunShape` (re-derived here, with its own `requiresUserInput` sweep) | `:201-205` |
-| 4 | create the agent registry **iff** `canSpawnChildren(shape, grantDeclarations)` | `:208-218`, `packages/loop/src/runtime/spawn-shape.ts:18-29` |
-| 5 | build `CapabilityServices`; provide `AGENT_REGISTRY_PORT` when a registry exists | `:220-221` |
-| 6 | activate every capability: `extensionAdmission.call(…, capability.forRun(ctx))` inside `boundPromise(setupTimeoutMs)` | `:239-311` |
-| 7 | collect `lifecycle` hooks from the activations | `:312` |
-| 8 | resolve every `seedBlock()` under the same wall bound | `:313-341` |
-| 9 | collect `seedMarker`s from **all registered** capabilities, not only the activated ones | `:342-344` |
-| 10 | provide `TOOL_EFFECT_PORT` | `:345` |
-| 11 | open the journal (`openJournal(wallStartedAt)`) and create the trace over `traceBridge` | `:347-372` |
-| 12 | log `run.composed` once, at `info` | `:373-380`, `:519-548` |
-| 13 | `record("init", …)` then `record("run_started", …)` | `:381-382` |
-| 14 | `fireObservers(hooks, "onRunStart", …)` under `setupTimeoutMs` | `:383-399` |
-| 15 | wrap `elicit` in `withElicitWaitBound`, then the serializing relay | `:437-451` |
-| 16 | `openToolPool`; on `!ok` short-circuit straight to `wrap(poolResult.response)` | `:453-462` |
-| 17 | record `mcp_degraded` when some servers failed but the pool is usable | `:471-473` |
+| 1 | `startedAt = performance.now()`, `wallStartedAt = Date.now()` | `packages/loop/src/runtime/orchestrator.ts` |
+| 2 | `resolveConfig`, `resolveSubagentProfiles`, capability tool metadata, projectors, request view | `packages/loop/src/runtime/orchestrator.ts` |
+| 3 | `deriveRunShape` (re-derived here, with its own `requiresUserInput` sweep) | `packages/loop/src/runtime/orchestrator.ts` |
+| 4 | create the agent registry **iff** `canSpawnChildren(shape, grantDeclarations)` | `packages/loop/src/runtime/spawn-shape.ts` |
+| 5 | build `CapabilityServices`; provide `AGENT_REGISTRY_PORT` when a registry exists | `packages/loop/src/runtime/orchestrator.ts` |
+| 6 | activate every capability: `extensionAdmission.call(…, capability.forRun(ctx))` inside `boundPromise(setupTimeoutMs)` | `packages/loop/src/runtime/orchestrator.ts` |
+| 7 | collect `lifecycle` hooks from the activations | `packages/loop/src/runtime/orchestrator.ts` |
+| 8 | resolve every `seedBlock()` under the same wall bound | `packages/loop/src/runtime/orchestrator.ts` |
+| 9 | collect `seedMarker`s from **all registered** capabilities, not only the activated ones | `packages/loop/src/runtime/orchestrator.ts` |
+| 10 | provide `TOOL_EFFECT_PORT` | `packages/loop/src/runtime/orchestrator.ts` |
+| 11 | open the journal (`openJournal(wallStartedAt)`) and create the trace over `traceBridge` | `packages/loop/src/runtime/orchestrator.ts` |
+| 12 | log `run.composed` once, at `info` | `packages/loop/src/runtime/orchestrator.ts` |
+| 13 | `record("init", …)` then `record("run_started", …)` | `packages/loop/src/runtime/orchestrator.ts` |
+| 14 | `fireObservers(hooks, "onRunStart", …)` under `setupTimeoutMs` | `packages/loop/src/runtime/orchestrator.ts` |
+| 15 | wrap `elicit` in `withElicitWaitBound`, then the serializing relay | `packages/loop/src/runtime/orchestrator.ts` |
+| 16 | `openToolPool`; on `!ok` short-circuit straight to `wrap(poolResult.response)` | `packages/loop/src/runtime/orchestrator.ts` |
+| 17 | record `mcp_degraded` when some servers failed but the pool is usable | `packages/loop/src/runtime/orchestrator.ts` |
 | 18 | add tools discovered from successfully opened `auto_tools` servers to every resolved per-run profile | `addAutomaticMcpTools` in `packages/loop/src/runtime/tools/automatic-mcp-tools.ts` |
 | 19 | `runEntryAgent(…)`, then `wrap(outcome.response, outcome)` | `runOrchestrator` in `packages/loop/src/runtime/orchestrator.ts` |
-| — | `finally`: `Promise.allSettled(opened.map(o => o.release()))` | `:497-499` |
+| — | `finally`: `Promise.allSettled(opened.map(o => o.release()))` | `packages/loop/src/runtime/orchestrator.ts` |
 
-`wrap` (`:401-429`) is the single exit funnel: it unions every activation's `guardTripCodes`
-(`:405`), records `run_ended` (`:406`), fires `onRunEnd` observers under the run-end timeout
-(`:407-420`), then **seals** the trace (`:421`). Sealing after `run_ended` is what makes `run_ended`
-the last persisted event (`packages/loop/tests/integration/run-lifecycle-events.test.ts:56`). The
+`wrap` is the single exit funnel: it unions every activation's `guardTripCodes`, records `run_ended`, fires `onRunEnd` observers under the run-end timeout, then **seals** the trace. Sealing after `run_ended` is what makes `run_ended`
+the last persisted event (`packages/loop/tests/integration/run-lifecycle-events.test.ts`). The
 `onRunEnd` observer context it hands every lifecycle hook is `{ status, errorCode?, iterationsUsed,
-elapsedMs }` — `errorCode` present only when `response.status === "error"` (`:410-415`). This is the
+elapsedMs }` — `errorCode` present only when `response.status === "error"`. This is the
 lifecycle-hook *observer* method (§4.14's `ObserverMethod`), distinct from `RunCapability.onRunEnd`
 (invariant 8), which fires later, in `executeRun`, after the record is persisted.
 
 Note the asymmetry in step 6: the activation is invoked **even for a pre-aborted run**, with the
-admission class switched to `"run_end"` when `deps.signal?.aborted` (`:258`). The in-source comment
-at `:246-250` states the reason: "The activation owns finalizeRun/onRunEnd, which must still observe
+admission class switched to `"run_end"` when `deps.signal?.aborted`. The in-source comment
+ states the reason: "The activation owns finalizeRun/onRunEnd, which must still observe
 the cancelled record."
 
 ### 4.3 `runEntryAgent` — building the entry agent
 
-`packages/loop/src/runtime/orchestrator.ts:586-672`:
+`packages/loop/src/runtime/orchestrator.ts`:
 
-- tool registry from the pool, reserving capability wire names (`:601`);
-- token ledger from `config.max_tokens` (`:602`);
-- the entry iteration cap (`:603-607`):
+- tool registry from the pool, reserving capability wire names;
+- token ledger from `config.max_tokens`;
+- the entry iteration cap :
 
 | role | cap |
 | --- | --- |
 | lead, soft mode | `entryResolved.iterationLimit ?? CLARVIS_DEFAULT_ITERATION_LIMIT` |
 | lead, hard mode | `entryResolved.iterationLimit ?? Number.POSITIVE_INFINITY` |
-| sub-agent | `resolveIterationCap(entryResolved, CLARVIS_DEFAULT_ITERATION_LIMIT)` (`packages/loop/src/runtime/subagents/subagent-profiles.ts:67-72`) |
+| sub-agent | `resolveIterationCap(entryResolved, CLARVIS_DEFAULT_ITERATION_LIMIT)` (`packages/loop/src/runtime/subagents/subagent-profiles.ts`) |
 
-- usage accounting (`:611`), entry seed (`:614`), and the per-attempt input builder (`:617-636`);
-- `runWithClockAndTimeout` whose `buildLoop` runs the vision prepass *then* `runAgent` (`:646-656`);
+- usage accounting, entry seed, and the per-attempt input builder;
+- `runWithClockAndTimeout` whose `buildLoop` runs the vision prepass *then* `runAgent`;
 - `toResponse` maps the loop result with a role-aware empty-result fallback message: `"Lead returned
   an empty response."` for a lead; otherwise `"LLM returned an empty response."` for
-  `empty_response` and `"Run terminated with no result."` for any other code (`:658-665`).
+  `empty_response` and `"Run terminated with no result."` for any other code.
 
 ### 4.4 `createEntryInput` — assembling the per-attempt input builder
 
-`packages/loop/src/runtime/entry-inputs.ts:163-318` builds the `EntryInputBuilder` `runEntryAgent`
-calls once per clock/signal attempt (`EntryInputBuilder`'s own type at `:114-117`), in this order:
+`packages/loop/src/runtime/entry-inputs.ts` builds the `EntryInputBuilder` `runEntryAgent`
+calls once per clock/signal attempt (`EntryInputBuilder`'s own type), in this order:
 
-1. **`entryRunCaps` composition** (`:174-206`): a lead's run-capability list is
-   `[createDelegationRunCapability({...}), ...(deps.runCapabilities ?? [])]` — the delegation
+1. **`entryRunCaps` composition** : a lead's run-capability list is
+   `[createDelegationRunCapability({...})...(deps.runCapabilities ?? [])]` — the delegation
    capability first, then the run's own capabilities; a plain subagent gets only
    `deps.runCapabilities ?? []`, no delegation capability at all.
-2. **`orderCapabilities(entryRunCaps)`** (`:208`) sorts that list by declared `order`, exactly as
+2. **`orderCapabilities(entryRunCaps)`** sorts that list by declared `order`, exactly as
    `runOrchestrator`'s own activation fold does, before anything is folded into the entry agent's
    handlers.
-3. **The agents-registry injection** (`:210-217`): when `deps.services` holds an `AGENT_REGISTRY_PORT`
+3. **The agents-registry injection** : when `deps.services` holds an `AGENT_REGISTRY_PORT`
    entry (i.e. a supervision registry exists — see §4.2 step 4), `resolveAgentsLimits` is consulted
-   and, if it resolves, `createAgentsRunCapability(agents, ...)` is **prepended** ahead of the ordered
+   and, if it resolves, `createAgentsRunCapability(agents...)` is **prepended** ahead of the ordered
    list, so the five `agent_*` handlers are matched before any other capability's.
-4. **`buildFinalizerSoftBudget`** (`:128-147`, called per-attempt inside `buildSharedInput`): returns
+4. **`buildFinalizerSoftBudget`** (called per-attempt inside `buildSharedInput`): returns
    `[undefined, undefined]` outright when the run is not in soft mode; otherwise it builds a
    `SoftBudget` from the request's `total_token_limit` and the resolved iteration cap, and — only when
    that budget resolves — a `SoftLimitAsk` bound to the run's `elicit` channel, clock and signal. In
-   soft mode `deps.elicit` is asserted non-`undefined` (`buildSoftLimitAsk(deps.elicit!, ...)`).
+   soft mode `deps.elicit` is asserted non-`undefined` (`buildSoftLimitAsk(deps.elicit!...)`).
 
-The returned builder dispatches to `buildLeadInput` or `buildSubagentInput` (`:316-318`) — a lead's
+The returned builder dispatches to `buildLeadInput` or `buildSubagentInput` — a lead's
 persona names its spawnable subagent registry and soft-mode status; a subagent's persona carries the
-request's user text as its task body (`subagentTaskBody`, computed once at `:169` from
+request's user text as its task body (`subagentTaskBody`, computed once from
 `userText(request.messages)`, empty for a lead).
 
 ### 4.5 `runWithClockAndTimeout` — the timeout/cancel race
 
-`packages/loop/src/runtime/run-timeout.ts:66`. The clock is a **stall** clock, not a wall clock: it
-is armed with `config.timeout_ms` (`:78`) and re-armed by `poke()` on every trace entry
-(`packages/loop/src/runtime/run-trace.ts:148`). The doc comment at `:44-46` states `timeout_ms` means
+`packages/loop/src/runtime/run-timeout.ts`. The clock is a **stall** clock, not a wall clock: it
+is armed with `config.timeout_ms` and re-armed by `poke()` on every trace entry
+(`packages/loop/src/runtime/run-trace.ts`). The doc comment states `timeout_ms` means
 "no activity for this long".
 
 | Race winner | Effect | Source |
 | --- | --- | --- |
-| `"timeout"` | abort the internal controller, wait `settleGraceMs`, return `errorResponse(finalize(), "timeout", "Run stalled: no activity for timeout_ms=…", { elapsed_ms })` | `:102-128` |
-| the `externallyAborted` sentinel | wait `settleGraceMs`, return `mapErrorToResponse(externalSignal.reason, finalize(), externalSignal)` — i.e. `cancelled` | `:129-147` |
-| the loop's own value | `toResponse(winner, finalize())` | `:148` |
-| a thrown error | `mapErrorToResponse(err, finalize(), externalSignal)` | `:149-150` |
+| `"timeout"` | abort the internal controller, wait `settleGraceMs`, return `errorResponse(finalize(), "timeout", "Run stalled: no activity for timeout_ms=…", { elapsed_ms })` | `packages/loop/src/runtime/run-timeout.ts` |
+| the `externallyAborted` sentinel | wait `settleGraceMs`, return `mapErrorToResponse(externalSignal.reason, finalize(), externalSignal)` — i.e. `cancelled` | `packages/loop/src/runtime/run-timeout.ts` |
+| the loop's own value | `toResponse(winner, finalize())` | `packages/loop/src/runtime/run-timeout.ts` |
+| a thrown error | `mapErrorToResponse(err, finalize(), externalSignal)` | `packages/loop/src/runtime/run-timeout.ts` |
 
 If the loop does not settle within the grace, a `run.teardown_detached` warning is logged and the
-promise is detached via `suppressSecondaryRejection` (`:105-119`, `:131-145`).
-`packages/loop/tests/unit/run-timeout.test.ts:16-38` pins that the outer run resolves with
-`{status:"error", error:{code:"timeout"}}` while the loop is still hanging;
-`:40-57` pins the same for external cancellation.
+promise is detached via `suppressSecondaryRejection`.
+`packages/loop/tests/unit/run-timeout.test.ts` pins that the outer run resolves with
+`{status:"error", error:{code:"timeout"}}` while the loop is still hanging, and pins the same
+settlement behavior for external cancellation.
 
-`finalize()` is called exactly once on every exit path (`:122,147,149,151`) — the doc comment at
-`:59` states this explicitly.
+`finalize()` is called exactly once on every exit path — the doc comment states this explicitly.
 
 ### 4.6 `runAgent` — assembling `LoopDerived`
 
-`packages/loop/src/runtime/loop/run-agent.ts:124`, in order:
+`packages/loop/src/runtime/loop/run-agent.ts`, in order:
 
-1. bind an agent-scoped logger (`:132-135`);
-2. create the `LiveContext` from the seed and notify `onContext` (`:137-144`);
-3. build convergence guards, arg validator, progress tracker (`:150-162`);
-4. **early cancellation probe** — return a cancelled result before anything else (`:194-197`), pinned
-   by `packages/loop/tests/unit/run-agent.test.ts:166-176` (`llm.calls` is empty);
-5. build `budgetStop`, `onGuardTrip`, `checkpoint` (`:199-274`) — `budgetStop(kind)` fires
+1. bind an agent-scoped logger;
+2. create the `LiveContext` from the seed and notify `onContext`;
+3. build convergence guards, arg validator, progress tracker;
+4. **early cancellation probe** — return a cancelled result before anything else; this is pinned
+   by `packages/loop/tests/unit/run-agent.test.ts` (`llm.calls` is empty);
+5. build `budgetStop`, `onGuardTrip`, `checkpoint` — `budgetStop(kind)` fires
    `onBudgetExhausted` with `{ agent, reason: kind, tokensUsed: budget.ledger.consumed(),
-   iterationsUsed: budget.counter.count() }` (`:199-210`) before returning the terminal
+   iterationsUsed: budget.counter.count() }` before returning the terminal
    `budget_exhausted`/`soft_limit_declined` result;
-6. create the steer inbox (`:276`);
-7. build the `LoopAgentBuildContext` and `attach` every agent capability, then `foldContributions`
-   (`:278-300`);
-8. append the hook-driven pre-finalize gate, if any hook owns `preFinalize` (`:301-314`);
-9. compute the visible tool list, filtering vision tools for a non-vision target (`:316-328`);
-10. build the catch-all MCP handler (`:330-337`);
+6. create the steer inbox;
+7. build the `LoopAgentBuildContext` and `attach` every agent capability, then `foldContributions`;
+8. append the hook-driven pre-finalize gate, if any hook owns `preFinalize`;
+9. compute the visible tool list, filtering vision tools for a non-vision target;
+10. build the catch-all MCP handler;
 11. **pre-loop budget check** — `checkLimits`, plus `folded.outputBudget?.remaining() < 1`; record
-    `budget_check` and return `budgetStop("exhausted")` (`:339-346`), pinned by
-    `packages/loop/tests/unit/run-agent.test.ts:645-669` (fires `onBudgetExhausted` and records
+    `budget_check` and return `budgetStop("exhausted")`, pinned by
+    `packages/loop/tests/unit/run-agent.test.ts` (fires `onBudgetExhausted` and records
     `budget_check`, with zero model calls);
-12. wrap the target's LLM in `withOutputTokenBudget` when a capability contributed one (`:493-502`);
+12. wrap the target's LLM in `withOutputTokenBudget` when a capability contributed one;
 13. call `runAgentLoop`, and close the steer source / compaction source in a `finally` when either
-    exists (`:629-634`).
+    exists.
 
-Handler order is `[...folded.handlers, submitHandler?, mcpHandler]` (`:415-419`); `selectHandler`
-takes the first match (`packages/loop/src/runtime/loop/loop-contract.ts:84-89`) and `mcpHandler`
-matches everything (`packages/loop/src/runtime/loop/mcp-handler.ts:34`), so it is the terminal
+Handler order is `[...folded.handlers, submitHandler?, mcpHandler]`; `selectHandler`
+takes the first match (`packages/loop/src/runtime/loop/loop-contract.ts`) and `mcpHandler`
+matches everything (`packages/loop/src/runtime/loop/mcp-handler.ts`), so it is the terminal
 fallback by construction.
 
 ### 4.7 `runAgentLoop` — one iteration, step by step
 
-`packages/loop/src/runtime/loop/loop.ts:886`. `core.onStart?.()` fires once before the loop (`:895`).
+`packages/loop/src/runtime/loop/loop.ts`. `core.onStart?.()` fires once before the loop.
 
 | # | Step | Source | Early exit |
 | --- | --- | --- | --- |
-| 1 | `beforeIteration?.()` | `:903` | — |
+| 1 | `beforeIteration?.()` | `packages/loop/src/runtime/loop/loop.ts` | — |
 | 2 | `runIterationPreamble` — abort probe, `allToolsUnavailable` probe, compaction thunk, counter+`*_iteration_started` | `packages/loop/src/runtime/loop/loop.ts` (`runAgentLoop`, `runIterationPreamble` call); `packages/loop/src/runtime/loop/loop-iteration.ts` (`runIterationPreamble`) | `cancelled` → `maybeCancelled()!`; `all_tools_unavailable` → `results.allToolsUnavailable()` (`runAgentLoop`, non-proceed branch) |
-| 3 | `drainSteer?.(iteration)` | `:921` | — |
-| 4 | build the call: `buildModelCall`, `withStreaming`, `takeForcedChoice` | `:923-959` | — |
-| 5 | `callModelWithRecovery` | `:960-1009` | `OutputBudgetExhaustedError` → `results.budgetExhausted()` (`:1005-1007`); `!ok` → the cancelled result (`:1009`) |
-| 6 | `ctx.observeUsage(input_tokens)` and `recordIterationMetrics` | `:1011` (observe), `:1013-1025` (metrics) | — |
-| 7 | `classifyResponse` | call site `:1027`, function `packages/loop/src/runtime/loop/classify-response.ts:18` | — |
-| 8a | `empty` / `reasoning-only` → append reasoning parts, bump streak, nudge, bump progress, checkpoint | `:1028-1044` | streak ≥ 2 → `results.emptyResponse()`; progress trip → `results.noProgress()`; checkpoint → its result |
-| 8b | `text-only` → `finalize.onTextOnly` | `:1046-1055` | `{kind:"return"}` → its result |
-| 8c | `has-tools` → `onAssistantText`, `appendAssistantToolCalls`, `fastAcceptSubmit`, `runDispatch` | `:1057-1070` | fast-accept → its result; dispatch `terminal` → its result |
-| 9 | `afterDispatch?.()` | `:1072` | — |
-| 10 | soft convergence warnings: one joined runtime note + one trace entry each | `:1074-1094` | — |
-| 11 | hard guard trip → `onGuardTrip?`; `"continue"` falls through, `undefined` records `terminate` and returns `results.guardTrip(trip)` | `:1096-1115` | — |
-| 12 | fold progress; `progress.bump(productive)` | `:1117-1120` | trip → `results.noProgress()` |
-| 13 | `beforeCheckpoint?.()` then `cancelOrCheckpoint` | `:1122-1125` | non-null → its result |
-| — | `catch`: `OutputBudgetExhaustedError` → `results.budgetExhausted()`, else rethrow | `:1127-1129` | — |
-| — | `finally`: `await d.onTeardown?.()` | `:1130-1132` | — |
+| 3 | `drainSteer?.(iteration)` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 4 | build the call: `buildModelCall`, `withStreaming`, `takeForcedChoice` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 5 | `callModelWithRecovery` | `packages/loop/src/runtime/loop/loop.ts` | `OutputBudgetExhaustedError` → `results.budgetExhausted()`; `!ok` → the cancelled result |
+| 6 | `ctx.observeUsage(input_tokens)` and `recordIterationMetrics` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 7 | `classifyResponse` | `packages/loop/src/runtime/loop/classify-response.ts` | — |
+| 8a | `empty` / `reasoning-only` → append reasoning parts, bump streak, nudge, bump progress, checkpoint | `packages/loop/src/runtime/loop/loop.ts` | streak ≥ 2 → `results.emptyResponse()`; progress trip → `results.noProgress()`; checkpoint → its result |
+| 8b | `text-only` → `finalize.onTextOnly` | `packages/loop/src/runtime/loop/loop.ts` | `{kind:"return"}` → its result |
+| 8c | `has-tools` → `onAssistantText`, `appendAssistantToolCalls`, `fastAcceptSubmit`, `runDispatch` | `packages/loop/src/runtime/loop/loop.ts` | fast-accept → its result; dispatch `terminal` → its result |
+| 9 | `afterDispatch?.()` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 10 | soft convergence warnings: one joined runtime note + one trace entry each | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 11 | hard guard trip → `onGuardTrip?`; `"continue"` falls through, `undefined` records `terminate` and returns `results.guardTrip(trip)` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 12 | fold progress; `progress.bump(productive)` | `packages/loop/src/runtime/loop/loop.ts` | trip → `results.noProgress()` |
+| 13 | `beforeCheckpoint?.()` then `cancelOrCheckpoint` | `packages/loop/src/runtime/loop/loop.ts` | non-null → its result |
+| — | `catch`: `OutputBudgetExhaustedError` → `results.budgetExhausted()`, else rethrow | `packages/loop/src/runtime/loop/loop.ts` | — |
+| — | `finally`: `await d.onTeardown?.()` | `packages/loop/src/runtime/loop/loop.ts` | — |
 
 Step 2's "compaction thunk" is not a lightweight check: `buildCompactionThunk`
-(`packages/loop/src/runtime/loop/loop.ts:242-372`) can itself call `runCompaction`/`attemptCompaction`,
+(`packages/loop/src/runtime/loop/loop.ts`) can itself call `runCompaction`/`attemptCompaction`,
 which invoke `target.llm` to summarize the context. It runs after the cancellation and
-`allToolsUnavailable` probes (`packages/loop/src/runtime/loop/loop-iteration.ts:42-48`), but before the
+`allToolsUnavailable` probes (`packages/loop/src/runtime/loop/loop-iteration.ts`), but before the
 iteration's own model call — so a slow or failing compaction summarization is a real model call
 subject to the same stall clock as any other, and it can consume the run's inactivity budget before an
 ordinary per-iteration model call happens at all this turn. The thunk's own internal policy
@@ -551,14 +543,13 @@ ordinary per-iteration model call happens at all this turn. The thunk's own inte
 Two ordering facts the code itself calls out:
 
 - The soft-warning note is *joined* rather than appended twice, because `appendRuntimeNote` replaces
-  any earlier note of the same kind and the second would delete the first
-  (`:1074-1079`).
+  any earlier note of the same kind and the second would delete the first.
 - A waived guard trip falls **through** to steps 12–13 rather than `continue`-ing, so a waiver does
-  not exempt the turn from the no-progress tracker or the budget checkpoint (`:1096-1101`).
+  not exempt the turn from the no-progress tracker or the budget checkpoint.
 
 ### 4.8 Response classification
 
-`classifyResponse` (`packages/loop/src/runtime/loop/classify-response.ts:18-26`), in strict priority
+`classifyResponse` (`packages/loop/src/runtime/loop/classify-response.ts`), in strict priority
 order:
 
 | condition | class |
@@ -568,172 +559,168 @@ order:
 | `reasoning` non-empty | `reasoning-only` |
 | otherwise | `empty` |
 
-Pinned by `packages/loop/tests/unit/classify-response.test.ts:6-29`, including that empty strings and
-an empty `toolCalls` array all read as `empty` (`:26-29`).
+Pinned by `packages/loop/tests/unit/classify-response.test.ts`, including that empty strings and
+an empty `toolCalls` array all read as `empty`.
 
 ### 4.9 Empty / reasoning-only streak
 
-State machine over `emptyStreak` (`packages/loop/src/runtime/loop/loop.ts:899,1032,1045`):
+State machine over `emptyStreak` (`packages/loop/src/runtime/loop/loop.ts`):
 
 | state | event | next | effect |
 | --- | --- | --- | --- |
-| `streak = 0` | `empty` or `reasoning-only` | `streak = 1` | append reasoning parts if any (`:1029-1030`); append the class-specific `empty_response` runtime note (`:1034-1039`); `progress.bump(false)`; checkpoint; `continue` |
-| `streak = 1` | `empty` or `reasoning-only` | terminal | `results.emptyResponse()` → `status: "error"`, code `empty_response` (`:1033`, `packages/loop/src/runtime/loop/run-agent.ts:546-554`) |
-| any | `text-only` or `has-tools` | `streak = 0` | (`:1045`) |
+| `streak = 0` | `empty` or `reasoning-only` | `streak = 1` | append reasoning parts if any; append the class-specific `empty_response` runtime note; `progress.bump(false)`; checkpoint; `continue` |
+| `streak = 1` | `empty` or `reasoning-only` | terminal | `results.emptyResponse()` → `status: "error"`, code `empty_response` (`packages/loop/src/runtime/loop/run-agent.ts`) |
+| any | `text-only` or `has-tools` | `streak = 0` | — |
 
-Pinned end-to-end by `packages/loop/tests/integration/empty-response.test.ts:20-35` (two empties →
-error), `:67-83` (one empty is nudged and recovers), `:85-113` (reasoning-only is not terminal and
-the reasoning parts survive into the next request), `:115-140` (the streak resets). The single-note
-property is pinned by `packages/loop/tests/unit/run-agent.test.ts:672-710`.
+Pinned end-to-end by `packages/loop/tests/integration/empty-response.test.ts` (two empties →
+error) (one empty is nudged and recovers) (reasoning-only is not terminal and
+the reasoning parts survive into the next request) (the streak resets). The single-note
+property is pinned by `packages/loop/tests/unit/run-agent.test.ts`.
 
 The error message is `"${agent} returned neither text nor tool calls in consecutive completions."`
-with `agent` ∈ `{"LLM","Lead"}` (`packages/loop/src/runtime/loop/loop-shared.ts:100-108`), selected
+with `agent` ∈ `{"LLM","Lead"}` (`packages/loop/src/runtime/loop/loop-shared.ts`), selected
 by `RunAgentInput.emptyResponseAgent`.
 
 ### 4.10 Model call and its recoveries
 
-`buildModelCall` (`packages/loop/src/runtime/loop/loop.ts:424-475`) assembles `LLMCallParams`:
-tools are withheld as an empty list when the target lacks `tool_calling` (`:430`, `:442`); cache breakpoints come from
-`ctx.cacheBreakpoints()` filtered to non-negative indices (`:433-434`, `:441`); `maxOutputTokens`
-goes through `clampOutputBudget` (`:445-453`); `onRetry` is attached **unconditionally** and both
-pokes the clock and records a durable `model_call_retry` (`:459-473`).
+`buildModelCall` (`packages/loop/src/runtime/loop/loop.ts`) assembles `LLMCallParams`:
+tools are withheld as an empty list when the target lacks `tool_calling`; cache breakpoints come from
+`ctx.cacheBreakpoints()` filtered to non-negative indices; `maxOutputTokens`
+goes through `clampOutputBudget`; `onRetry` is attached **unconditionally** and both
+pokes the clock and records a durable `model_call_retry`.
 
-`clampOutputBudget` (`:394-404`, doc at `:374-393`): raise `configured` to `max(configured, floor)`; if
+`clampOutputBudget` (doc): raise `configured` to `max(configured, floor)`; if
 `windowTokens <= 0` return that; else return `max(1, min(floored, floor((windowTokens −
-promptTokensEstimate) * 0.9)))`. The doc comment at `:389-392` states the window always wins over
-the reasoning floor. Pinned by `packages/loop/tests/component/max-output-tokens-clamp.test.ts:30-56`.
+promptTokensEstimate) * 0.9)))`. The doc comment states the window always wins over
+the reasoning floor. Pinned by `packages/loop/tests/component/max-output-tokens-clamp.test.ts`.
 
-`callModelWithRecovery` (`packages/loop/src/runtime/loop/model-call.ts:84-131`):
+`callModelWithRecovery` (`packages/loop/src/runtime/loop/model-call.ts`):
 
 | situation | behaviour |
 | --- | --- |
-| success | `{ ok: true, result }` (`:92`) |
-| any throw, run aborted | `{ ok: false, cancelled }` (`:94-95`) |
-| `context_overflow` and `overflowRecoveries < 3` and `evict()` returned an event | record `compaction`, increment, `rebuild()` the call, retry (`:96-107`) |
-| `context_overflow`, nothing evictable, `overflowDiagnostic` given | synthesize a new `ProviderError` with the diagnostic text, `recordError` it, throw it (`:108-115`) |
-| forced tool choice + `client` error | `recordError` the original, retry once with the **unforced** base call (`:117-127`) |
-| anything else | `recordError` if it is a `ProviderError`, rethrow (`:128-129`) |
+| success | `{ ok: true, result }` |
+| any throw, run aborted | `{ ok: false, cancelled }` |
+| `context_overflow` and `overflowRecoveries < 3` and `evict()` returned an event | record `compaction`, increment, `rebuild()` the call, retry |
+| `context_overflow`, nothing evictable, `overflowDiagnostic` given | synthesize a new `ProviderError` with the diagnostic text, `recordError` it, throw it |
+| forced tool choice + `client` error | `recordError` the original, retry once with the **unforced** base call |
+| anything else | `recordError` if it is a `ProviderError`, rethrow |
 
-Pinned by `packages/loop/tests/unit/model-call.test.ts:104-167` (forced-choice retry, both errors
-recorded, cancellation after retry) and `:170-279` (overflow: eviction retry, raw rethrow without a
+Pinned by `packages/loop/tests/unit/model-call.test.ts` (forced-choice retry, both errors
+recorded, cancellation after retry) (overflow: eviction retry, raw rethrow without a
 diagnostic, the diagnostic path, and the hard stop after `MAX_OVERFLOW_RECOVERIES` with
 `llm.calls` of length 8).
 
 `rebuild` exists because `cacheBreakpoints` are *indices* captured before an eviction shifted the
-array — the doc comment at `packages/loop/src/runtime/loop/model-call.ts:50-60` spells out the
+array — the doc comment at `packages/loop/src/runtime/loop/model-call.ts` spells out the
 failure it prevents.
 
 ### 4.11 The output-token budget
 
-`withOutputTokenBudget` (`packages/loop/src/runtime/loop/output-budget.ts:65-138`) wraps `llm.call` in
+`withOutputTokenBudget` (`packages/loop/src/runtime/loop/output-budget.ts`) wraps `llm.call` in
 a reservation against a shared `OutputTokenBudget`, and splits into two branches on
 `budget.remaining()`:
 
-- **Unbounded** (`remaining === Number.POSITIVE_INFINITY`, `:71-86`): no reservation is taken up
+- **Unbounded** (`remaining === Number.POSITIVE_INFINITY`): no reservation is taken up
   front — the call runs directly — but the result is still accounted for afterward: on success or on
   a failure carrying `accumulatedUsage`/`partialUsage`, the observed output tokens are reserved and
   immediately settled. This branch is not a pure passthrough: it always touches the shared accounting,
   it simply never blocks on it.
-- **Bounded** (`:87-134`): `remaining < 1` throws `OutputBudgetExhaustedError` immediately (`:87`).
+- **Bounded** : `remaining < 1` throws `OutputBudgetExhaustedError` immediately.
   Otherwise `configuredAttempts = (params.maxRetries ?? 0) + 1` and
   `desiredPerAttempt = params.maxOutputTokens ?? remaining` are combined into a requested reservation
-  of `min(remaining, desiredPerAttempt * configuredAttempts)` (`:89-95`); a `null` reservation or one
-  under 1 token also throws `OutputBudgetExhaustedError` (`:97-100`). The reservation is then divided
+  of `min(remaining, desiredPerAttempt * configuredAttempts)`; a `null` reservation or one
+  under 1 token also throws `OutputBudgetExhaustedError`. The reservation is then divided
   back into `attempts = min(configuredAttempts, floor(reservation.amount))` and
-  `perAttempt = min(desiredPerAttempt, floor(reservation.amount / attempts))` (`:102-108`) — so a tiny
+  `perAttempt = min(desiredPerAttempt, floor(reservation.amount / attempts))` — so a tiny
   remaining ceiling silently shrinks the number of hidden retries the call is allowed, not just their
   size. The bounded call is always sent with an explicit `maxRetries: attempts - 1` so an inner retry
   decorator cannot apply an unseen default and escape the reservation.
 
 On settle, three outcomes: a failure carrying `accumulatedUsage`/`partialUsage` settles that exact
-amount (`:118-124`); `producedNoBillableOutput(err)` — no `streamStarted`, no accumulated/partial
-usage — releases the whole reservation (`:125-126`); anything else (output had begun streaming, or the
-failure is unclassified) settles the **entire** reservation (`:127-133`), because that is the only way
+amount; `producedNoBillableOutput(err)` — no `streamStarted`, no accumulated/partial
+usage — releases the whole reservation; anything else (output had begun streaming, or the
+failure is unclassified) settles the **entire** reservation, because that is the only way
 to keep the shared ceiling hard when no accounting survived the failure.
 
-Pinned by `packages/loop/tests/unit/output-budget.test.ts:52-77` (per-attempt reservation math),
-`:78-96` (hidden retries shrink under a tiny remaining ceiling), `:97-122` (attributed streamed
-failure, and a later call is rejected once the budget is gone), `:123-141` (full charge on
-untrustworthy failure), and `:142-168` (a context-overflow reservation released ahead of the
+Pinned by `packages/loop/tests/unit/output-budget.test.ts` (per-attempt reservation math) (hidden retries shrink under a tiny remaining ceiling) (attributed streamed
+failure, and a later call is rejected once the budget is gone) (full charge on
+untrustworthy failure), (a context-overflow reservation released ahead of the
 recovery call).
 
 ### 4.12 Tool dispatch within an iteration
 
-`runDispatch` (`packages/loop/src/runtime/loop/loop.ts:711-863`). Full mechanics of *what a tool
+`runDispatch` (`packages/loop/src/runtime/loop/loop.ts`). Full mechanics of *what a tool
 does* belong to [loop-tool-dispatch-and-results](tool-dispatch.md); what this document owns is the batch's control flow:
 
 1. pause the compute clock for the whole batch — this agent's own `computeRegion` if it has one,
-   else `clock.pauseCompute()` (`:730`), released in `finally` (`:840`);
+   else `clock.pauseCompute()`, released in `finally`;
 2. iterate the calls in emission order; break immediately if a terminal was set or the run signal
-   aborted (`:733-739`);
+   aborted;
 3. run `beforeToolUse` hooks; a denial short-circuits that one call with
-   `DENIED by a workspace hook: …` and continues the batch (`:740-746`);
+   `DENIED by a workspace hook: …` and continues the batch;
 4. a rewrite produces a **new** call object carrying `rewrittenFrom`, never a mutation of the one
    already in context; its advisory rendering is capped at 2,000 characters before entering the
-   model context (`:492-536`, `:747-757`);
-5. `settleOrAbort` the handler against the run signal (`:758-761`): `aborted` → cancelled text and
-   break (`:762-767`); `rejected` → `Tool 'X' failed: msg`, warn, continue (`:768-776`);
-6. `afterToolUse` hooks fold advisories into a `result` verdict (`:778-782`);
-7. verdict routing — `terminal` sets `terminal` and breaks with `terminalCallText` (`:783-786`);
-   `cancelled` records the text and only terminates if the run is genuinely cancelled (`:788-795`);
-   `deferred` is pushed onto the concurrent list under a batch signal (`:797-824`); plain results are
-   stored (`:826-829`);
+   model context;
+5. `settleOrAbort` the handler against the run signal : `aborted` → cancelled text and
+   break; `rejected` → `Tool 'X' failed: msg`, warn, continue;
+6. `afterToolUse` hooks fold advisories into a `result` verdict;
+7. verdict routing — `terminal` sets `terminal` and breaks with `terminalCallText`;
+   `cancelled` records the text and only terminates if the run is genuinely cancelled;
+   `deferred` is pushed onto the concurrent list under a batch signal; plain results are
+   stored;
 8. `finally`: abort the batch controller if terminal or the loop broke early, then `settleOrAbort` the
-   joined deferreds; an abort here converts to a cancelled terminal (`:832-840`);
+   joined deferreds; an abort here converts to a cancelled terminal;
 9. after the loop, **every** slot is filled — unfilled ones get
    `Tool 'X' was not completed (the dispatch ended before its result).` — spilled if oversize, and
-   appended to the context as a tool message (`:843-857`).
+   appended to the context as a tool message.
 
-`terminalCallText` (`:648-655`) never fabricates a failure: handler-supplied `text` wins, then a
+`terminalCallText` never fabricates a failure: handler-supplied `text` wins, then a
 cancellation line, then the error message, then `Tool 'X' result: accepted (the run ended with this
 call).` All four branches plus the "was not completed" fill are pinned by
-`packages/loop/tests/unit/run-agent.test.ts:594-641`.
+`packages/loop/tests/unit/run-agent.test.ts`.
 
 The dispatch's tolerance for throwing and rejecting handlers, and the guarantee that every
 `tool_call` gets a paired `tool_result`, is pinned by
-`packages/loop/tests/unit/run-agent.test.ts:311-409` (`assertNoOrphans`), and the abort boundaries by
-`:411-536`.
+`packages/loop/tests/unit/run-agent.test.ts` (`assertNoOrphans`), and the abort boundaries.
 
 ### 4.13 Finalization
 
 Two paths, chosen by whether `RunAgentInput.contract` is set
-(`packages/loop/src/runtime/loop/run-agent.ts:174`).
+(`packages/loop/src/runtime/loop/run-agent.ts`).
 
 **With a contract** (`output_schema` present):
 
-- `fastAcceptSubmit` (`:566-580`) accepts only when *all five* conditions hold: exactly one tool call
-  (`:567`), it is `submit_result` (`:569`), it validates (`:570-571`), **no** hook owns
-  `beforeToolUse` (`:572`), and every gate's `fastAcceptOk?.() ?? true` is true (`:573`). It opens a
-  `CallEnvelope`, appends the acceptance as the tool message, and completes (`:574-579`). Each guard
-  is pinned: `packages/loop/tests/integration/fast-accept-submit.test.ts:41` (a sibling tool call
-  forces the slow path and the sibling actually runs), `:93` (a denying `beforeToolUse` hook is
-  honoured), `:127` (the plain single-submit fast path survives).
-- otherwise `submitHandler` (`:381-413`) validates, records `lastSubmitAttempt`, and on success runs
+- `fastAcceptSubmit` accepts only when *all five* conditions hold: exactly one tool call, it is `submit_result`, it validates, **no** hook owns
+  `beforeToolUse`, and every gate's `fastAcceptOk?.() ?? true` is true. It opens a
+  `CallEnvelope`, appends the acceptance as the tool message, and completes. Each guard
+  is pinned: `packages/loop/tests/integration/fast-accept-submit.test.ts` (a sibling tool call
+  forces the slow path and the sibling actually runs) (a denying `beforeToolUse` hook is
+  honoured) (the plain single-submit fast path survives).
+- otherwise `submitHandler` validates, records `lastSubmitAttempt`, and on success runs
   the gates: `terminal` → terminal verdict with the envelope's failure text; `nudge` → a plain result
-  carrying the note plus a `noteGateNudged` (`:392-405`).
-- `onTextOnly` (`:583-609`) never accepts bare text: it appends the assistant text plus
+  carrying the note plus a `noteGateNudged`.
+- `onTextOnly` never accepts bare text: it appends the assistant text plus
   `"[runtime: result not yet submitted; call submit_result to finalize]"`, bumps progress, and either
   terminates on `no_progress` (using `textNoSubmitMessage` when supplied) or checkpoints and
-  continues. Pinned by `packages/loop/tests/unit/run-agent.test.ts:101-126`.
+  continues. Pinned by `packages/loop/tests/unit/run-agent.test.ts`.
 
-**Without a contract**: `onTextOnly` (`:610-624`) appends the text, runs the gates, and completes on
-`pass`; a `nudge` appends the note, and only an `unbounded` nudge bumps the progress tracker
-(`:617-619`).
+**Without a contract**: `onTextOnly` appends the text, runs the gates, and completes on
+`pass`; a `nudge` appends the note, and only an `unbounded` nudge bumps the progress tracker.
 
-`runGates` (`packages/loop/src/runtime/loop/loop-contract.ts:103-112`) runs gates in order and
+`runGates` (`packages/loop/src/runtime/loop/loop-contract.ts`) runs gates in order and
 short-circuits on the first non-`pass`, returning the gate's **ordinal** as its only identity — the
-doc comment at `:98-101` states the ordinal is stable because gates are folded in capability
+doc comment states the ordinal is stable because gates are folded in capability
 registration order.
 
 **Forced tool after a nudge**: `noteGateNudged` sets `forceToolNextIteration` when
-`input.forceToolOnNudge === true` (`packages/loop/src/runtime/loop/run-agent.ts:437-446`), and
-`takeForcedChoice` consumes it exactly once, returning `"required"` (`:517-529`). The one-shot
-property is documented in-source at `:432-434`: leaving the choice forced would stop the model from
+`input.forceToolOnNudge === true` (`packages/loop/src/runtime/loop/run-agent.ts`), and
+`takeForcedChoice` consumes it exactly once, returning `"required"`. The one-shot
+property is documented in-source : leaving the choice forced would stop the model from
 ever finishing, since `submit_result` is a tool but a closing summary is not.
 
 ### 4.14 Lifecycle-hook sweep machinery
 
-`ObserverMethod` (`packages/loop/src/runtime/loop/lifecycle-hooks.ts:57-65`) enumerates the eight
+`ObserverMethod` (`packages/loop/src/runtime/loop/lifecycle-hooks.ts`) enumerates the eight
 fire-and-forget hook methods `fireObservers` dispatches: `onRunStart`, `onRunEnd`,
 `onSubagentStart`, `onSubagentComplete`, `onPostCompact`, `onModelCallError`,
 `onBudgetExhausted`, `onUserSteer`. `onPreCompact` is
@@ -741,42 +728,39 @@ deliberately **not** a member — it returns contributions, which `fireObservers
 it through this path would silently drop every one; `collectCompactionContributions` is its own
 separate sweep (see invariant 66).
 
-`runVerdictHooks` (`:102-149`) sweeps a verdict-returning hook list and short-circuits on the first
+`runVerdictHooks` sweeps a verdict-returning hook list and short-circuits on the first
 `deny`. Its `select` callback's *second* argument carries the arguments an earlier hook in the same
-sweep already rewrote (`:92-93`, `:120`), so a later hook rules on what its predecessors actually left,
+sweep already rewrote, so a later hook rules on what its predecessors actually left,
 and the sweep's `VerdictSweep.rewritten` is therefore the **last** writer's value, never accumulated
 across hooks. A denial carries no rewritten payload — a call that will not run has no arguments worth
 reporting.
 
-`buildPreFinalizeGate` (`:165-211`) builds the `FinalizeGate` that consults every hook's
+`buildPreFinalizeGate` builds the `FinalizeGate` that consults every hook's
 `preFinalize`. Its fail-closed shape is **not** the same as `beforeToolUse`'s outright denial: a
 denied or thrown `preFinalize` hook becomes an **unbounded `nudge`** carrying a
-`[runtime: finalize rejected …]` note (`:198-206`) — never a terminal result. The agent is nudged to
-try again, not stopped; `fastAcceptOk` reports `true` only when no hook defines `preFinalize` at all
-(`:175`).
+`[runtime: finalize rejected …]` note — never a terminal result. The agent is nudged to
+try again, not stopped; `fastAcceptOk` reports `true` only when no hook defines `preFinalize` at all.
 
 ### 4.15 Steering
 
-`SteerSource` is pull-only. `createSteerInbox` (`packages/loop/src/runtime/loop/steer-inbox.ts:38`)
+`SteerSource` is pull-only. `createSteerInbox` (`packages/loop/src/runtime/loop/steer-inbox.ts`)
 splits arrival-detection from consumption: `probe()` pulls into a local buffer and reports
-non-emptiness without consuming (`:63-66`); `take()` pulls, hands the buffer over and clears it
-(`:57-62`); a throwing `drain()` is logged and treated as empty (`:45-53`). The whole surface is
-pinned by `packages/loop/tests/unit/steer-inbox.test.ts:27-147`.
+non-emptiness without consuming; `take()` pulls, hands the buffer over and clears it; a throwing `drain()` is logged and treated as empty. The whole surface is
+pinned by `packages/loop/tests/unit/steer-inbox.test.ts`.
 
-`drainSteer` (`packages/loop/src/runtime/loop/run-agent.ts:460-490`) runs at the *top* of an
-iteration, after the preamble (`packages/loop/src/runtime/loop/loop.ts:921`). For each message it
+`drainSteer` (`packages/loop/src/runtime/loop/run-agent.ts`) runs at the *top* of an
+iteration, after the preamble (`packages/loop/src/runtime/loop/loop.ts`). For each message it
 appends a user entry, records a `user_steering` trace entry carrying `iteration_ref` and the
-flattened text, and fires `onUserSteer` observers; after the batch it calls `progress.reset()`
-(`:511`).
+flattened text, and fires `onUserSteer` observers; after the batch it calls `progress.reset()`.
 
-`packages/loop/tests/unit/steering.test.ts:122-165` pins that a steer queued *during* iteration N's
-dispatch appears in iteration N+1's request and carries `iteration_ref: 2`; `:167-205` pins FIFO
-ordering with one event each; `:207-238` pins multimodal content passing through; `:242-278` pins
+`packages/loop/tests/unit/steering.test.ts` pins that a steer queued *during* iteration N's
+dispatch appears in iteration N+1's request and carries `iteration_ref: 2` pins FIFO
+ordering with one event each pins multimodal content passing through pins
 that the reset buys a redirected run an extra iteration.
 
-`bc.steerProbe` exposes `probe()` to capabilities (`packages/loop/src/runtime/loop/run-agent.ts:293`)
+`bc.steerProbe` exposes `probe()` to capabilities (`packages/loop/src/runtime/loop/run-agent.ts`)
 so an interruptible idle can wake on a steer without swallowing it — the module doc at
-`packages/loop/src/runtime/loop/steer-inbox.ts:3-15` states this is the whole reason the inbox exists.
+`packages/loop/src/runtime/loop/steer-inbox.ts` states this is the whole reason the inbox exists.
 
 ### 4.16 Cancellation
 
@@ -784,30 +768,30 @@ Cancellation is cooperative and observed at named probe points; there is no pree
 
 | Probe point | Source |
 | --- | --- |
-| `runAgent` entry, before any work | `packages/loop/src/runtime/loop/run-agent.ts:194-197` |
-| iteration preamble | `packages/loop/src/runtime/loop/loop-iteration.ts:42-44` |
-| after a model-call throw | `packages/loop/src/runtime/loop/model-call.ts:94-95` |
-| before each tool call in a batch | `packages/loop/src/runtime/loop/loop.ts:733-739` |
-| when a handler's promise loses to the abort | `packages/loop/src/runtime/loop/loop.ts:758-767` |
-| when a handler returns `kind: "cancelled"` | `packages/loop/src/runtime/loop/loop.ts:788-795` |
-| when the deferred join loses to the abort | `packages/loop/src/runtime/loop/loop.ts:832-840` |
-| before every budget checkpoint | `packages/loop/src/runtime/loop/loop-shared.ts:119-126` |
+| `runAgent` entry, before any work | `packages/loop/src/runtime/loop/run-agent.ts` |
+| iteration preamble | `packages/loop/src/runtime/loop/loop-iteration.ts` |
+| after a model-call throw | `packages/loop/src/runtime/loop/model-call.ts` |
+| before each tool call in a batch | `packages/loop/src/runtime/loop/loop.ts` |
+| when a handler's promise loses to the abort | `packages/loop/src/runtime/loop/loop.ts` |
+| when a handler returns `kind: "cancelled"` | `packages/loop/src/runtime/loop/loop.ts` |
+| when the deferred join loses to the abort | `packages/loop/src/runtime/loop/loop.ts` |
+| before every budget checkpoint | `packages/loop/src/runtime/loop/loop-shared.ts` |
 
 Every probe funnels through `maybeCancelled` → `checkCancelled`
-(`packages/loop/src/runtime/loop/cancellation.ts:60-76`), which records **one** `cancellation` trace
-entry as a side effect and reports `true`. `cancellationReason` (`:12-21`) resolves the reason in
+(`packages/loop/src/runtime/loop/cancellation.ts`), which records **one** `cancellation` trace
+entry as a side effect and reports `true`. `cancellationReason` resolves the reason in
 three steps: a `reason` object with a string `source` yields that source; a non-empty string reason is
 returned verbatim; anything else aborted yields the literal `"cancelled"`. Pinned by
-`packages/loop/tests/unit/cancellation.test.ts:10-58`.
+`packages/loop/tests/unit/cancellation.test.ts`.
 
 A handler returning `kind: "cancelled"` while the run is **not** aborted does not end the run — the
 batch continues and the call still gets a paired tool result, pinned by
-`packages/loop/tests/unit/run-agent.test.ts:267-308`.
+`packages/loop/tests/unit/run-agent.test.ts`.
 
 At the run boundary, `executeRun` forwards an external abort with a default reason of
-`{ source: "mcp" }` (`packages/loop/src/runtime/execute-run.ts:373`) and handles an
-already-aborted signal by aborting immediately (`:375-377`), pinned by
-`packages/loop/tests/component/execute-run.test.ts:192-199`.
+`{ source: "mcp" }` (`packages/loop/src/runtime/execute-run.ts`) and handles an
+already-aborted signal by aborting immediately, pinned by
+`packages/loop/tests/component/execute-run.test.ts`.
 
 ### 4.17 Termination catalogue
 
@@ -815,105 +799,102 @@ Every way a run reaches its terminal `RunResponse`:
 
 | Terminal | Where decided | Resulting response |
 | --- | --- | --- |
-| MCP pool refused to open | `packages/loop/src/runtime/orchestrator.ts:462` | the pool's own response (e.g. `mcp_connection_failed`, `cancelled`) |
-| stall timeout | `packages/loop/src/runtime/run-timeout.ts:121-128` | `error` / `timeout`, `details.elapsed_ms` |
-| external cancellation wins the race | `packages/loop/src/runtime/run-timeout.ts:147` | `cancelled` |
-| thrown error escapes the loop | `packages/loop/src/runtime/run-timeout.ts:151` | mapped per §3.3 |
-| pre-loop budget check | `packages/loop/src/runtime/loop/run-agent.ts:339-346` | `budget_exhausted` |
-| iteration preamble: all tools unavailable | `packages/loop/src/runtime/loop/loop.ts:917` | `error` / `all_tools_unavailable` |
-| iteration preamble: cancelled | `packages/loop/src/runtime/loop/loop.ts:916` | `cancelled` |
-| output budget exhausted | `packages/loop/src/runtime/loop/loop.ts:1006`, `:1128` | `budget_exhausted` |
-| model call cancelled | `packages/loop/src/runtime/loop/loop.ts:1009` | `cancelled` |
-| empty-response streak | `packages/loop/src/runtime/loop/loop.ts:1033` | `error` / `empty_response` |
-| no-progress streak | `packages/loop/src/runtime/loop/loop.ts:1040`, `:1120` | `error` / `no_progress` |
-| finalize accepted (text or structured) | `packages/loop/src/runtime/loop/run-agent.ts:358-367` | `completed` |
-| finalize gate returned terminal | `packages/loop/src/runtime/loop/run-agent.ts:396-400`, `:613` | the gate's own result |
-| a tool handler returned terminal | `packages/loop/src/runtime/loop/loop.ts:1070` | the handler's result |
-| hard guard trip | `packages/loop/src/runtime/loop/loop.ts:1112-1113` | `error` / the guard's code |
-| budget checkpoint | `packages/loop/src/runtime/loop/loop.ts:1041-1042`, `:1124-1125`; `packages/loop/src/runtime/loop/run-agent.ts:261-274` | `budget_exhausted` or `soft_limit_declined` |
+| MCP pool refused to open | `packages/loop/src/runtime/orchestrator.ts` | the pool's own response (e.g. `mcp_connection_failed`, `cancelled`) |
+| stall timeout | `packages/loop/src/runtime/run-timeout.ts` | `error` / `timeout`, `details.elapsed_ms` |
+| external cancellation wins the race | `packages/loop/src/runtime/run-timeout.ts` | `cancelled` |
+| thrown error escapes the loop | `packages/loop/src/runtime/run-timeout.ts` | mapped per §3.3 |
+| pre-loop budget check | `packages/loop/src/runtime/loop/run-agent.ts` | `budget_exhausted` |
+| iteration preamble: all tools unavailable | `packages/loop/src/runtime/loop/loop.ts` | `error` / `all_tools_unavailable` |
+| iteration preamble: cancelled | `packages/loop/src/runtime/loop/loop.ts` | `cancelled` |
+| output budget exhausted | `packages/loop/src/runtime/loop/loop.ts` | `budget_exhausted` |
+| model call cancelled | `packages/loop/src/runtime/loop/loop.ts` | `cancelled` |
+| empty-response streak | `packages/loop/src/runtime/loop/loop.ts` | `error` / `empty_response` |
+| no-progress streak | `packages/loop/src/runtime/loop/loop.ts` | `error` / `no_progress` |
+| finalize accepted (text or structured) | `packages/loop/src/runtime/loop/run-agent.ts` | `completed` |
+| finalize gate returned terminal | `packages/loop/src/runtime/loop/run-agent.ts` | the gate's own result |
+| a tool handler returned terminal | `packages/loop/src/runtime/loop/loop.ts` | the handler's result |
+| hard guard trip | `packages/loop/src/runtime/loop/loop.ts` | `error` / the guard's code |
+| budget checkpoint | `packages/loop/src/runtime/loop/loop.ts`; `packages/loop/src/runtime/loop/run-agent.ts` | `budget_exhausted` or `soft_limit_declined` |
 
 `completed`, `noProgress` and `emptyResponse` each record a `terminate` entry with a reason
-(`packages/loop/src/runtime/loop/run-agent.ts:360`, `:349`, `:547`), as does a non-escalated guard trip (`packages/loop/src/runtime/loop/loop.ts:1112`) and
-`all_tools_unavailable` (`packages/loop/src/runtime/loop/loop-iteration.ts:46`). `terminate` is not wire-visible
-(`packages/trace/src/trace-mapper.ts:507`).
+(`packages/loop/src/runtime/loop/run-agent.ts`), as does a non-escalated guard trip (`packages/loop/src/runtime/loop/loop.ts`) and
+`all_tools_unavailable` (`packages/loop/src/runtime/loop/loop-iteration.ts`). `terminate` is not wire-visible
+(`packages/trace/src/trace-mapper.ts`).
 
 ## 5. Invariants
 
 1. **An execution id is reserved for the run's whole duration and released in a `finally`.** A second
    in-flight run with the same `(owner, id)` throws `executionIdConflict` before the first has
-   persisted anything. — `packages/loop/src/runtime/execute-run.ts:132-149` (doc at `:123-130`), released at `:505-507`. The
-   *persisted*-collision half is pinned by `packages/loop/tests/component/execute-run.test.ts:78-87`;
+   persisted anything. — `packages/loop/src/runtime/execute-run.ts` (doc), released. The
+   *persisted*-collision half is pinned by `packages/loop/tests/component/execute-run.test.ts`;
    the in-flight half is **unpinned**.
 2. **A run whose shape requires a human refuses to start without an `elicit` channel.** —
-   `packages/loop/src/runtime/execute-run.ts:306-312`. Test:
-   `packages/loop/tests/component/execute-run.test.ts:100-109`.
+   `packages/loop/src/runtime/execute-run.ts`. Test:
+   `packages/loop/tests/component/execute-run.test.ts`.
 3. **`continue_from` naming a run with no restorable `final_context` throws
    `ContinuationUnavailableError`, and the lookup is owner-scoped.** —
-   `packages/loop/src/runtime/execute-run.ts:349-353`. Tests:
-   `packages/loop/tests/integration/continuation.test.ts:191`, `:198`, `:212`.
+   `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/integration/continuation.test.ts`.
 4. **A failed `traceStore.insert` becomes `PersistenceError`, except a `ConflictError`, which is
-   rethrown as-is.** — `packages/loop/src/runtime/execute-run.ts:438-457`. Tests:
-   `packages/loop/tests/component/execute-run.test.ts:90-97`, `:170-189`.
+   rethrown as-is.** — `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/component/execute-run.test.ts`.
 5. **The journal is discarded only after a successful insert, and closed on every path.** —
-   `packages/loop/src/runtime/execute-run.ts:438-440`, `:501-504`. Tests:
-   `packages/loop/tests/integration/journal-durability.test.ts:85-91` (no journal left behind) and
-   `:93-128` (the journal's events equal the persisted record's events exactly).
+   `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/integration/journal-durability.test.ts` (no journal left behind) (the journal's events equal the persisted record's events exactly).
 6. **A capability's `finalizeRun` failure or hang costs it its state slot and nothing else.** Each
    call is bounded by `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` and both timeout and throw are logged
-   and coerced to `undefined`. — `packages/loop/src/runtime/execute-run.ts:204-243`. Tests:
-   `packages/loop/tests/unit/capability-state.test.ts:57-72` (throw), `:74-97` (hang).
+   and coerced to `undefined`. — `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/unit/capability-state.test.ts` (throw) (hang).
 7. **A continued run's prior `capability_state` is carried forward for any capability that did not
    run this turn; this turn's value replaces it for one that did.** —
-   `packages/loop/src/runtime/execute-run.ts:203,244-247`. Tests:
-   `packages/loop/tests/unit/capability-state.test.ts:99-106`, `:108-113`.
+   `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/unit/capability-state.test.ts`.
 8. **`onRunEnd` runs after the record is persisted, never blocks the response beyond its budget, and
    a throwing or rejecting `onRunEnd` is warned and ignored.** —
-   `packages/loop/src/runtime/execute-run.ts:459-497`. Tests:
-   `packages/loop/tests/integration/host-capability.test.ts:213-226` (a rejecting and a throwing
+   `packages/loop/src/runtime/execute-run.ts`. Tests:
+   `packages/loop/tests/integration/host-capability.test.ts` (a rejecting and a throwing
    `onRunEnd` both log `capability_run_end_failed` with their messages while the run still
-   `completed`s) and `:228-237` (an `onRunEnd` that outlives
+   `completed`s) (an `onRunEnd` that outlives
    `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` logs `capability_run_end_timeout` and the run still
    `completed`s).
 9. **A capability's `forRun` is invoked even when the run's signal is already aborted**, with the
-   admission class switched to `"run_end"`. — `packages/loop/src/runtime/orchestrator.ts:246-269`,
-   the class chosen at `:258`. Test:
-   `packages/loop/tests/integration/host-capability.test.ts:311-329` (an already-`AbortSignal.abort`ed
+   admission class switched to `"run_end"`. — `packages/loop/src/runtime/orchestrator.ts`,
+   the class chosen. Test:
+   `packages/loop/tests/integration/host-capability.test.ts` (an already-`AbortSignal.abort`ed
    run still activates the capability, whose `onRunEnd` observes the `cancelled` record) — the test
    pins the outcome, not the `"run_end"` admission-class switch by name.
 10. **`forRun` and `seedBlock` are each bounded by `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`; a timeout
     costs the capability its contribution, not the run.** —
-    `packages/loop/src/runtime/orchestrator.ts:254-269` and `:318-326`, warned at `:283-293`,
-    `:327-336`. Tests: `packages/loop/tests/integration/host-capability.test.ts:274-283` (a `forRun`
-    that never settles is skipped without delaying an activated sibling capability) and `:295-309`
+    `packages/loop/src/runtime/orchestrator.ts`, warned. Tests: `packages/loop/tests/integration/host-capability.test.ts` (a `forRun`
+    that never settles is skipped without delaying an activated sibling capability)
     (a `seedBlock` that never settles is omitted and the run still completes).
 11. **`seedMarker`s are collected from every *registered* capability, while `seedBlock`s come only
-    from the *activated* ones.** — `packages/loop/src/runtime/orchestrator.ts:342-344` versus
-    `:312-340`. The consequence is stated in-source at
-    `packages/loop/src/runtime/entry-seed.ts:44-47`: an unrecognised block accumulates a fresh copy
+    from the *activated* ones.** — `packages/loop/src/runtime/orchestrator.ts`. The consequence is stated in-source at
+    `packages/loop/src/runtime/entry-seed.ts`: an unrecognised block accumulates a fresh copy
     every turn. **Unpinned at the orchestrator level**; the seed-side effect is pinned by
-    `packages/loop/tests/unit/entry-seed-markers.test.ts:118-136`.
+    `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 12. **`init` is recorded before `run_started`, and `run_ended` is recorded before the trace is
     sealed — so `run_ended` is always the last persisted event.** —
-    `packages/loop/src/runtime/orchestrator.ts:381-382`, `:406`, `:421`; sealing makes later
-    `record`/`signal` calls no-ops (`packages/trace/src/in-memory-trace.ts:49,55`). Tests:
-    `packages/loop/tests/integration/orchestrator.test.ts:76` (`init` first in the in-memory trace),
-    `packages/loop/tests/integration/run-lifecycle-events.test.ts:53-56` (exactly one `run_started`
+    `packages/loop/src/runtime/orchestrator.ts`; sealing makes later
+    `record`/`signal` calls no-ops (`packages/trace/src/in-memory-trace.ts`). Tests:
+    `packages/loop/tests/integration/orchestrator.test.ts` (`init` first in the in-memory trace),
+    `packages/loop/tests/integration/run-lifecycle-events.test.ts` (exactly one `run_started`
     first and one `run_ended` last, persisted).
 13. **`init` and `terminate` are never wire-visible.** —
-    `packages/trace/src/trace-mapper.ts:506-512`. Test:
-    `packages/loop/tests/integration/run-lifecycle-events.test.ts:55` depends on it (it asserts
+    `packages/trace/src/trace-mapper.ts`. Test:
+    `packages/loop/tests/integration/run-lifecycle-events.test.ts` depends on it (it asserts
     `run_started` is index 0 of the persisted events).
 14. **The trace bridge maps each entry at most once and hands the identical object to the journal and
     to `emitEvent`; the journal receives durable entries only; the clock is poked even for a
-    live-only entry with no sink wired.** — `packages/loop/src/runtime/run-trace.ts:149,163-168`.
-    Tests: `packages/loop/tests/unit/run-trace.test.ts:149-160`, `:169-179`, `:181-195`, `:197-206`.
+    live-only entry with no sink wired.** — `packages/loop/src/runtime/run-trace.ts`.
+    Tests: `packages/loop/tests/unit/run-trace.test.ts`.
 15. **A throwing `ingest` or `emitEvent` consumer never reaches the run.** —
-    `packages/loop/src/runtime/run-trace.ts:149-161`, `:167-178`. Tests:
-    `packages/loop/tests/unit/run-trace.test.ts:95-112`, `:114-128`, `:130-139`.
+    `packages/loop/src/runtime/run-trace.ts`. Tests:
+    `packages/loop/tests/unit/run-trace.test.ts`.
 16. **A throwing `onCapabilityEvent` listener never reaches the run or the emitting capability.** —
-    `packages/loop/src/runtime/execute-run.ts:363-369`. **Unpinned.**
+    `packages/loop/src/runtime/execute-run.ts`. **Unpinned.**
 17. **MCP leases are released on every exit path from the entry agent.** —
-    `packages/loop/src/runtime/orchestrator.ts:497-499`. Pinned indirectly by
+    `packages/loop/src/runtime/orchestrator.ts`. Pinned indirectly by
     `packages/loop/tests/integration/connection-leak.test.ts`.
 17a. **An `auto_tools` server contributes only tools it advertised after a successful open, to
     every resolved agent for this run; it never changes the request's profile DTOs or an authored
@@ -921,236 +902,229 @@ Every way a run reaches its terminal `RunResponse`:
     `packages/loop/tests/unit/automatic-mcp-tools.test.ts` and the "host-composed automatic server
     tools" integration case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
 18. **`finalize()` (the usage snapshot) is called exactly once per run, on every exit path.** —
-    `packages/loop/src/runtime/run-timeout.ts:122,147,149,151`; documented at `:59`. **Unpinned.**
+    `packages/loop/src/runtime/run-timeout.ts`; documented. **Unpinned.**
 19. **The run timeout measures inactivity, not wall time: it is re-armed by every trace entry.** —
-    `packages/loop/src/runtime/run-timeout.ts:78` arms it, `packages/loop/src/runtime/run-trace.ts:148`
-    pokes it. Tests: `packages/loop/tests/integration/orchestrator.test.ts:263-282` (a hung model call
-    times out), `packages/loop/tests/integration/retry-pokes-stall-clock.test.ts:14` (a transient
+    `packages/loop/src/runtime/run-timeout.ts` arms it, `packages/loop/src/runtime/run-trace.ts`
+    pokes it. Tests: `packages/loop/tests/integration/orchestrator.test.ts` (a hung model call
+    times out), `packages/loop/tests/integration/retry-pokes-stall-clock.test.ts` (a transient
     failure's retry refills the watchdog).
 20. **A loop that ignores its abort cannot pin the outer run beyond `settleGraceMs`; it is detached
-    with its rejection still observed.** — `packages/loop/src/runtime/run-timeout.ts:105-120`,
-    `:131-146`, `suppressSecondaryRejection` at `:116`, `:142`. Tests:
-    `packages/loop/tests/unit/run-timeout.test.ts:16-38` (timeout), `:40-57` (external cancellation).
+    with its rejection still observed.** — `packages/loop/src/runtime/run-timeout.ts`, `suppressSecondaryRejection`. Tests:
+    `packages/loop/tests/unit/run-timeout.test.ts` (timeout) (external cancellation).
 21. **A cancelled run is reported as `cancelled` whatever error was thrown.** —
-    `packages/loop/src/runtime/run-response-mapping.ts:47-49`. Test:
-    `packages/loop/tests/unit/run-response-mapping.test.ts:48-57`; also
-    `packages/loop/tests/integration/orchestrator.test.ts:367` (a cancellation during a compaction
+    `packages/loop/src/runtime/run-response-mapping.ts`. Test:
+    `packages/loop/tests/unit/run-response-mapping.test.ts`; also
+    `packages/loop/tests/integration/orchestrator.test.ts` (a cancellation during a compaction
     summary maps to `cancelled`, not `provider_error`).
 22. **Every error message and every `details` payload on a run response is sanitized before it
-    leaves.** — `packages/loop/src/runtime/run-response-mapping.ts:54,62-63,69`. Test:
-    `packages/loop/tests/unit/run-response-mapping.test.ts:61-81` (nested details redacted, and the
-    caller's own object left unmutated at `:80`).
+    leaves.** — `packages/loop/src/runtime/run-response-mapping.ts`. Test:
+    `packages/loop/tests/unit/run-response-mapping.test.ts` (nested details redacted, and the
+    caller's own object left unmutated).
 23. **Two consecutive empty-or-reasoning-only completions end the agent; one does not.** —
-    `packages/loop/src/runtime/loop/loop.ts:230`, `:1032-1033`. Tests:
-    `packages/loop/tests/integration/empty-response.test.ts:20-35`, `:67-83`, `:85-113`, `:115-140`.
+    `packages/loop/src/runtime/loop/loop.ts`. Tests:
+    `packages/loop/tests/integration/empty-response.test.ts`.
 24. **The empty-response nudge is a *replaceable* runtime note: a second empty replaces the first
     rather than accumulating.** — `ctx.appendRuntimeNote("empty_response", …)` at
-    `packages/loop/src/runtime/loop/loop.ts:1034-1039`. Test:
-    `packages/loop/tests/unit/run-agent.test.ts:672-710`.
+    `packages/loop/src/runtime/loop/loop.ts`. Test:
+    `packages/loop/tests/unit/run-agent.test.ts`.
 25. **A reasoning-only completion's `reasoningParts` are appended to the context before the nudge, so
-    provider continuation state survives.** — `packages/loop/src/runtime/loop/loop.ts:1028-1030`. Test:
-    `packages/loop/tests/integration/empty-response.test.ts:105-112`.
+    provider continuation state survives.** — `packages/loop/src/runtime/loop/loop.ts`. Test:
+    `packages/loop/tests/integration/empty-response.test.ts`.
 26. **Both soft convergence warnings of one iteration are joined into a single runtime note.** —
-    `packages/loop/src/runtime/loop/loop.ts:1080-1094`, with the reason stated at `:1074-1079`.
-    ~~**Unpinned** by any test naming this behaviour.~~ **Pinned 2026-08-22**:
+    `packages/loop/src/runtime/loop/loop.ts`, with the reason stated.
+    ~~**Unpinned** by any test naming this behaviour.~~ **Pinned**:
     `packages/loop/tests/integration/convergence-warning-join.test.ts`. Making both guards warn in
     one iteration is the hard part and is not incidental — the stagnation guard ignores errors
     outright and any success clears the doom guard's counters, so it takes one batch holding a
     repeated *failing* call beside a repeatedly-identical *successful* one.
 27. **A waived guard trip does not skip the no-progress tracker or the budget checkpoint.** —
-    `packages/loop/src/runtime/loop/loop.ts:1096-1115` falls through to `:1117-1125`; reason stated at
-    `:1096-1101`. Related tests live in
+    `packages/loop/src/runtime/loop/loop.ts` falls through to reason stated. Related tests live in
     `packages/loop/tests/integration/guard-escalation.test.ts` (guard escalation is owned by
     [loop-budgets-clocks-and-guards](budgets-and-guards.md)).
 28. **An escalation that returns a result of its own does *not* record a `terminate` reason; only a
-    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts:1112`, reason stated
-    at `:1106-1111`. ~~**Unpinned.**~~ **Pinned 2026-08-22**:
+    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts`, reason stated. ~~**Unpinned.**~~ **Pinned**:
     `packages/loop/tests/component/guard-trip-terminate.test.ts`, with both controls — a declining
     escalation and no escalation at all both *do* record it.
 29. **`fastAcceptSubmit` is refused whenever anything downstream could have ruled on the call**: a
     multi-call batch, a non-`submit_result` call, an invalid payload, any `beforeToolUse` hook, or any
-    gate that does not opt in. — `packages/loop/src/runtime/loop/run-agent.ts:566-573`. Tests:
-    `packages/loop/tests/integration/fast-accept-submit.test.ts:41`, `:93`, `:127`.
+    gate that does not opt in. — `packages/loop/src/runtime/loop/run-agent.ts`. Tests:
+    `packages/loop/tests/integration/fast-accept-submit.test.ts`.
 30. **A forced tool choice after a nudge is consumed exactly once.** —
-    `packages/loop/src/runtime/loop/run-agent.ts:517-528`; reason stated at `:432-434`.
-    ~~**Unpinned.**~~ **Pinned 2026-08-22**: `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts`.
+    `packages/loop/src/runtime/loop/run-agent.ts`; reason stated.
+    ~~**Unpinned.**~~ **Pinned**: `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts`.
     The existing `force_tool_on_nudge` tests showed the flag being *set*; their scripts ended on the
     forced call, so a `takeForcedChoice` that never cleared it kept them green while every later
     iteration was silently forced. The third iteration is reached by having the forced call name a
     tool the registry does not carry.
 31. **A rewritten tool call is a new object; the assistant message already in context is never
-    mutated.** — `packages/loop/src/runtime/loop/loop.ts:747-757`. **Unpinned** at this line (the
+    mutated.** — `packages/loop/src/runtime/loop/loop.ts`. **Unpinned by a direct loop test** (the
     hook-dialect side is owned by [hooks-execution](../execution/hooks.md)).
 32. **Every tool call in a batch gets exactly one tool result appended, including calls the batch
-    never reached.** — `packages/loop/src/runtime/loop/loop.ts:843-857`. Tests:
-    `packages/loop/tests/unit/run-agent.test.ts:320-332` (`assertNoOrphans`), `:334-368`, `:370-408`,
-    `:632-641`.
+    never reached.** — `packages/loop/src/runtime/loop/loop.ts`. Tests:
+    `packages/loop/tests/unit/run-agent.test.ts` (`assertNoOrphans`).
 33. **A terminal verdict never fabricates a failure line for the call that produced it.** —
-    `packages/loop/src/runtime/loop/loop.ts:648-655`. Tests:
-    `packages/loop/tests/unit/run-agent.test.ts:594-630`.
+    `packages/loop/src/runtime/loop/loop.ts`. Tests:
+    `packages/loop/tests/unit/run-agent.test.ts`.
 34. **The compute clock is paused for the whole tool-dispatch batch and released in a `finally`,
     using this agent's own background region when it has one.** —
-    `packages/loop/src/runtime/loop/loop.ts:730`, `:832-840`; the rationale for the region is stated at
-    `packages/loop/src/runtime/loop/loop.ts:126-134`. **Unpinned** at this line;
+    `packages/loop/src/runtime/loop/loop.ts`; the rationale for the region is stated at
+    `packages/loop/src/runtime/loop/loop.ts`. **Unpinned by a direct loop test**;
     `packages/capability/tests/unit/compute-clock.test.ts` owns the clock's own truth table.
 35. **`onTeardown` fires on every exit path from the iteration loop and is awaited.** —
-    `packages/loop/src/runtime/loop/loop.ts:1130-1132`. ~~**Unpinned.**~~ **Pinned 2026-08-22**:
+    `packages/loop/src/runtime/loop/loop.ts`. ~~**Unpinned.**~~ **Pinned**:
     `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts` — a completed run, a
     no-progress termination, and a provider throwing out of the loop, each asserting the count is
     exactly one, plus that an async teardown has settled before the run returns.
 36. **A steer is delivered exactly once, on the iteration after it was queued, and resets the
-    no-progress streak.** — `packages/loop/src/runtime/loop/run-agent.ts:460-490` (drain at
-    `packages/loop/src/runtime/loop/loop.ts:921`, i.e. after the preamble). Tests:
-    `packages/loop/tests/unit/steering.test.ts:122-165`, `:242-278`.
+    no-progress streak.** — `packages/loop/src/runtime/loop/run-agent.ts` (drain at
+    `packages/loop/src/runtime/loop/loop.ts`, i.e. after the preamble). Tests:
+    `packages/loop/tests/unit/steering.test.ts`.
 37. **`probe()` does not consume; a throwing steer source is treated as empty.** —
-    `packages/loop/src/runtime/loop/steer-inbox.ts:45-53,63-66`. Tests:
-    `packages/loop/tests/unit/steer-inbox.test.ts:38-52`, `:65-81`, `:83-94`.
+    `packages/loop/src/runtime/loop/steer-inbox.ts`. Tests:
+    `packages/loop/tests/unit/steer-inbox.test.ts`.
 38. **The steer and compaction sources are closed when the agent's loop settles, and only when one of
-    them exists.** — `packages/loop/src/runtime/loop/run-agent.ts:629-634`. **Unpinned.**
+    them exists.** — `packages/loop/src/runtime/loop/run-agent.ts`. **Unpinned.**
 39. **One `cancellation` trace entry per detection, not one per probe.** —
-    `packages/loop/src/runtime/loop/cancellation.ts:60-76` records only when it returns `true`, and
+    `packages/loop/src/runtime/loop/cancellation.ts` records only when it returns `true`, and
     each probe site returns immediately on a hit. Test:
-    `packages/loop/tests/unit/run-agent.test.ts:178-216` asserts exactly one `cancellation` entry.
+    `packages/loop/tests/unit/run-agent.test.ts` asserts exactly one `cancellation` entry.
 40. **The agent's pre-loop budget check runs before any model call and mirrors the checkpoint exit
     path** — it records `budget_check` and fires `onBudgetExhausted`. —
-    `packages/loop/src/runtime/loop/run-agent.ts:339-346`, `:199-217`. Tests:
-    `packages/loop/tests/unit/run-agent.test.ts:645-669`, and `:93-99` for the zero-model-call
+    `packages/loop/src/runtime/loop/run-agent.ts`. Tests:
+    `packages/loop/tests/unit/run-agent.test.ts`, for the zero-model-call
     property.
 41. **The window clamp is the outermost step of the output budget: a reasoning floor can never push
     `maxOutputTokens` above the remaining window.** —
-    `packages/loop/src/runtime/loop/loop.ts:394-404`, reason stated at `:389-392`. Test:
-    `packages/loop/tests/component/max-output-tokens-clamp.test.ts:30-42`.
+    `packages/loop/src/runtime/loop/loop.ts`, reason stated. Test:
+    `packages/loop/tests/component/max-output-tokens-clamp.test.ts`.
 42. **A call that provably generated no billable output releases its whole reservation; a call that
-    had begun streaming is charged in full.** — `packages/loop/src/runtime/loop/output-budget.ts:49-56`
+    had begun streaming is charged in full.** — `packages/loop/src/runtime/loop/output-budget.ts`
     (`producedNoBillableOutput` requires `!streamStarted` **and** no `accumulatedUsage` **and** no
-    `partialUsage`), applied at `:125-133`. Test: `packages/loop/tests/unit/output-budget.test.ts:51`.
+    `partialUsage`). Test: `packages/loop/tests/unit/output-budget.test.ts`.
 43. **`onRetry` is attached to every model call regardless of whether the run has a clock, and both
     pokes the clock and records a durable `model_call_retry`.** —
-    `packages/loop/src/runtime/loop/loop.ts:459-473`, reason stated at `:417-422`.
-    Tests: `packages/loop/tests/integration/model-retry-visibility.test.ts:33-62`,
-    `packages/loop/tests/integration/retry-pokes-stall-clock.test.ts:14`.
+    `packages/loop/src/runtime/loop/loop.ts`, reason stated.
+    Tests: `packages/loop/tests/integration/model-retry-visibility.test.ts`,
+    `packages/loop/tests/integration/retry-pokes-stall-clock.test.ts`.
 44. **A retried attempt's tokens are charged to the ledger and the run totals, but are deliberately
     excluded from the recorded iteration event.** —
-    `packages/loop/src/runtime/loop/iteration-metrics.ts:177-196`, reason stated at `:153-161`. Tests:
-    `packages/loop/tests/unit/iteration-metrics.test.ts:153-176` (charged), `:177-195` (event
+    `packages/loop/src/runtime/loop/iteration-metrics.ts`, reason stated. Tests:
+    `packages/loop/tests/unit/iteration-metrics.test.ts` (charged) (event
     unchanged).
 45. **Context overflow is recovered at most `MAX_OVERFLOW_RECOVERIES` (3) times per model call, and
     the call is rebuilt after each eviction.** —
-    `packages/loop/src/runtime/loop/model-call.ts:99-106`, `MAX_OVERFLOW_RECOVERIES` at
-    `packages/loop/src/runtime/loop/loop-iteration.ts:7`. Tests:
-    `packages/loop/tests/unit/model-call.test.ts:171-186`, `:262-279`.
+    `packages/loop/src/runtime/loop/model-call.ts`, `MAX_OVERFLOW_RECOVERIES` at
+    `packages/loop/src/runtime/loop/loop-iteration.ts`. Tests:
+    `packages/loop/tests/unit/model-call.test.ts`.
 46. **`evict` is invoked on a `context_overflow` error and on nothing else**, which is what makes the
     compaction-reach watch's observation meaningful. —
-    `packages/loop/src/runtime/loop/model-call.ts:96-101`, stated at `:41-44`; the observer is wired at
-    `packages/loop/src/runtime/loop/loop.ts:965-968`. **Unpinned** as a negative.
+    `packages/loop/src/runtime/loop/model-call.ts`, stated; the observer is wired at
+    `packages/loop/src/runtime/loop/loop.ts`. **Unpinned** as a negative.
 47. **`compaction.unreachable` is reported at most once per agent loop, only when compaction is
     enabled, and only when the refused prompt was *smaller* than the compaction high-water mark.**
     `observeOverflow` returns immediately, without reporting, when `!config.enabled` — the same
     early-return that also makes a second observation in the same loop a no-op. —
-    `packages/loop/src/runtime/loop/compaction-reach.ts:51-68`, the `!config.enabled` short-circuit at
-    `:53`. **Unpinned.**
+    `packages/loop/src/runtime/loop/compaction-reach.ts`, the `!config.enabled` short-circuit. **Unpinned.**
 48. **The prompt-cache prefix watch compares `cached_tokens` against the *previous iteration's*
     `cached_tokens`, tolerates a 10% loss, and does not latch for the run.** —
-    `packages/loop/src/runtime/loop/iteration-metrics.ts:105-123`, reasoning at `:74-103`. Tests:
+    `packages/loop/src/runtime/loop/iteration-metrics.ts`, reasoning. Tests:
     `packages/loop/tests/integration/cache-prefix-capture.test.ts`,
     `packages/loop/tests/unit/prefix-break.test.ts`.
 49. **`cacheReadRatio`'s denominator is `input_tokens` alone.** —
-    `packages/loop/src/runtime/loop/iteration-metrics.ts:138-140`, reason stated at `:131-136`. Tests:
-    `packages/loop/tests/unit/iteration-metrics.test.ts:15-46`.
+    `packages/loop/src/runtime/loop/iteration-metrics.ts`, reason stated. Tests:
+    `packages/loop/tests/unit/iteration-metrics.test.ts`.
 50. **A restored volatile entry (canonical block or runtime note) is never carried into a
-    continuation's seed.** — `packages/loop/src/runtime/entry-seed.ts:70-72,157`. Test:
-    `packages/loop/tests/unit/entry-seed-markers.test.ts:153-170`.
+    continuation's seed.** — `packages/loop/src/runtime/entry-seed.ts`. Test:
+    `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 51. **A seed block the continuation already carries is kept verbatim and the freshly rendered copy is
     dropped; a newly active capability's block is appended *after* the restored history.** —
-    `packages/loop/src/runtime/entry-seed.ts:162-179`. Tests:
-    `packages/loop/tests/unit/entry-seed-markers.test.ts:99-116`, `:138-151`, and the prefix property
-    at `:176-197`.
+    `packages/loop/src/runtime/entry-seed.ts`. Tests:
+    `packages/loop/tests/unit/entry-seed-markers.test.ts`, and the prefix property.
 52. **A block whose capability is no longer active is dropped from the continuation.** —
-    `packages/loop/src/runtime/entry-seed.ts:158-159`. Test:
-    `packages/loop/tests/unit/entry-seed-markers.test.ts:118-136`.
+    `packages/loop/src/runtime/entry-seed.ts`. Test:
+    `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 53. **A continuation's restored transcript is reproduced byte-identically under a fresh system
-    head.** — `packages/loop/src/runtime/entry-seed.ts:174-179`. Tests:
-    `packages/loop/tests/integration/continuation.test.ts:77-108` (the middle slice equals
-    `final_context.map(e => e.message)`), `:110-137` (a profile switch swaps only the system head).
+    head.** — `packages/loop/src/runtime/entry-seed.ts`. Tests:
+    `packages/loop/tests/integration/continuation.test.ts` (the middle slice equals
+    `final_context.map(e => e.message)`) (a profile switch swaps only the system head).
 54. **`final_context` excludes the system head and is captured even on a non-`completed` exit.** —
     `packages/loop/src/runtime/orchestrator.ts` (`runEntryAgent` installs the `onContext` snapshot
     reader and returns it after the loop settles). Tests:
-    `packages/loop/tests/integration/final-context-capture.test.ts:45-84`, `:86-114`.
+    `packages/loop/tests/integration/final-context-capture.test.ts`.
 55. **`final_context` is attached only when non-empty**, so a run that produced nothing leaves the
-    field absent. — `packages/loop/src/runtime/orchestrator.ts:667-670`. **Unpinned** as a negative.
+    field absent. — `packages/loop/src/runtime/orchestrator.ts`. **Unpinned** as a negative.
 56. **A run with no MCP servers left usable short-circuits before the entry agent runs and reuses the
-    pool's own response.** — `packages/loop/src/runtime/orchestrator.ts:462`. Tests:
-    `packages/loop/tests/integration/orchestrator.test.ts:857`, `:883`, `:912`.
+    pool's own response.** — `packages/loop/src/runtime/orchestrator.ts`. Tests:
+    `packages/loop/tests/integration/orchestrator.test.ts`.
 57. **The entry iteration cap depends on role and budget mode: a hard-mode lead is uncapped
     (`POSITIVE_INFINITY`), a soft-mode lead mirrors the configured limit, and a sub-agent uses
-    `resolveIterationCap`.** — `packages/loop/src/runtime/orchestrator.ts:603-607`. **Partially
-    pinned**: `packages/loop/tests/integration/soft-default-iteration-limit.test.ts:34` pins that a
+    `resolveIterationCap`.** — `packages/loop/src/runtime/orchestrator.ts`. **Partially
+    pinned**: `packages/loop/tests/integration/soft-default-iteration-limit.test.ts` pins that a
     soft-mode run "asks at the default iteration limit instead of running unbounded", and
-    `packages/loop/tests/integration/orchestrator.test.ts:606`, `:631` pin the soft-mode lead's own
+    `packages/loop/tests/integration/orchestrator.test.ts` pin the soft-mode lead's own
     prompt text. No test pins the hard-mode lead's `POSITIVE_INFINITY` branch directly.
 58. **`resolveConfig` carries no iteration bound at all, and bounds tokens only under
-    `on_exceed: "stop"`.** — `packages/loop/src/runtime/run-shape.ts:20-29`. **Unpinned** directly;
+    `on_exceed: "stop"`.** — `packages/loop/src/runtime/run-shape.ts`. **Unpinned** directly;
     the consequence is visible in `deriveRunStartedDetail`'s finite-only emission
-    (`packages/loop/src/runtime/run-trace.ts:78`) and in
+    (`packages/loop/src/runtime/run-trace.ts`) and in
     `packages/loop/tests/integration/run-lifecycle-events.test.ts`.
 59. **The prompt-cache key defaults to the execution id, and the TTL to `1h` when a human park is
-    likely, `5m` otherwise.** — `packages/loop/src/runtime/execute-run.ts:346-347`;
-    `humanParkLikely` is derived at `packages/loop/src/validation/request/run-shape.ts:28`. The
+    likely, `5m` otherwise.** — `packages/loop/src/runtime/execute-run.ts`;
+    `humanParkLikely` is derived at `packages/loop/src/validation/request/run-shape.ts`. The
     defaults are applied only where the call did not already set them
-    (`packages/llm/src/prompt-cache-provider.ts:36-39`). **Unpinned** at the `executeRun` level.
+    (`packages/llm/src/prompt-cache-provider.ts`). **Unpinned** at the `executeRun` level.
 60. **A supervision registry exists only for a run that can actually spawn children.** —
-    `packages/loop/src/runtime/orchestrator.ts:210-218`, `packages/loop/src/runtime/spawn-shape.ts:18-29`.
+    `packages/loop/src/runtime/orchestrator.ts`, `packages/loop/src/runtime/spawn-shape.ts`.
     Test: `packages/loop/tests/unit/spawn-shape.test.ts`.
 61. **The MCP catch-all handler is last in the handler list, so every capability handler shadows
-    it.** — `packages/loop/src/runtime/loop/run-agent.ts:415-419`;
-    `packages/loop/src/runtime/loop/mcp-handler.ts:34` matches everything;
+    it.** — `packages/loop/src/runtime/loop/run-agent.ts`;
+    `packages/loop/src/runtime/loop/mcp-handler.ts` matches everything;
     `selectHandler` takes the first match
-    (`packages/loop/src/runtime/loop/loop-contract.ts:88`). **Unpinned** as an ordering rule at these
+    (`packages/loop/src/runtime/loop/loop-contract.ts`). **Unpinned** as an ordering rule at these
     lines.
 62. **`runGates` short-circuits on the first non-`pass` and identifies the gate by ordinal only.** —
-    `packages/loop/src/runtime/loop/loop-contract.ts:103-112`. **Unpinned.**
+    `packages/loop/src/runtime/loop/loop-contract.ts`. **Unpinned.**
 63. **`onPreCompact` is structurally excluded from the observer dispatch path**, because
     `fireObservers` discards return values and `ObserverMethod` omits it. —
-    `packages/loop/src/runtime/loop/lifecycle-hooks.ts:57-65`, reason stated at `:50-55`. **Unpinned**
+    `packages/loop/src/runtime/loop/lifecycle-hooks.ts`, reason stated. **Unpinned**
     (it is a compile-time guarantee).
 64. **Every lifecycle-hook invocation is wall-bounded — 5s for observers and verdict sweeps, 30s for
     gate hooks — and a hung hook is detached.** —
-    `packages/loop/src/runtime/loop/lifecycle-hooks.ts:16,17,27-44`. Tests:
-    `packages/loop/tests/unit/lifecycle-hooks.test.ts:102-113`, `:236`.
+    `packages/loop/src/runtime/loop/lifecycle-hooks.ts`. Tests:
+    `packages/loop/tests/unit/lifecycle-hooks.test.ts`.
 65. **`beforeToolUse` fails closed (a throwing hook denies) and `afterToolUse` fails open (a throwing
     hook leaves the result unmodified).** —
-    `packages/loop/src/runtime/loop/loop.ts:569` (`onThrow: "deny"`) versus `:620` (`onThrow: "ignore"`). Test:
-    `packages/loop/tests/unit/lifecycle-hooks.test.ts:45-113` for the sweep semantics.
+    `packages/loop/src/runtime/loop/loop.ts` (`onThrow: "deny"`) (`onThrow: "ignore"`). Test:
+    `packages/loop/tests/unit/lifecycle-hooks.test.ts` for the sweep semantics.
 66. **`collectCompactionContributions` always fails open.** —
-    `packages/loop/src/runtime/loop/lifecycle-hooks.ts:317-341`, reason stated at `:301-316`. Test:
+    `packages/loop/src/runtime/loop/lifecycle-hooks.ts`, reason stated. Test:
     `packages/loop/tests/unit/compaction-contributions.test.ts`.
 67. **`run.composed` is emitted once per run, at `info`, listing capabilities in activation order.** —
-    `packages/loop/src/runtime/orchestrator.ts:519-548`, reason stated in the doc block at `:502-518`. Tests:
-    `packages/loop/tests/integration/run-observability.test.ts:26-55` (exactly one line, correct
-    fields), `:58-72` (run correlation on every line), `:101` (silent at a level that discards it),
-    `:117` (the run works with no logger at all).
+    `packages/loop/src/runtime/orchestrator.ts`, reason stated in the doc block. Tests:
+    `packages/loop/tests/integration/run-observability.test.ts` (exactly one line, correct
+    fields) (run correlation on every line) (silent at a level that discards it) (the run works with no logger at all).
 68. **The run-scoped logger is `undefined` — not a no-op object — when the host wired none.** —
-    `packages/loop/src/runtime/execute-run.ts:339-342`, reason stated at `:328-338`. Test:
-    `packages/loop/tests/integration/run-observability.test.ts:117`.
+    `packages/loop/src/runtime/execute-run.ts`, reason stated. Test:
+    `packages/loop/tests/integration/run-observability.test.ts`.
 69. **`toLlmTarget` omits an undefined optional field from the built `LlmTarget` rather than copying
-    it through as `undefined`.** — `packages/loop/src/runtime/loop/loop-shared.ts:56-71` (`LlmTarget`
-    itself at `:30-43`). Test:
-    `packages/loop/tests/unit/loop-shared.test.ts:7-18` (`"reasoningEffort" in withoutEffort ===
+    it through as `undefined`.** — `packages/loop/src/runtime/loop/loop-shared.ts` (`LlmTarget`
+    itself). Test:
+    `packages/loop/tests/unit/loop-shared.test.ts` (`"reasoningEffort" in withoutEffort ===
     false`).
 70. **`EngineTerminalVerdict`/`EngineHandlerVerdict` widen the capability `HandlerVerdict` one way
     only: every verdict a capability produces satisfies the engine type, but only a handler the
     engine itself builds populates the terminal `text`.** —
-    `packages/loop/src/runtime/loop/loop-contract.ts:39-74`. **Unpinned** as a type-level guarantee;
+    `packages/loop/src/runtime/loop/loop-contract.ts`. **Unpinned** as a type-level guarantee;
     its behavioural consequence is invariant 33.
 71. **A hook-rewritten argument envelope contributes at most 2,000 rendered argument characters to
     the model's permanent context; the trace retains the untruncated executed arguments.** —
-    Production: `packages/loop/src/runtime/loop/loop.ts:492-536`. Test:
+    Production: `packages/loop/src/runtime/loop/loop.ts`. Test:
     `packages/loop/tests/unit/tool-hooks.test.ts` ("bounds rewritten arguments before appending them
     to the model context").
 72. **Opaque host metadata is captured exactly once per run and the identical snapshot reaches both
     the crash journal header and final execution record** (INV-319). Production:
-    `packages/loop/src/runtime/execute-run.ts:300`, `:386-391`, `:426-436`. Test:
-    `packages/loop/tests/component/execute-run.test.ts:53-75`. The loop does not import or validate the
+    `packages/loop/src/runtime/execute-run.ts`. Test:
+    `packages/loop/tests/component/execute-run.test.ts`. The loop does not import or validate the
     Extension Profile DTO stored there; that host contract belongs to
     [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
 
@@ -1158,45 +1132,45 @@ Every way a run reaches its terminal `RunResponse`:
 
 | Failure | Handling | Cite |
 | --- | --- | --- |
-| Invalid request body | `validateBody` throws before anything is reserved or recorded | `packages/loop/src/runtime/execute-run.ts:298` |
-| Duplicate persisted execution id | `ConflictError` thrown before the run starts | `packages/loop/src/runtime/execute-run.ts:318-323` |
-| Duplicate in-flight execution id | `executionIdConflict` from the reservation | `packages/loop/src/runtime/execute-run.ts:143` |
-| Missing `elicit` for a human-needing run | `ValidationError("elicitation_not_supported")` | `packages/loop/src/runtime/execute-run.ts:306-312` |
-| Unavailable continuation | `ContinuationUnavailableError` | `packages/loop/src/runtime/execute-run.ts:349-353` |
-| Persist failure | `run.persist_failed` logged with status and iterations, then `PersistenceError` | `packages/loop/src/runtime/execute-run.ts:438-457` |
-| Extension gate saturated at activation | `capability.extension_saturated` warned; the capability contributes nothing | `packages/loop/src/runtime/orchestrator.ts:270-281` |
-| `forRun` / `seedBlock` timeout | `capability.setup_timeout` warned with `phase`; contribution dropped | `packages/loop/src/runtime/orchestrator.ts:283-293`, `:327-336` |
-| `finalizeRun` timeout / throw | `capability.finalize_timeout` / `capability.finalize_failed` warned; slot omitted | `packages/loop/src/runtime/execute-run.ts:204-243` |
-| `onRunEnd` throw / rejection | `capability.run_end_failed` warned; run unaffected | `packages/loop/src/runtime/execute-run.ts:459-487` |
-| `onRunEnd` work exceeds its budget | `capability.run_end_timeout` warned; the work continues detached | `packages/loop/src/runtime/execute-run.ts:488-497`, `raceWithBudget` at `:162-177` |
-| Some MCP servers unreachable | `mcp_degraded` recorded; the run continues | `packages/loop/src/runtime/orchestrator.ts:471-472` |
-| All MCP servers unreachable at open | the pool's failure response is returned without running the agent | `packages/loop/src/runtime/orchestrator.ts:462` |
-| All tools become unavailable mid-run | `terminate{reason:"all_tools_unavailable"}` then `error`/`all_tools_unavailable` | `packages/loop/src/runtime/loop/loop-iteration.ts:45-48`, `packages/loop/src/runtime/loop/run-agent.ts:536-544` |
-| Provider `context_overflow` | evict-and-retry up to 3×; then a legible diagnostic `ProviderError` | `packages/loop/src/runtime/loop/model-call.ts:96-115` |
-| Forced tool choice rejected as `client` | one silent retry without the forcing | `packages/loop/src/runtime/loop/model-call.ts:117-127` |
-| Provider transient failure | retried by the provider layer; each retry recorded as `model_call_retry` and pokes the clock | `packages/loop/src/runtime/loop/loop.ts:459-473` |
-| Any provider error reaching the loop | `model_call_error` recorded with `kind`/`status`/`retry_after_ms`/`usage_attributed`, message sanitized; `onModelCallError` observers fired | `packages/loop/src/runtime/loop/iteration-metrics.ts:314-336`, `packages/loop/src/runtime/loop/loop.ts:976-1002` |
-| Output budget exhausted before or during a call | `OutputBudgetExhaustedError` → `budget_exhausted` | `packages/loop/src/runtime/loop/output-budget.ts:87,99`; caught at `packages/loop/src/runtime/loop/loop.ts:1005-1007`, `:1127-1129` |
-| Tool handler throws | converted to `Tool 'X' failed: msg`; `tool.handler_failed` warned; batch continues | `packages/loop/src/runtime/loop/loop.ts:768-776` |
-| Deferred handler rejects | same, via `tool.deferred_handler_failed` | `packages/loop/src/runtime/loop/loop.ts:811-821` |
-| Deferred still pending at cancellation | detached, but its later rejection is still observed | `packages/loop/src/runtime/loop/loop.ts:832-840`, `settleOrAbort` at `:668-690`. Test: `packages/loop/tests/unit/run-agent.test.ts:458-536` |
-| Steer source `drain()` throws | `steer.drain_failed` warned; treated as empty | `packages/loop/src/runtime/loop/steer-inbox.ts:45-53` |
-| Trace `ingest` throws | `trace.ingest_failed` warned; entry dropped from the registry only | `packages/loop/src/runtime/run-trace.ts:149-161` |
-| `onEvent` throws | `trace.emit_failed` warned; event dropped | `packages/loop/src/runtime/run-trace.ts:167-178` |
-| Capability event listener throws | swallowed silently | `packages/loop/src/runtime/execute-run.ts:363-369` |
-| Loop stalls | `error`/`timeout` with `details.elapsed_ms` | `packages/loop/src/runtime/run-timeout.ts:121-128` |
-| Loop refuses to unwind after abort | `run.teardown_detached` warned; the outer run proceeds | `packages/loop/src/runtime/run-timeout.ts:106-120`, `:132-146` |
-| Declared context window wider than the model's real one | `compaction.unreachable` warned once per agent loop | `packages/loop/src/runtime/loop/compaction-reach.ts:56-67` |
-| Prompt-cache prefix collapses | `iteration.cache` escalated from `debug` to `warn` | `packages/loop/src/runtime/loop/iteration-metrics.ts:232-251` |
+| Invalid request body | `validateBody` throws before anything is reserved or recorded | `packages/loop/src/runtime/execute-run.ts` |
+| Duplicate persisted execution id | `ConflictError` thrown before the run starts | `packages/loop/src/runtime/execute-run.ts` |
+| Duplicate in-flight execution id | `executionIdConflict` from the reservation | `packages/loop/src/runtime/execute-run.ts` |
+| Missing `elicit` for a human-needing run | `ValidationError("elicitation_not_supported")` | `packages/loop/src/runtime/execute-run.ts` |
+| Unavailable continuation | `ContinuationUnavailableError` | `packages/loop/src/runtime/execute-run.ts` |
+| Persist failure | `run.persist_failed` logged with status and iterations, then `PersistenceError` | `packages/loop/src/runtime/execute-run.ts` |
+| Extension gate saturated at activation | `capability.extension_saturated` warned; the capability contributes nothing | `packages/loop/src/runtime/orchestrator.ts` |
+| `forRun` / `seedBlock` timeout | `capability.setup_timeout` warned with `phase`; contribution dropped | `packages/loop/src/runtime/orchestrator.ts` |
+| `finalizeRun` timeout / throw | `capability.finalize_timeout` / `capability.finalize_failed` warned; slot omitted | `packages/loop/src/runtime/execute-run.ts` |
+| `onRunEnd` throw / rejection | `capability.run_end_failed` warned; run unaffected | `packages/loop/src/runtime/execute-run.ts` |
+| `onRunEnd` work exceeds its budget | `capability.run_end_timeout` warned; the work continues detached | `packages/loop/src/runtime/execute-run.ts`, `raceWithBudget` |
+| Some MCP servers unreachable | `mcp_degraded` recorded; the run continues | `packages/loop/src/runtime/orchestrator.ts` |
+| All MCP servers unreachable at open | the pool's failure response is returned without running the agent | `packages/loop/src/runtime/orchestrator.ts` |
+| All tools become unavailable mid-run | `terminate{reason:"all_tools_unavailable"}` then `error`/`all_tools_unavailable` | `packages/loop/src/runtime/loop/loop-iteration.ts`, `packages/loop/src/runtime/loop/run-agent.ts` |
+| Provider `context_overflow` | evict-and-retry up to 3×; then a legible diagnostic `ProviderError` | `packages/loop/src/runtime/loop/model-call.ts` |
+| Forced tool choice rejected as `client` | one silent retry without the forcing | `packages/loop/src/runtime/loop/model-call.ts` |
+| Provider transient failure | retried by the provider layer; each retry recorded as `model_call_retry` and pokes the clock | `packages/loop/src/runtime/loop/loop.ts` |
+| Any provider error reaching the loop | `model_call_error` recorded with `kind`/`status`/`retry_after_ms`/`usage_attributed`, message sanitized; `onModelCallError` observers fired | `packages/loop/src/runtime/loop/iteration-metrics.ts`, `packages/loop/src/runtime/loop/loop.ts` |
+| Output budget exhausted before or during a call | `OutputBudgetExhaustedError` → `budget_exhausted` | `packages/loop/src/runtime/loop/output-budget.ts`; caught at `packages/loop/src/runtime/loop/loop.ts` |
+| Tool handler throws | converted to `Tool 'X' failed: msg`; `tool.handler_failed` warned; batch continues | `packages/loop/src/runtime/loop/loop.ts` |
+| Deferred handler rejects | same, via `tool.deferred_handler_failed` | `packages/loop/src/runtime/loop/loop.ts` |
+| Deferred still pending at cancellation | detached, but its later rejection is still observed | `packages/loop/src/runtime/loop/loop.ts`, `settleOrAbort`. Test: `packages/loop/tests/unit/run-agent.test.ts` |
+| Steer source `drain()` throws | `steer.drain_failed` warned; treated as empty | `packages/loop/src/runtime/loop/steer-inbox.ts` |
+| Trace `ingest` throws | `trace.ingest_failed` warned; entry dropped from the registry only | `packages/loop/src/runtime/run-trace.ts` |
+| `onEvent` throws | `trace.emit_failed` warned; event dropped | `packages/loop/src/runtime/run-trace.ts` |
+| Capability event listener throws | swallowed silently | `packages/loop/src/runtime/execute-run.ts` |
+| Loop stalls | `error`/`timeout` with `details.elapsed_ms` | `packages/loop/src/runtime/run-timeout.ts` |
+| Loop refuses to unwind after abort | `run.teardown_detached` warned; the outer run proceeds | `packages/loop/src/runtime/run-timeout.ts` |
+| Declared context window wider than the model's real one | `compaction.unreachable` warned once per agent loop | `packages/loop/src/runtime/loop/compaction-reach.ts` |
+| Prompt-cache prefix collapses | `iteration.cache` escalated from `debug` to `warn` | `packages/loop/src/runtime/loop/iteration-metrics.ts` |
 
 **Expected boundary failures**: `executeRun` deliberately throws `ValidationError`, `ConflictError`
 (persisted or in-flight id), `ContinuationUnavailableError`, and `PersistenceError`. Failures that
 reach `runWithClockAndTimeout` become terminal responses; this includes provider errors and unexpected
-mid-agent throws (`packages/loop/src/runtime/run-timeout.ts:150-151`), pinned by
-`packages/loop/tests/integration/unexpected-throw-envelope.test.ts:12-54`. This is not a universal
+mid-agent throws (`packages/loop/src/runtime/run-timeout.ts`), pinned by
+`packages/loop/tests/integration/unexpected-throw-envelope.test.ts`. This is not a universal
 no-throw envelope around the whole orchestrator: for example, a non-admission error thrown by
-`capability.forRun` escapes its activation catch (`packages/loop/src/runtime/orchestrator.ts:254-281`),
-and a rejecting `seedBlock` escapes its bounded call (`:313-341`), so either can still reject
+`capability.forRun` escapes its activation catch (`packages/loop/src/runtime/orchestrator.ts`),
+and a rejecting `seedBlock` escapes its bounded call, so either can still reject
 `executeRun`.
 
 ## 7. Coupling
@@ -1205,21 +1179,21 @@ and a rejecting `seedBlock` escapes its bounded call (`:313-341`), so either can
 
 | Dependency | Edge | Forced by |
 | --- | --- | --- |
-| `@clarvis/capability` | runtime + type | value imports include `sanitizeErrorMessage`, `bind`, `unref`, the execution error classes, `composeCapabilityRegistry`, `createCapabilityRequestView`, `createCapabilityServices`, `MCP_HOOK_TOOL_PORT`, `TOOL_EFFECT_PORT`, `parseModelRef`, `reasoningOutputFloor`, `contentToText`, `levelEnabled`, `NOOP_LOGGER`, `foldContributions`, `openCallEnvelope`, `suppressSecondaryRejection` and `createComputeClock` — `packages/loop/src/runtime/execute-run.ts:1,12,20-26,38`; `packages/loop/src/runtime/orchestrator.ts:3,45-50`; `packages/loop/src/runtime/loop/loop.ts:1,14`; `packages/loop/src/runtime/loop/run-agent.ts:2,21,35`; `packages/loop/src/runtime/run-timeout.ts:1,4` |
-| `@clarvis/trace` | runtime | `generateExecutionId`, `mapTrace`, `buildRecord`, `createTrace`, `mapEntry` — `packages/loop/src/runtime/execute-run.ts:17-19`; `packages/loop/src/runtime/orchestrator.ts:22`; `packages/loop/src/runtime/run-trace.ts:7` |
-| `@clarvis/llm` | runtime | `withPromptCacheDefaults` — `packages/loop/src/runtime/execute-run.ts:4` |
-| `@clarvis/mcp-client` | type-only here | `import type { ConnectionManager }` (`packages/loop/src/runtime/execute-run.ts:5`), `import { type OpenedConnection }` (`packages/loop/src/runtime/orchestrator.ts:18`); the actual pool work is in `open-tool-pool.ts` |
-| `@clarvis/supervision` | runtime | `AGENT_REGISTRY_PORT`, `createAgentRegistry`, `resolveAgentsLimits` — `packages/loop/src/runtime/orchestrator.ts:29-30`; `packages/loop/src/runtime/entry-inputs.ts:43` |
-| `node:crypto` | runtime | `randomUUID` for the sub-agent instance id — `packages/loop/src/runtime/entry-inputs.ts:1` |
+| `@clarvis/capability` | runtime + type | value imports include `sanitizeErrorMessage`, `bind`, `unref`, the execution error classes, `composeCapabilityRegistry`, `createCapabilityRequestView`, `createCapabilityServices`, `MCP_HOOK_TOOL_PORT`, `TOOL_EFFECT_PORT`, `parseModelRef`, `reasoningOutputFloor`, `contentToText`, `levelEnabled`, `NOOP_LOGGER`, `foldContributions`, `openCallEnvelope`, `suppressSecondaryRejection` and `createComputeClock` — `packages/loop/src/runtime/execute-run.ts`; `packages/loop/src/runtime/orchestrator.ts`; `packages/loop/src/runtime/loop/loop.ts`; `packages/loop/src/runtime/loop/run-agent.ts`; `packages/loop/src/runtime/run-timeout.ts` |
+| `@clarvis/trace` | runtime | `generateExecutionId`, `mapTrace`, `buildRecord`, `createTrace`, `mapEntry` — `packages/loop/src/runtime/execute-run.ts`; `packages/loop/src/runtime/orchestrator.ts`; `packages/loop/src/runtime/run-trace.ts` |
+| `@clarvis/llm` | runtime | `withPromptCacheDefaults` — `packages/loop/src/runtime/execute-run.ts` |
+| `@clarvis/mcp-client` | type-only here | `import type { ConnectionManager }` (`packages/loop/src/runtime/execute-run.ts`), `import { type OpenedConnection }` (`packages/loop/src/runtime/orchestrator.ts`); the actual pool work is in `open-tool-pool.ts` |
+| `@clarvis/supervision` | runtime | `AGENT_REGISTRY_PORT`, `createAgentRegistry`, `resolveAgentsLimits` — `packages/loop/src/runtime/orchestrator.ts`; `packages/loop/src/runtime/entry-inputs.ts` |
+| `node:crypto` | runtime | `randomUUID` for the sub-agent instance id — `packages/loop/src/runtime/entry-inputs.ts` |
 
 ### 7.2 What depends on this subsystem
 
 | Consumer | Edge | Cite |
 | --- | --- | --- |
-| `@clarvis/kernel`'s run service | calls `executeRun` | `packages/kernel/src/runs/run-service.ts:105` |
-| `@clarvis/kernel`'s workflows service | calls `executeRun` for a leader | `packages/kernel/src/workflows/workflows-service.ts:516` |
-| `@clarvis/memory`'s indexer | calls `executeRun` for an indexing pass | `packages/memory/src/indexer/run.ts:178-180,194-200` |
-| `@clarvis/workflows` | receives `executeRun` through a port on `WorkflowCtx` rather than importing the engine | `packages/workflows/src/types.ts:73` (`executeRun(args: ExecuteRunArgs): Promise<ExecuteRunOutcome>`), used at `packages/workflows/src/run-leader.ts:94` |
+| `@clarvis/kernel`'s run service | calls `executeRun` | `packages/kernel/src/runs/run-service.ts` |
+| `@clarvis/kernel`'s workflows service | calls `executeRun` for a leader | `packages/kernel/src/workflows/workflows-service.ts` |
+| `@clarvis/memory`'s indexer | calls `executeRun` for an indexing pass | `packages/memory/src/indexer/run.ts` |
+| `@clarvis/workflows` | receives `executeRun` through a port on `WorkflowCtx` rather than importing the engine | `packages/workflows/src/types.ts` (`executeRun(args: ExecuteRunArgs): Promise<ExecuteRunOutcome>`), used at `packages/workflows/src/run-leader.ts` |
 
 The `@clarvis/workflows` edge is the one worth naming: it is a **structural inversion**. The type is
 declared on `WorkflowCtx` and the function is supplied by the host, so `workflows` never imports
@@ -1228,33 +1202,33 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 
 ### 7.3 Internal edges within `@clarvis/loop`
 
-- `execute-run.ts → orchestrator.ts` (import at `:14`, call at `:383`) — the only call site of `runOrchestrator`.
-- `orchestrator.ts → run-agent.ts` (`:24`, called at `:655`), `entry-seed.ts` (`:26`),
-  `entry-inputs.ts` (`:50`), `run-shape.ts` (`:53`), `run-response-mapping.ts` (`:54`),
-  `run-trace.ts` (`:55-61`), `run-timeout.ts` (`:62`), `vision-prepass.ts` (`:63`),
-  `open-tool-pool.ts` (`:52`), `capability-order.ts` (`:47`), `capability-tool-metadata.ts` (`:48`).
-- `run-agent.ts → loop.ts` (`:18`) — `runAgentLoop` is called from exactly one place (`:503`).
+- `execute-run.ts → orchestrator.ts` (import, call) — the only call site of `runOrchestrator`.
+- `orchestrator.ts → run-agent.ts`, `entry-seed.ts`,
+  `entry-inputs.ts`, `run-shape.ts`, `run-response-mapping.ts`,
+  `run-trace.ts`, `run-timeout.ts`, `vision-prepass.ts`,
+  `open-tool-pool.ts`, `capability-order.ts`, `capability-tool-metadata.ts`.
+- `run-agent.ts → loop.ts` — `runAgentLoop` is called from exactly one place.
 - `run-subagent.ts → run-agent.ts` — the second caller of `runAgent`
-  (`packages/loop/src/runtime/subagents/run-subagent.ts:161`), which is what makes `runAgent` the
+  (`packages/loop/src/runtime/subagents/run-subagent.ts`), which is what makes `runAgent` the
   shared agent driver rather than an entry-agent-only path. Owned by [loop-delegation-and-subagents](delegation-and-subagents.md).
 - `loop/index.ts` re-exports `cancellation`, `iteration-metrics`, `loop-iteration`, `loop-shared`
   and `run-agent` — but **not** `loop.ts`, `model-call.ts`, `steer-inbox.ts`, `progress.ts`,
   `classify-response.ts`, `output-budget.ts` or `compaction-reach.ts`
-  (`packages/loop/src/runtime/loop/index.ts:6-10`).
+  (`packages/loop/src/runtime/loop/index.ts`).
 - `runtime/support/*` is the runtime's cross-cutting utility layer, and its barrel is the one in the
   package that re-exports a whole *dependency*. Beside `bounded`, `concurrency`, `run-response`,
   `signals` and `stringify` it carries a bare `export * from "@clarvis/capability"`
-  (`packages/loop/src/runtime/support/index.ts:10`), because the pausable compute clock was extracted
+  (`packages/loop/src/runtime/support/index.ts`), because the pausable compute clock was extracted
   to that package and no local module defines it any more
-  (`packages/loop/src/runtime/support/index.ts:1-8`; `createComputeClock` is
-  `packages/capability/src/index.ts:56`). `concurrency.ts` is the same move one file down — ten lines
-  re-exporting `createSemaphore` so that "`./support` and every direct importer keep one import path"
-  (`packages/loop/src/runtime/support/concurrency.ts:4-10`). Nothing under any `src/` imports the
+  (`packages/loop/src/runtime/support/index.ts`; `createComputeClock` is
+  `packages/capability/src/index.ts`). `concurrency.ts` is the same move one file down, re-exporting
+  `createSemaphore` so that "`./support` and every direct importer keep one import path"
+  (`packages/loop/src/runtime/support/concurrency.ts`). Nothing under any `src/` imports the
   barrel: production code names the file it wants
-  (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:6` for `safeStringify`,
-  `packages/loop/src/host.ts:69` for `boundPromise`), and its importers are unit tests
-  (`packages/loop/tests/unit/stringify.test.ts:2`,
-  `packages/loop/tests/unit/ask-user-tool.test.ts:12`). The five modules themselves are owned
+  (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` for `safeStringify`,
+  `packages/loop/src/host.ts` for `boundPromise`), and its importers are unit tests
+  (`packages/loop/tests/unit/stringify.test.ts`,
+  `packages/loop/tests/unit/ask-user-tool.test.ts`). The five modules themselves are owned
   elsewhere — `bounded.ts` by [elicitation-and-user-interaction](../cross-cutting/elicitation.md),
   `concurrency.ts` and `signals.ts` by [loop-delegation-and-subagents](delegation-and-subagents.md),
   `stringify.ts` by [loop-tool-dispatch-and-results](tool-dispatch.md) — and only `run-response.ts`
@@ -1281,27 +1255,27 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
    one exported name across two modules, not one computation done twice for no reason, and a data
    constraint makes calling the heavier one from `executeRun` impossible.
 
-   `execute-run.ts:13` imports `deriveRunShape` from `../validation/request-schema.ts` — a
+   `execute-run.ts` imports `deriveRunShape` from `../validation/request-schema.ts` — a
    **validation-layer** function returning only `{ entry, isLead, userInputEnabled, askUserGranted,
-   softMode }`. `orchestrator.ts:59` imports a **different** `deriveRunShape`, from `./run-shape.ts`,
+   softMode }`. `orchestrator.ts` imports a **different** `deriveRunShape`, from `./run-shape.ts`,
    returning the full `RunShape` (`entryResolved`, `spawnableRegistry`, `fullRegistry`,
-   `primarySubagentModel`, …) — and that richer function's own body (`packages/loop/src/runtime/run-shape.ts:68-79`) calls the
-   validation-layer one *again* internally, aliased as `deriveRequestShape` (`packages/loop/src/runtime/run-shape.ts:4`), to get
+   `primarySubagentModel`, …) — and that richer function's own body (`packages/loop/src/runtime/run-shape.ts`) calls the
+   validation-layer one *again* internally, aliased as `deriveRequestShape` (`packages/loop/src/runtime/run-shape.ts`), to get
    the same `{ entry, isLead, … }` shape before building the rest of `RunShape` around it. So the
    validation-layer computation — including its `requiresUserInput` sweep over
    `allCapabilities` — genuinely runs twice per request that goes through `executeRun`: once directly
-   (`execute-run.ts:301-304`), once indirectly inside `orchestrator.ts`'s call to the full
-   `deriveRunShape` (`orchestrator.ts:201-205` → `run-shape.ts:78`). Both sweeps read the same
+   (`execute-run.ts`), once indirectly inside `orchestrator.ts`'s call to the full
+   `deriveRunShape` (`orchestrator.ts` → `run-shape.ts`). Both sweeps read the same
    `requestView` object (`execute-run.ts` passes its own `requestView` through as
-   `OrchestratorDeps.requestView`, and `orchestrator.ts:200` reuses it — `deps.requestView ??
+   `OrchestratorDeps.requestView`, and `orchestrator.ts` reuses it — `deps.requestView ??
    createCapabilityRequestView(request)` — rather than recreating it), so the two sweeps' *inputs* are
    identical; only a capability whose `requiresUserInput` reads something besides `requestView` (or is
    otherwise impure) could see the two calls disagree.
 
    `executeRun` cannot call the full, `run-shape.ts` version of `deriveRunShape` in its place: that
-   function requires a `SubagentProfileRegistry` as its second argument (`packages/loop/src/runtime/run-shape.ts:69-72`), and
+   function requires a `SubagentProfileRegistry` as its second argument (`packages/loop/src/runtime/run-shape.ts`), and
    `execute-run.ts` never builds one — `resolveSubagentProfiles` is called only inside
-   `runOrchestrator` (`orchestrator.ts:195`), after `execute-run.ts`'s own check has already run. This
+   `runOrchestrator` (`orchestrator.ts`), after `execute-run.ts`'s own check has already run. This
    is a genuine data-availability constraint, not a style choice: the lighter function is the *only*
    one `execute-run.ts` has the inputs to call.
 
@@ -1315,40 +1289,39 @@ declared on `WorkflowCtx` and the function is supplied by the host, so `workflow
 
    Finally, the double sweep is inert even if a capability's `requiresUserInput` **were** impure:
    `execute-run.ts`'s own (first) `shape` is consumed only by the `elicitation_not_supported` fail-fast
-   throw (`:306-312`) and to compute `runMode` (`:305`), which is used solely as a `logger` binding
-   field (`:342`, `mode: runMode`) — never anything that reaches the model or governs dispatch. The
+   throw and to compute `runMode`, which is used solely as a `logger` binding
+   field (`mode: runMode`) — never anything that reaches the model or governs dispatch. The
    run's actual behaviour is driven entirely by `orchestrator.ts`'s own (second, authoritative) shape;
    a divergence could at most skew that one log field, never execution.
 2. **The in-flight execution-id reservation has no test.** `reserveExecutionId`
-   (`packages/loop/src/runtime/execute-run.ts:132`) exists specifically for the window before a trace is written
-   (`:123-126`), yet `packages/loop/tests/component/execute-run.test.ts` only covers the persisted
+   (`packages/loop/src/runtime/execute-run.ts`) exists specifically for the window before a trace is written, yet `packages/loop/tests/component/execute-run.test.ts` only covers the persisted
    collision. Nothing pins the concurrent case.
 3. **`raceWithBudget`'s timer semantics vs. detached work.** The doc comment states work that outlives
-   the budget "is not cancelled — it simply stops being waited on" (`packages/loop/src/runtime/execute-run.ts:158-160`), but
+   the budget "is not cancelled — it simply stops being waited on" (`packages/loop/src/runtime/execute-run.ts`), but
    nothing in the code says what should happen to such work if the process exits; the timer being
-   `unref`'d (`:170`) means a pending budget never keeps the process alive, which is the only stated
+   `unref`'d means a pending budget never keeps the process alive, which is the only stated
    guarantee.
 4. **`MAX_CONSECUTIVE_EMPTY_RESPONSES = 2` and the `CACHE_PREFIX_LOSS = 0.1` tolerance** are bare
-   constants (`packages/loop/src/runtime/loop/loop.ts:230`, `packages/loop/src/runtime/loop/iteration-metrics.ts:68`). The latter carries a stated *purpose*
-   ("absorbs the block rounding every provider reports in", `packages/loop/src/runtime/loop/iteration-metrics.ts:94-96`) but not a
+   constants (`packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/loop/iteration-metrics.ts`). The latter carries a stated *purpose*
+   ("absorbs the block rounding every provider reports in", `packages/loop/src/runtime/loop/iteration-metrics.ts`) but not a
    derivation for the specific figure.
 5. **Whether `computeRegion` is ever set for the entry agent.** `LoopCore.computeRegion`
-   (`packages/loop/src/runtime/loop/loop.ts:126-134`) is documented as "Present only for a child spawned in the background", and
-   `createEntryInput` never sets it (`packages/loop/src/runtime/entry-inputs.ts:236-273`). Confirming that only the delegation
+   (`packages/loop/src/runtime/loop/loop.ts`) is documented as "Present only for a child spawned in the background", and
+   `createEntryInput` never sets it (`packages/loop/src/runtime/entry-inputs.ts`). Confirming that only the delegation
    path populates it requires reading [loop-delegation-and-subagents](delegation-and-subagents.md)' sources.
 6. **`LoopDerived.beforeCheckpoint` has exactly one producer** —
-    `RunAgentInput.buildBeforeCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts:81`, invoked at `:456-458`) — and no caller
+    `RunAgentInput.buildBeforeCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts`, invoked) — and no caller
     inside the files in this document's scope supplies it. Which capability or persona builds it is outside
     this document.
 7. **The `interrupted` status is unreachable from this subsystem.**
-    `packages/capability/src/execution-status.ts:11` states it is produced only by
+    `packages/capability/src/execution-status.ts` states it is produced only by
     `TraceStore.recoverOrphans`. `loopResultToResponse` has no arm for it
-    (`packages/loop/src/runtime/run-response-mapping.ts:94-113`), so a record carrying it can only come from the journal
+    (`packages/loop/src/runtime/run-response-mapping.ts`), so a record carrying it can only come from the journal
     recovery path owned by [trace-recording-and-persistence](../foundations/trace.md).
 8. ~~**No test names the joined-convergence-warning rule, the one-shot forced choice, the
     `onTeardown` guarantee, or the escalation's `terminate` suppression** (invariants 26, 28, 30, 35).
     Each is asserted only by an in-source comment. These are the highest-value gaps in this document's
-    test coverage.~~ **Resolved 2026-08-22.** All four now carry tests; see the invariants themselves
+    test coverage.~~ **Resolved.** All four now carry tests; see the invariants themselves
     for where. Two were harder to reach than the claim suggests, and the difficulty is the finding:
 
     - **26** needs both guards warning in the *same* iteration, which a batch of only-failing or

@@ -14,6 +14,8 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[
 const ACTION_SHA = /^[0-9a-f]{40}$/;
 const SOURCE_REPOSITORY = "getclarvis/clarvis";
 const RELEASE_REPOSITORY = "getclarvis/clarvis-releases";
+const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
+const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
 
 interface WorkflowSource {
   path: string;
@@ -106,11 +108,43 @@ export function releaseReadinessFailures(input: {
   ) {
     failures.push("release workflow must publish the Vercel AI SDK license");
   }
+  const tagOnlyGuard = "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')";
+  const runtimeReleaseMarkers = [
+    `RUNTIME_ARTIFACT_REPOSITORY: ${RUNTIME_ARTIFACT_REPOSITORY}`,
+    `RUNTIME_IMAGE_REPOSITORY: ${RUNTIME_IMAGE_REPOSITORY}`,
+    "  runtime-image:",
+    "  runtime-manifest:",
+    "needs: [package, runtime-manifest]",
+    "RELEASE_TAG: ${{ github.ref_name }}",
+    "bun run tooling/runtime/release-manifest.ts",
+    "uses: actions/attest@",
+    "subject-name: ${{ env.RUNTIME_ARTIFACT_REPOSITORY }}",
+    "subject-name: ${{ env.RUNTIME_IMAGE_REPOSITORY }}",
+    "artifact-metadata: write",
+    "build/release/runtime-release.json",
+  ];
+  const tagGuardCount = input.releaseWorkflow.split(tagOnlyGuard).length - 1;
+  const registryPushCount = input.releaseWorkflow.split("push-to-registry: true").length - 1;
+  const packageWriteCount = input.releaseWorkflow.split("packages: write").length - 1;
+  const runtimeIdentityGate = input.releaseWorkflow.indexOf("RELEASE_TAG: ${{ github.ref_name }}");
+  const runtimeRegistryLogin = input.releaseWorkflow.indexOf("docker login ghcr.io");
+  const firstRuntimePush = input.releaseWorkflow.indexOf('docker push "$artifact_tag"');
   if (
-    !input.releaseWorkflow.includes(
-      "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')",
-    )
+    runtimeReleaseMarkers.some((marker) => !input.releaseWorkflow.includes(marker)) ||
+    tagGuardCount < 3 ||
+    registryPushCount < 2 ||
+    packageWriteCount < 2 ||
+    runtimeIdentityGate < 0 ||
+    runtimeRegistryLogin < 0 ||
+    firstRuntimePush < 0 ||
+    runtimeIdentityGate > runtimeRegistryLogin ||
+    runtimeRegistryLogin > firstRuntimePush
   ) {
+    failures.push(
+      "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
+    );
+  }
+  if (!input.releaseWorkflow.includes(tagOnlyGuard)) {
     failures.push("release publish job must reject manual workflow dispatches");
   }
   if (!input.releaseWorkflow.includes(`RELEASE_REPOSITORY: ${RELEASE_REPOSITORY}`)) {

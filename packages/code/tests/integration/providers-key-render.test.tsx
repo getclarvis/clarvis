@@ -9,6 +9,7 @@ import type {
   Scope,
   SettingsAdapter,
   SettingsFile,
+  SettingsPatch,
 } from "../../src/adapters/settings.ts";
 import type { KeysAdapter, KeySource } from "../../src/adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
@@ -34,7 +35,7 @@ function fakeSettings(
     issues?: FieldIssue[];
     refs?: (name: string) => { agents: string[]; defaultModel: boolean };
   },
-  writes?: { scope: Scope; patch: Partial<SettingsFile> }[],
+  writes?: { scope: Scope; patch: SettingsPatch }[],
 ): SettingsAdapter {
   const providers = provider ? [provider] : [];
   return {

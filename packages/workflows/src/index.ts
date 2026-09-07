@@ -19,8 +19,12 @@
  * from `@clarvis/capability`; the loop dependency is limited to execution and its
  * workflow-specific elicitation serializer rather than contract pass-throughs.
  */
-export { runLeader } from "./run-leader.ts";
-export { createWorkflowsCapability, WORKFLOW_GRANT } from "./capability.ts";
+export {
+  runLeader,
+  createLeaderOutputBudgetCapability,
+  workflowOutputBudgetOf,
+} from "./run-leader.ts";
+export { createWorkflowsCapability, workflowContextOf, WORKFLOW_GRANT } from "./capability.ts";
 export { createWorkflowLedger } from "./ledger.ts";
 export type { WorkflowLedger } from "./ledger.ts";
 export { createWorkflowLeaderCount } from "./leader-count.ts";

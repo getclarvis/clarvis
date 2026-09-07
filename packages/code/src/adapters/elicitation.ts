@@ -140,10 +140,17 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
   const detail =
-    params.detail !== undefined && params.detail.command.trim().length > 0
+    params.detail !== undefined &&
+    "command" in params.detail &&
+    params.detail.command.trim().length > 0
       ? params.detail
       : undefined;
-  return { mode: "form", message, fields, ...(detail !== undefined ? { detail } : {}) };
+  return {
+    mode: "form",
+    message,
+    fields,
+    ...(detail !== undefined ? { detail } : {}),
+  };
 }
 
 /** How an un-defaulted choice field starts. */

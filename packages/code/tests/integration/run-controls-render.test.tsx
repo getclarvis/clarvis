@@ -26,6 +26,8 @@ function mount(
     guardMode?: "off" | "on" | "auto";
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
+    /** Optional container runtime used to exercise its effective descriptions. */
+    runtime?: { backend: "docker" };
     sandboxInspection?: { available: boolean; degraded: boolean; reason?: string } | Error;
   } = {},
 ) {
@@ -40,6 +42,7 @@ function mount(
     memory: { enabled: true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
+    ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
     ...(opts.sandboxInspection === undefined
       ? {}
       : { sandbox: { type: "native", enabled: true, availability: "optional" } }),
@@ -65,6 +68,7 @@ function mount(
     },
     write: async (scope: string, patch: unknown) => {
       writes.push({ scope, patch });
+      Object.assign(effective, patch);
     },
     validateProviders: () => ({ ok: opts.resolvable !== false }),
     inspectSandbox: async () => {
@@ -97,6 +101,7 @@ function mount(
   } as unknown as MemoryModeStore;
   const notes: string[] = [];
   const sandboxOpened: true[] = [];
+  const runtimeRetries: true[] = [];
   const deps = {
     settings,
     guard,
@@ -106,6 +111,7 @@ function mount(
     },
     runActive: () => false,
     openSandbox: () => sandboxOpened.push(true),
+    retryRuntime: () => runtimeRetries.push(true),
   };
   return {
     host,
@@ -116,6 +122,7 @@ function mount(
     guardSetModeCalls,
     memorySetModeCalls,
     sandboxOpened,
+    runtimeRetries,
   };
 }
 
@@ -160,8 +167,9 @@ async function activateMemoryOff(
   await selectOption(press, render, 2, ["down"]);
 }
 
-test("the safety row opens sandbox details and persists a selected protected preset", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened } = mount();
+test("the isolation row opens sandbox details and persists minimal lazy Docker", async () => {
+  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened, runtimeRetries } =
+    mount();
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
     height: 40,
@@ -170,13 +178,13 @@ test("the safety row opens sandbox details and persists a selected protected pre
 
   press("b");
   expect(sandboxOpened).toEqual([true]);
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down", "down", "down", "down"]);
+  await selectOption(press, () => t.renderOnce(), 0, ["down", "down"]);
 
   expect(writes).toEqual([
     {
       scope: "global",
       patch: {
-        guard: { type: "shell", mode: "on" },
+        runtime: { backend: "docker" },
         sandbox: {
           type: "native",
           enabled: true,
@@ -188,13 +196,39 @@ test("the safety row opens sandbox details and persists a selected protected pre
       },
     },
   ]);
-  expect(guardSetModeCalls).toEqual(["on"]);
-  expect(notes).toEqual(["safety: protected (global)"]);
+  expect(guardSetModeCalls).toEqual([]);
+  expect(runtimeRetries).toEqual([true]);
+  expect(notes).toEqual(["isolation: docker (global)"]);
   t.renderer.destroy();
 });
 
-test("judged confirms direct host execution and persists guard auto without a sandbox", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls } = mount();
+test("the Docker consequences remain complete in a narrow Run controls viewport", async () => {
+  const { host, deps } = mount({ runtime: { backend: "docker" } });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 72,
+    height: 40,
+  });
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  const prose = frame.replaceAll(/\s+/gu, " ");
+  expect(prose).toContain(
+    "The selected workspace is mounted directly; changes appear on the host immediately.",
+  );
+  expect(prose).toContain(
+    "Outbound network access is enabled; guest services can be exposed to the host.",
+  );
+  expect(prose).toContain(
+    "Docker stays cold until the first run; an operational startup failure requires Sandbox.",
+  );
+  expect(frame.split("\n").every((line) => line.length <= 72)).toBe(true);
+  t.renderer.destroy();
+});
+
+test("Host isolation requires confirmation and leaves command review untouched", async () => {
+  const { host, deps, press, notes, writes, guardSetModeCalls } = mount({
+    sandboxInspection: { available: true, degraded: false },
+  });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
     height: 40,
@@ -203,11 +237,11 @@ test("judged confirms direct host execution and persists guard auto without a sa
 
   press("return");
   await t.renderOnce();
-  press("down");
+  press("up");
   press("return");
   await tick();
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("Judged mode runs commands directly on the host");
+  expect(t.captureCharFrame()).toContain("Run agent tools directly on this host?");
   expect(writes).toEqual([]);
 
   press("y");
@@ -216,7 +250,7 @@ test("judged confirms direct host execution and persists guard auto without a sa
     {
       scope: "global",
       patch: {
-        guard: { type: "shell", mode: "auto" },
+        runtime: { backend: "native" },
         sandbox: {
           type: "native",
           enabled: false,
@@ -228,12 +262,12 @@ test("judged confirms direct host execution and persists guard auto without a sa
       },
     },
   ]);
-  expect(guardSetModeCalls).toEqual(["auto"]);
-  expect(notes).toEqual(["safety: judged (global)"]);
+  expect(guardSetModeCalls).toEqual([]);
+  expect(notes).toEqual(["isolation: host (global)"]);
   t.renderer.destroy();
 });
 
-test("a reviewed safety preset preserves the scope's allow and deny policy", async () => {
+test("Auto review preserves the scope's allow and deny policy", async () => {
   const { host, deps, press, writes } = mount({
     guard: {
       global: {
@@ -248,7 +282,7 @@ test("a reviewed safety preset preserves the scope's allow and deny policy", asy
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down", "down", "down"]);
+  await activateGuard(press, () => t.renderOnce(), 2);
   expect(writes[0]).toMatchObject({
     scope: "global",
     patch: {
@@ -263,7 +297,7 @@ test("a reviewed safety preset preserves the scope's allow and deny policy", asy
   t.renderer.destroy();
 });
 
-test("a workspace safety preset carries forward the global command policy", async () => {
+test("workspace Auto review carries forward the global command policy", async () => {
   const { host, deps, press, writes } = mount({
     guard: {
       global: { type: "shell", allowed_commands: ["bun test"], denied_commands: ["rm -rf *"] },
@@ -275,7 +309,7 @@ test("a workspace safety preset carries forward the global command policy", asyn
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 0, ["down", "down", "down", "down"]);
+  await activateGuard(press, () => t.renderOnce(), 2);
   expect(writes[0]).toMatchObject({
     scope: "workspace",
     patch: {
@@ -290,7 +324,7 @@ test("a workspace safety preset carries forward the global command policy", asyn
   t.renderer.destroy();
 });
 
-test("the safety status distinguishes checking, unavailable, degraded and optional hosts", async () => {
+test("the isolation status distinguishes checking, unavailable, degraded and optional hosts", async () => {
   const cases = [
     {
       inspection: new Error("probe failed"),
@@ -341,7 +375,7 @@ test("the guard-mode row writes settings.guard.mode at scope and syncs the sessi
   await t.renderOnce();
   await activateGuard(press, () => t.renderOnce(), 1);
   expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
-  expect(notes).toEqual(["guard: on (global settings)"]);
+  expect(notes).toEqual(["review: approval (global settings)"]);
   expect(guardSetModeCalls).toEqual(["on"]);
   t.renderer.destroy();
 });
@@ -376,12 +410,12 @@ test("guard 'auto' without a resolvable model falls back to writing 'on', not a 
   expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
   expect(guardSetModeCalls).toEqual(["on"]);
   expect(notes).toHaveLength(1);
-  expect(notes[0]).toContain("guard: on (global settings)");
-  expect(notes[0]).toContain("using on until one is configured");
+  expect(notes[0]).toContain("review: approval (global settings)");
+  expect(notes[0]).toContain("Auto needs a usable default_model");
   t.renderer.destroy();
 });
 
-test("a guard mode that matches no safety preset shows the custom caption", async () => {
+test("isolation and review remain separately visible for a noncanonical legacy pair", async () => {
   const { host, deps } = mount({
     guardMode: "auto",
     sandboxInspection: { available: true, degraded: false },
@@ -392,7 +426,9 @@ test("a guard mode that matches no safety preset shows the custom caption", asyn
   });
   await t.renderOnce();
   const out = t.captureCharFrame();
-  expect(out).toContain("Safety preset  custom");
+  expect(out).toContain("Isolation  sandbox");
+  expect(out).toContain("Command review  auto");
+  expect(out).not.toContain("custom");
   t.renderer.destroy();
 });
 

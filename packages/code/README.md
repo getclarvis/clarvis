@@ -24,7 +24,7 @@ boundaries, and derive Code's exact workspace-package allowlist from the central
 The TUI contract is divided across the focused `code-*` specs in the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
-keyboard policy, theme, and onboarding. The performance contract and dated measurement review live
+keyboard policy, theme, and onboarding. The performance contract and measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
 Transcript snapshot rendering remains in
@@ -385,13 +385,14 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-`Ctrl+S` opens the canonical safety-preset picker on every Keyboard Profile; `Alt+S` remains an
-enhanced-path accelerator. Clarvis keeps the terminal's native text path instead of requesting
-all-key escape reports, so macOS dead-key and IME composition remain intact. Every terminal path,
-including direct iTerm sessions, must deliver Option as Meta/Esc+ for the enhanced accelerator; a
-literal `ß` remains ordinary text, while `Ctrl+S` keeps the picker reachable. The picker is loaded
-on first use, retained after that first mount, and reuses the same preset application policy as Run
-controls. There is no global
+Isolation and command review are separate controls. `Ctrl+S` opens Host/Sandbox/Docker isolation
+and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; `Alt+S` and `Alt+G` are their
+enhanced-path accelerators. On macOS those enhanced bindings render as Option when the terminal
+delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` expands or collapses
+the Task editor, so `Ctrl+G` has no editing behavior. Clarvis keeps the terminal's native text path
+instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
+`ß` remains ordinary text. Both pickers are loaded on first use and retained after their first
+mount. There is no global
 physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
@@ -497,10 +498,9 @@ and type-check commands across the common JavaScript/TypeScript, Python, Rust,
 Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
 interpreters and task runners plus install, publish, deploy and migration
 commands remain reviewable. Existing lists — including an intentionally empty
-one — are never expanded or replaced. For a low-interruption posture with host
-containment, use the `reviewed` preset; an allowlist is approval policy and does
-not make repository-controlled build or test code safe to run directly on the
-host.
+one — are never expanded or replaced. For a low-interruption posture with host containment, choose
+Isolation `Sandbox` or `Docker` and Review `Auto`; an allowlist is approval policy and does not make
+repository-controlled build or test code safe to run directly on the host.
 
 After a guarded shell call settles, its transcript header states the durable
 verdict and answerer, for example `auto-guard approved · judge` or
@@ -510,15 +510,10 @@ and survives reopening the run. When consecutive shell calls collapse into a
 answerer; a denied member is not hidden by the group's collapsed error body.
 Denied signatures are prioritized ahead of ordinary signatures when the six-row group cap applies.
 
-Changing the guard mode or choosing a named safety preset preserves the effective
-`allowed_commands` and `denied_commands`, including when a workspace preset inherits the global
-policy. A preset changes execution posture; it does not erase the command policy.
-
-The six selectable presets are `free`, `judged`, `approval`, `isolated`, `reviewed`, and
-`protected`. `judged` runs directly on the host without a native sandbox boundary while the LLM judge
-reviews risky commands; if no judge can resolve a decision, execution falls back to asking the user.
-Because `free` and `judged` remove the sandbox boundary, the quick picker requires an explicit danger
-confirmation before applying either posture.
+Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
+workspace choice inherits the global policy. Changing Isolation leaves Review and its command
+policy untouched. Selecting Host requires an explicit danger confirmation because it removes the
+containment boundary; turning Review off does not itself change isolation.
 
 A **deny** is enforced before any of this, in every mode; `denied_commands` wins
 over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
@@ -687,7 +682,10 @@ the lead agent's reply to stdout and exits 0 on success or 1 on failure —
 suitable for scripts and CI. Interactive approvals (guard/ask_user) are
 auto-denied with a note on stderr, so a headless run can never hang. Without
 `--agent`, it uses the same configured-default, runnable-`marshall`, runnable-Lead
-resolution as the TUI and fails clearly when no interactive entry agent exists.
+resolution as the TUI and fails clearly when no interactive entry agent exists. Its kernel, like
+the interactive and other headless paths, is opened through `WorkspaceClientManager`; a selected
+Docker or Podman runtime therefore receives the same lazy local factory instead of failing before
+the run starts.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever
@@ -1129,7 +1127,7 @@ cleanup; combine `--clear --empty-workspace` to clean and immediately start a fr
 
 This package is outside the monorepo's `tsc -b` reference graph — Bun executes the TypeScript and
 TSX source directly and nothing is emitted for consumers — but it **does** have a package build:
-`bun --filter @clarvis/code build` (`tooling/artifact/build.ts`) produces the distributable bundle. From the
+`bun --filter @clarvis/code build` (`packages/code/tooling/artifact/build.ts`) produces the distributable bundle. From the
 repository root, `bun run build` runs the TypeScript library graph and then this bundle; use
 `bun run build:code` when only the TUI changed.
 
@@ -1146,7 +1144,7 @@ the build pays that once. Consequences worth knowing:
 - **After editing `src/`, the global command keeps running the old bundle.** Use
   `bun run start` / `bun run dev` for the inner loop, rebuild with `bun run build` or
   `bun run build:code`, or set `CLARVIS_CODE_SOURCE=1` to force the sources.
-- **The bundle is package-local, not standalone by itself.** `tooling/artifact/build.ts` keeps
+- **The bundle is package-local, not standalone by itself.** `packages/code/tooling/artifact/build.ts` keeps
   `@opentui/core`, its platform-native packages, and `pino` external, so renderer and logging workers
   remain relative to their owning package instead of embedding the build host's `node_modules` path.
   The build rejects generated JavaScript containing the checkout root. Checkout setup provides the
@@ -1186,9 +1184,10 @@ startup composer, complete header and complete input-ready frame, n≥7 with min
 It refuses to report on a busy machine and stamps the power state, because CPU
 frequency scaling moved one unchanged measurement from 2.05 s to 0.60 s and three
 conclusions had to be withdrawn over it.
-The repository's [Clarvis performance validation
-skill](../../.agents/skills/clarvis-performance-validation/SKILL.md) owns the future clean-versus-
-marketplace A/B, real-PTY run, ignored-OAuth, skill/MCP/subagent, hashing-drift and cleanup checklist.
+The repository's [Clarvis TUI validation
+skill](../../.agents/skills/clarvis-tui-validation/SKILL.md) selects focused, full-audit, or performance
+work. Its performance mode scopes startup, extension comparisons, real-run latency, OAuth, drift,
+and retention checks to the investigation and reuses valid artifact evidence across modes.
 
 An MCP that cannot connect while a run opens its tool pool remains represented by the persisted
 `mcp_degraded` diagnostic event, but Code does not publish that event into conversation history. The
@@ -1203,6 +1202,65 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook/capability projections are withheld.
 
+The workspace header reports Review and effective Isolation as separate chips. A configured Docker
+choice begins as `Docker`, changes to the reported container engine after its lazy first-run launch,
+and reads `Sandbox` if an operational Docker startup failure activates the required native fallback.
+`WorkspaceClientManager` supplies the selected local Podman or Docker composition through a dynamic
+`@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
+Container isolation mounts the workspace already selected by Code directly at `/workspace`, so
+changes appear on the host immediately and there is no Clarvis-owned copy/apply prompt. Starting
+Code inside a linked worktree uses that worktree as the separate checkout; Code does not create a
+second copy, commit, merge or remove it. A primary checkout or non-Git directory is edited directly.
+Run Controls states this direct-mount consequence explicitly.
+The simple Docker selection persists only `{ "backend": "docker" }`; advanced settings may override
+the executable, Docker context (`connection`), digest, network, fallback, resource ceilings and an
+operator-owned image recipe. Recipe scripts live under global `runtime-recipes/` and are referenced
+by an absolute path from global `settings.json`; the TUI has no script editor and the guest has no
+mutation tool for either. For example:
+
+```json
+{
+  "runtime": {
+    "backend": "docker",
+    "recipe": {
+      "name": "team-tools",
+      "script": "/Users/alice/.clarvis/runtime-recipes/team-tools.sh",
+      "network": "outbound"
+    }
+  }
+}
+```
+
+For example, that operator-owned script can contain:
+
+```sh
+apt-get update
+apt-get install -y --no-install-recommends jq shellcheck
+```
+
+The absolute script is captured and run as POSIX `sh -eu` only when the first Docker run needs an
+unseen derived image. Its content, the fixed builder policy and the exact base image form a local
+cache identity, so later Clarvis processes reuse the inspected derived image instead of rebuilding
+it. A ready generation does not watch the script; an edit is captured on the next cold Docker
+generation. Recipe failure is visible and fail-closed; Clarvis does not silently use the
+uncustomized image or Sandbox fallback.
+
+The recipe is not a secret-delivery channel: its captured bytes are sent to the selected Docker
+engine, and secrets written into commands, installed files or build output may persist outside
+Clarvis. Authenticated builds need a future explicit host-owned secret contract.
+
+An uncached recipe publishes `Preparing Docker runtime recipe '<name>' for first use…` through the
+existing transient runtime-placement notice while Isolation remains in `starting`.
+Omitting `network` selects the broader ordinary `outbound` route, not internet-only filtering.
+
+Inside an isolated run, agents with `run_commands` are told that `mise` installs missing toolchains
+outside the workspace and receive `expose_port`. Docker preserves those installations in a labelled
+local volume scoped to that workspace and exact image, including across TUI sessions; Podman still
+uses ephemeral `/mise`. The Docker volume is engine-owned cache rather than host-visible project
+state and is not bounded by `storage_bytes`. `expose_port` returns the actual host-only `127.0.0.1`
+URL chosen by the kernel, so the UI need not infer Docker/Colima forwarding or claim the guest port
+is directly reachable.
+
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer
 lifecycle-pass, key-layer and cumulative layer-registration counters. Set
@@ -1215,9 +1273,9 @@ or key-layer counts do not balance; the corresponding limits are configurable th
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
 lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
 configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
-configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker, Safety
-Preset Picker, Catalog Picker, the narrow drawer and a bounded ten-slot autocomplete projection are
-also retained lazily.
+configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker,
+Isolation Picker, Review Picker, Catalog Picker, the narrow drawer and a bounded ten-slot
+autocomplete projection are also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both
 must keep renderable, lifecycle-pass and key-layer ownership constant. Immediate RSS/PSS may rise
 while Bun and OpenTUI retain collectable arenas, so the pass/fail leak rate is the post-GC

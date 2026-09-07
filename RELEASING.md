@@ -67,6 +67,9 @@ public and grant Actions write access to `clarvis`; registry writes use its job-
 `GITHUB_TOKEN`, not the Publisher App token. Source/revision OCI labels and attestations continue
 to identify the source build even when the official package is connected to the distribution repo.
 
+Multi-platform index assembly uses the runner-provided Docker Buildx plugin and verifies its
+availability before use; it requires no third-party action allowlist expansion.
+
 GHCR package controls exist only after the first image push. At first publication, verify the
 package's connected repository, visibility, and Actions access in GitHub; creating a public Git
 repository does not prove that a newly pushed package is public. The stable publish job attempts

@@ -21,6 +21,10 @@ test("distribution workflows separate candidate and stable publication and gate 
   expect(candidateSource).toContain('bash tooling/ci/qualify-runtime.sh "$image_tag" podman');
   expect(candidateSource).not.toContain("getclarvis/clarvis-releases");
   expect(candidateSource).not.toContain("CLARVIS_RELEASE_APP_PRIVATE_KEY");
+  expect(candidateSource).not.toContain("docker/setup-buildx-action");
+  expect(stableSource).not.toContain("docker/setup-buildx-action");
+  expect(candidateSource).toContain("run: docker buildx version");
+  expect(stableSource).toContain("run: docker buildx version");
   expect(stable.jobs.package.needs).toBe("identity");
   expect(stable.jobs["runtime-image"].needs).toBe("identity");
   expect(stable.jobs.identity.steps[1].run).toContain('[[ "$GITHUB_REF_NAME" =~ ^v');

@@ -246,7 +246,7 @@ units and are not published independently.
 | [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                 |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                 |
 | [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.   |
-| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The terminal UI distributed as `clarvis`.                    |
+| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling. |
 | [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.   |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product

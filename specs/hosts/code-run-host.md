@@ -76,6 +76,9 @@ file authority are owned by [self-configuration.md](self-configuration.md).
 | `fitCurrentContext` | `(targetWindowTokens: number) => Promise<CompactResult \| null>` | `packages/code/src/run-host.ts` (`RunHost`) |
 | `teardownRuns` | `() => void` | `packages/code/src/run-host.ts` |
 | `submitTurn` | `(content: MessageContent, display?: string) => Promise<void>` | `packages/code/src/run-host.ts` |
+| `scheduledBinding` | `(materialize?: boolean) => LoopBinding \| null`; captures live conversation/configuration identity without a model call | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `submitScheduledTurn` | `(request: ScheduledTurnRequest) => ScheduledTurnAdmission`; reserves synchronously and never steers | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `scheduledBusy` | `Accessor<boolean>`; includes human preparation, reservations, session loading, reconciliation, physical handles, bash and outstanding compaction | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `submitPromptTurn` | `(messages, display?, skill?: {name, task?, plansMode?}) => void` | `packages/code/src/run-host.ts` |
 | `submitSkillRun` | `(name, task, agent) => Promise<void>` | `packages/code/src/run-host.ts` |
 | `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>`; `profile` is an Agent Profile id | `packages/code/src/run-host.ts` |
@@ -108,6 +111,8 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` and `EXPORT_INCOMPLETE_PREFIX`.
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `packages/code/src/run-host.ts` |
 | `activeProfile` / `setActiveProfile` | agent selection | yes | `packages/code/src/run-host.ts` |
 | `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
+| `executionConfiguration` | fingerprint and readable effective model label | no | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `scheduledBlockedReason` / `onSessionInvalidated` | current execution health and registration invalidation ports | no | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `plansMode` | `() => PlanMode` | no | `packages/code/src/run-host.ts` |
 | `planProviderKey` | `() => string \| undefined` | no | `packages/code/src/run-host.ts` |
 | `isManagerProfile` | `() => boolean` — the `workflow` grant | no | `packages/code/src/run-host.ts` |
@@ -361,7 +366,17 @@ surfaces as a run-error status rather than an incomplete request —
 
 ### 4.2 `runManaged` — the single funnel
 
-Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
+Every run shape (`submitTurn`, `submitScheduledTurn`, `submitSkillRun`, `workOnTask`) goes through it.
+Human and scheduled conversation turns share `submitPreparedTurn`. The scheduled entry additionally
+reserves before asynchronous preparation and retains that reservation through reconciliation and
+physical closure. It cannot steer, overwrite the human draft after preparation failure or dispatch
+under a changed live-session/configuration binding. Human input received before reservation wins;
+input received after reservation waits for the handle and can then steer normally. Production:
+`submitScheduledTurn`, `submitTurn`, `submitPreparedTurn` in
+[run-host.ts](../../packages/code/src/run-host.ts). Test: the automatic-admission, preparation-race,
+stale-callback, cancellation and closure/reconciliation cases in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+The complete registration contract is [loop-scheduling.md](loop-scheduling.md).
 
 | Phase | Effect | File |
 | --- | --- | --- |
@@ -380,7 +395,7 @@ Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
 | resolve | `attention.notify` when not cancelled and away | `packages/code/src/run-host.ts` (`runManaged`) |
 | reject | `onError(e)`; `store.settleRun(id)`; `attention.notify("run failed")` when not cancelled and away | `packages/code/src/run-host.ts` |
 | finally | idempotently release interactive ownership on an error path; clear the diagnostic binding and sink; resolve `currentSettlement` without awaiting `closed` | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
-| finally | `elicit.cancelPending()` unconditionally | `packages/code/src/run-host.ts` |
+| finally | `elicit.cancelPending()` only while the same session and ownership epoch remain current | `packages/code/src/run-host.ts` |
 
 `runOutcomeStatus` renders `"failed — <message>"` for a failed envelope carrying an error,
 otherwise `envelope?.status ?? "done"`.

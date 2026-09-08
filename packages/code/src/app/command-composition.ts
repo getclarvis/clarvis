@@ -9,6 +9,8 @@ import type { HintTone } from "../views/hint.ts";
 import { registerAppCommands, type AppCommandDeps, type AppCommandWiring } from "./commands.tsx";
 import { registerAgentsCommands } from "../features/agents/commands.ts";
 import { registerProvidersCommands } from "../features/providers/commands.ts";
+import { registerLoopCommands } from "../features/loop/commands.ts";
+import type { LoopController } from "../features/loop/controller.ts";
 
 /** Feature dependencies consumed by the application command composition root. */
 export interface FeatureCommandDeps {
@@ -29,6 +31,7 @@ export interface FeatureCommandDeps {
 /** Dependencies for composing application and feature registrations. */
 export interface CodeCommandDeps extends AppCommandDeps {
   features: FeatureCommandDeps;
+  loops?: LoopController;
 }
 
 /**
@@ -40,6 +43,8 @@ export interface CodeCommandDeps extends AppCommandDeps {
 export function registerCodeCommands(deps: CodeCommandDeps): AppCommandWiring {
   const { commands, features } = deps;
   const featureScope = commands.scope();
+  if (deps.loops)
+    registerLoopCommands(featureScope, { loops: deps.loops, ui: deps.ui, notify: deps.notify });
   registerProvidersCommands(featureScope, {
     settings: features.settings,
     catalog: features.catalog,

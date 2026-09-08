@@ -624,6 +624,13 @@ split, demonstrated directly in the `code` client's own reconciliation code.
 are not a passive DTO: they are the mechanism that produces the persisted record
 `session-service.ts` stores and the counterpart (`restoreHistory`) that re-arms a resumed session.
 
+- **`ensureIdentity(title)`** materializes and saves empty conversation metadata without a user
+  message, turn, continuation id or model call. This lets the live host bind a `/loop` registration
+  before its first real turn; the scheduler definition itself is never persisted. Production:
+  `createSession` in [session.ts](../../packages/code/src/adapters/session.ts). Test:
+  `ensureIdentity persists an empty conversation without inventing history or a continuation` in
+  [session.test.ts](../../packages/code/tests/component/session.test.ts). See
+  [loop-scheduling.md](loop-scheduling.md).
 - **`beginTurn(content, executionId)`** seeds `meta` on the first turn or appends a running
   `kind: "conversation"` turn, pushes the user message onto `history`, advances
   `continuationBase`, and returns the previous **conversation** execution id. Initialization likewise

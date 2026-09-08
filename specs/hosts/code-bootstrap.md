@@ -33,6 +33,19 @@ architecture tests pin their observable handoff (`tooling/checks/coverage.ts`,
 
 ## 2. Surface
 
+Interactive runtime composition also owns one in-memory conversation prompt scheduler. It binds
+jobs to `RunHost.scheduledBinding`, supplies connection/configuration readiness, pauses on reconnect
+or conversation changes, cancels registrations on session deletion and disposes timers on close.
+App contributes draft/dialog admission gates and command composition registers `/loop`. Headless
+execution does not instantiate this controller or restore any schedule. Production: `loops`,
+`loopReadiness`, `buildRunHost`, `closeWorkspace` in
+[runtime.tsx](../../packages/code/src/runtime.tsx) and `registerCodeCommands` in
+[command-composition.ts](../../packages/code/src/app/command-composition.ts).
+Test: controller disposal/binding cases in
+[loop-controller.test.ts](../../packages/code/tests/unit/loop-controller.test.ts) and live App command
+and interaction gates in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+The owning contract is [loop-scheduling.md](loop-scheduling.md).
+
 ### 2.1 The `clarvis` bin
 
 | Property | Value | Source |

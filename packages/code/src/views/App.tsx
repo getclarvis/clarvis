@@ -41,6 +41,7 @@ import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
+import type { LoopController } from "../features/loop/controller.ts";
 import type { BackendProbe } from "../onboarding/doctor.ts";
 import type { ConnectionState } from "../adapters/connection-state.ts";
 import type { McpClientCaps } from "../adapters/mcp-capabilities-bridge.ts";
@@ -192,6 +193,10 @@ export interface AppShell {
 
 /** The active run's live surface: submit/cancel/status plus the pending elicitation, if any. */
 export interface AppRunControls {
+  /** Process-local recurrence controller; omitted by hosts without interactive scheduling. */
+  loops?: LoopController;
+  /** Reads host preparation, reconciliation and physical ownership for scheduler wakeups. */
+  scheduledBusy?: Accessor<boolean>;
   status: () => string;
   submit: (content: MessageContent) => void;
   submitPrompt: (
@@ -911,6 +916,7 @@ export function App(props: AppProps): JSX.Element {
 
   const appWiring = registerCodeCommands({
     commands,
+    ...(props.run.loops ? { loops: props.run.loops } : {}),
     ui: overlays.ui,
     effects,
     session: {
@@ -1001,7 +1007,35 @@ export function App(props: AppProps): JSX.Element {
     },
   });
   overlays.setRecheck(appWiring.recheck);
+  props.run.loops?.setInteractionGate(
+    () =>
+      draftNonEmpty()
+        ? "The composer has an unsent draft or attachment."
+        : overlays.overlay() !== "none" ||
+            transientOverlay() !== "none" ||
+            inputPopupOpen() ||
+            props.run.elicit() ||
+            props.run.switching?.() ||
+            refuseAtFloor()
+          ? "A dialog or interaction is open."
+          : null,
+    pressureBlockedReason,
+  );
+  createEffect(() => {
+    draftNonEmpty();
+    overlays.overlay();
+    transientOverlay();
+    inputPopupOpen();
+    props.run.elicit();
+    props.run.switching?.();
+    props.run.scheduledBusy?.();
+    props.backend.connection();
+    pressureBlocked();
+    refuseAtFloor();
+    props.run.loops?.refresh();
+  });
   onCleanup(() => {
+    props.run.loops?.dispose();
     if (transientOverlay() !== "none") {
       setTransientOverlay("none");
       interaction.popOverlayContext();
@@ -1060,7 +1094,8 @@ export function App(props: AppProps): JSX.Element {
       const child = path[2]!;
       const parent = commands.entries().find((entry) => entry.slashes.includes(parentSlash));
       if (parent?.subcommands.some((subcommand) => subcommand.name === child)) {
-        if (commands.route(parent.name, [child, args].filter(Boolean).join(" "))) return "handled";
+        const routed = commands.route(parent.name, [child, args].filter(Boolean).join(" "));
+        if (routed) return routed === "block" ? "block" : "handled";
       }
     }
     const hit = classifySlashSubmit(name, {
@@ -1072,7 +1107,8 @@ export function App(props: AppProps): JSX.Element {
       return "handled";
     }
     if (hit.kind === "command") {
-      if (args && commands.route(hit.command, args)) return "handled";
+      const routed = args ? commands.route(hit.command, args) : false;
+      if (routed) return routed === "block" ? "block" : "handled";
       pendingSlashArgs = args;
       commands.runCommand(hit.command);
       pendingSlashArgs = "";

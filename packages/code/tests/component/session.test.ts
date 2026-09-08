@@ -154,6 +154,25 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve };
 }
 
+test("ensureIdentity persists an empty conversation without inventing history or a continuation", () => {
+  const store = fakeStore();
+  const session = createSession({
+    store,
+    workspace: "ws",
+    project: "project",
+    owner: "user",
+    priceFor: () => undefined,
+  });
+  const identity = session.ensureIdentity("Scheduled conversation");
+  expect(identity.turns).toEqual([]);
+  expect(store.get(identity.id)?.id).toBe(identity.id);
+  expect(session.ensureIdentity("another title")).toBe(identity);
+  expect(session.messages()).toEqual([]);
+  expect(session.beginTurn("first real prompt", "exec_first")).toBeUndefined();
+  expect(session.meta()?.id).toBe(identity.id);
+  expect(session.meta()?.turns).toHaveLength(1);
+});
+
 test("a turn snapshots its Extension Profile and reconciliation trusts the persisted run", () => {
   const store = fakeStore();
   const initial = {

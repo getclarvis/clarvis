@@ -70,6 +70,10 @@ export type PlansMode = "off" | "on" | "review";
 export interface StartRunParams {
   /** Client-chosen id for idempotency + continuation; the kernel echoes it. */
   execution_id?: string;
+  /** Ephemeral owner-scoped identity for configuration consent in the currently open session.
+   * Generate a fresh value when opening or resuming a session. Never persist or derive it from
+   * a stored session id, continuation or provider cache hint. Omission requires consent per run. */
+  configuration_session_id?: string;
   messages: Message[];
   /**
    * Agent to run as (the entry agent).

@@ -189,13 +189,13 @@ export interface SkillInfo {
   defaulted?: SkillDefaultedField[];
   scope: SkillScope;
   source: SkillSource;
-  /** Absolute path of the root this skill was scanned from. */
+  /** Absolute discovery root, or a `builtin:` locator for host-embedded instructions. */
   root: string;
-  /** Absolute path of the skill's own directory. */
+  /** Absolute skill directory, or a `builtin:` locator when no filesystem directory exists. */
   dir: string;
   /** Host-approved skill directory for bundled helper execution. */
   executionRoot?: string;
-  /** Absolute path of the skill's `SKILL.md` file. */
+  /** Absolute manifest path, or a `builtin:` locator for a skill with `source: "builtin"`. */
   path: string;
   /**
    * Same-named skills from lower-precedence roots that this one shadowed during

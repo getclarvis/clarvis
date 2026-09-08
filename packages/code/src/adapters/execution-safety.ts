@@ -2,9 +2,22 @@ import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
 import type { GuardMode } from "./guard-mode.ts";
 import type { MemoryMode } from "./memory-mode.ts";
+import type { RuntimeStatus } from "@clarvis/protocol";
 
 /** User-facing execution boundary, independent from command review. */
 export type IsolationMode = "host" | "sandbox" | "docker" | "podman";
+
+/** Actual active native placement overrides next-run preferences; an idle native host does not. */
+export function effectiveRunIsolation(
+  configured: IsolationMode,
+  runtime: RuntimeStatus | undefined,
+  active: boolean,
+): IsolationMode {
+  if (runtime?.kind === "native" && (active || runtime.lifecycle === "fallback"))
+    return runtime.isolation;
+  if (runtime?.kind === "container") return runtime.engine;
+  return configured;
+}
 
 /** Effective safety, memory and planning state consumed by the shell and Run Controls. */
 export interface RunControlsState {

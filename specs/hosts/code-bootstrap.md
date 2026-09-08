@@ -995,6 +995,14 @@ version after one gutter column. It is a pure projection of `HeaderPlan`, comput
 
 #### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
 
+App's `effectiveRunIsolation` projection uses host-reported native placement during an active run,
+including an explicitly approved native configuration turn, and keeps configured next-run preferences
+when the native host is idle. A latched sandbox fallback and container status retain their existing
+projection. Production: `effectiveRunIsolation` in
+[execution-safety.ts](../../packages/code/src/adapters/execution-safety.ts), used by `App`.
+Test: `shows active native configuration without replacing the idle next-run preference` in
+[execution-safety.test.ts](../../packages/code/tests/unit/execution-safety.test.ts).
+
 `HeaderInput` (`packages/code/src/views/header-projection.ts`, `HeaderInput`) is the one shell snapshot the row is derived
 from — `width`, `version`, `floor`, `agentName`, `model`, `isolation`, `review`, `sandboxUnavailable?`,
 `memoryConfigured`, `memory`, `plans`, `connection`, `doctorDirty`, `workspace`, `workspaceLabel?`,

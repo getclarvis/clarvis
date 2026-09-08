@@ -254,6 +254,7 @@ test("startRun maps the complete guard and active-task request without workspace
   const handle = c.startRun({
     executionId: "exec_task",
     messages: [],
+    configurationSessionId: "live-authorization-instance",
     guardJudge: {
       prompt: "review writes",
       model: "openai/judge",
@@ -264,6 +265,7 @@ test("startRun maps the complete guard and active-task request without workspace
   });
   expect(captured).toMatchObject({
     execution_id: "exec_task",
+    configuration_session_id: "live-authorization-instance",
     guard_judge: {
       prompt: "review writes",
       model: "openai/judge",

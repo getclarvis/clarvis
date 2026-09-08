@@ -37,7 +37,7 @@ import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls, type IsolationMode } from "../adapters/execution-safety.ts";
+import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -1018,12 +1018,8 @@ export function App(props: AppProps): JSX.Element {
     );
   const agentName = (): string =>
     props.fleet.agents.view()?.name ?? (props.fleet.agents.active() || "no agent");
-  const effectiveIsolation = (): IsolationMode => {
-    const runtime = props.backend.runtime?.();
-    if (runtime?.kind === "native" && runtime.lifecycle === "fallback") return "sandbox";
-    if (runtime?.kind === "container") return runtime.engine;
-    return runControls().isolation;
-  };
+  const effectiveIsolation = () =>
+    effectiveRunIsolation(runControls().isolation, props.backend.runtime?.(), props.run.active());
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,

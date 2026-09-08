@@ -31,6 +31,18 @@ scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the s
 (out of scope here) consumes, and what this document's `WorkflowsService` constructs once per manager
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
+The builtin configuration guide carries executable authoring examples for a workflow document,
+its brief and its separate Admiral skill launcher. The native configuration route writes authored
+files; an ordinary manager run reloads definitions and requires its own workflow preflight.
+Production: `CONFIGURATION_EXAMPLES` in
+[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts), and
+`readWorkflowDefs` in
+[workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
+Test: `creates a workflow in native mode and runs it through Admiral with an independent preflight`
+and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
+[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
+See [self-configuration.md](../hosts/self-configuration.md) for that mode's authority and limitations.
+
 ## 2. Surface
 
 For container managers, the kernel's admitted `runtime.workflows` bridge leaves canonical request

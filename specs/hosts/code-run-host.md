@@ -43,6 +43,17 @@ whether a late callback still owns the surface it wants to write to
 
 ## 2. Surface
 
+Configuration authorization uses a volatile identity associated with the current `Session` object.
+`createRunHost` passes it as `configurationSessionId`; `toStartParams` maps it to the protocol's
+`configuration_session_id`. Neither metadata nor trace continuations store it. A resumed session
+gets a fresh identity, while successive turns in the same live object reuse it. The existing
+standalone skill path invokes `/clarvis-configure` and renders its host elicitation.
+Production: `configurationSessions` in [run-host.ts](../../packages/code/src/run-host.ts) and
+`toStartParams` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
+Test: `configuration consent identity lives only in the open TUI session, never in resume` in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts). Native admission and
+file authority are owned by [self-configuration.md](self-configuration.md).
+
 ### 2.1 `RunHost` (`packages/code/src/run-host.ts`)
 
 | Member | Signature | File |

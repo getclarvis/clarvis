@@ -638,6 +638,37 @@ without a write. The scope remains configuration scope (`global` or
 `workspace`); it is shared operator configuration rather than owner-scoped run
 state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
+## Builtin configuration skill
+
+Invoke `/clarvis-configure <task>` in Code to start a dedicated native configuration run after human
+elicitation. Its `configure_clarvis` tool provides `list`, `read`, `write`, `edit` and `delete` for
+authored files in the four global/workspace Clarvis/shared-agent roots. `edit` replaces exactly one
+matching snippet against the last read revision. Keys, subscriptions, auth, trust and private state
+are excluded. The run executes on the host without sandbox/container or extension/shell execution.
+Consent lasts only in the currently open TUI session; resume or reconnect requires approval again.
+See [self-configuration.md](../../specs/hosts/self-configuration.md) for the path policy, volatile
+identity and explicit filesystem limits. Normal turns retain their configured runtime.
+
+The file kernel includes `clarvis-configure`, a user-invocable skill with its body in
+[`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts). It ships in the executable,
+requires no `SKILL.md` or first-run scaffolding, and remains available with an empty custom
+Extension Profile. Agents carrying `use_skills` can load it through `load_skill`; clients can invoke
+it through the ordinary skills service. Disabling skills through the host or environment also
+disables this builtin.
+
+The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
+models, Extension Profiles, plugins, MCP, hooks, memory, plans, tasks, workflows and runtime.
+Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
+and exercised against the product loaders. They include a complete workflow with its brief and
+Admiral launcher, a nonempty Extension Profile with exact plugin/skill identities, and settings
+fragments for the configurable services. Workflow files are loaded on the next manager run;
+Extension Profile selection uses the operator's preview/confirmation and reconnect flow. The
+configuration tool authors files; installation, selection, workspace trust, credentials and UI
+preferences retain their operator controls. A working default model is needed to enter this mode.
+Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
+be replaced by an installed skill. Discovery and resources for other skills retain their existing
+snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).
+
 ## The agent fleet ships as data
 
 Clarvis ships five agents — `marshall`, `admiral`, `coder`, `explorer`, `planner` — as TypeScript in

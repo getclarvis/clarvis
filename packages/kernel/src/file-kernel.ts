@@ -1,4 +1,7 @@
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
+import { withBuiltinSkills } from "./skills/builtin-skills.ts";
+import { configurationRoots } from "@clarvis/paths";
+import { createNativeConfigurationRuns } from "./configuration/native-configuration.ts";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -756,6 +759,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     logger,
     workspaceRoot: opts.workspaceRoot,
     skillRoots: pluginSkillRoots,
+    composeSkills: withBuiltinSkills,
     skillBootstraps: pluginSkillBootstraps,
     resolveGuard: createGuardResolver({
       loadSettings: loadGuardSettings,
@@ -942,6 +946,28 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
   const nativeExecuteRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  let activeConfigurations = 0;
+  const configurationRuntime: RuntimeStatus = {
+    kind: "native",
+    host_platform: process.platform,
+    isolation: "host",
+    lifecycle: "ready",
+  };
+  const currentRuntime = (): RuntimeStatus =>
+    activeConfigurations > 0 ? configurationRuntime : runtimeCoordinator.current();
+  const nativeConfiguration = createNativeConfigurationRuns({
+    ...(built.skills === undefined ? {} : { skills: built.skills }),
+    roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+    store: configStore,
+    ...(defaultModel === undefined ? {} : { defaultModel }),
+    nativeExecuteRun,
+    onActivity: (active) => {
+      activeConfigurations += active ? 1 : -1;
+      const status = currentRuntime();
+      kernel.capabilities.runtime = status;
+      opts.onRuntimePlacement?.({ status });
+    },
+  });
   const runtimeCoordinator = createLazyRuntimeCoordinator({
     selection: runtimeSelection,
     nativeIsolation,
@@ -973,12 +999,14 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       }
     },
     onPlacement: (notice) => {
+      if (activeConfigurations > 0) return;
       if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
       opts.onRuntimePlacement?.(notice);
     },
   });
   try {
     kernel = createInProcessKernel({
+      nativeConfiguration,
       deps,
       logger: componentLogger("kernel"),
       workspaceRoot: opts.workspaceRoot,
@@ -1024,6 +1052,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         runtime: runtimeCoordinator.current(),
       },
       dispose: async (): Promise<void> => {
+        nativeConfiguration.close();
         cleanup.stop();
         await housekeeping.stop();
         try {
@@ -1044,6 +1073,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       },
     });
   } catch (error) {
+    nativeConfiguration.close();
     cleanup.stop();
     await housekeeping.stop();
     extensionProfileManager.close();
@@ -1069,7 +1099,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   return Object.defineProperties(
     Object.assign(kernel, { workspaceHooks, retryRuntime: () => runtimeCoordinator.retry() }),
     {
-      runtime: { enumerable: true, get: () => runtimeCoordinator.current() },
+      runtime: { enumerable: true, get: currentRuntime },
     },
   ) as FileKernel;
 }

@@ -10,6 +10,15 @@ and authenticated authority on the host.
 
 This document is the current contract and records only behavior implemented in source.
 
+The builtin `/clarvis-configure` flow has an explicit host-only
+[native configuration contract](self-configuration.md). A separate human elicitation admits its
+limited configuration file tools for the currently open TUI session. That run never enters the
+runtime coordinator, launches a container or invokes a sandbox. It executes no extensions and
+does not change placement for subsequent ordinary runs. Resume requires new approval.
+Production: `createNativeConfigurationRuns` in
+[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
+Test: [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
+
 Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker accepts
 the simple `{ "backend": "docker" }` choice; the kernel defaults it to 2 CPUs, 4 GiB memory, 256
 processes, 16 MiB output, 4 GiB storage, ordinary `outbound` networking and required-Sandbox

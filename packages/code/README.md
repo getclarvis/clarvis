@@ -144,6 +144,14 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
+`/clarvis-configure <task>` opens the shipped configuration skill on a dedicated native agent.
+After approving its elicitation, that agent can list, read, write, edit and delete authored files in
+`~/.clarvis`, `<workspace>/.clarvis`, `~/.agents` and `<workspace>/.agents`, with credentials and
+private state excluded. It executes on the host without sandbox or container, using only the
+configuration file tool and questions. Approval is reused while that session is live in the TUI;
+closing it and resuming requires a new approval. No authorization is saved in session history.
+See [self-configuration.md](../../specs/hosts/self-configuration.md).
+
 The app uses a file-backed kernel. Workspace configuration lives under
 `.clarvis`, typically:
 

@@ -1176,6 +1176,19 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 ## 6. Failure modes and degradation
 
+The builtin [native self-configuration flow](../hosts/self-configuration.md) is explicitly admitted
+through live-session human elicitation before leaving configured isolation. It exposes only mediated
+authored-file operations and questions, with no shell, MCP, extension execution or continuation.
+Private credential/state paths, stable symlinks and hardlinked leaves are excluded. Consent and its
+nonce are not persisted or restored by TUI resume. This is native access with a file policy;
+parent-directory TOCTOU and secret literals embedded in allowed documents remain explicit limits.
+Production: `createNativeConfigurationRuns` and `configurationFileOperation` in
+[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts) and
+[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
+[native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts),
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts), and
+the live-session/resume test in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
 | Condition | Handler | Outcome |
 | --- | --- | --- |
 | Confined path outside every root | `packages/tools/src/lib/paths.ts` | `ToolError("path_escape")`, `{ path: input }`; message states the boundary is fixed before the run |

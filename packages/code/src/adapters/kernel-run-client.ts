@@ -137,6 +137,9 @@ type ProtoRunHandle = ProtocolRunHandle;
 function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
   return {
     execution_id: executionId,
+    ...(input.configurationSessionId
+      ? { configuration_session_id: input.configurationSessionId }
+      : {}),
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),

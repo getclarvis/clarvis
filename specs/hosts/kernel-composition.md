@@ -40,6 +40,14 @@ The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
 
+The file host also composes the reserved `clarvis-configure` skill from TypeScript data through
+the loop's `composeSkills` seam. It ships with the runtime artifact and remains independent of
+filesystem Extension Profile selection while respecting the skills opt-out and per-agent grant.
+Production: `createFileKernel` in `packages/kernel/src/file-kernel.ts` and `withBuiltinSkills` in
+`packages/kernel/src/skills/builtin-skills.ts`. Test:
+`packages/kernel/tests/integration/builtin-skills.test.ts`. The disclosure and precedence contract
+is owned by [skills](../execution/skills.md#414a-shipped-configuration-guidance).
+
 `CreateFileKernelOptions.extensionProfileSelector` is the process-local Extension Profile selector. The manager
 resolves the installed inventory before the config store is constructed, then supplies the store's
 exact active-plugin selector and workspace executable trust surface. The resulting snapshot is
@@ -193,13 +201,20 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/tests/integration/extension-profile-manager.test.ts` (`pins the active snapshot until
    reconnect`). The full contract is [Extension Profiles](extension-profiles.md#5-invariants).
 
-8. **Every physical run owned by the file kernel, including a delayed memory-indexer continuation,
+8. **Every extension-consuming run owned by the file kernel, including a delayed memory-indexer continuation,
    acquires the same immutable Extension Profile lease.** Admission validates before execution and release
    runs after success or failure. Production: `acquireExtensionProfileRunLease` and
    `executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`; `withRunLease` in
    `packages/kernel/src/runs/run-lease.ts`. Test:
    `packages/kernel/tests/unit/run-lease.test.ts` and
    `packages/memory/tests/component/factory.test.ts`.
+
+   The explicitly approved [native configuration route](self-configuration.md) supplies its own
+   extension-free profile and capabilities, so it bypasses this lease and ordinary placement.
+   Production: `createNativeConfigurationRuns` in
+   [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), wired
+   by `createFileKernel`. Test:
+   [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
 
 ## 8. Failure behavior
 

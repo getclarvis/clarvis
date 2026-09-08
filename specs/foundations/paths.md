@@ -754,6 +754,14 @@ synchronous persistence APIs that cannot yield while holding their transaction."
 
 ## 5. Invariants
 
+`configurationRoots` exposes `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents` without creating or authorizing their directories. The kernel supplies its
+resolved global directory and workspace; shared global content uses the user home. Production:
+[configuration.ts](../../packages/paths/src/configuration.ts). Test: all-four-root operations in
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+The consumer's file allow-list and consent are owned by
+[self-configuration.md](../hosts/self-configuration.md).
+
 **INV-001.** No package outside `@clarvis/paths` may spell the literal directory names `.clarvis`
 or `.agents`, or the temp-file prefix `.clarvis-tmp-`, in executable source under any package's
 `src/` or package `tooling/` — only in comments/TSDoc. Production: not one file — the sweep covers

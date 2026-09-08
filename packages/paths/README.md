@@ -96,6 +96,12 @@ removed rather than deprecated.
 
 ## The four trees
 
+`configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
+scopes for native self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents`. It neither creates directories nor authorizes access. The kernel owns consent
+and the credential-excluding file policy described in
+[self-configuration.md](../../specs/hosts/self-configuration.md).
+
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
 `plugins/`, `extension-profiles/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its

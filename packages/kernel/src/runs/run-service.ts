@@ -21,6 +21,7 @@ import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
+import type { NativeConfigurationRuns } from "../configuration/native-configuration.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -76,6 +77,8 @@ export interface RunServiceConfig {
   logger?: Logger;
   /** Executes the loop natively or through an explicitly configured isolated runtime. */
   executeRun?: RunExecutor;
+  /** Explicitly approved host-only route for the shipped configuration skill. */
+  nativeConfiguration?: NativeConfigurationRuns;
 }
 
 /**
@@ -113,7 +116,12 @@ export function createRunService(cfg: RunServiceConfig): RunService {
   const activeHandles = new Map<string, RunHandle>();
 
   function startReserved(params: StartRunParams, executionId: string): RunHandle {
-    if (cfg.runManagerWorkflow !== undefined && cfg.isManagerRun?.(params) === true) {
+    const configuration = cfg.nativeConfiguration?.requested(params) === true;
+    if (
+      !configuration &&
+      cfg.runManagerWorkflow !== undefined &&
+      cfg.isManagerRun?.(params) === true
+    ) {
       return cfg.runManagerWorkflow({ ...params, execution_id: executionId });
     }
     return createManagedRun({
@@ -122,12 +130,11 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
-        const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
+        const request = { ...params, execution_id: executionId };
         const executeRun =
           cfg.executeRun ??
           (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
-        const outcome = await executeRun({
-          rawBody,
+        const args: Omit<RunExecutorArgs, "rawBody"> = {
           owner,
           deps,
           onEvent: (ev) => {
@@ -142,7 +149,10 @@ export function createRunService(cfg: RunServiceConfig): RunService {
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: context.elicit,
-        });
+        };
+        const outcome = configuration
+          ? await cfg.nativeConfiguration!.execute(request, args)
+          : await executeRun({ ...args, rawBody: assembleRunRequest(request) });
         return engineResultToProto(outcome.executionId, outcome.response);
       },
     });

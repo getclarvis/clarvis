@@ -28,6 +28,14 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 
 ## 2. Surface
 
+Agent-driven edits through the builtin skill use the separate
+[native self-configuration contract](self-configuration.md): live-session elicitation, authored-file
+allow-lists and revision-bound `write`, `edit` and `delete`. This mode does not expose credential,
+trust or private-state stores, and does not replace the operator-facing config service below.
+Production: `configurationFileOperation` in
+[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+
 ### 2.1 Public exports (`packages/kernel/src/config.ts`, the `./config` entrypoint)
 
 | Symbol | Kind | File |

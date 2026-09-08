@@ -1850,6 +1850,37 @@ test("submitSkillRun: starts a run on the skill's agent, appends its digest, and
   dispose();
 });
 
+test("configuration consent identity lives only in the open TUI session, never in resume", async () => {
+  const { host, runs } = mount();
+  const runSkill = async (): Promise<StartRunInput> => {
+    const turn = host.submitSkillRun(
+      "clarvis-configure",
+      "Configure a reviewer",
+      "clarvis-configure",
+    );
+    await flush();
+    const run = runs.at(-1)!;
+    run.resolve(completed(run.handle.executionId));
+    await turn;
+    return run.input;
+  };
+  const first = await runSkill();
+  const second = await runSkill();
+  expect(first.configurationSessionId).toBeString();
+  expect(second.configurationSessionId).toBe(first.configurationSessionId);
+  const saved = host.sessionMeta()!;
+  expect(first.configurationSessionId).not.toBe(saved.id);
+  expect(JSON.stringify(saved)).not.toContain(first.configurationSessionId!);
+  host.clearSession();
+  await host.loadSessionMeta(saved);
+  const resumed = await runSkill();
+  expect(host.sessionMeta()?.id).toBe(saved.id);
+  expect(resumed.configurationSessionId).toBeString();
+  expect(resumed.configurationSessionId).not.toBe(first.configurationSessionId);
+  const repeated = await runSkill();
+  expect(repeated.configurationSessionId).toBe(resumed.configurationSessionId);
+});
+
 test("submitSkillRun: a failed skill run reports the skill name in the error status", async () => {
   const { host, runs, dispose } = mount();
   const turn = host.submitSkillRun("reviewer", "review the diff", "coder");

@@ -36,6 +36,12 @@ implements an in-process client, a loopback client and stdio transport.
 
 ## Services
 
+`StartRunParams.configuration_session_id` optionally carries a volatile authorization identity for
+the currently open conversation instance. Clients must generate a fresh value on every open/resume
+and never persist it or substitute the saved session id, `continue_from` or a provider cache hint.
+Omission requires native configuration approval per run. The `configuration_access` elicitation
+uses the existing open-ended kind. See [self-configuration.md](../../specs/hosts/self-configuration.md).
+
 `KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
 services:
 

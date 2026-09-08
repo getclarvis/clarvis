@@ -49,6 +49,8 @@ export { globalRoot, workspaceRoot, HOME_ENV, WORKSPACE_ENV, type RootOptions } 
 
 export { globalPaths, type GlobalPaths } from "./global.ts";
 
+export { configurationRoots, type ConfigurationRoot } from "./configuration.ts";
+
 export {
   agentsMarketplaceFile,
   agentsMarketplaceFiles,

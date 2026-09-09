@@ -112,7 +112,8 @@ An available listing's second Enter is one composed intent:
 
 That action is the consent for the complete plugin. It does not open a second plugin or hook approval
 screen. A failed membership write removes the just-installed checkout; a failed reconnect keeps the
-persisted membership and reports that `/reconnect` is still required.
+persisted membership and reports that `/reconnect reload` is still required. Plain `/reconnect`
+only restores the host connection; it cannot activate a saved Extension Profile or stop its runs.
 
 Enter on an installed detail opens the Extension Profile composer primed with that exact plugin. `u`
 confirms that an update may change skills, MCP servers, hooks, or executable services before the

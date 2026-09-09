@@ -69,6 +69,8 @@ export type TurnRef = ConversationTurnRef | TranscriptTurnRef;
 /** A session's persisted metadata: its turns, totals, and any unflushed pending messages. */
 export interface SessionMeta {
   id: SessionId;
+  /** Last canonical hosted revision observed by this cache; never a control or consent token. */
+  revision?: number;
   title: string;
   /** Required before persistence; optional only for unpersisted view projections. */
   projectId?: string;
@@ -282,7 +284,7 @@ export interface SessionStore {
   list(): SessionMeta[];
   get(id: SessionId): SessionMeta | null;
   /** Fetch and cache the full session document on demand. */
-  load(id: SessionId): Promise<SessionMeta | null>;
+  load(id: SessionId, options?: { refresh?: boolean }): Promise<SessionMeta | null>;
   save(meta: SessionMeta): void;
   delete(id: SessionId): boolean;
   /** Bounded cache and write-lane counters for the process-level memory ledger. */
@@ -292,7 +294,7 @@ export interface SessionStore {
     pending_session_write_lanes: number;
     queued_session_writes: number;
   };
-  /** Waits for optimistic background writes to reach the backing service. */
+  /** Waits for writes. A versioned store rejects after any uncertain/failed write until recreated. */
   flushPending?(): Promise<void>;
 }
 
@@ -361,6 +363,7 @@ export function metaToSession(m: SessionMeta): Session {
   if (m.projectId === undefined) throw new Error("session project identity is required");
   return {
     id: m.id,
+    ...(m.revision === undefined ? {} : { revision: m.revision }),
     title: m.title,
     project_id: m.projectId,
     workspace: m.workspace,
@@ -392,6 +395,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
   const lastExtensionProfile = persistedExtensionProfile(s.turns.at(-1)?.extension_profile);
   return {
     id: s.id,
+    ...(s.revision === undefined ? {} : { revision: s.revision }),
     title: s.title,
     projectId: s.project_id,
     workspace: s.workspace,
@@ -472,7 +476,7 @@ export function createSessionStore(
   sessions: SessionService,
   owner: string,
   initial: SessionMeta[] = [],
-  opts: { onError?: (message: string) => void } = {},
+  opts: { onError?: (message: string) => void; versioned?: boolean } = {},
 ): SessionStore {
   const cache = new Map<SessionId, SessionMeta>(initial.map((m) => [m.id, m]));
   type PendingMutation = { kind: "save"; snapshot: Session } | { kind: "delete" };
@@ -483,6 +487,7 @@ export function createSessionStore(
   }
   const lanes = new Map<SessionId, WriteLane>();
   const fullSessionLru: SessionId[] = [];
+  let writeFailure: Error | undefined;
 
   function forgetFull(id: SessionId): void {
     const at = fullSessionLru.indexOf(id);
@@ -524,9 +529,25 @@ export function createSessionStore(
     if (entry.turnCount === undefined) touchFull(entry.id);
   }
 
-  async function persist(id: SessionId, mutation: PendingMutation): Promise<void> {
-    if (mutation.kind === "save") await sessions.save(mutation.snapshot);
-    else await sessions.delete(id);
+  async function persist(id: SessionId, mutation: PendingMutation, lane: WriteLane): Promise<void> {
+    if (mutation.kind !== "save") {
+      await sessions.delete(id);
+      return;
+    }
+    const base = mutation.snapshot.revision ?? 0;
+    await sessions.save(mutation.snapshot);
+    if (opts.versioned !== true) return;
+    const confirmed = await sessions.get(id);
+    if (confirmed === null || confirmed.revision !== base + 1)
+      throw new Error(
+        "conversation changed before its save could be confirmed; reconnect to reload",
+      );
+    const current = cache.get(id);
+    if (current !== undefined && (current.revision ?? 0) === base)
+      current.revision = confirmed.revision;
+    const pending = lane.pending;
+    if (pending?.kind === "save" && (pending.snapshot.revision ?? 0) === base)
+      pending.snapshot.revision = confirmed.revision;
   }
 
   /**
@@ -537,6 +558,10 @@ export function createSessionStore(
    * at most the in-flight snapshot plus one replacement.
    */
   function enqueue(id: SessionId, mutation: PendingMutation): void {
+    if (opts.versioned === true && writeFailure !== undefined) {
+      opts.onError?.("session persistence is uncertain; reconnect before saving again");
+      return;
+    }
     const current = lanes.get(id);
     if (current !== undefined) {
       current.pending = mutation;
@@ -551,11 +576,16 @@ export function createSessionStore(
           const next = lane.pending;
           lane.pending = undefined;
           try {
-            await persist(id, next);
+            await persist(id, next, lane);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            if (opts.versioned === true) {
+              writeFailure ??= new Error(`session ${next.kind} failed: ${message}`);
+              lane.pending = undefined;
+            }
             opts.onError?.(`session ${next.kind} failed: ${message}`);
           }
+          if (opts.versioned === true && writeFailure !== undefined) break;
         }
       } finally {
         // Remove the lane in the same async continuation that observed an empty
@@ -573,9 +603,11 @@ export function createSessionStore(
   return {
     list: () => [...cache.values()].sort((a, b) => b.updatedAt - a.updatedAt),
     get: (id) => cache.get(id) ?? null,
-    load: async (id) => {
+    load: async (id, options) => {
+      const writing = lanes.get(id);
+      if (options?.refresh === true && writing !== undefined) await writing.promise;
       const current = cache.get(id);
-      if (current !== undefined && current.turnCount === undefined) {
+      if (options?.refresh !== true && current !== undefined && current.turnCount === undefined) {
         touchFull(id);
         return current;
       }
@@ -612,6 +644,7 @@ export function createSessionStore(
     flushPending: async () => {
       while (lanes.size > 0) await Promise.all([...lanes.values()].map((lane) => lane.promise));
       demoteOldFullSessions();
+      if (opts.versioned === true && writeFailure !== undefined) throw writeFailure;
     },
   };
 }

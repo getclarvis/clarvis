@@ -11,7 +11,7 @@ import type {
 import { OPERATIONS, SPECIAL_OPERATIONS } from "./operations.ts";
 
 /** Clean-break version of Clarvis's internal request/notification wire. */
-export const CLARVIS_WIRE_VERSION = 3 as const;
+export const CLARVIS_WIRE_VERSION = 4 as const;
 
 /**
  * The request/response method vocabulary for kernel RPC — Clarvis's own,
@@ -25,6 +25,12 @@ export const CLARVIS_WIRE_VERSION = 3 as const;
  */
 export const M = {
   hello: SPECIAL_OPERATIONS.hello.method,
+  hostingStart: SPECIAL_OPERATIONS.hostingStart.method,
+  hostingAttach: SPECIAL_OPERATIONS.hostingAttach.method,
+  hostingSteer: SPECIAL_OPERATIONS.hostingSteer.method,
+  hostingCompact: SPECIAL_OPERATIONS.hostingCompact.method,
+  hostingCancel: SPECIAL_OPERATIONS.hostingCancel.method,
+  hostingRespond: SPECIAL_OPERATIONS.hostingRespond.method,
   runsStart: SPECIAL_OPERATIONS.runsStart.method,
   runsSteer: SPECIAL_OPERATIONS.runsSteer.method,
   runsCompact: SPECIAL_OPERATIONS.runsCompact.method,
@@ -65,6 +71,7 @@ export const M = {
  *   onto the matching local event stream or listener.
  */
 export const N = {
+  hostedObservation: "hosting.observation",
   runEvent: "run.event",
   runElicitation: "run.elicitation",
   runResult: "run.result",

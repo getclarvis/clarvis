@@ -46,7 +46,7 @@ export interface ClipboardImage {
 export interface Platform {
   capabilities: PlatformCapabilities;
   onShutdown(hook: ShutdownHook): () => void;
-  shutdown(reason: ShutdownReason, err?: unknown): Promise<never>;
+  shutdown(reason: ShutdownReason, err?: unknown, exitMessage?: string): Promise<never>;
   suspend(): void;
   resume(): void;
   copyText(text: string): Promise<boolean>;
@@ -291,7 +291,11 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     } catch {}
   }
 
-  async function shutdown(reason: ShutdownReason, err?: unknown): Promise<never> {
+  async function shutdown(
+    reason: ShutdownReason,
+    err?: unknown,
+    exitMessage?: string,
+  ): Promise<never> {
     const failed = reason === "panic" || reason === "boot-failed";
     shutdownFailed ||= failed;
     if (shuttingDown) {
@@ -318,6 +322,7 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     if (reason !== "panic" && remote) await drainStdinUntilQuiet(DRAIN_MAX_MS, DRAIN_QUIET_MS);
     if (reason === "panic" && err)
       process.stderr.write(String((err as Error)?.stack ?? err) + "\n");
+    if (exitMessage !== undefined) process.stdout.write(exitMessage + "\n");
     process.exit(shutdownFailed ? 1 : 0);
   }
 

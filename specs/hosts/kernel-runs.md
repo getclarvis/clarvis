@@ -44,13 +44,27 @@ between them.
 
 | Symbol | Kind | Signature / shape | Source |
 | --- | --- | --- | --- |
-| `createRunService` | value | `(cfg: RunServiceConfig) => RunService` | `packages/kernel/src/runs/run-service.ts`, re-exported at `packages/kernel/src/index.ts` |
+| `createRunService` | value | `(cfg: RunServiceConfig) => KernelRunService` | `packages/kernel/src/runs/run-service.ts`, re-exported at `packages/kernel/src/index.ts` |
 | `RunServiceConfig` | type | see §2.3 | `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/index.ts` |
 | `RunRequestAssembler` | type | `(params: StartRunParams & { execution_id: string }) => unknown` | `packages/kernel/src/runs/run-service.ts` |
 | `createManagedRun` | value | `(spec: ManagedRunSpec) => RunHandle` | `packages/kernel/src/runs/managed-run.ts`, `packages/kernel/src/index.ts` |
 | `ManagedRunContext`, `ManagedRunSpec` | type | see §2.4 | `packages/kernel/src/runs/managed-run.ts` |
 | `createSettingsRunAssembler` | value | `(store: ConfigStore, options?: SettingsAssemblerOptions) => RunRequestAssembler` | `packages/kernel/src/runs/settings-assembler.ts`, `packages/kernel/src/index.ts` |
 | `SettingsAssemblerOptions` | type | see §2.5 | `packages/kernel/src/runs/settings-assembler.ts` |
+
+### 2.1.1 Prepared host starts
+
+`KernelRunService` adds a trusted optional prepared-execution argument to `start`; it is not a
+protocol parameter. `InProcessKernel.prepareRun` uses this overload to launch an immutable body or
+prepared workflow while sharing ordinary id reservations and physical leases. Ordinary wire starts
+keep their existing assembly-failure behavior. Prepared host calls surface invalid configuration
+before conversation intent is committed. The effective snapshot and workflow coupling are specified
+in [hosted runs](hosted-runs.md#file-kernel-composition).
+
+Production: `PreparedRunExecution`, `KernelRunService` and `startReserved` in
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts); `prepareKernelRun` in
+[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts). Test:
+[prepared-kernel-run.test.ts](../../packages/kernel/tests/integration/prepared-kernel-run.test.ts).
 
 ### 2.2 Exported from `@clarvis/kernel/policy`
 
@@ -126,6 +140,13 @@ ordinary run and `runManagerWorkflow` in
 `RunEvent` is the output union. `RunHandle` has two settle points that are deliberately
 distinct: `done` "Resolves when execution ends; it does not imply that `events` has closed"
  and `closed` "Resolves after execution and bounded post-run event delivery both finish".
+
+Managed handles return an unsubscribe function from `onElicit` and expose the optional
+`onElicitSettled` observer. Settlement includes answers, abort and execution closure, allowing a
+hosting pump to retain only current questions without consuming events twice. Production:
+`createManagedRunWithRuntime` in [managed-run.ts](../../packages/kernel/src/runs/managed-run.ts).
+Test: [elicit-bridge.test.ts](../../packages/kernel/tests/unit/elicit-bridge.test.ts), owned by
+[elicitation](../cross-cutting/elicitation.md#44-kernel-elicit-bridge--state-machine).
 
 Managed and remote handles additionally project the optional `RunHandle.buffered()` counters from
 their event streams. `EventStream.stats()` maintains item count, estimated bytes and dropped count
@@ -356,6 +377,13 @@ owner-scoped persisted execution. Guided compaction uses the stored request and 
 replaces `final_context`. A mechanical target performs no model call and persists only after the
 replacement fits. Production: `createRunService` in `packages/kernel/src/runs/run-service.ts`.
 Test: `packages/kernel/tests/unit/run-service-lifecycle.test.ts`.
+
+An ineffective guided summary leaves the stored context intact but still charges consumed model
+usage. A summary completing after its execution was deleted returns `not_found`; it cannot recreate
+the execution. Production: `createRunService.compact` in
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the settled guided compaction
+and removed-execution cases in
+[run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
 ### 4.2 Assembly (`packages/kernel/src/runs/settings-assembler.ts`)
 

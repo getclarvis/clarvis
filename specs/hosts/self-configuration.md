@@ -50,14 +50,19 @@ Other clients must generate a new nonce on every open/resume and never persist i
 limits approval to one run. Provider cache hints and `continue_from` never supply authorization.
 
 Concurrent requests sharing a live nonce share one pending prompt. The host retains at most 128
-consent entries per resident owner; evicting an entry also invalidates any capability bound to it.
-Every tool operation rechecks consent and cancellation. Production: `createNativeConfigurationRuns`;
+consent entries per resident owner. `retireSession(owner, nonce)` revokes one live instance without
+retiring other conversations or owners. Retirement, eviction and host closure abort the consent's
+signal, including pending elicitation and active native execution; a late approval cannot revive it.
+Every tool operation rechecks consent and cancellation. Native placement stays active until the last
+overlapping native run settles. Production: `createNativeConfigurationRuns`;
 `configurationSessions` in [run-host.ts](../../packages/code/src/run-host.ts); `toStartParams` in
 [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts); `StartRunParams` in
 [runs.ts](../../packages/protocol/src/runs.ts). Test: `native configuration consent` in
 [native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts);
 `configuration consent identity lives only in the open TUI session, never in resume` in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+Test: the single-conversation retirement, pending-approval and overlapping-native-work cases in
+[native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts).
 
 ## 3. Native execution boundary
 

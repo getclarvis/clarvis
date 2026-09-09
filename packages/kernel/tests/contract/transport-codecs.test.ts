@@ -15,7 +15,7 @@ import {
 } from "../helpers/recording-kernel-services.ts";
 
 const HELLO = {
-  wire_version: 3,
+  wire_version: 4,
   capabilities: {
     memory: false,
     skills: false,

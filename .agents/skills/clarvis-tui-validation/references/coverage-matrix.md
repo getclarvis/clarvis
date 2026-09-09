@@ -85,7 +85,7 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-14` | `/model` selection, active-run refusal and context-fit confirmation     |
 | `CMD-15` | `/effort`                                                               |
 | `CMD-16` | `/settings` and every current subcommand                                |
-| `CMD-17` | `/reconnect` success, degraded and failure                              |
+| `CMD-17` | `/reconnect` recovery; `/reconnect reload` success, busy refusal and failure                              |
 | `CMD-18` | `/doctor` recheck, diagnostics and guided fixes                         |
 | `CMD-19` | `/extensions`                                                           |
 | `CMD-20` | `/activity`, `/activity plan`, `/activity workflow`, `/activity agents` |
@@ -94,6 +94,9 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-23` | `/export` success, failure, path confinement and memory-fuse refusal    |
 | `CMD-24` | Dynamic skill slash commands, including optional task and agent routing |
 | `CMD-25` | Dynamic MCP prompt slash commands, duplicate-name handling and refresh  |
+| `CMD-26` | `/loop` duration/cron, list, pause/resume/cancel and live-session lifetime |
+| `CMD-27` | `/background`, list and targeted cancellation; exit only after receipt |
+| `CMD-28` | `/attach <execution-id>` and explicit control takeover in discovery |
 
 ### Current Settings panels
 

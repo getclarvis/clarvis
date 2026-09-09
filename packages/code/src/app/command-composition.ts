@@ -11,6 +11,8 @@ import { registerAgentsCommands } from "../features/agents/commands.ts";
 import { registerProvidersCommands } from "../features/providers/commands.ts";
 import { registerLoopCommands } from "../features/loop/commands.ts";
 import type { LoopController } from "../features/loop/controller.ts";
+import { registerBackgroundCommands } from "../features/background/commands.ts";
+import type { BackgroundController } from "../features/background/controller.ts";
 
 /** Feature dependencies consumed by the application command composition root. */
 export interface FeatureCommandDeps {
@@ -32,6 +34,13 @@ export interface FeatureCommandDeps {
 export interface CodeCommandDeps extends AppCommandDeps {
   features: FeatureCommandDeps;
   loops?: LoopController;
+  backgrounds?: BackgroundController;
+  backgroundExitAllowed?: () => boolean;
+}
+
+/** Recovery discovery shares the application's registry and overlay lifecycle. */
+export interface CodeCommandWiring extends AppCommandWiring {
+  offerBackgrounds(canOpen: () => boolean): Promise<void>;
 }
 
 /**
@@ -40,9 +49,20 @@ export interface CodeCommandDeps extends AppCommandDeps {
  * @param deps - Application and feature command dependencies.
  * @returns The application command projections used by the shell.
  */
-export function registerCodeCommands(deps: CodeCommandDeps): AppCommandWiring {
+export function registerCodeCommands(deps: CodeCommandDeps): CodeCommandWiring {
   const { commands, features } = deps;
   const featureScope = commands.scope();
+  const backgrounds =
+    deps.backgrounds === undefined
+      ? undefined
+      : registerBackgroundCommands(featureScope, {
+          backgrounds: deps.backgrounds,
+          ui: deps.ui,
+          notify: deps.notify,
+          ...(deps.backgroundExitAllowed === undefined
+            ? {}
+            : { canExit: deps.backgroundExitAllowed }),
+        });
   if (deps.loops)
     registerLoopCommands(featureScope, { loops: deps.loops, ui: deps.ui, notify: deps.notify });
   registerProvidersCommands(featureScope, {
@@ -70,6 +90,9 @@ export function registerCodeCommands(deps: CodeCommandDeps): AppCommandWiring {
   let disposed = false;
   return {
     ...app,
+    offerBackgrounds: async (canOpen) => {
+      if (!disposed) await backgrounds?.offer(canOpen);
+    },
     dispose: () => {
       if (disposed) return;
       disposed = true;

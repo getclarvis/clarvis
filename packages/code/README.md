@@ -1,10 +1,43 @@
 # `@clarvis/code`
 
-The flagship Clarvis terminal UI. It runs the agent stack in process through
+The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
-shell can run against a remote kernel later without a client change.
+shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+
+The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
+revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it
+again. Hosted completion waits for observation delivery and host reconciliation; a lost connection
+rejects observation without inventing an execution result. The session cache supports explicit
+canonical refresh and confirmed revision sequencing. The workspace manager launches or discovers
+the companion `local-host` entry and owns its connection, while the host owns execution and history.
+
+`/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
+uncertain handoff leaves the interface open. Reopening the same workspace offers the previous work
+or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
+the same execution, and `/background cancel <execution-id>` requests cancellation without treating
+its acknowledgement as physical completion. Another TUI's controller is observed by default;
+taking control requires an explicit action in the list. Saved results remain in Sessions.
+After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
+that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
+exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+
+`/reconnect` restores the connection to the existing host without restarting it or replaying work.
+`/reconnect reload` applies saved configuration through an explicit host restart, which is refused
+while physical work is active. A refused reload leaves a healthy connection available. Provider
+credential saves and extension activation request that same reload path; connection recovery alone
+does not activate a saved Extension Profile.
+
+User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
+conversation in the host before spawning, persist their observation under that reservation, and
+release it after physical completion. Normal exit cancels and drains local shell work before
+closing the host connection. Offline compaction uses the host's separate maintenance admission.
+
+`--resume` and `--continue` check for hosted work before reconstructing historical traces. Print mode
+also uses hosted turn admission and waits for physical closure. The host must remain alive for
+execution to continue; restarting an interrupted host does not replay tools or restore a live run.
+See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -777,6 +810,7 @@ Normal boot remains in the checkout where `clarvis` started. `--worktree [name]`
 reopens a checkout before the kernel and TUI boot, then the process stays pinned to it. There is no
 in-TUI selector or runtime switching. When an interactive launch selected a managed worktree and
 that checkout is clean, exit asks whether to remove the checkout or keep it. Removal is explicit,
+first asks the host to retire admission, which is refused while hosted work remains occupied. It then
 closes the workspace and completes outside the platform's bounded shutdown path, rechecks
 cleanliness, uses `git worktree remove` without force, and preserves `clarvis/<name>` so a clean tree
 with unmerged commits cannot lose its branch. Clarvis removes an empty parent only for its canonical

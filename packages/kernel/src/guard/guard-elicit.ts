@@ -40,7 +40,7 @@ export type GuardElicitParams = ElicitParams & { detail?: ElicitationCommandDeta
  * bash segments — env-assignment prefixes included — matched exactly, never by
  * prefix, so a re-run of an approved command passes silently while any changed
  * flag, argument or env assignment asks again.
- * Lives only as long as its kernel; never persisted.
+ * Revoked by its owning interactive scope; never persisted.
  */
 export interface GuardSessionAllowlist {
   /**
@@ -53,6 +53,8 @@ export interface GuardSessionAllowlist {
    * a no-op for an undecidable or empty command.
    */
   record(bash: ShellFacts): void;
+  /** Permanently discard consent; a late answer cannot repopulate this instance. */
+  revoke(): void;
 }
 
 /**
@@ -72,14 +74,25 @@ const sessionKey = (s: ShellFacts["segments"][number]): string =>
  */
 export function createGuardSessionAllowlist(): GuardSessionAllowlist {
   const approved = new Set<string>();
+  let revoked = false;
+  let bytes = 0;
   return {
     covers(bash): boolean {
-      if (bash.undecidable || bash.segments.length === 0) return false;
+      if (revoked || bash.undecidable || bash.segments.length === 0) return false;
       return bash.segments.every((s) => approved.has(sessionKey(s)));
     },
     record(bash): void {
-      if (bash.undecidable || bash.segments.length === 0) return;
-      for (const s of bash.segments) approved.add(sessionKey(s));
+      if (revoked || bash.undecidable || bash.segments.length === 0) return;
+      const added = [...new Set(bash.segments.map(sessionKey))].filter((key) => !approved.has(key));
+      const extra = added.reduce((sum, key) => sum + Buffer.byteLength(key), 0);
+      if (approved.size + added.length > 1024 || bytes + extra > 1024 * 1024) return;
+      for (const key of added) approved.add(key);
+      bytes += extra;
+    },
+    revoke(): void {
+      revoked = true;
+      approved.clear();
+      bytes = 0;
     },
   };
 }

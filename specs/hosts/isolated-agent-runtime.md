@@ -44,7 +44,8 @@ Test: `packages/kernel/tests/unit/runtime-settings.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 Every complete Code kernel path, including `--print` and `--refresh-models`, enters through the
-workspace manager, which supplies the concrete local factory lazily. Only the first container run
+workspace manager and the independent Code host entry, which supplies the concrete local factory
+lazily. Only the first container run
 imports the selected engine process adapter and, for Docker, resolves either the local development
 tag, the explicitly installed candidate's image, or that exact installed version's digest-pinned release image; application startup performs
 neither import, network request nor engine probe. When configured, a Docker recipe is also captured,
@@ -75,7 +76,8 @@ and `packages/code/src/adapters/runtime-image.ts` (`resolveClarvisRuntimeImage`)
 Test: `packages/code/tests/unit/runtime-image.test.ts` (same-RC selection and identity drift).
 
 Production: `WorkspaceClientManager.create` in
-`packages/code/src/adapters/workspace-client-manager.ts`; `createLocalPodmanRuntime` and
+`packages/code/src/adapters/workspace-client-manager.ts` and `main` in
+`packages/code/src/local-host.ts`; `createLocalPodmanRuntime` and
 `createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
 `createLocalDockerRuntime` in `packages/kernel/src/runtime/local-docker-runtime.ts`;
 `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;

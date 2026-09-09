@@ -256,6 +256,21 @@ user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
+The split artifact also ships Code's `local-host.js` companion. Its launcher resolves the companion
+and runtime beneath the current concrete version directory before starting the workspace host.
+Updating `current` does not redirect that process: installers and `activateStagedRelease` preserve
+the predecessor version directory, and an existing same-version payload cannot be overwritten with
+different bytes. This preserves lazy chunks for a live background run through a normal update.
+An explicit uninstall or external deletion of the version directory is outside that retention
+guarantee. Developer builds likewise remain mutable checkout artifacts. Production:
+`resolveLocalKernelArtifact` in
+[local-kernel-artifact.ts](../../packages/code/src/adapters/local-kernel-artifact.ts), `copySource`
+in [package.ts](../../packages/code/tooling/release/package.ts), and `activateStagedRelease` in
+[installation.ts](../../packages/code/src/update/installation.ts).
+Test: the verified activation and preserved predecessor cases in
+[update-command.test.ts](../../packages/code/tests/unit/update-command.test.ts), plus portable
+payload verification in [smoke.ts](../../packages/code/tooling/release/smoke.ts).
+
 The release workflow builds and smokes all six target archives independently. In parallel, and only
 for a pushed non-RC tag, native Linux jobs verify the tag identity before registry authentication, build
 and push one carrier/final pair per architecture, and a dependent job creates the two immutable

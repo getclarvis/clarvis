@@ -356,7 +356,7 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | Package | Type-only | Barrel | Entry point | GRANDFATHERED |
 | --- | ---: | ---: | ---: | --- |
 | capability | 8 | – | – | – |
-| code | 4 | – | 3 (`src/cli.ts`, `src/index.tsx`, `src/runtime.tsx`) | – (former `src/adapters/kernel-capabilities-client.ts` entry removed) |
+| code | 5 | – | 4 (`src/cli.ts`, `src/index.tsx`, `src/local-host.ts`, `src/runtime.tsx`) | – (former `src/adapters/kernel-capabilities-client.ts` entry removed) |
 | hooks | – | – | – | – (empty array) |
 | kernel | 5 | – | 1 (`src/bin.ts`) | – |
 | loop | – | 4 (`host`, `lib`, `workflows`, `workspace`) | – | – (former `src/version.ts` and `src/settings/marketplace-schema.ts` entries removed) |
@@ -368,6 +368,16 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | tools | 4 | 1 (`src/shell-entry.ts`) | – | – |
 | trace | 1 | – | – | – |
 | workflows | 1 | 1 | – | – |
+
+Code's companion entry starts the independent local kernel process when imported, so it shares the
+executable-entry exception rather than running inside the coverage process. Its host composition
+remains measured in Kernel. Production: `NO_COUNTER_ALLOWLIST` in
+[coverage.ts](../../tooling/checks/coverage.ts), [local-host.ts](../../packages/code/src/local-host.ts)
+and `serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts).
+Test: [local-host-lifecycle.test.ts](../../packages/kernel/tests/integration/local-host-lifecycle.test.ts)
+exercises the real composition in-process; [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
+proves separate-process ownership. Distributed companion loading uses the
+[artifact qualification](distribution-and-updates.md) and live TUI evidence, independently of LCOV.
 
 The **barrel** reason turns on the *form* of the re-exports rather than on the word. All four `loop`
 entries are the package's entry-point barrels, and each spells its statements as a named list —

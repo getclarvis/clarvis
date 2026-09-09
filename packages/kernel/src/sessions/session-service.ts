@@ -9,7 +9,12 @@ import type {
   SessionService,
   SessionSummary,
 } from "@clarvis/protocol";
-import { globalPaths, ownerSegment, writeFileAtomicSync } from "@clarvis/paths";
+import {
+  globalPaths,
+  ownerSegment,
+  writeFileAtomicSync,
+  writeFileDurableSync,
+} from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
@@ -22,6 +27,7 @@ function isSession(v: unknown): v is Session {
     typeof s.project_id === "string" &&
     typeof s.workspace === "string" &&
     typeof s.created_at === "number" &&
+    (s.revision === undefined || (Number.isSafeInteger(s.revision) && s.revision >= 0)) &&
     Array.isArray(s.turns) &&
     s.turns.every((turn) => turn?.kind === "conversation" || turn?.kind === "transcript") &&
     s.totals !== null &&
@@ -391,7 +397,8 @@ interface SessionPageScanOptions {
   signal?: AbortSignal;
 }
 
-interface FileSessionService extends SessionService {
+/** File host catalog with cancellation that stays outside serialized pagination DTOs. */
+export interface FileSessionService extends SessionService {
   listPage(
     page?: CursorPagination,
     scan?: SessionPageScanOptions,
@@ -674,10 +681,15 @@ export function createSessionService(opts: {
      * Persist a session, creating the owner dir as needed.
      *
      * @param session - the session to write; keyed by its `id`.
-     * @remarks The write is atomic (tmp + `rename`), so a concurrent reader sees
-     *   the old file or the complete new one, never a partial.
+     * @remarks The canonical document is synced before replacement, so a hosted turn intent can
+     *   commit before model work. The disposable summary remains an atomic, rebuildable sidecar.
      */
     async save(session: Session): Promise<void> {
+      if (
+        session.revision !== undefined &&
+        (!Number.isSafeInteger(session.revision) || session.revision < 0)
+      )
+        throw kernelError("invalid_request", "session revision must be a nonnegative safe integer");
       if (session.project_id !== opts.projectId || session.workspace !== opts.workspaceId) {
         throw kernelError(
           "invalid_request",
@@ -698,7 +710,7 @@ export function createSessionService(opts: {
       try {
         unlinkSync(summaryFor(session.id));
       } catch {}
-      writeFileAtomicSync(fileFor(session.id), serialized);
+      writeFileDurableSync(fileFor(session.id), serialized);
       writeFileAtomicSync(summaryFor(session.id), serializedSummary);
     },
 

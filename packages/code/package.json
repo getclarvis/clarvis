@@ -2,7 +2,7 @@
   "name": "@clarvis/code",
   "private": true,
   "type": "module",
-  "description": "Flagship terminal UI for the clarvis loop \u2014 an in-process host over @clarvis/kernel via the @clarvis/protocol contract.",
+  "description": "Flagship terminal UI for Clarvis, connected to a workspace kernel host through the @clarvis/protocol contract.",
   "license": "MIT",
   "author": "getclarvis",
   "bin": {

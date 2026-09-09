@@ -39,6 +39,15 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 
 ## 2. Surface
 
+The background-run view uses the shared level/list key registration: arrows select runs or a new
+conversation, Enter opens the selection, `t` explicitly confirms takeover of another controller,
+`c` requests cancellation when control permits it, and `ctrl+r` refreshes discovery. Escape follows
+the standard view-host dismissal boundary. Disabled verbs do not acquire authority.
+
+Production: `BackgroundView` in [view.tsx](../../packages/code/src/features/background/view.tsx).
+Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx)
+drives the shared keymap and checks attach/new-conversation rendering and actions.
+
 ### 2.1 `keys/keyspec.ts` — key-label formatting and layer priorities
 
 | Export | Signature | Cite |
@@ -770,7 +779,9 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 `onPopupOpenChange`; while slash autocomplete is open, `App.inputPopupOpen` removes
 `LeadActivityLine` so the menu replaces that band instead of stacking with `ready`, `thinking` or
 `working`. When visible during a run, the activity line owns phase, elapsed time, iteration and
-the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. The canonical footer is deliberately stable across that lifecycle: it keeps
+the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
+continuation also displays `continues after exit` before the elapsed detail; this is presentation
+of host policy, not a grant or another key binding. The canonical footer is deliberately stable across that lifecycle: it keeps
 Context plus cumulative Session token totals/cost before and after settlement and never repeats
 `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
 (`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,

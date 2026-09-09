@@ -317,6 +317,7 @@ export function createManagedRunWithRuntime(
     } finally {
       steer.close();
       compaction.close();
+      bridge.close();
       closeStream();
     }
   })();
@@ -341,8 +342,9 @@ export function createManagedRunWithRuntime(
       bridge.respond(response);
     },
     onElicit(handler) {
-      bridge.onElicit(handler);
+      return bridge.onElicit(handler);
     },
+    onElicitSettled: (handler) => bridge.onSettled(handler),
     buffered: () => {
       const stats = stream.stats();
       return {

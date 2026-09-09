@@ -69,23 +69,25 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 }
 
 describe("code's internal architecture", () => {
-  it("routes every complete kernel boot through the runtime-aware workspace manager", () => {
+  it("keeps runtime construction in the independent application host and discovery in its adapter", () => {
     const runtime = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
+    const host = readFileSync(join(SRC, "local-host.ts"), "utf8");
     expect(runtime).not.toContain("loadFileKernelFactory");
     expect(runtime).not.toContain("createFileKernel(");
-    expect(manager).toContain("runtimeFactory:");
-    expect(manager).toContain("local.createLocalDockerRuntime(input, {");
-    expect(manager).toContain("onRecipePreparation:");
-    expect(manager).toContain("local.createLocalPodmanRuntime(input)");
+    expect(manager).not.toContain("createFileKernel(");
+    expect(manager).toContain("connectOrLaunchLocalKernel");
+    expect(host).toContain("serveLocalFileKernel(");
+    expect(host).toContain("local.createLocalDockerRuntime(value, {");
+    expect(host).toContain("onRecipePreparation(name)");
+    expect(host).toContain("local.createLocalPodmanRuntime(value)");
   });
 
-  it("releases durable memory recovery only after the usable application paint", () => {
+  it("does not tie process-owned memory recovery to TUI paint or connection recovery", () => {
     const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
-    const painted = source.indexOf('"app.boot.painted"');
-    const recovery = source.indexOf("workspaceManager.startMemoryRecovery()");
-    expect(painted).toBeGreaterThanOrEqual(0);
-    expect(recovery).toBeGreaterThan(painted);
+    const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
+    expect(source).not.toContain("startMemoryRecovery");
+    expect(manager).not.toContain("startMemoryRecovery");
   });
 
   it("keeps the automatic update check behind the post-paint task gate", () => {
@@ -162,6 +164,7 @@ describe("code's internal architecture", () => {
       if (
         relativeFile === "index.tsx" ||
         relativeFile === "runtime.tsx" ||
+        relativeFile === "local-host.ts" ||
         relativeFile === "startup-foundation.ts" ||
         relativeFile.startsWith("bootstrap/") ||
         relativeFile.startsWith("adapters/")

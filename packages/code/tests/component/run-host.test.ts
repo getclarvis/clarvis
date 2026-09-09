@@ -1,6 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import type { MessageContent, RunDetail, RunResult, WorkspaceService } from "@clarvis/protocol";
+import type {
+  HostedRunRef,
+  HostedRunReceipt,
+  HostingService,
+  MessageContent,
+  RunDetail,
+  RunResult,
+  WorkspaceService,
+} from "@clarvis/protocol";
 import { createRunHost, type RunHost, type RunHostDeps } from "../../src/run-host.ts";
 import { createTranscriptStore, type TranscriptStore } from "../../src/adapters/store.ts";
 import { createActivityStore } from "../../src/adapters/activity-store.ts";
@@ -13,6 +21,7 @@ import type { PromptHistory } from "../../src/core/prompt-history.ts";
 import { runEvent } from "../helpers/run-events.ts";
 import { MAX_COMPOSER_IMAGE_BYTES } from "../../src/core/attachments.ts";
 import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "../../src/core/loop-schedule.ts";
+import { hostingFixture } from "../helpers/hosted-run.ts";
 
 const ev = runEvent;
 
@@ -440,6 +449,121 @@ test("late steer failure from a cleared conversation cannot restore its draft or
   await first;
 });
 
+test("hosted shell reserves before spawn and shutdown waits for output persistence and release", async () => {
+  const trace: string[] = [];
+  const admitted = Promise.withResolvers<void>();
+  const finished = Promise.withResolvers<LocalBashResult>();
+  const persisted = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  let signal: AbortSignal | undefined;
+  const byId = new Map<string, SessionMeta>();
+  const sessions: SessionStore = {
+    list: () => [...byId.values()],
+    get: (id) => byId.get(id) ?? null,
+    load: async (id) => structuredClone(byId.get(id) ?? null),
+    save(meta) {
+      byId.set(meta.id, {
+        ...structuredClone(meta),
+        revision: (byId.get(meta.id)?.revision ?? 0) + 1,
+      });
+    },
+    delete: (id) => byId.delete(id),
+    flushPending: async () => {
+      if ([...byId.values()].some((meta) => (meta.pending?.length ?? 0) > 0)) {
+        trace.push("persist");
+        await persisted.promise;
+      }
+    },
+  };
+  const { service } = hostingFixture({
+    reserveActivity: async (sessionId, kind) => {
+      expect(byId.has(sessionId)).toBe(true);
+      trace.push("reserve");
+      await admitted.promise;
+      return { lease_id: "shell-lease", session_id: sessionId, host_generation: "host", kind };
+    },
+    releaseActivity: async (id) => {
+      expect(id).toBe("shell-lease");
+      trace.push("release");
+      await released.promise;
+    },
+  });
+  const fake = fakeClient();
+  const { host } = mount({
+    sessionStore: sessions,
+    client: { ...fake.client, hosting: service },
+    runBash: (_command, options) => {
+      trace.push("spawn");
+      signal = options.signal;
+      return finished.promise;
+    },
+  });
+  expect(host.runBangCommand("local check")).toBe(true);
+  await flush();
+  expect(trace).toEqual(["reserve"]);
+  expect(host.scheduledBusy()).toBe(true);
+  admitted.resolve();
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn"]);
+  let stopped = false;
+  const stopping = host.stopLocalWork().then(() => {
+    stopped = true;
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(stopped).toBe(false);
+  finished.resolve({
+    exitCode: null,
+    stdout: "local output",
+    stderr: "",
+    signal: "SIGTERM",
+    timedOut: false,
+    cancelled: true,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 1,
+  });
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn", "persist"]);
+  expect(host.physicalWorkActive()).toBe(true);
+  persisted.resolve();
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn", "persist", "release"]);
+  expect(stopped).toBe(false);
+  released.resolve();
+  await stopping;
+  expect(host.scheduledBusy()).toBe(false);
+  expect(host.sessionMeta()!.pending?.[0]?.content).toContain("local output");
+  expect(fake.runs).toHaveLength(0);
+});
+
+test("refused hosted shell admission settles its transcript without starting a process", async () => {
+  const sessions = fakeSessionStore();
+  const save = sessions.save.bind(sessions);
+  sessions.save = (meta) => save({ ...meta, revision: 1 });
+  let spawns = 0;
+  const { service } = hostingFixture({
+    reserveActivity: async () => {
+      throw new Error("conversation occupied elsewhere");
+    },
+  });
+  const { host, store } = mount({
+    sessionStore: sessions,
+    client: { ...fakeClient().client, hosting: service },
+    runBash: async () => {
+      spawns++;
+      throw new Error("must not spawn");
+    },
+  });
+  expect(host.runBangCommand("local check")).toBe(true);
+  await flush();
+  await host.stopLocalWork();
+  await flush();
+  expect(spawns).toBe(0);
+  expect(host.scheduledBusy()).toBe(false);
+  expect(host.runStatus()).toContain("conversation occupied elsewhere");
+  expect(store.nodes.some((node) => node.status === "running")).toBe(false);
+});
+
 test("bash and unsettled compaction serialize automatic admission", async () => {
   let finishBash!: (result: LocalBashResult) => void;
   const { host, runs, compactImpl } = mount({
@@ -635,6 +759,266 @@ function mount(over: Partial<RunHostDeps> = {}): {
   };
 }
 
+function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
+  const fake = fakeClient();
+  const handle = fake.client.startRun({ executionId: "exec_hosted" });
+  const run = fake.runs[0]!;
+  const meta: SessionMeta = {
+    id: "session-hosted",
+    revision: 2,
+    title: "Hosted conversation",
+    owner: "test-owner",
+    projectId: "prj_test",
+    workspace: "ws_test",
+    createdAt: 1,
+    updatedAt: 1,
+    turns: [
+      {
+        kind: "conversation",
+        executionId: handle.executionId,
+        userPreview: "Existing prompt",
+        status: "running",
+      },
+    ],
+    totals: { input: 0, output: 0, cached: 0 },
+  };
+  const ref: HostedRunRef = {
+    execution_id: handle.executionId,
+    session_id: meta.id,
+    workspace_id: meta.workspace,
+    host_generation: "generation",
+    title: meta.title,
+    config: { agent: "coder" },
+    created_at: 1,
+    updated_at: 1,
+    revision: 1,
+    control_epoch: 1,
+    control: "available",
+    disconnect_policy: policy,
+    execution_state: "running",
+    attention: "none",
+  };
+  const calls = { attaches: 0, releases: 0, retired: [] as string[], hostCancels: 0, writes: 0 };
+  const unexpected = async (): Promise<never> => {
+    throw new Error("unexpected hosting call");
+  };
+  const hosting: HostingService = {
+    list: async () => [ref],
+    start: unexpected,
+    attach: unexpected,
+    detach: unexpected,
+    receipt: unexpected,
+    readSnapshot: unexpected,
+    releaseSnapshot: unexpected,
+    releaseObservation: unexpected,
+    async closeSession(id) {
+      calls.retired.push(id);
+      if (policy === "cancel") calls.hostCancels++;
+    },
+    acknowledge: unexpected,
+    reserveActivity: unexpected,
+    releaseActivity: unexpected,
+  };
+  const sessions: SessionStore = {
+    list: () => [structuredClone(meta)],
+    get: () => structuredClone(meta),
+    load: async () => structuredClone(meta),
+    save() {
+      calls.writes++;
+    },
+    delete: () => false,
+  };
+  const mounted = mount({
+    sessionStore: sessions,
+    client: {
+      ...fake.client,
+      hosting,
+      attachRun() {
+        calls.attaches++;
+        return {
+          ...handle,
+          async releaseObservation() {
+            calls.releases++;
+            run.reject(new Error("observation released"));
+          },
+        };
+      },
+    },
+  });
+  return { ...mounted, calls, ref, meta, sessions, run, hosting };
+}
+
+test("resume refuses an unknown hosted outcome without treating its trace as an ordinary continuation", async () => {
+  const f = mountHosted();
+  f.ref.execution_state = "unknown";
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.host.runStatus()).toContain("unknown outcome");
+  expect(f.host.runStatus()).toContain("/background list");
+  expect(f.host.scheduledBusy()).toBe(false);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test.each(["continue", "cancel"] as const)(
+  "hosted teardown leaves the %s disconnect policy to the host and releases only its observation",
+  async (policy) => {
+    const f = mountHosted(policy);
+    const observing = f.host.attachHostedRun(f.ref);
+    await flush();
+    expect(f.host.runActive()).toBe(true);
+    expect(f.host.continuesOnExit()).toBe(policy === "continue");
+    expect(f.calls.attaches).toBe(1);
+    expect(f.host.sessionMeta()!.turns).toHaveLength(1);
+    f.host.teardownRuns();
+    await observing;
+    expect(f.calls.retired).toEqual([f.meta.id]);
+    expect(f.calls.releases).toBe(1);
+    expect(f.calls.hostCancels).toBe(policy === "cancel" ? 1 : 0);
+    expect(f.run.cancelled).toBe(false);
+    expect(f.host.physicalWorkActive()).toBe(false);
+    expect(f.host.continuesOnExit()).toBe(false);
+    expect(f.calls.writes).toBe(0);
+  },
+);
+
+test("an explicit cancel still controls an attached background run", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  expect(f.host.cancelCurrentRun()).toBe(true);
+  expect(f.run.cancelled).toBe(true);
+  f.host.teardownRuns();
+  await observing;
+  expect(f.calls.writes).toBe(0);
+});
+
+test("background handoff waits for its receipt and releases observation without cancelling work", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const committed = Promise.withResolvers<HostedRunReceipt>();
+  let input: Parameters<HostingService["detach"]>[0] | undefined;
+  f.hosting.detach = (request) => {
+    input = request;
+    return committed.promise;
+  };
+  const handoff = f.host.backgroundCurrentRun();
+  expect(f.host.backgroundCurrentRun()).toBe(handoff);
+  await flush();
+  expect(f.host.runActive()).toBe(true);
+  expect(f.calls.releases).toBe(0);
+  expect(input).toMatchObject({
+    execution_id: f.ref.execution_id,
+    host_generation: f.ref.host_generation,
+    revision: f.ref.revision,
+    control_epoch: f.ref.control_epoch,
+  });
+  const receipt = { operation_id: input!.operation_id, run: f.ref, committed_at: 10 };
+  committed.resolve(receipt);
+  expect(await handoff).toEqual(receipt);
+  await observing;
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+  expect(f.host.runStatus()).toBe("run continues in background");
+  expect(f.calls.writes).toBe(0);
+});
+
+test("a lost handoff reply is reconciled by operation id and never repeats the mutation", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let receipt: HostedRunReceipt | null = null;
+  let detachCalls = 0;
+  f.hosting.detach = async (request) => {
+    detachCalls++;
+    receipt = { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+    throw new Error("connection lost after commit");
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("connection lost after commit");
+  expect(f.calls.releases).toBe(0);
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff is unconfirmed");
+  f.hosting.receipt = async (id) => {
+    expect(id).toBe(receipt!.operation_id);
+    return receipt;
+  };
+  expect(await f.host.backgroundCurrentRun()).toEqual(receipt!);
+  await observing;
+  expect(detachCalls).toBe(1);
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("handoff reconciles an immediately readable receipt after its acknowledgement is lost", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let receipt: HostedRunReceipt | null = null;
+  f.hosting.detach = async (request) => {
+    receipt = { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+    throw new Error("lost acknowledgement");
+  };
+  f.hosting.receipt = async () => receipt;
+  expect(await f.host.backgroundCurrentRun()).toEqual(receipt!);
+  await observing;
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("a conversation change during a committed handoff cannot close the new TUI conversation", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const committed = Promise.withResolvers<HostedRunReceipt>();
+  let operationId = "";
+  f.hosting.detach = (input) => {
+    operationId = input.operation_id;
+    return committed.promise;
+  };
+  const handoff = f.host.backgroundCurrentRun();
+  const rejected = handoff.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await flush();
+  f.host.clearSession();
+  committed.resolve({ operation_id: operationId, run: f.ref, committed_at: 10 });
+  expect(await rejected).toMatchObject({
+    message: expect.stringContaining("conversation changed, so this TUI remains open"),
+  });
+  await observing;
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("background refuses a stale workspace binding before requesting a handoff", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  f.hosting.list = async () => [{ ...f.ref, workspace_id: "another-workspace" }];
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow(
+    "conversation changed before background",
+  );
+  expect(f.calls.releases).toBe(0);
+  f.host.teardownRuns();
+  await observing;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("there is no hosted run");
+});
+
+test("a delayed hosted attach cannot replace a conversation cleared while its metadata loads", async () => {
+  const f = mountHosted();
+  const loading = Promise.withResolvers<SessionMeta>();
+  f.sessions.load = () => loading.promise;
+  const observing = f.host.attachHostedRun(f.ref);
+  f.host.clearSession();
+  loading.resolve(structuredClone(f.meta));
+  await observing;
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.store.nodes).toEqual([]);
+  f.run.resolve(undefined);
+});
+
 test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles totals once", async () => {
   const { host, store, runs, dispose } = mount();
   expect(host.runStartedAt()).toBeNull();
@@ -642,6 +1026,7 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   await flush();
   expect(host.runActive()).toBe(true);
   expect(host.runStartedAt()).not.toBeNull();
+  expect(host.continuesOnExit()).toBe(false);
   expect(host.sessionUsageBaseline()).toEqual({ input: 0, output: 0, cached: 0 });
   expect(runs.length).toBe(1);
   expect(runs[0]!.input.profile).toBe("coder");

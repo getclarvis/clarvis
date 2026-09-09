@@ -10,6 +10,8 @@ const [matrix, settingsSource, ...commandSources] = await Promise.all(
     "packages/code/src/app/commands.tsx",
     "packages/code/src/keys/commands.ts",
     "packages/code/src/views/App.tsx",
+    "packages/code/src/features/loop/commands.ts",
+    "packages/code/src/features/background/commands.ts",
   ].map((path) => readFile(resolve(repo, path), "utf8")),
 );
 const inventory = inspectTuiInventory({

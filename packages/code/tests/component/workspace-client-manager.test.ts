@@ -1,11 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "bun:test";
 import { ownerFromWorkspace } from "@clarvis/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
+import { connectOrLaunchLocalKernel } from "@clarvis/kernel/bootstrap";
+import type { KernelClient } from "@clarvis/protocol";
 
 import { WorkspaceClientManager } from "../../src/adapters/workspace-client-manager.ts";
 import { prepareStartupFoundation } from "../../src/startup-foundation.ts";
@@ -20,6 +21,142 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 describe("WorkspaceClientManager", () => {
+  it("explicit idle reload replaces the host generation", async () => {
+    const root = openTempDir("clarvis-workspace-idle-reload-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    const manager = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "global"),
+    });
+    try {
+      const original = (await manager.open()).client;
+      const generation = (await original.localHost!.inspect()).host_generation;
+      await manager.invalidate(manager.current.id);
+      const replacement = (await manager.open()).client;
+      expect((await replacement.localHost!.inspect()).host_generation).not.toBe(generation);
+      await expect(original.localHost!.inspect()).rejects.toThrow();
+      await replacement.localHost!.requestRestart();
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("a candidate that fails inspection cannot replace a healthy connection", async () => {
+    const root = openTempDir("clarvis-workspace-recovery-candidate-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    let connects = 0;
+    let candidateClosed = false;
+    const manager = await WorkspaceClientManager.create(
+      { workspaceRoot, globalDir: join(root, "global") },
+      {
+        connectHost: async (options) => {
+          const result = await connectOrLaunchLocalKernel(options);
+          if (++connects === 1) return result;
+          return {
+            client: {
+              ...result.client,
+              localHost: {
+                ...result.client.localHost!,
+                inspect: async () => {
+                  throw new Error("candidate handshake lost");
+                },
+              },
+              close: async () => {
+                await result.client.close();
+                candidateClosed = true;
+              },
+            },
+          };
+        },
+      },
+    );
+    try {
+      const original = (await manager.open()).client;
+      const generation = (await original.localHost!.inspect()).host_generation;
+      await expect(manager.recover(manager.current.id)).rejects.toThrow("candidate handshake lost");
+      const retained = (await manager.open()).client;
+      expect(retained.localHost).toBe(original.localHost);
+      expect((await retained.localHost!.inspect()).host_generation).toBe(generation);
+      expect(candidateClosed).toBe(true);
+      await original.localHost!.requestRestart();
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("recovers a broken socket without restarting the host or replaying execution", async () => {
+    const root = openTempDir("clarvis-workspace-reconnect-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    let connected: KernelClient | undefined;
+    let restartRequests = 0;
+    const manager = await WorkspaceClientManager.create(
+      { workspaceRoot, globalDir: join(root, "global") },
+      {
+        connectHost: async (options) => {
+          const result = await connectOrLaunchLocalKernel(options);
+          connected = result.client;
+          const controls = result.client.localHost!;
+          return {
+            client: {
+              ...result.client,
+              localHost: {
+                ...controls,
+                requestRestart: async () => {
+                  restartRequests++;
+                  await controls.requestRestart();
+                },
+              },
+            },
+          };
+        },
+      },
+    );
+    try {
+      const original = connected!;
+      const generation = (await original.localHost!.inspect()).host_generation;
+      await original.close();
+      await expect(original.localHost!.inspect()).rejects.toThrow();
+      await manager.recover(manager.current.id);
+      const reopened = await manager.open();
+      expect((await reopened.client.localHost!.inspect()).host_generation).toBe(generation);
+      expect(restartRequests).toBe(0);
+      expect(await reopened.client.hosting!.list()).toEqual([]);
+      await connected!.localHost!.requestRestart();
+    } finally {
+      await manager.close();
+    }
+  });
+
+  it("a refused reload preserves its original connection while physical activity is reserved", async () => {
+    const root = openTempDir("clarvis-workspace-reload-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    const manager = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "global"),
+    });
+    let leaseId: string | undefined;
+    const original = (await manager.open()).client;
+    try {
+      const before = await original.localHost!.inspect();
+      const lease = await original.hosting!.reserveActivity("test-session", "shell");
+      leaseId = lease.lease_id;
+      await expect(manager.invalidate(manager.current.id)).rejects.toThrow();
+      const retained = (await manager.open()).client;
+      expect(retained.localHost).toBe(original.localHost);
+      expect((await retained.localHost!.inspect()).host_generation).toBe(before.host_generation);
+      await original.hosting!.releaseActivity(leaseId);
+      leaseId = undefined;
+      await original.localHost!.requestRestart();
+    } finally {
+      if (leaseId !== undefined) await original.hosting!.releaseActivity(leaseId);
+      await manager.close();
+    }
+  });
+
   it("prepares the startup foundation from process-pinned paths and owner", async () => {
     const root = openTempDir("clarvis-startup-foundation-");
     const workspace = join(root, "workspace");
@@ -62,8 +199,10 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("opens only the process-pinned workspace", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-workspaces-"));
-    const globalDir = join(workspaceRoot, "global");
+    const root = openTempDir("clarvis-workspaces-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    const globalDir = join(root, "global");
     git(workspaceRoot, "init", "--quiet");
     git(workspaceRoot, "config", "user.email", "tests@example.com");
     git(workspaceRoot, "config", "user.name", "Clarvis Tests");
@@ -86,7 +225,7 @@ describe("WorkspaceClientManager", () => {
   });
 
   it("derives the default owner from the selected linked checkout", async () => {
-    const workspaceRoot = mkdtempSync(join(tmpdir(), "clarvis-primary-owner-"));
+    const workspaceRoot = openTempDir("clarvis-primary-owner-");
     const externalRoot = join(workspaceRoot, "linked");
     const primaryRoot = join(workspaceRoot, "primary");
     git(workspaceRoot, "init", "--quiet", primaryRoot);

@@ -93,6 +93,7 @@ methods onto `requireKernel().sessions`, exposed on the client at `sessions`
 ```ts
 interface Session {                       // packages/protocol/src/sessions.ts
   id: string; title: string; project_id: string; workspace: string;
+  revision?: number;
   created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turns: SessionTurn[]; totals: SessionTotals; pending?: Message[];
 }
@@ -405,13 +406,14 @@ or belongs to another workspace"). Pinned by "reports how much of a restored ses
 and "distinguishes a session that could not be read from one with no turns" in
 `packages/kernel/tests/integration/session-service.test.ts`.
 
-### 4.6 `save(session)` — validate, then two atomic writes
+### 4.6 `save(session)` — validate, then publish the canonical record durably
 
 `save` in `packages/kernel/src/sessions/session-service.ts`:
 
 1. Reject (`invalid_request`) if `session.project_id`/`session.workspace` do not match the service's
    own scope, **before any write** (pinned by "rejects sessions for another workspace before writing
    either document" in `packages/kernel/tests/integration/session-service.test.ts`).
+   A present `revision` must also be a nonnegative safe integer; it is checked on read and write.
 2. Serialize the full document bounded to `SESSION_MAX_BYTES` (throws `resource_exhausted` if it
    does not fit — see §4.8 for the preflight mechanism) and the derived summary bounded to
    `SESSION_SUMMARY_MAX_BYTES`.
@@ -419,7 +421,72 @@ and "distinguishes a session that could not be read from one with no turns" in
    doc comment states the reasoning: a crash after this point can only leave a *missing* sidecar
    (which `readSummary` rebuilds from the authoritative full document), never a valid-looking but
    stale one.
-4. Write the full document, then the new summary, both via `writeFileAtomicSync`.
+4. Write the full document via `writeFileDurableSync`, syncing payload and parent directory under
+   the platform contract of [paths](../foundations/paths.md), then atomically replace the rebuildable
+   summary via `writeFileAtomicSync`. Hosted model work waits on the canonical intent commit.
+
+Production: `save` and `isSession` in
+[session-service.ts](../../packages/kernel/src/sessions/session-service.ts).
+Test: the commit-before-model and invalid-revision cases in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts), plus
+the existing round-trip and preflight cases in
+[session-service.test.ts](../../packages/kernel/tests/integration/session-service.test.ts).
+
+### Host-owned conversation transactions
+
+`createHostedSessionCoordinator` wraps the existing file service for a hosted connection. It
+materializes revision zero for conversations that have not yet been written by the host. Each
+accepted save, intent or reconciliation increments the persisted `Session.revision`. A caller must
+read the new document after a save before issuing another mutation; `save` keeps its void return
+contract. Summaries remain bounded catalog rows; turn admission uses the full document's revision.
+This optional ownership metadata does not introduce a separate session store or restoration parser.
+
+The coordinator reserves one mutation per conversation before any await, with at most four concurrent
+conversation mutations and no queued UI documents. Interactive delete is refused while the registry
+reports physical work. Save is also refused except for the authenticated connection holding a local
+activity lease in that conversation. That exception permits its shell observation to become durable
+before admission is released; it cannot alter existing turn history or totals. The host derives this
+authority from the connection's activity map, never a caller-supplied claim, and rechecks it after
+reading the document. New conversations must have empty history. Metadata and pending observations
+otherwise require an idle conversation and the currently observed revision. Pagination still forwards its transport-only
+cancellation signal to the underlying cooperative scan.
+
+Preparation validates workspace, expected revision, duplicate execution and conversation continuation.
+Only the latest conversational execution may be an explicit continuation; transcript-only turns
+cannot supply that continuation. The host replaces caller configuration consent with its live scope,
+captures an immutable execution binding without starting inference, and rechecks the full conversation
+after that asynchronous preparation. `commitIntent` rechecks again, then writes the running turn and
+increments the revision before `start` can run. Conversational turns consume pending observations
+into their messages; transcript-only turns leave those pending observations intact. Preview/title
+redaction applies before persistence or discovery, and live consent never enters session metadata.
+
+The registry retains the prepared transaction before invoking `commitIntent`. Reconciliation can
+therefore distinguish an unchanged document after a failed write from an intent actually published
+before that write reported failure. A missing or conflicting intent cannot silently free ownership.
+Result identity must match, and only a terminal result may settle the turn. The turn's persisted
+`ended_at` makes repeated reconciliation idempotent for status, revision and usage. Per-agent/model
+usage supplies known prices; unknown models contribute tokens without an invented cost. Flat usage
+without a cache split removes the previously numeric cache total when input is positive.
+
+`createFileRunHost` composes the coordinator with the registry and immutable execution preparation.
+Code uses a presentation shadow of run history and adopts canonical revisions after reconciliation.
+`RunHost.runBangCommand` flushes its pending observation while holding the connection's shell lease.
+The physical shell belongs to the TUI; an unconfirmed disconnect does not prove that it ended.
+
+Production: `saveDuringActivity` in `createHostedSessionCoordinator`, `HostedRegistry.ownsActivity`,
+and `servicesFor` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: `only the local activity owner can persist observations before releasing conversation admission`
+in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+Production: `createHostedSessionCoordinator`, `HostedSessionOptions` and `addUsage` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `PreparedHostedTurn` and the intent
+commit/reconciliation order in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts)
+covers real file persistence, stale/foreign admission, protected history, pending context, revocation,
+unknown pricing/cache details, idempotent totals, pagination cancellation and failures before/after
+canonical publication. `retains failed intent ownership until its known preparation is reconciled`
+in [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) verifies
+that a failed intent cannot release its registry reservation before reconciliation.
 
 ### 4.7 `delete(id)` — best-effort sidecar, authoritative document
 
@@ -965,7 +1032,7 @@ continuation base.
 ## 7. Coupling
 
 - **`createSessionService` depends on `@clarvis/paths`** (`globalPaths`, `ownerSegment`,
-  `writeFileAtomicSync`) for every path it computes and every write it performs (the static import in
+  `writeFileAtomicSync`, `writeFileDurableSync`) for every path it computes and every write it performs (the static import in
   `packages/kernel/src/sessions/session-service.ts`); changing `@clarvis/paths`' segment-encoding or atomic
   write semantics changes this subsystem's on-disk safety without this file changing.
 - **`createSessionService` depends on `@clarvis/capability` only for `Logger`/`NOOP_LOGGER`** (the

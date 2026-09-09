@@ -175,6 +175,21 @@ untrusted dynamic path component. Production: `GlobalPaths.runtimeRecipesDir`,
 `packages/paths/src/global.ts`. Test: `globalPaths > names the generated state and the cache` in
 `packages/paths/tests/component/paths.test.ts`.
 
+### 2.4.1 Local host namespaces
+
+`localHostPaths` hashes the canonical workspace path, effective global root, operating-system account
+and data owner into a private `state/hosts/` namespace. The builder names the cross-process lease,
+connection record, run index and generation/execution-specific observation projection files. Input
+ids are hashed rather than interpreted as path segments. Its Unix socket endpoint uses a separate,
+short temporary directory and rejects paths exceeding 100 UTF-8 bytes; Windows uses a named pipe.
+The builder performs no filesystem mutation or authentication. The hosting composition must protect
+the namespace and exclude its credentials from agent-readable roots.
+
+Production: `LocalHostPaths`, `LocalHostPathOptions` and `localHostPaths` in
+[local-host.ts](../../packages/paths/src/local-host.ts). Test:
+[local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts). Its kernel consumer is
+specified by [hosted runs](../hosts/hosted-runs.md); builder tests do not qualify native IPC behavior.
+
 ### 2.5 Workspace paths (`packages/paths/src/workspace.ts`)
 
 `workspacePaths(root?, opts?)` (`packages/paths/src/workspace.ts`) returns a `WorkspacePaths` record

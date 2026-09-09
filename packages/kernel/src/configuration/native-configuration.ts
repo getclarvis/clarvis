@@ -15,12 +15,15 @@ type ConfigurationRunArgs = Omit<RunExecutorArgs, "rawBody">;
 export interface NativeConfigurationRuns {
   requested(params: StartRunParams): boolean;
   execute(params: ConfigurationRunParams, args: ConfigurationRunArgs): Promise<ExecuteRunOutcome>;
+  /** Revoke only this live conversation instance, including native work still executing. */
+  retireSession(owner: string, session: string): void;
   retireOwner(owner: string): void;
   close(): void;
 }
 
 interface Consent {
   approved: boolean;
+  controller: AbortController;
   pending?: Promise<void>;
 }
 
@@ -40,12 +43,26 @@ export function createNativeConfigurationRuns(options: {
 }): NativeConfigurationRuns {
   const owners = new Map<string, Map<string, Consent>>();
   let closed = false;
+  let activeRuns = 0;
   const assertOpen = (): void => {
     if (closed) throw new Error("Native configuration access has ended.");
   };
+  const revoke = (consent: Consent): void => {
+    consent.approved = false;
+    consent.controller.abort(new Error("Native configuration session has ended."));
+  };
+  const retireSession = (owner: string, session: string): void => {
+    const sessions = owners.get(owner);
+    const key = `session:${session}`;
+    const consent = sessions?.get(key);
+    sessions?.delete(key);
+    if (sessions?.size === 0) owners.delete(owner);
+    if (consent !== undefined) revoke(consent);
+  };
   const retireOwner = (owner: string): void => {
-    for (const consent of owners.get(owner)?.values() ?? []) consent.approved = false;
+    const sessions = owners.get(owner);
     owners.delete(owner);
+    for (const consent of sessions?.values() ?? []) revoke(consent);
   };
   return {
     requested: (params) =>
@@ -73,17 +90,21 @@ export function createNativeConfigurationRuns(options: {
         if (sessions.size >= 128) {
           const oldest = sessions.entries().next().value;
           if (oldest !== undefined) {
-            oldest[1].approved = false;
             sessions.delete(oldest[0]);
+            revoke(oldest[1]);
           }
         }
-        consent = { approved: false };
+        consent = { approved: false, controller: new AbortController() };
         sessions.set(key, consent);
       }
       const current = consent;
+      const externalSignal = AbortSignal.any([
+        current.controller.signal,
+        ...(args.externalSignal === undefined ? [] : [args.externalSignal]),
+      ]);
       const assertAuthorized = (): void => {
         assertOpen();
-        args.externalSignal?.throwIfAborted();
+        externalSignal.throwIfAborted();
         if (!current.approved || owners.get(args.owner)?.get(key) !== current)
           throw new Error("Native configuration access is not authorized.");
       };
@@ -92,7 +113,7 @@ export function createNativeConfigurationRuns(options: {
           if (args.elicit === undefined)
             throw kernelError("unauthorized", "Native configuration requires human approval.");
           const signal = AbortSignal.any([
-            ...(args.externalSignal === undefined ? [] : [args.externalSignal]),
+            externalSignal,
             AbortSignal.timeout(args.deps.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS),
           ]);
           const answer = await args.elicit(
@@ -129,14 +150,16 @@ export function createNativeConfigurationRuns(options: {
           await current.pending;
         } catch (error) {
           if (sessions.get(key) === current) sessions.delete(key);
+          revoke(current);
           throw error;
         } finally {
           delete current.pending;
         }
       }
       assertAuthorized();
+      activeRuns++;
       try {
-        options.onActivity?.(true);
+        if (activeRuns === 1) options.onActivity?.(true);
         const settings = options.store.readSettings().merged;
         const model = settings.default_model ?? options.defaultModel;
         if (model === undefined)
@@ -148,6 +171,7 @@ export function createNativeConfigurationRuns(options: {
         const { capabilityRegistry: _registry, ...baseDeps } = args.deps;
         return await options.nativeExecuteRun({
           ...args,
+          externalSignal,
           capabilities: [],
           deps: {
             ...baseDeps,
@@ -183,13 +207,15 @@ export function createNativeConfigurationRuns(options: {
           },
         });
       } finally {
-        options.onActivity?.(false);
+        activeRuns--;
         if (session === undefined) {
-          current.approved = false;
           sessions.delete(key);
+          revoke(current);
         }
+        if (activeRuns === 0) options.onActivity?.(false);
       }
     },
+    retireSession,
     retireOwner,
     close() {
       closed = true;

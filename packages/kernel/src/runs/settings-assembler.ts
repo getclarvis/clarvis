@@ -361,7 +361,7 @@ function buildProfile(
  * request.
  */
 export function createSettingsRunAssembler(
-  store: ConfigStore,
+  store: Pick<ConfigStore, "readSettings" | "readContext" | "readEffectiveAgent">,
   options: SettingsAssemblerOptions = {},
 ): RunRequestAssembler {
   const fallbackBudget = {

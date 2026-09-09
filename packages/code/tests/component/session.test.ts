@@ -69,6 +69,43 @@ function fakeStore(): SessionStore & { snapshots: SessionMeta[] } {
   };
 }
 
+test("hosted session persists only its empty identity and adopts canonical turn accounting", () => {
+  const store = fakeStore();
+  const session = createSession({
+    store,
+    owner: "clarvis",
+    project: "project",
+    workspace: "workspace",
+    hosted: true,
+  });
+  const identity = session.ensureIdentity("Hosted conversation");
+  expect(store.snapshots).toHaveLength(1);
+  expect(store.snapshots[0]!.turns).toEqual([]);
+  session.acceptHosted({ ...identity, revision: 1 });
+  session.beginTurn("Prompt", "execution");
+  session.endTurn(wire("execution", "completed", "Answer", usage(5, 3, 0)));
+  session.flush();
+  session.ensureIdentity("Still the same identity");
+  expect(store.snapshots).toHaveLength(1);
+  expect(session.meta()!.totals).toEqual({ input: 0, output: 0, cached: 0 });
+  const canonical: SessionMeta = {
+    ...identity,
+    revision: 3,
+    turns: [
+      { kind: "conversation", executionId: "execution", userPreview: "Prompt", status: "done" },
+    ],
+    totals: { input: 5, output: 3, cached: 0 },
+    pending: [{ role: "assistant", content: "Host-owned observation" }],
+  };
+  session.acceptHosted(canonical);
+  session.reconcile(stored("execution", "completed", [5, 3, 0], { result: "Answer" }));
+  expect(session.meta()!.totals).toEqual({ input: 5, output: 3, cached: 0 });
+  expect(session.takePending()).toEqual([{ role: "assistant", content: "Host-owned observation" }]);
+  session.flush();
+  expect(store.snapshots).toHaveLength(1);
+  expect(() => session.acceptHosted({ ...canonical, id: "another" })).toThrow("does not belong");
+});
+
 function usage(i: number, o: number, c: number): RunUsage {
   return {
     iterations: 1,

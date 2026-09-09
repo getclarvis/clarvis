@@ -14,6 +14,27 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
+`createFileRunHost` composes a FileKernel with the hosted registry, session coordinator and an
+authenticated server of the existing kernel RPC. It accepts host-owned projection/index storage and
+a local token verifier. Client disconnect retires observation/control and applies the run's explicit
+disconnect policy; only its process owner calls the host's `close`. `InProcessKernel.prepareRun`
+captures effective root/leader configuration without inference, and its single-use start still enters
+the existing execution-id, owner and Extension Profile leases. `serveLocalFileKernel` adds a private
+lease/discovery record, authenticated listener and independent idle lifecycle;
+`connectOrLaunchLocalKernel` discovers or launches its application-selected artifact. Code adoption
+and installed-artifact retention remain separate composition work.
+
+Production: `createFileRunHost` in
+[file-host.ts](../../packages/kernel/src/hosting/file-host.ts) and `prepareRun` in
+[kernel.ts](../../packages/kernel/src/kernel.ts). Test:
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts) and
+[prepared-kernel-run.test.ts](../../packages/kernel/tests/integration/prepared-kernel-run.test.ts).
+Process production: [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts) and
+[launcher.ts](../../packages/kernel/src/hosting/launcher.ts). Process test:
+[local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
+proves a separate host completes after its launching peer exits, using MockLLM. The detailed
+ownership and limits are in [hosted runs](hosted-runs.md#independent-process-composition).
+
 `createFileKernel(options)` resolves process environment and paths, discovers the workspace identity,
 creates the Extension Profile manager, opens configuration and secrets, builds
 planning/memory/task/workflow dependencies, constructs the
@@ -119,6 +140,17 @@ The tools capability receives the selected workspace, sandbox policy, guard reso
 environment names. It creates the run-owned scratch and appends host system temporary access inside
 the optional tools capability. The kernel guard makes `host_vcs` an ordinary ask:
 mode `on` uses the human channel, while a configured mode `auto` judge may answer it.
+
+`CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
+interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The
+host-only `FileKernel.nativeConfiguration` surface exposes `requested` and `retireSession` for native
+configuration admission and revocation; it does not expose its executor or become a `KernelClient`
+service. `retireSession` takes the authenticated owner and derives the same workspace scope as runs;
+the guard callback receives that internal scoped owner directly. Production: `createFileKernel` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
+Test: the revoked-live-session branch of
+[native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts)
+and the controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's

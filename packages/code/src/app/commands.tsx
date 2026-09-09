@@ -30,7 +30,7 @@ import {
 import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
 import { seedDefaultAllowlist } from "../onboarding/seed-default-allowlist.ts";
-import type { ConnectionState } from "../adapters/connection-state.ts";
+import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
 import type { RunHost } from "../run-host.ts";
 import { isDiagnosticLevel } from "../core/diagnostic-events.ts";
@@ -110,7 +110,7 @@ export interface AppCommandDeps {
   refreshModels: () => Promise<{ providers: number; models: number }>;
   refreshAgentProfiles: () => Promise<void>;
   keys: KeysAdapter;
-  reconnectBackend: () => Promise<{ ok: boolean; message: string }>;
+  reconnectBackend: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
   retryRuntime?: () => void;
   env: EnvView;
   preview: ThemePreview;
@@ -206,7 +206,7 @@ export async function recomposeSelectedPlugin(
   if (!extensionProfileSelectsPlugin(before, ref)) return undefined;
   const reconnect = await reconnectBackend();
   if (!reconnect.ok) {
-    return `selected by ${before.id}; takes effect after /reconnect (${reconnect.message})`;
+    return `selected by ${before.id}; takes effect after /reconnect reload (${reconnect.message})`;
   }
   await reloadPlugins();
   const after = await extensionProfiles.current();
@@ -528,8 +528,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             ? {}
             : {
                 resumeCatalog: async (item: SessionCatalogItem) => {
-                  await deps.session.resumeCatalog!(item);
                   host.close();
+                  await deps.session.resumeCatalog!(item);
                 },
               }),
           delete: deps.session.delete,
@@ -837,7 +837,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
         await pluginsStore.reload();
-        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect reload (${reconnect.message})`;
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
@@ -867,7 +867,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
         await pluginsStore.reload();
-        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect reload (${reconnect.message})`;
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
@@ -1272,14 +1272,40 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerAction({
     name: "backend.reconnect",
     title: "Reconnect backend",
-    desc: "Rebuild the kernel with fresh env and saved keys",
+    desc: "Restore the host connection; use reload to apply saved configuration",
     slash: "/reconnect",
     surface: "slash",
     group: "actions",
     parent: "inspect",
+    subcommands: [{ name: "reload", desc: "Reload saved configuration when the host is idle" }],
+    route: (args) => {
+      if (!args.trim()) return false;
+      if (args.trim() !== "reload") {
+        notify("Usage: /reconnect [reload]", "warn");
+        return "block";
+      }
+      commands.runCommand("backend.reload");
+      return true;
+    },
     run: async () => {
       notify("reconnecting backend" + glyph("ellipsis"));
-      const r = await deps.reconnectBackend();
+      const r = await deps.reconnectBackend("connection");
+      notify(r.message, r.ok ? "success" : "error");
+      recheck();
+    },
+  });
+
+  commands.registerAction({
+    name: "backend.reload",
+    title: "Reload backend configuration",
+    desc: "Apply saved configuration when the host is idle",
+    slash: false,
+    surface: "internal",
+    group: "actions",
+    parent: "inspect",
+    run: async () => {
+      notify("reloading backend configuration" + glyph("ellipsis"));
+      const r = await deps.reconnectBackend("reload");
       notify(r.message, r.ok ? "success" : "error");
       recheck();
     },

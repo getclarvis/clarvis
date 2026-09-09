@@ -25,6 +25,18 @@ share the same windowing math
 
 ## 2. Surface
 
+Hosted backends add `/background`, `/background list`, `/background cancel <execution-id>` and
+`/attach <execution-id>` through the same deterministic command registry. Invalid arguments return
+`block` so the composer retains them. No command is forwarded to the model. The startup discovery
+view rechecks interaction ownership after its list request and cannot replace a newly typed draft.
+The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
+
+Production: `registerBackgroundCommands` in
+[commands.ts](../../packages/code/src/features/background/commands.ts), registered by
+[command-composition.ts](../../packages/code/src/app/command-composition.ts) and wired in
+[App.tsx](../../packages/code/src/views/App.tsx).
+Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
+
 ### `InputDock.tsx` — the composer
 
 | Symbol | Signature | File |

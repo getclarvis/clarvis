@@ -1,7 +1,10 @@
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
 import { withBuiltinSkills } from "./skills/builtin-skills.ts";
-import { configurationRoots } from "@clarvis/paths";
-import { createNativeConfigurationRuns } from "./configuration/native-configuration.ts";
+import { configurationRoots, workspaceScopeKey } from "@clarvis/paths";
+import {
+  createNativeConfigurationRuns,
+  type NativeConfigurationRuns,
+} from "./configuration/native-configuration.ts";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -72,7 +75,11 @@ export type WorkspaceHooksTrust =
   | { state: "trusted"; fingerprint: string }
   | { state: "unapproved"; fingerprint: string }
   | { state: "changed"; fingerprint: string; approved: string };
-import { createGuardResolver, type GuardSettings } from "./guard/resolver.ts";
+import {
+  createGuardResolver,
+  type GuardResolverDeps,
+  type GuardSettings,
+} from "./guard/resolver.ts";
 import { createInProcessKernel, type InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
@@ -126,6 +133,8 @@ export interface CreateFileKernelOptions {
   environment?: KernelEnvironment;
   /** Logger to use; defaults to one built from `CLARVIS_LOG_LEVEL`. */
   logger?: Logger;
+  /** Persistent hosts bind shell session approval to current interactive control, not kernel lifetime. */
+  sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
   /** Project-host-owned physical model-call gate shared across workspace kernels. */
   modelCallAdmission?: HostModelCallAdmission;
   /** Project-host-owned physical capability/lifecycle gate shared across kernels. */
@@ -212,6 +221,8 @@ export type ExtensionProfileDriftNotice =
  * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
+  /** Host-only routing and revocation; native execution itself is not exposed through this surface. */
+  readonly nativeConfiguration: Pick<NativeConfigurationRuns, "requested" | "retireSession">;
   readonly workspaceHooks: {
     /** The current verdict for this workspace's declared hooks. */
     trust(): WorkspaceHooksTrust;
@@ -222,6 +233,8 @@ export interface FileKernel extends InProcessKernel {
   };
   /** Effective execution placement for this kernel instance. */
   readonly runtime: RuntimeStatus;
+  /** Physical execution leases, including background memory work; independent of UI connections. */
+  activeExecutionLeases(): number;
   /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
   retryRuntime(): void;
 }
@@ -765,6 +778,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       loadSettings: loadGuardSettings,
       logger: componentLogger("guard"),
       audit: auditLogger,
+      ...(opts.sessionAllowlistFor === undefined
+        ? {}
+        : { sessionAllowlistFor: opts.sessionAllowlistFor }),
     }),
     resolveSandbox: () => sandboxPolicy.resolve(),
     resolveSecretNames: loadSecretNames,
@@ -1097,7 +1113,20 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     "the kernel is ready and now serves requests",
   );
   return Object.defineProperties(
-    Object.assign(kernel, { workspaceHooks, retryRuntime: () => runtimeCoordinator.retry() }),
+    Object.assign(kernel, {
+      workspaceHooks,
+      nativeConfiguration: {
+        requested: (params: Parameters<NativeConfigurationRuns["requested"]>[0]) =>
+          nativeConfiguration.requested(params),
+        retireSession: (owner: string, session: string) =>
+          nativeConfiguration.retireSession(
+            workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
+            session,
+          ),
+      },
+      retryRuntime: () => runtimeCoordinator.retry(),
+      activeExecutionLeases: () => extensionProfileRunRefs,
+    }),
     {
       runtime: { enumerable: true, get: currentRuntime },
     },

@@ -22,6 +22,8 @@ import type { TasksService } from "./tasks.ts";
 import type { ProviderAuthService } from "./provider-auth.ts";
 import type { StorageService } from "./storage.ts";
 import type { ExtensionProfileService } from "./extension-profiles.ts";
+import type { HostingService } from "./hosting.ts";
+import type { LocalHostService } from "./local-host.ts";
 
 /** Features and versions a kernel advertises to a freshly connected client. */
 export interface KernelCapabilities {
@@ -33,6 +35,10 @@ export interface KernelCapabilities {
   agent_tools: boolean;
   /** Whether this host wires the external Tasks capability/control plane. */
   tasks: boolean;
+  /** Generation of an authenticated local host that owns runs beyond this connection. */
+  hosting?: { host_generation: string };
+  /** Operator process controls accompany the advertised hosted execution service. */
+  local_host?: true;
   /** Effective execution placement selected by the host. */
   runtime?: RuntimeStatus;
 }
@@ -93,6 +99,10 @@ export interface KernelClient {
 
   /** Start, stream, and control loop runs. */
   readonly runs: RunService;
+  /** Present only when the connected host advertises recoverable run ownership. */
+  readonly hosting?: HostingService;
+  /** Optional authenticated local process controls; unavailable through ordinary remote hosting. */
+  readonly localHost?: LocalHostService;
   /** Read/write settings, agents, and context docs. */
   readonly config: ConfigService;
   /** Install/manage plugins and review unmanaged hooks. */

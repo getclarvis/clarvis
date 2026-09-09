@@ -69,6 +69,7 @@ it("elicits before native configuration, edits through the real loop, and preser
     logger: NOOP_LOGGER,
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
     subscriptions: false,
+    defaultOwner: "operator",
     builtins: { tools: false, hooks: false, tasks: false },
     onRuntimePlacement: ({ status }) =>
       placements.push(status.kind === "native" ? status.isolation : status.engine),
@@ -123,6 +124,17 @@ it("elicits before native configuration, edits through the real loop, and preser
     });
     expect(await second.done).toMatchObject({ status: "completed" });
     expect(approvals).toBe(1);
+    kernel.nativeConfiguration.retireSession("operator", "live-tui-instance");
+    const retired = await start();
+    retired.onElicit((request) => {
+      approvals++;
+      void retired.respond({ id: request.id, action: "decline" });
+    });
+    const retiredResult = await retired.done;
+    expect(retiredResult.error?.message).toContain("not approved");
+    expect(retiredResult.status).toBe("failed");
+    expect(approvals).toBe(2);
+    expect(nativeRuns).toBe(2);
     const resumed = await kernel.runs.start({
       messages: [],
       skill: { name: "clarvis-configure" },

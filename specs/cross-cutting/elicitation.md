@@ -98,7 +98,7 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 
 | Symbol | Location | Shape |
 | --- | --- | --- |
-| `ElicitBridge` | `packages/kernel/src/runs/elicit-bridge.ts` | engine `elicit`, `onElicit(handler)` and `respond(res)` |
+| `ElicitBridge` | `packages/kernel/src/runs/elicit-bridge.ts` | engine `elicit`, removable `onElicit`/`onSettled` observers, `respond` and `close` |
 | `createElicitBridge(executionId)` | `packages/kernel/src/runs/elicit-bridge.ts` | one bridge per run, ids namespaced `<executionId>:elicit:<n>` |
 
 ### 2.5 Protocol wire shapes (`@clarvis/protocol`)
@@ -375,8 +375,10 @@ When `enabled` is `false` or no `elicit` was supplied, no serializer or relay is
 | --- | --- | --- |
 | no pending entry for id | `bridge.elicit(params, opts)` called | mints `id`, builds `ElicitationRequest` (`kind: params.kind ?? "ask_user"` — a caller that omits `kind` is protocol-labeled as an ordinary `ask_user` question, `packages/kernel/src/runs/elicit-bridge.ts`), stores `{request, resolve}` in `pending`, delivers to every already-registered handler (`packages/kernel/src/runs/elicit-bridge.ts`) |
 | entry pending, no handler yet | `bridge.onElicit(handler)` registers | handler pushed, then **replayed every still-pending request** |
-| entry pending | `bridge.respond({id, action, content?})` | entry removed from `pending`, its `resolve` settles with `{action, content?}` |
-| entry pending | the elicit call's `opts.signal` aborts | entry removed from `pending`, resolves as `{action:"cancel"}` |
+| entry pending | `bridge.respond({id, action, content?})` | entry and abort listener removed, settlement observers notified once, promise resolves with `{action, content?}` |
+| entry pending | the elicit call's `opts.signal` aborts | entry and listener removed, settlement observers notified, promise resolves as `{action:"cancel"}` |
+| bridge closed or signal already aborted | `elicit` called | resolves as cancellation without publishing or retaining a question |
+| bridge open | `close` called | retires the bridge, cancels pending questions and releases observer references |
 | entry absent (unknown/already-settled id) | `respond` called | no-op — `item === undefined` returns silently |
 | — | a registered handler throws | swallowed by `deliver`'s `try/catch`; "cannot break or settle the engine's pending question" |
 
@@ -385,16 +387,20 @@ lost, and is delivered the moment the first handler attaches — is pinned by
 `packages/kernel/tests/unit/elicit-bridge.test.ts` ("an elicitation raised before onElicit
 registration is delivered when the handler attaches").
 
-The table's abort row assumes `opts.signal` is unaborted at the moment `bridge.elicit()` is called.
-`elicit`'s abort listener is registered with `opts.signal?.addEventListener("abort"...)` **after**
-the entry is already stored in `pending` and delivered to every handler, and — unlike
-`boundPromise` (§4.2), which checks `opts.signal?.aborted` up front before ever registering a listener
-— nothing here checks whether the signal is already aborted at call time. A DOM `AbortSignal` does not
-replay a past `"abort"` event to a listener added after it fired, so a caller that passes an
-already-aborted signal into `bridge.elicit()` leaves that entry pending indefinitely: it is neither
-cancelled by the (already-fired) abort nor answered, and only an explicit `bridge.respond(...)` for that
-id resolves it. Whether any current caller can reach `bridge.elicit()` with an already-aborted signal
-is not established in this document's scope (see §8).
+The bridge registers abort cleanup before delivering to observers, so synchronous cancellation in a
+handler cannot leave a pending entry behind. Each registration returns an unsubscribe function.
+`RunHandle.onElicitSettled`, when supplied by a managed handle, exposes settlement to a hosting pump
+without a second consumer of run events. `createManagedRun` closes the bridge when execution ends.
+
+The bridge admits at most 64 pending questions with 8 MiB of aggregate encoded requests, plus 16
+observers per channel. Saturation rejects new work with `resource_exhausted`; admitted questions
+remain intact. A handler exception cannot prevent other observers or settlement. These limits do
+not replace the caller's elicitation timeout or grant policy.
+
+Production: `createElicitBridge` in [elicit-bridge.ts](../../packages/kernel/src/runs/elicit-bridge.ts),
+`createManagedRunWithRuntime` in [managed-run.ts](../../packages/kernel/src/runs/managed-run.ts).
+Test: the pre-aborted, synchronous-cancellation, removable-observer and pending-budget cases in
+[elicit-bridge.test.ts](../../packages/kernel/tests/unit/elicit-bridge.test.ts).
 
 The **remote** kernel client (`packages/kernel/src/transport/client.ts`) repeats the same buffering
 pattern one hop further out, for a client that has not yet called `RunHandle.onElicit` on its own
@@ -736,8 +742,8 @@ The private protocol and lifetime contract belongs to
   `elicitWaitMs` derivation as `ask_user` — it is a second consumer of the one per-run FIFO, out of
   scope for this document's detail (see the budget/soft-limit document) but coupled here through
   `elicitWithClockPause` and `createElicitSerializer`.
-- `packages/kernel/src/guard/resolver.ts` constructs a `createGuardSessionAllowlist()` and a
-  `createGuardElicit(ctx.elicit, {...})` per guard resolution — the guard's own escalation/decision
+- `packages/kernel/src/guard/resolver.ts` selects the current interactive allowlist for each command
+  and constructs `createGuardElicit(ctx.elicit, {...})` for each human question — the guard's own escalation/decision
   policy (out of scope here; see **command-guard-and-approval**) rides this document's `Elicit`/`GuardElicit`
   adaptation to reach the human.
 - `code`'s `run-host.ts` and `runtime.tsx` hold the only production `ElicitSlot`
@@ -756,12 +762,9 @@ The private protocol and lifetime contract belongs to
   never receives the tool regardless of its own profile's grants, which the production code enforces at
   `packages/loop/src/runtime/capabilities/ask-user.ts` (`if (!scope.entry) return null`) — remains production-verified only, with no located
   test in this document's scope.
-- **`ElicitBridge.elicit`'s handling of a signal already aborted at call time.** As noted in §4.4,
-  `createElicitBridge`'s abort listener is registered after the pending entry is stored and delivered,
-  with no upfront `opts.signal?.aborted` check (unlike `boundPromise`, §4.2). Whether any production
-  caller can actually reach `bridge.elicit()` with an already-aborted `signal` — and, if so, what
-  recovers that entry — is unestablished; no test exercising this specific ordering is
-  known under `packages/kernel/tests`.
+- ~~**`ElicitBridge.elicit` with an already-aborted signal.**~~ Resolved by the preflight cancellation
+  and listener-before-delivery contract in §4.4, covered by the pre-aborted and synchronous observer
+  cancellation tests in [elicit-bridge.test.ts](../../packages/kernel/tests/unit/elicit-bridge.test.ts).
 - **Remote-transport elicit-buffering test coverage (ELI-05).** `packages/kernel/src/transport/client.ts`'s
   `pendingElicits`/`elicitHandlers` buffering is a straightforward
   mirror of the (tested) in-process bridge behavior, but no test file specifically exercising the

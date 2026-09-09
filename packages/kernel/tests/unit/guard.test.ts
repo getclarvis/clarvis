@@ -18,6 +18,7 @@ import {
   createGuardElicit,
   createGuardSessionAllowlist,
   type GuardElicitParams,
+  type GuardSessionAllowlist,
 } from "../../src/guard/guard-elicit.ts";
 import { createJudgeElicit } from "../../src/guard/judge.ts";
 import { createGuardResolver, resolveGuardMode } from "../../src/guard/resolver.ts";
@@ -739,6 +740,64 @@ describe("createGuardResolver", () => {
     };
     return { elicit, prompts: () => prompts };
   }
+
+  it("revalidates the live controller's allowlist inside an already resolved run", async () => {
+    let current: GuardSessionAllowlist | undefined = createGuardSessionAllowlist();
+    const { elicit, prompts } = countingElicit("allow_session");
+    const resolver = createGuardResolver({
+      loadSettings: () => ({}),
+      sessionAllowlistFor: ({ owner, executionId }) => {
+        expect(owner).toBe("o");
+        expect(executionId).toBe("hosted-run");
+        return current;
+      },
+    });
+    const resolution = await resolver(ctx({ executionId: "hosted-run", elicit }));
+    const ask = () => resolution!.elicit!(bashReq("bun test"));
+    expect(await ask()).toEqual({ allowed: true, answerer: "human" });
+    expect(await ask()).toEqual({ allowed: true, answerer: "session_allowlist" });
+    current.revoke();
+    current = undefined;
+    expect(await ask()).toEqual({ allowed: false, answerer: "human" });
+    current = createGuardSessionAllowlist();
+    expect(await ask()).toEqual({ allowed: true, answerer: "human" });
+    expect(prompts()).toBe(3);
+  });
+
+  it("cannot seed a new controller's consent with an older pending answer", async () => {
+    const old = createGuardSessionAllowlist();
+    let current = old;
+    const pending = Promise.withResolvers<Awaited<ReturnType<Elicit>>>();
+    const resolver = createGuardResolver({
+      loadSettings: () => ({}),
+      sessionAllowlistFor: () => current,
+    });
+    const resolution = await resolver(ctx({ elicit: () => pending.promise }));
+    const answer = resolution!.elicit!(bashReq("bun test"));
+    old.revoke();
+    current = createGuardSessionAllowlist();
+    pending.resolve({ action: "accept", content: { decision: "allow_session" } });
+    expect(await answer).toEqual({ allowed: true, answerer: "human" });
+    expect(old.covers(shellFacts("bun test"))).toBe(false);
+    expect(current.covers(shellFacts("bun test"))).toBe(false);
+  });
+
+  it("bounds retained command approvals and never revives a revoked list", () => {
+    const list = createGuardSessionAllowlist();
+    for (let index = 0; index < 1024; index++) list.record(shellFacts(`echo ${index}`));
+    list.record(shellFacts("echo overflow"));
+    expect(list.covers(shellFacts("echo 0"))).toBe(true);
+    expect(list.covers(shellFacts("echo overflow"))).toBe(false);
+    const large = createGuardSessionAllowlist();
+    const oversized = shellFacts(`echo ${"x".repeat(1024 * 1024)}`);
+    large.record(oversized);
+    expect(large.covers(oversized)).toBe(false);
+    large.record(shellFacts("echo x"));
+    expect(large.covers(shellFacts("echo x"))).toBe(true);
+    list.revoke();
+    list.record(shellFacts("echo 0"));
+    expect(list.covers(shellFacts("echo 0"))).toBe(false);
+  });
 
   it("allow_session silences the next prompt for the same command across runs, new flags ask again", async () => {
     const { elicit, prompts } = countingElicit("allow_session");

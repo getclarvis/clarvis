@@ -29,7 +29,9 @@ function fakeHandle(executionId: string): {
       responses.push(response);
       return Promise.resolve();
     },
-    onElicit: (handler) => handlers.push(handler),
+    onElicit: (handler) => {
+      handlers.push(handler);
+    },
     done: Promise.resolve({ execution_id: executionId, status: "completed" }),
     closed: Promise.resolve(),
   };

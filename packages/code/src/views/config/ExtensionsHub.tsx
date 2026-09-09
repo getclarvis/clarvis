@@ -782,7 +782,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         deps.notify(
           reconnect.ok
             ? `${extensionProfileId(setup.ref)} is active for future runs`
-            : `${extensionProfileId(setup.ref)} was saved; reconnect with /reconnect (${reconnect.message})`,
+            : `${extensionProfileId(setup.ref)} was saved; reload with /reconnect reload (${reconnect.message})`,
           reconnect.ok ? "success" : "warn",
         );
       },
@@ -1273,7 +1273,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         </Show>
         <Show when={result && !result.reconnect.ok}>
           <text fg={tokens.warn} paddingTop={1} wrapMode="word">
-            {`The persisted selection takes effect after /reconnect: ${result!.reconnect.message}`}
+            {`The persisted selection takes effect after /reconnect reload: ${result!.reconnect.message}`}
           </text>
         </Show>
         <text fg={tokens.accent2} paddingTop={1}>

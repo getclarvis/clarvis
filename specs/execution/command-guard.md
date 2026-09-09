@@ -589,8 +589,24 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 
 ### 4.6 Resolving a run's guard
 
-`createGuardResolver` creates **one** session allow list up front, shared by every run it resolves
-(`packages/kernel/src/guard/resolver.ts`). Per run :
+By default, `createGuardResolver` creates one allowlist shared by its runs. A host with independent
+interactive lifetimes supplies `sessionAllowlistFor`, resolving the current list on each command by
+owner/execution identity. Returning `undefined` disables session approval for that command. Human
+questions capture the list present when they open; revocation permanently clears that instance, so
+an old pending response cannot authorize a new controller. Judge fallback uses the same lookup.
+
+The list retains at most 1,024 normalized segment keys and 1 MiB of key bytes. An accepted command
+that would exceed either budget remains approved once but is not cached; later calls ask again.
+There is no partial insertion or silent eviction of a different approved command.
+
+Production: `createGuardResolver` and `GuardResolverDeps.sessionAllowlistFor` in
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts), `createGuardSessionAllowlist` in
+[guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts). Test: `revalidates the live
+controller's allowlist inside an already resolved run`, `cannot seed a new controller's consent
+with an older pending answer`, and `bounds retained command approvals and never revives a revoked
+list` in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
+
+Per run:
 
 1. `settings = deps.loadSettings()` — re-read every time.
 2. `guardMode = ctx.request.guard_mode ?? defaultGuardMode(settings.guard)`
@@ -1015,10 +1031,13 @@ broken.
     `packages/kernel/src/guard/guard-elicit.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
-46. **The session allow list is never persisted and lives exactly as long as one resolver.**
-    `packages/kernel/src/guard/guard-elicit.ts`;
-    `packages/kernel/src/guard/resolver.ts`. Pinned across two runs of one resolver:
-    `packages/kernel/tests/unit/guard.test.ts`.
+46. **The session allowlist is never persisted; its host can revoke it independently of the
+    resolver.** The default lifetime remains one resolver, while `sessionAllowlistFor` chooses the
+    current interactive scope per command. A revoked instance cannot be repopulated. Production:
+    `createGuardSessionAllowlist` and `createGuardResolver` in
+    [guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts) and
+    [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test: the default across-run and
+    controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
 
 47. **A run with no elicit channel gets no elicit at all, even after another run of the same
     resolver recorded a session approval.** `packages/kernel/src/guard/resolver.ts`. Pinned: `packages/kernel/tests/unit/guard.test.ts`.

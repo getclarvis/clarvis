@@ -760,7 +760,10 @@ export interface RunHandle {
    *
    * @param handler - Called when the kernel asks the user a question.
    */
-  onElicit(handler: (req: ElicitationRequest) => void): void;
+  onElicit(handler: (req: ElicitationRequest) => void): void | (() => void);
+
+  /** Observe a question's response or expiry without retaining stale prompts on reconnect. */
+  onElicitSettled?(handler: (id: string) => void): () => void;
 
   /** Resolves when execution ends; it does not imply that `events` has closed. */
   readonly done: Promise<RunResult>;

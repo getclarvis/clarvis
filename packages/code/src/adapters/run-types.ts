@@ -4,6 +4,7 @@ import type {
   PlansMode,
   RunCompactionResult,
   RunResult,
+  StartHostedTurnParams,
 } from "@clarvis/protocol";
 import type { GuardMode } from "./guard-mode.ts";
 
@@ -36,6 +37,8 @@ interface GuardJudgeInput {
 
 /** Parameters accepted by the adapter's `startRun` entry point. */
 export interface StartRunInput {
+  /** Host-owned turn admission; required when the backend advertises hosted execution. */
+  session?: Omit<StartHostedTurnParams, "params">;
   messages?: Message[];
   profile?: string;
   executionId?: string;
@@ -56,8 +59,13 @@ export interface StartRunInput {
 export interface RunHandle {
   executionId: string;
   cancel(): Promise<void>;
+  /** Release this hosted observation; the host separately applies the conversation's exit policy. */
+  releaseObservation?(): Promise<void>;
   done: Promise<RunResult | undefined>;
-  /** Resolves after the protocol stream and the client's event pump have both released the run. */
+  /**
+   * Resolves after stream delivery and closure. A hosted disconnect rejects: losing its
+   * observation does not prove that the independently owned execution physically ended.
+   */
   closed: Promise<void>;
   /** Current protocol queue counters when the active transport exposes them. */
   buffered?: () => { buffered_items: number; buffered_bytes: number; dropped: number } | undefined;

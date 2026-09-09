@@ -69,6 +69,108 @@ function settledRecord(id: string, context: ContextSnapshotEntry[]): ExecutionRe
 }
 
 describe("run-service lifecycle reservation", () => {
+  it.each([
+    { text: "Preserve the user's confirmed database choice.", expected: "compacted" },
+    { text: "An ineffective summary. ".repeat(500), expected: "skipped" },
+  ])(
+    "settled guided compaction accounts for model usage when $expected",
+    async ({ text, expected }) => {
+      const traceStore = createMemoryTraceStore();
+      const context: ContextSnapshotEntry[] = Array.from({ length: 8 }, (_, index) => ({
+        message: {
+          role: index % 2 === 0 ? "user" : "assistant",
+          content: `turn ${index}: ${"x".repeat(700)}`,
+        },
+        evictable: true,
+        summary: false,
+        canonical: false,
+      }));
+      await traceStore.insert(settledRecord("background-result", context));
+      const llm = new MockLLM({
+        script: [
+          {
+            text,
+            usage: { input_tokens: 30, output_tokens: 12, cached_tokens: 4, cache_write_tokens: 2 },
+          },
+        ],
+      });
+      const service = createRunService({
+        deps: { env: loadEnv({}), llm, traceStore } as unknown as ExecuteRunDeps,
+        owner: "owner",
+        assembleRunRequest: () => {
+          throw new Error("compaction must not prepare another turn");
+        },
+      });
+      const result = await service.compact("background-result", "  preserve confirmed choices  ");
+      expect(result.status).toBe(expected);
+      expect(llm.calls).toHaveLength(1);
+      expect(JSON.stringify(llm.calls[0]!.messages)).toContain("preserve confirmed choices");
+      const stored = traceStore.getById("owner", "background-result")!;
+      expect(stored.total_input_tokens).toBe(30);
+      expect(stored.total_output_tokens).toBe(12);
+      expect(stored.total_cached_tokens).toBe(4);
+      expect(stored.total_cache_write_tokens).toBe(2);
+      if (expected === "compacted") {
+        expect(JSON.stringify(stored.final_context)).toContain(
+          "Preserve the user's confirmed database choice",
+        );
+        expect(result).toMatchObject({
+          usage: { input_tokens: 30, output_tokens: 12, cached_tokens: 4, cache_write_tokens: 2 },
+        });
+      } else expect(stored.final_context).toEqual(context);
+    },
+  );
+
+  it("a stored execution removed during guided compaction cannot be recreated by its late summary", async () => {
+    const traceStore = createMemoryTraceStore();
+    const context: ContextSnapshotEntry[] = Array.from({ length: 8 }, (_, index) => ({
+      message: { role: index % 2 === 0 ? "user" : "assistant", content: "x".repeat(700) },
+      evictable: true,
+      summary: false,
+      canonical: false,
+    }));
+    await traceStore.insert(settledRecord("removed-result", context));
+    const llm = new MockLLM({ script: [{ text: "Retain the decision." }] });
+    const service = createRunService({
+      deps: {
+        env: loadEnv({}),
+        traceStore,
+        llm: {
+          async call(params: Parameters<MockLLM["call"]>[0]) {
+            await traceStore.deleteById("owner", "removed-result");
+            return llm.call(params);
+          },
+        },
+      } as unknown as ExecuteRunDeps,
+      owner: "owner",
+      assembleRunRequest: () => ({}),
+    });
+    await expect(service.compact("removed-result", "retain decisions")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(traceStore.getById("owner", "removed-result")).toBeNull();
+  });
+
+  it("empty and unavailable stored runs do not launch compaction or accept invalid targets", async () => {
+    const traceStore = createMemoryTraceStore();
+    await traceStore.insert(settledRecord("empty", []));
+    const llm = new MockLLM({ script: [] });
+    const service = createRunService({
+      deps: { env: loadEnv({}), llm, traceStore } as unknown as ExecuteRunDeps,
+      owner: "owner",
+      assembleRunRequest: () => ({}),
+    });
+    await expect(service.compact("empty")).resolves.toMatchObject({
+      status: "skipped",
+      reason: "no_context",
+    });
+    await expect(service.compact("missing")).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.compact("empty", undefined, { mechanical_target_tokens: 0.5 }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(llm.calls).toEqual([]);
+  });
+
   it("keeps an execution id reserved until bounded post-run event delivery closes", async () => {
     const firstClosed = deferred();
     let generation = 0;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   deriveIsolation,
+  effectiveRunIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
@@ -25,6 +26,24 @@ const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
 describe("execution safety", () => {
+  it("shows active native configuration without replacing the idle next-run preference", () => {
+    const host = {
+      kind: "native",
+      host_platform: "linux",
+      isolation: "host",
+      lifecycle: "ready",
+    } as const;
+    expect(effectiveRunIsolation("docker", host, true)).toBe("host");
+    expect(effectiveRunIsolation("docker", host, false)).toBe("docker");
+    expect(effectiveRunIsolation("docker", undefined, true)).toBe("docker");
+    expect(
+      effectiveRunIsolation(
+        "docker",
+        { ...host, isolation: "sandbox", lifecycle: "fallback" },
+        false,
+      ),
+    ).toBe("sandbox");
+  });
   it("derives isolation independently from command review", () => {
     expect(deriveIsolation({})).toBe("host");
     expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");

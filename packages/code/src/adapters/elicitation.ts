@@ -103,6 +103,7 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   guard_confirm: GUARD_DECISION_LABELS,
+  configuration_access: { deny: "deny", allow_session: "allow while this session is open" },
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
 };

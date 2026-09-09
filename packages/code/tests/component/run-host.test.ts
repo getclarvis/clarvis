@@ -1,6 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import type { MessageContent, RunDetail, RunResult, WorkspaceService } from "@clarvis/protocol";
+import type {
+  HostedRunRef,
+  HostedRunReceipt,
+  HostingService,
+  MessageContent,
+  RunDetail,
+  RunResult,
+  WorkspaceService,
+} from "@clarvis/protocol";
 import { createRunHost, type RunHost, type RunHostDeps } from "../../src/run-host.ts";
 import { createTranscriptStore, type TranscriptStore } from "../../src/adapters/store.ts";
 import { createActivityStore } from "../../src/adapters/activity-store.ts";
@@ -12,6 +20,8 @@ import type { SessionId } from "../../src/adapters/session-store.ts";
 import type { PromptHistory } from "../../src/core/prompt-history.ts";
 import { runEvent } from "../helpers/run-events.ts";
 import { MAX_COMPOSER_IMAGE_BYTES } from "../../src/core/attachments.ts";
+import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "../../src/core/loop-schedule.ts";
+import { hostingFixture } from "../helpers/hosted-run.ts";
 
 const ev = runEvent;
 
@@ -144,6 +154,555 @@ function completed(executionId: string): RunResult {
   };
 }
 
+function schedule(host: RunHost, prompt = "scheduled prompt"): ScheduledTurnRequest {
+  return {
+    binding: host.scheduledBinding(true)!,
+    prompt,
+    occurrenceId: crypto.randomUUID(),
+    valid: () => true,
+  };
+}
+
+function admitted(
+  receipt: ScheduledTurnAdmission,
+): Extract<ScheduledTurnAdmission, { status: "admitted" }> {
+  expect(receipt.status).toBe("admitted");
+  if (receipt.status !== "admitted") throw new Error(receipt.reason);
+  return receipt;
+}
+
+function persisted(executionId: string, result = completed(executionId)): RunDetail {
+  return {
+    execution_id: executionId,
+    status: result.status,
+    created_at: 1,
+    ended_at: 2,
+    messages: [],
+    events: [],
+    result,
+  };
+}
+
+test("scheduledBinding materializes a stable conversation without a turn, transcript or model call", () => {
+  const sessions = fakeSessionStore();
+  const { host, store, runs } = mount({ sessionStore: sessions });
+  expect(host.scheduledBinding()).toBeNull();
+  const first = host.scheduledBinding(true)!;
+  expect(host.scheduledBinding(true)).toEqual(first);
+  expect(host.sessionMeta()?.turns).toEqual([]);
+  expect(sessions.list()).toHaveLength(1);
+  expect(store.nodes).toEqual([]);
+  expect(runs).toEqual([]);
+});
+
+test("automatic admission reserves before preparation and never converts a concurrent occurrence to steer", async () => {
+  const { host, runs, steerImpl, getRunImpl } = mount();
+  getRunImpl.fn = async (id) => persisted(id);
+  let steers = 0;
+  steerImpl.fn = async () => {
+    steers++;
+    return { status: "steered" };
+  };
+  const first = admitted(host.submitScheduledTurn(schedule(host, "/quit !echo literal  ")));
+  expect(host.scheduledBusy()).toBe(true);
+  expect(host.submitScheduledTurn(schedule(host)).status).toBe("deferred");
+  expect(host.runBangCommand("echo busy")).toBe(false);
+  await host.compactCurrentRun();
+  await flush();
+  expect(runs).toHaveLength(1);
+  expect(runs[0]!.input.messages).toEqual([{ role: "user", content: "/quit !echo literal  " }]);
+  expect(steers).toBe(0);
+  runs[0]!.resolve(completed(first.executionId));
+  expect(await first.completion).toMatchObject({
+    status: "completed",
+    usage: { input: 100, output: 10 },
+  });
+  expect(host.scheduledBusy()).toBe(false);
+});
+
+test.each(["reconciliation", "closure"] as const)(
+  "scheduled completion waits for both physical closure and reconciliation (last=%s)",
+  async (last) => {
+    const fake = fakeClient();
+    let close!: () => void;
+    const closed = new Promise<void>((resolve) => {
+      close = resolve;
+    });
+    let reconcile!: (value: RunDetail) => void;
+    fake.getRunImpl.fn = () =>
+      new Promise((resolve) => {
+        reconcile = resolve;
+      });
+    const { host } = mount({
+      client: { ...fake.client, startRun: (input) => ({ ...fake.client.startRun(input), closed }) },
+    });
+    const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+    let settled = false;
+    void receipt.completion.then(() => {
+      settled = true;
+    });
+    await flush();
+    fake.runs[0]!.resolve(completed(receipt.executionId));
+    await flush();
+    expect(host.runActive()).toBe(false);
+    expect(host.submitScheduledTurn(schedule(host)).status).toBe("deferred");
+    if (last === "closure") reconcile(persisted(receipt.executionId));
+    else close();
+    await flush();
+    expect(settled).toBe(false);
+    expect(host.scheduledBusy()).toBe(true);
+    if (last === "closure") close();
+    else reconcile(persisted(receipt.executionId));
+    expect((await receipt.completion).status).toBe("completed");
+    expect(host.scheduledBusy()).toBe(false);
+  },
+);
+
+test("a previously received human submission owns asynchronous preparation ahead of an automatic occurrence", async () => {
+  const fake = fakeClient();
+  let image!: (value: Awaited<ReturnType<WorkspaceService["readImage"]>>) => void;
+  fake.client.files.readImage = () =>
+    new Promise((resolve) => {
+      image = resolve;
+    });
+  const { host } = mount({ client: fake.client });
+  const request = schedule(host);
+  const turn = host.submitTurn("human @file.png");
+  expect(host.submitScheduledTurn(request).status).toBe("deferred");
+  await flush();
+  image({ path: "file.png", mime: "image/png", data: "AA==" });
+  await flush();
+  expect(fake.runs).toHaveLength(1);
+  fake.runs[0]!.resolve(completed(fake.runs[0]!.handle.executionId));
+  await turn;
+});
+
+test("human input after automatic reservation waits for its handle and then follows normal steer semantics", async () => {
+  const fake = fakeClient();
+  let image!: (value: Awaited<ReturnType<WorkspaceService["readImage"]>>) => void;
+  fake.client.files.readImage = () =>
+    new Promise((resolve) => {
+      image = resolve;
+    });
+  let steers = 0;
+  fake.steerImpl.fn = async () => {
+    steers++;
+    return { status: "steered" };
+  };
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  const { host } = mount({ client: fake.client });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host, "automatic @file.png")));
+  const human = host.submitTurn("human follow-up");
+  await flush();
+  expect(fake.runs).toHaveLength(0);
+  expect(steers).toBe(0);
+  image({ path: "file.png", mime: "image/png", data: "AA==" });
+  await human;
+  expect(fake.runs).toHaveLength(1);
+  expect(steers).toBe(1);
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await receipt.completion;
+});
+
+test.each(["session", "configuration", "permission", "cancel"] as const)(
+  "automatic preparation revalidates %s after image I/O without restoring a human draft",
+  async (change) => {
+    const fake = fakeClient();
+    let image!: (value: Awaited<ReturnType<WorkspaceService["readImage"]>>) => void;
+    fake.client.files.readImage = () =>
+      new Promise((resolve) => {
+        image = resolve;
+      });
+    let fingerprint = "config_a";
+    let permission: string | null = null;
+    const { host, store } = mount({
+      client: fake.client,
+      executionConfiguration: () => ({ fingerprint, label: "model" }),
+      scheduledBlockedReason: () => permission,
+    });
+    const restores: string[] = [];
+    host.registerDraftRestore((value) => {
+      restores.push(value);
+    });
+    const request = schedule(host, "automatic @file.png");
+    const receipt = admitted(host.submitScheduledTurn(request));
+    await flush();
+    if (change === "session") host.clearSession();
+    if (change === "configuration") fingerprint = "config_b";
+    if (change === "permission") permission = "revoked";
+    if (change === "cancel") await receipt.cancel();
+    image({ path: "file.png", mime: "image/png", data: "AA==" });
+    expect((await receipt.completion).status).not.toBe("completed");
+    expect(fake.runs).toHaveLength(0);
+    expect(store.nodes).toHaveLength(0);
+    expect(restores).toEqual([]);
+    if (change === "session" || change === "configuration")
+      expect(host.submitScheduledTurn(request).status).toBe("refused");
+  },
+);
+
+test("an automatic prompt preparation error is a failed attempt and never overwrites the composer", async () => {
+  const fake = fakeClient();
+  fake.client.files.readImage = async () => {
+    throw new Error("cannot read image");
+  };
+  const { host } = mount({ client: fake.client });
+  let restores = 0;
+  host.registerDraftRestore(() => {
+    restores++;
+  });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host, "@file.png")));
+  expect((await receipt.completion).status).toBe("failed");
+  expect(restores).toBe(0);
+  expect(fake.runs).toHaveLength(0);
+});
+
+test("scheduled cancellation only targets its own physical handle, even after a newer human turn starts", async () => {
+  const fake = fakeClient();
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  let close!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    close = resolve;
+  });
+  let starts = 0;
+  const { host } = mount({
+    client: {
+      ...fake.client,
+      startRun: (input) => {
+        const handle = fake.client.startRun(input);
+        return ++starts === 1 ? { ...handle, closed } : handle;
+      },
+    },
+  });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await flush();
+  const human = host.submitTurn("next human turn");
+  await flush();
+  expect(fake.runs).toHaveLength(2);
+  await receipt.cancel();
+  expect(fake.runs[0]!.cancelled).toBe(true);
+  expect(fake.runs[1]!.cancelled).toBe(false);
+  expect(host.scheduledBusy()).toBe(true);
+  close();
+  await receipt.completion;
+  expect(host.scheduledBusy()).toBe(true);
+  fake.runs[1]!.resolve(completed(fake.runs[1]!.handle.executionId));
+  await human;
+  expect(host.scheduledBusy()).toBe(false);
+});
+
+test("a failed Ctrl-C request still pauses the recurrence when its run eventually finishes", async () => {
+  const { host, runs, getRunImpl } = mount();
+  getRunImpl.fn = async (id) => persisted(id);
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  runs[0]!.handle.cancel = async () => {
+    throw new Error("cancel transport failed");
+  };
+  expect(host.cancelCurrentRun()).toBe(true);
+  await flush();
+  expect(host.runActive()).toBe(true);
+  runs[0]!.resolve(completed(receipt.executionId));
+  expect((await receipt.completion).status).toBe("cancelled");
+});
+
+test("late completion from a cleared conversation cannot cancel a new conversation's elicitation", async () => {
+  const elicit = createElicitSlot();
+  const { host, runs } = mount({ elicit });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  host.clearSession();
+  const question = elicit.ask({
+    message: "new conversation approval",
+    requestedSchema: { type: "object", properties: {} },
+  });
+  runs[0]!.resolve(completed(receipt.executionId));
+  await receipt.completion;
+  expect(elicit.request()?.message).toBe("new conversation approval");
+  elicit.cancelPending();
+  await question;
+});
+
+test("late steer failure from a cleared conversation cannot restore its draft or status", async () => {
+  const { host, runs, steerImpl } = mount();
+  const first = host.submitTurn("first");
+  await flush();
+  let fail!: (error: Error) => void;
+  steerImpl.fn = () =>
+    new Promise((_resolve, reject) => {
+      fail = reject;
+    });
+  const steer = host.submitTurn("old human draft");
+  await flush();
+  let restores = 0;
+  host.registerDraftRestore(() => {
+    restores++;
+  });
+  host.clearSession();
+  fail(new Error("late transport failure"));
+  await steer;
+  expect(restores).toBe(0);
+  expect(host.runStatus()).toBe("idle");
+  runs[0]!.resolve(completed(runs[0]!.handle.executionId));
+  await first;
+});
+
+test("hosted shell reserves before spawn and shutdown waits for output persistence and release", async () => {
+  const trace: string[] = [];
+  const admitted = Promise.withResolvers<void>();
+  const finished = Promise.withResolvers<LocalBashResult>();
+  const persisted = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  let signal: AbortSignal | undefined;
+  const byId = new Map<string, SessionMeta>();
+  const sessions: SessionStore = {
+    list: () => [...byId.values()],
+    get: (id) => byId.get(id) ?? null,
+    load: async (id) => structuredClone(byId.get(id) ?? null),
+    save(meta) {
+      byId.set(meta.id, {
+        ...structuredClone(meta),
+        revision: (byId.get(meta.id)?.revision ?? 0) + 1,
+      });
+    },
+    delete: (id) => byId.delete(id),
+    flushPending: async () => {
+      if ([...byId.values()].some((meta) => (meta.pending?.length ?? 0) > 0)) {
+        trace.push("persist");
+        await persisted.promise;
+      }
+    },
+  };
+  const { service } = hostingFixture({
+    reserveActivity: async (sessionId, kind) => {
+      expect(byId.has(sessionId)).toBe(true);
+      trace.push("reserve");
+      await admitted.promise;
+      return { lease_id: "shell-lease", session_id: sessionId, host_generation: "host", kind };
+    },
+    releaseActivity: async (id) => {
+      expect(id).toBe("shell-lease");
+      trace.push("release");
+      await released.promise;
+    },
+  });
+  const fake = fakeClient();
+  const { host } = mount({
+    sessionStore: sessions,
+    client: { ...fake.client, hosting: service },
+    runBash: (_command, options) => {
+      trace.push("spawn");
+      signal = options.signal;
+      return finished.promise;
+    },
+  });
+  expect(host.runBangCommand("local check")).toBe(true);
+  await flush();
+  expect(trace).toEqual(["reserve"]);
+  expect(host.scheduledBusy()).toBe(true);
+  admitted.resolve();
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn"]);
+  let stopped = false;
+  const stopping = host.stopLocalWork().then(() => {
+    stopped = true;
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(stopped).toBe(false);
+  finished.resolve({
+    exitCode: null,
+    stdout: "local output",
+    stderr: "",
+    signal: "SIGTERM",
+    timedOut: false,
+    cancelled: true,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 1,
+  });
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn", "persist"]);
+  expect(host.physicalWorkActive()).toBe(true);
+  persisted.resolve();
+  await flush();
+  expect(trace).toEqual(["reserve", "spawn", "persist", "release"]);
+  expect(stopped).toBe(false);
+  released.resolve();
+  await stopping;
+  expect(host.scheduledBusy()).toBe(false);
+  expect(host.sessionMeta()!.pending?.[0]?.content).toContain("local output");
+  expect(fake.runs).toHaveLength(0);
+});
+
+test("refused hosted shell admission settles its transcript without starting a process", async () => {
+  const sessions = fakeSessionStore();
+  const save = sessions.save.bind(sessions);
+  sessions.save = (meta) => save({ ...meta, revision: 1 });
+  let spawns = 0;
+  const { service } = hostingFixture({
+    reserveActivity: async () => {
+      throw new Error("conversation occupied elsewhere");
+    },
+  });
+  const { host, store } = mount({
+    sessionStore: sessions,
+    client: { ...fakeClient().client, hosting: service },
+    runBash: async () => {
+      spawns++;
+      throw new Error("must not spawn");
+    },
+  });
+  expect(host.runBangCommand("local check")).toBe(true);
+  await flush();
+  await host.stopLocalWork();
+  await flush();
+  expect(spawns).toBe(0);
+  expect(host.scheduledBusy()).toBe(false);
+  expect(host.runStatus()).toContain("conversation occupied elsewhere");
+  expect(store.nodes.some((node) => node.status === "running")).toBe(false);
+});
+
+test("bash and unsettled compaction serialize automatic admission", async () => {
+  let finishBash!: (result: LocalBashResult) => void;
+  const { host, runs, compactImpl } = mount({
+    runBash: () =>
+      new Promise((resolve) => {
+        finishBash = resolve;
+      }),
+  });
+  const request = schedule(host);
+  expect(host.runBangCommand("local check")).toBe(true);
+  expect(host.submitScheduledTurn(request).status).toBe("deferred");
+  finishBash({
+    exitCode: 0,
+    stdout: "done",
+    stderr: "",
+    signal: null,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 1,
+    timedOut: false,
+    cancelled: false,
+  });
+  await flush();
+  const human = host.submitTurn("context");
+  await flush();
+  runs[0]!.resolve(completed(runs[0]!.handle.executionId));
+  await human;
+  let finishCompact!: (result: Awaited<ReturnType<RunHostDeps["client"]["compact"]>>) => void;
+  compactImpl.fn = () =>
+    new Promise((resolve) => {
+      finishCompact = resolve;
+    });
+  const compact = host.compactCurrentRun();
+  expect(host.submitScheduledTurn(request).status).toBe("deferred");
+  host.onEvent(
+    ev({ type: "compaction", operation: "trim", at: 1, agent: "lead", freed_chars: 10 }),
+    "live",
+  );
+  expect(host.scheduledBusy()).toBe(true);
+  finishCompact({
+    status: "skipped",
+    execution_id: runs[0]!.handle.executionId,
+    reason: "disabled",
+  });
+  await compact;
+  expect(host.scheduledBusy()).toBe(false);
+});
+
+test("unavailable reconciliation or usage pauses without inventing a free run", async () => {
+  const { host, runs } = mount();
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  runs[0]!.resolve({
+    execution_id: receipt.executionId,
+    status: "completed",
+    usage: { iterations: 1, elapsed_ms: 10, by_agent: [] },
+  });
+  const result = await receipt.completion;
+  expect(result.status).toBe("unknown");
+  expect(result.usage).toEqual({});
+});
+
+test("a local command detached by clear still blocks automatic admission until its promise settles", async () => {
+  let finish!: (result: LocalBashResult) => void;
+  const { host } = mount({
+    runBash: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  });
+  host.runBangCommand("slow local check");
+  host.clearSession();
+  expect(host.physicalWorkActive()).toBe(true);
+  expect(host.submitScheduledTurn(schedule(host)).status).toBe("deferred");
+  finish({
+    exitCode: 0,
+    stdout: "",
+    stderr: "",
+    signal: null,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+    durationMs: 1,
+    timedOut: false,
+    cancelled: true,
+  });
+  await flush();
+  expect(host.physicalWorkActive()).toBe(false);
+  expect(host.scheduledBusy()).toBe(false);
+  expect(host.runStatus()).toBe("idle");
+});
+
+test("a rejected physical closure makes automatic completion unknown and releases its counted lease", async () => {
+  const fake = fakeClient();
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  let rejectClose!: (error: Error) => void;
+  const closed = new Promise<void>((_resolve, reject) => {
+    rejectClose = reject;
+  });
+  const { host } = mount({
+    client: { ...fake.client, startRun: (input) => ({ ...fake.client.startRun(input), closed }) },
+  });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await flush();
+  rejectClose(new Error("stream lost"));
+  expect((await receipt.completion).status).toBe("unknown");
+  expect(host.scheduledBusy()).toBe(false);
+});
+
+test("continuation recovery cannot restart an automatic occurrence after its conversation was cleared", async () => {
+  const { host, runs, getRunImpl } = mount();
+  getRunImpl.fn = async (id) => persisted(id);
+  const human = host.submitTurn("first persisted context");
+  await flush();
+  const firstId = runs[0]!.handle.executionId;
+  runs[0]!.resolve(completed(firstId));
+  await human;
+  let resolveHistory!: (result: RunDetail) => void;
+  getRunImpl.fn = () =>
+    new Promise((resolve) => {
+      resolveHistory = resolve;
+    });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  runs[1]!.resolve({
+    execution_id: receipt.executionId,
+    status: "failed",
+    error: { code: "continuation_unavailable", message: "context pruned" },
+  });
+  await flush();
+  host.clearSession();
+  resolveHistory(persisted(firstId));
+  await receipt.completion;
+  expect(runs).toHaveLength(2);
+  expect(host.sessionMeta()).toBeNull();
+  expect(host.runStatus()).toBe("idle");
+});
+
 function mount(over: Partial<RunHostDeps> = {}): {
   host: RunHost;
   store: TranscriptStore;
@@ -200,6 +759,266 @@ function mount(over: Partial<RunHostDeps> = {}): {
   };
 }
 
+function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
+  const fake = fakeClient();
+  const handle = fake.client.startRun({ executionId: "exec_hosted" });
+  const run = fake.runs[0]!;
+  const meta: SessionMeta = {
+    id: "session-hosted",
+    revision: 2,
+    title: "Hosted conversation",
+    owner: "test-owner",
+    projectId: "prj_test",
+    workspace: "ws_test",
+    createdAt: 1,
+    updatedAt: 1,
+    turns: [
+      {
+        kind: "conversation",
+        executionId: handle.executionId,
+        userPreview: "Existing prompt",
+        status: "running",
+      },
+    ],
+    totals: { input: 0, output: 0, cached: 0 },
+  };
+  const ref: HostedRunRef = {
+    execution_id: handle.executionId,
+    session_id: meta.id,
+    workspace_id: meta.workspace,
+    host_generation: "generation",
+    title: meta.title,
+    config: { agent: "coder" },
+    created_at: 1,
+    updated_at: 1,
+    revision: 1,
+    control_epoch: 1,
+    control: "available",
+    disconnect_policy: policy,
+    execution_state: "running",
+    attention: "none",
+  };
+  const calls = { attaches: 0, releases: 0, retired: [] as string[], hostCancels: 0, writes: 0 };
+  const unexpected = async (): Promise<never> => {
+    throw new Error("unexpected hosting call");
+  };
+  const hosting: HostingService = {
+    list: async () => [ref],
+    start: unexpected,
+    attach: unexpected,
+    detach: unexpected,
+    receipt: unexpected,
+    readSnapshot: unexpected,
+    releaseSnapshot: unexpected,
+    releaseObservation: unexpected,
+    async closeSession(id) {
+      calls.retired.push(id);
+      if (policy === "cancel") calls.hostCancels++;
+    },
+    acknowledge: unexpected,
+    reserveActivity: unexpected,
+    releaseActivity: unexpected,
+  };
+  const sessions: SessionStore = {
+    list: () => [structuredClone(meta)],
+    get: () => structuredClone(meta),
+    load: async () => structuredClone(meta),
+    save() {
+      calls.writes++;
+    },
+    delete: () => false,
+  };
+  const mounted = mount({
+    sessionStore: sessions,
+    client: {
+      ...fake.client,
+      hosting,
+      attachRun() {
+        calls.attaches++;
+        return {
+          ...handle,
+          async releaseObservation() {
+            calls.releases++;
+            run.reject(new Error("observation released"));
+          },
+        };
+      },
+    },
+  });
+  return { ...mounted, calls, ref, meta, sessions, run, hosting };
+}
+
+test("resume refuses an unknown hosted outcome without treating its trace as an ordinary continuation", async () => {
+  const f = mountHosted();
+  f.ref.execution_state = "unknown";
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.host.runStatus()).toContain("unknown outcome");
+  expect(f.host.runStatus()).toContain("/background list");
+  expect(f.host.scheduledBusy()).toBe(false);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test.each(["continue", "cancel"] as const)(
+  "hosted teardown leaves the %s disconnect policy to the host and releases only its observation",
+  async (policy) => {
+    const f = mountHosted(policy);
+    const observing = f.host.attachHostedRun(f.ref);
+    await flush();
+    expect(f.host.runActive()).toBe(true);
+    expect(f.host.continuesOnExit()).toBe(policy === "continue");
+    expect(f.calls.attaches).toBe(1);
+    expect(f.host.sessionMeta()!.turns).toHaveLength(1);
+    f.host.teardownRuns();
+    await observing;
+    expect(f.calls.retired).toEqual([f.meta.id]);
+    expect(f.calls.releases).toBe(1);
+    expect(f.calls.hostCancels).toBe(policy === "cancel" ? 1 : 0);
+    expect(f.run.cancelled).toBe(false);
+    expect(f.host.physicalWorkActive()).toBe(false);
+    expect(f.host.continuesOnExit()).toBe(false);
+    expect(f.calls.writes).toBe(0);
+  },
+);
+
+test("an explicit cancel still controls an attached background run", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  expect(f.host.cancelCurrentRun()).toBe(true);
+  expect(f.run.cancelled).toBe(true);
+  f.host.teardownRuns();
+  await observing;
+  expect(f.calls.writes).toBe(0);
+});
+
+test("background handoff waits for its receipt and releases observation without cancelling work", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const committed = Promise.withResolvers<HostedRunReceipt>();
+  let input: Parameters<HostingService["detach"]>[0] | undefined;
+  f.hosting.detach = (request) => {
+    input = request;
+    return committed.promise;
+  };
+  const handoff = f.host.backgroundCurrentRun();
+  expect(f.host.backgroundCurrentRun()).toBe(handoff);
+  await flush();
+  expect(f.host.runActive()).toBe(true);
+  expect(f.calls.releases).toBe(0);
+  expect(input).toMatchObject({
+    execution_id: f.ref.execution_id,
+    host_generation: f.ref.host_generation,
+    revision: f.ref.revision,
+    control_epoch: f.ref.control_epoch,
+  });
+  const receipt = { operation_id: input!.operation_id, run: f.ref, committed_at: 10 };
+  committed.resolve(receipt);
+  expect(await handoff).toEqual(receipt);
+  await observing;
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+  expect(f.host.runStatus()).toBe("run continues in background");
+  expect(f.calls.writes).toBe(0);
+});
+
+test("a lost handoff reply is reconciled by operation id and never repeats the mutation", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let receipt: HostedRunReceipt | null = null;
+  let detachCalls = 0;
+  f.hosting.detach = async (request) => {
+    detachCalls++;
+    receipt = { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+    throw new Error("connection lost after commit");
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("connection lost after commit");
+  expect(f.calls.releases).toBe(0);
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff is unconfirmed");
+  f.hosting.receipt = async (id) => {
+    expect(id).toBe(receipt!.operation_id);
+    return receipt;
+  };
+  expect(await f.host.backgroundCurrentRun()).toEqual(receipt!);
+  await observing;
+  expect(detachCalls).toBe(1);
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("handoff reconciles an immediately readable receipt after its acknowledgement is lost", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let receipt: HostedRunReceipt | null = null;
+  f.hosting.detach = async (request) => {
+    receipt = { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+    throw new Error("lost acknowledgement");
+  };
+  f.hosting.receipt = async () => receipt;
+  expect(await f.host.backgroundCurrentRun()).toEqual(receipt!);
+  await observing;
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("a conversation change during a committed handoff cannot close the new TUI conversation", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const committed = Promise.withResolvers<HostedRunReceipt>();
+  let operationId = "";
+  f.hosting.detach = (input) => {
+    operationId = input.operation_id;
+    return committed.promise;
+  };
+  const handoff = f.host.backgroundCurrentRun();
+  const rejected = handoff.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await flush();
+  f.host.clearSession();
+  committed.resolve({ operation_id: operationId, run: f.ref, committed_at: 10 });
+  expect(await rejected).toMatchObject({
+    message: expect.stringContaining("conversation changed, so this TUI remains open"),
+  });
+  await observing;
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("background refuses a stale workspace binding before requesting a handoff", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  f.hosting.list = async () => [{ ...f.ref, workspace_id: "another-workspace" }];
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow(
+    "conversation changed before background",
+  );
+  expect(f.calls.releases).toBe(0);
+  f.host.teardownRuns();
+  await observing;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("there is no hosted run");
+});
+
+test("a delayed hosted attach cannot replace a conversation cleared while its metadata loads", async () => {
+  const f = mountHosted();
+  const loading = Promise.withResolvers<SessionMeta>();
+  f.sessions.load = () => loading.promise;
+  const observing = f.host.attachHostedRun(f.ref);
+  f.host.clearSession();
+  loading.resolve(structuredClone(f.meta));
+  await observing;
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.store.nodes).toEqual([]);
+  f.run.resolve(undefined);
+});
+
 test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles totals once", async () => {
   const { host, store, runs, dispose } = mount();
   expect(host.runStartedAt()).toBeNull();
@@ -207,6 +1026,7 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   await flush();
   expect(host.runActive()).toBe(true);
   expect(host.runStartedAt()).not.toBeNull();
+  expect(host.continuesOnExit()).toBe(false);
   expect(host.sessionUsageBaseline()).toEqual({ input: 0, output: 0, cached: 0 });
   expect(runs.length).toBe(1);
   expect(runs[0]!.input.profile).toBe("coder");
@@ -1848,6 +2668,37 @@ test("submitSkillRun: starts a run on the skill's agent, appends its digest, and
     session_turn_refs: 1,
   });
   dispose();
+});
+
+test("configuration consent identity lives only in the open TUI session, never in resume", async () => {
+  const { host, runs } = mount();
+  const runSkill = async (): Promise<StartRunInput> => {
+    const turn = host.submitSkillRun(
+      "clarvis-configure",
+      "Configure a reviewer",
+      "clarvis-configure",
+    );
+    await flush();
+    const run = runs.at(-1)!;
+    run.resolve(completed(run.handle.executionId));
+    await turn;
+    return run.input;
+  };
+  const first = await runSkill();
+  const second = await runSkill();
+  expect(first.configurationSessionId).toBeString();
+  expect(second.configurationSessionId).toBe(first.configurationSessionId);
+  const saved = host.sessionMeta()!;
+  expect(first.configurationSessionId).not.toBe(saved.id);
+  expect(JSON.stringify(saved)).not.toContain(first.configurationSessionId!);
+  host.clearSession();
+  await host.loadSessionMeta(saved);
+  const resumed = await runSkill();
+  expect(host.sessionMeta()?.id).toBe(saved.id);
+  expect(resumed.configurationSessionId).toBeString();
+  expect(resumed.configurationSessionId).not.toBe(first.configurationSessionId);
+  const repeated = await runSkill();
+  expect(repeated.configurationSessionId).toBe(resumed.configurationSessionId);
 });
 
 test("submitSkillRun: a failed skill run reports the skill name in the error status", async () => {

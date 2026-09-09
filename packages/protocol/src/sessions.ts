@@ -67,6 +67,8 @@ export interface SessionTurn {
  */
 export interface Session {
   id: string;
+  /** Hosted conversation revision. Zero precedes host ownership; hosted writes require a matching value. */
+  revision?: number;
   title: string;
   /** Project this conversation belongs to. */
   project_id: string;

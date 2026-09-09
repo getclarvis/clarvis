@@ -96,6 +96,12 @@ removed rather than deprecated.
 
 ## The four trees
 
+`configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
+scopes for native self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents`. It neither creates directories nor authorizes access. The kernel owns consent
+and the credential-excluding file policy described in
+[self-configuration.md](../../specs/hosts/self-configuration.md).
+
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
 `plugins/`, `extension-profiles/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
@@ -362,6 +368,14 @@ returns `void`, so a workspace past that threshold would otherwise stop being sw
 permanently.
 
 ## Owner segments
+
+`localHostPaths` builds the private state and short IPC endpoint namespace for an operator account,
+data owner, canonical workspace and effective global root. Its lease, discovery credentials and
+handoff index live under global `state/hosts/`, apart from agent scratch. Unix endpoints use a short
+temporary directory so HOME length does not consume the socket path budget; Windows endpoints use
+named pipes. The builder neither opens a listener nor grants access. Hosts must verify directory
+ownership, protect credentials and authenticate their connections. See
+[hosted runs](../../specs/hosts/hosted-runs.md) for the observation/storage coupling.
 
 Owner-derived builders take the **raw owner id** and encode it themselves:
 `exportsDirForOwner`, `plansRootForOwner`, `memoryRootForOwner`,

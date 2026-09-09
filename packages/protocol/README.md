@@ -32,9 +32,20 @@ async function listAgents(client: KernelClient): Promise<void> {
 ```
 
 Concrete clients and transports live outside this package. `@clarvis/kernel`
-implements an in-process client, a loopback client and stdio transport.
+implements an in-process client, a loopback client, stdio transport and a reconnectable local IPC
+adapter using the same RPC framing.
 
 ## Services
+
+`StartRunParams.configuration_session_id` optionally carries a volatile authorization identity for
+the currently open conversation instance. Clients must generate a fresh value on every open/resume
+and never persist it or substitute the saved session id, `continue_from` or a provider cache hint.
+Omission requires native configuration approval per run. The `configuration_access` elicitation
+uses the existing open-ended kind. See [self-configuration.md](../../specs/hosts/self-configuration.md).
+
+Managed `RunHandle` implementations can return an unsubscribe function from `onElicit` and expose
+`onElicitSettled` to retire answered or expired questions. Hosted observations carry sequenced event
+frames and reuse run control methods; they are separate from the single source event consumer.
 
 `KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
 services:
@@ -59,6 +70,25 @@ services:
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+
+`hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
+snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
+`KernelClient.hosting` is optional and appears on a remote client only when `hello` advertises
+`capabilities.hosting.host_generation`. It uses the kernel RPC catalog and sequenced observation
+notifications. Ordinary in-process/stdio composition does not enable a persistent host.
+Observation storage and its current implementation scope are specified in
+[hosted runs](../../specs/hosts/hosted-runs.md).
+
+`local-host.ts` defines the optional `KernelClient.localHost` operator service, advertised by
+`capabilities.local_host`. It carries process state, browser-request claims and explicit runtime
+retry/restart operations through the kernel RPC. The service contains no provider credentials;
+opening an authorization URL does not approve authorization. Its availability requires hosting
+and the local operator role.
+
+Hosted conversation reads include `Session.revision`; the hosted coordinator requires that
+observed revision for saves and turn admission. The ordinary file-store contract does not itself
+enforce hosted ownership. Lifecycle and mutation rules are specified in
+[sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
@@ -159,12 +189,14 @@ Stdio, HTTP and WebSocket transports can implement the same interface without ch
 the concrete transport decides how to interrupt the request without serializing the signal into the
 wire parameters.
 
-Wire contract 3 is negotiated exactly in the opening hello. Unknown versions and malformed or
-extra envelope fields fail closed. Stdio uses strict newline-delimited frames capped at 8 MiB and a
+The opening hello requires the exact `CLARVIS_WIRE_VERSION` declared by the kernel's
+[`wire.ts`](../kernel/src/transport/wire.ts), independently of the guest execution RPC revision.
+Unknown versions and malformed or extra envelope fields fail closed. Stdio uses strict
+newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
 the connection instead of being skipped.
 
-Run completion has two independent notifications: `run.result` settles `RunHandle.done`, while
+Ordinary connection-owned runs have two independent notifications: `run.result` settles `RunHandle.done`, while
 `run.stream_end` closes the ordered event iterable after its bounded tail drains and settles
 `RunHandle.closed`. A result never silently discards a final event. Hosts use `closed` to release
 run and owner leases without attaching a second consumer to the single-consumer `events` stream.
@@ -172,7 +204,10 @@ Remote client buffers cap at 1,024 events, coalesce compatible deltas, discard o
 classified as droppable by kernel policy, and cancel/fail the run if structural events alone
 saturate the buffer. A handle may also expose `buffered()`: optional O(1) counters for buffered
 items, estimated bytes and dropped events. The counters are diagnostic metadata, not another event
-consumer and not a transport compatibility requirement.
+consumer and not a transport compatibility requirement. Hosted runs use `hosting.observation`
+with distinct event-end, result and physical-closure notes. Losing that observation rejects its
+unfinished promises without recording an execution failure; the host retains physical ownership
+until teardown and reconciliation complete. See [hosted runs](../../specs/hosts/hosted-runs.md#hosted-kernel-rpc).
 
 Capability-owned event names do not reopen the public `RunEvent` discriminator. The kernel maps
 them to the closed `capability_event` variant with bounded, sanitized detail, so an exhaustive

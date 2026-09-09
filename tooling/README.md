@@ -51,6 +51,11 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
+Both Containerfiles and the build helper carry private protocol revision 7, matching the kernel
+worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
+model policy. Older images are refused at admission and must be rebuilt; changing an active runtime
+image remains an operator choice.
+
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
 source commit to the two released OCI digests, the private guest protocol revision, the supported
 Linux platforms, and the digest-pinned build/base images. It writes no registry state itself; the
@@ -73,9 +78,10 @@ RC identity, emits the separate candidate manifest with the `source-v1` installa
 publishes only source prereleases. `packages/code/tooling/candidate-install.ts` consumes that contract
 for explicit development installs, verifying the source snapshot and pulling its candidate image.
 `ci/qualify-runtime.sh` runs the existing Docker or rootless Podman integration canaries against the
-actual built image. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
-before attaching that identity to a source prerelease.
-After publication, the same workflow tests `dev-install.sh --candidate` against the public RC on
-both architectures, then exercises the installed checkout with its resolved Docker image.
- The official workflow accepts only stable
-tags and verifies anonymous image pulls before public release activation.
+actual built image, including stdio MCP hooks that write to the guest's mounted workspace but cannot
+access synthetic host files outside it. That hook canary also covers early lifecycle calls and gate
+argument rewriting. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
+before attaching that identity to a source prerelease. After publication, the same workflow tests
+`dev-install.sh --candidate` against the public RC on both architectures, then exercises the installed
+checkout with its resolved Docker image. The official workflow accepts only stable tags and verifies
+anonymous image pulls before public release activation.

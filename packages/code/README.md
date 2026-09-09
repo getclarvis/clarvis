@@ -1,10 +1,43 @@
 # `@clarvis/code`
 
-The flagship Clarvis terminal UI. It runs the agent stack in process through
+The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
-shell can run against a remote kernel later without a client change.
+shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+
+The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
+revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it
+again. Hosted completion waits for observation delivery and host reconciliation; a lost connection
+rejects observation without inventing an execution result. The session cache supports explicit
+canonical refresh and confirmed revision sequencing. The workspace manager launches or discovers
+the companion `local-host` entry and owns its connection, while the host owns execution and history.
+
+`/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
+uncertain handoff leaves the interface open. Reopening the same workspace offers the previous work
+or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
+the same execution, and `/background cancel <execution-id>` requests cancellation without treating
+its acknowledgement as physical completion. Another TUI's controller is observed by default;
+taking control requires an explicit action in the list. Saved results remain in Sessions.
+After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
+that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
+exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+
+`/reconnect` restores the connection to the existing host without restarting it or replaying work.
+`/reconnect reload` applies saved configuration through an explicit host restart, which is refused
+while physical work is active. A refused reload leaves a healthy connection available. Provider
+credential saves and extension activation request that same reload path; connection recovery alone
+does not activate a saved Extension Profile.
+
+User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
+conversation in the host before spawning, persist their observation under that reservation, and
+release it after physical completion. Normal exit cancels and drains local shell work before
+closing the host connection. Offline compaction uses the host's separate maintenance admission.
+
+`--resume` and `--continue` check for hosted work before reconstructing historical traces. Print mode
+also uses hosted turn admission and waits for physical closure. The host must remain alive for
+execution to continue; restarting an interrupted host does not replay tools or restore a live run.
+See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -146,6 +179,14 @@ another project, start the binary from that directory or use the installed
 `clarvis` command there.
 
 ## Configuration
+
+`/clarvis-configure <task>` opens the shipped configuration skill on a dedicated native agent.
+After approving its elicitation, that agent can list, read, write, edit and delete authored files in
+`~/.clarvis`, `<workspace>/.clarvis`, `~/.agents` and `<workspace>/.agents`, with credentials and
+private state excluded. It executes on the host without sandbox or container, using only the
+configuration file tool and questions. Approval is reused while that session is live in the TUI;
+closing it and resuming requires a new approval. No authorization is saved in session history.
+See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 The app uses a file-backed kernel. Workspace configuration lives under
 `.clarvis`, typically:
@@ -496,6 +537,45 @@ shortcut`; the removed command palette is not presented as a fallback route. The
 normalized-event diagnostic is reachable from Doctor; it stores only capability verdicts and never
 raw escape sequences, hostnames, addresses or typed text.
 
+### Repeat prompts in the current conversation
+
+`/loop` schedules an explicit prompt while this TUI stays open:
+
+```text
+/loop 5m check the PR comments
+/loop 90m --max-runs 8 -- review the test results
+/loop cron "0 9 * * 1-5" --tz America/Recife -- prepare the summary
+```
+
+Intervals use positive integer minutes, hours or days (`m`, `h`, `d`), with a one-minute minimum.
+The first run waits a full interval; later runs wait that interval after the preceding execution
+finishes. Cron uses five numeric calendar fields, with lists, ranges, steps and Sunday 0/7. A
+restricted day of month and weekday use OR. The timezone is captured at creation; DST gaps are
+skipped and repeated local times use their first occurrence. Missed cron times become one pending
+run. Options go before `--`; everything after it is literal prompt text, even `/quit`, `/loop` or
+`!command`.
+
+Creation opens details with the prompt, id, conversation, agent/model, schedule, next eligibility
+and attempt limit. `/loop` or `/loop list` opens help and the list; `/loop show <id>` opens details.
+Use `/loop pause <id>`, `/loop resume <id>` or `/loop cancel <id>`. Pause and cancel leave the current
+run to finish; `/loop cancel <id> --running` also requests cancellation of that job's own run.
+The detail/list controls expose the same actions. Invalid commands preserve your draft for correction.
+
+Runs use the current conversation context and ordinary tools, permissions, approvals and budgets.
+They wait while you have a draft, attachments, an open dialog or another execution still settling.
+There are at most ten live jobs per conversation and twenty admitted attempts per job by default;
+`--max-runs` changes the latter. A prompt is limited to 64 KiB, with at most one hundred retained
+registrations across the TUI. Errors, cancellation, unavailable results, connection loss or changed
+execution configuration pause the job. Changing conversations also pauses it; returning requires
+explicit resume, which shows the revalidated configuration and schedules a future occurrence.
+Clearing/deleting a conversation cancels its registrations. Closing the TUI forgets all jobs;
+normal run history remains, and restarting or resuming a conversation never restarts a loop.
+
+The host owns this feature, with no model call needed to create or control a registration. It uses
+the pinned Croner dependency solely for calendar calculations; its bundled MIT license is preserved
+in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). The behavioral contract and test ownership
+are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
+
 ### The command guard, and answering it automatically
 
 Before a shell command runs, the guard rules on it. Its mode lives in
@@ -733,6 +813,7 @@ Normal boot remains in the checkout where `clarvis` started. `--worktree [name]`
 reopens a checkout before the kernel and TUI boot, then the process stays pinned to it. There is no
 in-TUI selector or runtime switching. When an interactive launch selected a managed worktree and
 that checkout is clean, exit asks whether to remove the checkout or keep it. Removal is explicit,
+first asks the host to retire admission, which is refused while hosted work remains occupied. It then
 closes the workspace and completes outside the platform's bounded shutdown path, rechecks
 cleanliness, uses `git worktree remove` without force, and preserves `clarvis/<name>` so a clean tree
 with unmerged commits cannot lose its branch. Clarvis removes an empty parent only for its canonical

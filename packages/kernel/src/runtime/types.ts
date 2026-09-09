@@ -90,12 +90,23 @@ export interface RuntimePortPreview {
   readonly url: string;
 }
 
+/** One admitted stdio MCP hook call, without process configuration or host credentials. */
+export interface RuntimeHookMcpCall {
+  readonly server: string;
+  readonly tool: string;
+  readonly input: unknown;
+}
+
 /** Started execution session owned by the host. */
 export interface RuntimeSession {
   readonly info: RuntimeInfo;
   /** True once the private channel or attached engine process cannot accept another request. */
   readonly closed: boolean;
   startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
+  /** Execute a hook through the active run's guest-owned stdio MCP connection. */
+  callHookMcp(runId: string, call: RuntimeHookMcpCall, signal?: AbortSignal): Promise<unknown>;
+  /** Deliver a host remote server's elicitation to its active guest-owned relay. */
+  elicitMcp(runId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
   cancel(runId: string): Promise<void>;
   exposePort(

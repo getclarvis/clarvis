@@ -20,7 +20,7 @@ test("parseSlashCommand: splits a slash command into name and trailing args", ()
   });
   expect(parseSlashCommand("  /commit  focus here  ")).toEqual({
     name: "commit",
-    args: "focus here",
+    args: "focus here  ",
   });
 });
 

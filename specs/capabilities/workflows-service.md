@@ -6,6 +6,20 @@
 
 ## 1. Purpose
 
+Hosted turns may supply `PreparedWorkflowExecution` to the kernel's `runManagerWorkflow`. This
+retains the manager's already assembled body, including a skill seed, and fixes the assembler,
+fan-out settings, selectable leaders and default leader for the whole tree. Later file edits affect
+future preparations. They do not change a leader spawned by an already admitted manager or grant
+an expired interactive permission. The scheduler and physical tree still use the same workflow
+service, lifecycle and container bridge.
+
+Production: `PreparedWorkflowExecution`, `runManagerWorkflow` and `assembleLeader` in
+[workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts), and
+`prepareKernelRun` in [prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts). Test:
+[prepared-kernel-run.test.ts](../../packages/kernel/tests/integration/prepared-kernel-run.test.ts)
+drives an actual manager and leader with MockLLM after changing the skill and profiles. The hosted
+composition and admission contract is in [hosted runs](../hosts/hosted-runs.md#file-kernel-composition).
+
 This subsystem is the non-live half of `@clarvis/workflows`: authored definitions and persisted
 state rather than the in-flight fan-out mechanics (which are owned by the sibling document
 [capabilities/workflows-scheduling.md](workflows-scheduling.md)).
@@ -30,6 +44,18 @@ The types in `packages/workflows/src/types.ts` are the seam between these two ha
 scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the scheduling capability
 (out of scope here) consumes, and what this document's `WorkflowsService` constructs once per manager
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
+
+The builtin configuration guide carries executable authoring examples for a workflow document,
+its brief and its separate Admiral skill launcher. The native configuration route writes authored
+files; an ordinary manager run reloads definitions and requires its own workflow preflight.
+Production: `CONFIGURATION_EXAMPLES` in
+[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts), and
+`readWorkflowDefs` in
+[workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
+Test: `creates a workflow in native mode and runs it through Admiral with an independent preflight`
+and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
+[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
+See [self-configuration.md](../hosts/self-configuration.md) for that mode's authority and limitations.
 
 ## 2. Surface
 

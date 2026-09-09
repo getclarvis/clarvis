@@ -1,4 +1,5 @@
 import type { Accessor, JSX } from "solid-js";
+import type { BackgroundController } from "../features/background/controller.ts";
 import {
   createEffect,
   createMemo,
@@ -37,12 +38,13 @@ import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls, type IsolationMode } from "../adapters/execution-safety.ts";
+import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
+import type { LoopController } from "../features/loop/controller.ts";
 import type { BackendProbe } from "../onboarding/doctor.ts";
-import type { ConnectionState } from "../adapters/connection-state.ts";
+import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { McpClientCaps } from "../adapters/mcp-capabilities-bridge.ts";
 import type {
   ModelCatalogService,
@@ -192,6 +194,12 @@ export interface AppShell {
 
 /** The active run's live surface: submit/cancel/status plus the pending elicitation, if any. */
 export interface AppRunControls {
+  /** Live workspace discovery and explicit handoff; omitted by hosts without hosted admission. */
+  backgrounds?: BackgroundController;
+  /** Process-local recurrence controller; omitted by hosts without interactive scheduling. */
+  loops?: LoopController;
+  /** Reads host preparation, reconciliation and physical ownership for scheduler wakeups. */
+  scheduledBusy?: Accessor<boolean>;
   status: () => string;
   submit: (content: MessageContent) => void;
   submitPrompt: (
@@ -207,6 +215,8 @@ export interface AppRunControls {
   /** Detach an unresponsive run after the memory fuse's cancellation grace. */
   forceStop?: () => void;
   active: () => boolean;
+  /** Host-confirmed continuation of the observed run; independent of volatile tool consent. */
+  continuesOnExit?: Accessor<boolean>;
   /** True until every backend handle and local process has physically settled. */
   physicalActive?: () => boolean;
   /** Host-owned retained-memory and event-queue counters. */
@@ -295,7 +305,7 @@ export interface AppBackend {
   runtime?: () => RuntimeStatus | undefined;
   /** Clear a session-latched Docker fallback; the next run starts it lazily again. */
   retryRuntime: () => void;
-  reconnect: () => Promise<{ ok: boolean; message: string }>;
+  reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** Everything {@link App} needs to render: transcript/activity state, shell handles and the run/session/fleet/backend controls. */
@@ -603,7 +613,7 @@ export function App(props: AppProps): JSX.Element {
   let requestFinalQuit = props.shell.quit;
   const quitConfirm = createQuitConfirm({
     isDirtyView: () => overlays.viewDirty(),
-    isRunActive: () => props.run.active(),
+    isRunAtRisk: () => props.run.active() && props.run.continuesOnExit?.() !== true,
     isDraftNonEmpty: () => (inputEl?.plainText ?? "").trim().length > 0,
     notify,
     quit: () => requestFinalQuit(),
@@ -911,6 +921,10 @@ export function App(props: AppProps): JSX.Element {
 
   const appWiring = registerCodeCommands({
     commands,
+    ...(props.run.loops ? { loops: props.run.loops } : {}),
+    ...(props.run.backgrounds ? { backgrounds: props.run.backgrounds } : {}),
+    backgroundExitAllowed: () =>
+      !draftNonEmpty() && overlays.overlay() === "none" && transientOverlay() === "none",
     ui: overlays.ui,
     effects,
     session: {
@@ -1001,7 +1015,60 @@ export function App(props: AppProps): JSX.Element {
     },
   });
   overlays.setRecheck(appWiring.recheck);
+  let backgroundOfferLive = true;
   onCleanup(() => {
+    backgroundOfferLive = false;
+  });
+  onMount(() => {
+    const offer = (): void =>
+      detachObserved(
+        "background.startup",
+        () =>
+          appWiring.offerBackgrounds(
+            () =>
+              backgroundOfferLive &&
+              !draftNonEmpty() &&
+              overlays.overlay() === "none" &&
+              transientOverlay() === "none" &&
+              !inputPopupOpen() &&
+              !props.run.active() &&
+              !props.run.elicit() &&
+              !props.run.switching?.(),
+          ),
+        (error) => notify(error instanceof Error ? error.message : String(error), "warn"),
+      );
+    if (props.shell.afterPaint) props.shell.afterPaint(offer);
+    else queueMicrotask(offer);
+  });
+  props.run.loops?.setInteractionGate(
+    () =>
+      draftNonEmpty()
+        ? "The composer has an unsent draft or attachment."
+        : overlays.overlay() !== "none" ||
+            transientOverlay() !== "none" ||
+            inputPopupOpen() ||
+            props.run.elicit() ||
+            props.run.switching?.() ||
+            refuseAtFloor()
+          ? "A dialog or interaction is open."
+          : null,
+    pressureBlockedReason,
+  );
+  createEffect(() => {
+    draftNonEmpty();
+    overlays.overlay();
+    transientOverlay();
+    inputPopupOpen();
+    props.run.elicit();
+    props.run.switching?.();
+    props.run.scheduledBusy?.();
+    props.backend.connection();
+    pressureBlocked();
+    refuseAtFloor();
+    props.run.loops?.refresh();
+  });
+  onCleanup(() => {
+    props.run.loops?.dispose();
     if (transientOverlay() !== "none") {
       setTransientOverlay("none");
       interaction.popOverlayContext();
@@ -1018,12 +1085,8 @@ export function App(props: AppProps): JSX.Element {
     );
   const agentName = (): string =>
     props.fleet.agents.view()?.name ?? (props.fleet.agents.active() || "no agent");
-  const effectiveIsolation = (): IsolationMode => {
-    const runtime = props.backend.runtime?.();
-    if (runtime?.kind === "native" && runtime.lifecycle === "fallback") return "sandbox";
-    if (runtime?.kind === "container") return runtime.engine;
-    return runControls().isolation;
-  };
+  const effectiveIsolation = () =>
+    effectiveRunIsolation(runControls().isolation, props.backend.runtime?.(), props.run.active());
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,
@@ -1064,7 +1127,8 @@ export function App(props: AppProps): JSX.Element {
       const child = path[2]!;
       const parent = commands.entries().find((entry) => entry.slashes.includes(parentSlash));
       if (parent?.subcommands.some((subcommand) => subcommand.name === child)) {
-        if (commands.route(parent.name, [child, args].filter(Boolean).join(" "))) return "handled";
+        const routed = commands.route(parent.name, [child, args].filter(Boolean).join(" "));
+        if (routed) return routed === "block" ? "block" : "handled";
       }
     }
     const hit = classifySlashSubmit(name, {
@@ -1076,7 +1140,8 @@ export function App(props: AppProps): JSX.Element {
       return "handled";
     }
     if (hit.kind === "command") {
-      if (args && commands.route(hit.command, args)) return "handled";
+      const routed = args ? commands.route(hit.command, args) : false;
+      if (routed) return routed === "block" ? "block" : "handled";
       pendingSlashArgs = args;
       commands.runCommand(hit.command);
       pendingSlashArgs = "";
@@ -1192,6 +1257,7 @@ export function App(props: AppProps): JSX.Element {
   const leadActivityDetail = (): string => {
     if (!props.run.active()) return "";
     const detail: string[] = [];
+    if (props.run.continuesOnExit?.()) detail.push("continues after exit");
     const startedAt = props.run.startedAt();
     if (startedAt !== null) detail.push(formatElapsed(tickNow() - startedAt));
     const iteration = /iteration\s+(\d+)/i.exec(props.run.status())?.[1];

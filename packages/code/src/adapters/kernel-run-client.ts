@@ -1,6 +1,10 @@
 import { resolveAgentsByName } from "@clarvis/kernel/config";
+import { readHostedSnapshot } from "@clarvis/kernel";
 import type {
   ConfigService,
+  AttachHostedRunParams,
+  HostedRunAttachment,
+  HostingService,
   ElicitationRequest,
   ElicitationResponse,
   ExtensionProfileRunRef,
@@ -34,6 +38,7 @@ import type { EventSource } from "./event-span.ts";
 import { hasKernelErrorCode } from "./kernel-errors.ts";
 import { detachObserved } from "../core/tasks.ts";
 import { diagnosticEvent } from "../core/diagnostic-events.ts";
+import type { ReconnectMode } from "./connection-state.ts";
 import type {
   MemoryIngestNotice,
   ProfileInfo,
@@ -45,7 +50,7 @@ import type {
 } from "./run-types.ts";
 
 /**
- * The in-process run backend: drives runs through @clarvis/kernel, presenting the
+ * Drives ordinary or hosted runs through the kernel contract, presenting the
  * run-slice surface the UI's run host consumes (startRun → RunHandle, steer,
  * getRun, listProfiles, deleteRun).
  *
@@ -70,7 +75,7 @@ export interface KernelRunClient {
   readonly workspace: WorkspaceRef;
   readonly capabilities: KernelCapabilities;
   connect(): Promise<void>;
-  reconnect(): Promise<void>;
+  reconnect(mode?: ReconnectMode): Promise<void>;
   /** The kernel-resolved agent catalogue; pass an already-fetched list to skip the round trip. */
   listProfiles(
     prefetched?: Awaited<ReturnType<KernelClient["config"]["listAgents"]>>,
@@ -79,6 +84,10 @@ export interface KernelRunClient {
    * routes it as a workflow (manager fanning out leader runs) transparently,
    * returning the same {@link RunHandle} the run host drives. */
   startRun(input: StartRunInput): RunHandle;
+  /** Observe an existing hosted execution without sending another start or prompt. */
+  attachRun(input: AttachHostedRunParams): RunHandle;
+  /** Present only when the connected host advertises independent execution ownership. */
+  readonly hosting?: HostingService;
   /** The workflow tree control plane (kernel.workflows): get/list/delete. */
   readonly workflows: WorkflowsService;
   steer(input: {
@@ -124,19 +133,28 @@ export interface KernelRunClient {
 
 /** Constructor inputs for {@link createKernelRunClient}. */
 export interface KernelRunClientDeps {
-  /** Builds the kernel (production: createFileKernel; tests: a fake). Called on
-   * connect and after reconnect so the process can be torn down and rebuilt. */
+  /** Acquire the current workspace connection after initial discovery or an explicit transition. */
   createKernel: () => Promise<KernelClient>;
-  /** Evict any host-side kernel cache after the old client lease is released. */
-  prepareReconnect?: () => Promise<void>;
+  /** Prepare a verified replacement before releasing the current adapter; refusal preserves it. */
+  prepareReconnect?: (mode: ReconnectMode) => Promise<void>;
   callbacks: KernelRunClientCallbacks;
 }
 
-type ProtoRunHandle = ProtocolRunHandle;
+interface ProtoRunHandle extends ProtocolRunHandle {
+  /** Snapshot prefix owned by this attachment, followed by the ordinary event tail. */
+  replay?: AsyncIterable<RunEvent>;
+  /** Observers do not receive interactive question prompts. */
+  interactive?: boolean;
+  /** Release this attachment after its pump/closure settles, including projection failure. */
+  release?(): Promise<void>;
+}
 
 function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
   return {
     execution_id: executionId,
+    ...(input.configurationSessionId
+      ? { configuration_session_id: input.configurationSessionId }
+      : {}),
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
@@ -159,7 +177,7 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
   };
 }
 
-/** Builds a {@link KernelRunClient} that drives runs through an in-process kernel built by `deps.createKernel`. */
+/** Build the TUI run adapter over a protocol client supplied by the application composition. */
 export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClient {
   const { createKernel, callbacks } = deps;
   let kernel: KernelClient | undefined;
@@ -208,9 +226,9 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     await k?.close();
   }
 
-  async function reconnect(): Promise<void> {
+  async function reconnect(mode: ReconnectMode = "reload"): Promise<void> {
+    await deps.prepareReconnect?.(mode);
     await dispose();
-    await deps.prepareReconnect?.();
     await connect();
   }
 
@@ -321,6 +339,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   async function pumpEvents(executionId: string, handle: ProtoRunHandle): Promise<void> {
     const emitProgress = makeProgressEmitter(executionId);
     try {
+      if (handle.replay !== undefined) {
+        for await (const event of handle.replay) {
+          if (event.type !== "memory_ingest") callbacks.onEvent(event, "replay", executionId);
+        }
+      }
       for await (const event of handle.events) {
         if (event.type === "memory_ingest") {
           callbacks.onMemoryIngest?.(event.detail);
@@ -331,6 +354,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       }
     } catch (error) {
       reportStreamInterrupted(executionId, error);
+      if (handle.replay !== undefined) throw error;
     }
   }
 
@@ -358,31 +382,47 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     diagnosticEvent("run.close.failed", { execution_id: executionId, error }, "debug");
   }
 
-  function driveHandle(executionId: string, handleP: Promise<ProtoRunHandle>): RunHandle {
+  function driveHandle(
+    executionId: string,
+    handleP: Promise<ProtoRunHandle>,
+    hosted = false,
+  ): RunHandle {
     live.set(executionId, handleP);
     let protocolHandle: ProtoRunHandle | undefined;
 
     const started = handleP.then((handle) => {
       protocolHandle = handle;
-      wireElicit(handle);
+      if (handle.interactive !== false) wireElicit(handle);
       return { handle, pump: pumpEvents(executionId, handle) };
     });
-    const done: Promise<RunResult | undefined> = started.then(({ handle }) => handle.done);
+    const done: Promise<RunResult | undefined> = started.then(({ handle, pump }) =>
+      hosted
+        ? Promise.all([handle.done, handle.closed, pump]).then(([result]) => result)
+        : handle.done,
+    );
     const closed = started
       .then(async ({ handle, pump }) => {
-        await handle.closed;
-        await pump;
+        try {
+          await Promise.all([handle.closed, pump]);
+        } finally {
+          await handle.release?.();
+        }
       })
       // A start failure is already reported through `done`; lifecycle closure
       // must remain safe for detached physical-lifecycle observers.
-      .catch((error: unknown) => reportCloseFailure(executionId, error))
+      .catch((error: unknown) => {
+        reportCloseFailure(executionId, error);
+        if (hosted) throw error;
+      })
       .finally(() => {
         if (live.get(executionId) === handleP) live.delete(executionId);
       });
+    if (hosted) detachObserved("hosting.observation.closed", () => closed);
 
     return {
       executionId,
       cancel: () => handleP.then((handle) => handle.cancel()),
+      ...(hosted ? { releaseObservation: () => handleP.then((handle) => handle.release?.()) } : {}),
       done,
       closed,
       buffered: () => protocolHandle?.buffered?.(),
@@ -391,7 +431,54 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
 
   function startRun(input: StartRunInput): RunHandle {
     const executionId = input.executionId ?? "exec_" + crypto.randomUUID();
-    return driveHandle(executionId, requireKernel().runs.start(toStartParams(input, executionId)));
+    const current = requireKernel();
+    const params = toStartParams(input, executionId);
+    if (current.hosting === undefined) return driveHandle(executionId, current.runs.start(params));
+    const service = current.hosting;
+    const handle =
+      input.session === undefined
+        ? Promise.reject(new Error("hosted turn requires a persisted conversation revision"))
+        : service
+            .start({ ...input.session, params: { ...params, execution_id: executionId } })
+            .then((attachment) => hostedHandle(service, attachment, true));
+    return driveHandle(executionId, handle, true);
+  }
+
+  function hostedHandle(
+    service: HostingService,
+    attachment: HostedRunAttachment,
+    interactive: boolean,
+  ): ProtoRunHandle {
+    const { handle } = attachment;
+    return {
+      ...handle,
+      interactive,
+      replay: {
+        async *[Symbol.asyncIterator]() {
+          for await (const frame of readHostedSnapshot(service, attachment.snapshot))
+            yield frame.event;
+        },
+      },
+      events: {
+        async *[Symbol.asyncIterator]() {
+          for await (const frame of handle.events) yield frame.event;
+        },
+      },
+      release: () => service.releaseObservation(attachment.observation_id),
+    };
+  }
+
+  function attachRun(input: AttachHostedRunParams): RunHandle {
+    const service = requireKernel().hosting;
+    if (service === undefined) throw new Error("backend does not support hosted runs");
+    if (live.has(input.execution_id)) throw new Error("this client already observes the execution");
+    return driveHandle(
+      input.execution_id,
+      service
+        .attach(input)
+        .then((attachment) => hostedHandle(service, attachment, input.control !== "observe")),
+      true,
+    );
   }
 
   async function steer(input: {
@@ -413,6 +500,15 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     request?: string;
     mechanicalTargetTokens?: number;
   }): Promise<CompactResult> {
+    if (requireKernel().hosting !== undefined) {
+      const active = live.get(input.executionId);
+      if (active !== undefined) {
+        if (input.mechanicalTargetTokens !== undefined)
+          throw new Error("mechanical compaction requires an idle hosted run");
+        await (await active).compact(input.request);
+        return { status: "queued", execution_id: input.executionId };
+      }
+    }
     return requireKernel().runs.compact(
       input.executionId,
       input.request,
@@ -566,6 +662,10 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     reconnect,
     listProfiles,
     startRun,
+    attachRun,
+    get hosting() {
+      return kernel?.hosting;
+    },
     steer,
     compact,
     context,

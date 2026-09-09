@@ -15,6 +15,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   bridges, persistent workspace-scoped `mise` tool caches, and bounded loopback service exposure.
 - Advanced global runtime recipes can build a reusable operator-customized Docker image on first use
   without exposing the recipe as a guest tool or modifying the canonical release image.
+- `/clarvis-configure` ships configuration guidance as TypeScript and starts an explicitly approved
+  native run for editing authored global/workspace configuration, agents, skills, workflows and
+  Extension Profiles. Credential stores and private state remain excluded from its file tools.
+- `/loop` schedules user-authored prompts by interval or five-field cron in the current conversation,
+  with bounded attempts, human interaction priority, pause/resume and scoped cancellation. Schedules
+  live only while the TUI is open; interval jobs wait after each completed run.
+- `/background` hands an active run to the workspace host so it can continue after the TUI exits.
+  Reopening that workspace offers the existing run or a new conversation; `/background list` and
+  `/attach` recover the same execution without resubmitting its prompt.
 
 ### Changed
 
@@ -23,6 +32,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - Runtime startup is demand-driven. An operational Docker startup failure falls back to required
   native sandboxing by default and reports the effective placement; integrity and policy failures
   still fail closed.
+- `/reconnect` restores the connection to the existing workspace host. `/reconnect reload` explicitly
+  restarts an idle host to activate pinned configuration and refuses while physical work is active.
+- Builtin configuration guidance covers scheduling, background runs and reload. Documentation
+  maintenance now includes synchronizing that shipped guide with the owning contracts.
 
 ### Security
 
@@ -30,6 +43,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   Clarvis workspace control paths are mounted read-only, while the selected project remains
   intentionally writable and default outbound networking can reach host/LAN peers and transmit
   readable workspace data.
+- Stdio MCP connections and MCP hooks execute inside Docker/Podman guests. Authenticated HTTP/SSE
+  connections stay host-owned behind scoped operations, retaining host tool policy, bounded RPC
+  handling and human elicitation without exposing credentials to the guest.
+- Native configuration consent lasts only in the currently live TUI session; resume and reconnection
+  require fresh approval. Configuration runs cannot be detached into background execution.
 
 ## [0.1.1] - 2026-09-04
 

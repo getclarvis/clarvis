@@ -50,6 +50,9 @@ import {
 } from "../runs/coalesce-events.ts";
 import { CLARVIS_WIRE_VERSION } from "./wire.ts";
 import { decodeRunEvent } from "./run-event-codec.ts";
+import { createHostingClient } from "./hosting-client.ts";
+import { createLocalHostClient } from "./local-host-client.ts";
+import { wireId } from "./hosting-codec.ts";
 
 /**
  * A client-side kernel façade over a {@link KernelTransport} — the remote-ready
@@ -67,8 +70,8 @@ export interface RemoteKernel extends KernelClient {
   /** List the agents available in the bound workspace (a convenience alias for `config.listAgents`). */
   listAgents(): Promise<AgentSummary[]>;
   /**
-   * Close the connection: settle every in-flight run as `unavailable`, detach the
-   * close listener, and close the transport. Idempotent.
+   * Close the connection: settle ordinary in-flight handles as `unavailable`, reject unfinished
+   * hosted observations without fabricating a run result, and release the transport. Idempotent.
    */
   close(): Promise<void>;
 }
@@ -149,6 +152,7 @@ export async function connectKernelClient(
   const configSubs = new Map<string, (change: ConfigChange) => void>();
   const notificationOffs: Array<() => void> = [];
   let closed = false;
+  let hosted: ReturnType<typeof createHostingClient> | undefined;
   let offClose: (() => void) | undefined;
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -183,6 +187,7 @@ export async function connectKernelClient(
   };
   const clearClientSubscriptions = (): void => {
     configSubs.clear();
+    hosted?.close();
   };
   const observe = (method: string, handler: (params: unknown) => void): void => {
     notificationOffs.push(transport.onNotification(method, handler));
@@ -387,6 +392,12 @@ export async function connectKernelClient(
     !hasOnly(hello, ["wire_version", "capabilities", "project", "workspace", "principal"]) ||
     hello.wire_version !== CLARVIS_WIRE_VERSION ||
     !isRecord(hello.capabilities) ||
+    (hello.capabilities.local_host !== undefined &&
+      (hello.capabilities.local_host !== true || hello.capabilities.hosting === undefined)) ||
+    (hello.capabilities.hosting !== undefined &&
+      (!isRecord(hello.capabilities.hosting) ||
+        !hasOnly(hello.capabilities.hosting, ["host_generation"]) ||
+        !wireId(hello.capabilities.hosting.host_generation))) ||
     !validRuntime ||
     !isRecord(hello.project) ||
     !isRecord(hello.workspace) ||
@@ -410,6 +421,16 @@ export async function connectKernelClient(
     throw new Error(
       `kernel selected an invalid or unsupported Clarvis wire contract '${String(selected)}'`,
     );
+  }
+
+  if (hello.capabilities.hosting !== undefined) {
+    hosted = createHostingClient({
+      transport,
+      generation: hello.capabilities.hosting.host_generation,
+      workspaceId: hello.workspace.id,
+      logger,
+      protocolViolation,
+    });
   }
 
   /**
@@ -604,6 +625,10 @@ export async function connectKernelClient(
     workspace: hello.workspace,
     ...(hello.principal !== undefined ? { principal: hello.principal } : {}),
     runs,
+    ...(hosted === undefined ? {} : { hosting: hosted.service }),
+    ...(hello.capabilities.local_host === true
+      ? { localHost: createLocalHostClient(transport, hello.capabilities.hosting!.host_generation) }
+      : {}),
     config,
     plugins,
     extensionProfiles,

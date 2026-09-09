@@ -101,6 +101,13 @@ try {
 }
 ```
 
+`buildExecuteRunDeps({ composeSkills })` lets a host add embedded skills after ordinary discovery
+without changing the filesystem scanner or the engine's optional dependency boundary. The callback
+runs once only when skills are enabled, and receives the discovered provider or `undefined` after
+a discovery failure. Its result backs both the skills capability and the returned owner-facing
+provider. The kernel uses this seam for its shipped configuration guide; the engine does not own
+the guide or its reserved name. Existing `use_skills` grants still control model access.
+
 `buildExecuteRunDeps({ mcpAuthorization })` optionally creates the shared remote-MCP OAuth
 coordinator. The host owns the private store path and may supply a browser opener; the builder wires
 the coordinator into HTTP/SSE transports and closes its callback listener together with the

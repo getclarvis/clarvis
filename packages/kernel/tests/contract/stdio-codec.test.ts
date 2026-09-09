@@ -29,6 +29,38 @@ class GatedWritable extends Writable {
 }
 
 describe("stdio NDJSON codec", () => {
+  it.each(["count", "bytes"] as const)(
+    "bounds inbound %s before invoking another handler",
+    async (kind) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const closed = Promise.withResolvers<void>();
+      let admitted = 0;
+      const server: KernelServer = {
+        connect() {
+          return {
+            handle(_method, _params, signal) {
+              admitted += 1;
+              return new Promise((resolve) =>
+                signal?.addEventListener("abort", () => resolve({}), { once: true }),
+              );
+            },
+            close: () => closed.resolve(),
+          };
+        },
+      };
+      serveKernelOverStdio(server, { input, output });
+      const count = kind === "count" ? 129 : 3;
+      const params = kind === "count" ? {} : { body: "x".repeat(6 * 1024 * 1024) };
+      for (let id = 1; id <= count; id++)
+        input.write(`${JSON.stringify({ t: "req", id, method: "probe", params })}\n`);
+      await closed.promise;
+      expect(admitted).toBe(kind === "count" ? 128 : 2);
+      expect(input.destroyed).toBe(true);
+      expect(output.destroyed).toBe(true);
+    },
+  );
+
   it("reassembles chunked frames and dispatches notifications", async () => {
     const input = new PassThrough();
     const output = new PassThrough();

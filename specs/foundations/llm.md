@@ -1164,6 +1164,22 @@ logger is defaulted to `NOOP_LOGGER` at construction rather than optionally chai
 
 ## 7. Coupling
 
+The kernel's isolated runtime consumes the host `LLMProvider` port built by the loop, without a
+direct dependency on this package. It resolves admitted provider/model configuration on the host,
+reconstructs capabilities, forwards per-call retry limits, and preserves typed `ProviderError`
+recovery/accounting fields over the private channel. Physical requests still pass through this
+package's admission and retry decorators. The wire schema and bounded queue belong to
+[isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Production: `hostModelBroker` in
+[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts), `modelBody`
+in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
+`encodeRuntimeProviderError` in
+[`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts).
+Test: real host SDK and retry-decorator cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+and typed provider error round-trips in
+[`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts).
+
 ### 7.1 What this package depends on
 
 | Dependency | Kind | What forces it |

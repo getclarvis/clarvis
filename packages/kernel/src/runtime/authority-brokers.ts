@@ -1,4 +1,5 @@
 import { boundJsonValue } from "../core/bounded-json.ts";
+import { createSemaphore } from "@clarvis/capability";
 
 /** Host-owned allowance for one runtime's authenticated model traffic. */
 export interface ModelBrokerLease {
@@ -10,6 +11,8 @@ export interface ModelBrokerLease {
   readonly destination: URL;
   readonly expiresAt: number;
   readonly maxConcurrent: number;
+  /** Bounded FIFO waiting allowance, independent of container CPU resources. */
+  readonly maxQueued?: number;
   readonly maxInputBytes: number;
   readonly maxOutputBytes: number;
 }
@@ -72,7 +75,8 @@ export function createModelBroker(
   execute: HostModelExecutor,
   now: () => number = Date.now,
 ): ModelBroker {
-  let active = 0;
+  const permits = createSemaphore(lease.maxConcurrent);
+  let admitted = 0;
   let revoked = false;
   const liveControllers = new Set<AbortController>();
   return {
@@ -92,17 +96,24 @@ export function createModelBroker(
       if (byteLength(request.body) > lease.maxInputBytes) {
         throw brokerError("resource_exhausted", "model input exceeds the lease bound");
       }
-      if (active >= lease.maxConcurrent) {
-        throw brokerError("resource_exhausted", "model lease concurrency is exhausted");
+      signal?.throwIfAborted();
+      if (admitted >= lease.maxConcurrent + (lease.maxQueued ?? 0)) {
+        throw brokerError("resource_exhausted", "model lease queue is full");
       }
       const controller = new AbortController();
       const abort = (): void => controller.abort(signal?.reason);
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted === true) abort();
       liveControllers.add(controller);
-      active += 1;
+      admitted += 1;
+      let acquired = false;
       try {
+        await permits.acquire(controller.signal);
+        acquired = true;
         controller.signal.throwIfAborted();
+        if (now() >= lease.expiresAt) {
+          throw brokerError("unauthorized", "model lease expired while queued");
+        }
         const events: unknown[] = [];
         let outputBytes = 0;
         for await (const event of execute(request, {
@@ -140,7 +151,8 @@ export function createModelBroker(
         controller.abort(new Error("model broker call closed"));
         signal?.removeEventListener("abort", abort);
         liveControllers.delete(controller);
-        active -= 1;
+        admitted -= 1;
+        if (acquired) permits.release();
       }
     },
     revoke(): void {

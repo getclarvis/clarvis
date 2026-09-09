@@ -99,8 +99,11 @@ const NO_COUNTER_ALLOWLIST = {
     // cover is the PTY-driven artifact smoke. Splitting the entry keeps heavy
     // code out of first paint but does not make either module safe to import into
     // the in-process coverage runner.
+    // `src/local-host.ts` boots the companion process. Kernel measures its shared
+    // composition; installed-artifact and PTY checks exercise this entry itself.
     "src/cli.ts",
     "src/index.tsx",
+    "src/local-host.ts",
     "src/runtime.tsx",
   ],
   hooks: [],

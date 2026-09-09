@@ -175,6 +175,12 @@ global root first and the workspace root second, so precedence is `workspace > g
 An override replaces the complete definition; it is not merged round by round. A malformed document
 is diagnosed and contributes no override, leaving a same-named built-in available.
 
+The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
+and a separate skill launcher targeting Admiral. Its native configuration mode can write those files;
+an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
+independent of Extension Profile selection, while a standalone launcher must be selected by a custom
+profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.
+
 Every round declares both `title` and `brief`. The title is an interpolated, single-line label for the
 leader roster; the brief is the complete task prompt. A title is required, cannot exceed 60 Unicode
 code points, and is never synthesized from or clipped out of the brief.

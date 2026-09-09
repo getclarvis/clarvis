@@ -22,6 +22,7 @@ export type {
   RunEventSource,
 } from "./runs/event-policy.ts";
 export { deriveRunEventSpan, iterationSpanId } from "./runs/run-event-span.ts";
+export { buildRecoveredContext, buildSkillRunDigest } from "./runs/recovered-context.ts";
 export type { RunEventSpan, SpanPhase, SpanKind } from "./runs/run-event-span.ts";
 export {
   engineResultToProto,

@@ -43,6 +43,8 @@ export function createRuntimeSupervisor(backend: RuntimeBackend): RuntimeSupervi
           return active === undefined || started.closed;
         },
         startRun: (runId, envelope, signal) => started.startRun(runId, envelope, signal),
+        callHookMcp: (runId, call, signal) => started.callHookMcp(runId, call, signal),
+        elicitMcp: (runId, input, signal) => started.elicitMcp(runId, input, signal),
         steer: (runId, input, signal) => started.steer(runId, input, signal),
         cancel: (runId) => started.cancel(runId),
         exposePort: (guestPort, protocol, signal) =>

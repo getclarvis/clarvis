@@ -61,10 +61,15 @@ export function ElicitBlock(props: {
   const form = parseElicitForm(props.request);
   const fields = form.fields;
   const isGuard = props.request.kind === "guard_confirm";
+  const isConfiguration = props.request.kind === "configuration_access";
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
   const accent = (): string =>
-    isGuard ? tokens.warn : isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent;
+    isGuard || isConfiguration
+      ? tokens.warn
+      : isPlanReview || isWorkflowReview
+        ? tokens.accent2
+        : tokens.accent;
 
   /** `title` + `revision N · M tasks · retention: keep`, or null when the plan
    * projection has not arrived. */
@@ -321,13 +326,15 @@ export function ElicitBlock(props: {
       backgroundColor={tokens.bg}
     >
       <text fg={accent()} flexShrink={0}>
-        {isGuard
-          ? glyph("warning") + " Command approval"
-          : isPlanReview
-            ? "Plan approval required"
-            : isWorkflowReview
-              ? "Workflow approval required"
-              : "Agent asks"}
+        {isConfiguration
+          ? glyph("warning") + " Native configuration access"
+          : isGuard
+            ? glyph("warning") + " Command approval"
+            : isPlanReview
+              ? "Plan approval required"
+              : isWorkflowReview
+                ? "Workflow approval required"
+                : "Agent asks"}
       </text>
       <Show when={planSummary()} keyed>
         {(summary: { title: string; meta: string }) => (

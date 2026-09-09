@@ -28,6 +28,46 @@ function fixture() {
   return { ...f, receipt, controller, attached, handoffs: () => handoffs, exits: () => exits };
 }
 
+test("archives only the observed unknown generation and acknowledges after durable recovery", async () => {
+  const f = fixture();
+  const ref = hostedRef({ execution_state: "unknown" });
+  const calls: string[] = [];
+  const resolution = {
+    kind: "operator_verified_physical_closure" as const,
+    previous_host_generation: ref.host_generation,
+    resolving_host_generation: "current",
+    operator_connection_id: "operator",
+    resolved_at: 20,
+  };
+  f.service.resolveRecovery = async (input) => {
+    expect(input).toEqual({
+      execution_id: ref.execution_id,
+      host_generation: ref.host_generation,
+      revision: ref.revision,
+      physical_work_stopped: true,
+    });
+    calls.push("resolve");
+    return { ...ref, execution_state: "closed", recovery_resolution: resolution };
+  };
+  f.service.acknowledge = async () => {
+    calls.push("acknowledge");
+  };
+  await f.controller.resolveRecovery(ref);
+  expect(calls).toEqual(["resolve", "acknowledge"]);
+  expect(f.attached).toEqual([]);
+  f.service.resolveRecovery = async () => {
+    throw new Error("audit unavailable");
+  };
+  await expect(f.controller.resolveRecovery(ref)).rejects.toThrow("audit unavailable");
+  expect(calls).toEqual(["resolve", "acknowledge"]);
+  await f.controller.resolveRecovery({
+    ...ref,
+    execution_state: "closed",
+    recovery_resolution: resolution,
+  });
+  expect(calls).toEqual(["resolve", "acknowledge", "acknowledge"]);
+});
+
 test("coalesces handoff and exits only after its confirmed receipt", async () => {
   const f = fixture();
   const pending = f.controller.background();

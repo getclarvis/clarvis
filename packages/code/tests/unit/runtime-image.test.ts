@@ -17,6 +17,28 @@ function manifest(version = "1.2.3"): Record<string, unknown> {
   };
 }
 
+test("generation shutdown cancels release manifest acquisition", async () => {
+  const controller = new AbortController();
+  const entered = Promise.withResolvers<void>();
+  const fetcher = (async (_input: unknown, options: RequestInit) => {
+    const signal = options.signal!;
+    const stopped = new Promise<never>((_resolve, reject) =>
+      signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true }),
+    );
+    entered.resolve();
+    return stopped;
+  }) as unknown as typeof fetch;
+  const refused = resolveClarvisRuntimeImage({
+    currentVersion: "1.2.3",
+    environment: {},
+    signal: controller.signal,
+    fetcher,
+  }).catch((error: unknown) => error);
+  await entered.promise;
+  controller.abort(new Error("host retired"));
+  expect(await refused).toMatchObject({ message: "host retired" });
+});
+
 test("source development selects the local image without any network request", async () => {
   let fetched = false;
   await expect(

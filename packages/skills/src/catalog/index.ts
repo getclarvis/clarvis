@@ -3,7 +3,12 @@ import type { SkillInfo } from "../types.ts";
 export const MAX_SKILL_CATALOG_CHARS = 8_000;
 
 function catalogLine(skill: SkillInfo, compact: boolean): string {
-  const location = skill.source === "builtin" ? "builtin; load by name" : `path: ${skill.path}`;
+  const location =
+    skill.source === "builtin"
+      ? "builtin; load by name"
+      : skill.resourceAccess === "remote"
+        ? "remote; load by name; resources via read_skill_resource"
+        : `path: ${skill.path}`;
   return compact
     ? `- **${skill.name}** (${location})`
     : `- **${skill.name}** — ${skill.description} (${location})`;
@@ -11,7 +16,7 @@ function catalogLine(skill: SkillInfo, compact: boolean): string {
 
 /**
  * Render a bounded skill catalog as Markdown bullets containing each skill's
- * name, description, and absolute `SKILL.md` path or embedded-builtin label for prompt injection.
+ * name, description, and filesystem path or embedded/remote access instructions for prompt injection.
  *
  * @param skills - builtins precede external skills, each group sorted by name without
  *   mutating the input.

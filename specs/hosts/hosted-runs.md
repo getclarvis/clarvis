@@ -82,12 +82,32 @@ The bounded host list shows identity, state, configuration and attention. Enter 
 another TUI's controlled run, or opens a closed result. Taking another controller requires explicit
 confirmation. Starting another conversation does not attach to the listed run.
 
+`createBackgroundListController` owns bounded polling, coalesced refresh, loading/error state and
+serialized attach/cancel operations, including the interval spent awaiting takeover confirmation.
+Disposal removes the wakeup and suppresses late list results and operation events. `BackgroundView`
+keeps keyed rows, selection by execution identity, keyboard navigation and visual confirmation.
+Production: [controller.ts](../../packages/code/src/features/background/controller.ts) and
+[view.tsx](../../packages/code/src/features/background/view.tsx). Test:
+[background-list-controller.test.ts](../../packages/code/tests/unit/background-list-controller.test.ts).
+
 `/attach <execution-id>` resolves an exact workspace execution. `/background cancel <execution-id>`
 requests cancellation only when another TUI does not own control. Temporary cancel observations are
 released after delivery or failure; cancellation acknowledgement never releases host physical work.
 `RunHost.resumeSessionById` also consults the live host before loading historical traces. Attach
 preserves execution identity and does not resubmit the prompt. Closed results load canonical history
-and are acknowledged only if that resume still owns the selected conversation.
+and are acknowledged only if that resume still owns the selected conversation. A live controlled
+observation is acknowledged by `createKernelRunClient` only after its prefix, tail, result and host
+settlement have all been consumed successfully, before observation release and readiness. An explicit
+release, observer-only attachment, transport failure or failed settlement does not dismiss that
+result. Acknowledgement failure rejects readiness and still attempts observation release.
+Production: `driveHandle` and `hostedHandle` in
+[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts), using
+`createHostedObservationLease` in
+[hosted-observation.ts](../../packages/code/src/adapters/hosted-observation.ts). Test:
+[kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts) covers
+physical/ack ordering, abandoned observations, observer attachments and acknowledgement failure;
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) covers forty
+foreground turns while retaining an unseen background result.
 
 The observed run's confirmed `continue` policy is projected through `RunHost.continuesOnExit`.
 The activity line shows `continues after exit`; `/quit` does not arm the run-loss confirmation for
@@ -148,8 +168,9 @@ cleanliness/ownership cases in
 
 `startHeadlessRun` materializes and reads back an empty canonical conversation before hosted
 admission. Its observation delivers the immutable prefix before the live tail. Print waits for
-event drainage and physical closure before closing its connection; a refused hosted start cannot
-fall back to `runs.start`.
+event drainage, physical closure and acknowledgement through the same observation lease as the TUI
+before releasing its observation and closing its connection. An abandoned event iterator retains the
+unconsumed result for later inspection. A refused hosted start cannot fall back to `runs.start`.
 
 Production: [headless-run.ts](../../packages/code/src/adapters/headless-run.ts) and `runPrintMode` in
 [runtime.tsx](../../packages/code/src/runtime.tsx). Test:
@@ -246,6 +267,16 @@ receives a fresh scope. At most 64 conversation scopes are retained per connecti
 revocation callback fails, a disconnected peer and its controls become unusable before that error is
 reported; all scopes are attempted. The concrete guard/configuration policy supplies this callback.
 
+Native and guest command approval consult the same live scope. `runtime.guard_approval` derives shell
+facts on the host from the displayed command; callers cannot submit an allowlist scope or forged
+parsed segments. Every coverage check resolves the current scope, and answers received after that
+scope retires deny even when the old dialog selected one-time approval. Human fallback answers are
+not cached by the judge or capability broker. Production: `createGuardHumanApproval` in
+[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts) and `createHostGuardApprovalGrant`
+in [guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts). Test:
+[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
+and [runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts).
+
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,
 forged-peer, takeover, conversation-resume, independent-limit and revocation-failure cases in
@@ -268,8 +299,11 @@ leave its pending map, and responding to such an id fails with `not_found`. Repe
 register another callback on the source handle. Subscriber callbacks are removable and bounded.
 
 Semantic `done`, source event end, physical `closed` and host reconciliation are independent. The
-execution's `settled` promise waits for all of them; its state reports reconciliation failure
-explicitly. Closing an observation is not physical completion. A storage failure retires observers,
+execution's `settled` promise also awaits its owner's `commitTerminal` transaction. Successful
+subscriber `closed` and `terminalCommitted` mean reconciliation, durable terminal discovery and
+admission release have finished. Until then the reference remains `finishing`; neither semantic
+`done` nor physical exit alone permits reuse. A reconciliation or terminal commit failure rejects
+subscriber closure and reports unknown/recovery state while keeping the conversation occupied. Closing an observation is not physical completion. A storage failure retires observers,
 requests run cancellation and keeps draining until the real source closes. It prevents further
 recoverable attaches; existing run/session stores remain the authority for any reconciled outcome.
 
@@ -298,6 +332,23 @@ Run controls capture the current controller epoch. Observers cannot mutate; taki
 controller requires explicit takeover. Authority is checked again after asynchronous observation
 preparation. A connection can hold four observations, counting preparations already in flight.
 Closing control cancels unpromoted work and revokes its interactive consent. Promoted work continues.
+An authenticated operator may call `controlObservation(observationId, "acquire" | "takeover")`
+on its existing observation. It creates no snapshot/subscription and updates only that observation's
+captured controller epoch. A foreign/released observation, observer role, committing handoff or
+ended occupancy is refused. Acquiring occupied control still requires explicit takeover; older
+observation handles retain their previous epoch and fail control checks.
+Code routes takeover of an already observed execution through this method, retaining the session,
+transcript, pump and observation ID. Confirmed acquisition wires interactive questions once and
+permits normal result acknowledgement after complete consumption and host closure.
+Production: `createHostedRegistry` in [registry.ts](../../packages/kernel/src/hosting/registry.ts),
+`hostedHandle`/`driveHandle` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts),
+and `attachHostedRun` in [run-host.ts](../../packages/code/src/run-host.ts).
+Test: existing-observation takeover and old-controller fencing in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) and
+[hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts);
+preserved TUI session/stream and controlled result consumption in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts) and
+[kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts).
 Local activity leases share conversation admission and remain occupied if their connection dies
 without proving physical completion; releasing an unknown or foreign lease is refused.
 
@@ -310,6 +361,22 @@ waits on the admitted handoff's outcome before
 applying cancel/continue. Receipt lookup on a new authenticated connection preserves its operation id;
 current run state accompanies the receipt, including completion during commit.
 
+Handoff failures carry `HostedHandoffFailureDetails` in `KernelError.details`:
+`{handoff: {operation_id, admission: "refused" | "uncertain"}}`. Before its identity is admitted,
+a definitive refusal leaves that identity unused. Previously admitted, failed or expired identities
+remain uncertain and cannot be replayed. The Code run host clears its pending handoff only for a
+matching explicit refusal, allowing a fresh operation after the refusal cause is resolved.
+An unclassified failure, mismatched operation identity or missing receipt retains uncertainty and
+continues receipt lookup without repeating detach.
+Production: `HostingService` and `HostedHandoffFailureDetails` in
+[hosting.ts](../../packages/protocol/src/hosting.ts), `createHostedRegistry` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts), and `backgroundCurrentRun` in
+[run-host.ts](../../packages/code/src/run-host.ts).
+Test: pre-admission refusal and failed durable handoff in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts),
+and definite refusal, uncertain conflict and lost receipt recovery in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
 The registry retains at most 32 runs and 128 handoff operation identities per generation. Receipt
 lookup expires after 24 hours by default; an expired/failed operation id is never replayed. The commit
 queue holds at most 16 operations and an encoded index cannot exceed 2 MiB. No provider credentials,
@@ -319,7 +386,12 @@ are outside that port. Reclamation failures cannot silently free retention capac
 
 Physical run closure, conversation reconciliation and terminal index commit must all succeed before
 the registry releases occupancy. Failure leaves explicit unknown/recovery state and blocks unsafe
-reuse. Host shutdown separately cancels all remaining roots and waits for preparation and physical
+reuse. `commitTerminal` is the single settlement barrier shared with the execution pump; handoff
+index writes preserve the current lifecycle rather than restoring an older captured state.
+Test: the blocked/failed terminal commit and completion-during-handoff cases in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) verify that
+awaiting successful `closed` permits the next turn immediately.
+Host shutdown separately cancels all remaining roots and waits for preparation and physical
 teardown; a single client's `close` never invokes that shutdown.
 
 Production: `createHostedRegistry`, `PreparedHostedTurn` and `HostedRegistryState` in
@@ -350,6 +422,52 @@ the `initialState`, `sync` and `acknowledge` boundaries in
 [hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts) covers
 old-generation controls, unknown occupancy, terminal acknowledgement, corrupt/oversized indexes and
 expired receipts. This is recovery of discovery metadata, not resumption after a process crash.
+
+### Explicit operator recovery
+
+`HostingService.resolveRecovery` accepts only an authenticated operator, an old execution's exact
+generation and revision, and `physical_work_stopped: true`. The operator must first verify that all
+processes and containers belonging to the old work have stopped. A missing host record or dead host
+PID alone does not establish this. The host records an operator attestation; it does not independently
+prove process closure or remote side effects. Current-generation executions, live occupancy, missing
+confirmation and stale revisions are refused. Guest capabilities do not expose this operation.
+
+`archiveRecovery` first commits a `HostedRecoveryResolution` on the canonical session turn. The
+receipt names the old and resolving generations, the authenticated connection and the verification
+time. An unfinished turn becomes `interrupted`; known terminal status and usage remain intact, and
+no execution end time or run result is invented. If intent never reached the session, a transcript
+audit turn records its identity. That conversation is archived: later model admission requires a
+new conversation, preserving history without replaying uncertain actions. Metadata reads, export
+and explicit deletion retain their ordinary contracts.
+
+Only after the session audit is durable does the registry commit the discovery row as physically
+`closed`, retaining any already known outcome and recovery error. It then releases unresolved
+physical occupancy. If either write fails, the row remains unresolved; a retry reuses a previously
+committed session audit. Concurrent confirmations share one operation. Host shutdown awaits that
+operation. Ordinary acknowledgement may now remove the discovery row and private observation
+projection while the session audit remains. These archived records therefore do not exhaust the
+retained-run index. Maintenance still requires every live run/activity and remaining unknown
+physical execution to be absent.
+
+Production: `resolveRecovery` in [registry.ts](../../packages/kernel/src/hosting/registry.ts),
+`archiveRecovery` and archived-conversation admission in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), and the coordinator composition in
+[file-host.ts](../../packages/kernel/src/hosting/file-host.ts). Test:
+[hosted-recovery.test.ts](../../packages/kernel/tests/component/hosted-recovery.test.ts),
+`durably archives unknown turns with %s intent without inventing outcomes or replay` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts), and
+`operator recovery preserves the session audit and unlocks maintenance over local IPC` in
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+The background list's `archive recovery` action presents the generation/run identity and physical
+verification statement before confirmation. Declining or leaving the view does not publish recovery.
+After confirmation, it acknowledges only a matching durable recovery response; a lost response
+requires refreshing discovery before another action. Production: `BackgroundView` and
+`createBackgroundListController` in
+[view.tsx](../../packages/code/src/features/background/view.tsx) and
+[controller.ts](../../packages/code/src/features/background/controller.ts). Test:
+[background-controller.test.ts](../../packages/code/tests/unit/background-controller.test.ts) and
+[background-list-controller.test.ts](../../packages/code/tests/unit/background-list-controller.test.ts).
 
 ## File kernel composition
 
@@ -406,7 +524,8 @@ model, and verifies the original inputs, duplicate-id refusal, lease release and
 lease before constructing a FileKernel. A contender returns without constructing a second kernel.
 Private state must be outside the writable workspace. The host generates an independent random
 connection credential; it is not a provider credential and never enters the run index or guest.
-The credential record includes schema/wire, artifact, account/workspace namespace, host generation,
+The schema-2 credential record includes wire, artifact, effective operator-policy identity,
+account/workspace namespace, host generation,
 machine, endpoint and diagnostic PID. Discovery is a hint: an authenticated hello must confirm the
 expected workspace and generation before a client can use the connection.
 
@@ -438,9 +557,35 @@ reports unconfirmed startup. `bin.ts` accepts the strict private `--local-host` 
 preserving ordinary stdio serving. Selecting and retaining the installed artifact is the application
 composition's responsibility, not authority supplied over RPC.
 
+Reuse also requires the same resolved operator execution policy. The identity covers the explicit
+non-secret loop projection and the enabled/confine/grant tool policy; raw environment values,
+credentials, owner and diagnostics are excluded. Equivalent environment spellings compare equally.
+Both narrower and wider policy refuse reuse, preserving admitted work and the original generation.
+The operator reconnects with the original policy, requests an idle host restart, then launches with
+the desired policy. The launcher never silently mutates policy or restarts an active host.
+Production: `localKernelPolicyIdentity` in
+[policy-identity.ts](../../packages/kernel/src/hosting/policy-identity.ts),
+`connectOrLaunchLocalKernel` in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
+`serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts).
+Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts)
+and the independent process test that preserves its background execution after incompatible
+tool/default/ceiling reconnect attempts in
+[local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
+
 The host normally exits after 60 seconds with no clients or physical work. The idle boundary includes
 preparation/runs, local activities, maintenance, disconnect cleanup, index commits, and the FileKernel's
-execution leases. Pending/running/retry memory jobs also keep it alive. Closing a client never invokes
+execution leases. Pending/running/retry memory jobs also keep it alive. A supported but disabled
+workspace memory capability does not keep an idle host alive: only `capability_disabled` with
+`MEMORY_NOT_CONFIGURED` means no active memory instance. Other queue inspection failures prevent
+automatic retirement; they are not treated as an empty queue.
+Production: `memoryKeepsHostAlive` in
+[memory-activity.ts](../../packages/kernel/src/hosting/memory-activity.ts). Test:
+[host-memory-activity.test.ts](../../packages/kernel/tests/unit/host-memory-activity.test.ts)
+covers absent/disabled memory, job states and inspection errors; `retires an idle memory-capable
+process with workspace memory disabled` in
+[local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
+verifies process discovery retirement with the real file host.
+Closing a client never invokes
 the physical host's close. Host shutdown closes the listener, drains/cancels the kernel, then removes
 discovery and releases its lease. Durable terminal references and canonical traces/sessions remain.
 

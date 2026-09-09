@@ -378,6 +378,8 @@ An ACK does not prove physical closure. Reattach observes the same execution/con
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
 exit policy. Native configuration and local !commands cannot detach. Questions still need a person
 and retain timeouts; detach never approves them or restores configuration consent on attachment.
+Detach, takeover, disconnect and conversation close revoke native and container allow_session command
+approvals. Reattach needs fresh approval when asked.
 Normal isolation remains. The host must stay alive: crashes/reboots do not checkpoint-resume runs.
 Reconcile uncertain results before retrying. For /loop, only an admitted run can continue;
 the recurring schedule ends with the TUI.

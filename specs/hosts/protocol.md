@@ -429,6 +429,22 @@ not the same declared type.
 `KernelError` (`packages/protocol/src/common.ts`) wraps a code with a `message: string` and optional `details:
 unknown` ("machine detail — validation issues, provider error, …", `packages/protocol/src/common.ts`).
 
+`HostedHandoffFailureDetails` in [hosting.ts](../../packages/protocol/src/hosting.ts) classifies
+one handoff `operation_id` as `refused` before admission or `uncertain` after admission in
+`details.handoff`. An absent classification remains uncertain. The concrete admission/receipt
+contract and its source/test evidence belong to [hosted runs](hosted-runs.md#registry-and-handoff-transactions).
+`HostingService.controlObservation` returns confirmed control metadata for an existing
+connection-owned observation without reattaching or replacing its snapshot/stream. Its operator
+authority and epoch-fencing invariants share that hosted-run contract.
+
+`ResolveHostedRecoveryParams` requires an old execution generation, observed revision and explicit
+physical-closure confirmation. The operator-only `HostingService.resolveRecovery` returns a
+physically closed reference with `HostedRecoveryResolution`, without manufacturing an outcome.
+The canonical session turn retains the resolution after discovery acknowledgement and archives the
+conversation against further inference. Production: [hosting.ts](../../packages/protocol/src/hosting.ts)
+and [sessions.ts](../../packages/protocol/src/sessions.ts). The commit ordering, authority and tests
+are owned by [explicit operator recovery](hosted-runs.md#explicit-operator-recovery).
+
 ### 3.3 `RunEvent` — the 39-variant discriminated union
 
 Defined as `RunEvent` in `packages/protocol/src/runs.ts`, one large union type. Every variant and its

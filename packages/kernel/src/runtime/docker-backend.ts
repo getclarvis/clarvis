@@ -1,61 +1,48 @@
 import {
+  guestWorkspacePath,
+  noContainerCapabilities,
+  readContainerInspection,
+  validContainerPolicy,
+} from "./container-policy.ts";
+import {
   miseCacheIdentity,
   prepareMiseCache,
   prepareCacheOwnership,
   type MiseCacheIdentity,
 } from "./container-mise-cache.ts";
-import { posix, relative, sep } from "node:path";
-import type { Readable, Writable } from "node:stream";
-import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
-import {
-  createExecutionPeer,
-  type ExecutionRequestHandler,
-  type GuestExecutionMethod,
-} from "./execution-rpc.ts";
+import type { Logger } from "@clarvis/capability";
+import { type ExecutionRequestHandler, type GuestExecutionMethod } from "./execution-rpc.ts";
 import {
   RuntimeLaunchError,
   type RuntimeAvailability,
   type RuntimeBackend,
-  type RuntimeInfo,
   type RuntimeLaunchSpec,
   type RuntimeSession,
 } from "./types.ts";
 import { RUNTIME_PROTOCOL_LABEL, RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
-import { createContainerRuntimePortPreview } from "./port-preview.ts";
+import { connectContainerSession, cleanupInterruptedContainerCreate } from "./container-session.ts";
+import { initializationControl } from "./initialization-control.ts";
 
-export interface DockerCommandResult {
-  readonly exitCode: number | null;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-export interface DockerAttachedProcess {
-  readonly stdin: Writable;
-  readonly stdout: Readable;
-  readonly stderr: Readable;
-  readonly exited: Promise<number | null>;
-  kill(signal: NodeJS.Signals): void;
-}
-/** Per-command bounds for an exceptional long-running Docker control operation. */
-export interface DockerRunOptions {
-  /** Hard wall-clock ceiling, clamped by the concrete adapter. */
-  readonly timeoutMs?: number;
-  /** Capture ceiling for each output stream, clamped by the concrete adapter. */
-  readonly maxOutputBytes?: number;
-}
-export interface DockerControl {
-  run(
-    args: readonly string[],
-    signal?: AbortSignal,
-    options?: DockerRunOptions,
-  ): Promise<DockerCommandResult>;
-  attach(args: readonly string[]): DockerAttachedProcess;
-}
+import type {
+  ContainerControl as DockerControl,
+  ContainerCommandResult as DockerCommandResult,
+} from "./types.ts";
+export type {
+  ContainerCommandResult as DockerCommandResult,
+  ContainerAttachedProcess as DockerAttachedProcess,
+  ContainerControl as DockerControl,
+  ContainerRunOptions as DockerRunOptions,
+} from "./types.ts";
+
 export interface DockerBackendOptions {
   readonly control: DockerControl;
   readonly handlers?: Readonly<Partial<Record<GuestExecutionMethod, ExecutionRequestHandler>>>;
   readonly logger?: Logger;
   readonly hostPlatform?: NodeJS.Platform;
   readonly stopTimeoutSeconds?: number;
+  /** Cancels generation initialization without supplying a caller run signal. */
+  readonly signal?: AbortSignal;
+  readonly bootstrapTimeoutMs?: number;
   /** Numeric host identity seam; production inherits the invoking operator, never an image's USER. */
   readonly hostUser?: { readonly uid: number; readonly gid: number };
 }
@@ -84,9 +71,6 @@ function network(spec: RuntimeLaunchSpec): string {
     "unsupported_policy",
     "internet-only egress enforcement is unavailable for the Docker adapter",
   );
-}
-function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): string {
-  return posix.join("/workspace", relative(spec.workspaceRoot, hostPath).split(sep).join("/"));
 }
 function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
   return [
@@ -151,56 +135,24 @@ function validInspect(
   cache: MiseCacheIdentity,
   user: string,
 ): boolean {
-  const root = record(Array.isArray(value) ? value[0] : value);
-  const host = record(root?.HostConfig);
-  const config = record(root?.Config);
-  const mounts = Array.isArray(root?.Mounts) ? root.Mounts : [];
-  const labels = record(config?.Labels);
-  const security = Array.isArray(host?.SecurityOpt) ? host.SecurityOpt.map(String) : [];
-  const drops = Array.isArray(host?.CapDrop)
-    ? host.CapDrop.map((v) => String(v).toLowerCase())
-    : [];
-  const expectedBinds = [
-    { source: spec.workspaceRoot, destination: "/workspace", writable: true },
-    ...spec.readOnlyWorkspacePaths.map((path) => ({
-      source: path,
-      destination: guestWorkspacePath(spec, path),
-      writable: false,
-    })),
-    ...(spec.gitCommonDir === undefined
-      ? []
-      : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
-  ];
-  const miseMounts = mounts.filter((item) => record(item)?.Destination === "/mise");
-  const configuredMounts: unknown[] = Array.isArray(host?.Mounts) ? host.Mounts : [];
-  const cacheConfig = configuredMounts.find((mount) => record(mount)?.Target === "/mise");
-  const volumeOptions = record(record(cacheConfig)?.VolumeOptions);
-  return (
-    config?.User === user &&
-    volumeOptions?.Subpath === "data" &&
-    volumeOptions?.NoCopy === true &&
-    host?.Privileged === false &&
-    host?.ReadonlyRootfs === true &&
-    String(host?.NetworkMode).toLowerCase() === network(spec) &&
-    labels?.["io.clarvis.generation"] === spec.generation &&
-    security.some((v) => v.includes("no-new-privileges")) &&
-    drops.includes("all") &&
-    host?.PidsLimit === spec.limits.processCount &&
-    host?.Memory === spec.limits.memoryBytes &&
-    mounts.length === expectedBinds.length + 1 &&
-    expectedBinds.every((expected) => {
-      const matches = mounts.filter((item) => record(item)?.Destination === expected.destination);
-      return (
-        matches.length === 1 &&
-        record(matches[0])?.Type === "bind" &&
-        record(matches[0])?.Source === expected.source &&
-        record(matches[0])?.RW === expected.writable
-      );
-    }) &&
-    miseMounts.length === 1 &&
-    record(miseMounts[0])?.Type === "volume" &&
-    record(miseMounts[0])?.Name === cache.name &&
-    record(miseMounts[0])?.RW === true
+  const inspection = readContainerInspection(value);
+  if (inspection === undefined) return false;
+  const { host, config, policy } = inspection;
+  const configured = Array.isArray(host.Mounts) ? host.Mounts.map(record) : [];
+  const cacheConfig = configured.find((mount) => mount?.Target === "/mise");
+  const volume = record(cacheConfig?.VolumeOptions);
+  return validContainerPolicy(
+    {
+      ...policy,
+      identityAccepted: config.User === user,
+      capabilitiesCleared:
+        Array.isArray(host.CapDrop) &&
+        host.CapDrop.some((cap) => typeof cap === "string" && cap.toLowerCase() === "all") &&
+        noContainerCapabilities(host.CapAdd),
+      cacheLayoutAccepted: volume?.Subpath === "data" && volume.NoCopy === true,
+    },
+    spec,
+    cache,
   );
 }
 async function successful(
@@ -215,10 +167,9 @@ async function successful(
 
 /** Create the strict Docker reference backend, suitable for Docker Desktop or Colima. */
 export function createDockerRuntimeBackend(options: DockerBackendOptions): RuntimeBackend {
-  const logger = options.logger ?? NOOP_LOGGER;
-  const stopSeconds = Math.max(1, Math.min(30, Math.floor(options.stopTimeoutSeconds ?? 5)));
   let version: string | undefined;
   let rootless = false;
+  const control = initializationControl(options.control, options.signal);
   return {
     async inspect(): Promise<RuntimeAvailability> {
       if ((options.hostPlatform ?? process.platform) === "win32")
@@ -229,8 +180,9 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
         };
       let result: DockerCommandResult;
       try {
-        result = await options.control.run(["info", "--format", "{{json .}}"]);
+        result = await control.run(["info", "--format", "{{json .}}"]);
       } catch {
+        options.signal?.throwIfAborted();
         return { available: false, reason: "engine_missing", message: "Docker is unavailable" };
       }
       if (result.exitCode !== 0)
@@ -281,10 +233,10 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
       const user = `${uid}:${gid}`;
       const cache = miseCacheIdentity(spec, user);
       let created = false;
-      let attached: DockerAttachedProcess | undefined;
+      let createAttempted = false;
       try {
         const image = await successful(
-          options.control,
+          control,
           ["image", "inspect", spec.imageDigest],
           "docker image inspect",
         );
@@ -303,12 +255,15 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
             "handshake_mismatch",
             "Docker resolved image identity or runtime protocol did not match admission",
           );
-        await prepareMiseCache(options.control, cache);
-        await prepareCacheOwnership(options.control, spec, cache, user);
-        await successful(options.control, createArgs(spec, name, cache, user), "docker create");
+        await prepareMiseCache(control, cache);
+        await prepareCacheOwnership(control, spec, cache, user);
+        options.signal?.throwIfAborted();
+        const arguments_ = createArgs(spec, name, cache, user);
+        createAttempted = true;
+        await successful(control, arguments_, "docker create");
         created = true;
         const effective = await successful(
-          options.control,
+          control,
           ["container", "inspect", name],
           "docker container inspect",
         );
@@ -317,114 +272,28 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
             "unsupported_policy",
             "Docker effective configuration did not match the admitted isolation policy",
           );
-        attached = options.control.attach(["start", "--attach", "--interactive", name]);
-        let stderrBytes = 0;
-        attached.stderr.on("data", (chunk: Buffer | string) => {
-          stderrBytes += Buffer.byteLength(chunk);
-          if (stderrBytes > spec.limits.outputBytes) attached?.kill("SIGKILL");
-        });
-        const peer = createExecutionPeer({
-          role: "host",
-          generation: spec.generation,
-          input: attached.stdout,
-          output: attached.stdin,
-          handlers: options.handlers ?? {},
-          logger,
-        });
-        const handshake = await peer.request<{
-          generation: string;
-          imageDigest: string;
-          runtimeProtocolRevision: string;
-        }>(
-          "runtime.bootstrap",
-          { generation: spec.generation },
+        return await connectContainerSession(
           {
-            generation: spec.generation,
-            imageDigest: spec.imageDigest,
-            runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
-            configurationRevision: spec.configurationRevision,
-            extensionRevision: spec.extensionRevision,
-            capabilityMethods: spec.capabilityMethods,
+            ...options,
+            engine: "docker",
+            engineVersion: version,
           },
+          spec,
+          name,
         );
-        if (
-          handshake.generation !== spec.generation ||
-          handshake.imageDigest !== spec.imageDigest ||
-          handshake.runtimeProtocolRevision !== RUNTIME_PROTOCOL_REVISION
-        ) {
-          peer.close();
-          throw new RuntimeLaunchError("handshake_mismatch", "guest bootstrap identity mismatch");
-        }
-        const info: RuntimeInfo = {
-          kind: "container",
-          generation: spec.generation,
-          engine: "docker",
-          engineVersion: version,
-          hostPlatform: options.hostPlatform ?? process.platform,
-          guestPlatform: "linux",
-          imageDigest: spec.imageDigest,
-          runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
-          network: spec.network,
-          limits: spec.limits,
-          lifecycle: "ready",
-        };
-        const previews = createContainerRuntimePortPreview(options.control, name);
-        let stopped = false;
-        let removed = false;
-        let exited = false;
-        void attached.exited.then(
-          (code) => {
-            exited = true;
-            if (!stopped) peer.close(new Error(`Docker runtime process exited (${String(code)})`));
-          },
-          () => {
-            exited = true;
-            if (!stopped) peer.close(new Error("Docker runtime process exit was unavailable"));
-          },
-        );
-        return {
-          info,
-          get closed() {
-            return stopped || exited || peer.closed;
-          },
-          startRun: (runId, envelope, signal) =>
-            peer.request("runtime.start", { generation: spec.generation, runId }, envelope, {
-              ...(signal === undefined ? {} : { signal }),
-            }),
-          callHookMcp: (runId, call, signal) =>
-            peer.request("runtime.hook_mcp", { generation: spec.generation, runId }, call, {
-              ...(signal === undefined ? {} : { signal }),
-            }),
-          elicitMcp: (runId, input, signal) =>
-            peer.request("runtime.mcp_elicit", { generation: spec.generation, runId }, input, {
-              ...(signal === undefined ? {} : { signal }),
-            }),
-          async steer(runId, input, signal) {
-            await peer.request("runtime.steer", { generation: spec.generation, runId }, input, {
-              ...(signal === undefined ? {} : { signal }),
-            });
-          },
-          async cancel(runId) {
-            await peer.request("runtime.cancel", { generation: spec.generation, runId });
-          },
-          exposePort: (guestPort, protocol, signal) => previews.expose(guestPort, protocol, signal),
-          async stop() {
-            if (removed) return;
-            if (!stopped) {
-              stopped = true;
-              await previews.close();
-              peer.close();
-              await options.control
-                .run(["stop", "--time", String(stopSeconds), name])
-                .catch(() => undefined);
-            }
-            await successful(options.control, ["rm", "--force", name], "docker rm");
-            removed = true;
-          },
-        };
       } catch (error) {
-        attached?.kill("SIGKILL");
         if (created) await options.control.run(["rm", "--force", name]).catch(() => undefined);
+        else if (createAttempted) {
+          try {
+            await cleanupInterruptedContainerCreate(options.control, name, spec.generation);
+          } catch (cleanup) {
+            throw new AggregateError(
+              [error, cleanup],
+              "runtime initialization and cleanup failed",
+              { cause: cleanup },
+            );
+          }
+        }
         throw error;
       }
     },

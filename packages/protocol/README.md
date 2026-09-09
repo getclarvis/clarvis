@@ -73,6 +73,17 @@ configuration types do not cross this boundary.
 
 `hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
 snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
+`HostingService.resolveRecovery` is an operator-only confirmation of physical closure for old unknown
+work, fenced by generation and revision. Its `HostedRecoveryResolution` is retained on both the
+discovery reference and canonical session turn. The affected conversation is archived; no result or
+execution replay is implied. The durable audit precedes release of physical uncertainty and survives
+discovery acknowledgement.
+Handoff errors may carry `HostedHandoffFailureDetails`, binding an operation ID to `refused`
+or `uncertain` admission. Only an explicit refusal permits a new handoff identity; an absent
+classification or missing receipt preserves uncertainty.
+`HostingService.controlObservation` acquires or takes over control for an observation already
+owned by the connection, preserving its snapshot and stream. It returns the confirmed control
+epoch; unrelated observations retain their previous authority.
 `KernelClient.hosting` is optional and appears on a remote client only when `hello` advertises
 `capabilities.hosting.host_generation`. It uses the kernel RPC catalog and sequenced observation
 notifications. Ordinary in-process/stdio composition does not enable a persistent host.

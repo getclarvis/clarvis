@@ -2,7 +2,8 @@ import { spawn, type SpawnOptions } from "node:child_process";
 import { hostname } from "node:os";
 import { isAbsolute } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { detachObserved, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { detachObserved, loadEnv, NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { localKernelPolicyIdentity } from "./policy-identity.ts";
 import { kernelError } from "../core/errors.ts";
 import { connectKernelClient, type RemoteKernel } from "../transport/client.ts";
 import { connectLocalKernelTransport } from "../transport/local.ts";
@@ -109,6 +110,7 @@ export async function connectOrLaunchLocalKernel(
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > 120_000)
     throw kernelError("invalid_request", "host startup timeout must be within 120 seconds");
   const logger = options.logger ?? NOOP_LOGGER;
+  const policyId = localKernelPolicyIdentity(loadEnv(options.environment));
   const identity = await resolveLocalHostIdentity(options);
   const environment = {
     ...options.environment,
@@ -124,6 +126,11 @@ export async function connectOrLaunchLocalKernel(
       throw kernelError("conflict", "local host state belongs to another machine");
     const live = record !== null && localHostProcessAlive(record.pid);
     if (live) {
+      if (record.policy_id !== policyId)
+        throw kernelError(
+          "conflict",
+          "active local host has different operator execution policy; reconnect using its original policy and request an idle host restart before applying changed policy",
+        );
       if (record.wire_version !== CLARVIS_WIRE_VERSION || record.artifact_id !== options.artifactId)
         throw kernelError(
           "unsupported",

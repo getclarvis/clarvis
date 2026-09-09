@@ -55,6 +55,8 @@ function isWithin(root: string, candidate: string): boolean {
 
 /** Host-only inputs for resolving one immutable local recipe image. */
 export interface ResolveDockerRuntimeRecipeOptions {
+  /** Cancel generation preparation, including a contended build lease. */
+  readonly signal?: AbortSignal;
   readonly baseImageDigest: string;
   readonly recipe: RuntimeRecipe;
   readonly control: DockerControl;
@@ -506,6 +508,7 @@ async function resolveDockerRuntimeRecipeChecked(
         waitMs: BUILD_TIMEOUT_MS,
         retryMs: 250,
         heartbeatMs: 5_000,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
       },
     );
   } catch (cause) {

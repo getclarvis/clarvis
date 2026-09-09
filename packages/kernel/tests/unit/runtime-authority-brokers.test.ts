@@ -4,6 +4,121 @@ import { createCapabilityBroker, createModelBroker } from "../../src/runtime/aut
 const identity = { generation: "generation-1", runId: "run-1", callId: "call-1" };
 
 describe("runtime authority brokers", () => {
+  it("bounds call identities without retaining non-replayable response bodies", async () => {
+    let invoked = 0;
+    const broker = createCapabilityBroker({
+      generation: identity.generation,
+      runId: identity.runId,
+      maxArgumentsBytes: 128,
+      maxResultBytes: 1024 * 1024,
+      maxCalls: 3,
+      maxRetainedResultBytes: 1,
+      grants: [
+        {
+          method: "plans.read",
+          revision: "v1",
+          idempotent: false,
+          validateArguments: () => true,
+          invoke: async () => {
+            invoked++;
+            return "x".repeat(512 * 1024);
+          },
+        },
+      ],
+    });
+    const request = { method: "plans.read", revision: "v1", arguments: {} };
+    for (let i = 0; i < 3; i++) {
+      expect(
+        ((await broker.invoke({ ...identity, callId: `read-${i}` }, request)) as string).length,
+      ).toBe(512 * 1024);
+    }
+    await expect(broker.invoke({ ...identity, callId: "overflow" }, request)).rejects.toMatchObject(
+      { code: "resource_exhausted" },
+    );
+    await expect(broker.invoke({ ...identity, callId: "read-0" }, request)).rejects.toMatchObject({
+      code: "outcome_unknown",
+    });
+    expect(invoked).toBe(3);
+    broker.revoke();
+  });
+
+  it("reserves aggregate replay bytes before invoking and checks replay arguments", async () => {
+    let invoked = 0;
+    const broker = createCapabilityBroker({
+      generation: identity.generation,
+      runId: identity.runId,
+      maxArgumentsBytes: 128,
+      maxResultBytes: 64,
+      maxCalls: 10,
+      maxRetainedResultBytes: 128,
+      grants: [
+        {
+          method: "read.value",
+          revision: "v1",
+          idempotent: true,
+          validateArguments: () => true,
+          invoke: async () => {
+            invoked++;
+            return "x".repeat(50);
+          },
+        },
+      ],
+    });
+    const request = { method: "read.value", revision: "v1", arguments: { id: "first" } };
+    await broker.invoke(identity, request);
+    await broker.invoke({ ...identity, callId: "second" }, request);
+    await expect(broker.invoke({ ...identity, callId: "third" }, request)).rejects.toMatchObject({
+      code: "resource_exhausted",
+    });
+    expect(await broker.invoke(identity, request)).toBe("x".repeat(50));
+    await expect(
+      broker.invoke(identity, { ...request, arguments: { id: "different" } }),
+    ).rejects.toMatchObject({ code: "outcome_unknown" });
+    expect(invoked).toBe(2);
+    broker.revoke();
+  });
+
+  it("counts concurrent response reservations and releases failed reservations", async () => {
+    const gate = Promise.withResolvers<void>();
+    let invoked = 0;
+    const broker = createCapabilityBroker({
+      generation: identity.generation,
+      runId: identity.runId,
+      maxArgumentsBytes: 128,
+      maxResultBytes: 64,
+      maxRetainedResultBytes: 64,
+      grants: [
+        {
+          method: "read.value",
+          revision: "v1",
+          idempotent: true,
+          validateArguments: () => true,
+          invoke: async () => {
+            if (++invoked === 1) {
+              await gate.promise;
+              throw new Error("failed read");
+            }
+            return null;
+          },
+        },
+      ],
+    });
+    const request = { method: "read.value", revision: "v1", arguments: {} };
+    const first = broker.invoke(identity, request);
+    void first.catch(() => undefined);
+    try {
+      await expect(broker.invoke({ ...identity, callId: "second" }, request)).rejects.toMatchObject(
+        { code: "resource_exhausted" },
+      );
+    } finally {
+      gate.resolve();
+    }
+    await expect(first).rejects.toThrow("failed read");
+    await expect(broker.invoke({ ...identity, callId: "third" }, request)).resolves.toBeNull();
+    expect(invoked).toBe(2);
+    broker.revoke();
+  });
+
   it.each(["drain", "cancel", "revoke", "expire"])(
     "bounds FIFO model waiting and handles %s",
     async (mode) => {

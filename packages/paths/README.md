@@ -285,6 +285,11 @@ Every acquired asynchronous lease must be released, including after `renew()`, `
 remove the canonical entry as its own, but it still stops heartbeat work and closes the held file
 handle. Leaving a lost lease unreleased delegates descriptor cleanup to runtime garbage collection.
 
+Asynchronous acquisition accepts an optional `signal`. Cancellation interrupts contention waits,
+checks admission before returning ownership, and abandons a publication that raced cancellation.
+It rejects instead of returning the contention sentinel; cancelling acquisition does not release
+a lease already handed to its caller.
+
 `acquireLocalLeaseSync` publishes and releases the same record synchronously, with no contention
 wait or heartbeat. It exists only for APIs whose whole filesystem transaction is synchronous; an
 asynchronous caller uses `acquireLocalLease` so it never blocks the event loop while waiting.

@@ -8,6 +8,7 @@ import {
   createPlanStore,
   type PlanDocument,
   type PlanFactory,
+  type PlanRef,
 } from "@clarvis/plan";
 import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import type { GuestExecutionBridge } from "../../src/runtime/execution-worker.ts";
@@ -18,8 +19,17 @@ import {
   RUNTIME_PLANS_REVISION,
 } from "../../src/runtime/plan-bridge.ts";
 
-function bridgeFor(factory: PlanFactory, owner: string): GuestExecutionBridge {
-  const grant = createHostPlansGrant(factory, owner);
+type PlanAuthority = Parameters<typeof createHostPlansGrant>[2];
+
+function bridgeFor(
+  factory: PlanFactory,
+  owner: string,
+  context: PlanAuthority = {
+    runId: "run-1",
+    readTerminalRecord: () => null,
+  },
+): GuestExecutionBridge {
+  const grant = createHostPlansGrant(factory, owner, context);
   return {
     async model() {
       throw new Error("model is outside this test");
@@ -51,6 +61,26 @@ function planCas(document: PlanDocument) {
   };
 }
 
+function planRef(document: PlanDocument, key = "markdown:host"): PlanRef {
+  return {
+    id: document.id,
+    provider_key: key,
+    final_revision: document.revision,
+    final_spec_revision: document.spec_revision,
+    status: document.status,
+    retention: document.retention,
+  };
+}
+
+function terminalRecord(document: PlanDocument): ReturnType<PlanAuthority["readTerminalRecord"]> {
+  return {
+    id: "run-1",
+    owner_key_name: "owner-a",
+    status: "completed",
+    capability_state: { plans: planRef(document) },
+  };
+}
+
 describe("runtime plan bridge", () => {
   it("keeps plan identity and mutations in the canonical host store", async () => {
     const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
@@ -61,9 +91,13 @@ describe("runtime plan bridge", () => {
         return { key: "markdown:host", providerKind: "markdown", store: canonical };
       },
     };
-    const guest = await createGuestPlanFactory(bridgeFor(hostFactory, "owner-a")).storeFor(
-      "forged-owner",
-    );
+    let terminal: ReturnType<PlanAuthority["readTerminalRecord"]> = null;
+    const guest = await createGuestPlanFactory(
+      bridgeFor(hostFactory, "owner-a", {
+        runId: "run-1",
+        readTerminalRecord: () => terminal,
+      }),
+    ).storeFor("forged-owner");
 
     expect(guest.key).toBe("markdown:host");
     const created = await guest.store.create({
@@ -99,7 +133,16 @@ describe("runtime plan bridge", () => {
       objective: "Retain canonical host authority",
     });
     expect((await guest.store.list()).plans.map((plan) => plan.id)).toEqual([created.id]);
-    expect(await guest.store.delete(created.id, reconciled)).toBe(true);
+    await expect(guest.store.delete(created.id, reconciled)).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    const completed = await guest.store.update(created.id, reconciled, (draft) => {
+      draft.status = "completed";
+      draft.retention = "discard";
+    });
+    terminal = terminalRecord(completed);
+    expect(await guest.store.delete(created.id, completed)).toBe(true);
+    expect(await guest.store.delete(created.id)).toBe(false);
     await expect(canonical.read(created.id)).rejects.toMatchObject({ code: "plan_not_found" });
   });
 
@@ -113,6 +156,7 @@ describe("runtime plan bridge", () => {
         },
       },
       "owner",
+      { runId: "run", readTerminalRecord: () => null },
     );
     expect(
       grant.validateArguments({ operation: "read", input: { id: "plan", path: "/host" } }),
@@ -138,6 +182,7 @@ describe("runtime plan bridge", () => {
         }),
       },
       "owner",
+      { runId: "run", readTerminalRecord: () => null },
     );
     const expected = planCas(document);
     const now = "2026-09-05T12:01:00.000Z";
@@ -219,6 +264,155 @@ describe("runtime plan bridge", () => {
     await expect(
       grant.invoke({ operation: "unknown" }, new AbortController().signal),
     ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("never binds another run's plan through read or list and rejects forged creators", async () => {
+    const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const foreign = await canonical.create({
+      title: "Retained",
+      objective: "Protect host plans",
+      tasks: [],
+      createdByRun: "other-run",
+    });
+    const guest = (
+      await createGuestPlanFactory(
+        bridgeFor(
+          {
+            storeFor: async () => ({
+              key: "markdown:host",
+              providerKind: "markdown",
+              store: canonical,
+            }),
+          },
+          "owner-a",
+          { runId: "run-1", readTerminalRecord: () => terminalRecord(foreign) },
+        ),
+      ).storeFor("owner-a")
+    ).store;
+    await guest.read(foreign.id);
+    await guest.list();
+    await expect(guest.delete(foreign.id)).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(
+      guest.update(foreign.id, foreign, (draft) => {
+        draft.retention = "discard";
+      }),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(
+      guest.revise(foreign.id, foreign, { type: "set_context", context: "forged" }),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(guest.reconcile(foreign.id, foreign)).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    await expect(
+      guest.create({ title: "Forgery", objective: "", tasks: [], createdByRun: "other-run" }),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+    expect(await canonical.read(foreign.id)).toEqual(foreign);
+    expect((await canonical.list()).plans).toHaveLength(1);
+  });
+
+  it.each([
+    "active",
+    "keep",
+    "missing_trace",
+    "failed_run",
+    "other_run",
+    "other_owner",
+    "other_plan",
+    "other_provider",
+    "stale_revision",
+    "stale_spec",
+    "retained_ref",
+    "active_ref",
+  ])("enforces host retention with %s even for a continuation binding", async (scenario) => {
+    const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const created = await canonical.create({
+      title: "Continuation",
+      objective: "",
+      tasks: [],
+      createdByRun: "prior-run",
+    });
+    const document = await canonical.update(created.id, created, (draft) => {
+      draft.status = scenario === "active" ? "active" : "completed";
+      draft.retention = scenario === "keep" ? "keep" : "discard";
+    });
+    const record = terminalRecord(document)!;
+    const ref = record.capability_state!.plans as PlanRef;
+    if (scenario === "failed_run") record.status = "error";
+    if (scenario === "other_run") record.id = "other-run";
+    if (scenario === "other_owner") record.owner_key_name = "other-owner";
+    if (scenario === "other_plan") ref.id = "other-plan";
+    if (scenario === "other_provider") ref.provider_key = "other-provider";
+    if (scenario === "stale_revision") ref.final_revision -= 1;
+    if (scenario === "stale_spec") ref.final_spec_revision += 1;
+    if (scenario === "retained_ref") ref.retention = "keep";
+    if (scenario === "active_ref") ref.status = "active";
+    const grant = createHostPlansGrant(
+      {
+        storeFor: async () => ({
+          key: "markdown:host",
+          providerKind: "markdown",
+          store: canonical,
+        }),
+      },
+      "owner-a",
+      {
+        runId: "run-1",
+        priorRef: planRef(document),
+        readTerminalRecord: () => (scenario === "missing_trace" ? null : record),
+      },
+    );
+    await expect(
+      grant.invoke(
+        { operation: "delete", input: { id: document.id } },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: "unauthorized" });
+    expect(await canonical.read(document.id)).toEqual(document);
+  });
+
+  it("uses host CAS for retention even when the guest omits it", async () => {
+    const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const created = await canonical.create({
+      title: "Race",
+      objective: "",
+      tasks: [],
+      createdByRun: "prior-run",
+    });
+    const document = await canonical.update(created.id, created, (draft) => {
+      draft.status = "completed";
+      draft.retention = "discard";
+    });
+    const grant = createHostPlansGrant(
+      {
+        storeFor: async () => ({
+          key: "markdown:host",
+          providerKind: "markdown",
+          store: {
+            ...canonical,
+            async delete(id, expected) {
+              expect(expected).toEqual(planCas(document));
+              await canonical.update(id, document, (draft) => {
+                draft.retention = "keep";
+              });
+              return canonical.delete(id, expected);
+            },
+          },
+        }),
+      },
+      "owner-a",
+      {
+        runId: "run-1",
+        priorRef: planRef(document),
+        readTerminalRecord: () => terminalRecord(document),
+      },
+    );
+    await expect(
+      grant.invoke(
+        { operation: "delete", input: { id: document.id } },
+        new AbortController().signal,
+      ),
+    ).rejects.toBeInstanceOf(PlanConflictError);
+    expect((await canonical.read(document.id)).retention).toBe("keep");
   });
 
   it("maps host plan failures back to the canonical guest error classes", async () => {

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { boundJsonValue } from "../core/bounded-json.ts";
 import { createSemaphore } from "@clarvis/capability";
 
@@ -171,6 +172,8 @@ export interface HostCapabilityGrant {
   readonly idempotent: boolean;
   validateArguments(argumentsValue: unknown): boolean;
   invoke(argumentsValue: unknown, signal: AbortSignal): Promise<unknown>;
+  /** Releases bounded run-owned transfer state when the grant is revoked. */
+  revoke?(): void;
 }
 
 /** Guest request for one declared host-owned capability. */
@@ -197,7 +200,22 @@ export function createCapabilityBroker(options: {
   readonly grants: readonly HostCapabilityGrant[];
   readonly maxArgumentsBytes: number;
   readonly maxResultBytes: number;
+  /** Maximum distinct attempted calls retained for replay fencing during one run. */
+  readonly maxCalls?: number;
+  /** Aggregate byte allowance for completed replay results and in-flight reservations. */
+  readonly maxRetainedResultBytes?: number;
 }): CapabilityBroker {
+  const maxCalls = options.maxCalls ?? 16_384;
+  const maxRetainedResultBytes = options.maxRetainedResultBytes ?? 8 * 1024 * 1024;
+  for (const limit of [
+    maxCalls,
+    maxRetainedResultBytes,
+    options.maxArgumentsBytes,
+    options.maxResultBytes,
+  ]) {
+    if (!Number.isSafeInteger(limit) || limit <= 0)
+      throw new Error("capability broker limits must be positive safe integers");
+  }
   const grants = new Map<string, HostCapabilityGrant>();
   for (const grant of options.grants) {
     if (grants.has(grant.method)) throw new Error(`duplicate capability grant '${grant.method}'`);
@@ -205,10 +223,17 @@ export function createCapabilityBroker(options: {
   }
   const calls = new Map<
     string,
-    { readonly method: string; readonly result?: unknown; readonly complete: boolean }
+    {
+      readonly method: string;
+      readonly fingerprint: string;
+      readonly result?: unknown;
+      readonly complete: boolean;
+    }
   >();
   const live = new Set<AbortController>();
   let revoked = false;
+  let retainedResultBytes = 0;
+  let reservedResultBytes = 0;
   return {
     async invoke(identity, request, signal) {
       if (
@@ -231,25 +256,52 @@ export function createCapabilityBroker(options: {
         throw brokerError("invalid_request", "capability arguments were refused");
       }
       const prior = calls.get(identity.callId);
+      const fingerprint = createHash("sha256")
+        .update(JSON.stringify([request.revision, request.arguments]))
+        .digest("hex");
       if (prior !== undefined) {
-        if (prior.method !== request.method || !grant.idempotent || !prior.complete) {
+        if (
+          prior.method !== request.method ||
+          prior.fingerprint !== fingerprint ||
+          !grant.idempotent ||
+          !prior.complete
+        ) {
           throw brokerError("outcome_unknown", "capability call identity cannot be replayed");
         }
         return prior.result;
       }
-      calls.set(identity.callId, { method: request.method, complete: false });
+      signal?.throwIfAborted();
+      const reservation = grant.idempotent ? options.maxResultBytes : 0;
+      if (
+        calls.size >= maxCalls ||
+        retainedResultBytes + reservedResultBytes + reservation > maxRetainedResultBytes
+      ) {
+        throw brokerError("resource_exhausted", "capability replay history bound exceeded");
+      }
+      calls.set(identity.callId, { method: request.method, fingerprint, complete: false });
+      reservedResultBytes += reservation;
       const controller = new AbortController();
       const abort = (): void => controller.abort(signal?.reason);
       signal?.addEventListener("abort", abort, { once: true });
       live.add(controller);
       try {
         const result = await grant.invoke(request.arguments, controller.signal);
-        if (byteLength(result) > options.maxResultBytes) {
+        const resultBytes = byteLength(result);
+        if (resultBytes > options.maxResultBytes) {
           throw brokerError("resource_exhausted", "capability result exceeds the response bound");
         }
-        calls.set(identity.callId, { method: request.method, result, complete: true });
+        if (!revoked) {
+          if (grant.idempotent) retainedResultBytes += resultBytes;
+          calls.set(identity.callId, {
+            method: request.method,
+            fingerprint,
+            complete: true,
+            ...(grant.idempotent ? { result } : {}),
+          });
+        }
         return result;
       } finally {
+        reservedResultBytes -= reservation;
         signal?.removeEventListener("abort", abort);
         live.delete(controller);
       }
@@ -259,6 +311,9 @@ export function createCapabilityBroker(options: {
       revoked = true;
       for (const controller of live) controller.abort(new Error("capability grant revoked"));
       live.clear();
+      calls.clear();
+      retainedResultBytes = 0;
+      for (const grant of grants.values()) grant.revoke?.();
     },
   };
 }

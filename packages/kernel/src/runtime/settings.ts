@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const limits = z
   .object({
-    cpu_count: z.number().positive().finite(),
+    cpu_count: z.number().int().positive(),
     memory_bytes: z.number().int().positive(),
     process_count: z.number().int().positive(),
     output_bytes: z.number().int().positive(),

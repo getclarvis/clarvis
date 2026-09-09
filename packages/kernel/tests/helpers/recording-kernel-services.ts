@@ -30,6 +30,8 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       list: record("hosting.list"),
       start: record("hosting.start"),
       attach: record("hosting.attach"),
+      controlObservation: record("hosting.controlObservation"),
+      resolveRecovery: record("hosting.resolveRecovery"),
       detach: record("hosting.detach"),
       receipt: record("hosting.receipt"),
       readSnapshot: record("hosting.readSnapshot"),

@@ -192,6 +192,32 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).toContain("native sandbox");
   });
 
+  it("requires resource disclosure and writable preparation for remote helpers", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha" } }),
+      skills: fakeSkills({
+        loadSkill: () =>
+          makeContent("alpha", {
+            resourceAccess: "remote",
+            executionRoot: "/private/host/skill",
+          }),
+      }),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(false);
+    expect(res.text).toContain("no skill file or directory is mounted");
+    expect(res.text).toContain("read_skill_resource");
+    expect(res.text).toContain("read all required resource pages");
+    expect(res.text).toContain("writable workspace directory");
+    expect(res.text).toContain("normal shell tool");
+    expect(res.text).not.toContain("/private/host");
+    expect(res.text).not.toContain("Skill directory:");
+    expect(res.text).not.toContain("Package execution root:");
+  });
+
   it("rejects every resource-shaped argument on the name-only load operation", () => {
     for (const arguments_ of [
       { name: "alpha", resource: "/dev/null? no resource omitted actually." },

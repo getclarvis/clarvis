@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 
 const automation = resolve("tooling/release/gitflow.ts");
 
@@ -11,8 +12,19 @@ test("signed candidate sequence and final merge tag survive retries without rewr
   const remote = join(directory, "remote.git");
   const key = join(directory, "signing-key");
   const eventPath = join(directory, "event.json");
-  const run = (argv: string[], cwd = directory, env = process.env) => {
-    const result = Bun.spawnSync(argv, { cwd, env, stdout: "pipe", stderr: "pipe" });
+  const inheritedEnv = {
+    ...process.env,
+    GIT_DIR: join(directory, "unrelated.git"),
+    GIT_WORK_TREE: join(directory, "unrelated-worktree"),
+    GIT_INDEX_FILE: join(directory, "unrelated-index"),
+  };
+  const run = (argv: string[], cwd = directory, env: NodeJS.ProcessEnv = inheritedEnv) => {
+    const result = Bun.spawnSync(argv, {
+      cwd,
+      env: withoutGitRepositoryEnvironment(env),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     if (result.exitCode !== 0) throw new Error(result.stderr.toString());
     return result.stdout.toString().trim();
   };
@@ -21,7 +33,7 @@ test("signed candidate sequence and final merge tag survive retries without rewr
   const invoke = (eventName: string, payload: unknown) => {
     writeFileSync(eventPath, JSON.stringify(payload));
     return run([process.execPath, automation, "publish"], checkout, {
-      ...process.env,
+      ...inheritedEnv,
       GITHUB_EVENT_NAME: eventName,
       GITHUB_EVENT_PATH: eventPath,
     });

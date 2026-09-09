@@ -8,6 +8,7 @@ import {
   type ScheduledTurnRequest,
 } from "./core/loop-schedule.ts";
 import type {
+  HostedHandoffFailureDetails,
   ActiveTaskRequestDto,
   HostedActivityLease,
   HostedRunReceipt,
@@ -896,6 +897,17 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             revision: ref.revision,
           });
         } catch (error) {
+          const details =
+            typeof error === "object" && error !== null && "details" in error
+              ? (error.details as Partial<HostedHandoffFailureDetails> | undefined)
+              : undefined;
+          if (
+            details?.handoff?.operation_id === operationId &&
+            details.handoff.admission === "refused"
+          ) {
+            pendingHandoff = undefined;
+            throw error;
+          }
           const recovered = await hosting.receipt(operationId).catch(() => null);
           if (recovered === null) throw error;
           receipt = recovered;
@@ -1991,6 +2003,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         }
       }
       meta = await sessionStore.load(id, { refresh: client.hosting !== undefined });
+      if (meta?.turns.some((turn) => turn.recoveryResolution !== undefined))
+        throw new Error(
+          "this conversation was archived after recovery; start a new conversation for new work",
+        );
     } catch (error) {
       if (requestEpoch === loadEpoch) {
         setSessionLoading(false);
@@ -2013,15 +2029,29 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   ): Promise<void> {
     if (client.hosting === undefined || client.attachRun === undefined)
       throw new Error("backend does not support hosted observation");
-    if (currentHandle?.executionId === ref.execution_id) {
-      setStatus(["already attached to this execution"]);
-      return;
-    }
     if (ref.workspace_id !== workspaceId)
       throw new Error("hosted run belongs to another workspace");
+    if (currentHandle?.executionId === ref.execution_id) {
+      if (control === "observe") {
+        setStatus(["already attached to this execution"]);
+        return;
+      }
+      const handle = currentHandle;
+      const ownership = runOwnershipEpoch;
+      if (handle.acquireControl === undefined)
+        throw new Error("backend does not support control of an existing observation");
+      await handle.acquireControl(control);
+      if (currentHandle === handle && runOwnershipEpoch === ownership)
+        setStatus(["controlling hosted run"]);
+      return;
+    }
     if (ref.execution_state === "unknown")
       throw new Error(
         "this execution has an unknown outcome; inspect its history before starting another conversation",
+      );
+    if (ref.recovery_resolution !== undefined)
+      throw new Error(
+        "this conversation was archived after recovery; start a new conversation for new work",
       );
     const requestEpoch = ++loadEpoch;
     const previousHandle = currentHandle;

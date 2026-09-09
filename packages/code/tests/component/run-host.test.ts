@@ -803,6 +803,8 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
     throw new Error("unexpected hosting call");
   };
   const hosting: HostingService = {
+    controlObservation: unexpected,
+    resolveRecovery: unexpected,
     list: async () => [ref],
     start: unexpected,
     attach: unexpected,
@@ -837,6 +839,8 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
         calls.attaches++;
         return {
           ...handle,
+          acquireControl: (control) =>
+            hosting.controlObservation("existing-observation", control).then(() => undefined),
           async releaseObservation() {
             calls.releases++;
             run.reject(new Error("observation released"));
@@ -858,6 +862,47 @@ test("resume refuses an unknown hosted outcome without treating its trace as an 
   expect(f.host.runStatus()).toContain("/background list");
   expect(f.host.scheduledBusy()).toBe(false);
   f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("an acknowledged recovery archive cannot resume inference through its saved session", async () => {
+  const f = mountHosted();
+  f.hosting.list = async () => [];
+  f.meta.turns[0]!.recoveryResolution = {
+    kind: "operator_verified_physical_closure",
+    previous_host_generation: "old",
+    resolving_host_generation: "new",
+    operator_connection_id: "operator",
+    resolved_at: 20,
+  };
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.host.runStatus()).toContain("archived after recovery");
+  expect(f.host.scheduledBusy()).toBe(false);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("takes control of an already observed run while retaining its session and stream", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref, "observe");
+  await flush();
+  const session = f.host.sessionMeta()?.id;
+  const modes: string[] = [];
+  f.hosting.controlObservation = async (id, control) => {
+    expect(id).toBe("existing-observation");
+    modes.push(control);
+    return { ...f.ref, control: "self", control_epoch: 2 };
+  };
+  await f.host.attachHostedRun(f.ref, "takeover");
+  expect(modes).toEqual(["takeover"]);
+  expect(f.calls.attaches).toBe(1);
+  expect(f.calls.releases).toBe(0);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.calls.writes).toBe(0);
+  expect(f.host.sessionMeta()?.id).toBe(session);
+  expect(f.host.runStatus()).toBe("controlling hosted run");
+  f.host.teardownRuns();
+  await observing;
 });
 
 test.each(["continue", "cancel"] as const)(
@@ -948,6 +993,52 @@ test("a lost handoff reply is reconciled by operation id and never repeats the m
   expect(detachCalls).toBe(1);
   expect(f.calls.releases).toBe(1);
   expect(f.run.cancelled).toBe(false);
+});
+
+test("a definitive handoff refusal permits a fresh operation after the cause is resolved", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const operations: string[] = [];
+  f.hosting.detach = async (request) => {
+    operations.push(request.operation_id);
+    if (operations.length === 1)
+      throw Object.assign(new Error("refresh before handoff"), {
+        code: "conflict",
+        details: { handoff: { operation_id: request.operation_id, admission: "refused" } },
+      });
+    return { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("refresh before handoff");
+  expect(f.calls.releases).toBe(0);
+  const receipt = await f.host.backgroundCurrentRun();
+  expect(operations).toHaveLength(2);
+  expect(operations[0]).not.toBe(operations[1]);
+  expect(receipt.operation_id).toBe(operations[1]!);
+  await observing;
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("a conflict with uncertain admission retains its identity and never repeats detach", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let calls = 0;
+  f.hosting.detach = async (request) => {
+    calls++;
+    throw Object.assign(new Error("handoff outcome unknown"), {
+      code: "conflict",
+      details: { handoff: { operation_id: request.operation_id, admission: "uncertain" } },
+    });
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff outcome unknown");
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff is unconfirmed");
+  expect(calls).toBe(1);
+  f.host.teardownRuns();
+  await observing;
 });
 
 test("handoff reconciles an immediately readable receipt after its acknowledgement is lost", async () => {

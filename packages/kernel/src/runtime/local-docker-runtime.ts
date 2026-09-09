@@ -8,10 +8,11 @@ import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
 import {
   createLocalContainerRuntime,
   type LocalContainerRuntimeOptions,
-} from "./local-podman-runtime.ts";
+} from "./local-container-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
 import { resolveDockerRuntimeRecipe } from "./runtime-recipe.ts";
 import { RuntimeLaunchError } from "./types.ts";
+import { initializationControl } from "./initialization-control.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
 
@@ -25,7 +26,7 @@ export interface RuntimeImageSelection {
 export interface LocalDockerRuntimeOptions extends LocalContainerRuntimeOptions {
   readonly control?: DockerControl;
   /** Resolves the image only when settings omit an advanced immutable image id. */
-  readonly resolveImage?: () => Promise<RuntimeImageSelection>;
+  readonly resolveImage?: (signal?: AbortSignal) => Promise<RuntimeImageSelection>;
   /** Injectable context-discovery runner for deterministic tests. */
   readonly processRunner?: ProcessRunner;
   /** Reports an uncached operator recipe before waiting for or performing its first build. */
@@ -49,6 +50,7 @@ async function dockerConnection(
   configured: string | undefined,
   environment: Readonly<Record<string, string>>,
   runner: ProcessRunner,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (configured !== undefined) return configured;
   const selected = environment.DOCKER_CONTEXT?.trim();
@@ -60,6 +62,7 @@ async function dockerConnection(
       args: ["context", "show"],
       environment,
       timeoutMs: 10_000,
+      ...(signal === undefined ? {} : { signal }),
     });
   } catch (cause) {
     throw new RuntimeLaunchError("engine_missing", "Docker is unavailable", { cause });
@@ -87,12 +90,13 @@ async function resolveImageDigest(
   configured: string | undefined,
   control: DockerControl,
   resolveImage: LocalDockerRuntimeOptions["resolveImage"],
+  signal?: AbortSignal,
 ): Promise<string> {
   if (configured !== undefined) return configured;
   let selected: RuntimeImageSelection;
   try {
     selected =
-      (await resolveImage?.()) ??
+      (await resolveImage?.(signal)) ??
       ({ reference: "clarvis-runtime:development", pull: false } as const);
   } catch (cause) {
     if (
@@ -125,7 +129,9 @@ async function resolveImageDigest(
     );
   }
   if (selected.pull) {
-    const pulled = await control.run(["pull", selected.reference]);
+    const pulled = await control.run(["pull", selected.reference], undefined, {
+      timeoutMs: 15 * 60_000,
+    });
     if (pulled.exitCode !== 0) {
       throw new RuntimeLaunchError("operational_failure", "Clarvis runtime image download failed");
     }
@@ -167,6 +173,7 @@ export async function createLocalDockerRuntime(
           input.settings.connection,
           environment,
           options.processRunner ?? createNodeProcessRunner(),
+          input.signal,
         )
       : (input.settings.connection ?? "injected");
   const control =
@@ -176,10 +183,12 @@ export async function createLocalDockerRuntime(
       context: connection,
       environment,
     });
+  const preparing = initializationControl(control, input.signal);
   const baseImageDigest = await resolveImageDigest(
     input.settings.image_digest,
-    control,
+    preparing,
     options.resolveImage,
+    input.signal,
   );
   const imageDigest =
     input.settings.recipe === undefined
@@ -187,7 +196,8 @@ export async function createLocalDockerRuntime(
       : await resolveDockerRuntimeRecipe({
           baseImageDigest,
           recipe: input.settings.recipe,
-          control,
+          control: preparing,
+          ...(input.signal === undefined ? {} : { signal: input.signal }),
           ...(options.roots === undefined ? {} : { roots: options.roots }),
           ...(options.onRecipePreparation === undefined
             ? {}
@@ -202,6 +212,7 @@ export async function createLocalDockerRuntime(
   const resolvedInput = { ...input, settings: resolvedSettings };
   const backend = createDockerRuntimeBackend({
     control,
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
     handlers: router.handlers,
   });
   return createLocalContainerRuntime(resolvedInput, backend, router, options);

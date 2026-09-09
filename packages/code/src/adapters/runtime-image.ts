@@ -120,6 +120,7 @@ function runtimeImageFromManifest(source: string, version: string): string {
  * names.
  */
 export async function resolveClarvisRuntimeImage(options: {
+  readonly signal?: AbortSignal;
   readonly currentVersion: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly fetcher?: typeof fetch;
@@ -151,7 +152,10 @@ export async function resolveClarvisRuntimeImage(options: {
         `v${options.currentVersion}/${RUNTIME_RELEASE_ASSET}`;
   const response = await (options.fetcher ?? globalThis.fetch)(url, {
     redirect: "follow",
-    signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+    signal:
+      options.signal === undefined
+        ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+        : AbortSignal.any([options.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),
     headers: {
       accept: "application/json",
       "user-agent": `clarvis/${options.currentVersion}`,

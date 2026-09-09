@@ -1171,7 +1171,7 @@ recovery/accounting fields over the private channel. Physical requests still pas
 package's admission and retry decorators. The wire schema and bounded queue belong to
 [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 Production: `hostModelBroker` in
-[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts), `modelBody`
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), `modelBody`
 in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
 `encodeRuntimeProviderError` in
 [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts).

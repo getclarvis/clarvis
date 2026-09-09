@@ -1,3 +1,5 @@
+import { createHostedObservationLease } from "./hosted-observation.ts";
+import { detachObserved } from "../core/tasks.ts";
 import { readHostedSnapshot } from "@clarvis/kernel";
 import type { KernelClient, RunHandle, StartRunParams } from "@clarvis/protocol";
 import { redactPreview, uuidv7 } from "./session-store.ts";
@@ -41,13 +43,28 @@ export async function startHeadlessRun(
     user_preview: redactPreview(prompt),
     params,
   });
+  const consumed = Promise.withResolvers<void>();
+  const lease = createHostedObservationLease(hosting, attachment, true);
+  const closed = lease.settle(consumed.promise);
+  detachObserved("headless.observation.closed", () => closed);
   return {
     ...attachment.handle,
+    closed,
     events: {
       async *[Symbol.asyncIterator]() {
-        for await (const frame of readHostedSnapshot(hosting, attachment.snapshot))
-          yield frame.event;
-        for await (const frame of attachment.handle.events) yield frame.event;
+        let complete = false;
+        try {
+          for await (const frame of readHostedSnapshot(hosting, attachment.snapshot))
+            yield frame.event;
+          for await (const frame of attachment.handle.events) yield frame.event;
+          complete = true;
+          consumed.resolve();
+        } catch (error) {
+          consumed.reject(error);
+          throw error;
+        } finally {
+          if (!complete) consumed.reject(new Error("Headless observation was not fully consumed."));
+        }
       },
     },
   };

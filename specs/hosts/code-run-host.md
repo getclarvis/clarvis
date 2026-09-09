@@ -56,8 +56,10 @@ cannot attach twice to the same currently observed execution.
 The adapter replays the immutable prefix with `source: replay`, then consumes the live tail with
 `source: live`, preserving the execution id throughout. Historical events do not trigger live progress
 or memory-ingest notices. Observer attachments do not display or answer interactive questions.
-Hosted `done` waits for snapshot/tail delivery and the host's reconciliation/physical closure before
-the TUI's ordinary completion path can run. Disconnect or malformed observation rejects that promise
+Hosted `done` waits for snapshot/tail delivery, physical closure, host reconciliation, terminal
+index commit and admission release. A successfully consumed controlled result is acknowledged and
+its observation released before the TUI reports readiness. Observer-only, abandoned or failed
+observations do not acknowledge the result; acknowledgement failure rejects readiness. Disconnect or malformed observation rejects that promise
 and `closed` instead of fabricating a failed execution result. Observation release follows closure
 or observation failure; semantic stream end alone cannot release a still-closing host observation.
 
@@ -100,6 +102,39 @@ Test: `configuration consent identity lives only in the open TUI session, never 
 file authority are owned by [self-configuration.md](self-configuration.md).
 
 ### 2.1 `RunHost` (`packages/code/src/run-host.ts`)
+
+The background list offers explicit recovery archival for an old unknown execution. The operator
+must verify physical work stopped before confirming the displayed generation and execution. A late
+confirmation after view disposal is ignored. Only a matching durable recovery response permits
+discovery acknowledgement. The canonical session preserves its recovery audit and remains archived
+against new inference; no execution is replayed. Production: `BackgroundView` and
+`createBackgroundListController` in [view.tsx](../../packages/code/src/features/background/view.tsx)
+and [controller.ts](../../packages/code/src/features/background/controller.ts). Test:
+[background-list-controller.test.ts](../../packages/code/tests/unit/background-list-controller.test.ts)
+and [background-controller.test.ts](../../packages/code/tests/unit/background-controller.test.ts).
+The host contract is [explicit operator recovery](hosted-runs.md#explicit-operator-recovery).
+`resumeSessionById` also refuses an archived canonical session after its discovery entry has been
+acknowledged, preserving the history without treating it as a fresh inference context. Production:
+[run-host.ts](../../packages/code/src/run-host.ts). Test:
+`an acknowledged recovery archive cannot resume inference through its saved session` in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
+`backgroundCurrentRun` retains an uncertain handoff's operation identity for receipt lookup.
+Only a matching `HostedHandoffFailureDetails` pre-admission refusal clears the attempt for a new
+mutation after its cause is resolved. Production: `backgroundCurrentRun` in
+[run-host.ts](../../packages/code/src/run-host.ts). Test: definite refusal, uncertain conflict and
+lost-reply recovery in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
+`attachHostedRun` routes explicit acquisition/takeover of the current observed execution to that
+handle's `acquireControl`, preserving its session, transcript and stream. `driveHandle` wires
+elicitation once after confirmed acquisition; `createHostedObservationLease` reads its updated
+interactive disposition before acknowledging a consumed result.
+Production: [run-host.ts](../../packages/code/src/run-host.ts),
+[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts) and
+[hosted-observation.ts](../../packages/code/src/adapters/hosted-observation.ts).
+Test: takeover without reattachment and observer-to-controller result consumption in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts) and
+[kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts).
 
 | Member | Signature | File |
 | --- | --- | --- |

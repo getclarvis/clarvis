@@ -470,6 +470,22 @@ without a cache split removes the previously numeric cache total when input is p
 
 `createFileRunHost` composes the coordinator with the registry and immutable execution preparation.
 Code uses a presentation shadow of run history and adopts canonical revisions after reconciliation.
+
+An operator's old-generation recovery adds a `HostedRecoveryResolution` to the affected turn and
+archives that conversation. Unfinished turns become `interrupted` without an invented result,
+end time or usage. Existing terminal data remains intact. The audit survives discovery acknowledgement
+and the Code `metaToSession` / `sessionToMeta` round trip. Later inference must use a new conversation;
+the hosted coordinator rejects both continuation and fresh execution in an archived conversation.
+The two-write recovery ordering is owned by [hosted runs](hosted-runs.md#explicit-operator-recovery).
+Production: `archiveRecovery` and `prepare` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `SessionTurn` in
+[sessions.ts](../../packages/protocol/src/sessions.ts), and the Code session converters in
+[session-store.ts](../../packages/code/src/adapters/session-store.ts). Test:
+`durably archives unknown turns with %s intent without inventing outcomes or replay` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts) and
+`operator recovery audits survive session projection and metadata saves` in
+[session-store.test.ts](../../packages/code/tests/component/session-store.test.ts).
+
 `RunHost.runBangCommand` flushes its pending observation while holding the connection's shell lease.
 The physical shell belongs to the TUI; an unconfirmed disconnect does not prove that it ended.
 
@@ -478,8 +494,9 @@ and `servicesFor` in [file-host.ts](../../packages/kernel/src/hosting/file-host.
 Test: `only the local activity owner can persist observations before releasing conversation admission`
 in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
 
-Production: `createHostedSessionCoordinator`, `HostedSessionOptions` and `addUsage` in
-[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `PreparedHostedTurn` and the intent
+Production: `createHostedSessionCoordinator` and `HostedSessionOptions` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), shared `addRunUsage` in
+[usage.ts](../../packages/kernel/src/sessions/usage.ts), `PreparedHostedTurn` and the intent
 commit/reconciliation order in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
 Test: [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts)
 covers real file persistence, stale/foreign admission, protected history, pending context, revocation,
@@ -764,8 +781,9 @@ belong here rather than only in §3:
   and the stored in-memory value is the same bounded value later serialized to disk. Test:
   `packages/code/tests/component/session-store.test.ts` (`redactTurnError` masking, newline, bound,
   and opt-out cases) and `packages/code/tests/component/session.test.ts` (producer persistence).
-- **`addUsageToTotals(totals, usage, priceFor?)`** is the sole path that mutates a session's
-  `totals`: per-agent detail adds raw input/output/cached counts, while a flat-only compatibility
+- **`addRunUsage(totals, usage, priceFor?)`** in Kernel owns the shared accumulation rule.
+  Code's `addUsageToTotals` only converts `costUsd` to/from the canonical `cost_usd` DTO; it does not
+  reimplement pricing. The host session coordinator uses the same helper: per-agent detail adds raw input/output/cached counts, while a flat-only compatibility
   result adds its input/output and permanently removes `cached` when positive input omitted the
   split. Once unknown, later known runs cannot turn the partial cached subset back into a complete
   total. Only when `priceFor` resolves a `CatalogCost` for a detailed agent does it
@@ -774,8 +792,10 @@ belong here rather than only in §3:
   cache-write tokens at its `cache_write` rate (falling back to `input`) — so a cached token is never
   billed at both the input and cache-read rate. `uncachedInput(totals)` is the display-side
   counterpart: it subtracts only a complete numeric cached total; otherwise it returns gross input.
-  Production: `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
+  Production: [usage.ts](../../packages/kernel/src/sessions/usage.ts) (`addRunUsage`),
+  `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
   `packages/code/src/adapters/session.ts` (`finishTurn`, `reconcile`). Tests:
+  [session-usage.test.ts](../../packages/kernel/tests/unit/session-usage.test.ts) and
   `packages/code/tests/component/session-store.test.ts` (per-agent sums, flat unknown split, net/gross
   display and cost cases) and `packages/code/tests/component/session.test.ts` (missing split at live
   settlement and stored reconciliation).

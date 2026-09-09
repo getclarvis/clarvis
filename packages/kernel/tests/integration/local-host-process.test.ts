@@ -71,6 +71,19 @@ async function fixture() {
 }
 
 describe("independent local kernel process", () => {
+  test("retires an idle memory-capable process with workspace memory disabled", async () => {
+    const f = await fixture();
+    const { client } = await connectOrLaunchLocalKernel(f.options);
+    cleanups.push(() => client.close());
+    expect(client.capabilities.memory).toBe(true);
+    await expect(client.memory.jobs()).rejects.toMatchObject({
+      code: "capability_disabled",
+      details: { memory_code: "MEMORY_NOT_CONFIGURED" },
+    });
+    await client.close();
+    await until(async () => (await readLocalHostConnection(f.identity)) === null, 5000);
+  });
+
   test("finishes after its launching client exits and reconnects to the same execution", async () => {
     const f = await fixture();
     const peer = Bun.spawn(
@@ -101,6 +114,25 @@ describe("independent local kernel process", () => {
       tools: "0",
       maxGrant: "read",
     });
+    for (const change of [
+      { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      { CLARVIS_AGENT_TOOLS_MAX_GRANT: "none" },
+      { CLARVIS_DEFAULT_ELICIT_WAIT_MS: "1234" },
+      { CLARVIS_RETRY_CEILING: "0", CLARVIS_DEFAULT_MAX_RETRIES: "0" },
+    ]) {
+      await expect(
+        connectOrLaunchLocalKernel({
+          ...f.options,
+          environment: { ...f.options.environment, ...change },
+        }),
+      ).rejects.toMatchObject({
+        code: "conflict",
+        message: expect.stringContaining("idle host restart"),
+      });
+      expect((await readLocalHostConnection(f.identity))!.host_generation).toBe(
+        record.host_generation,
+      );
+    }
     await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
     await until(() =>
       access(join(f.workspaceRoot, "after-exit.json")).then(

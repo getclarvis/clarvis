@@ -8,6 +8,17 @@ settings precedence, providers, Agent Profiles, subagents, grants, optional capa
 Profiles, plugins, skills, MCP, hooks, memory, plans, tasks, workflows, trust, runtime settings,
 TUI loop scheduling, background runs and configuration reload.
 The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
+Container disclosure retains builtin provenance and priority, and uses the same canonical embedded
+instruction text without inventing a `SKILL.md` path or execution directory. The background guidance
+states that detach, takeover, connection loss and leaving the live conversation revoke command
+`allow_session` approvals in native and container execution.
+Production: [skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts),
+[disclosure.ts](../../packages/skills/src/disclosure.ts) and
+[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
+Test: native/guest builtin conformance in
+[runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts) and
+controller revocation in
+[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts).
 
 The file kernel reserves this skill's name and composes it after extension discovery. Disabling
 skills at the host or environment level removes it too. A custom empty Extension Profile excludes

@@ -876,7 +876,7 @@ resolves those references through the canonical `resolveBootstrapSkills` gate, t
 inactive, unavailable or foreign-root skill cannot become a guest bootstrap. Production:
 `pluginSkillBootstraps` in `packages/kernel/src/file-kernel.ts`;
 `createRuntimeSkillBootstraps` in `packages/kernel/src/runtime/skills-bridge.ts`; and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
 `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (`projects active plugin bootstraps as
 bodies without disclosing their host roots`) and
 `packages/kernel/tests/integration/local-podman-runtime.test.ts`.

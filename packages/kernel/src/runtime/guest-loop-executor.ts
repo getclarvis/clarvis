@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import {
-  loadEnv,
   NOOP_LOGGER,
   type CompactionRequest,
   type ExecutionRecord,
@@ -17,6 +16,7 @@ import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
 import { createGuardResolver, type GuardSettings } from "../guard/resolver.ts";
 import { createGuestGuardAuditLogger } from "./guard-audit-bridge.ts";
+import { createGuestGuardApproval } from "./guard-approval-bridge.ts";
 import { createRuntimePreviewCapability } from "./preview-capability.ts";
 import { createGuestPlanFactory } from "./plan-bridge.ts";
 import { createPlansCapability } from "@clarvis/plan/capability";
@@ -42,11 +42,19 @@ import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
 import { createGuestHookMcpCaller } from "./hook-mcp.ts";
 import { createGuestMcpConnections } from "./remote-mcp.ts";
+import { validRuntimeToolPolicy, type RuntimeToolPolicy } from "./tool-policy.ts";
+import {
+  guestLoopEnvironment,
+  validRuntimeLoopPolicy,
+  type RuntimeLoopPolicy,
+} from "./loop-policy.ts";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
   readonly owner: string;
   readonly modelLeaseId: string;
+  readonly toolPolicy: RuntimeToolPolicy;
+  readonly loopPolicy: RuntimeLoopPolicy;
   readonly priorExecution?: StoredExecution;
   readonly guardSettings?: Omit<GuardSettings, "providers">;
   readonly hostCapabilities?: readonly string[];
@@ -180,6 +188,8 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
     value === null ||
     typeof (value as GuestRunEnvelope).owner !== "string" ||
     typeof (value as GuestRunEnvelope).modelLeaseId !== "string" ||
+    !validRuntimeToolPolicy((value as GuestRunEnvelope).toolPolicy) ||
+    !validRuntimeLoopPolicy((value as GuestRunEnvelope).loopPolicy) ||
     !Object.prototype.hasOwnProperty.call(value, "rawBody")
   ) {
     return false;
@@ -307,10 +317,7 @@ export function createGuestLoopExecutor(
         const enqueueEvent = (event: unknown): void => {
           eventTail = eventTail.then(() => bridge.event(event));
         };
-        const env = loadEnv({
-          CLARVIS_LOG_LEVEL: "silent",
-          CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
-        });
+        const env = guestLoopEnvironment(envelope.loopPolicy, envelope.toolPolicy);
         const plans = envelope.hostCapabilities?.includes("plans")
           ? createPlansCapability({
               factory: createGuestPlanFactory(bridge, signal),
@@ -340,15 +347,18 @@ export function createGuestLoopExecutor(
           logger: NOOP_LOGGER,
           workspaceRoot,
           traceDir,
-          builtins: { tools: true, skills: false, hooks: false },
+          builtins: { tools: envelope.toolPolicy.enabled, skills: false, hooks: false },
           resolveGuard: createGuardResolver({
+            humanApprovalFor: () => createGuestGuardApproval(bridge, signal),
             loadSettings: () => guestGuardSettings(envelope),
             logger: NOOP_LOGGER,
             audit: createGuestGuardAuditLogger(enqueueEvent),
           }),
           resolveSecretNames: () => [],
           capabilities: [
-            createRuntimePreviewCapability(bridge),
+            ...(envelope.toolPolicy.enabled && envelope.toolPolicy.maxGrant === "exec"
+              ? [createRuntimePreviewCapability(bridge)]
+              : []),
             ...(plans === undefined ? [] : [plans]),
             ...(skills === undefined ? [] : [skills]),
             memory,

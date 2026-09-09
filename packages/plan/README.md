@@ -174,6 +174,13 @@ what it did, so nothing is deleted without an explicit choice.
 `discard` removes the file only **after** the terminal record persists, and only on a `completed`
 run. A crash or cancellation always leaves it for recovery.
 
+In isolated execution the kernel enforces retention on the host: only the current run's created or
+continued plan may be mutated, and deletion requires the matching durable completed trace, canonical
+completed/discard state and host-selected CAS. Reading or listing another plan never binds it.
+The private plan bridge transfers large requests/results in bounded chunks, preserving the document
+and list-page limits above. Its resource and authority contract belongs to
+[`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
+
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in
 `tests/component/plan-session.test.ts` asserts that retention and pending-task-nudge defaults never

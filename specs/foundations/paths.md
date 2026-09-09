@@ -631,6 +631,14 @@ floored at 1 (`packages/paths/src/local-lease.ts`).
    cleanly.
 9. `finally`: if publication never completed (`published === false`), close and unlink the temp.
 
+Asynchronous `AcquireLocalLeaseOptions.signal` cancels the acquisition wait, including the retry
+delay. Admission checks it before attempts and before returning a published lease; a raced
+publication is abandoned through the same ownership-checked release path before rejection.
+It does not cancel ownership already returned to a caller. Production: `acquireLocalLease`
+and `tryPublish` in [local-lease.ts](../../packages/paths/src/local-lease.ts).
+Test: cancelled contention and publication races in
+[local-lease.test.ts](../../packages/paths/tests/contract/local-lease.test.ts).
+
 ### 4.6 Reclaiming a stale lease (`reclaimLocalLease`, `packages/paths/src/local-lease.ts`)
 
 1. `observe(path)` — `lstat` + parse; `null` (ENOENT) means "already gone", return `true`.
@@ -928,7 +936,7 @@ says so, and names the phase").
 | `ensureWorkspaceDir`'s `.gitignore` seed fails for a reason other than "already exists" | logs `paths.gitignore_seed_skipped` (`file`, `code`) at `debug` and swallows the error — the directory creation still succeeds and the caller is never told the ignore file may be missing | `packages/paths/src/ensure.ts` |
 | An existing `.gitignore` cannot be read or atomically updated with `worktrees/` | logs `paths.gitignore_update_failed` (`file`, `code`) at `warn` and throws, so checkout creation cannot proceed without the exclusion | `packages/paths/src/ensure.ts` (`seedFile`) |
 | `ensureWorkspaceSubdir` given a `dir` outside `<ws>/.clarvis` | throws a plain `Error` naming both paths | `packages/paths/src/ensure.ts` |
-| `acquireLocalLease` contended and unreclaimable | returns `null` after `waitMs` of retries — never throws | `packages/paths/src/local-lease.ts` |
+| `acquireLocalLease` contended and unreclaimable | returns `null` after `waitMs` of retries; an aborted acquisition signal rejects | `packages/paths/src/local-lease.ts` |
 | `tryPublish`'s `afterPublish` callback or its post-publish recovery-intent recheck throws | the just-published lease is abandoned via `abandonPublishedLease(Sync)` and the original error is rethrown — `acquireLocalLease`/`acquireLocalLeaseSync` reject/throw rather than returning `null` | `packages/paths/src/local-lease.ts` (async) (sync) |
 | `owned()` or `renew()` finds it no longer holds the lease | sets `lost = true` and logs `paths.lease_lost` with `phase` naming where the loss was discovered — one of the three `LeaseLossPhase` values `"renew"` (a failed heartbeat, `packages/paths/src/local-lease.ts`), `"stat"` (the identity capture at the start of `release()` failed), or `"release"` (`handle.close()` itself failed); every subsequent `owned()`/`release()` call returns `false`, while `release()` still stops heartbeat work and closes the held handle | `packages/paths/src/local-lease.ts` (`createLease`, `release`); `packages/paths/tests/contract/local-lease.test.ts` (heartbeat-loss regression) |
 | A reclaim's rename-to-quarantine hits `ENOENT` (already gone) | treated as success (`return true`), not a refusal | `packages/paths/src/local-lease.ts` |

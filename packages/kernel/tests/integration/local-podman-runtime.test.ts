@@ -32,7 +32,7 @@ import {
   modelDestination,
   validElicitArguments,
   validPreviewArguments,
-} from "../../src/runtime/local-podman-runtime.ts";
+} from "../../src/runtime/local-container-runtime.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -312,6 +312,7 @@ describe("local Podman runtime composition", () => {
                   ReadonlyRootfs: true,
                   Memory: 64 * 1024 * 1024,
                   PidsLimit: 32,
+                  CapAdd: null,
                   NanoCpus: 1_000_000_000,
                   SecurityOpt: ["no-new-privileges"],
                   Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${128 * 1024 * 1024}` },

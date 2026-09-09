@@ -129,6 +129,7 @@ function mount(
   const saved: Record<string, string> = {};
   const writes: { scope: Scope; patch: Partial<SettingsFile> }[] = [];
   const closed: number[] = [];
+  const dispatched: string[] = [];
   const { host, controls } = createViewHost({
     interaction: {
       keymap,
@@ -142,7 +143,7 @@ function mount(
       dispose: () => {},
     },
     close: () => closed.push(1),
-    dispatch: () => {},
+    dispatch: (name) => dispatched.push(name),
     initialScope: opts?.initialScope,
   });
   const deps = {
@@ -152,7 +153,7 @@ function mount(
     notify: (m: string) => notes.push(m),
     catalog: opts?.catalog ?? null,
   };
-  return { host, controls, deps, press, notes, saved, writes, closed };
+  return { host, controls, deps, press, notes, saved, writes, closed, dispatched };
 }
 
 const DETAIL_FIELD_COUNT = 8;
@@ -318,14 +319,14 @@ test("the source row opens the enum picker and stages one representative selecti
   t.renderer.destroy();
 });
 
-test("a typed API key stages in memory without touching the key store", async () => {
+test("a typed API key stays staged until save, which requests a configuration reload", async () => {
   const provider: ProviderConfig = {
     name: "openrouter",
     kind: "openai-compatible",
     base_url: "https://openrouter.ai/api/v1",
     api_key_env: "OPENROUTER_API_KEY",
   };
-  const { host, deps, press, saved } = mount(provider, "none");
+  const { host, controls, deps, press, saved, dispatched } = mount(provider, "none");
   const t = await openRender((() => ProvidersPanel(host, deps)) as never, {
     width: 100,
     height: 30,
@@ -345,6 +346,10 @@ test("a typed API key stages in memory without touching the key store", async ()
   expect(stagedFrame).toContain("staged");
   expect(saved["OPENROUTER_API_KEY"]).toBeUndefined();
   expect(host.dirty()).toBe(true);
+  expect(dispatched).toEqual([]);
+  await controls.runSave();
+  expect(saved["OPENROUTER_API_KEY"]).toBe("sk-test-123");
+  expect(dispatched).toEqual(["backend.reload"]);
   t.renderer.destroy();
 });
 

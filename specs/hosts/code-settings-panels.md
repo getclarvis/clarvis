@@ -529,7 +529,7 @@ completion cases).
 1. `bootstrap = deps.bootstrap === true`; a field editor is created bound to the host's keymap and
    `active` (the `bootstrap` and `editor` declarations).
 2. The controller is constructed with `manageDefaultModel: bootstrap` and — only when there is
-   **no** `onBootstrapComplete` — an `onReconnect` that dispatches `backend.reconnect`; the panel
+   **no** `onBootstrapComplete` — an `onReconnect` that dispatches `backend.reload`; the panel
    always owns it and disposes it in `onCleanup` (the `ctrl` declaration and cleanup callback).
 3. Provider/model cursor and picker signals, subscription-status/device-attempt signals, a
    device-action feedback signal, and one-second unref'd device-code countdown timer are created
@@ -834,6 +834,13 @@ the mark) (a staged credential keeps it dirty anyway, because a key never lands 
 | 4 | for each staged key | `await keys.set(envVar, value)`, then drop it from `pendingKeys`; on throw emit `key_save_failed` and return `"key-error"` |
 | 5 | for each staged source | `code.writeKeySource(scope, envVar, source)`, then drop it; on throw emit `source_save_failed` and return `"source-error"` |
 | 6 | — | bump `keysRev`, clear dirty, emit `saved`, and call `onReconnect` iff any key or source was staged |
+
+That callback requests configuration reload, the same operation as `/reconnect reload`; a plain
+transport recovery cannot apply saved credential-source choices. An occupied host refuses reload
+without losing the saved changes or a healthy connection. Production: `ProvidersPanel` and
+`backend.reload` in `packages/code/src/app/commands.tsx`. Test: `a typed API key stays staged until
+save, which requests a configuration reload` in
+`packages/code/tests/integration/providers-key-render.test.tsx`.
 
 `disposed()` is re-checked after **every** await, so a panel torn
 down mid-save neither writes secrets nor emits into a dead view — pinned at

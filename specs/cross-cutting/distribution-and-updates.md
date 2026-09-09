@@ -73,6 +73,15 @@ supplied by those packages remain in their copied package directories. Productio
 `packages/code/tooling/release/package.ts` (`copySource`, `copyRuntime`, `runtimeClosure`,
 `copyDependencies`).
 
+The static notice also contains the complete upstream MIT license of the pinned Croner library,
+which is bundled into the terminal UI's calendar adapter. It remains available when Croner is not
+an external member of the packaged dependency closure. Production: `copySource` in
+[package.ts](../../packages/code/tooling/release/package.ts), the Code dependency manifest and
+[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
+Test: packaged static-notice validation in
+[smoke.ts](../../packages/code/tooling/release/smoke.ts); calendar behavior belongs to
+[loop-scheduling.md](../hosts/loop-scheduling.md).
+
 `release.json` is schema 1:
 
 ```json
@@ -246,6 +255,21 @@ one and durably replaces `current` last. Failure before that write leaves the ac
 user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
+
+The split artifact also ships Code's `local-host.js` companion. Its launcher resolves the companion
+and runtime beneath the current concrete version directory before starting the workspace host.
+Updating `current` does not redirect that process: installers and `activateStagedRelease` preserve
+the predecessor version directory, and an existing same-version payload cannot be overwritten with
+different bytes. This preserves lazy chunks for a live background run through a normal update.
+An explicit uninstall or external deletion of the version directory is outside that retention
+guarantee. Developer builds likewise remain mutable checkout artifacts. Production:
+`resolveLocalKernelArtifact` in
+[local-kernel-artifact.ts](../../packages/code/src/adapters/local-kernel-artifact.ts), `copySource`
+in [package.ts](../../packages/code/tooling/release/package.ts), and `activateStagedRelease` in
+[installation.ts](../../packages/code/src/update/installation.ts).
+Test: the verified activation and preserved predecessor cases in
+[update-command.test.ts](../../packages/code/tests/unit/update-command.test.ts), plus portable
+payload verification in [smoke.ts](../../packages/code/tooling/release/smoke.ts).
 
 The release workflow builds and smokes all six target archives independently. In parallel, and only
 for a pushed non-RC tag, native Linux jobs verify the tag identity before registry authentication, build

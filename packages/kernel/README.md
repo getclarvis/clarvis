@@ -1,26 +1,26 @@
 # `@clarvis/kernel`
 
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
-It is the Clarvis server core: applications can use it directly today and place
-the same services behind a remote transport later.
+It is the Clarvis server core: applications can use it directly or consume the same typed services
+through its RPC transports, including the independently owned local workspace host.
 
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
-| Entry                       | Responsibility                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------ |
-| `@clarvis/kernel`           | in-process kernel, kernel services/errors, client/server/transports and wire metadata      |
-| `@clarvis/kernel/bootstrap` | file-backed construction, owner-scoped stores, stdio hosting, bootstrap logger/environment |
-| `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition         |
-| `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state            |
-| `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                         |
-| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                         |
+| Entry                       | Responsibility                                                                                                                |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/kernel`           | in-process kernel, kernel services/errors, client/server/transports and wire metadata                                         |
+| `@clarvis/kernel/bootstrap` | file-backed construction, authenticated local host/launcher, owner-scoped stores, stdio hosting, bootstrap logger/environment |
+| `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition                                            |
+| `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state                                               |
+| `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                                                            |
+| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                                                            |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
@@ -35,6 +35,49 @@ kernel also owns host-side composition described by
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
 [`sessions.md`](../../specs/hosts/sessions.md), plus the kernel halves of capability specs named in
 their package READMEs.
+
+## Hosted observation infrastructure
+
+`src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
+revokes volatile consent scopes on disconnect, takeover or conversation close.
+The guard resolver accepts a lookup of the current interactive command allowlist; retired lists
+cannot be repopulated by late responses. Native configuration can retire an individual live session,
+aborting its pending approval and active native work without revoking another conversation.
+`createFileKernel` accepts `sessionAllowlistFor` and exposes host-only native routing/revocation
+through `nativeConfiguration`; these controls are not model-callable services.
+`src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
+byte-paginated snapshots. It uses the existing run event coalescer and keeps structural events;
+storage/quota failures prevent new snapshots. `src/hosting/execution.ts` keeps the sole managed-run
+consumer alive without subscribers, cuts snapshot/tail observations and waits for physical closure
+plus host reconciliation. A slow observer loses only its own bounded stream.
+The root entry's `readHostedSnapshot` incrementally decodes those pages with the live event codec,
+checks byte/sequence continuity through the immutable cut and releases the snapshot on abandonment.
+`src/hosting/registry.ts` provides shared admission, controller epochs and connection-independent
+handoff receipts over injected turn/persistence ports. The existing RPC catalog exposes that registry
+through an explicitly hosted connection. Attachment transfers snapshot metadata and subscribes to
+sequenced tail, result, elicitation and physical-closure notifications. Disconnect rejects the local
+observation without fabricating a failed execution result. `src/hosting/sessions.ts` coordinates
+versioned conversation writes, committed turn intent, pending context and single-count usage over
+the canonical file session store. That store durably replaces its canonical document and keeps its
+summary rebuildable. `createFileRunHost` composes these services with a FileKernel and an authenticated
+RPC server. Its caller supplies private durable storage and the local token verifier. Operator
+connections can use local subscription controls; observer connections receive non-sensitive reads.
+All conversation runs enter through `hosting.start`; offline compaction and disposable cleanup share
+a maintenance reservation. `InProcessKernel.prepareRun` resolves the entry, model and skill before
+intent publication and keeps later workflow leaders on the same bounded configuration snapshot.
+Prepared launches retain ordinary execution-id, owner and Extension Profile leases.
+`serveLocalFileKernel` composes a separately launched host with a private lease, credential,
+generation-aware discovery index and idle shutdown. `connectOrLaunchLocalKernel` authenticates the
+discovered generation or launches the application-selected artifact without inheriting TUI stdio.
+Discovery retiring during a read is treated as absent; privacy and other I/O failures still reject.
+It preserves operator tool policy and refuses a live incompatible host. The kernel binary accepts
+the private `--local-host` bootstrap mode; ordinary stdio hosting remains available. New generations
+retain terminal discovery metadata and mark previously live references unknown without restoring
+execution or consent. Code composes its companion entry and uses the same RPC through its workspace
+manager; installed-artifact retention and platform qualification remain application responsibilities.
+Process integration tests verify survival after a launching client exits with MockLLM; they do not
+qualify a subscription/TUI journey or native Windows/macOS behavior. The ownership, limits and
+validation scope are specified in [hosted runs](../../specs/hosts/hosted-runs.md).
 
 ## File-backed kernel
 
@@ -60,7 +103,8 @@ product decision, not provider endorsement. Synthetic registrations exercise tra
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
 separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version. The
-remote transport always uses the unavailable implementation.
+ordinary remote composition uses the unavailable implementation. The authenticated local
+`createFileRunHost` composition exposes subscription control only to its operator role.
 
 `createFileKernel` is the single-workspace entrypoint. It derives stable project and workspace
 identities directly from Git and owns that canonical workspace until close. There is no project-level
@@ -120,16 +164,36 @@ host to execute the canonical post-run enqueue there. The resulting dedicated in
 the file host's direct Loop executor, not the container coordinator, so Memory mutation remains a
 host-only operation throughout.
 
-Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook commands
-and MCP hooks execute on the host through admitted callbacks; the guest cannot supply a command or
-replace policy. Tasks uses its canonical guest capability and strict request schema over a host-owned
-provider port, retaining binding, write gates and provider errors. Admiral scheduling and its shared
+Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook selection,
+ordering and command hooks remain on the host through admitted callbacks; the guest cannot supply a
+command or replace policy. A hook targeting a `stdio` MCP server calls back into the active container
+through `runtime.hook_mcp`, using that run's guest-owned connection and environment, including before
+the ordinary tool pool opens. There is no host execution fallback when that call fails. HTTP/SSE
+MCP hooks retain their host connections and remote effects. Tasks uses its canonical guest capability
+and strict request schema over a host-owned provider port, retaining binding, write gates and provider
+errors. Admiral scheduling and its shared
 leader/subagent budget stay together in the guest, while the host assembles each leader request and
 admits execution to the same generation. An unknown host capability that cannot be projected refuses
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 5 and a rebuilt compatible worker image.
+require runtime protocol revision 7 and a rebuilt compatible worker image.
+
+Ordinary HTTP/SSE MCP tools and resources also use host-owned connections through the closed
+`runtime.mcp` grant. The host pins enabled server declarations and the owner; the guest supplies
+only a server name or a run-owned lease and a catalog-admitted operation. Environment-backed headers,
+bearer tokens and the OAuth coordinator/store remain on the host. Typed pending/deferred connection
+failures retain native run behavior, and remote elicitation returns through `runtime.mcp_elicit` to
+the live guest's serialized input port. Run teardown releases the leases. Stdio remains guest-local,
+and HTTP/SSE still has remote effects even with container network `none`.
+
+Before each admitted provider/model pair reaches the adapter, the host uses the shared
+`resolveProvider` on its captured registry, including model overrides, and reconstructs the model's
+capability set. Image removal remains adapter serialization-only. Model envelopes preserve per-call
+retry and Retry-After limits, including zero retries, while typed provider failures preserve recovery
+and failed-attempt usage without transmitting stacks, causes, headers or response bodies. The broker
+uses bounded FIFO admission configured by the host model concurrency/queue settings, not container
+CPU allocation; the host provider admission policy still owns physical requests.
 
 The selected canonical workspace is mounted read-write at guest `/workspace`; guest changes are
 therefore visible on the host immediately. Clarvis does not create a second workspace copy or own an
@@ -510,16 +574,27 @@ The transport layer maps the same kernel services to Clarvis wire methods:
 - `connectKernelClient` builds a remote `KernelClient`.
 - `createLoopbackTransport` connects both sides in process.
 - `createStdioTransport` and `serveKernelOverStdio` provide stdio framing.
+- `connectLocalKernelTransport` and `listenLocalKernel` reuse that framing over reconnectable Unix
+  sockets or Windows named pipes. The listener bounds clients and hello deadlines; its caller must
+  supply authenticated resolution and operation authorization on `createKernelServer`.
 - `serveFileKernelOverStdio` combines a file kernel and stdio server.
 
 The `clarvis-kernel` binary starts the file-backed stdio server. The protocol is
 Clarvis's own request/notification contract, not MCP.
 
 Transports may implement `KernelTransport.onClose` to report explicit closure,
-EOF or connection errors. Remote clients use this signal to settle active run
-streams with `unavailable` instead of leaving `RunHandle.done` pending, and to
-settle `RunHandle.closed` so host lifecycle leases cannot remain pinned. The
-stdio and loopback transports implement this lifecycle.
+EOF or connection errors. For ordinary connection-owned runs, remote clients use this signal
+to settle handles with `unavailable` instead of leaving `RunHandle.done` pending.
+Hosted observations reject their unfinished promises without fabricating a run result;
+closing a subscriber does not prove physical completion or release the registry's run lease.
+The stdio, local IPC and loopback transports implement the connection lifecycle.
+
+The independent file host additionally advertises operator-only `localHost` controls through that
+same catalog: bounded runtime/profile state, claimed browser handoffs, explicit runtime retry and
+quiescent restart. These operations belong to the authenticated application channel; the private
+container execution RPC never exposes them. Code supplies the companion application's composition.
+Preparation failures enter the durable run index as sanitized plain error DTOs, so an invalid
+request does not poison later admissions with an unserializable exception object.
 
 Run elicitation is buffered until a client registers `RunHandle.onElicit`.
 Questions raised during startup therefore survive the asynchronous
@@ -618,6 +693,41 @@ without a write. The scope remains configuration scope (`global` or
 `workspace`); it is shared operator configuration rather than owner-scoped run
 state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
+## Builtin configuration skill
+
+Invoke `/clarvis-configure <task>` in Code to start a dedicated native configuration run after human
+elicitation. Its `configure_clarvis` tool provides `list`, `read`, `write`, `edit` and `delete` for
+authored files in the four global/workspace Clarvis/shared-agent roots. `edit` replaces exactly one
+matching snippet against the last read revision. Keys, subscriptions, auth, trust and private state
+are excluded. The run executes on the host without sandbox/container or extension/shell execution.
+Consent lasts only in the currently open TUI session; resume or reconnect requires approval again.
+See [self-configuration.md](../../specs/hosts/self-configuration.md) for the path policy, volatile
+identity and explicit filesystem limits. Normal turns retain their configured runtime.
+
+The file kernel includes `clarvis-configure`, a user-invocable skill with its body in
+[`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts). It ships in the executable,
+requires no `SKILL.md` or first-run scaffolding, and remains available with an empty custom
+Extension Profile. Agents carrying `use_skills` can load it through `load_skill`; clients can invoke
+it through the ordinary skills service. Disabling skills through the host or environment also
+disables this builtin.
+
+The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
+models, Extension Profiles, plugins, MCP, hooks, memory, plans, tasks, workflows, runtime,
+`/loop` scheduling and background runs. It distinguishes TUI-owned, in-memory schedules from runs
+that continue in the workspace host, and explains attachment, cancellation and consent lifetime.
+Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
+and exercised against the product loaders. They include a complete workflow with its brief and
+Admiral launcher, a nonempty Extension Profile with exact plugin/skill identities, and settings
+fragments for the configurable services. Workflow files are loaded on the next manager run;
+Extension Profile selection uses the operator's preview/confirmation and `/reconnect reload` flow
+when the host is idle. Plain `/reconnect` restores a connection to the same host without applying
+pinned configuration. The configuration tool authors files; installation, selection, workspace
+trust, credentials, UI preferences, loop registration and background controls retain their operator
+interfaces. A working default model is needed to enter this mode.
+Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
+be replaced by an installed skill. Discovery and resources for other skills retain their existing
+snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).
+
 ## The agent fleet ships as data
 
 Clarvis ships five agents — `marshall`, `admiral`, `coder`, `explorer`, `planner` — as TypeScript in
@@ -709,7 +819,8 @@ restores no plan block.
 Plan documents are deliberately not in the trace at all: the record's `plan_ref`
 names the file, and clients read it back through `PlansService`.
 
-The internal transport uses clean-break wire contract 3. Hello negotiates the exact version and is
+The internal transport negotiates the exact `CLARVIS_WIRE_VERSION` declared in
+[`wire.ts`](src/transport/wire.ts). This is independent of the guest execution RPC revision. Hello is
 mandatory before every read, control or mutation even for in-process/default-owner connections;
 request envelopes reject unknown fields, stdio frames are capped at 8 MiB, and the serialized writer
 has bounded count/bytes plus a 30-second stall timeout. `run.result` settles execution independently

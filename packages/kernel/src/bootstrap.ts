@@ -1,5 +1,11 @@
 /** File-backed kernel bootstrap and stdio hosting. */
 export { createFileKernel } from "./file-kernel.ts";
+export { createFileRunHost } from "./hosting/file-host.ts";
+export type { FileRunHost, FileRunHostOptions } from "./hosting/file-host.ts";
+export { serveLocalFileKernel } from "./hosting/serve-local.ts";
+export type { ServeLocalFileKernelOptions, LocalFileKernelHost } from "./hosting/serve-local.ts";
+export { connectOrLaunchLocalKernel, parseLocalHostArguments } from "./hosting/launcher.ts";
+export type { LocalKernelLaunchOptions, ConnectedLocalKernel } from "./hosting/launcher.ts";
 export type {
   CreateFileKernelOptions,
   ExtensionProfileDriftNotice,

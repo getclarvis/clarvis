@@ -195,9 +195,26 @@ its root approves helper execution" in `packages/skills/tests/integration/api.te
 
 An exact empty root set is intentional: the loop exposes an empty skills provider without appending
 standard roots and without reporting a discovery failure. This keeps a custom Extension Profile with no
-standalone or plugin skills truly empty (`emptySkillsProvider` and `dynamicSkills` in
+standalone or plugin skills empty of scanned extensions (`emptySkillsProvider` and `dynamicSkills` in
 `packages/loop/src/runtime/build-run-deps.ts`; test
 `packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
+
+The file kernel subsequently composes product-owned builtin guidance, including `clarvis-configure`,
+through `withBuiltinSkills`. It is independent of Extension Profile selection and remains available
+with an empty custom profile while skills are enabled. Production:
+[builtin-skills.ts](../../packages/kernel/src/skills/builtin-skills.ts). Test:
+[builtin-skills.test.ts](../../packages/kernel/tests/integration/builtin-skills.test.ts).
+The dedicated [native configuration route](self-configuration.md) executes no extensions and does
+not acquire their run lease; ordinary execution retains the pinned snapshot contract below.
+Its shipped guide demonstrates exact plugin versus standalone skill scopes with a nonempty
+definition. Native file authoring does not select that definition: activation still uses the
+preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
+of this selection; a standalone workflow launcher follows the normal skill allow-list.
+Production: `CONFIGURATION_EXAMPLES` in
+[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
+Test: `authors a nonempty Extension Profile, previews selection, and activates the launcher on
+reconnect` in
+[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
 
 ### 4.2 Status and snapshot
 

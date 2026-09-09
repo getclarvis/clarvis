@@ -25,6 +25,18 @@ share the same windowing math
 
 ## 2. Surface
 
+Hosted backends add `/background`, `/background list`, `/background cancel <execution-id>` and
+`/attach <execution-id>` through the same deterministic command registry. Invalid arguments return
+`block` so the composer retains them. No command is forwarded to the model. The startup discovery
+view rechecks interaction ownership after its list request and cannot replace a newly typed draft.
+The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
+
+Production: `registerBackgroundCommands` in
+[commands.ts](../../packages/code/src/features/background/commands.ts), registered by
+[command-composition.ts](../../packages/code/src/app/command-composition.ts) and wired in
+[App.tsx](../../packages/code/src/views/App.tsx).
+Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
+
 ### `InputDock.tsx` — the composer
 
 | Symbol | Signature | File |
@@ -421,6 +433,17 @@ whitespace-separated token per declared argument, and the last argument takes th
 (so a trailing free-text argument keeps its spaces). A required argument left unfilled is reported
 with a warn notification naming it (`mcpEffects.collectArgs`) rather than submitted with a gap.
 Pinned: `packages/code/tests/unit/autocomplete.test.ts`.
+
+Slash parsing preserves trailing argument whitespace. Native routers may return `"block"` to keep
+invalid input editable, including a `/loop` creation missing its mandatory prompt. The live loop
+controller defers automatic admission for nonempty drafts, attachments, autocomplete and blocking
+dialogs; it never dispatches the scheduled prompt through this input parser. Production:
+`parseSlashCommand` in [autocomplete.ts](../../packages/code/src/views/input/autocomplete.ts),
+`onSlashCommand` and loop interaction gates in [App.tsx](../../packages/code/src/views/App.tsx).
+Test: literal argument tails in [autocomplete.test.ts](../../packages/code/tests/unit/autocomplete.test.ts)
+and the two loop command/control cases in
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+The schedule grammar belongs to [loop-scheduling.md](loop-scheduling.md).
 
 ### Composer sizing and history-recall gating (`views/InputDock.tsx`)
 

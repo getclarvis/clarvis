@@ -47,6 +47,14 @@ export interface GuardResolverDeps {
    * own logger, sharing its destination — see `createAuditLogger`.
    */
   audit?: Logger;
+  /**
+   * Resolve volatile consent on each command by the host's current controller. Returning undefined
+   * disables session approval; omitting the port preserves the ordinary resolver-local lifetime.
+   */
+  sessionAllowlistFor?: (run: {
+    executionId: string;
+    owner: string;
+  }) => GuardSessionAllowlist | undefined;
 }
 
 /**
@@ -178,14 +186,14 @@ function recordAnswer(
 async function answered(
   audit: Logger,
   answerer: "human" | "judge",
-  allowlist: GuardSessionAllowlist,
+  allowlist: () => GuardSessionAllowlist | undefined,
   shell: Parameters<GuardSessionAllowlist["covers"]>[0] | undefined,
   answer: Promise<boolean | GuardElicitAnswer> | boolean | GuardElicitAnswer,
 ): Promise<{ allowed: boolean; answerer: "human" | "judge" }> {
-  const before = shell !== undefined && allowlist.covers(shell);
+  const before = shell !== undefined && allowlist()?.covers(shell) === true;
   const resolved = await answer;
   const allowed = resolved === true || (typeof resolved === "object" && resolved.allowed === true);
-  const after = shell !== undefined && allowlist.covers(shell);
+  const after = shell !== undefined && allowlist()?.covers(shell) === true;
   recordAnswer(audit, answerer, allowed, allowed && after && !before);
   return { allowed, answerer };
 }
@@ -220,13 +228,15 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   `guard_judge` request param is present and a model resolves, else falls back
  *   to the human prompt. The chosen elicit is wrapped so a command already
  *   covered by the session allowlist passes without prompting.
- * @remarks One session-scoped {@link GuardSessionAllowlist} is shared across all
- *   runs of this resolver, so an `allow_session` approval carries forward. The
+ * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
+ *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
+ *   Each human question captures its current list, so late responses cannot authorize a new scope. The
  *   judge's default model falls back to `CLARVIS_DEFAULT_MODEL` from the run
  *   env when settings name none.
  */
 export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
-  const sessionAllowlist = createGuardSessionAllowlist();
+  const defaultAllowlist =
+    deps.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
   const auditRoot = deps.audit ?? NOOP_LOGGER;
   return (ctx): GuardResolution | undefined => {
     const settings = deps.loadSettings();
@@ -236,13 +246,17 @@ export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
       recordDecision(audit, guardMode, decision),
     );
     if (guard === undefined) return undefined;
+    const sessionAllowlist = (): GuardSessionAllowlist | undefined =>
+      deps.sessionAllowlistFor === undefined ? defaultAllowlist : deps.sessionAllowlistFor(ctx);
+    const elicitation = ctx.elicit;
     const humanElicit =
-      ctx.elicit !== undefined
-        ? createGuardElicit(ctx.elicit, {
-            allowlist: sessionAllowlist,
-            workspaceRoot: ctx.workspaceRoot,
-            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-          })
+      elicitation !== undefined
+        ? (req: Parameters<GuardElicit>[0]) =>
+            createGuardElicit(elicitation, {
+              allowlist: sessionAllowlist(),
+              workspaceRoot: ctx.workspaceRoot,
+              ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
+            })(req)
         : undefined;
     const judgeElicit =
       guardMode === "auto" && ctx.request.guard_judge !== undefined
@@ -291,14 +305,16 @@ export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
               if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
               return answered(audit, "human", sessionAllowlist, req.shell, humanElicit(req));
             }
-            if (req.shell !== undefined && sessionAllowlist.covers(req.shell)) {
+            if (req.shell !== undefined && sessionAllowlist()?.covers(req.shell) === true) {
               recordAnswer(audit, "session_allowlist", true, false);
               return { allowed: true, answerer: "session_allowlist" };
             }
             if (judgeElicit !== undefined) {
-              const before = req.shell !== undefined && sessionAllowlist.covers(req.shell);
+              const before =
+                req.shell !== undefined && sessionAllowlist()?.covers(req.shell) === true;
               return judgeElicit(req).then((answer) => {
-                const after = req.shell !== undefined && sessionAllowlist.covers(req.shell);
+                const after =
+                  req.shell !== undefined && sessionAllowlist()?.covers(req.shell) === true;
                 recordAnswer(
                   audit,
                   answer.answerer,

@@ -1,4 +1,10 @@
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
+import { withBuiltinSkills } from "./skills/builtin-skills.ts";
+import { configurationRoots, workspaceScopeKey } from "@clarvis/paths";
+import {
+  createNativeConfigurationRuns,
+  type NativeConfigurationRuns,
+} from "./configuration/native-configuration.ts";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -69,7 +75,11 @@ export type WorkspaceHooksTrust =
   | { state: "trusted"; fingerprint: string }
   | { state: "unapproved"; fingerprint: string }
   | { state: "changed"; fingerprint: string; approved: string };
-import { createGuardResolver, type GuardSettings } from "./guard/resolver.ts";
+import {
+  createGuardResolver,
+  type GuardResolverDeps,
+  type GuardSettings,
+} from "./guard/resolver.ts";
 import { createInProcessKernel, type InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
@@ -123,6 +133,8 @@ export interface CreateFileKernelOptions {
   environment?: KernelEnvironment;
   /** Logger to use; defaults to one built from `CLARVIS_LOG_LEVEL`. */
   logger?: Logger;
+  /** Persistent hosts bind shell session approval to current interactive control, not kernel lifetime. */
+  sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
   /** Project-host-owned physical model-call gate shared across workspace kernels. */
   modelCallAdmission?: HostModelCallAdmission;
   /** Project-host-owned physical capability/lifecycle gate shared across kernels. */
@@ -209,6 +221,8 @@ export type ExtensionProfileDriftNotice =
  * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
+  /** Host-only routing and revocation; native execution itself is not exposed through this surface. */
+  readonly nativeConfiguration: Pick<NativeConfigurationRuns, "requested" | "retireSession">;
   readonly workspaceHooks: {
     /** The current verdict for this workspace's declared hooks. */
     trust(): WorkspaceHooksTrust;
@@ -219,6 +233,8 @@ export interface FileKernel extends InProcessKernel {
   };
   /** Effective execution placement for this kernel instance. */
   readonly runtime: RuntimeStatus;
+  /** Physical execution leases, including background memory work; independent of UI connections. */
+  activeExecutionLeases(): number;
   /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
   retryRuntime(): void;
 }
@@ -756,11 +772,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     logger,
     workspaceRoot: opts.workspaceRoot,
     skillRoots: pluginSkillRoots,
+    composeSkills: withBuiltinSkills,
     skillBootstraps: pluginSkillBootstraps,
     resolveGuard: createGuardResolver({
       loadSettings: loadGuardSettings,
       logger: componentLogger("guard"),
       audit: auditLogger,
+      ...(opts.sessionAllowlistFor === undefined
+        ? {}
+        : { sessionAllowlistFor: opts.sessionAllowlistFor }),
     }),
     resolveSandbox: () => sandboxPolicy.resolve(),
     resolveSecretNames: loadSecretNames,
@@ -942,6 +962,28 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
   const nativeExecuteRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  let activeConfigurations = 0;
+  const configurationRuntime: RuntimeStatus = {
+    kind: "native",
+    host_platform: process.platform,
+    isolation: "host",
+    lifecycle: "ready",
+  };
+  const currentRuntime = (): RuntimeStatus =>
+    activeConfigurations > 0 ? configurationRuntime : runtimeCoordinator.current();
+  const nativeConfiguration = createNativeConfigurationRuns({
+    ...(built.skills === undefined ? {} : { skills: built.skills }),
+    roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+    store: configStore,
+    ...(defaultModel === undefined ? {} : { defaultModel }),
+    nativeExecuteRun,
+    onActivity: (active) => {
+      activeConfigurations += active ? 1 : -1;
+      const status = currentRuntime();
+      kernel.capabilities.runtime = status;
+      opts.onRuntimePlacement?.({ status });
+    },
+  });
   const runtimeCoordinator = createLazyRuntimeCoordinator({
     selection: runtimeSelection,
     nativeIsolation,
@@ -973,12 +1015,14 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       }
     },
     onPlacement: (notice) => {
+      if (activeConfigurations > 0) return;
       if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
       opts.onRuntimePlacement?.(notice);
     },
   });
   try {
     kernel = createInProcessKernel({
+      nativeConfiguration,
       deps,
       logger: componentLogger("kernel"),
       workspaceRoot: opts.workspaceRoot,
@@ -1024,6 +1068,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         runtime: runtimeCoordinator.current(),
       },
       dispose: async (): Promise<void> => {
+        nativeConfiguration.close();
         cleanup.stop();
         await housekeeping.stop();
         try {
@@ -1044,6 +1089,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       },
     });
   } catch (error) {
+    nativeConfiguration.close();
     cleanup.stop();
     await housekeeping.stop();
     extensionProfileManager.close();
@@ -1067,9 +1113,22 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     "the kernel is ready and now serves requests",
   );
   return Object.defineProperties(
-    Object.assign(kernel, { workspaceHooks, retryRuntime: () => runtimeCoordinator.retry() }),
+    Object.assign(kernel, {
+      workspaceHooks,
+      nativeConfiguration: {
+        requested: (params: Parameters<NativeConfigurationRuns["requested"]>[0]) =>
+          nativeConfiguration.requested(params),
+        retireSession: (owner: string, session: string) =>
+          nativeConfiguration.retireSession(
+            workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
+            session,
+          ),
+      },
+      retryRuntime: () => runtimeCoordinator.retry(),
+      activeExecutionLeases: () => extensionProfileRunRefs,
+    }),
     {
-      runtime: { enumerable: true, get: () => runtimeCoordinator.current() },
+      runtime: { enumerable: true, get: currentRuntime },
     },
   ) as FileKernel;
 }

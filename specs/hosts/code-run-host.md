@@ -17,8 +17,10 @@ Below it sit two families of module. One is the *backend adapter*:
 presents `startRun → RunHandle`, `steer`, `compact`, `getRun`, `deleteRun`, `listProfiles`, plus thin
 pass-throughs for the remaining kernel services (`packages/code/src/adapters/kernel-run-client.ts`).
 `packages/code/src/adapters/workspace-client-manager.ts` sits under *that*, owning the process's one
-pinned file kernel; `open` accepts only that workspace, returns a no-op `release`, and `invalidate`
-rebuilds the same kernel (`WorkspaceClientManager`). The other family is the *projection
+connection to its independently hosted workspace kernel. `open` accepts only that workspace and
+returns a no-op `release`; `close` releases the connection. `recover` authenticates a replacement
+connection without restarting the host. `invalidate` asks the host to accept a quiescent restart
+before releasing the previous connection (`WorkspaceClientManager`). The other family is the *projection
 stores*: `adapters/store.ts` (the reactive transcript), `adapters/activity-store.ts` (subagents, plan,
 usage, context), `adapters/session.ts` + `adapters/session-store.ts` (turn history and its persistence
 through `SessionService`), plus small leaves — `run-reducers.ts`, `run-types.ts`, `active-agent.ts`,
@@ -43,11 +45,66 @@ whether a late callback still owns the surface it wants to write to
 
 ## 2. Surface
 
+### Hosted backend adapter
+
+`KernelRunClient.hosting` exposes the connected service only when the kernel provides it.
+`startRun` then requires `StartRunInput.session` with the persisted id/revision, turn kind and preview;
+it calls `hosting.start` exactly once. Missing session metadata cannot fall back to ordinary
+`runs.start`. `attachRun` names an existing execution/generation and never submits a prompt. A client
+cannot attach twice to the same currently observed execution.
+
+The adapter replays the immutable prefix with `source: replay`, then consumes the live tail with
+`source: live`, preserving the execution id throughout. Historical events do not trigger live progress
+or memory-ingest notices. Observer attachments do not display or answer interactive questions.
+Hosted `done` waits for snapshot/tail delivery and the host's reconciliation/physical closure before
+the TUI's ordinary completion path can run. Disconnect or malformed observation rejects that promise
+and `closed` instead of fabricating a failed execution result. Observation release follows closure
+or observation failure; semantic stream end alone cannot release a still-closing host observation.
+
+Active hosted steering and explicit compaction use the attached handle's controller epoch. Mechanical
+target compaction is currently refused while such a handle is active; idle compaction uses the ordinary
+service under host maintenance admission. `RunHost` uses a local session presentation shadow for
+hosted turns and adopts canonical revisions after reconciliation. Background commands and startup
+discovery enter through the application feature composition; their product contract is in
+[hosted runs](hosted-runs.md#code-integration).
+
+Production: `startRun`, `attachRun`, `hostedHandle` and `driveHandle` in
+[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts), using
+`readHostedSnapshot` from [hosted-snapshot.ts](../../packages/kernel/src/transport/hosted-snapshot.ts).
+Test: the hosted admission, observer attach, connection-loss and missing-revision cases in
+[kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts).
+
+`SessionMeta.revision` round-trips through the protocol DTO. `SessionStore.load(id, { refresh: true })`
+waits for that id's write lane and replaces even a full cached document with the canonical read.
+A `versioned` store confirms each successful save with a read of exactly the next revision before
+advancing its cache and a same-base queued local snapshot. It never rebases a rejected/uncertain
+write on a different client's revision. Any failed versioned write stops queued/future writes and
+makes `flushPending` reject until the store is recreated; read-only refresh remains available.
+The ordinary store keeps its existing optimistic behavior. Production composition selects versioned
+mode only when it adopts hosted conversations.
+
+Production: `SessionMeta`, `metaToSession`, `sessionToMeta` and `createSessionStore` in
+[session-store.ts](../../packages/code/src/adapters/session-store.ts). Test: hosted revision round trip,
+confirmed queued revision advancement, uncertainty without replay and canonical terminal refresh in
+[session-store.test.ts](../../packages/code/tests/component/session-store.test.ts).
+
+Configuration authorization uses a volatile identity associated with the current `Session` object.
+`createRunHost` passes it as `configurationSessionId`; `toStartParams` maps it to the protocol's
+`configuration_session_id`. Neither metadata nor trace continuations store it. A resumed session
+gets a fresh identity, while successive turns in the same live object reuse it. The existing
+standalone skill path invokes `/clarvis-configure` and renders its host elicitation.
+Production: `configurationSessions` in [run-host.ts](../../packages/code/src/run-host.ts) and
+`toStartParams` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
+Test: `configuration consent identity lives only in the open TUI session, never in resume` in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts). Native admission and
+file authority are owned by [self-configuration.md](self-configuration.md).
+
 ### 2.1 `RunHost` (`packages/code/src/run-host.ts`)
 
 | Member | Signature | File |
 | --- | --- | --- |
 | `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
+| `continuesOnExit` | `Accessor<boolean>` — the active observed run has confirmed host `continue` policy; later admissions reset the projection | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`, `attachHostedRun`) |
 | `bashActive` | `Accessor<boolean>` | `packages/code/src/run-host.ts` |
 | `compactionActive` | `Accessor<boolean>` — live compaction pipeline state | `packages/code/src/run-host.ts` (`RunHost`) |
 | `physicalWorkActive` | `Accessor<boolean>` — remains true until every run handle and local command settles | `packages/code/src/run-host.ts` (`RunHost`) |
@@ -65,10 +122,14 @@ whether a late callback still owns the surface it wants to write to
 | `fitCurrentContext` | `(targetWindowTokens: number) => Promise<CompactResult \| null>` | `packages/code/src/run-host.ts` (`RunHost`) |
 | `teardownRuns` | `() => void` | `packages/code/src/run-host.ts` |
 | `submitTurn` | `(content: MessageContent, display?: string) => Promise<void>` | `packages/code/src/run-host.ts` |
+| `scheduledBinding` | `(materialize?: boolean) => LoopBinding \| null`; captures live conversation/configuration identity without a model call | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `submitScheduledTurn` | `(request: ScheduledTurnRequest) => ScheduledTurnAdmission`; reserves synchronously and never steers | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `scheduledBusy` | `Accessor<boolean>`; includes human preparation, reservations, session loading, reconciliation, physical handles, bash and outstanding compaction | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `submitPromptTurn` | `(messages, display?, skill?: {name, task?, plansMode?}) => void` | `packages/code/src/run-host.ts` |
 | `submitSkillRun` | `(name, task, agent) => Promise<void>` | `packages/code/src/run-host.ts` |
 | `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>`; `profile` is an Agent Profile id | `packages/code/src/run-host.ts` |
 | `runBangCommand` | `(cmd: string) => boolean` — whether the command was accepted | `packages/code/src/run-host.ts` |
+| `stopLocalWork` | `() => Promise<void>` — abort and await the TUI's shell, observation persistence and activity release before disconnect | `packages/code/src/run-host.ts` |
 | `clearSession` | `(opts?: { flush?: boolean }) => void` | `packages/code/src/run-host.ts` |
 | `loadSessionMeta` | `(meta: SessionMeta) => Promise<void>` | `packages/code/src/run-host.ts` |
 | `resumeSessionById` | `(id: SessionId) => Promise<void>` | `packages/code/src/run-host.ts` |
@@ -97,6 +158,8 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` and `EXPORT_INCOMPLETE_PREFIX`.
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `packages/code/src/run-host.ts` |
 | `activeProfile` / `setActiveProfile` | agent selection | yes | `packages/code/src/run-host.ts` |
 | `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
+| `executionConfiguration` | fingerprint and readable effective model label | no | [run-host.ts](../../packages/code/src/run-host.ts) |
+| `scheduledBlockedReason` / `onSessionInvalidated` | current execution health and registration invalidation ports | no | [run-host.ts](../../packages/code/src/run-host.ts) |
 | `plansMode` | `() => PlanMode` | no | `packages/code/src/run-host.ts` |
 | `planProviderKey` | `() => string \| undefined` | no | `packages/code/src/run-host.ts` |
 | `isManagerProfile` | `() => boolean` — the `workflow` grant | no | `packages/code/src/run-host.ts` |
@@ -350,7 +413,17 @@ surfaces as a run-error status rather than an incomplete request —
 
 ### 4.2 `runManaged` — the single funnel
 
-Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
+Every run shape (`submitTurn`, `submitScheduledTurn`, `submitSkillRun`, `workOnTask`) goes through it.
+Human and scheduled conversation turns share `submitPreparedTurn`. The scheduled entry additionally
+reserves before asynchronous preparation and retains that reservation through reconciliation and
+physical closure. It cannot steer, overwrite the human draft after preparation failure or dispatch
+under a changed live-session/configuration binding. Human input received before reservation wins;
+input received after reservation waits for the handle and can then steer normally. Production:
+`submitScheduledTurn`, `submitTurn`, `submitPreparedTurn` in
+[run-host.ts](../../packages/code/src/run-host.ts). Test: the automatic-admission, preparation-race,
+stale-callback, cancellation and closure/reconciliation cases in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+The complete registration contract is [loop-scheduling.md](loop-scheduling.md).
 
 | Phase | Effect | File |
 | --- | --- | --- |
@@ -369,7 +442,7 @@ Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
 | resolve | `attention.notify` when not cancelled and away | `packages/code/src/run-host.ts` (`runManaged`) |
 | reject | `onError(e)`; `store.settleRun(id)`; `attention.notify("run failed")` when not cancelled and away | `packages/code/src/run-host.ts` |
 | finally | idempotently release interactive ownership on an error path; clear the diagnostic binding and sink; resolve `currentSettlement` without awaiting `closed` | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
-| finally | `elicit.cancelPending()` unconditionally | `packages/code/src/run-host.ts` |
+| finally | `elicit.cancelPending()` only while the same session and ownership epoch remain current | `packages/code/src/run-host.ts` |
 
 `runOutcomeStatus` renders `"failed — <message>"` for a failed envelope carrying an error,
 otherwise `envelope?.status ?? "done"`.
@@ -496,13 +569,25 @@ whether a run's stream stays open.
 
 ### 4.8 `runBangCommand` (`packages/code/src/run-host.ts`)
 
-Refuses while semantic reconciliation is pending or when `bashActive()`, lazily
+Refuses during turn preparation, session loading, physical run work, compaction or another shell; lazily
 creates a session, opens the transcript's local-bash node (`store.beginLocalBash`), installs an `AbortController`, sets
 `bashActive`, status `"! running…"`, and runs `runBash(cmd, {cwd: workspace, signal})` through
 `detachObserved`. On settle it finishes the transcript node, appends a `"user"`-role
 observation to the session **only if the session is still the same object**, and updates the
 status only if both the controller and the session are still current. Terminal status
 words: `"! cancelled"`, `"! timed out"`, `` `! exit ${exitCode ?? "?"}` ``.
+
+With a hosted backend, it confirms the canonical session before reserving a `shell` activity on that
+connection. A refusal never spawns, and a session change after reservation releases the lease without
+running the command. The shell result is persisted as a pending user observation under the owning
+activity before release. `stopLocalWork` aborts and waits for the physical shell plus that persistence
+and release, allowing `closeWorkspace` to keep its authenticated connection alive until cleanup.
+An abrupt disconnect does not prove physical completion and cannot free the host reservation.
+
+Production: `runBangCommand`, `stopLocalWork`, `prepareHostedSession` and the runtime's `closeWorkspace`.
+Test: `hosted shell reserves before spawn and shutdown waits for output persistence and release`,
+`refused hosted shell admission settles its transcript without starting a process` and the existing
+clear/session-switch cases in `packages/code/tests/component/run-host.test.ts`.
 
 ### 4.9 Resident-turn folding
 
@@ -844,10 +929,18 @@ compaction event or `run_ended` clears it. A settled `/compact` has no live even
 promise settles. Replay is ignored. `App` includes this accessor in the shared spinner clock and
 passes `Compacting context…` through `Footer.status`, reusing the canonical running status surface.
 
-`reconnect` (`packages/code/src/adapters/kernel-run-client.ts`) is strictly
-`dispose() → prepareReconnect?.() → connect()`; the asserted order is create generation 1, close
-generation 1, evict, then create generation 2
-(`packages/code/tests/component/kernel-run-client.test.ts`).
+`reconnect(mode)` (`packages/code/src/adapters/kernel-run-client.ts`) is strictly
+`prepareReconnect?.(mode) → dispose() → connect()`. The preparation hook must accept the transition
+before the adapter releases a healthy client. `connection` authenticates another connection to the
+existing host; `reload` requests an idle host restart first. The omitted mode remains `reload` for
+configuration callbacks, while `/reconnect` explicitly selects `connection` and `/reconnect reload`
+selects `reload`. A refused reload leaves the existing adapter usable.
+
+Production: `createKernelRunClient.reconnect` and `WorkspaceClientManager.recover` / `invalidate`.
+Test: `reconnect confirms host retirement before releasing a healthy client`, `connection recovery
+forwards its intent without preparing a host reload` and `a refused host reload leaves the connected
+client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket and
+occupied-host cases in `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
@@ -887,11 +980,11 @@ workspace with no local policy; it writes no runtime or Sandbox field. Productio
 
 The simple picker deliberately has no runtime-recipe editor. An operator may add a script under the
 global `runtime-recipes/` directory and reference it from the strict advanced Docker `recipe` block
-in global `settings.json`; `WorkspaceClientManager` keeps image resolution on the same lazy
+in global `settings.json`; Code's `local-host.ts` keeps image resolution on the same lazy
 first-run factory, and the kernel owns script capture, build, caching and fail-closed errors. Neither
 the renderer nor a guest receives the script bytes or an operation to
-mutate that configuration. Production: `WorkspaceClientManager.create` in
-`packages/code/src/adapters/workspace-client-manager.ts`, `runtimeSettingsSchema` in
+mutate that configuration. Production: `main` in
+`packages/code/src/local-host.ts`, `runtimeSettingsSchema` in
 `packages/kernel/src/runtime/settings.ts`, and `resolveDockerRuntimeRecipe` in
 `packages/kernel/src/runtime/runtime-recipe.ts`. Test:
 `packages/kernel/tests/unit/runtime-settings.test.ts`,
@@ -1094,9 +1187,12 @@ The following are derived directly from this document's own source and its tests
     (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
     `packages/code/tests/component/kernel-run-client.test.ts`.
 
-27. **Reconnect evicts the released host kernel before opening the replacement.**
-    `dispose(); prepareReconnect?.(); connect()` (`packages/code/src/adapters/kernel-run-client.ts`).
-    Pinned: `packages/code/tests/component/kernel-run-client.test.ts`.
+27. **Reconnect preparation succeeds before releasing a healthy adapter.**
+    Connection recovery and explicit idle reload carry different intents; a refused transition
+    preserves the original client. Production: `prepareReconnect`, `reconnect` in
+    `packages/code/src/adapters/kernel-run-client.ts`. Test:
+    `packages/code/tests/component/kernel-run-client.test.ts` and
+    `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 28. **A run's usage is counted at most once per execution id.** The `counted` set is shared by
     `createSession`'s `endTurn` and `reconcile` paths in `packages/code/src/adapters/session.ts`.
@@ -1230,12 +1326,13 @@ The following are derived directly from this document's own source and its tests
     (`packages/code/src/adapters/workspace-client-manager.ts`).
 
 53. **`WorkspaceClientManager.open` only opens the process-pinned workspace and its `release` is an
-    idempotent no-op.** The manager owns the one kernel lifetime; `invalidate` rebuilds that same
-    workspace kernel during an explicit reconnect, and `close` itself is idempotent. Production:
+    idempotent no-op.** The manager owns a connection to the independent host, and `close` is
+    idempotent. A refused restart leaves the run adapter's current client intact. Production:
     `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.open`,
     `invalidate`, and `close`). Test:
     `packages/code/tests/component/workspace-client-manager.test.ts` ("opens only the process-pinned
-    workspace").
+    workspace") and `packages/code/tests/component/kernel-run-client.test.ts` ("a refused host
+    reload leaves the connected client usable").
 
 54. **Prompt history reads at most the last 8 MiB of its file and tolerates a corrupt line.**
     `packages/code/src/adapters/file-prompt-history.ts`. Pinned:
@@ -1349,7 +1446,7 @@ The following are derived directly from this document's own source and its tests
 | --- | --- | --- |
 | `@clarvis/kernel/policy` | `packages/code/src/adapters/event-span.ts` (`isIngestPending` behind `memoryIngestIsPending`), `packages/code/src/adapters/session-store.ts` (`sanitizeText`) | value imports; both are shared classification rules with a single kernel owner |
 | `@clarvis/kernel/config` | `packages/code/src/adapters/kernel-run-client.ts` (`resolveAgentsByName`), `packages/code/src/adapters/execution-safety.ts` (`parseModelRef`, `PLANS_DEFAULTS`) | value imports |
-| `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`) | type-only options plus a dynamic value import; `WorkspaceClientManager` owns one pinned file kernel without adding bootstrap to the eager startup graph |
+| `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`connectLocalKernel`) | type-only options plus a dynamic value import; `WorkspaceClientManager` connects to the independent workspace host |
 | `@clarvis/paths` | `packages/code/src/adapters/file-prompt-history.ts` (`DIR_MODE`, `FILE_MODE`, `workspaceStatePaths`) | value import — the only place in this scope that names a path |
 | `solid-js` / `solid-js/store` | `packages/code/src/run-host.ts`, `packages/code/src/adapters/store.ts`, `packages/code/src/adapters/activity-store.ts`, `packages/code/src/adapters/active-agent.ts`, `packages/code/src/adapters/connection-state.ts` | reactive primitives; `batch` is load-bearing (invariant 38) |
 | `node:crypto` | `packages/code/src/adapters/store.ts` (`createHash` for `transcriptTextFingerprint`) | value import |
@@ -1367,8 +1464,8 @@ The following are derived directly from this document's own source and its tests
 | Consumer | What it takes | File |
 | --- | --- | --- |
 | `packages/code/src/runtime.tsx` | `createRunHost` and the entire dependency wiring | `runApp` |
-| `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` bound to `workspaceManager.invalidate` | `createWorkspaceRunClient` |
-| `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; every complete headless and interactive kernel receives a lazy local runtime-factory closure, while no engine import, image resolution or container preparation occurs until the first selected container run | `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`, `prepareStartupFoundation` |
+| `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` routing connection recovery to `workspaceManager.recover` and configuration reload to `invalidate` | `createWorkspaceRunClient` |
+| `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; headless and interactive modes connect to the independent application host, whose entry composes the lazy runtime factory | `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`, `prepareStartupFoundation` |
 | `packages/code/src/runtime.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `runApp` |
 | `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | — |
 | `packages/code/src/runtime.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `runControls.forceStop` |

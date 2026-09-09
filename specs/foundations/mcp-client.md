@@ -1281,7 +1281,19 @@ through the SDK's own schemas.
 | Consumer | Kind | Evidence |
 | --- | --- | --- |
 | `@clarvis/loop` | production dependency | `packages/loop/package.json`; connection/registry consumers plus OAuth coordinator and connection-manager construction at `packages/loop/src/runtime/build-run-deps.ts` |
-| `@clarvis/kernel` | **dev**Dependency only | `packages/kernel/package.json`; no `src/` file in kernel imports it |
+| `@clarvis/kernel` | production dependency | `packages/kernel/package.json`; `createHostRemoteMcpBridge` and `createGuestMcpConnections` in `packages/kernel/src/runtime/remote-mcp.ts` consume connection/lease/elicitation ports and native acquisition errors |
+
+Container placement keeps HTTP/SSE transports and their environment/OAuth authorization on the host.
+The kernel pins the admitted server snapshot and owner, exposes run-owned tool/resource leases, and
+reconstructs native pending/deferred/failure types in the guest. Remote elicitation returns to the
+guest's existing serialized relay; stdio remains guest-local. The kernel owns the closed RPC schema
+and teardown, specified by [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Production: `createHostRemoteMcpBridge` and `createGuestMcpConnections` in
+[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts).
+Test: `runtime remote MCP ownership` in
+[`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts), and
+HTTP/SSE bearer/header/saved-OAuth plus remote elicitation cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
 
 The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
 is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts`,

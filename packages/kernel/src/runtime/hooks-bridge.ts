@@ -12,6 +12,7 @@ import {
 import type { RunExecutorArgs } from "../runs/run-service.ts";
 import type { HostCapabilityGrant } from "./authority-brokers.ts";
 import type { GuestExecutionBridge } from "./execution-worker.ts";
+import type { RuntimeHookMcpCall } from "./types.ts";
 
 export const RUNTIME_HOOKS_METHOD = "runtime.hooks";
 const REVISION = "v1";
@@ -89,10 +90,11 @@ export interface RuntimeHooksDescriptor {
   readonly lifecycle: ReadonlyArray<readonly (keyof LifecycleHook)[]>;
 }
 
-/** Activate admitted hook implementations on the host; never accept a command from the guest. */
+/** Keep hook policy on the host while routing stdio MCP execution back to the admitted guest. */
 export async function createHostHooksBridge(
   args: RunExecutorArgs,
   runId: string,
+  callGuestMcp: (call: RuntimeHookMcpCall, signal?: AbortSignal) => Promise<unknown>,
 ): Promise<
   | {
       descriptor: RuntimeHooksDescriptor;
@@ -108,8 +110,13 @@ export async function createHostHooksBridge(
   const services = createCapabilityServices();
   services.provide(MCP_HOOK_TOOL_PORT, {
     async call(server, tool, input, signal) {
-      const declaration = request.servers.find((candidate) => candidate.name === server);
+      const declaration = request.servers.find(
+        (candidate) => candidate.name === server && candidate.enabled !== false,
+      );
       if (declaration === undefined) throw new Error("hook MCP server is not active for this run");
+      if (declaration.transport === "stdio") {
+        return callGuestMcp({ server, tool, input }, signal);
+      }
       const lease = await args.deps.connections.acquire({
         server: declaration,
         owner: args.owner,

@@ -39,6 +39,15 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 
 ## 2. Surface
 
+The background-run view uses the shared level/list key registration: arrows select runs or a new
+conversation, Enter opens the selection, `t` explicitly confirms takeover of another controller,
+`c` requests cancellation when control permits it, and `ctrl+r` refreshes discovery. Escape follows
+the standard view-host dismissal boundary. Disabled verbs do not acquire authority.
+
+Production: `BackgroundView` in [view.tsx](../../packages/code/src/features/background/view.tsx).
+Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx)
+drives the shared keymap and checks attach/new-conversation rendering and actions.
+
 ### 2.1 `keys/keyspec.ts` — key-label formatting and layer priorities
 
 | Export | Signature | Cite |
@@ -126,6 +135,7 @@ this file** (see §8).
 | `ViewRoute` | `{name, factory, scope?}` — a view route mounted under a deep-linked child so Escape has a page to return to | `packages/code/src/keys/commands.ts` |
 | `CommandUi` | `{openView(name, view, opts?), dismiss(), commandFailed(name, error)}` | `packages/code/src/keys/commands.ts` |
 | `CommandScope` | `{registerAction, registerView, promptCommand, skillCommand, dispose}` | `packages/code/src/keys/commands.ts` |
+| `CommandRouteResult` | `boolean \| "block"`; handled, fall through, or preserve invalid composer input | [commands.ts](../../packages/code/src/keys/commands.ts) |
 | `Commands` | the registry API: `registerAction`, `registerView`, `promptCommand`, `skillCommand`, `dispose`, `scope()`, `runCommand`, `route`, `entries`, `revision`, `keyCommandGroups`, `viewFactory` | `packages/code/src/keys/commands.ts` |
 | `createCommands(interaction, effects, ui)` | builds the registry, wires the shared keymap, registers 3 built-in session commands | `packages/code/src/keys/commands.ts` |
 
@@ -144,6 +154,18 @@ closes the responsive Sidebar (`packages/code/src/views/App.tsx`, `openActivityS
 `activity.open` registration). The production-shaped command paths are pinned by
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals").
+
+The interactive composition registers `loop.open` as the native `/loop` action. Its parser and
+controls do not consume a model turn. A validation error returns `"block"` through the registry and
+App so InputDock preserves the draft. The list/detail use standard level navigation and `p`, `r`,
+`c`, `x` for pause, explicit resume, cancel registration and cancel registration plus its own run.
+Production: `registerLoopCommands` in
+[commands.ts](../../packages/code/src/features/loop/commands.ts), `LoopView` in
+[view.tsx](../../packages/code/src/features/loop/view.tsx), and `onSlashCommand` in
+[App.tsx](../../packages/code/src/views/App.tsx).
+Test: loop validation and interactive controls in
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+Ownership and timing are specified in [loop-scheduling.md](loop-scheduling.md).
 
 ### 2.6 `keys/keyboard-profile.ts` — compatibility environment and manual overrides
 
@@ -757,7 +779,9 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 `onPopupOpenChange`; while slash autocomplete is open, `App.inputPopupOpen` removes
 `LeadActivityLine` so the menu replaces that band instead of stacking with `ready`, `thinking` or
 `working`. When visible during a run, the activity line owns phase, elapsed time, iteration and
-the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. The canonical footer is deliberately stable across that lifecycle: it keeps
+the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
+continuation also displays `continues after exit` before the elapsed detail; this is presentation
+of host policy, not a grant or another key binding. The canonical footer is deliberately stable across that lifecycle: it keeps
 Context plus cumulative Session token totals/cost before and after settlement and never repeats
 `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
 (`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,

@@ -1,6 +1,17 @@
+import { createHash } from "node:crypto";
 import { batch, createRoot, createSignal, type Accessor, type Setter } from "solid-js";
+import {
+  sameLoopBinding,
+  type LoopBinding,
+  type LoopTurnCompletion,
+  type ScheduledTurnAdmission,
+  type ScheduledTurnRequest,
+} from "./core/loop-schedule.ts";
 import type {
   ActiveTaskRequestDto,
+  HostedActivityLease,
+  HostedRunReceipt,
+  HostedRunRef,
   Message,
   MessageContent,
   PlansMode,
@@ -42,6 +53,7 @@ import {
   type WorkflowProjectionEvent,
 } from "./adapters/workflow-projection.ts";
 import {
+  addUsageToTotals,
   redactPreview,
   type SessionId,
   type SessionMeta,
@@ -70,7 +82,7 @@ export interface RunHostDeps {
   sessionStore: SessionStore;
   history: PromptHistory;
   client: Pick<KernelRunClient, "startRun" | "steer" | "compact" | "getRun" | "files"> &
-    Partial<Pick<KernelRunClient, "context" | "currentExtensionProfile">>;
+    Partial<Pick<KernelRunClient, "context" | "currentExtensionProfile" | "hosting" | "attachRun">>;
   elicit: Pick<ElicitSlot, "cancelPending">;
   owner: string;
   project: string;
@@ -109,6 +121,12 @@ export interface RunHostDeps {
    *   fall back to whatever fields survive, exactly as the store does.
    */
   describeToolCall?: TranscriptStoreDeps["describeToolCall"];
+  /** Current settings/agent content identity, supplied by the runtime without disclosing values. */
+  executionConfiguration?: () => { fingerprint: string; label: string };
+  /** Current connection, readiness and UI admission gates; never grants authority itself. */
+  scheduledBlockedReason?: () => string | null;
+  /** Invalidate in-memory recurrence when the conversation or host authority changes. */
+  onSessionInvalidated?: (id: string, reason: "clear" | "switch" | "teardown") => void;
 }
 
 /** One live-only MCP startup warning that the TUI may show outside the transcript. */
@@ -127,6 +145,8 @@ export interface McpStartupNotice {
 export interface RunHost {
   /** True only while the current run can still accept interactive control. */
   runActive: Accessor<boolean>;
+  /** The currently observed run has a host-confirmed policy to continue after this TUI exits. */
+  continuesOnExit: Accessor<boolean>;
   bashActive: Accessor<boolean>;
   /** True while the context-compaction pipeline is doing hook or model work. */
   compactionActive: Accessor<boolean>;
@@ -163,7 +183,19 @@ export interface RunHost {
   inspectCurrentContext(targetWindowTokens: number): ReturnType<KernelRunClient["context"]> | null;
   fitCurrentContext(targetWindowTokens: number): Promise<CompactResult | null>;
   teardownRuns(): void;
+  /** Abort TUI-owned shell work and wait for its physical completion and lease release before disconnecting. */
+  stopLocalWork(): Promise<void>;
+  /** Commit continuation in the independent host and release only this TUI's ownership. */
+  backgroundCurrentRun(): Promise<HostedRunReceipt>;
+  /** Open a hosted execution's conversation and observe the same execution without a start. */
+  attachHostedRun(ref: HostedRunRef, control?: "observe" | "acquire" | "takeover"): Promise<void>;
   submitTurn(content: MessageContent, display?: string): Promise<void>;
+  /** Current live conversation binding; materialization creates no run or transcript message. */
+  scheduledBinding(materialize?: boolean): LoopBinding | null;
+  /** Reserve an automatic turn synchronously; an occupied host never converts it to steer. */
+  submitScheduledTurn(request: ScheduledTurnRequest): ScheduledTurnAdmission;
+  /** Reactive complete admission gate, including preparation, reconciliation and physical work. */
+  scheduledBusy: Accessor<boolean>;
   submitPromptTurn(
     messages: PromptMessage[],
     display?: string,
@@ -351,11 +383,23 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
+  const configurationSessions = new WeakMap<Session, string>();
+  const configurationSessionId = (active: Session): string => {
+    let id = configurationSessions.get(active);
+    if (id === undefined) {
+      id = crypto.randomUUID();
+      configurationSessions.set(active, id);
+    }
+    return id;
+  };
   let sessionTask: ActiveTaskRequestDto | undefined;
   const [runActive, setRunActive] = createSignal(false);
+  const [disconnectPolicy, setDisconnectPolicy] =
+    createSignal<HostedRunRef["disconnect_policy"]>("cancel");
   const [compactionActive, setCompactionActive] = createSignal(false);
   const [physicalRunCount, setPhysicalRunCount] = createSignal(0);
   let bashAbort: AbortController | undefined;
+  let localWork: Promise<void> | undefined;
   const [bashActive, setBashActive] = createSignal(false);
   const [runStatus, setRunStatus] = createSignal("idle");
   const setStatus = (line: StatusLine): void => {
@@ -373,6 +417,174 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let workflowRunId: string | null = null;
   let draftRestore: ((text: string, content?: MessageContent) => void) | undefined;
   let loadEpoch = 0;
+  const [sessionGeneration, setSessionGeneration] = createSignal(0);
+  const [sessionLoading, setSessionLoading] = createSignal(false);
+  const [humanSubmissions, setHumanSubmissions] = createSignal(0);
+  const [compactionCalls, setCompactionCalls] = createSignal(0);
+  const [localCommandCount, setLocalCommandCount] = createSignal(0);
+  const [scheduledReserved, setScheduledReserved] = createSignal(false);
+  const [settlementActive, setSettlementActive] = createSignal(false);
+  interface ScheduledReservation {
+    request: ScheduledTurnRequest;
+    executionId: string;
+    ready: Promise<void>;
+    releaseReady(): void;
+    cancelled: boolean;
+    handles: RunHandle[];
+  }
+  let scheduledReservation: ScheduledReservation | undefined;
+
+  function scheduledBinding(materialize = false): LoopBinding | null {
+    const generation = sessionGeneration();
+    if (sessionLoading()) return null;
+    const profile = deps.activeProfile();
+    if (!profile) return null;
+    if (!session && materialize) {
+      loadEpoch += 1;
+      session = createSession(boundSessionDeps, { agentProfile: profile });
+    }
+    const meta = materialize ? session?.ensureIdentity("Scheduled conversation") : session?.meta();
+    if (!meta) return null;
+    const configuration = deps.executionConfiguration?.();
+    return {
+      sessionId: meta.id,
+      generation,
+      owner,
+      workspaceId,
+      agentId: profile,
+      configFingerprint: createHash("sha256")
+        .update(
+          JSON.stringify([
+            configuration?.fingerprint,
+            profile,
+            deps.guardMode(),
+            deps.judgePayload(deps.guardMode()),
+            deps.memoryMode(),
+            deps.plansMode?.(),
+            deps.planProviderKey?.(),
+            sessionTask,
+            client.currentExtensionProfile?.(),
+          ]),
+        )
+        .digest("hex"),
+      configLabel:
+        configuration?.label ?? `review ${deps.guardMode()} · memory ${deps.memoryMode()}`,
+    };
+  }
+
+  const scheduledBusy = (): boolean =>
+    scheduledReserved() ||
+    humanSubmissions() > 0 ||
+    sessionLoading() ||
+    settlementActive() ||
+    runActive() ||
+    physicalRunCount() > 0 ||
+    localCommandCount() > 0 ||
+    compactionActive() ||
+    compactionCalls() > 0;
+
+  function assertAutomatic(reservation: ScheduledReservation): void {
+    if (
+      reservation.cancelled ||
+      !reservation.request.valid() ||
+      !sameLoopBinding(reservation.request.binding, scheduledBinding()) ||
+      deps.scheduledBlockedReason?.()
+    )
+      throw new Error("Scheduled occurrence invalidated before dispatch.");
+  }
+
+  function turnCompletion(result: RunResult | undefined): LoopTurnCompletion {
+    if (!result || result.status === "running")
+      return {
+        status: "unknown",
+        reason: "Run result is unavailable; inspect it before resuming.",
+        usage: {},
+      };
+    const totals: SessionTotals = { input: 0, output: 0 };
+    if (result.usage) addUsageToTotals(totals, result.usage, priceFor);
+    const attributed = (result.usage?.by_agent?.length ?? 0) > 0;
+    const costsKnown =
+      attributed && result.usage!.by_agent!.every((agent) => priceFor(agent.model) !== undefined);
+    return {
+      status: result.status,
+      ...(result.error?.message
+        ? { reason: result.error.message }
+        : result.ended_reason && result.status !== "completed"
+          ? { reason: result.ended_reason }
+          : {}),
+      usage: result.usage
+        ? {
+            ...(attributed || result.usage.input_tokens !== undefined
+              ? { input: attributed ? totals.input : result.usage.input_tokens }
+              : {}),
+            ...(attributed || result.usage.output_tokens !== undefined
+              ? { output: attributed ? totals.output : result.usage.output_tokens }
+              : {}),
+            ...(costsKnown ? { costUsd: totals.costUsd ?? 0 } : {}),
+          }
+        : {},
+    };
+  }
+
+  function submitScheduledTurn(request: ScheduledTurnRequest): ScheduledTurnAdmission {
+    if (!sameLoopBinding(request.binding, scheduledBinding()) || !request.valid())
+      return {
+        status: "refused",
+        reason: "Conversation or execution configuration changed; resume explicitly.",
+      };
+    const blocked = deps.scheduledBlockedReason?.();
+    if (blocked) return { status: "deferred", reason: blocked };
+    if (scheduledBusy()) return { status: "deferred", reason: "The conversation is occupied." };
+    let releaseReady!: () => void;
+    const reservation: ScheduledReservation = {
+      request,
+      executionId: "exec_" + crypto.randomUUID(),
+      cancelled: false,
+      handles: [],
+      ready: new Promise<void>((resolve) => {
+        releaseReady = resolve;
+      }),
+      releaseReady: () => releaseReady(),
+    };
+    scheduledReservation = reservation;
+    setScheduledReserved(true);
+    const completion = (async (): Promise<LoopTurnCompletion> => {
+      let result: LoopTurnCompletion;
+      try {
+        result =
+          (await submitPreparedTurn(request.prompt, undefined, undefined, reservation)) ??
+          turnCompletion(undefined);
+      } catch (error) {
+        result = {
+          status: reservation.cancelled ? "cancelled" : "failed",
+          reason: errorText(error),
+          usage: {},
+        };
+      } finally {
+        reservation.releaseReady();
+      }
+      const closed = await Promise.allSettled(reservation.handles.map((handle) => handle.closed));
+      if (closed.some((entry) => entry.status === "rejected"))
+        result = {
+          ...result,
+          status: "unknown",
+          reason: "Run closure failed; inspect its result before resuming.",
+        };
+      if (scheduledReservation === reservation) scheduledReservation = undefined;
+      setScheduledReserved(scheduledReservation !== undefined);
+      return result;
+    })();
+    return {
+      status: "admitted",
+      executionId: reservation.executionId,
+      completion,
+      cancel: async () => {
+        reservation.cancelled = true;
+        const handle = reservation.handles.at(-1);
+        if (handle) await handle.cancel();
+      },
+    };
+  }
 
   function isWorkflowProjectionEvent(event: RunEvent): event is WorkflowProjectionEvent {
     return (
@@ -396,10 +608,36 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     project,
     workspace: workspaceId,
     priceFor,
+    hosted: client.hosting !== undefined,
     ...(client.currentExtensionProfile === undefined
       ? {}
       : { extensionProfile: client.currentExtensionProfile }),
   };
+  let sessionRetirement: Promise<void> = Promise.resolve();
+  let handoffFlight: Promise<HostedRunReceipt> | undefined;
+  let pendingHandoff: { operationId: string; executionId: string } | undefined;
+
+  async function prepareHostedSession(
+    sess: Session,
+    title: string,
+  ): Promise<
+    | {
+        session_id: string;
+        session_revision: number;
+      }
+    | undefined
+  > {
+    if (client.hosting === undefined) return undefined;
+    await sessionRetirement;
+    const identity = sess.ensureIdentity(title);
+    await sessionStore.flushPending?.();
+    const canonical = await sessionStore.load(identity.id, { refresh: true });
+    if (session !== sess) throw new Error("conversation changed during hosted preparation");
+    if (canonical?.revision === undefined)
+      throw new Error("hosted conversation has no confirmed revision");
+    sess.acceptHosted(canonical);
+    return { session_id: canonical.id, session_revision: canonical.revision };
+  }
 
   /**
    * Apply one run event to the transcript and the workflow projection.
@@ -497,6 +735,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     cancelRequested = true;
     setStatus(["cancelling", { mark: "ellipsis" }]);
     const handle = currentHandle;
+    if (scheduledReservation?.handles.includes(handle)) scheduledReservation.cancelled = true;
     void handle.cancel().catch((error: unknown) => {
       if (currentHandle !== handle || !runActive()) return;
       cancelRequested = false;
@@ -515,12 +754,17 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function compactCurrentRun(request?: string): Promise<void> {
+    if (scheduledReserved() && !runActive()) {
+      setStatus(["a scheduled turn is preparing or closing; compact after it settles"]);
+      return;
+    }
     const executionId = latestExecutionId();
     if (executionId === undefined) {
       setStatus(["no session context to compact"]);
       return;
     }
     const settled = !runActive();
+    setCompactionCalls((count) => count + 1);
     if (settled) setCompactionActive(true);
     try {
       const result = await client.compact({
@@ -541,6 +785,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     } catch (error) {
       setStatus([`compaction failed: ${errorText(error)}`]);
     } finally {
+      setCompactionCalls((count) => count - 1);
       if (settled) setCompactionActive(false);
     }
   }
@@ -555,20 +800,50 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function fitCurrentContext(targetWindowTokens: number): Promise<CompactResult | null> {
+    if (scheduledReserved() && !runActive()) return null;
     const executionId = latestExecutionId();
     if (executionId === undefined) return null;
-    return client.compact({ executionId, mechanicalTargetTokens: targetWindowTokens });
+    setCompactionCalls((count) => count + 1);
+    try {
+      return await client.compact({ executionId, mechanicalTargetTokens: targetWindowTokens });
+    } finally {
+      setCompactionCalls((count) => count - 1);
+    }
   }
 
-  function teardownRuns(): void {
+  function teardownRuns(reason: "clear" | "switch" | "teardown" = "teardown"): void {
+    const previousSession = session?.meta()?.id;
+    if (previousSession) deps.onSessionInvalidated?.(previousSession, reason);
+    const hosting = client.hosting;
+    if (hosting !== undefined && previousSession !== undefined) {
+      sessionRetirement = Promise.all([
+        sessionRetirement,
+        hosting.closeSession(previousSession),
+      ]).then(() => undefined);
+      detachObserved("hosting.session.retirement", () => sessionRetirement);
+    }
+    if (scheduledReservation) {
+      scheduledReservation.cancelled = true;
+      scheduledReservation.releaseReady();
+    }
     runOwnershipEpoch += 1;
+    setSessionGeneration((generation) => generation + 1);
     const settlement = currentSettlement;
     currentSettlement = undefined;
+    setSettlementActive(false);
     settlement?.release();
     bashAbort?.abort();
-    if (currentHandle) {
+    if (currentHandle && hosting === undefined) {
       cancelRequested = true;
       void currentHandle.cancel().catch(() => undefined);
+    }
+    if (hosting !== undefined) {
+      for (const handle of physicalHandles) {
+        if (handle.releaseObservation !== undefined)
+          detachObserved("hosting.observation.release", () => handle.releaseObservation!());
+        physicalHandles.delete(handle);
+        setPhysicalRunCount((count) => Math.max(0, count - 1));
+      }
     }
     currentSink = undefined;
     currentHandle = undefined;
@@ -580,6 +855,72 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setCompactionActive(false);
     setSessionUsageBaseline(null);
     deps.attention?.setTitle(null);
+  }
+
+  function backgroundCurrentRun(): Promise<HostedRunReceipt> {
+    if (handoffFlight !== undefined) return handoffFlight;
+    const hosting = client.hosting;
+    const handle = currentHandle;
+    const sess = session;
+    if (hosting === undefined || handle === undefined || sess === undefined)
+      return Promise.reject(new Error("there is no hosted run to move to background"));
+    if (bashActive() || compactionActive())
+      return Promise.reject(new Error("finish the local command or compaction before background"));
+    const ownership = runOwnershipEpoch;
+    const flight = (async () => {
+      let receipt: HostedRunReceipt | null;
+      if (pendingHandoff?.executionId === handle.executionId) {
+        receipt = await hosting.receipt(pendingHandoff.operationId);
+        if (receipt === null)
+          throw new Error("background handoff is unconfirmed; reconnect to inspect the hosted run");
+      } else {
+        const ref = (await hosting.list()).find(
+          (entry) => entry.execution_id === handle.executionId,
+        );
+        if (
+          ref === undefined ||
+          ref.session_id !== sess.meta()?.id ||
+          ref.workspace_id !== workspaceId ||
+          session !== sess ||
+          runOwnershipEpoch !== ownership
+        )
+          throw new Error("conversation changed before background handoff");
+        const operationId = crypto.randomUUID();
+        pendingHandoff = { executionId: handle.executionId, operationId };
+        try {
+          receipt = await hosting.detach({
+            execution_id: ref.execution_id,
+            host_generation: ref.host_generation,
+            operation_id: operationId,
+            control_epoch: ref.control_epoch,
+            revision: ref.revision,
+          });
+        } catch (error) {
+          const recovered = await hosting.receipt(operationId).catch(() => null);
+          if (recovered === null) throw error;
+          receipt = recovered;
+        }
+      }
+      if (session === sess && runOwnershipEpoch === ownership) {
+        teardownRuns("teardown");
+        elicit.cancelPending();
+        setStatus(["run continues in background"]);
+      } else
+        throw new Error(
+          "The run is in background; the conversation changed, so this TUI remains open.",
+        );
+      return receipt;
+    })();
+    handoffFlight = flight;
+    void flight.then(
+      () => {
+        if (handoffFlight === flight) handoffFlight = undefined;
+      },
+      () => {
+        if (handoffFlight === flight) handoffFlight = undefined;
+      },
+    );
+    return flight;
   }
 
   type RunEnvelope = Awaited<RunHandle["done"]>;
@@ -606,6 +947,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sess: Session;
     executionId: string;
     initialStatus: StatusLine;
+    disconnectPolicy?: HostedRunRef["disconnect_policy"];
     run: (setHandle: (h: RunHandle) => void) => Promise<RunEnvelope>;
     afterRun?: (envelope: RunEnvelope) => void;
     onStored: (envelope: RunEnvelope, stored: StoredRun, sink: RunSink) => void;
@@ -613,6 +955,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }): Promise<void> {
     const { sess, executionId } = opts;
     const ownershipEpoch = runOwnershipEpoch;
+    const hosted = client.hosting !== undefined;
     const attention = deps.attention;
     const transcript = store.openRun(executionId);
     const sink = teeSink(transcript, activity.openRun({ current: true }));
@@ -623,6 +966,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     diagnosticBind({ execution_id: executionId });
     const baseline = sess.meta()?.totals;
     setSessionUsageBaseline(baseline === undefined ? null : { ...baseline });
+    setDisconnectPolicy(hosted ? (opts.disconnectPolicy ?? "cancel") : "cancel");
     setRunActive(true);
     setCompactionActive(false);
     setRunStartedAt(Date.now());
@@ -637,6 +981,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       release: () => releaseSettlement(),
     };
     currentSettlement = settlement;
+    setSettlementActive(true);
     let interactiveReleased = false;
     const releaseInteractiveOwnership = (): void => {
       if (interactiveReleased || ownershipEpoch !== runOwnershipEpoch || currentSink?.sink !== sink)
@@ -660,16 +1005,21 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         setPhysicalRunCount((count) => count + 1);
         void h.closed.then(
           () => {
-            physicalHandles.delete(h);
-            setPhysicalRunCount((count) => Math.max(0, count - 1));
+            if (physicalHandles.delete(h)) setPhysicalRunCount((count) => Math.max(0, count - 1));
           },
           () => {
-            physicalHandles.delete(h);
-            setPhysicalRunCount((count) => Math.max(0, count - 1));
+            if (physicalHandles.delete(h)) setPhysicalRunCount((count) => Math.max(0, count - 1));
           },
         );
       });
       if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
+      if (hosted) {
+        const id = sess.meta()?.id;
+        const canonical = id === undefined ? null : await sessionStore.load(id, { refresh: true });
+        if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
+        if (canonical === null) throw new Error("hosted conversation could not be reconciled");
+        sess.acceptHosted(canonical);
+      }
       opts.afterRun?.(envelope);
       setStatus(runOutcomeStatus(envelope));
       releaseInteractiveOwnership();
@@ -714,9 +1064,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         diagnosticBind({ execution_id: undefined });
         currentSink = undefined;
       }
-      if (currentSettlement === settlement) currentSettlement = undefined;
+      if (currentSettlement === settlement) {
+        currentSettlement = undefined;
+        setSettlementActive(false);
+      }
       settlement.release();
-      elicit.cancelPending();
+      if (session === sess && ownershipEpoch === runOwnershipEpoch) elicit.cancelPending();
     }
   }
 
@@ -725,6 +1078,24 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     display?: string,
     skill?: { name: string; task?: string; plansMode?: PlansMode },
   ): Promise<void> {
+    const epoch = runOwnershipEpoch;
+    setHumanSubmissions((count) => count + 1);
+    try {
+      if (scheduledReservation && !currentHandle) await scheduledReservation.ready;
+      if (epoch !== runOwnershipEpoch) return;
+      await submitPreparedTurn(content, display, skill);
+    } finally {
+      setHumanSubmissions((count) => count - 1);
+    }
+  }
+
+  async function submitPreparedTurn(
+    content: MessageContent,
+    display?: string,
+    skill?: { name: string; task?: string; plansMode?: PlansMode },
+    automatic?: ScheduledReservation,
+  ): Promise<LoopTurnCompletion | void> {
+    const preparationEpoch = runOwnershipEpoch;
     const profile = deps.activeProfile();
     if (!profile) {
       setStatus(["no backend yet"]);
@@ -738,14 +1109,20 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           ? await buildContent(content, loadImage)
           : await appendMentionImages(content, loadImage);
     } catch (error) {
+      if (automatic) throw error;
       if (!(error instanceof MentionImageError)) throw error;
+      if (preparationEpoch !== runOwnershipEpoch) return;
       setStatus([error.message]);
       draftRestore?.(draftText, typeof content === "string" ? undefined : content);
       return;
     }
+    if (automatic) assertAutomatic(automatic);
+    if (preparationEpoch !== runOwnershipEpoch) return;
     const settlement = currentSettlement;
     if (!runActive() && settlement !== undefined) await settlement.promise;
-    if (runActive() && currentHandle) {
+    if (preparationEpoch !== runOwnershipEpoch) return;
+    if (automatic) assertAutomatic(automatic);
+    if (automatic === undefined && runActive() && currentHandle) {
       const execId = currentHandle.executionId;
       const queuedReceipt =
         currentSink?.executionId === execId
@@ -753,6 +1130,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           : undefined;
       try {
         const res = await client.steer({ executionId: execId, message: msg, profile });
+        if (preparationEpoch !== runOwnershipEpoch) return;
         if (res.status !== "steered") queuedReceipt?.discard();
         setStatus(
           res.status === "steered"
@@ -760,6 +1138,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             : [`steer: ${res.status}`],
         );
       } catch {
+        if (preparationEpoch !== runOwnershipEpoch) return;
         queuedReceipt?.fail();
         setStatus(["steer failed ", { mark: "emDash" }, " message restored to the input"]);
         draftRestore?.(draftText, typeof content === "string" ? undefined : content);
@@ -771,8 +1150,29 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       session = createSession(boundSessionDeps, { agentProfile: profile });
     }
     const sess = session;
-    const executionId = "exec_" + crypto.randomUUID();
+    const executionId = automatic?.executionId ?? "exec_" + crypto.randomUUID();
+    let hostedSession: Awaited<ReturnType<typeof prepareHostedSession>>;
+    try {
+      hostedSession = await prepareHostedSession(sess, draftText);
+    } catch (error) {
+      if (automatic) throw error;
+      if (preparationEpoch === runOwnershipEpoch) {
+        setStatus([`turn was not admitted: ${errorText(error)}`]);
+        draftRestore?.(draftText, typeof content === "string" ? undefined : content);
+      }
+      return;
+    }
+    if (preparationEpoch !== runOwnershipEpoch || session !== sess) return;
+    if (automatic) assertAutomatic(automatic);
+    const assertPreparation = (): void => {
+      if (session !== sess || preparationEpoch !== runOwnershipEpoch)
+        throw new Error("Conversation changed during turn preparation.");
+      if (automatic) assertAutomatic(automatic);
+    };
+    let completion = turnCompletion(undefined);
     const messagesBeforeTurn = [...sess.messages()];
+    const hostedPending = hostedSession === undefined ? 0 : (sess.meta()?.pending?.length ?? 0);
+    if (hostedPending > 0) messagesBeforeTurn.splice(-hostedPending);
     const userKey = store.appendUserMessage(msg, display, executionId);
     if ((skill?.plansMode ?? deps.plansMode?.()) === "review")
       store.appendNotice(
@@ -793,12 +1193,18 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       ...(memoryMode === "off" ? { memory: memoryMode } : {}),
     };
     const pending = sess.takePending();
+    const requestPending = hostedSession === undefined ? pending : [];
     const isManager = deps.isManagerProfile?.() === true;
     workflowRunId = executionId;
     setWorkflowActivity(null);
     const fullRequestMessages = async (): Promise<Message[]> => {
       if (sess.hasCompleteHistory())
-        return [...(skill === undefined ? sess.messages() : messagesBeforeTurn)];
+        return hostedSession === undefined
+          ? [...(skill === undefined ? sess.messages() : messagesBeforeTurn)]
+          : [
+              ...messagesBeforeTurn,
+              ...(skill === undefined ? [{ role: "user" as const, content: msg }] : []),
+            ];
       const currentMeta = sess.meta();
       if (currentMeta === null) throw new Error("cannot rebuild a detached session's full history");
       const historical = await resumeSession(
@@ -810,6 +1216,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         },
         { renderWindow: 0 },
       );
+      assertPreparation();
       if (historical.degraded.length > 0)
         throw new Error(
           `cannot rebuild full history: ${historical.degraded.length} persisted run trace${historical.degraded.length === 1 ? " is" : "s are"} unavailable`,
@@ -817,11 +1224,32 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       const beforeCurrent = [...historical.messages, ...pending];
       const semanticHistory = [...beforeCurrent, { role: "user" as const, content: msg }];
       sess.restoreHistory(semanticHistory);
-      return skill === undefined ? semanticHistory : beforeCurrent;
+      return hostedSession === undefined
+        ? skill === undefined
+          ? semanticHistory
+          : beforeCurrent
+        : [
+            ...historical.messages,
+            ...(skill === undefined ? [{ role: "user" as const, content: msg }] : []),
+          ];
     };
-    const startFull = (messages?: readonly Message[]): RunHandle =>
-      client.startRun({
-        messages: [...(messages ?? (skill === undefined ? sess.messages() : messagesBeforeTurn))],
+    const startFull = (messages?: readonly Message[]): RunHandle => {
+      assertPreparation();
+      return client.startRun({
+        ...(hostedSession === undefined
+          ? {}
+          : { session: { ...hostedSession, kind: "conversation", user_preview: draftText } }),
+        messages: [
+          ...(messages ??
+            (hostedSession === undefined
+              ? skill === undefined
+                ? sess.messages()
+                : messagesBeforeTurn
+              : [
+                  ...messagesBeforeTurn,
+                  ...(skill === undefined ? [{ role: "user" as const, content: msg }] : []),
+                ])),
+        ],
         profile,
         executionId,
         ...(skill !== undefined
@@ -833,19 +1261,36 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             }
           : {}),
         ...(promptCacheKey ? { promptCacheKey } : {}),
+        configurationSessionId: configurationSessionId(sess),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...guardArgs,
       });
+    };
     await runManaged({
       sess,
       executionId,
       initialStatus: ["running", { mark: "ellipsis" }],
       run: async (setHandle) => {
+        assertPreparation();
+        const attach = (handle: RunHandle): void => {
+          setHandle(handle);
+          if (automatic) {
+            automatic.handles.push(handle);
+            automatic.releaseReady();
+          }
+        };
         const handle =
           continueFrom && !isManager
             ? client.startRun({
+                ...(hostedSession === undefined
+                  ? {}
+                  : {
+                      session: { ...hostedSession, kind: "conversation", user_preview: draftText },
+                    }),
                 messages:
-                  skill === undefined ? [...pending, { role: "user", content: msg }] : pending,
+                  skill === undefined
+                    ? [...requestPending, { role: "user", content: msg }]
+                    : requestPending,
                 profile,
                 executionId,
                 continueFrom,
@@ -858,14 +1303,22 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                     }
                   : {}),
                 ...(promptCacheKey ? { promptCacheKey } : {}),
+                configurationSessionId: configurationSessionId(sess),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...guardArgs,
               })
             : startFull(isManager ? await fullRequestMessages() : undefined);
-        setHandle(handle);
+        attach(handle);
         let envelope = await handle.done;
-        if (continueFrom && !isManager && isContinuationUnavailable(envelope) && !cancelRequested) {
+        if (
+          hostedSession === undefined &&
+          continueFrom &&
+          !isManager &&
+          isContinuationUnavailable(envelope) &&
+          !cancelRequested
+        ) {
           await handle.closed;
+          assertPreparation();
           setStatus([
             "context expired ",
             { mark: "emDash" },
@@ -873,22 +1326,39 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             { mark: "ellipsis" },
           ]);
           const retry = startFull(await fullRequestMessages());
-          setHandle(retry);
+          attach(retry);
           envelope = await retry.done;
         }
         return envelope;
       },
-      afterRun: (envelope) => sess.endTurn(envelope),
+      afterRun: (envelope) => {
+        sess.endTurn(envelope);
+        completion = turnCompletion(envelope);
+        if (cancelRequested || automatic?.cancelled)
+          completion = { ...completion, status: "cancelled" };
+      },
       onStored: (_envelope, stored, sink) => {
         sess.reconcile(stored);
         replayRunEvents(sink, stored);
         if (stored !== null) sess.releaseHistory();
+        else if (automatic)
+          completion = {
+            ...completion,
+            status: "unknown",
+            reason: "Persisted reconciliation is unavailable; inspect the run before resuming.",
+          };
       },
       onError: (e) => {
         sess.endTurn(undefined);
         setStatus([cancelRequested ? "cancelled" : `run error: ${errorText(e)}`]);
+        completion = {
+          status: cancelRequested || automatic?.cancelled ? "cancelled" : "unknown",
+          reason: errorText(e),
+          usage: {},
+        };
       },
     });
+    return completion;
   }
 
   function submitPromptTurn(
@@ -909,6 +1379,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function submitSkillRun(name: string, task: string, agent: string): Promise<void> {
+    if (scheduledReserved()) {
+      setStatus(["busy ", { mark: "emDash" }, " finish the scheduled turn first"]);
+      return;
+    }
     const settlement = currentSettlement;
     if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive()) {
@@ -923,6 +1397,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
     const label = task.trim().length > 0 ? `/${name} ${task.trim()}` : `/${name}`;
+    const hostedSession = await prepareHostedSession(sess, label);
+    if (session !== sess) return;
     const userKey = store.appendUserMessage(label, label, executionId);
     const promptCacheKey = sess.meta()?.id;
     sess.beginTranscriptTurn(label, executionId);
@@ -935,10 +1411,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       initialStatus: [`running /${name} on ${agent}`, { mark: "ellipsis" }],
       run: (setHandle) => {
         const handle = client.startRun({
+          ...(hostedSession === undefined
+            ? {}
+            : { session: { ...hostedSession, kind: "transcript", user_preview: label } }),
           skill: { name, task },
           executionId,
           profile,
           ...(promptCacheKey ? { promptCacheKey } : {}),
+          configurationSessionId: configurationSessionId(sess),
           guardMode: skillGuardMode,
           ...deps.judgePayload(skillGuardMode),
           ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
@@ -949,9 +1429,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       afterRun: (envelope) => sess.endTranscriptTurn(envelope),
       onStored: (envelope, stored, sink) => {
         replayRunEvents(sink, stored);
-        sess.appendObservation(
-          buildSkillRunDigest(name, agent, envelope, stored, deps.planProviderKey?.()),
-        );
+        if (hostedSession === undefined)
+          sess.appendObservation(
+            buildSkillRunDigest(name, agent, envelope, stored, deps.planProviderKey?.()),
+          );
+        else sess.releaseHistory();
       },
       onError: (e) => {
         sess.endTranscriptTurn(undefined);
@@ -961,6 +1443,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function workOnTask(ref: TaskRefDto, profile: string): Promise<void> {
+    if (scheduledReserved()) {
+      setStatus(["busy ", { mark: "emDash" }, " finish the scheduled turn first"]);
+      return;
+    }
     const settlement = currentSettlement;
     if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive() || bashActive()) {
@@ -982,6 +1468,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       `Work on task ${ref.id} in the current workspace. Read the active task context, ` +
       "call start_task explicitly when that tool is available and you are ready to begin, and keep every review or completion transition explicit.";
     const display = `Work on task ${ref.id}`;
+    const hostedSession = await prepareHostedSession(sess, display);
+    if (session !== sess) return;
     const userKey = store.appendUserMessage(message, display, executionId);
     sess.beginTurn(message, executionId);
     rememberResidentTurn({ userKey });
@@ -996,11 +1484,15 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       initialStatus: [`working on ${ref.id}`, { mark: "ellipsis" }],
       run: (setHandle) => {
         const handle = client.startRun({
+          ...(hostedSession === undefined
+            ? {}
+            : { session: { ...hostedSession, kind: "conversation", user_preview: display } }),
           messages: [...sess.messages()],
           profile,
           executionId,
           task: sessionTask,
           ...(promptCacheKey ? { promptCacheKey } : {}),
+          configurationSessionId: configurationSessionId(sess),
           guardMode,
           ...deps.judgePayload(guardMode),
           ...(memoryMode === "off" ? { memory: memoryMode } : {}),
@@ -1022,7 +1514,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function runBangCommand(cmd: string): boolean {
-    if (currentSettlement !== undefined) return false;
+    if (scheduledReserved() || humanSubmissions() > 0 || sessionLoading()) return false;
+    if (currentSettlement !== undefined || compactionCalls() > 0 || physicalRunCount() > 0)
+      return false;
     if (bashActive()) {
       setStatus(["a ! command is already running ", { mark: "emDash" }, " draft kept"]);
       return false;
@@ -1034,37 +1528,82 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       });
     }
     const sess = session;
+    const hosting = client.hosting;
     const finish = store.beginLocalBash(cmd);
+    let finished = false;
     const abort = new AbortController();
     bashAbort = abort;
     setBashActive(true);
+    setLocalCommandCount((count) => count + 1);
     setStatus(["! running", { mark: "ellipsis" }]);
+    localWork = (async () => {
+      let lease: HostedActivityLease | undefined;
+      try {
+        if (hosting !== undefined) {
+          const binding = await prepareHostedSession(sess, cmd);
+          abort.signal.throwIfAborted();
+          lease = await hosting.reserveActivity(binding!.session_id, "shell");
+          if (session !== sess)
+            throw new Error("conversation changed before local shell admission");
+        }
+        abort.signal.throwIfAborted();
+        const result = await runBash(cmd, { cwd: workspace, signal: abort.signal });
+        finish(result);
+        finished = true;
+        if (session === sess) {
+          sess.appendObservation(formatBashObservation(cmd, result), "user");
+          if (hosting !== undefined) {
+            await sessionStore.flushPending?.();
+            const canonical = await sessionStore.load(lease!.session_id, { refresh: true });
+            if (session === sess && canonical !== null) sess.acceptHosted(canonical);
+          }
+        }
+        if (bashAbort === abort && session === sess)
+          setStatus([
+            result.cancelled
+              ? "! cancelled"
+              : result.timedOut
+                ? "! timed out"
+                : `! exit ${result.exitCode ?? "?"}`,
+          ]);
+      } catch (error) {
+        if (!finished)
+          finish({
+            exitCode: null,
+            stdout: "",
+            stderr: errorText(error),
+            signal: null,
+            timedOut: false,
+            cancelled: abort.signal.aborted,
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          });
+        throw error;
+      } finally {
+        try {
+          if (lease !== undefined) await hosting!.releaseActivity(lease.lease_id);
+        } finally {
+          if (bashAbort === abort) {
+            bashAbort = undefined;
+            setBashActive(false);
+          }
+          setLocalCommandCount((count) => count - 1);
+        }
+      }
+    })();
     detachObserved(
       "local_bash",
-      () =>
-        runBash(cmd, { cwd: workspace, signal: abort.signal })
-          .then((r) => {
-            finish(r);
-            if (session === sess) sess.appendObservation(formatBashObservation(cmd, r), "user");
-            if (bashAbort === abort && session === sess) {
-              setStatus([
-                r.cancelled
-                  ? "! cancelled"
-                  : r.timedOut
-                    ? "! timed out"
-                    : `! exit ${r.exitCode ?? "?"}`,
-              ]);
-            }
-          })
-          .finally(() => {
-            if (bashAbort === abort) {
-              bashAbort = undefined;
-              setBashActive(false);
-            }
-          }),
-      (e) => setStatus([`shell failed: ${errorText(e)}`]),
+      () => localWork,
+      (e) => {
+        if (session === sess) setStatus([`shell failed: ${errorText(e)}`]);
+      },
     );
     return true;
+  }
+
+  async function stopLocalWork(): Promise<void> {
+    bashAbort?.abort();
+    await Promise.allSettled(localWork === undefined ? [] : [localWork]);
   }
 
   /** Number of canonical session turns represented by the transcript's single prefix notice. */
@@ -1115,7 +1654,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   function clearSession(opts?: { flush?: boolean }): void {
     loadEpoch += 1;
-    teardownRuns();
+    teardownRuns("clear");
+    setSessionLoading(false);
     if (opts?.flush !== false) session?.flush();
     session = undefined;
     sessionTask = undefined;
@@ -1315,7 +1855,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   async function loadSessionMeta(meta: SessionMeta): Promise<void> {
     const epoch = ++loadEpoch;
-    teardownRuns();
+    teardownRuns("switch");
+    setSessionLoading(true);
     session?.flush();
     session = undefined;
     sessionTask = undefined;
@@ -1377,6 +1918,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       );
     } catch (error) {
       if (epoch !== loadEpoch) return;
+      setSessionLoading(false);
       throw error;
     }
     if (epoch !== loadEpoch) return;
@@ -1387,6 +1929,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       agentProfile: meta.agentProfile,
       historyComplete: resumed.degraded.length === 0,
     });
+    setSessionLoading(false);
     history.seed(seeds);
     if (meta.agentProfile) deps.setActiveProfile(meta.agentProfile);
     const previousExtensionProfile =
@@ -1423,26 +1966,116 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   async function resumeSessionById(id: SessionId): Promise<void> {
     const requestEpoch = ++loadEpoch;
+    setSessionLoading(true);
+    const previous = session?.meta()?.id;
+    if (previous) deps.onSessionInvalidated?.(previous, "switch");
     let meta: SessionMeta | null;
     try {
-      meta = await sessionStore.load(id);
+      if (client.hosting !== undefined) {
+        const ref = (await client.hosting.list())
+          .filter((entry) => entry.session_id === id)
+          .sort(
+            (a, b) =>
+              Number(a.execution_state === "closed") - Number(b.execution_state === "closed") ||
+              b.created_at - a.created_at,
+          )[0];
+        if (requestEpoch !== loadEpoch) return;
+        if (ref?.execution_state === "unknown")
+          throw new Error(
+            "this conversation has a run with an unknown outcome; inspect it in /background list or start another conversation",
+          );
+        if (ref !== undefined) {
+          setSessionLoading(false);
+          await attachHostedRun(ref, ref.control === "other" ? "observe" : "acquire");
+          return;
+        }
+      }
+      meta = await sessionStore.load(id, { refresh: client.hosting !== undefined });
     } catch (error) {
-      if (requestEpoch === loadEpoch) setStatus([`resume failed: ${errorText(error)}`]);
+      if (requestEpoch === loadEpoch) {
+        setSessionLoading(false);
+        setStatus([`resume failed: ${errorText(error)}`]);
+      }
       return;
     }
     if (requestEpoch !== loadEpoch) return;
     if (!meta) {
+      setSessionLoading(false);
       setStatus(["session not found"]);
       return;
     }
     await loadSessionMeta(meta).catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
   }
 
+  async function attachHostedRun(
+    ref: HostedRunRef,
+    control: "observe" | "acquire" | "takeover" = "acquire",
+  ): Promise<void> {
+    if (client.hosting === undefined || client.attachRun === undefined)
+      throw new Error("backend does not support hosted observation");
+    if (currentHandle?.executionId === ref.execution_id) {
+      setStatus(["already attached to this execution"]);
+      return;
+    }
+    if (ref.workspace_id !== workspaceId)
+      throw new Error("hosted run belongs to another workspace");
+    if (ref.execution_state === "unknown")
+      throw new Error(
+        "this execution has an unknown outcome; inspect its history before starting another conversation",
+      );
+    const requestEpoch = ++loadEpoch;
+    const previousHandle = currentHandle;
+    const meta = await sessionStore.load(ref.session_id, { refresh: true });
+    if (requestEpoch !== loadEpoch || currentHandle !== previousHandle || humanSubmissions() > 0)
+      return;
+    if (meta === null) throw new Error("hosted conversation is unavailable");
+    if (ref.execution_state === "closed") {
+      await loadSessionMeta(meta);
+      if (loadEpoch === requestEpoch + 1) await client.hosting.acknowledge(ref.execution_id);
+      return;
+    }
+    const turn = meta.turns.find((entry) => entry.executionId === ref.execution_id);
+    if (turn === undefined) throw new Error("hosted execution has no matching conversation turn");
+    const resumeEpoch = loadEpoch + 1;
+    await loadSessionMeta({ ...meta, turns: meta.turns.filter((entry) => entry !== turn) });
+    await sessionRetirement;
+    if (resumeEpoch !== loadEpoch) return;
+    const sess = session;
+    if (sess === undefined || sess.meta()?.id !== ref.session_id)
+      throw new Error("conversation changed during hosted attach");
+    sess.acceptHosted(meta);
+    const userKey = store.appendUserMessage(turn.userPreview, undefined, ref.execution_id);
+    rememberResidentTurn({ userKey });
+    workflowRunId = ref.execution_id;
+    await runManaged({
+      sess,
+      executionId: ref.execution_id,
+      initialStatus: [control === "observe" ? "observing hosted run" : "reattached to hosted run"],
+      disconnectPolicy: ref.disconnect_policy,
+      run: (setHandle) => {
+        const handle = client.attachRun!({
+          execution_id: ref.execution_id,
+          host_generation: ref.host_generation,
+          control,
+        });
+        setHandle(handle);
+        return handle.done;
+      },
+      onStored: (_result, stored, sink) => {
+        replayRunEvents(sink, stored);
+        sess.releaseHistory();
+      },
+      onError: (error) => setStatus([`hosted observation interrupted: ${errorText(error)}`]),
+    });
+  }
+
   return {
     runActive,
+    continuesOnExit: () => runActive() && disconnectPolicy() === "continue",
     bashActive,
     compactionActive,
-    physicalWorkActive: () => physicalRunCount() > 0 || bashActive(),
+    physicalWorkActive: () =>
+      physicalRunCount() > 0 || localCommandCount() > 0 || compactionCalls() > 0,
     memory: () => {
       const sessionMemory = session?.memory();
       let eventQueueItems = 0;
@@ -1486,7 +2119,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     inspectCurrentContext,
     fitCurrentContext,
     teardownRuns,
+    stopLocalWork,
+    backgroundCurrentRun,
+    attachHostedRun,
     submitTurn,
+    scheduledBinding,
+    submitScheduledTurn,
+    scheduledBusy,
     submitPromptTurn,
     submitSkillRun,
     workOnTask,

@@ -216,7 +216,7 @@ export function ExtensionProfileBrowser(
       deps.notify(
         reconnected.ok
           ? actionLabel
-          : `${actionLabel}; reconnect with /reconnect (${reconnected.message})`,
+          : `${actionLabel}; reload with /reconnect reload (${reconnected.message})`,
         reconnected.ok ? "success" : "warn",
       );
     });

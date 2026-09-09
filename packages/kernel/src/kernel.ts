@@ -11,6 +11,7 @@ import {
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import { kernelCapabilityRegistry } from "./config/capability-registry.ts";
+import type { NativeConfigurationRuns } from "./configuration/native-configuration.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
   AgentSummary,
@@ -32,6 +33,7 @@ import type {
   SandboxInspection,
   WorkspaceService,
   WorkspaceRef,
+  StartRunParams,
 } from "@clarvis/protocol";
 import type { PlanFactory } from "@clarvis/plan";
 import type { EventStreamOptions } from "./core/event-stream.ts";
@@ -39,7 +41,10 @@ import {
   createRunService,
   type RunExecutor,
   type RunRequestAssembler,
+  type KernelRunService,
+  type PreparedRunExecution,
 } from "./runs/run-service.ts";
+import { prepareKernelRun, type PreparedKernelRun } from "./runs/prepare-run.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
 import { createSkillsService } from "./skills/skills-service.ts";
@@ -89,7 +94,7 @@ import { createStorageService } from "./storage/storage-service.ts";
  * which is why they are named as a group and reached through
  * {@link InProcessKernel.forOwner}.
  */
-export type OwnerScopedKernel = OwnerServices;
+export type OwnerScopedKernel = OwnerServices & { readonly runs: KernelRunService };
 
 /** Reference-counted lease over one owner-scoped service bundle. */
 export interface OwnerLease<T> {
@@ -111,6 +116,8 @@ export interface OwnerLease<T> {
  * {@link InProcessKernel.forOwner}.
  */
 export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
+  /** Ordinary service with the trusted prepared-request overload used by this host. */
+  readonly runs: KernelRunService;
   /** Absolute workspace root the kernel operates over. */
   readonly workspaceRoot: string;
   /** Stable project shared by every linked workspace. */
@@ -163,6 +170,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
    * callers until kernel shutdown.
    */
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
+  /** Prepare immutable execution inputs without launching; owner must come from host authentication. */
+  prepareRun(params: StartRunParams, owner?: string): PreparedKernelRun;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
@@ -180,6 +189,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
  * Clarvis dir (see {@link createInProcessKernel}).
  */
 export interface CreateKernelOptions {
+  /** Host-only native configuration execution, bound to volatile user consent. */
+  nativeConfiguration?: NativeConfigurationRuns;
   /** Loop execution deps the run service drives (built by `buildExecuteRunDeps`). */
   deps: ExecuteRunDeps;
   /** Absolute workspace root the kernel operates over. */
@@ -443,6 +454,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   interface OwnerCacheEntry {
     services: OwnerScopedKernel;
     stateOwner: string;
+    prepareRun(params: StartRunParams): PreparedKernelRun;
     refs: number;
     runRefs: number;
     runDrained?: Promise<void>;
@@ -478,7 +490,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
 
   const ownerOccupancy = (): number => ownerEntries.size + retiringOwners.size;
 
-  const buildOwner = (owner: string): { services: OwnerScopedKernel; stateOwner: string } => {
+  const buildOwner = (
+    owner: string,
+  ): Pick<OwnerCacheEntry, "services" | "stateOwner" | "prepareRun"> => {
     const stateOwner = workspaceScopeKey(owner, opts.project.id, opts.workspace.id);
     const scope: OwnerScope = {
       owner: stateOwner,
@@ -503,6 +517,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const baseRuns = createRunService({
+      ...(opts.nativeConfiguration === undefined
+        ? {}
+        : { nativeConfiguration: opts.nativeConfiguration }),
       deps: runDeps,
       owner: scope.owner,
       assembleRunRequest,
@@ -518,10 +535,15 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         ? baseRuns
         : {
             ...baseRuns,
-            async start(params: Parameters<typeof baseRuns.start>[0]) {
+            async start(
+              params: Parameters<typeof baseRuns.start>[0],
+              prepared?: PreparedRunExecution,
+            ) {
+              if (opts.nativeConfiguration?.requested(params) === true)
+                return baseRuns.start(params, prepared);
               const release = opts.acquireRunLease!();
               try {
-                const handle = await baseRuns.start(params);
+                const handle = await baseRuns.start(params, prepared);
                 // The workspace run lease covers late capability delivery too.
                 // Releasing it at `done` could evict the workspace kernel while
                 // the managed stream is still inside its bounded ingest grace.
@@ -553,7 +575,34 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         enabled: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
       }),
     };
-    return { services, stateOwner };
+    return {
+      services,
+      stateOwner,
+      prepareRun(params) {
+        const entry = ownerEntries.get(owner);
+        if (entry === undefined)
+          throw kernelError("unavailable", "run owner generation is no longer resident");
+        return prepareKernelRun(params, {
+          configStore: opts.configStore,
+          ...(opts.assemblerOptions === undefined
+            ? {}
+            : { assemblerOptions: opts.assemblerOptions }),
+          ...(opts.assembleRunRequest === undefined
+            ? {}
+            : { assembleRunRequest: opts.assembleRunRequest }),
+          ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
+          nativeConfigurationRequested: (request) =>
+            opts.nativeConfiguration?.requested(request) === true,
+          workflowSettings: readWorkflowsSettings,
+          start: (request, prepared) => {
+            if (ownerEntries.get(owner) !== entry)
+              throw kernelError("unavailable", "prepared run owner generation was retired");
+            return entry.services.runs.start(request, prepared);
+          },
+          startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
+        });
+      },
+    };
   };
 
   const retireOwner = (owner: string, entry: OwnerCacheEntry): Promise<void> => {
@@ -564,6 +613,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     const retiring = Promise.resolve()
       .then(async () => {
         const cleanup = await Promise.allSettled([
+          Promise.resolve().then(() => opts.nativeConfiguration?.retireOwner(entry.stateOwner)),
           opts.memoryFactory?.stopOwner?.(entry.stateOwner) ?? Promise.resolve(),
           Promise.resolve().then(() => planFactory?.evictOwner?.(entry.stateOwner)),
           Promise.resolve().then(() => opts.onOwnerRetired?.(entry.stateOwner)),
@@ -643,6 +693,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     const entry: OwnerCacheEntry = {
       services: built.services,
       stateOwner: built.stateOwner,
+      prepareRun: built.prepareRun,
       refs: 0,
       runRefs: 0,
       pinned: pin,
@@ -675,10 +726,10 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...services,
       runs: {
         ...runs,
-        async start(params: Parameters<typeof runs.start>[0]) {
+        async start(params: Parameters<typeof runs.start>[0], prepared?: PreparedRunExecution) {
           // Preserve RunService's terminal-handle contract after shutdown. The
           // base service turns this into a failed handle instead of rejecting.
-          if (lifecycle.state !== "open") return runs.start(params);
+          if (lifecycle.state !== "open") return runs.start(params, prepared);
           if (ownerEntries.get(owner) !== entry) {
             throw kernelError("unavailable", `owner '${owner}' is no longer resident`);
           }
@@ -720,7 +771,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             scheduleOwnerRetirement(owner, entry);
           };
           try {
-            const handle = await runs.start(params);
+            const handle = await runs.start(params, prepared);
             void handle.closed.then(release, release);
             return handle;
           } catch (error) {
@@ -920,6 +971,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     tasks: scoped.tasks,
     forOwner,
     acquireOwner,
+    prepareRun: (params, owner = defaultOwner) => residentOwner(owner, false).prepareRun(params),
     listAgents: () => config.listAgents(),
     startMemoryRecovery,
     async close(): Promise<void> {
@@ -936,7 +988,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
  * @param store - the config store to read merged settings from.
  * @returns the resolved {@link WorkflowsRuntimeSettings}.
  */
-function readWorkflowsSettings(store: ConfigStore): WorkflowsRuntimeSettings {
+function readWorkflowsSettings(store: Pick<ConfigStore, "readSettings">): WorkflowsRuntimeSettings {
   const merged = store.readSettings().merged as Record<string, unknown>;
   const block = readCapabilitySettings<{
     max_concurrency?: number;

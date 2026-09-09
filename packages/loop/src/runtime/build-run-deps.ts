@@ -138,6 +138,9 @@ export interface BuildRunDepsOptions {
   skillRoots?: SkillRootInput[] | (() => SkillRootInput[]) | SkillRootSnapshotProvider;
   /** Additional roots appended ahead of the four standard Clarvis roots. */
   extraSkillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
+  /** Compose host-owned in-memory skills with the discovered provider, once at construction.
+   * Not called when skills are disabled. The returned provider backs both runs and host listings. */
+  composeSkills?: (discovered: SkillsProvider | undefined) => SkillsProvider;
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
    * (unlike `extraSkillRoots`, which also accepts an array) because the set must
    * be re-read per run: an array form would pin the answer at deps-construction
@@ -499,6 +502,7 @@ export async function buildExecuteRunDeps({
   traceDir,
   skillRoots,
   extraSkillRoots,
+  composeSkills,
   skillBootstraps,
   resolveGuard,
   resolveSandbox,
@@ -666,6 +670,10 @@ export async function buildExecuteRunDeps({
         );
       }
     }
+  }
+
+  if (useSkills && env.CLARVIS_SKILLS_ENABLED && composeSkills !== undefined) {
+    skills = composeSkills(skills);
   }
 
   const capabilities: Capability[] = [];

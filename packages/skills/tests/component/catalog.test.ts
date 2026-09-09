@@ -3,6 +3,23 @@ import { MAX_SKILL_CATALOG_CHARS, renderSkillCatalog } from "../../src/catalog/i
 import { makeInfo } from "../helpers/fixtures.ts";
 
 describe("renderSkillCatalog", () => {
+  it("identifies embedded instructions without advertising a filesystem path", () => {
+    const text = renderSkillCatalog([makeInfo({ source: "builtin", path: "builtin:setup" })]);
+    expect(text).toContain("builtin; load by name");
+    expect(text).not.toContain("path:");
+  });
+
+  it("keeps builtin guidance discoverable when external entries overflow the catalog", () => {
+    const external = Array.from({ length: 200 }, (_, index) =>
+      makeInfo({ name: `a-${String(index)}`, description: "External skill. ".repeat(50) }),
+    );
+    const text = renderSkillCatalog([
+      ...external,
+      makeInfo({ name: "z-configure", source: "builtin", path: "builtin:z-configure" }),
+    ]);
+    expect(text.split("\n")[2]).toBe("- **z-configure** (builtin; load by name)");
+    expect(text.length).toBeLessThanOrEqual(MAX_SKILL_CATALOG_CHARS);
+  });
   it("renders a sorted markdown section of name + description", () => {
     const text = renderSkillCatalog([
       makeInfo({ name: "pdf", description: "Extract text from PDFs" }),

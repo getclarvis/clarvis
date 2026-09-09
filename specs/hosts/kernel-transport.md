@@ -8,12 +8,13 @@
 `packages/kernel/src/transport/` is the RPC seam between a Clarvis *kernel* and a *client* of the
 `KernelClient` contract. It is JSON-RPC-*shaped* but carries Clarvis's own method vocabulary rather
 than MCP's (`packages/protocol/src/transport.ts`, `packages/kernel/src/transport/wire.ts`).
-Seven modules divide the job: `wire.ts` names the methods and notification payloads, `operations.ts`
+The transport modules divide the job: `wire.ts` names the methods and notification payloads, `operations.ts`
 is the single table mapping every method onto a protocol service call, `server.ts` dispatches a
 connection's requests and pumps a run's events out as notifications, `client.ts` builds a
 `RemoteKernel` façade whose service methods are wire requests, `stdio.ts` frames all of it as
 newline-delimited JSON over a stream pair, `loopback.ts` is the same seam with `JSON` round-tripping
-instead of a pipe, and `run-event-codec.ts` re-validates every inbound run event against a closed
+instead of a pipe, `local.ts` reuses the stream framing on reconnectable local IPC, and
+`run-event-codec.ts` re-validates every inbound run event against a closed
 schema registry.
 
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
@@ -45,6 +46,9 @@ Re-exported by `packages/kernel/src/index.ts`:
 | `RemoteKernel`, `ConnectKernelClientOptions` | types | `packages/kernel/src/transport/client.ts` | Client-side shapes |
 | `createLoopbackTransport(server, logger?)` | value | `packages/kernel/src/transport/loopback.ts` | In-process transport |
 | `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Client-side NDJSON transport |
+| `connectLocalKernelTransport(endpoint, options?)` | value | `packages/kernel/src/transport/local.ts` | Reconnectable Unix-socket/named-pipe client using the same NDJSON codec |
+| `listenLocalKernel(server, endpoint, options?)` | value | `packages/kernel/src/transport/local.ts` | Bounded local IPC listener; authentication and authorization stay on its server |
+| `LocalKernelListener`, `LocalKernelListenerOptions` | types | `packages/kernel/src/transport/local.ts` | Endpoint lifetime and connection/handshake bounds |
 | `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts` | Server-side NDJSON pump |
 | `WIRE_METHODS` (`M`), `WIRE_NOTIFICATIONS` (`N`) | values | `packages/kernel/src/transport/wire.ts` | Named method / notification constants |
 | `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts` (same-named symbols) | The operation catalog |
@@ -94,19 +98,25 @@ operation whose argument tuple and result are inferred from the service method
 `AsyncMethodKeys` filter itself. The two run
 methods use the special streaming/control operation path.
 
-**92 request methods exist**: 84 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
-Ordinary counts per service: runs 4, config 14, plugins 5, extensionProfiles 14, secrets 3, models 4,
-provider-auth 5, files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
+`KNOWN_METHODS` flattens every ordinary and special request from the same catalog. Hosted-run
+CRUD uses `OPERATIONS.hosting`; admission, attach and observation controls use special operations.
+There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
 `ORDINARY_OPERATIONS`, `KNOWN_METHODS`). Test:
 `packages/kernel/tests/contract/transport-codecs.test.ts` (transport operation descriptors).
 
-The 8 special operations and their metadata:
+The special operations and their metadata:
 
 | Method | `access` | `sensitivity` |
 | --- | --- | --- |
 | `hello` | read | — |
+| `hosting.start` | write | — |
+| `hosting.attach` | read; acquiring/taking control additionally requires registry operator authority | — |
+| `hosting.steer` | write | — |
+| `hosting.compact` | write | — |
+| `hosting.cancel` | write | — |
+| `hosting.respond` | write | — |
 | `runs.start` | write | — |
 | `runs.steer` | write | — |
 | `runs.compact` | write | — |
@@ -115,16 +125,17 @@ The 8 special operations and their metadata:
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
 
-`M` names 30 of the 92 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
+`M` names the special operations and selected ordinary aliases (`packages/kernel/src/transport/wire.ts`);
+the remaining ordinary methods are reached through the service proxies. The
 whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**.
 
-The 84 ordinary operations' individual `access`/`sensitivity` pairing is declared by
+Ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
 Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
 `secrets`, `providerAuth`, `files`, `tasks`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
-operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
-`sessions`, `storage`) never carry one:
+operations; `hosting`, `runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
+`sessions` and `storage` carry access metadata without a sensitivity tag:
 
 | Service | Method | `access` | `sensitivity` |
 | --- | --- | --- | --- |
@@ -213,7 +224,7 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 
 ### 2.4 Notifications
 
-`N` (`packages/kernel/src/transport/wire.ts`) — five server→client pushes, none of which has a response frame:
+`N` (`packages/kernel/src/transport/wire.ts`) names server→client pushes, none with a response frame:
 
 | Constant | Wire name | Payload interface | Declared at |
 | --- | --- | --- | --- |
@@ -222,6 +233,7 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | `runResult` | `run.result` | `RunResultNote { execution_id, result }` | `packages/kernel/src/transport/wire.ts` |
 | `runStreamEnd` | `run.stream_end` | `RunStreamEndNote { execution_id }` | `packages/kernel/src/transport/wire.ts` |
 | `configChange` | `config.change` | `ConfigChangeNote { subscription_id, change }` | `packages/kernel/src/transport/wire.ts` |
+| `hostedObservation` | `hosting.observation` | `HostedObservationNote { subscription_id, kind, ... }` | [hosting-codec.ts](../../packages/kernel/src/transport/hosting-codec.ts) |
 
 `run.elicitation` carries no `execution_id` of its own — the run is identified by
 `request.execution_id` (`packages/kernel/src/transport/wire.ts`, consumed at `packages/kernel/src/transport/client.ts`).
@@ -313,11 +325,11 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 3; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 3`
+`HelloParams` = `{ wire_version: 4; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 4`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 3; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 4; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
@@ -373,12 +385,14 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
    the **original** error.
 6. On a structurally invalid result: same teardown, then throw
    `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` ``.
-   The checks are `hasOnly` over the five permitted keys, `wire_version === 3`, `capabilities` /
+   The checks are `hasOnly` over the permitted keys, `wire_version === 4`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.
-7. Build the thirteen ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`, and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
+7. Build the ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`, and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
    `hello.workspace` and, when present, `hello.principal`.
+   A valid `capabilities.hosting.host_generation` additionally constructs the optional hosting
+   client and registers its observation notification validator before any hosted admission.
 
 ### 4.2 Server-side dispatch (`KernelConnection.handle`)
 
@@ -396,7 +410,7 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
 | Invoke | — | `operation.invoke(services(), p, signal)`; an `undefined` result becomes `{}` |
 | Special envelope | — | `specialParams` — object required, keys from a per-method allowlist |
 | Special authorize | — | Same policy hop, skipped for `hello` |
-| Switch | server special-operation switch | The eight special cases; `default` throws `invalid_request` `unknown method '<m>'` |
+| Switch | server special-operation switch | Cases declared by `SPECIAL_OPERATIONS`; `default` throws `invalid_request` `unknown method '<m>'` |
 
 `services()` throws `unauthorized` "connection has not completed hello" when no context is bound, which is the second guard behind the pre-hello gate.
 
@@ -405,6 +419,11 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
 | Method | Allowed keys |
 | --- | --- |
 | `hello` | `wire_version`, `clientInfo`, `workspace`, `auth` |
+| `hostingStart`, `hostingAttach` | `input`, `subscription_id` |
+| `hostingSteer` | `subscription_id`, `message` |
+| `hostingCompact` | `subscription_id`, `request` |
+| `hostingCancel` | `subscription_id` |
+| `hostingRespond` | `subscription_id`, `response` |
 | `runsStart` | `params` |
 | `runsSteer` | `execution_id`, `message` |
 | `runsCompact` | `execution_id`, `request`, `options` |
@@ -413,16 +432,27 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
 | `configSubscribe` | `kinds`, `subscription_id` |
 | `configUnsubscribe` | `subscription_id` |
 
-A method not in this table (there is none among the eight special operations) would fall to an empty
-allowed set, rejecting any key at all (`packages/kernel/src/transport/server.ts`).
+`specialParams` derives the allowed set from this per-method table; an absent entry has an empty
+set and therefore rejects any supplied key (`packages/kernel/src/transport/server.ts`).
 
 `hello` : one-shot (`helloStarted` → `invalid_request` "hello has already started on this
-connection"); `wire_version !== 3` → `unsupported`; malformed identity
+connection"); `wire_version !== CLARVIS_WIRE_VERSION` → `unsupported`; malformed identity
 fields → `invalid_request` "hello has invalid identity parameters"; then
 `resolveConnection` (or the default context built); if the connection closed while
 resolving, the resolved context's `close?.()` is called and `unavailable` is thrown;
 otherwise `context` is bound, `helloCompleted` set, and the result assembled with
 `context.capabilities ?? capabilities`.
+
+`CLARVIS_WIRE_VERSION` in [wire.ts](../../packages/kernel/src/transport/wire.ts) is the single
+revision authority for the kernel RPC over both stdio and local sockets. It is independent of the
+private execution RPC revision used between host and guest. Supporting hosted runs additionally
+requires the advertised `hosting.host_generation`; opening a transport does not enable that service.
+Production: `createKernelServer` and `connectKernelClient` in
+[server.ts](../../packages/kernel/src/transport/server.ts) and
+[client.ts](../../packages/kernel/src/transport/client.ts). Test: `invalid credentials and
+incompatible wire revisions do not receive services` in
+[local-transport.test.ts](../../packages/kernel/tests/integration/local-transport.test.ts), and
+the hosted-service cases in [hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts).
 
 ### 4.3 Starting and pumping a run
 
@@ -563,10 +593,54 @@ makes the peer's `onClose` settle live handles". Per inbound frame :
 | anything, after `closed` | ignored |
 | `cancel` | `controllers.get(id)?.abort(new Error("request cancelled"))` |
 | not `req` | ignored — including `note` |
-| `req` with an id already in flight | `close()` and return, **without dispatching** |
-| `req` | new `AbortController`, dispatch `conn.handle(method, params, signal)`, answer `res` with `result` or `toEnvelope(err)`, `.catch(close)`, `finally` delete the controller |
+| `req` with an id already in flight | Disconnect both streams and return, **without dispatching** |
+| `req` exceeding 128 in-flight requests or 16 MiB of aggregate inbound request bytes | Disconnect before allocating a controller or invoking a handler |
+| admitted `req` | new `AbortController`, dispatch `conn.handle(method, params, signal)`, answer `res` with `result` or `toEnvelope(err)`, `.catch(close)`, `finally` release the controller and byte reservation |
+
+The reservation remains charged through response delivery. Cancellation does not release it before
+the handler settles. Input EOF, error and close all disconnect the server side. Production:
+`serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts). Test: `bounds
+inbound %s before invoking another handler` and duplicate-id/cancellation cases in
+[stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts).
+
+### Reconnectable local IPC
+
+`listenLocalKernel` supplies the existing `serveKernelOverStdio` pump with a local duplex socket;
+`connectLocalKernelTransport` supplies the same socket to `createStdioTransport`. There is no second
+request vocabulary or frame parser. The listener defaults to four clients and a ten-second successful
+hello deadline. The client connection timeout defaults to five seconds. Invalid bounds fail before
+opening a channel. Listener close releases sockets and connections, not the kernel's own lifetime.
+
+The Unix socket directory must be owned by the current account with mode `0700` and cannot be a
+symlink. The adapter never removes an occupied endpoint before listen. Windows uses named pipes
+without the `readableAll`/`writableAll` relaxations. A local host composition must supply both
+`resolveConnection` and `authorize` to authenticate the account and limit operations; filesystem
+placement by itself is not authorization. This adapter alone does not detach or preserve a run.
+
+RPC defines the calls and notifications; local IPC supplies their byte streams. The adapter never
+forwards kernel frames to the guest's [private execution RPC](isolated-agent-runtime.md#5-private-execution-and-authority).
+`createKernelServer` accepts the kernel catalog only; the local-transport service test rejects
+`host.capability` on this endpoint. Hosted-run ownership, durable handoff and observation recovery
+belong to [the hosting service](hosted-runs.md#hosted-kernel-rpc), independently of the socket lifetime.
+
+Production: `listenLocalKernel` and `connectLocalKernelTransport` in
+[local.ts](../../packages/kernel/src/transport/local.ts). Test:
+[local-transport.test.ts](../../packages/kernel/tests/integration/local-transport.test.ts) runs
+the existing kernel client/server, a real local connection, a simulated-provider run, reconnection,
+credential/version refusal, client limits, handshake expiry and malformed-frame recovery. Native
+Windows/macOS IPC qualification is separate from exercising these tests on another platform.
 
 ### 4.10 Client transport state machine
+
+Hosted observations use this same transport and catalog. Their connection-local dispatch and
+client reconstruction are implemented by `createHostingDispatcher` and `createHostingClient` in
+[hosting-server.ts](../../packages/kernel/src/transport/hosting-server.ts) and
+[hosting-client.ts](../../packages/kernel/src/transport/hosting-client.ts). Their snapshot cut,
+sequence validation, control fencing and reconnect behavior are specified in
+[hosted runs](hosted-runs.md#hosted-kernel-rpc). Production: the `hosted` composition in `createKernelServer`
+and `connectKernelClient`. Test: the loopback/local parity, early-tail, malformed-tail, lost-handoff,
+elicitation and unpromoted-disconnect cases in
+[hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts).
 
 `terminate` (`packages/kernel/src/transport/stdio.ts`) is idempotent (`closed` guard) and, once: builds an `unavailable`
 error from the reason, rejects every pending request after detaching its abort listener, clears the
@@ -608,10 +682,13 @@ stream without waiting on an infinite send.
 ### 4.12 Connection teardown
 
 `KernelConnection.close` (`packages/kernel/src/transport/server.ts`) is idempotent and, in order: close the notification
-channel, `off()` every subscription and clear the map, `cancel()` every live handle and clear `live`,
+channel, release hosted observations, `off()` every config subscription and clear the map,
+`cancel()` every ordinary connection-owned live handle and clear `live`,
 call `context?.close?.()` (releasing the host lease), then release the lifecycle registration. The
 connection registers itself with `kernel.lifecycle` at connect time (`packages/kernel/src/transport/server.ts`), so closing the
 kernel closes every open connection.
+The injected hosted context separately applies the registry's disconnect policy. Its promoted
+executions never enter this per-connection `live` map.
 
 ### 4.13 Loopback
 
@@ -805,8 +882,9 @@ not re-run `resolveConnection`.
 Production: `helloStarted` `packages/kernel/src/transport/server.ts`.
 Test: `packages/kernel/tests/integration/transport.test.ts` (asserts `resolutions === 1`).
 
-**INV-T8.** A `hello` whose `wire_version` is missing or not `3` is `unsupported`.
-Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`).
+**INV-T8.** A `hello` whose `wire_version` is missing or differs from `CLARVIS_WIRE_VERSION` is `unsupported`.
+Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`) and
+`packages/kernel/src/transport/wire.ts` (`CLARVIS_WIRE_VERSION`).
 Test: `packages/kernel/tests/integration/transport.test.ts`.
 
 **INV-T9.** `hello` identity fields are validated before `resolveConnection` runs.
@@ -851,12 +929,14 @@ service"; `packages/kernel/tests/unit/run-service-lifecycle.test.ts`, "inspects 
 a settled continuation before a model switch".
 
 **INV-T15.** A failing notification sink opens the circuit permanently and disconnects exactly once;
-a client's live handles then settle `unavailable`.
+a client's ordinary connection-owned handles then settle `unavailable`. Hosted observations reject
+their unfinished waits without inventing a root result, as specified in [hosted runs](hosted-runs.md#hosted-kernel-rpc).
 Production: `createNotificationChannel` `packages/kernel/src/transport/server.ts`, `failConnection` `packages/kernel/src/transport/server.ts`.
 Test: `packages/kernel/tests/integration/transport.test.ts`.
 
-**INV-T16.** `connection.close()` does not wait on an in-flight notification send; the run's event
-stream is released and the handle cancelled.
+**INV-T16.** `connection.close()` does not wait on an in-flight notification send; an ordinary
+connection-owned run's event stream is released and its handle cancelled. Hosted runs instead
+release the connection's observation and apply the registry's committed disconnect policy.
 Production: `stop`'s interrupt fan-out `packages/kernel/src/transport/server.ts`, `close` `packages/kernel/src/transport/server.ts`.
 Test: `packages/kernel/tests/integration/transport.test.ts`.
 
@@ -917,7 +997,7 @@ as plugin-sensitive with exact read/write access").
 | `invalid_request` | `packages/kernel/src/transport/server.ts` | second `hello`, or bad identity fields |
 | `invalid_request` | `packages/kernel/src/transport/server.ts`, `M.runsCompact`; `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact` | mechanical target supplied for a connection-live run, or a non-positive/non-integer target supplied after delegation |
 | `invalid_request` | `packages/kernel/src/transport/server.ts` | unknown method |
-| `unsupported` | `packages/kernel/src/transport/server.ts` (`createKernelServer`) | `wire_version` not 3 |
+| `unsupported` | `packages/kernel/src/transport/server.ts` (`createKernelServer`) | `wire_version` differs from `CLARVIS_WIRE_VERSION` |
 | `conflict` | `packages/kernel/src/transport/server.ts` (config subscribe case) | duplicate subscription id |
 | `conflict` | `packages/kernel/src/transport/client.ts` | duplicate live execution id, client-side |
 | `not_found` | `packages/kernel/src/transport/server.ts`, `liveOrThrow` | steer/cancel/respond target absent or result-settled on this connection |
@@ -967,105 +1047,50 @@ policy itself belongs to **kernel-run-service-and-events**.
 
 **No retries anywhere.** Neither transport retries a frame, a request or a notification.
 
-### 6.3 Both host policy hooks fail open, and the trust model that bounds them
+### 6.3 Authentication and operation policy
 
-`KernelServerOptions` declares two hooks a host may supply, and neither is required. Absence is
-resolved to *permit* in both cases:
+The generic server keeps both policy hooks optional for process-owned stdio embedding.
+Without `resolveConnection`, hello validates but does not authenticate its optional token and
+returns no principal. Its default services explicitly replace local subscription controls with
+`createUnavailableProviderAuthService`. Without `authorize`, operations are permitted after hello.
+A socket embedder must provide both identity resolution and operation authorization.
 
-- **`authorize`.** The guard is written `opts.authorize === undefined || (await opts.authorize({…}))`
-  — identically on the ordinary path (`packages/kernel/src/transport/server.ts`) and the
-  special path — so `allowed` is `true` before any policy runs. The `unauthorized` throw
-   / that §6.1 records is therefore unreachable in every configuration this
-  repository builds.
-- **`resolveConnection`.** With none supplied, the connection is bound to `defaultContext` at
-  `connect` time rather than at `hello`, and `hello` takes that same value instead of
-  calling out. `defaultContext` is the server's own kernel: `kernel.project`,
-  `kernel.workspace`, and services assembled as `{...kernel.operatorServices, providerAuth:
-  createUnavailableProviderAuthService()...kernel.defaultOwnerServices }`
-  (`packages/kernel/src/transport/server.ts`, `defaultContext`). The explicit replacement is a
-  security boundary: subscription credentials and authorization controls are not projected onto a
-  default remote connection. `providerAuth.list` reports both supported schemes unavailable and
-  authorization attempts fail, while the other operator and default-owner services remain bound to
-  this kernel. Test: `packages/kernel/tests/integration/transport.test.ts`, "keeps subscription
-  authentication explicitly unavailable on a remote connection".
+`createFileRunHost` supplies both hooks. Its required verifier resolves only an operator or observer
+role; the host fixes owner/workspace independently of request fields. Every operation checks the live
+connection role and the catalog's `access` and `sensitivity`. Operators can use the local kernel
+services, including the host's subscription manager. Observers can use only non-sensitive reads;
+knowing an execution id grants no control. Disconnect removes that connection's role before cleanup.
+Its hosting service also prevents ordinary starts and unfenced active-run compaction from bypassing
+conversation admission. The owning contract is
+[hosted file composition](hosted-runs.md#file-kernel-composition).
 
-**Nothing in the repository supplies either.** `authorize` appears in `packages/*/src` only where it
-is declared and called (`packages/kernel/src/transport/server.ts`); its
-sole exerciser is INV-T11's test (`packages/kernel/tests/integration/transport.test.ts`).
-`resolveConnection` is likewise referenced only by its implementation and transport tests; the
-current single-workspace host builds `createFileKernel` directly and has no project-host connection
-resolver (`packages/code/src/adapters/workspace-client-manager.ts`).
-`KernelOperationMetadata.sensitivity`, the marker that would let a policy tell `secrets.*` from
-`models.get`, is written by the `read()` / `write()` helpers in
-`packages/kernel/src/transport/operations.ts` and carried onto `KernelAuthorizationContext`
-(`packages/kernel/src/transport/server.ts`) — and read by nothing. No `src` file in any package
-branches on it.
+Production: `KernelServerOptions`, `defaultContext` and both dispatch paths in
+[server.ts](../../packages/kernel/src/transport/server.ts);
+`createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts) pins the generic
+authorization hook and disabled remote subscription control;
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts) verifies
+authenticated file-host connections, observer restrictions and coordinated admission over a real
+local socket.
 
-**A `hello` `auth` token is accepted and then dropped.** `auth` is in the special-params allowlist, is type-checked as a string, and is documented on `HelloParams` as "Opaque auth
-token, when the transport requires one" (`packages/kernel/src/transport/wire.ts`). On the
-`defaultContext` branch nothing reads it, and `hello` answers with a successful
-`HelloResult` carrying no `principal`. The client accepts that answer — `principal` is
-optional in its handshake validation (`packages/kernel/src/transport/client.ts`). A client
-that presents a credential therefore cannot distinguish a kernel that authenticated it from one that
-ignored it. **Resolved**: the code now says. `KernelServerOptions.authorize` and
-`KernelServerOptions.resolveConnection` each carry a `@remarks` stating that no production host
-supplies one, what that leaves open (`secrets.set` reachable by any connection that completed
-`hello`; a credential accepted, type-checked and dropped), and why it is inert rather than an
-exposure — the tree builds no hosted case for this wire. The two remarks name each other, because a
-host wiring one without the other has authenticated callers it cannot restrain, or restraints on a
-caller it never identified. What is unbuilt is the seam's readiness, not a live hole; building it is
-the owner's decision and remains open.
+Secret values flow only from client to kernel on `secrets.set`; listing exposes names and there is no
+wire getter. These input bytes are intentionally preserved, while framing logs record metadata only.
+Authentication/authorization do not encrypt a transport. The stdio binary trusts the process pipes;
+`serveLocalFileKernel` protects the private endpoint/credential store and fences requests by its
+lease; `connectOrLaunchLocalKernel` authenticates discovery through the same RPC handshake.
+Code's workspace manager connects to that process composition. Its state belongs outside guest mounts and
+agent-readable roots. The generic server must not be exposed on a network by assuming that a successful
+unauthenticated hello established a principal.
 
-**What `secrets.set` carries.** The catalog's most sensitive operation puts the raw value straight
-into the wire parameter object — `encode: (name, value) => ({ name, value })` in
-`OPERATIONS.secrets.set` — and `invoke` hands both to `services.secrets.set`, which reaches
-`createFileSecretStore`'s `set`
-(`packages/kernel/src/secrets/secret-store.ts`) and rewrites the whole file through
-`writeFileAtomicSync` at `0o600` inside a `0o700` directory
-(`packages/paths/src/constants.ts`). No redaction touches it: `sanitizeDeep`/`terminalSafe`
-are reached only from `safeErrorDetails`, on the outbound **error** path
-(`packages/kernel/src/transport/stdio.ts`); request params go to `conn.handle`
-exactly as decoded; and the one log line about a frame records direction, reason and
-byte count, never content. The reachability path is the ordinary one: `hello`, then any
-`secrets.set` request frame — INV-T6's pre-`hello` gate is the only thing in front of
-it.
-
-**The trust model the code actually implements.** The exposure is bounded by what a peer must
-already hold to open a connection at all, and the source states the posture rather than leaving it
-to inference. `SecretService`'s module doc records both the direction and the deployment it is
-scoped to: "Values only ever flow client → kernel; listing returns names, never values" and "Secrets
-travel over the transport on `set`. That is fine over local stdio (same user/host); a hosted kernel
-needs TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`). The catalog matches the
-first half — `listNames` / `set` / `delete` and no `get`
-(`OPERATIONS.secrets` in `packages/kernel/src/transport/operations.ts`) — so a peer that can write a secret still
-cannot read one back over the wire.
-
-The second half holds because the wire has exactly one production host. `serveFileKernelOverStdio`
-is the only `createKernelServer` call outside tests and passes `capabilities` alone
-(`packages/kernel/src/serve.ts`); its streams default to the process's own `process.stdin` /
-`process.stdout`; and its only caller is the `clarvis-kernel` binary
-(`packages/kernel/src/bin.ts`, declared at `packages/kernel/package.json`). `packages/kernel/src`
-contains no socket, listener or HTTP server for this wire, so the peer is whoever was handed that
-process's pipes. Neither client of the kernel uses the transport at all: `@clarvis/code` wraps one
-in-process `createFileKernel` result as a `KernelClient`
-(`packages/code/src/adapters/workspace-client-manager.ts`) and `@clarvis/server` builds a
-`createFileKernel` directly (`packages/server/src/bin.ts`) behind a facade structurally narrowed
-to `runs.start`, with "no reachable path to config, secrets, files or cross-owner run listing"
-(`packages/server/src/host/run-host.ts`) — §7.2 records that neither package references any
-transport symbol.
-
-**The accurate statement is therefore the narrow one.** The fail-open default is real, and today it
-is not reachable by an untrusted peer: the wire's only production deployment is a pipe between two
-processes of the same user, which the OS already protects, and across which the secret is no better
-protected than `keys.json` itself — a file that peer can read and write directly. What the absence
-costs is not confidentiality today but the seam's readiness. `authorize` and `resolveConnection` are
-the only two places authentication and authorization can live on this wire; both default to
-permitting; neither is required at construction, so `createKernelServer` cannot refuse a host that
-omits them; and the one machine-readable marker a policy would key on has no reader. A host that
-puts `createKernelServer` behind a socket and forgets either hook gets a fully unauthenticated
-kernel with no construction-time error and no runtime signal — which is the case
-`packages/protocol/src/secrets.ts` names as needing TLS and at-rest protection, and which
-nothing in the tree builds yet.
+Production: `OPERATIONS.secrets` in
+[operations.ts](../../packages/kernel/src/transport/operations.ts),
+`serveFileKernelOverStdio` in [serve.ts](../../packages/kernel/src/serve.ts), and the
+`SecretService` contract in [secrets.ts](../../packages/protocol/src/secrets.ts). The caller-supplied
+authentication requirement of the IPC listener remains in
+[local.ts](../../packages/kernel/src/transport/local.ts).
+The independent host implementation and process-level evidence are owned by
+[hosted runs](hosted-runs.md#independent-process-composition); adding a launcher does not add another
+wire protocol or replay interrupted mutations.
 
 ## 7. Coupling
 
@@ -1096,6 +1121,7 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 | --- | --- |
 | `packages/kernel/src/index.ts` | re-exports the public surface |
 | `packages/kernel/src/serve.ts` | `createKernelServer` + `serveKernelOverStdio`, the stdio host |
+| `packages/kernel/src/hosting/file-host.ts` | authenticated FileKernel, session coordinator and hosted registry through the same RPC server |
 | `packages/kernel/src/bin.ts` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
 | `tests/contract/*`, `tests/integration/transport.test.ts`, `tests/integration/stdio-transport.test.ts`, `tests/unit/loopback-transport.test.ts` | the only exercisers of the client half in-repo |
 
@@ -1270,6 +1296,6 @@ judgement about the design.
   `DEFAULT_RUN_EVENT_BUFFER` → **kernel-run-service-and-events**.
 - The redaction rule set behind `sanitizeDeep`/`sanitizeErrorMessage` and what "credential-shaped"
   means → **security-confinement-and-redaction**.
-- `createFileKernel`, the Code host's single-workspace lifetime wrapper, and the composition
-  `src/serve.ts` sits in → the kernel bootstrap/composition item. None supplies a transport
-  `resolveConnection` hook.
+- `createFileKernel`, the Code host's single-workspace lifetime wrapper and the authenticated
+  `createFileRunHost` composition → [kernel composition](kernel-composition.md) and
+  [hosted runs](hosted-runs.md). The hosted file composition supplies both connection policy hooks.

@@ -44,6 +44,13 @@ place beside the server's tools.
 
 ## It does not know the engine
 
+`@clarvis/kernel` also consumes this package for its isolated-runtime bridge. HTTP/SSE leases,
+environment-backed authentication and saved OAuth remain on the host, while the guest receives
+catalogs/results and retains native pending/deferred failure and elicitation semantics. Stdio
+connections, including MCP hooks, stay inside the guest. The closed operation and lifetime contract
+belongs to [`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md); this package
+does not depend on the kernel or implement its RPC protocol.
+
 `@clarvis/loop` depends on this package, never the reverse. The one edge that
 used to point the wrong way was `buildRegistry` importing the engine's built-in
 wire names to keep an MCP tool from shadowing `submit_result` or `read_file`.

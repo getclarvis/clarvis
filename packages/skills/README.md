@@ -106,8 +106,15 @@ eager configuration path may reach it, or `builtins.skills = false` would still
 load this package on every import of the engine. The loop reaches it through a
 dynamic import instead.
 
-`renderSkillCatalog` includes the exact `SKILL.md` path with each name and description and never
-emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes
+`renderSkillCatalog` includes the exact `SKILL.md` path with each filesystem-backed name and
+description. Host-embedded entries with `source: "builtin"` instead say to load by name and precede
+external entries, keeping product guidance discoverable when a large catalog is truncated.
+`load_skill` identifies them as embedded instructions rather than advertising an execution
+directory. Their `root`, `dir` and `path` are `builtin:` locators, not filesystem paths. The kernel
+owns the shipped `clarvis-configure` body and composition; this package does not import product
+configuration or create builtin files.
+
+The catalog never emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes
 descriptions, then omits a deterministic tail. The capability filters a skill whose
 `agents/openai.yaml` declares `dependencies.tools` entries of `type: mcp` unless the run carries
 that MCP server (including its plugin-qualified form), while the protocol/UI retain the dependency

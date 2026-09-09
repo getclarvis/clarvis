@@ -7,14 +7,18 @@ import {
   loadEnv,
   MCP_HOOK_TOOL_PORT,
   NOOP_LOGGER,
+  ProviderError,
+  type LLMCallParams,
   type Capability,
   type HookConfig,
   type LLMProvider,
   type RunRequest,
 } from "@clarvis/capability";
-import { buildExecuteRunDeps } from "@clarvis/loop/host";
+import { buildExecuteRunDeps, type BuildRunDepsOptions } from "@clarvis/loop/host";
 import { executeRun } from "@clarvis/loop";
 import { HOME_ENV } from "@clarvis/paths";
+import { createMCPAuthorizationCoordinator } from "@clarvis/mcp-client";
+import { remoteServer } from "../helpers/runtime-remote-server.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
 import type { TaskDocument, TaskProviderResolver } from "@clarvis/tasks";
 import {
@@ -54,8 +58,13 @@ const body = (execution_id: string, grants: string[] = []): RunRequest =>
   }) as RunRequest;
 
 async function fixture(
-  llm: LLMProvider,
-  options: { hooks?: readonly HookConfig[]; tasks?: TaskProviderResolver } = {},
+  llm: LLMProvider | undefined,
+  options: {
+    hooks?: readonly HookConfig[];
+    tasks?: TaskProviderResolver;
+    environment?: BuildRunDepsOptions["environment"];
+    mcpAuthorization?: BuildRunDepsOptions["mcpAuthorization"];
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-composition-"));
   cleanup.push(() => rm(root, { recursive: true, force: true }));
@@ -66,15 +75,19 @@ async function fixture(
     traceDir: join(root, "traces"),
     env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
     logger: NOOP_LOGGER,
-    environment: { PATH: process.env.PATH },
+    environment: { PATH: process.env.PATH, ...options.environment },
+    ...(options.mcpAuthorization === undefined
+      ? {}
+      : { mcpAuthorization: options.mcpAuthorization }),
     builtins: { tools: true, skills: false, hooks: options.hooks !== undefined },
     ...(options.hooks === undefined ? {} : { resolveHooks: () => options.hooks }),
     capabilities:
       options.tasks === undefined ? [] : [createTasksCapability({ resolver: options.tasks })],
   });
   cleanup.push(() => built.dispose());
-  built.deps.llm = llm;
+  if (llm !== undefined) built.deps.llm = llm;
   const generation = "composition";
+  const guestEnvelopes: unknown[] = [];
   const router = createRuntimeAuthorityRouter(generation);
   const backend: RuntimeBackend = {
     inspect: async () => ({ available: true, engineVersion: "test", rootless: true }),
@@ -122,8 +135,14 @@ async function fixture(
         get closed() {
           return host.closed;
         },
-        startRun: (runId, payload, signal) =>
-          host.request("runtime.start", { generation, runId }, payload, { signal }),
+        startRun: (runId, payload, signal) => {
+          guestEnvelopes.push(structuredClone(payload));
+          return host.request("runtime.start", { generation, runId }, payload, { signal });
+        },
+        callHookMcp: (runId, payload, signal) =>
+          host.request("runtime.hook_mcp", { generation, runId }, payload, { signal }),
+        elicitMcp: (runId, payload, signal) =>
+          host.request("runtime.mcp_elicit", { generation, runId }, payload, { signal }),
         steer: async (runId, payload, signal) => {
           await host.request("runtime.steer", { generation, runId }, payload, { signal });
         },
@@ -172,39 +191,458 @@ async function fixture(
     { roots: { env: { [HOME_ENV]: join(root, "home") } } },
   );
   cleanup.push(() => runtime.close());
-  return { root, workspaceRoot, deps: built.deps, runtime };
+  return { root, workspaceRoot, deps: built.deps, runtime, router, guestEnvelopes };
 }
 
 describe("runtime capability composition", () => {
-  it("keeps MCP hooks owner-scoped and releases their host lease after success or failure", async () => {
+  it.each(["http", "sse"] as const)(
+    "keeps %s bearer, header and saved OAuth authentication on the host",
+    async (transport) => {
+      for (const authentication of ["bearer", "header", "oauth"] as const) {
+        const token = `synthetic-${authentication}-credential`;
+        const header = authentication === "header" ? "X-Mcp-Key" : "Authorization";
+        const expected = authentication === "header" ? token : `Bearer ${token}`;
+        const remote = remoteServer(transport, header, expected);
+        cleanup.push(() => remote.close());
+        const authRoot = await mkdtemp(join(tmpdir(), "clarvis-runtime-auth-"));
+        cleanup.push(() => rm(authRoot, { recursive: true, force: true }));
+        const authorization = { storeFile: join(authRoot, "oauth.json") };
+        let calls = 0;
+        const f = await fixture(
+          {
+            call: async (params) => {
+              calls += 1;
+              if (calls === 1) {
+                expect(params.tools.some((tool) => tool.toolName === "inspect")).toBe(true);
+                return { usage, toolCalls: [{ id: "inspect", name: "inspect", arguments: {} }] };
+              }
+              expect(JSON.stringify(params.messages)).toContain("authenticated remote result");
+              return { usage, text: "done" };
+            },
+          },
+          {
+            environment: { HOST_MCP_TOKEN: token, HOST_MCP_HEADER: token },
+            ...(authentication === "oauth" ? { mcpAuthorization: authorization } : {}),
+          },
+        );
+        if (authentication === "oauth") {
+          const seed = createMCPAuthorizationCoordinator(authorization);
+          try {
+            const session = await seed.session(
+              { workspace: f.workspaceRoot, owner: "owner" },
+              remote.url,
+            );
+            await session.provider.saveTokens({ access_token: token, token_type: "Bearer" });
+          } finally {
+            await seed.close();
+          }
+        }
+        const request = body(`remote-${transport}-${authentication}`);
+        request.servers = [
+          {
+            name: "remote",
+            transport,
+            url: remote.url,
+            required: true,
+            ...(authentication === "bearer" ? { bearer_token_env_var: "HOST_MCP_TOKEN" } : {}),
+            ...(authentication === "header"
+              ? { env_http_headers: { "X-Mcp-Key": "HOST_MCP_HEADER" } }
+              : {}),
+          },
+        ];
+        request.profiles[0]!.tools = ["remote.inspect"];
+        const outcome = await f.runtime.executeRun({
+          rawBody: request,
+          owner: "owner",
+          deps: f.deps,
+        });
+        expect(outcome.response).toMatchObject({ status: "completed" });
+        expect(calls).toBe(2);
+        expect(remote.headers.length).toBeGreaterThanOrEqual(3);
+        expect(remote.headers.every((value) => value === expected)).toBe(true);
+        expect(JSON.stringify(f.guestEnvelopes)).not.toContain(token);
+      }
+    },
+  );
+
+  it("resolves host provider/model overrides and preserves zero-valued retry policy", async () => {
+    const calls: LLMCallParams[] = [];
+    const f = await fixture({
+      call: async (params) => {
+        calls.push(params);
+        return { text: "done", usage };
+      },
+    });
+    const request = body("resolved-provider");
+    request.providers = [
+      {
+        name: "test",
+        kind: "openai-compatible",
+        base_url: "https://provider.test/v1",
+        api_key_env: "HOST_API_KEY",
+        headers: { "X-Base": "base", "X-Override": "provider" },
+        body: { options: { base: true }, base: true },
+        models: {
+          model: {
+            context_window_tokens: 10000,
+            capabilities: [],
+            headers: { "X-Override": "model" },
+            body: { options: { model: true } },
+            prompt_cache: "off",
+          },
+        },
+      },
+    ];
+    request.profiles[0]!.retry = { max_retries: 0, max_retry_after_ms: 1 };
+    const outcome = await f.runtime.executeRun({ rawBody: request, owner: "owner", deps: f.deps });
+    expect(outcome.response.status).toBe("completed");
+    expect(calls[0]).toMatchObject({
+      maxRetries: 0,
+      maxRetryAfterMs: 1,
+      providerConfig: {
+        kind: "openai-compatible",
+        apiKeyEnv: "HOST_API_KEY",
+        baseUrl: "https://provider.test/v1",
+        headers: { "X-Base": "base", "X-Override": "model" },
+        body: { options: { model: true }, base: true },
+        promptCache: "off",
+      },
+    });
+    expect(calls[0]!.capabilities).toEqual(new Set());
+  });
+
+  it("authenticates the real compatible adapter on the host and strips images only for the non-vision wire call", async () => {
+    const requests: Array<{
+      authorization: string | null;
+      header: string | null;
+      body: Record<string, unknown>;
+    }> = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(incoming) {
+        requests.push({
+          authorization: incoming.headers.get("authorization"),
+          header: incoming.headers.get("x-model"),
+          body: (await incoming.json()) as Record<string, unknown>,
+        });
+        const chunks = [
+          {
+            id: "fixture",
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "model",
+            choices: [
+              { index: 0, delta: { role: "assistant", content: "done" }, finish_reason: null },
+            ],
+          },
+          {
+            id: "fixture",
+            object: "chat.completion.chunk",
+            created: 0,
+            model: "model",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          },
+        ];
+        return new Response(
+          chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n",
+          { headers: { "content-type": "text/event-stream" } },
+        );
+      },
+    });
+    cleanup.push(async () => {
+      await server.stop(true);
+    });
+    const f = await fixture(undefined, {
+      environment: {
+        HOST_API_KEY: "synthetic-provider-key",
+        HOST_HEADER: "synthetic-model-header",
+      },
+    });
+    const request = body("real-provider-wire");
+    request.providers = [
+      {
+        name: "test",
+        kind: "openai-compatible",
+        base_url: `http://127.0.0.1:${String(server.port)}/v1`,
+        api_key_env: "HOST_API_KEY",
+        models: {
+          model: {
+            context_window_tokens: 10000,
+            capabilities: [],
+            headers: { "X-Model": "${HOST_HEADER}" },
+          },
+          vision: { context_window_tokens: 10000, capabilities: ["vision"] },
+        },
+      },
+    ];
+    request.vision_model = "test/vision";
+    request.messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe this" },
+          {
+            type: "image",
+            mediaType: "image/png",
+            image:
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j65kAAAAASUVORK5CYII=",
+          },
+        ],
+      },
+    ];
+    const original = structuredClone(request.messages);
+    const outcome = await f.runtime.executeRun({ rawBody: request, owner: "owner", deps: f.deps });
+    expect(outcome.response.status).toBe("completed");
+    const vision = requests.find((entry) => entry.body.model === "vision")!;
+    const text = requests.find((entry) => entry.body.model === "model")!;
+    expect(vision.authorization).toBe("Bearer synthetic-provider-key");
+    expect(JSON.stringify(vision.body.messages)).toContain("image_url");
+    expect(text.authorization).toBe("Bearer synthetic-provider-key");
+    expect(text.header).toBe("synthetic-model-header");
+    expect(JSON.stringify(text.body.messages)).not.toContain("image_url");
+    expect(JSON.stringify(text.body.messages)).toContain("[image");
+    expect(request.messages).toEqual(original);
+    expect(JSON.stringify(f.guestEnvelopes)).not.toContain("synthetic-provider-key");
+    expect(JSON.stringify(f.guestEnvelopes)).not.toContain("synthetic-model-header");
+  });
+
+  it.each(["disabled", "retry-after-cap"])(
+    "honors %s retries in the actual host retry decorator",
+    async (mode) => {
+      let attempts = 0;
+      const server = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch() {
+          attempts += 1;
+          return Response.json(
+            { error: { message: "temporarily unavailable" } },
+            {
+              status: 503,
+              headers: { "retry-after": "1" },
+            },
+          );
+        },
+      });
+      cleanup.push(async () => {
+        await server.stop(true);
+      });
+      const f = await fixture(undefined);
+      const request = body(`retry-${mode}`);
+      request.providers = [
+        {
+          name: "test",
+          kind: "openai-compatible",
+          base_url: `http://127.0.0.1:${String(server.port)}/v1`,
+        },
+      ];
+      request.profiles[0]!.retry =
+        mode === "disabled" ? { max_retries: 0 } : { max_retries: 1, max_retry_after_ms: 1 };
+      const outcome = await f.runtime.executeRun({
+        rawBody: request,
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(outcome.response).toMatchObject({
+        status: "error",
+        error: { details: { kind: "transient" } },
+      });
+      expect(attempts).toBe(1);
+    },
+  );
+
+  it("relays remote elicitation through the live guest and its serialized host input port", async () => {
+    let calls = 0;
+    let questions = 0;
+    let released = 0;
+    const f = await fixture({
+      call: async () => {
+        calls += 1;
+        return calls === 1
+          ? { usage, toolCalls: [{ id: "inspect", name: "inspect", arguments: {} }] }
+          : { usage, text: "done" };
+      },
+    });
+    f.deps.connections.acquire = async ({ relay }) => ({
+      tools: [{ name: "inspect", inputSchema: { type: "object" } }],
+      conn: {
+        name: "remote",
+        transport: "http",
+        status: "connected",
+        callTool: async () => {
+          expect(relay).toBeDefined();
+          return {
+            ok: true,
+            data: await relay!.handle({
+              message: "Approve remote inspection?",
+              requestedSchema: { type: "object", properties: {} },
+            }),
+          };
+        },
+        close: async () => undefined,
+      },
+      release: async () => {
+        released += 1;
+      },
+    });
+    const request = body("remote-elicitation", ["ask_user"]);
+    request.servers = [
+      { name: "remote", transport: "http", url: "https://remote.test/mcp", required: true },
+    ];
+    request.profiles[0]!.tools = ["remote.inspect"];
+    const outcome = await f.runtime.executeRun({
+      rawBody: request,
+      owner: "owner",
+      deps: f.deps,
+      elicit: async (params) => {
+        expect(params.message).toBe("Approve remote inspection?");
+        questions += 1;
+        return { action: "accept", content: {} };
+      },
+    });
+    expect(outcome.response.status).toBe("completed");
+    expect(questions).toBe(1);
+    expect(released).toBe(1);
+  });
+
+  it("recovers from context overflow through the real guest loop", async () => {
+    const calls: LLMCallParams[] = [];
+    const f = await fixture({
+      call: async (params) => {
+        calls.push(structuredClone({ ...params, signal: undefined, onStreamDelta: undefined }));
+        if (calls.length === 1)
+          return { usage, toolCalls: [{ id: "inspect", name: "inspect", arguments: {} }] };
+        if (calls.length === 2)
+          throw new ProviderError("context overflow", { kind: "context_overflow" });
+        return { text: "recovered", usage };
+      },
+    });
+    const request = body("overflow-recovery");
+    request.servers = [{ name: "remote", transport: "http", url: "https://remote.test/mcp" }];
+    request.profiles[0]!.tools = ["remote.inspect"];
+    f.deps.connections.acquire = async () => ({
+      tools: [{ name: "inspect", inputSchema: { type: "object" } }],
+      conn: {
+        name: "remote",
+        transport: "http",
+        status: "connected",
+        callTool: async () => ({ ok: true, data: "evictable-result ".repeat(200) }),
+        close: async () => undefined,
+      },
+      release: async () => undefined,
+    });
+    const outcome = await f.runtime.executeRun({ rawBody: request, owner: "owner", deps: f.deps });
+    expect(outcome.response).toMatchObject({ status: "completed" });
+    expect(calls).toHaveLength(3);
+    expect(JSON.stringify(calls[1]!.messages)).toContain("evictable-result");
+    expect(JSON.stringify(calls[2]!.messages)).not.toContain("evictable-result");
+  });
+
+  it("charges accumulated failed-attempt usage after a brokered provider failure", async () => {
+    const error = new ProviderError("quota fixture", {
+      kind: "quota",
+      partialUsage: { ...usage, input_tokens: 11 },
+    });
+    error.accumulatedUsage = { ...usage, input_tokens: 22, output_tokens: 4 };
+    const f = await fixture({
+      call: async () => {
+        throw error;
+      },
+    });
+    const outcome = await f.runtime.executeRun({
+      rawBody: body("failed-usage"),
+      owner: "owner",
+      deps: f.deps,
+    });
+    expect(outcome.response.status).toBe("error");
+    expect(outcome.response).toMatchObject({
+      error: { details: { kind: "quota" } },
+      usage: { by_agent: [{ input_tokens: 22, output_tokens: 4 }] },
+    });
+  });
+
+  it("admits four parallel model calls and queues a fifth despite the two-CPU runtime", async () => {
+    const first = Promise.withResolvers<void>();
+    const four = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    let started = 0;
+    const f = await fixture({
+      call: async (params) => {
+        expect(params.providerConfig?.kind).toBe("anthropic");
+        expect(params.providerConfig?.apiKeyEnv).toBeUndefined();
+        expect(params.capabilities).toBeUndefined();
+        started += 1;
+        first.resolve();
+        if (started === 4) four.resolve();
+        await gate.promise;
+        return { text: "done", usage };
+      },
+    });
+    const run = f.runtime.executeRun({
+      rawBody: body("parallel-calls"),
+      owner: "owner",
+      deps: f.deps,
+    });
+    await first.promise;
+    const modelLeaseId = (f.guestEnvelopes[0] as { modelLeaseId: string }).modelLeaseId;
+    const calls = Array.from({ length: 4 }, (_, index) =>
+      f.router.handlers["host.model"]!({
+        method: "host.model",
+        generation: "composition",
+        runId: "parallel-calls",
+        callId: `parallel-${String(index)}`,
+        signal: new AbortController().signal,
+        payload: {
+          leaseId: modelLeaseId,
+          provider: "test",
+          model: "model",
+          requestId: `parallel-${String(index)}`,
+          body: {
+            messages: [],
+            tools: [],
+            providerConfig: { kind: "openai", apiKeyEnv: "forged" },
+            capabilities: ["vision"],
+          },
+        },
+      }),
+    );
+    try {
+      await four.promise;
+      expect(started).toBe(4);
+    } finally {
+      gate.resolve();
+    }
+    await Promise.all(calls);
+    expect((await run).response.status).toBe("completed");
+    expect(started).toBe(5);
+  });
+
+  it("routes stdio hooks only to the guest and never falls back to a host connection", async () => {
     const f = await fixture({
       call: async () => {
         throw new Error("unexpected model request");
       },
     });
+    const request = body("stdio-hooks");
+    request.servers = [{ name: "review", transport: "stdio", command: "guest-only-command" }];
     const signal = new AbortController().signal;
-    const request = body("mcp-hooks");
-    const server = {
-      name: "review",
-      transport: "stdio" as const,
-      command: "host-only-command",
-      args: [],
-    };
-    request.servers = [server];
-    let acquisitions = 0;
-    let releases = 0;
+    let hostAcquisitions = 0;
+    let guestCalls = 0;
     let fail = false;
     const hook: Capability = {
       name: "hooks",
       forRun(context) {
-        const port = context.services.get(MCP_HOOK_TOOL_PORT)!;
         return {
           name: "hooks",
           forAgent: () => null,
           lifecycle: [
             {
-              async onRunStart(input) {
-                await port.call("review", "inspect", { mode: input.mode }, signal);
+              async onRunStart() {
+                await context.services
+                  .get(MCP_HOOK_TOOL_PORT)!
+                  .call("review", "inspect", { mode: "solo" }, signal);
               },
             },
           ],
@@ -216,32 +654,22 @@ describe("runtime capability composition", () => {
       capabilities: [hook],
       connections: {
         closeAll: async () => undefined,
-        async acquire(options: Parameters<typeof f.deps.connections.acquire>[0]) {
-          acquisitions++;
-          expect(options).toEqual({ server, owner: "owner", poolSharing: "owner", signal });
-          return {
-            tools: [],
-            conn: {
-              name: "review",
-              status: "connected" as const,
-              transport: "stdio" as const,
-              close: async () => undefined,
-              async callTool(tool: string, input: unknown, callSignal?: AbortSignal) {
-                expect([tool, input, callSignal]).toEqual(["inspect", { mode: "solo" }, signal]);
-                if (fail) throw new Error("hook provider failed");
-                return { ok: true, data: { accepted: true } };
-              },
-            },
-            release: async () => {
-              releases++;
-            },
-          };
+        async acquire(): Promise<never> {
+          hostAcquisitions++;
+          throw new Error("stdio hook must not acquire a host connection");
         },
       },
     };
     const bridge = await createHostHooksBridge(
       { rawBody: request, owner: "owner", deps },
-      "mcp-hooks",
+      "stdio-hooks",
+      async (call, callSignal) => {
+        guestCalls++;
+        expect(call).toEqual({ server: "review", tool: "inspect", input: { mode: "solo" } });
+        expect(callSignal).toBe(signal);
+        if (fail) throw new Error("guest hook unavailable");
+        return { accepted: true };
+      },
     );
     const invocation = {
       operation: "invoke",
@@ -249,22 +677,118 @@ describe("runtime capability composition", () => {
       method: "onRunStart",
       context: { mode: "solo", entry: "solo" },
     };
-    expect(bridge!.grant.validateArguments(invocation)).toBe(true);
     await bridge!.grant.invoke(invocation, signal);
-    expect(releases).toBe(1);
     fail = true;
-    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow("hook provider failed");
-    expect(releases).toBe(2);
-    const inactive = await createHostHooksBridge(
-      { rawBody: { ...request, servers: [] }, owner: "owner", deps },
-      "inactive-hooks",
+    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
+      "guest hook unavailable",
     );
-    await expect(inactive!.grant.invoke(invocation, signal)).rejects.toThrow(
+    request.servers[0]!.enabled = false;
+    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
       "hook MCP server is not active",
     );
-    expect(acquisitions).toBe(2);
-    expect(releases).toBe(2);
+    expect(guestCalls).toBe(2);
+    expect(hostAcquisitions).toBe(0);
   });
+
+  it.each(["http", "sse"] as const)(
+    "keeps %s MCP hooks owner-scoped on the host and releases their lease",
+    async (transport) => {
+      const f = await fixture({
+        call: async () => {
+          throw new Error("unexpected model request");
+        },
+      });
+      const signal = new AbortController().signal;
+      const request = body("mcp-hooks");
+      const server = {
+        name: "review",
+        transport,
+        url: "https://hooks.invalid/mcp",
+      };
+      request.servers = [server];
+      let acquisitions = 0;
+      let releases = 0;
+      let fail = false;
+      const hook: Capability = {
+        name: "hooks",
+        forRun(context) {
+          const port = context.services.get(MCP_HOOK_TOOL_PORT)!;
+          return {
+            name: "hooks",
+            forAgent: () => null,
+            lifecycle: [
+              {
+                async onRunStart(input) {
+                  await port.call("review", "inspect", { mode: input.mode }, signal);
+                },
+              },
+            ],
+          };
+        },
+      };
+      const deps = {
+        ...f.deps,
+        capabilities: [hook],
+        connections: {
+          closeAll: async () => undefined,
+          async acquire(options: Parameters<typeof f.deps.connections.acquire>[0]) {
+            acquisitions++;
+            expect(options).toEqual({ server, owner: "owner", poolSharing: "owner", signal });
+            return {
+              tools: [],
+              conn: {
+                name: "review",
+                status: "connected" as const,
+                transport,
+                close: async () => undefined,
+                async callTool(tool: string, input: unknown, callSignal?: AbortSignal) {
+                  expect([tool, input, callSignal]).toEqual(["inspect", { mode: "solo" }, signal]);
+                  if (fail) throw new Error("hook provider failed");
+                  return { ok: true, data: { accepted: true } };
+                },
+              },
+              release: async () => {
+                releases++;
+              },
+            };
+          },
+        },
+      };
+      const bridge = await createHostHooksBridge(
+        { rawBody: request, owner: "owner", deps },
+        "mcp-hooks",
+        async () => {
+          throw new Error("remote hooks must stay on the host");
+        },
+      );
+      const invocation = {
+        operation: "invoke",
+        index: 0,
+        method: "onRunStart",
+        context: { mode: "solo", entry: "solo" },
+      };
+      expect(bridge!.grant.validateArguments(invocation)).toBe(true);
+      await bridge!.grant.invoke(invocation, signal);
+      expect(releases).toBe(1);
+      fail = true;
+      await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
+        "hook provider failed",
+      );
+      expect(releases).toBe(2);
+      const inactive = await createHostHooksBridge(
+        { rawBody: { ...request, servers: [] }, owner: "owner", deps },
+        "inactive-hooks",
+        async () => {
+          throw new Error("inactive hook must not reach guest");
+        },
+      );
+      await expect(inactive!.grant.invoke(invocation, signal)).rejects.toThrow(
+        "hook MCP server is not active",
+      );
+      expect(acquisitions).toBe(2);
+      expect(releases).toBe(2);
+    },
+  );
 
   it("refuses duplicate, unprepared and over-authorized leaders and validates guest workflow progress", async () => {
     const f = await fixture({
@@ -466,6 +990,7 @@ describe("runtime capability composition", () => {
     let managerCalls = 0;
     let leaderCalls = 0;
     let leaderLimit: number | undefined;
+    let leaderRetries: number | undefined;
     const f = await fixture({
       async call(params) {
         if (params.tools?.some((tool) => tool.wireName === "run_leader")) {
@@ -487,6 +1012,7 @@ describe("runtime capability composition", () => {
         }
         leaderCalls++;
         leaderLimit = params.maxOutputTokens;
+        leaderRetries = params.maxRetries;
         return { text: "leader done", usage };
       },
     });
@@ -519,6 +1045,8 @@ describe("runtime capability composition", () => {
     expect(leaderCalls).toBe(1);
     expect(leaderLimit).toBeLessThanOrEqual(25);
     expect(leaderLimit).toBeGreaterThan(0);
+    expect(leaderRetries).toBe(3);
+    expect(leaderLimit! * (leaderRetries! + 1)).toBeLessThanOrEqual(100);
     expect(ctx.ledger.spent()).toBe(1);
     const record = f.deps.traceStore.getById("owner", "manager-run");
     expect(JSON.stringify(record)).toContain("workflow_run_started");

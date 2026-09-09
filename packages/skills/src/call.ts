@@ -139,8 +139,10 @@ export function handleLoadSkillCall(args: {
         "When a native sandbox is active, the package root is mounted read-only.\n";
   return ok(
     `Skill '${content.name}' — ${content.description}\n\n` +
-      `Skill directory: ${content.dir}\n` +
-      "Resolve bundled relative paths from that directory.\n" +
+      (content.source === "builtin"
+        ? "Builtin instructions embedded in Clarvis; no skill file or execution directory.\n"
+        : `Skill directory: ${content.dir}\n` +
+          "Resolve bundled relative paths from that directory.\n") +
       executionHint +
       "\n" +
       `${body}${renderResourceList(content.resources)}`,

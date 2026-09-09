@@ -11,6 +11,8 @@
 
 export type * from "./common.ts";
 export type * from "./runs.ts";
+export type * from "./hosting.ts";
+export type * from "./local-host.ts";
 export type * from "./config.ts";
 export type * from "./plugins.ts";
 export type * from "./extension-profiles.ts";

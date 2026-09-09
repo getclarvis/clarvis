@@ -3,6 +3,8 @@ export { createInProcessKernel, DEFAULT_KERNEL_CAPABILITIES } from "./kernel.ts"
 export { createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 export type { ComponentLoggers } from "./component-loggers.ts";
 export type { InProcessKernel, OwnerScopedKernel, CreateKernelOptions } from "./kernel.ts";
+export type { PreparedKernelRun } from "./runs/prepare-run.ts";
+export type { KernelRunService, PreparedRunExecution } from "./runs/run-service.ts";
 export type { ConnectionEvent, ConnectionEventSink } from "./connection-health.ts";
 
 export { assertRuntimeLaunchSpec } from "./runtime/launch-policy.ts";
@@ -14,6 +16,7 @@ export {
   type RuntimeAvailability,
   type RuntimeBackend,
   type RuntimeInfo,
+  type RuntimeHookMcpCall,
   type RuntimeKind,
   type RuntimeLaunchSpec,
   type RuntimeLifecycleState,
@@ -170,9 +173,16 @@ export type {
   TransportDisconnect,
 } from "./transport/server.ts";
 export { connectKernelClient } from "./transport/client.ts";
+export { readHostedSnapshot } from "./transport/hosted-snapshot.ts";
 export type { RemoteKernel, ConnectKernelClientOptions } from "./transport/client.ts";
 export { createLoopbackTransport } from "./transport/loopback.ts";
 export { createStdioTransport, serveKernelOverStdio } from "./transport/stdio.ts";
+export {
+  connectLocalKernelTransport,
+  listenLocalKernel,
+  type LocalKernelListener,
+  type LocalKernelListenerOptions,
+} from "./transport/local.ts";
 export { M as WIRE_METHODS, N as WIRE_NOTIFICATIONS } from "./transport/wire.ts";
 export {
   OPERATIONS as KERNEL_OPERATIONS,

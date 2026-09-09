@@ -37,6 +37,7 @@
         "@opentui/core": "0.5.9",
         "@opentui/keymap": "0.5.9",
         "@opentui/solid": "0.5.9",
+        "croner": "10.0.1",
         "solid-js": "1.9.12",
         "web-tree-sitter": "0.25.10",
         "zod": "^4.4.3",
@@ -60,6 +61,7 @@
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "@clarvis/loop": "workspace:*",
+        "@clarvis/mcp-client": "workspace:*",
         "@clarvis/memory": "workspace:*",
         "@clarvis/paths": "workspace:*",
         "@clarvis/plan": "workspace:*",
@@ -71,9 +73,6 @@
         "@clarvis/workflows": "workspace:*",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@clarvis/mcp-client": "workspace:*",
       },
     },
     "packages/llm": {
@@ -573,6 +572,8 @@
     "core-js-compat": ["core-js-compat@3.49.0", "", { "dependencies": { "browserslist": "^4.28.1" } }, "sha512-VQXt1jr9cBz03b331DFDCCP90b3fanciLkgiOoy8SBHy06gNf+vQ1A3WFLqG7I8TipYIKeYK9wxd0tUrvHcOZA=="],
 
     "cors": ["cors@2.8.6", "", { "dependencies": { "object-assign": "^4", "vary": "^1" } }, "sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw=="],
+
+    "croner": ["croner@10.0.1", "", {}, "sha512-ixNtAJndqh173VQ4KodSdJEI6nuioBWI0V1ITNKhZZsO0pEMoDxz539T4FTTbSZ/xIOSuDnzxLVRqBVSvPNE2g=="],
 
     "cross-spawn": ["cross-spawn@7.0.6", "", { "dependencies": { "path-key": "^3.1.0", "shebang-command": "^2.0.0", "which": "^2.0.1" } }, "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA=="],
 

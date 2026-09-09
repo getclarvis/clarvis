@@ -33,6 +33,19 @@ architecture tests pin their observable handoff (`tooling/checks/coverage.ts`,
 
 ## 2. Surface
 
+Interactive runtime composition also owns one in-memory conversation prompt scheduler. It binds
+jobs to `RunHost.scheduledBinding`, supplies connection/configuration readiness, pauses on reconnect
+or conversation changes, cancels registrations on session deletion and disposes timers on close.
+App contributes draft/dialog admission gates and command composition registers `/loop`. Headless
+execution does not instantiate this controller or restore any schedule. Production: `loops`,
+`loopReadiness`, `buildRunHost`, `closeWorkspace` in
+[runtime.tsx](../../packages/code/src/runtime.tsx) and `registerCodeCommands` in
+[command-composition.ts](../../packages/code/src/app/command-composition.ts).
+Test: controller disposal/binding cases in
+[loop-controller.test.ts](../../packages/code/tests/unit/loop-controller.test.ts) and live App command
+and interaction gates in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+The owning contract is [loop-scheduling.md](loop-scheduling.md).
+
 ### 2.1 The `clarvis` bin
 
 | Property | Value | Source |
@@ -585,7 +598,7 @@ terminal result."
 | 5 | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
 | 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
 | 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
-| 8 | after `app.boot.painted`, release memory recovery, Markdown warm-up, and the optional managed-install release check; resume/continue restore saved content after parser warm-up | `runApp` |
+| 8 | after `app.boot.painted`, release Markdown warm-up and the optional managed-install release check; resume/continue restore saved content after parser warm-up | `runApp` |
 
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
@@ -624,11 +637,12 @@ Two orderings the code annotates explicitly:
   Production: `packages/code/src/runtime.tsx` (`preloadMarkdown`, `markdownPreload`, `appProps`,
   `app.boot.painted`). Test:
   `packages/code/tooling/artifact/smoke.ts`.
-- Durable memory-queue recovery is released immediately after the same `app.boot.painted` boundary.
-  Kernel construction and the earlier shell/application paints do not start an index pass.
-  Production: `packages/code/src/runtime.tsx` (`app.boot.painted`, `startMemoryRecovery`) and
-  `packages/code/src/adapters/workspace-client-manager.ts` (`startMemoryRecovery`). Test:
-  `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-before-recovery order).
+- Durable memory recovery belongs to the independent host. It begins after authenticated discovery
+  publication and survives TUI disconnect; another paint or connection recovery does not restart it.
+  Production: `serveLocalFileKernel` in `packages/kernel/src/hosting/serve-local.ts`.
+  Test: `packages/code/tests/architecture/architecture-boundary.test.ts` checks that the UI and manager
+  do not own its release; process lifecycle is exercised in
+  `packages/kernel/tests/integration/local-host-process.test.ts`.
 - The automatic version check is another after-paint task, but only for a managed portable
   installation whose global Code preference remains enabled. It dynamically imports the read-only
   checker, uses a 24-hour disposable cache, and is aborted by platform shutdown; its failure never
@@ -861,7 +875,7 @@ overlay host, commands and interaction.
 
 **Quit confirm** (`createQuitConfirm`, `packages/code/src/views/quit-confirm.ts`) is App's own
 "press again to quit" gate, and `App` wires it with `isDirtyView: () =>
-overlays.viewDirty()`, `isRunActive: () => props.run.active()`, `isDraftNonEmpty: () =>
+overlays.viewDirty()`, `isRunAtRisk` (an active run without confirmed host continuation), `isDraftNonEmpty: () =>
 (inputEl?.plainText ?? "").trim().length > 0`, `notify` and a `requestFinalQuit` indirection; its
 `.quit` is what `InteractionEffects.quit` calls, and its `.disarm` is called during teardown. The
 gate's own contract type is `QuitConfirm = { quit(opts: { confirm: boolean }): void; disarm(): void
@@ -872,10 +886,11 @@ gate — the first call only notifies and starts a [1500ms] window, and quitting
 call inside that window"; `confirm: false` "is for a caller that has already spent a keystroke on the
 decision (the double-tap `^C` path, and `/quit`, where typing the command is itself explicit): it
 quits immediately from a state where nothing is at stake.". But the gate does not simply
-trust that flag: "**The gate still arms whenever work would be lost**, whatever the flag says — a
-dirty view or a live run. It used to check only the dirty view, and `/quit` passes `confirm: false`,
-so typing it mid-run discarded a run in flight with no prompt at all." — mechanically,
-`atStake = dirtyView || deps.isRunActive()` and the gate arms whenever `confirm || atStake`.
+trust that flag: a dirty view or a run that will be cancelled on exit still requires confirmation.
+Mechanically, `atStake = dirtyView || deps.isRunAtRisk()` and the gate arms whenever `confirm || atStake`.
+An observed hosted run with confirmed `continue` policy is not at risk merely because it is active;
+the activity line displays `continues after exit`. This projection does not change host policy or
+tool consent, and a later turn defaults to ordinary exit policy.
 A non-empty draft is deliberately excluded from that arming set: "Running `/quit` from the composer
 leaves the command itself sitting in the draft, so counting it would make the slash command arm
 against its own text." — `isDraftNonEmpty` is consulted only to pick the *wording* of an
@@ -886,6 +901,10 @@ already-armed prompt (`" (unsaved changes)"` > `" (run active)"` > `" (draft uns
 named draft-only, run-active wording, and `/quit`-mid-run cases;
 `packages/code/tests/integration/interaction.test.ts` cross-references
 the double-tap `^C` path this gate was written for.
+Production: `createQuitConfirm` in [quit-confirm.ts](../../packages/code/src/views/quit-confirm.ts)
+and its composition in [App.tsx](../../packages/code/src/views/App.tsx). Test:
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx)
+exercises the actual slash-input path under both hosted disconnect policies.
 
 `requestFinalQuit` delegates directly to `props.shell.quit` for a normal checkout and performs the
 asynchronous clean-worktree check for a managed checkout. A clean result mounts
@@ -995,6 +1014,14 @@ version after one gutter column. It is a pure projection of `HeaderPlan`, comput
 
 #### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
 
+App's `effectiveRunIsolation` projection uses host-reported native placement during an active run,
+including an explicitly approved native configuration turn, and keeps configured next-run preferences
+when the native host is idle. A latched sandbox fallback and container status retain their existing
+projection. Production: `effectiveRunIsolation` in
+[execution-safety.ts](../../packages/code/src/adapters/execution-safety.ts), used by `App`.
+Test: `shows active native configuration without replacing the idle next-run preference` in
+[execution-safety.test.ts](../../packages/code/tests/unit/execution-safety.test.ts).
+
 `HeaderInput` (`packages/code/src/views/header-projection.ts`, `HeaderInput`) is the one shell snapshot the row is derived
 from — `width`, `version`, `floor`, `agentName`, `model`, `isolation`, `review`, `sandboxUnavailable?`,
 `memoryConfigured`, `memory`, `plans`, `connection`, `doctorDirty`, `workspace`, `workspaceLabel?`,
@@ -1078,12 +1105,23 @@ floor-mode identity drop and the version field; the render side is pinned by
 store, clears the active session when ids match, and deletes the session and its runs through the
 current run client. No temporary client or cross-workspace branch exists.
 
-**`reconnectBackend`** (`packages/code/src/runtime.tsx`, `reconnectBackend`): refuses immediately, with no reconnect
-attempt, while a run is active (`"run in progress " + glyph("emDash") + " cancel it before reconnecting"`). Otherwise it sets
-connection state to `connecting`, calls `runClient.reconnect()`, then reloads keys, settings and agent
-files and re-lists Agent Profiles, sets connection to `ready` (with detail `"no Agent Profiles"` when the list is
-empty), and returns `{ ok: true, message: "backend reconnected " + glyph("emDash") + " keys applied" }`. A throw anywhere in that sequence sets connection to `failed` and returns
-`` { ok: false, message: `reconnect failed ${glyph("emDash")} restart clarvis (${errorText(e)})` } ``.
+**`reconnectBackend`** (`packages/code/src/runtime.tsx`): refuses while `RunHost.scheduledBusy()`
+reports local preparation, physical run closure, shell work or compaction. Otherwise it sets
+connection state to `connecting`, pauses loop readiness, and calls `runClient.reconnect(mode)`.
+`/reconnect` selects `connection`, which replaces the transport without restarting the executor;
+`/reconnect reload` and configuration callbacks select `reload`, which requires host quiescence.
+Success reloads local keys/settings/agent adapters and the profile catalogue before publishing
+`ready`. Failure probes the retained client: a rejected reload with a healthy connection remains
+`ready`, while an unavailable connection becomes `failed` and offers `/reconnect`. Host polling
+also reports lost connection separately from the runtime placement label. Neither path retries a
+run or silently reattaches its controls.
+
+Production: `createWorkspaceRunClient`, `reconnectBackend` and `subscribeConnectionFailure` wiring
+in `packages/code/src/runtime.tsx`; `WorkspaceClientManager` and `createKernelRunClient`.
+Test: the recovery/refused-reload cases in
+`packages/code/tests/component/workspace-client-manager.test.ts`, transition-intent and retained-client
+cases in `packages/code/tests/component/kernel-run-client.test.ts`, and `/reconnect` routing in
+`packages/code/tests/integration/app-commands.test.tsx`.
 
 **`exportSession`/`writeExportChunk`** (`packages/code/src/runtime.tsx`): `writeExportChunk`
 writes a chunk's UTF-8 bytes in a loop over `output.write(bytes, offset, …)`, advancing `offset` by
@@ -1366,14 +1404,12 @@ and only if unset.
 Production: `packages/code/src/index.tsx` (`runInteractive`, `??=` before either foundation path).
 Unpinned.
 
-**INV-CB-41.** Interactive durable memory recovery begins only after the usable application paint;
-reconnecting after that release starts recovery on the replacement kernel without moving work back
-onto the cold-boot path.
-Production: `packages/code/src/runtime.tsx` (`app.boot.painted`, `startMemoryRecovery`) and
-`packages/code/src/adapters/workspace-client-manager.ts` (`startMemoryRecovery`, `reconnect`).
-Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-before-recovery
-order) and `packages/kernel/tests/integration/owner-isolation.test.ts` (idempotent release and later
-owner startup).
+**INV-CB-41.** Durable memory recovery follows the independent host lifecycle, not a TUI paint or
+transport reconnect. Production: `serveLocalFileKernel` in
+`packages/kernel/src/hosting/serve-local.ts`. Test:
+`packages/code/tests/architecture/architecture-boundary.test.ts` checks that the UI owns no recovery
+trigger; `packages/kernel/tests/integration/local-host-process.test.ts` exercises process lifecycle,
+and `packages/kernel/tests/integration/owner-isolation.test.ts` pins idempotent recovery release.
 
 **INV-CB-42.** One `--extension-profile` value reaches every kernel created by the invocation and remains the
 highest-precedence selector across backend reconnects; it never writes persisted selection state.
@@ -1494,8 +1530,8 @@ kernel boot through the runtime-aware workspace manager").
 | Worktree branch lookup fails | `worktree.branch.unavailable` at `warn`; header branch stays `undefined` | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
 | Prompt-history persistence fails | `historyFailure` string pushed into the run status line | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
 | Session store errors | routed to `setRunStatus` through `onError` | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
-| `reconnectBackend` while a run is active | refuses with an explanatory message, no reconnect attempted | `{ ok: false, message }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
-| `reconnectBackend` throws | connection → `failed`, `reconnect failed — restart clarvis (<text>)` | `{ ok: false }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
+| `reconnectBackend` while local work is active or preparing | refuses with an explanatory message, no reconnect attempted | `{ ok: false, message }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
+| `reconnectBackend` throws | probes the retained client; keeps `ready` if reachable, otherwise sets `failed` with a connection recovery action | `{ ok: false }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
 | Session export fails | `export failed: <text>` returned as the status string | degrade | `packages/code/src/runtime.tsx` (`exportSession`) |
 | An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/runtime.tsx` (`writeExportChunk`) |
 | `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before a kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts`; `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`) |

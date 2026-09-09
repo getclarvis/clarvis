@@ -1,6 +1,6 @@
 # The transport-agnostic kernel to UI contract
 
-> Implemented at `packages/protocol/src/**` (19 files) plus
+> Implemented at `packages/protocol/src/**` plus
 > `packages/kernel/src/transport/operations.ts` as the consumer table. Nontrivial claims below carry
 > checkable source or test evidence, preferably at the owning symbol. Open questions are collected
 > in the final section.
@@ -26,11 +26,9 @@ transport, cancellation and live-handle interfaces deliberately also contain met
 signals and an async iterable. Opaque payload escape hatches are typed `unknown`, for example
 `KernelError.details` at `packages/protocol/src/common.ts`.
 
-The package achieves its "transport-agnostic" claim not just by convention but by construction: it
-declares 198 non-reexport type-level exports across its 18 sibling modules — 152 `export interface`
-declarations (`rg -c "^export interface\\b" packages/protocol/src/*.ts`) plus 46 `export type <Name>
-= ...` aliases (e.g. `packages/protocol/src/common.ts`'s `Scope`, `packages/protocol/src/runs.ts`'s `RunStatus`, `packages/protocol/src/tasks.ts`'s
-`TaskStageDto`) — and `packages/protocol/src/index.ts` re-exports all 18 sibling modules with `export type *`.
+The package achieves its "transport-agnostic" claim by construction: its public declarations are
+interfaces and type aliases, and `packages/protocol/src/index.ts` re-exports the sibling modules
+with `export type *`.
 TypeScript erases the whole surface at compile time — the package produces **zero runtime values**,
 confirmed independently below (§7).
 
@@ -38,13 +36,15 @@ confirmed independently below (§7).
 
 ### 2.1 Module list
 
-All 19 source files, each opened directly:
+Source ownership:
 
 | File | Owns |
 | --- | --- |
-| `index.ts` | Barrel: `export type *` from the 18 modules below |
+| `index.ts` | Barrel: `export type *` from the modules below |
 | `common.ts` | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
 | `runs.ts` | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
+| `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
+| `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit runtime retry/restart controls |
 | `config.ts` | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
 | `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
 | `extension-profiles.ts` | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
@@ -64,9 +64,41 @@ All 19 source files, each opened directly:
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
+`KernelClient.hosting` is an optional `HostingService`, advertised by
+`KernelCapabilities.hosting.host_generation`. `connectKernelClient` exposes it only when that
+generation is present in the handshake. Ordinary in-process/stdio composition does not enable it.
+
+`KernelClient.localHost` additionally requires `capabilities.local_host` and hosted generation.
+It is advertised only to an authenticated local operator. `LocalHostStatus` carries runtime state,
+sequenced notices and restart state; `LocalHostBrowserRequest` carries a claimed URL with an id and
+expiry. The service uses the same kernel operation catalog and never serializes application callbacks
+or provider credentials. Runtime retry and restart remain explicit operations.
+
+Production: `LocalHostService` in [local-host.ts](../../packages/protocol/src/local-host.ts),
+`OPERATIONS.localHost` in [operations.ts](../../packages/kernel/src/transport/operations.ts),
+`createLocalHostClient` in [local-host-client.ts](../../packages/kernel/src/transport/local-host-client.ts)
+and `createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts)
+checks the shared catalog facade; authenticated role checks are exercised by
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+Its DTOs describe an atomic snapshot/tail observation and independent handoff receipts; a lost
+connection rejects the observation rather than manufacturing an execution result.
+Production: [hosting.ts](../../packages/protocol/src/hosting.ts), `KernelClient` in
+[client.ts](../../packages/protocol/src/client.ts) and `createHostingClient` in
+[hosting-client.ts](../../packages/kernel/src/transport/hosting-client.ts).
+Test: [hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts).
+The lifecycle and storage ownership are specified in [hosted runs](hosted-runs.md).
+`Session.revision` carries the hosted coordinator's optimistic mutation revision; an unhosted
+conversation has no assigned revision. Hosted reads materialize zero before ownership begins.
+Production: `Session` in [sessions.ts](../../packages/protocol/src/sessions.ts) and
+`createHostedSessionCoordinator` in [sessions.ts](../../packages/kernel/src/hosting/sessions.ts).
+Test: [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts).
+The write and accounting contract is in [sessions](sessions.md#host-owned-conversation-transactions).
+
 ### 2.2 `KernelClient` — the object a UI programs against
 
-Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 named services and one method:
+Defined in `packages/protocol/src/client.ts`. Aggregates identity/capability fields, named services,
+optional hosted-run ownership and a close method:
 
 | Member | Type | File |
 | --- | --- | --- |
@@ -75,6 +107,7 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 | `project` | `ProjectRef` | `KernelClient.project` |
 | `workspace` | `WorkspaceRef` | `KernelClient.workspace` |
 | `runs` | `RunService` | `KernelClient.runs` |
+| `hosting?` | `HostingService` | `KernelClient.hosting`; requires the advertised host generation |
 | `config` | `ConfigService` | `KernelClient.config` |
 | `plugins` | `PluginService` | `KernelClient.plugins` |
 | `extensionProfiles` | `ExtensionProfileService` | `KernelClient.extensionProfiles` |
@@ -92,7 +125,8 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 | `close(): Promise<void>` | method | `KernelClient.close` |
 
 `KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
-optional host-reported `runtime`. Native placement carries only `kind` and `host_platform`.
+optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
+`host_platform`, effective isolation, lifecycle and optional fallback origin.
 Container placement additionally reports generation, selected Docker/Podman engine and version,
 host/guest platform, local immutable image digest, private runtime protocol revision, effective
 network grant and lifecycle. This is an informational projection, not a client-controlled launch
@@ -134,7 +168,8 @@ Every signature below is the one declared in its file.
 | `compact` | `(request?: string) => Promise<void>` | `RunHandle.compact` |
 | `cancel` | `() => Promise<void>` | `RunHandle.cancel` |
 | `respond` | `(response: ElicitationResponse) => Promise<void>` | `RunHandle.respond` |
-| `onElicit` | `(handler: (req: ElicitationRequest) => void) => void` | `RunHandle.onElicit` |
+| `onElicit` | `(handler: (req: ElicitationRequest) => void) => void \| (() => void)` | `RunHandle.onElicit`; managed handles return unsubscribe |
+| `onElicitSettled?` | `(handler: (id: string) => void) => () => void` | `RunHandle.onElicitSettled`; answered or expired questions |
 | `done` | `readonly Promise<RunResult>` | `RunHandle.done` |
 | `buffered?` | `() => { buffered_items; buffered_bytes; dropped }` | `RunHandle.buffered` |
 | `closed` | `readonly Promise<void>` | `RunHandle.closed` |
@@ -486,6 +521,7 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
 | `continue_from?` | `string` | resume / steer-after-end |
 | `prompt_cache_key?` | `string` | provider prompt-cache hint |
+| `configuration_session_id?` | `string` | volatile owner-scoped nonce for the currently open session; generate anew on open/resume, never persist or derive from cache/continuation ids; omission requires consent per run |
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
 | `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |
 | `guard_judge?` | `GuardJudge` | caller-owned judge prompt/model/timeout |
@@ -494,6 +530,14 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `task?` | `ActiveTaskRequestDto` | binds one external task |
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
 | `output_schema?` | `JsonSchema` | structured-output request |
+
+The configuration nonce stays on the host side of run admission. Its lifecycle and
+`configuration_access` elicitation are specified in [self-configuration.md](self-configuration.md).
+Production: `StartRunParams` in [runs.ts](../../packages/protocol/src/runs.ts) and
+`createNativeConfigurationRuns` in
+[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
+Test: [native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts)
+and the live-session/resume test in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
 ### 3.5 `PlanProjection` and CAS revision pair
 
@@ -936,7 +980,7 @@ Two properties the package states about *degradation of fidelity* rather than er
 Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies`/
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
-`import type` among its 19 files points at a sibling module inside `packages/protocol/src/`
+`import type` in the package points at a sibling module inside `packages/protocol/src/`
 (`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows}.ts`).
 The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.

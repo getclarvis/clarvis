@@ -42,6 +42,8 @@ type Frame = ReqFrame | ResFrame | NoteFrame | CancelFrame;
 export const MAX_WIRE_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_WRITER_QUEUE_FRAMES = 1_024;
 const MAX_WRITER_QUEUE_BYTES = 16 * 1024 * 1024;
+const MAX_INBOUND_REQUESTS = 128;
+const MAX_INBOUND_REQUEST_BYTES = 16 * 1024 * 1024;
 const WRITER_TIMEOUT_MS = 30_000;
 const MAX_ERROR_MESSAGE_CHARS = 16_384;
 const MAX_ERROR_DETAILS_BYTES = 64 * 1024;
@@ -532,6 +534,7 @@ export function serveKernelOverStdio(
 ): { close(): void } {
   let closed = false;
   const controllers = new Map<number, AbortController>();
+  let inboundBytes = 0;
   const close = (): void => {
     if (closed) return;
     closed = true;
@@ -562,11 +565,20 @@ export function serveKernelOverStdio(
       }
       if (frame.t !== "req") return;
       if (controllers.has(frame.id)) {
-        close();
+        disconnect();
+        return;
+      }
+      const bytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+      if (
+        controllers.size >= MAX_INBOUND_REQUESTS ||
+        inboundBytes + bytes > MAX_INBOUND_REQUEST_BYTES
+      ) {
+        disconnect();
         return;
       }
       const controller = new AbortController();
       controllers.set(frame.id, controller);
+      inboundBytes += bytes;
       void conn
         .handle(frame.method, frame.params, controller.signal)
         .then(
@@ -574,12 +586,16 @@ export function serveKernelOverStdio(
           (err) => writer.send({ t: "res", id: frame.id, error: toEnvelope(err) }),
         )
         .catch(close)
-        .finally(() => controllers.delete(frame.id));
+        .finally(() => {
+          controllers.delete(frame.id);
+          inboundBytes -= bytes;
+        });
     },
     disconnect,
     logger,
   );
   io.input.once("end", disconnect);
   io.input.once("error", disconnect);
+  io.input.once("close", disconnect);
   return { close };
 }

@@ -40,6 +40,8 @@ import { createGuestMemoryCapability, validRuntimeMemoryDescriptor } from "./mem
 import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-queue.ts";
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
+import { createGuestHookMcpCaller } from "./hook-mcp.ts";
+import { createGuestMcpConnections } from "./remote-mcp.ts";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
@@ -60,6 +62,9 @@ interface GuestRunEnvelope {
 interface GuestRunControl {
   readonly steer: SteerQueue;
   readonly compaction: CompactionQueue;
+  readonly hookCalls: AbortController;
+  callHookMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
+  elicitMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
 }
 
 type GuestControlInput =
@@ -194,6 +199,8 @@ function modelBody(params: LLMCallParams): unknown {
     tools: params.tools,
     ...(params.toolChoice === undefined ? {} : { toolChoice: params.toolChoice }),
     ...(params.timeoutMs === undefined ? {} : { timeoutMs: params.timeoutMs }),
+    ...(params.maxRetries === undefined ? {} : { maxRetries: params.maxRetries }),
+    ...(params.maxRetryAfterMs === undefined ? {} : { maxRetryAfterMs: params.maxRetryAfterMs }),
     ...(params.maxOutputTokens === undefined ? {} : { maxOutputTokens: params.maxOutputTokens }),
     ...(params.reasoningSummary === undefined ? {} : { reasoningSummary: params.reasoningSummary }),
     ...(params.reasoningEffort === undefined ? {} : { reasoningEffort: params.reasoningEffort }),
@@ -290,6 +297,7 @@ export function createGuestLoopExecutor(
       const control: GuestRunControl = {
         steer: createSteerQueue(),
         compaction: createCompactionQueue(),
+        hookCalls: new AbortController(),
       };
       controls.set(runId, control);
       try {
@@ -358,6 +366,13 @@ export function createGuestLoopExecutor(
         built.deps.capabilityRegistry?.register(memorySettingsSpec);
         built.deps.capabilityRegistry?.register(tasksSettingsSpec);
         built.deps.llm = guestModelProvider(runId, envelope.modelLeaseId, bridge);
+        const connections = createGuestMcpConnections({
+          local: built.deps.connections,
+          bridge,
+          signal,
+        });
+        built.deps.connections = connections;
+        control.elicitMcp = (input, signal) => connections.elicit(input, signal);
         built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
         const extraCapabilities = [
           ...(child?.args.capabilities ?? []),
@@ -390,6 +405,13 @@ export function createGuestLoopExecutor(
         ];
         let sequence = 0;
         try {
+          const servers = record(envelope.rawBody)?.servers;
+          control.callHookMcp = createGuestHookMcpCaller({
+            servers: Array.isArray(servers) ? servers : [],
+            owner: envelope.owner,
+            connections: built.deps.connections,
+            signal: AbortSignal.any([signal, control.hookCalls.signal]),
+          });
           const outcome = await executeRun({
             rawBody: envelope.rawBody,
             owner: envelope.owner,
@@ -426,17 +448,37 @@ export function createGuestLoopExecutor(
           await bridge.checkpoint({ sequence, terminal: false, state: { outcome } });
           return outcome;
         } finally {
+          control.hookCalls.abort(new Error("guest run MCP hooks closed"));
           try {
             await eventTail;
           } finally {
-            await built.dispose();
+            try {
+              await connections.closeAll();
+            } finally {
+              await built.dispose();
+            }
           }
         }
       } finally {
+        control.hookCalls.abort(new Error("guest run MCP hooks closed"));
         control.steer.close();
         control.compaction.close();
         if (controls.get(runId) === control) controls.delete(runId);
       }
+    },
+    async callHookMcp(runId, input, signal) {
+      const control = controls.get(runId);
+      if (control?.callHookMcp === undefined) {
+        throw guestControlError("not_found", "run MCP hooks are unavailable");
+      }
+      return control.callHookMcp(input, signal);
+    },
+    async elicitMcp(runId, input, signal) {
+      const control = controls.get(runId);
+      if (control?.elicitMcp === undefined) {
+        throw guestControlError("not_found", "run MCP elicitation is unavailable");
+      }
+      return control.elicitMcp(input, signal);
     },
     async steer(runId, input, _signal) {
       const control = controls.get(runId);

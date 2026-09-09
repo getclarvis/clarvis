@@ -1,5 +1,6 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "bun:test";
+import { ProviderError, type FailureKind } from "@clarvis/capability";
 import {
   MAX_EXECUTION_FRAME_BYTES,
   createExecutionPeer,
@@ -18,6 +19,90 @@ function pair() {
 }
 
 describe("private runtime execution RPC", () => {
+  it.each<FailureKind>([
+    "context_overflow",
+    "client",
+    "transient",
+    "auth",
+    "quota",
+    "content_policy",
+  ])("round-trips typed %s failures, recovery fields and failed-attempt usage", async (kind) => {
+    const usage = { input_tokens: 13, output_tokens: 2, cached_tokens: 3, cache_write_tokens: 4 };
+    const error = new ProviderError("synthetic provider failure", {
+      kind,
+      status: 400,
+      retryAfterMs: 0,
+      partialUsage: usage,
+      streamStarted: true,
+    });
+    error.accumulatedUsage = { ...usage, input_tokens: 26 };
+    Object.assign(error, {
+      headers: { authorization: "private-token" },
+      cause: { body: "private-body" },
+    });
+    const io = pair();
+    const wire: string[] = [];
+    io.hostOutput.on("data", (chunk: Buffer) => wire.push(chunk.toString()));
+    const host = createExecutionPeer({
+      role: "host",
+      generation: "gen",
+      input: io.hostInput,
+      output: io.hostOutput,
+      handlers: {
+        "host.model": async () => {
+          throw error;
+        },
+      },
+    });
+    const guest = createExecutionPeer({
+      role: "guest",
+      generation: "gen",
+      input: io.guestInput,
+      output: io.guestOutput,
+      handlers: {},
+    });
+    try {
+      const received = await guest
+        .request("host.model", { generation: "gen", runId: "run", callId: "call" })
+        .catch((failure: unknown) => failure);
+      expect(received).toBeInstanceOf(ProviderError);
+      expect(received).toMatchObject({
+        kind,
+        status: 400,
+        retryAfterMs: 0,
+        streamStarted: true,
+        partialUsage: usage,
+        accumulatedUsage: { ...usage, input_tokens: 26 },
+      });
+      expect(wire.join("")).not.toContain("private-token");
+      expect(wire.join("")).not.toContain("private-body");
+      expect(wire.join("")).not.toContain("stack");
+      expect(guest.closed).toBe(false);
+    } finally {
+      host.close();
+      guest.close();
+    }
+  });
+
+  it.each([
+    { kind: "unknown", streamStarted: false },
+    { kind: "client", streamStarted: false, stack: "unexpected" },
+    { kind: "client", streamStarted: false, retryAfterMs: -1 },
+    { kind: "client", streamStarted: false, partialUsage: { input_tokens: -1 } },
+    { kind: "client", streamStarted: false, status: 999 },
+  ])("rejects malformed provider failure data %j", (provider) => {
+    expect(
+      decodeExecutionFrame({
+        type: "result",
+        id: 1,
+        generation: "gen",
+        runId: "run",
+        callId: "call",
+        error: { code: "provider_error", message: "failed", provider },
+      }),
+    ).toBeNull();
+  });
+
   it.each(["duplicate", "wrong-call", "unknown-field", "non-model"])(
     "refuses %s incremental model frames",
     async (violation) => {

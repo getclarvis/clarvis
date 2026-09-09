@@ -21,11 +21,21 @@ import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
+import type { NativeConfigurationRuns } from "../configuration/native-configuration.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
  */
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
+
+/** Trusted host preparation; never accepted as a protocol start parameter. */
+export type PreparedRunExecution =
+  { kind: "ordinary"; rawBody: unknown } | { kind: "workflow"; start(): RunHandle };
+
+/** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
+export interface KernelRunService extends RunService {
+  start(params: StartRunParams, prepared?: PreparedRunExecution): Promise<RunHandle>;
+}
 
 /** Placement-neutral execution port; native remains the lazy default. */
 export type RunExecutorArgs = Omit<ExecuteRunArgs, "steer"> & {
@@ -76,6 +86,8 @@ export interface RunServiceConfig {
   logger?: Logger;
   /** Executes the loop natively or through an explicitly configured isolated runtime. */
   executeRun?: RunExecutor;
+  /** Explicitly approved host-only route for the shipped configuration skill. */
+  nativeConfiguration?: NativeConfigurationRuns;
 }
 
 /**
@@ -104,7 +116,7 @@ export interface RunServiceConfig {
  *   reserves an execution id before constructing a handle, preventing a
  *   duplicate launch from sharing trace or remote-mutation identity.
  */
-export function createRunService(cfg: RunServiceConfig): RunService {
+export function createRunService(cfg: RunServiceConfig): KernelRunService {
   const { deps, owner, assembleRunRequest } = cfg;
   const logger = cfg.logger ?? NOOP_LOGGER;
   const ingestGraceMs = cfg.ingestGraceMs ?? DEFAULT_INGEST_CLOSE_GRACE_MS;
@@ -112,8 +124,19 @@ export function createRunService(cfg: RunServiceConfig): RunService {
   const activeIds = new Set<string>();
   const activeHandles = new Map<string, RunHandle>();
 
-  function startReserved(params: StartRunParams, executionId: string): RunHandle {
-    if (cfg.runManagerWorkflow !== undefined && cfg.isManagerRun?.(params) === true) {
+  function startReserved(
+    params: StartRunParams,
+    executionId: string,
+    prepared?: PreparedRunExecution,
+  ): RunHandle {
+    const configuration = cfg.nativeConfiguration?.requested(params) === true;
+    if (!configuration && prepared?.kind === "workflow") return prepared.start();
+    if (
+      !configuration &&
+      prepared === undefined &&
+      cfg.runManagerWorkflow !== undefined &&
+      cfg.isManagerRun?.(params) === true
+    ) {
       return cfg.runManagerWorkflow({ ...params, execution_id: executionId });
     }
     return createManagedRun({
@@ -122,12 +145,11 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
-        const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
+        const request = { ...params, execution_id: executionId };
         const executeRun =
           cfg.executeRun ??
           (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
-        const outcome = await executeRun({
-          rawBody,
+        const args: Omit<RunExecutorArgs, "rawBody"> = {
           owner,
           deps,
           onEvent: (ev) => {
@@ -142,21 +164,28 @@ export function createRunService(cfg: RunServiceConfig): RunService {
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: context.elicit,
-        });
+        };
+        const outcome = configuration
+          ? await cfg.nativeConfiguration!.execute(request, args)
+          : await executeRun({
+              ...args,
+              rawBody:
+                prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
+            });
         return engineResultToProto(outcome.executionId, outcome.response);
       },
     });
   }
 
   return {
-    async start(params: StartRunParams): Promise<RunHandle> {
+    async start(params: StartRunParams, prepared?: PreparedRunExecution): Promise<RunHandle> {
       const executionId = params.execution_id ?? generateExecutionId();
       if (activeIds.has(executionId) || store.existsForOwner(owner, executionId)) {
         throw kernelError("conflict", `run '${executionId}' already exists for this owner`);
       }
       activeIds.add(executionId);
       try {
-        const handle = startReserved(params, executionId);
+        const handle = startReserved(params, executionId, prepared);
         activeHandles.set(executionId, handle);
         const release = (): void => {
           activeIds.delete(executionId);

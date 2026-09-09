@@ -2,6 +2,9 @@ import { expect, test } from "bun:test";
 import { kernelError } from "@clarvis/kernel";
 import type {
   ElicitationRequest,
+  HostedRunAttachment,
+  HostedRunFrame,
+  HostingService,
   KernelClient,
   RunDetail,
   RunEvent,
@@ -56,7 +59,9 @@ function controllableHandle(executionId: string) {
     compact: async (request?: string) => void compacted.push(request),
     cancel: async () => {},
     respond: async (r: unknown) => void responded.push(r),
-    onElicit: (h: (req: ElicitationRequest) => void) => (elicitHandler = h),
+    onElicit: (h: (req: ElicitationRequest) => void) => {
+      elicitHandler = h;
+    },
     done,
     closed,
   };
@@ -92,6 +97,7 @@ interface KernelOver {
   approveWorkspace?: KernelClient["config"]["approveWorkspace"];
   revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
   currentExtensionProfile?: KernelClient["extensionProfiles"]["current"];
+  hosting?: HostingService;
 }
 
 /**
@@ -144,6 +150,7 @@ function fakeKernel(over: KernelOver): KernelClient {
     } as KernelClient["extensionProfiles"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
+    ...(over.hosting === undefined ? {} : { hosting: over.hosting }),
     close: async () => {},
   } as unknown as KernelClient;
 }
@@ -159,6 +166,256 @@ function client(over: KernelOver, cbOver: Partial<KernelRunClientCallbacks> = {}
   const c = createKernelRunClient({ createKernel: async () => fakeKernel(over), callbacks });
   return { c, events, progress };
 }
+
+function hostedFixture() {
+  const ctrl = controllableHandle("hosted-execution");
+  const physical = Promise.withResolvers<void>();
+  const prefix: HostedRunFrame = {
+    first_sequence: 1,
+    last_sequence: 1,
+    event: { type: "iteration_started", at: 1, agent: "lead", iteration: 1, model: "m" },
+  };
+  const bytes = Buffer.from(`${JSON.stringify(prefix)}\n`);
+  const attachment: HostedRunAttachment = {
+    run: {
+      execution_id: "hosted-execution",
+      session_id: "conversation",
+      workspace_id: "workspace",
+      host_generation: "generation",
+      title: "Existing turn",
+      config: { agent: "coder" },
+      created_at: 1,
+      updated_at: 1,
+      revision: 1,
+      control_epoch: 1,
+      control: "self",
+      disconnect_policy: "continue",
+      execution_state: "running",
+      attention: "none",
+    },
+    observation_id: "observation",
+    snapshot: {
+      snapshot_id: "snapshot",
+      bytes: bytes.length,
+      cursor: { execution_id: "hosted-execution", host_generation: "generation", sequence: 1 },
+    },
+    pending_elicitations: [],
+    handle: {
+      ...ctrl.handle,
+      closed: physical.promise,
+      events: {
+        async *[Symbol.asyncIterator]() {
+          let sequence = 1;
+          for await (const event of ctrl.handle.events) {
+            sequence += 1;
+            yield { first_sequence: sequence, last_sequence: sequence, event };
+          }
+        },
+      },
+    },
+  };
+  const starts: Parameters<HostingService["start"]>[0][] = [];
+  const attaches: Parameters<HostingService["attach"]>[0][] = [];
+  const released: string[] = [];
+  const unexpected = async (): Promise<never> => {
+    throw new Error("unexpected hosted control");
+  };
+  const service: HostingService = {
+    list: async () => [attachment.run],
+    start: async (input) => {
+      starts.push(input);
+      return attachment;
+    },
+    attach: async (input) => {
+      attaches.push(input);
+      return attachment;
+    },
+    readSnapshot: async (id, offset) => ({
+      snapshot_id: id,
+      offset,
+      data_base64: bytes.toString("base64"),
+    }),
+    releaseSnapshot: async (id) => {
+      released.push(id);
+    },
+    releaseObservation: async (id) => {
+      released.push(id);
+    },
+    detach: unexpected,
+    receipt: unexpected,
+    closeSession: unexpected,
+    acknowledge: unexpected,
+    reserveActivity: unexpected,
+    releaseActivity: unexpected,
+  };
+  return { ctrl, physical, prefix, attachment, starts, attaches, released, service };
+}
+
+test("hosted admission uses the persisted session and waits for projection plus physical reconciliation", async () => {
+  const f = hostedFixture();
+  const routed: Array<{ type: string; source: string; id: string }> = [];
+  let ordinaryStarts = 0;
+  const { c, progress } = client(
+    {
+      hosting: f.service,
+      start: async () => {
+        ordinaryStarts += 1;
+        return f.ctrl.handle;
+      },
+    },
+    { onEvent: (event, source, id) => routed.push({ type: event.type, source, id }) },
+  );
+  await c.connect();
+  const session = {
+    session_id: "conversation",
+    session_revision: 7,
+    kind: "conversation" as const,
+    user_preview: "literal /quit",
+  };
+  const handle = c.startRun({
+    executionId: "hosted-execution",
+    session,
+    profile: "coder",
+    messages: [{ role: "user", content: "literal /quit" }],
+  });
+  let finished = false;
+  const result = handle.done.then((value) => {
+    finished = true;
+    return value;
+  });
+  f.ctrl.push({ type: "iteration_started", at: 2, agent: "lead", iteration: 2, model: "m" });
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed", result: "same run" });
+  f.ctrl.close();
+  await flushMicrotasks();
+  expect(finished).toBe(false);
+  expect(f.released).not.toContain("observation");
+  f.physical.resolve();
+  expect(await result).toMatchObject({ execution_id: "hosted-execution", result: "same run" });
+  await handle.closed;
+  expect(ordinaryStarts).toBe(0);
+  expect(f.starts).toEqual([
+    {
+      ...session,
+      params: {
+        execution_id: "hosted-execution",
+        agent: "coder",
+        messages: [{ role: "user", content: "literal /quit" }],
+      },
+    },
+  ]);
+  expect(routed).toEqual([
+    { type: "iteration_started", source: "replay", id: "hosted-execution" },
+    { type: "iteration_started", source: "live", id: "hosted-execution" },
+  ]);
+  expect(progress.map((entry) => entry.iteration)).toEqual([2]);
+  expect(f.released).toEqual(["snapshot", "observation"]);
+  await c.dispose();
+});
+
+test("attach observes the same execution, leaves observer questions untouched and never starts", async () => {
+  const f = hostedFixture();
+  let questions = 0;
+  const { c } = client(
+    { hosting: f.service },
+    {
+      onElicit: async () => {
+        questions += 1;
+        return { action: "decline" };
+      },
+    },
+  );
+  await c.connect();
+  const input = {
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "observe" as const,
+  };
+  const handle = c.attachRun(input);
+  await flushMicrotasks();
+  f.ctrl.fireElicit({
+    id: "pending",
+    execution_id: "hosted-execution",
+    prompt: "Allow?",
+    kind: "ask_user",
+  });
+  expect(questions).toBe(0);
+  expect(f.ctrl.responded).toEqual([]);
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  await handle.closed;
+  expect(f.starts).toEqual([]);
+  expect(f.attaches).toEqual([input]);
+  await c.dispose();
+});
+
+test("a lost hosted observation rejects completion instead of fabricating a failed execution", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.attachRun({
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "acquire",
+  });
+  const done = handle.done.then(
+    () => "unexpected completion",
+    (error: unknown) => error,
+  );
+  const closed = handle.closed.then(
+    () => "unexpected closure",
+    (error: unknown) => error,
+  );
+  await flushMicrotasks();
+  f.physical.reject(new Error("connection lost"));
+  f.ctrl.close();
+  expect(await done).toMatchObject({ message: "connection lost" });
+  expect(await closed).toMatchObject({ message: "connection lost" });
+  expect(f.released).toContain("observation");
+  expect(f.starts).toEqual([]);
+  await c.dispose();
+});
+
+test("hosted clients refuse a start without a conversation revision", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.startRun({ messages: [{ role: "user", content: "missing session" }] });
+  await expect(handle.done).rejects.toThrow("persisted conversation revision");
+  await expect(handle.closed).rejects.toThrow("persisted conversation revision");
+  expect(f.starts).toEqual([]);
+  await c.dispose();
+});
+
+test("hosted controls use the attached handle and preserve the live compaction contract", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.attachRun({
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "acquire",
+  });
+  expect(
+    await c.steer({ executionId: "hosted-execution", message: "continue here" }),
+  ).toMatchObject({ status: "steered" });
+  expect(await c.compact({ executionId: "hosted-execution", request: "keep decisions" })).toEqual({
+    status: "queued",
+    execution_id: "hosted-execution",
+  });
+  await expect(
+    c.compact({ executionId: "hosted-execution", mechanicalTargetTokens: 2000 }),
+  ).rejects.toThrow("idle hosted run");
+  expect(f.ctrl.steered).toEqual(["continue here"]);
+  expect(f.ctrl.compacted).toEqual(["keep decisions"]);
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  await handle.closed;
+  await c.dispose();
+});
 
 test("connect exposes the process-pinned Extension Profile identity", async () => {
   const { c } = client({});
@@ -254,6 +511,7 @@ test("startRun maps the complete guard and active-task request without workspace
   const handle = c.startRun({
     executionId: "exec_task",
     messages: [],
+    configurationSessionId: "live-authorization-instance",
     guardJudge: {
       prompt: "review writes",
       model: "openai/judge",
@@ -264,6 +522,7 @@ test("startRun maps the complete guard and active-task request without workspace
   });
   expect(captured).toMatchObject({
     execution_id: "exec_task",
+    configuration_session_id: "live-authorization-instance",
     guard_judge: {
       prompt: "review writes",
       model: "openai/judge",
@@ -798,7 +1057,7 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
   await c.dispose();
 });
 
-test("reconnect evicts the released host kernel before opening a replacement", async () => {
+test("reconnect confirms host retirement before releasing a healthy client", async () => {
   const order: string[] = [];
   let generation = 0;
   const callbacks: KernelRunClientCallbacks = { onEvent: () => {} };
@@ -818,8 +1077,61 @@ test("reconnect evicts the released host kernel before opening a replacement", a
   await c.connect();
   await c.reconnect();
 
-  expect(order).toEqual(["create:1", "close:1", "evict", "create:2"]);
+  expect(order).toEqual(["create:1", "evict", "close:1", "create:2"]);
   await c.dispose();
+});
+
+test("connection recovery forwards its intent without preparing a host reload", async () => {
+  const modes: string[] = [];
+  let creates = 0;
+  const c = createKernelRunClient({
+    createKernel: async () => {
+      creates++;
+      return fakeKernel({});
+    },
+    prepareReconnect: async (mode) => {
+      modes.push(mode);
+    },
+    callbacks: { onEvent: () => {} },
+  });
+  try {
+    await c.connect();
+    await c.reconnect("connection");
+    expect(modes).toEqual(["connection"]);
+    expect(creates).toBe(2);
+    await expect(c.listProfiles()).resolves.toBeArray();
+  } finally {
+    await c.dispose();
+  }
+});
+
+test("a refused host reload leaves the connected client usable", async () => {
+  let closes = 0;
+  let creates = 0;
+  const kernel = fakeKernel({});
+  const c = createKernelRunClient({
+    createKernel: async () => {
+      creates++;
+      return {
+        ...kernel,
+        close: async () => {
+          closes++;
+        },
+      };
+    },
+    prepareReconnect: async () => {
+      throw new Error("host has active work");
+    },
+    callbacks: { onEvent: () => {} },
+  });
+  await c.connect();
+  await expect(c.reconnect()).rejects.toThrow("host has active work");
+  expect(closes).toBe(0);
+  expect(creates).toBe(1);
+  expect(c.workspace).toEqual(kernel.workspace);
+  await expect(c.listProfiles()).resolves.toBeArray();
+  await c.dispose();
+  expect(closes).toBe(1);
 });
 
 test("capabilities stays readable while reconnect is between kernels", async () => {

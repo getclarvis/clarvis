@@ -70,6 +70,10 @@ export type PlansMode = "off" | "on" | "review";
 export interface StartRunParams {
   /** Client-chosen id for idempotency + continuation; the kernel echoes it. */
   execution_id?: string;
+  /** Ephemeral owner-scoped identity for configuration consent in the currently open session.
+   * Generate a fresh value when opening or resuming a session. Never persist or derive it from
+   * a stored session id, continuation or provider cache hint. Omission requires consent per run. */
+  configuration_session_id?: string;
   messages: Message[];
   /**
    * Agent to run as (the entry agent).
@@ -756,7 +760,10 @@ export interface RunHandle {
    *
    * @param handler - Called when the kernel asks the user a question.
    */
-  onElicit(handler: (req: ElicitationRequest) => void): void;
+  onElicit(handler: (req: ElicitationRequest) => void): void | (() => void);
+
+  /** Observe a question's response or expiry without retaining stale prompts on reconnect. */
+  onElicitSettled?(handler: (id: string) => void): () => void;
 
   /** Resolves when execution ends; it does not imply that `events` has closed. */
   readonly done: Promise<RunResult>;

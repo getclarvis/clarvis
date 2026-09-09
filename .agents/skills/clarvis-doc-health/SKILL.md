@@ -17,11 +17,18 @@ and read the relevant package READMEs. Search matching entries in
 [known issues](../../../specs/known-issues.md) before repeating historical investigations. Read each
 needed contract once and reuse its evidence while the inputs remain unchanged.
 
-For a repository-wide audit, inventory tracked and unignored documentation from the repository root:
+For a repository-wide audit, start with tracked and unignored Markdown from the repository root:
 
 ```bash
 git ls-files --cached --others --exclude-standard -- '*.md' '*.mdx'
 ```
+
+Also inventory shipped agent guidance in TypeScript: the `CLARVIS_CONFIGURE_SKILL` metadata/body in
+[clarvis-configure.ts](../../../packages/kernel/src/skills/clarvis-configure.ts) and its executable
+[configuration examples](../../../packages/kernel/src/skills/configuration-examples.ts). These are
+product documentation even though a Markdown-only search omits them. Their ownership and limits
+live in the [Kernel README](../../../packages/kernel/README.md#builtin-configuration-skill) and
+[self-configuration contract](../../../specs/hosts/self-configuration.md).
 
 Distinguish product documentation, repository skill instructions, proposals, and intentionally
 invalid test fixtures. The public site and its English/Portuguese pages belong to the separate
@@ -58,6 +65,15 @@ For review-only requests, return the findings and proposed dispositions without 
 regression check only when an executable rule caused the drift; wording changes need no invented
 behavioral tests.
 
+For configuration, command, activation, grant/capability, session/runtime lifecycle or recovery
+claims, review the builtin `clarvis-configure` metadata, body and examples against the owning source
+and specs in the same iteration. Update affected builtin guidance alongside the README/specs so an
+installed agent receives the current instructions, including operator-only actions and consent
+boundaries. Preserve executable examples, on-demand disclosure and the existing body budget. Keep
+the builtin in TypeScript; do not replace it with a `SKILL.md` file or installation scaffolding.
+Record its disposition explicitly: updated, or reviewed with a reason no change was needed.
+Unrelated wording changes do not require rewriting the builtin.
+
 When a user-visible TUI surface or its proof requirement changes, follow
 [the TUI inventory maintenance section](../clarvis-tui-validation/references/full-audit.md#maintain-the-inventory).
 Update the affected matrix rows once; change workflow instructions or report fields only if their
@@ -73,6 +89,12 @@ formatter. Run `bun run check:graph` only for dependency/package changes; source
 receive their targeted tests and checks. Reuse enclosing checks already completed on the same
 inputs instead of starting full suites for documentation-only work.
 
+When the builtin body or examples change, run the existing Kernel component/integration
+`builtin-skills.test.ts` and integration `configuration-guidance.test.ts` checks. They validate
+distribution, disclosure, example embedding/loaders and the body budget; they do not prove that an
+agent followed new prose or that a TUI journey ran. Do not add tests that merely mirror new wording.
+
 Review `git diff --check` and the final diff, including newly added files. Report the contradictions
 resolved, remaining decisions, reviewed README/spec files, exact validation and limits, external
-documentation disposition, and publication status under the repository handoff contract.
+documentation and builtin-guidance dispositions, and publication status under the repository
+handoff contract.

@@ -712,14 +712,18 @@ it through the ordinary skills service. Disabling skills through the host or env
 disables this builtin.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
-models, Extension Profiles, plugins, MCP, hooks, memory, plans, tasks, workflows and runtime.
+models, Extension Profiles, plugins, MCP, hooks, memory, plans, tasks, workflows, runtime,
+`/loop` scheduling and background runs. It distinguishes TUI-owned, in-memory schedules from runs
+that continue in the workspace host, and explains attachment, cancellation and consent lifetime.
 Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
 and exercised against the product loaders. They include a complete workflow with its brief and
 Admiral launcher, a nonempty Extension Profile with exact plugin/skill identities, and settings
 fragments for the configurable services. Workflow files are loaded on the next manager run;
-Extension Profile selection uses the operator's preview/confirmation and reconnect flow. The
-configuration tool authors files; installation, selection, workspace trust, credentials and UI
-preferences retain their operator controls. A working default model is needed to enter this mode.
+Extension Profile selection uses the operator's preview/confirmation and `/reconnect reload` flow
+when the host is idle. Plain `/reconnect` restores a connection to the same host without applying
+pinned configuration. The configuration tool authors files; installation, selection, workspace
+trust, credentials, UI preferences, loop registration and background controls retain their operator
+interfaces. A working default model is needed to enter this mode.
 Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
 be replaced by an installed skill. Discovery and resources for other skills retain their existing
 snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).

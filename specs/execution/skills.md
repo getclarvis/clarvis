@@ -767,7 +767,10 @@ Metadata and body results are detached from the shipped data to prevent caller m
 
 The guide covers configuration scope/precedence, agents and subagents, grants and capability gates,
 models and credentials, Extension Profiles, plugins, skills, MCP, hooks, memory, plans, tasks,
-workflows, runtime and diagnosis. `CONFIGURATION_EXAMPLES` in
+workflows, runtime, TUI loops, background runs and reload/diagnosis. User-operated scheduling and
+background controls follow [loop scheduling](../hosts/loop-scheduling.md) and
+[hosted runs](../hosts/hosted-runs.md); loading the guide does not invoke those commands, persist a
+schedule or extend configuration consent. `CONFIGURATION_EXAMPLES` in
 [configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts) supplies the
 verbatim filenames and bytes rendered in the guide. Settings and agent schemas, plugin/skill
 discovery, Extension Profile resolution/selection and workflow loading/execution validate these

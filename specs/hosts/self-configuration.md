@@ -5,7 +5,8 @@
 Clarvis ships `clarvis-configure` as TypeScript data embedded in the kernel and application bundle.
 It needs no generated `SKILL.md`, source checkout or separately installed extension. Its guide covers
 settings precedence, providers, Agent Profiles, subagents, grants, optional capabilities, Extension
-Profiles, plugins, skills, MCP, hooks, memory, plans, tasks, workflows, trust and runtime settings.
+Profiles, plugins, skills, MCP, hooks, memory, plans, tasks, workflows, trust, runtime settings,
+TUI loop scheduling, background runs and configuration reload.
 The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
 
 The file kernel reserves this skill's name and composes it after extension discovery. Disabling
@@ -148,11 +149,12 @@ remains below the 32,768-character regression ceiling and is disclosed on demand
 
 | Flow | Authored configuration and validation | Activation or remaining operator action |
 | --- | --- | --- |
-| Models, budgets, MCP, hooks, capabilities and runtime | Settings fragments pass `kernelSettingsSchema` and the real file store | Existing runs retain their resolved settings; host-composed providers/runtime can require reconnect; authentication and dependency installation are separate |
+| Models, budgets, MCP, hooks, capabilities and runtime | Settings fragments pass `kernelSettingsSchema` and the real file store | Existing runs retain their resolved settings; host-pinned configuration requires `/reconnect reload` with an idle host; authentication and dependency installation are separate |
 | Agent Profiles and subagents | Reviewer plus Marshall overlay assemble into the reachable profile graph | Next ordinary run, with workspace trust for workspace declarations |
 | Workflows | Complete `WORKFLOW.md`, relative brief, args, round type/profile, selectors and synthesis | Reloaded each manager run; Admiral or another `workflow` entry invokes the normal preview/preflight and checkpoints |
 | Workflow slash launcher | A separate `SKILL.md` declares `agent: admiral` | Normal skill discovery; custom Extension Profiles must select the standalone launcher |
-| Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and reconnects; native file authoring never writes selection or trust state |
+| Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection or trust state |
+| Loop scheduling and background runs | User-operated TUI commands; no new settings fields, grants or native configuration file operations | `/loop` creates in-memory conversation jobs; `/background` hands off an eligible run, `/attach` reattaches and explicit controls manage cancellation |
 | Context and policy prompts | Global context plus supported guard/memory prompts | Workspace `CLARVIS.md`/`AGENTS.md` belong at the workspace root, requiring ordinary authorized workspace editing |
 | Credentials, subscriptions, workspace trust and UI preferences | Outside the configuration file tool | Operator controls; a functioning default model/provider is a prerequisite for this agent mode |
 
@@ -163,6 +165,15 @@ making a profile effective are separate outcomes. The guide also distinguishes a
 from persisted selection, stale preview recovery, safe rename/deletion sequencing, complete
 workflow overrides and the possible reappearance of a lower-precedence definition after removal.
 Plugin hooks activate with their plugin; there is no separate per-hook approval record.
+
+The guide follows the [loop scheduling](loop-scheduling.md) and [hosted runs](hosted-runs.md)
+contracts for user commands, interval/calendar semantics, limits, pausing, handoff and recovery.
+Closing the TUI forgets loop registrations; only an admitted occurrence can continue in background.
+Reattachment does not replay a prompt or restore configuration consent. Native configuration runs
+cannot detach. Plain `/reconnect` recovers the same host connection; `/reconnect reload` requires an
+idle host to apply pinned configuration. These are operator actions after the configuration turn,
+not tools exposed by loading this guide. The command behavior and its executable evidence remain
+owned by those contracts; the builtin distribution checks do not execute TUI journeys.
 
 Production: `CLARVIS_CONFIGURE_SKILL` in
 [clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts), `CONFIGURATION_EXAMPLES`,

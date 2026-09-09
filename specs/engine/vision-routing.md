@@ -44,7 +44,7 @@ Container placement preserves the same capability gate: the host reconstructs ea
 declared capability set, including an empty set, before adapter serialization. The original image
 parts remain in the guest's retained context; only the wire representation strips images for a
 non-visual model, including after a `vision_model` prepass. Production: `hostModelBroker` in
-[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts).
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
 Test: the real OpenAI-compatible SDK vision-prepass case in
 [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
 asserts images on the vision request, none on the text request, and an unchanged source message
@@ -433,6 +433,14 @@ from the other).
     `packages/code/src/core/attachments.ts`; pinned by "rejects empty, fifth,
     oversized and aggregate-overflow images" (`packages/code/tests/unit/attachments.test.ts`)
     and "rejected images never enter reactive composer state".
+The full composer image budget is transferable through both local-host stdio and private guest RPC.
+    Their common logical JSON limit is 64 MiB, including base64, context and envelopes; physical
+    fragments remain bounded and excess local messages cannot terminate another run. Production:
+    `createJsonMessageWriter` in [json-message.ts](../../packages/kernel/src/core/json-message.ts).
+    Test: `transfers the full composer image budget and isolates oversized requests and results`
+    in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts) and
+    `preserves admitted images, accumulated context and final trace through the real guest loop`
+    in [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
 20. **A staged attachment's declared `size` cannot understate its real payload.** `attachmentBytes`
     takes the larger of the declared size and `base64DecodedBytes(data)`, so a `size: 1` attachment
     whose `data` actually decodes to 32 bytes still reports 32 — admission checks bytes actually

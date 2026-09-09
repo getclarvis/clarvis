@@ -20,6 +20,9 @@ import { HOME_ENV } from "@clarvis/paths";
 import { createMCPAuthorizationCoordinator } from "@clarvis/mcp-client";
 import { remoteServer } from "../helpers/runtime-remote-server.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
+import { createPlansCapability } from "@clarvis/plan/capability";
+import { createPlanStore, type PlanFactory } from "@clarvis/plan";
+import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import type { TaskDocument, TaskProviderResolver } from "@clarvis/tasks";
 import {
   createWorkflowsCapability,
@@ -28,7 +31,7 @@ import {
   createWorkflowSemaphore,
   type WorkflowCtx,
 } from "@clarvis/workflows";
-import { createLocalContainerRuntime } from "../../src/runtime/local-podman-runtime.ts";
+import { createLocalContainerRuntime } from "../../src/runtime/local-container-runtime.ts";
 import { createRuntimeAuthorityRouter } from "../../src/runtime/isolated-run-executor.ts";
 import { createExecutionPeer } from "../../src/runtime/execution-rpc.ts";
 import { serveExecutionWorker } from "../../src/runtime/execution-worker.ts";
@@ -62,8 +65,11 @@ async function fixture(
   options: {
     hooks?: readonly HookConfig[];
     tasks?: TaskProviderResolver;
+    plans?: PlanFactory;
     environment?: BuildRunDepsOptions["environment"];
     mcpAuthorization?: BuildRunDepsOptions["mcpAuthorization"];
+    toolEnvironment?: Record<string, string>;
+    tools?: boolean;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-composition-"));
@@ -73,16 +79,26 @@ async function fixture(
   const built = await buildExecuteRunDeps({
     workspaceRoot,
     traceDir: join(root, "traces"),
-    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...options.toolEnvironment }),
     logger: NOOP_LOGGER,
     environment: { PATH: process.env.PATH, ...options.environment },
     ...(options.mcpAuthorization === undefined
       ? {}
       : { mcpAuthorization: options.mcpAuthorization }),
-    builtins: { tools: true, skills: false, hooks: options.hooks !== undefined },
+    builtins: { tools: options.tools ?? true, skills: false, hooks: options.hooks !== undefined },
     ...(options.hooks === undefined ? {} : { resolveHooks: () => options.hooks }),
-    capabilities:
-      options.tasks === undefined ? [] : [createTasksCapability({ resolver: options.tasks })],
+    capabilities: [
+      ...(options.tasks === undefined ? [] : [createTasksCapability({ resolver: options.tasks })]),
+      ...(options.plans === undefined
+        ? []
+        : [
+            createPlansCapability({
+              factory: options.plans,
+              defaultPendingTaskNudges: 3,
+              defaultElicitWaitMs: 60_000,
+            }),
+          ]),
+    ],
   });
   cleanup.push(() => built.dispose());
   if (llm !== undefined) built.deps.llm = llm;
@@ -170,6 +186,7 @@ async function fixture(
       extensionRevision: "extensions",
       deps: built.deps,
       ...(options.tasks === undefined ? {} : { taskResolver: options.tasks }),
+      ...(options.plans === undefined ? {} : { planFactory: options.plans }),
       settings: {
         backend: "docker",
         image_digest: `sha256:${"d".repeat(64)}`,
@@ -195,6 +212,279 @@ async function fixture(
 }
 
 describe("runtime capability composition", () => {
+  it("preserves admitted images, accumulated context and final trace through the real guest loop", async () => {
+    let calls = 0;
+    const f = await fixture({
+      call: async () => {
+        calls++;
+        return { text: "done", usage };
+      },
+    });
+    const image = `data:image/png;base64,${Buffer.alloc(5 * 1024 * 1024, 65).toString("base64")}`;
+    const request = {
+      ...body("images-native"),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", image, mediaType: "image/png" },
+            { type: "image", image, mediaType: "image/png" },
+          ],
+        },
+      ],
+    };
+    const native = await executeRun({ rawBody: request, owner: "owner", deps: f.deps });
+    expect(native.response.status).toBe("completed");
+    const first = await f.runtime.executeRun({
+      rawBody: { ...request, execution_id: "images-guest" },
+      owner: "owner",
+      deps: f.deps,
+    });
+    expect(first.response).toMatchObject({ status: "completed" });
+    const trace = f.deps.traceStore.getById("owner", "images-guest");
+    expect(Buffer.byteLength(JSON.stringify(trace))).toBeGreaterThan(8 * 1024 * 1024);
+    const continued = await f.runtime.executeRun({
+      rawBody: { ...body("images-continued"), continue_from: "images-guest" },
+      owner: "owner",
+      deps: f.deps,
+    });
+    expect(continued.response.status).toBe("completed");
+    expect(calls).toBe(3);
+    expect(f.runtime.closed).toBe(false);
+  });
+
+  it.each(["keep", "discard"] as const)(
+    "preserves %s retention after a real guest plan lifecycle and durable host trace",
+    async (retention) => {
+      const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
+      let readTrace: () => unknown = () => undefined;
+      let deleted = 0;
+      const plans: PlanFactory = {
+        storeFor: async () => ({
+          key: "markdown:host",
+          providerKind: "markdown",
+          store: {
+            ...canonical,
+            async delete(id, expected) {
+              expect(readTrace()).toMatchObject({
+                status: "completed",
+                capability_state: { plans: { id, retention: "discard", status: "completed" } },
+              });
+              expect(expected).toBeDefined();
+              deleted++;
+              return canonical.delete(id, expected);
+            },
+          },
+        }),
+      };
+      let step = 0;
+      const f = await fixture(
+        {
+          call: async () => {
+            if (step++ === 0)
+              return {
+                usage,
+                toolCalls: [
+                  {
+                    id: "create",
+                    name: "create_plan",
+                    arguments: {
+                      title: "Lifecycle",
+                      objective: "Check retained authority",
+                      tasks: [{ title: "Verify" }],
+                      validation: [],
+                      retention,
+                    },
+                  },
+                ],
+              };
+            if (step === 2) {
+              const plan = (await canonical.list()).plans[0]!;
+              return {
+                usage,
+                toolCalls: [
+                  {
+                    id: "complete",
+                    name: "transition_plan_task",
+                    arguments: {
+                      expected_revision: plan.revision,
+                      expected_digest: plan.digest,
+                      expected_spec_digest: plan.spec_digest,
+                      task_id: plan.tasks[0]!.id,
+                      status: "done",
+                      result: "verified",
+                    },
+                  },
+                ],
+              };
+            }
+            return { text: "done", usage };
+          },
+        },
+        { plans },
+      );
+      readTrace = () => f.deps.traceStore.getById("owner", "plan-lifecycle");
+      const outcome = await f.runtime.executeRun({
+        rawBody: {
+          ...body("plan-lifecycle", ["edit_workspace"]),
+          plans: { mode: "on", retention },
+        },
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(outcome.response.status).toBe("completed");
+      expect(deleted).toBe(retention === "discard" ? 1 : 0);
+      expect((await canonical.list()).plans).toHaveLength(retention === "discard" ? 0 : 1);
+      expect(readTrace()).toMatchObject({
+        status: "completed",
+        capability_state: { plans: { retention, status: "completed" } },
+      });
+    },
+  );
+
+  it.each([
+    { CLARVIS_AGENT_TOOLS_ENABLED: "0", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "none" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "edit" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+  ])("preserves host tool policy %j in the real guest loop", async (toolEnvironment) => {
+    const advertised: string[][] = [];
+    const f = await fixture(
+      {
+        call: async (params) => {
+          advertised.push(params.tools?.map((tool) => tool.toolName).sort() ?? []);
+          return { text: "done", usage };
+        },
+      },
+      { toolEnvironment },
+    );
+    for (const [execution_id, run] of [
+      ["native-policy", executeRun],
+      ["guest-policy", f.runtime.executeRun],
+    ] as const) {
+      const result = await run({
+        rawBody: body(execution_id, ["run_commands"]),
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(result.response.status).toBe("completed");
+    }
+    expect(advertised).toHaveLength(2);
+    expect(advertised[1]!.filter((name) => name !== "expose_port")).toEqual(advertised[0]);
+    if (
+      toolEnvironment.CLARVIS_AGENT_TOOLS_ENABLED === "0" ||
+      toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "exec"
+    ) {
+      expect(advertised[1]).not.toContain("expose_port");
+      expect(advertised[1]).not.toContain("bash");
+    }
+    expect(f.guestEnvelopes[0]).toMatchObject({
+      toolPolicy: {
+        enabled: toolEnvironment.CLARVIS_AGENT_TOOLS_ENABLED === "1",
+        maxGrant: toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT,
+      },
+    });
+  });
+
+  it("preserves the operator's elicitation deadline in the native and guest loops", async () => {
+    const deadlines: Array<number | undefined> = [];
+    let calls = 0;
+    const f = await fixture(
+      {
+        call: async () =>
+          ++calls % 2 === 1
+            ? {
+                usage,
+                toolCalls: [{ id: "ask", name: "ask_user", arguments: { question: "Continue?" } }],
+              }
+            : { usage, text: "done" },
+      },
+      { toolEnvironment: { CLARVIS_DEFAULT_ELICIT_WAIT_MS: "1234" } },
+    );
+    for (const [id, run] of [
+      ["native-deadline", executeRun],
+      ["guest-deadline", f.runtime.executeRun],
+    ] as const) {
+      const outcome = await run({
+        rawBody: body(id, ["ask_user"]),
+        owner: "owner",
+        deps: f.deps,
+        elicit: async (_params, options) => {
+          deadlines.push(options.timeoutMs);
+          return { action: "accept", content: { answer: "continue" } };
+        },
+      });
+      expect(outcome.response.status).toBe("completed");
+    }
+    expect(deadlines).toEqual([1234, 1234]);
+  });
+
+  it("enforces the operator's retry ceiling before either loop calls the model", async () => {
+    let calls = 0;
+    const f = await fixture(
+      {
+        call: async () => {
+          calls++;
+          return { text: "done", usage };
+        },
+      },
+      { toolEnvironment: { CLARVIS_RETRY_CEILING: "0", CLARVIS_DEFAULT_MAX_RETRIES: "0" } },
+    );
+    for (const [id, run] of [
+      ["native-retry", executeRun],
+      ["guest-retry", f.runtime.executeRun],
+    ] as const) {
+      const request = body(id);
+      request.profiles[0]!.retry = { max_retries: 1 };
+      await expect(run({ rawBody: request, owner: "owner", deps: f.deps })).rejects.toThrow(
+        "exceeds CLARVIS_RETRY_CEILING (0)",
+      );
+    }
+    expect(calls).toBe(0);
+    expect(f.runtime.closed).toBe(false);
+    expect(
+      (
+        await f.runtime.executeRun({
+          rawBody: body("valid-after-refusal"),
+          owner: "owner",
+          deps: f.deps,
+        })
+      ).response.status,
+    ).toBe("completed");
+  });
+
+  it("preserves the host builtin-tools opt-out even when environment tools are enabled", async () => {
+    let names: string[] = [];
+    const f = await fixture(
+      {
+        call: async (params) => {
+          names = params.tools?.map((tool) => tool.toolName) ?? [];
+          return { text: "done", usage };
+        },
+      },
+      {
+        tools: false,
+        toolEnvironment: {
+          CLARVIS_AGENT_TOOLS_ENABLED: "1",
+          CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+        },
+      },
+    );
+    expect(
+      (
+        await f.runtime.executeRun({
+          rawBody: body("guest-without-tools", ["run_commands"]),
+          owner: "owner",
+          deps: f.deps,
+        })
+      ).response.status,
+    ).toBe("completed");
+    expect(names).not.toContain("write_file");
+    expect(names).not.toContain("expose_port");
+    expect(f.guestEnvelopes[0]).toMatchObject({ toolPolicy: { enabled: false } });
+  });
+
   it.each(["http", "sse"] as const)(
     "keeps %s bearer, header and saved OAuth authentication on the host",
     async (transport) => {

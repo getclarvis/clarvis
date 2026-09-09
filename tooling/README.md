@@ -19,6 +19,10 @@ Root tooling is TypeScript unless a shell is the behavior under test or the work
 shell control flow. It participates in `bun run typecheck`, `bun run lint:eslint`,
 `bun run format:check`, `bun run knip`, and the supported root `bun run test` command.
 
+The real-Git release fixture uses `withoutGitRepositoryEnvironment` from `@clarvis/paths` before
+starting child processes. This keeps hook and linked-worktree repository context out of its
+disposable checkout and bare remote, including child tag automation.
+
 `lib/package-architecture.ts` is the single machine-readable role registry and dependency-direction
 policy for all workspace packages. It also owns the single-version product rule: root
 `package.json` is authoritative, workspace manifests and lock entries are unversioned, workspaces
@@ -51,9 +55,9 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
-Both Containerfiles and the build helper carry private protocol revision 7, matching the kernel
+Both Containerfiles and the build helper carry private protocol revision 9, matching the kernel
 worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
-model policy. Older images are refused at admission and must be rebuilt; changing an active runtime
+model policy and resolved operator loop defaults/ceilings. Older images are refused at admission and must be rebuilt; changing an active runtime
 image remains an operator choice.
 
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and

@@ -40,8 +40,10 @@ their package READMEs.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 revokes volatile consent scopes on disconnect, takeover or conversation close.
-The guard resolver accepts a lookup of the current interactive command allowlist; retired lists
-cannot be repopulated by late responses. Native configuration can retire an individual live session,
+Native and container guard decisions share the host lookup of the current interactive command
+allowlist. The guest consults `runtime.guard_approval` for each human consent check and never retains
+a human approval locally. Retired scopes reject late answers, including one-time approval, and the
+judge caches only its own final decisions. Native configuration can retire an individual live session,
 aborting its pending approval and active native work without revoking another conversation.
 `createFileKernel` accepts `sessionAllowlistFor` and exposes host-only native routing/revocation
 through `nativeConfiguration`; these controls are not model-callable services.
@@ -49,16 +51,29 @@ through `nativeConfiguration`; these controls are not model-callable services.
 byte-paginated snapshots. It uses the existing run event coalescer and keeps structural events;
 storage/quota failures prevent new snapshots. `src/hosting/execution.ts` keeps the sole managed-run
 consumer alive without subscribers, cuts snapshot/tail observations and waits for physical closure
-plus host reconciliation. A slow observer loses only its own bounded stream.
+plus host reconciliation, terminal index commit and admission release before successful observer
+closure. Failure of this terminal transaction rejects closure and retains conservative occupancy.
+A slow observer loses only its own bounded stream.
 The root entry's `readHostedSnapshot` incrementally decodes those pages with the live event codec,
 checks byte/sequence continuity through the immutable cut and releases the snapshot on abandonment.
 `src/hosting/registry.ts` provides shared admission, controller epochs and connection-independent
-handoff receipts over injected turn/persistence ports. The existing RPC catalog exposes that registry
-through an explicitly hosted connection. Attachment transfers snapshot metadata and subscribes to
-sequenced tail, result, elicitation and physical-closure notifications. Disconnect rejects the local
-observation without fabricating a failed execution result. `src/hosting/sessions.ts` coordinates
+handoff receipts over injected turn/persistence ports.
+Handoff failures classify their operation identity as refused before admission or uncertain after
+admission; receipt absence alone never permits replay. A definite refusal does not consume the
+operation identity, allowing clients to retry after resolving its cause.
+The existing RPC catalog exposes that registry through an explicitly hosted connection.
+Attachment transfers snapshot metadata and subscribes to
+sequenced tail, result, elicitation and physical-closure notifications.
+An operator can explicitly acquire or take over control for an existing observation without
+creating another snapshot or stream. Only that observation receives the new controller epoch;
+the previous controller is fenced.
+Disconnect rejects the local observation without fabricating a failed execution result.
+`src/hosting/sessions.ts` coordinates
 versioned conversation writes, committed turn intent, pending context and single-count usage over
-the canonical file session store. That store durably replaces its canonical document and keeps its
+the canonical file session store. `addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,
+owns token/cache/pricing accumulation for both the host and Code presentation adapters. The private
+`runtimeStatusSchema` shares runtime variants between discovery storage and local-host transport
+while each boundary supplies its own field limits. That store durably replaces its canonical document and keeps its
 summary rebuildable. `createFileRunHost` composes these services with a FileKernel and an authenticated
 RPC server. Its caller supplies private durable storage and the local token verifier. Operator
 connections can use local subscription controls; observer connections receive non-sensitive reads.
@@ -67,13 +82,22 @@ a maintenance reservation. `InProcessKernel.prepareRun` resolves the entry, mode
 intent publication and keeps later workflow leaders on the same bounded configuration snapshot.
 Prepared launches retain ordinary execution-id, owner and Extension Profile leases.
 `serveLocalFileKernel` composes a separately launched host with a private lease, credential,
-generation-aware discovery index and idle shutdown. `connectOrLaunchLocalKernel` authenticates the
+generation-aware discovery index and idle shutdown. Disabled workspace memory permits idle
+retirement even when the host supports memory; pending jobs and queue inspection failures still
+prevent automatic retirement. `connectOrLaunchLocalKernel` authenticates the
 discovered generation or launches the application-selected artifact without inheriting TUI stdio.
 Discovery retiring during a read is treated as absent; privacy and other I/O failures still reject.
-It preserves operator tool policy and refuses a live incompatible host. The kernel binary accepts
+It compares a non-secret identity of resolved tool/loop policy before reusing a live host. Changed
+policy requires reconnecting with the original policy and explicitly requesting an idle restart;
+refusal preserves admitted work. A live incompatible artifact is also refused. The kernel binary accepts
 the private `--local-host` bootstrap mode; ordinary stdio hosting remains available. New generations
 retain terminal discovery metadata and mark previously live references unknown without restoring
-execution or consent. Code composes its companion entry and uses the same RPC through its workspace
+execution or consent. An operator can explicitly resolve an old unknown entry after verifying all
+of its processes and containers stopped. The host first archives the canonical conversation with
+an audit receipt, then publishes physical closure without inventing a run outcome. A failed write
+retains uncertainty. Acknowledgement removes discovery/projection state while preserving the session
+audit; maintenance can proceed once all physical work is resolved. New inference requires a new
+conversation. Code composes its companion entry and uses the same RPC through its workspace
 manager; installed-artifact retention and platform qualification remain application responsibilities.
 Process integration tests verify survival after a launching client exits with MockLLM; they do not
 qualify a subscription/TUI journey or native Windows/macOS behavior. The ownership, limits and
@@ -124,8 +148,10 @@ simple `{ "backend": "docker" }` selection and fills product-owned limits, `outb
 required-Sandbox fallback defaults; executable, context, digest, network, limits and fallback remain
 advanced overrides. Docker also accepts an advanced operator-owned `recipe` with a safe name, an
 absolute POSIX-shell script path under global `runtime-recipes/` and an optional `none`/`outbound`
-build network. Podman retains the fully explicit contract. Container preparation starts only when
-a run first needs it, coalesces
+build network. Podman retains the fully explicit contract. All configured limits, including CPU
+count, must be positive safe integers. Acquiring a missing release or candidate image has a bounded
+15-minute pull deadline; short inspection commands keep their separate command deadline.
+Container preparation starts only when a run first needs it, coalesces
 concurrent starts and reuses the ready generation. An operational Docker startup failure latches a
 native Sandbox fallback for later runs and reports that transition once; image-integrity, recipe,
 policy and handshake failures remain fail-closed, and a started run is never replayed through
@@ -147,10 +173,19 @@ workspace data. `none` remains the explicit offline mode; `internet` is refused 
 egress can actually be enforced. The headless
 guest entry builds the real loop against `/workspace`, proxies model calls and the completed trace
 record to host authority, and may report only a non-terminal reconstruction checkpoint. It applies
-the same command guard to guest shell calls with an `exec` ceiling; closed guard-audit events cross
+the same command guard to guest shell calls and preserves the host's tools enablement, confinement
+and grant ceiling, including a host composition that omits tools. Preview authority additionally
+requires enabled tools, an `exec` ceiling and the selected profile's `run_commands` grant.
+Closed guard-audit events cross
 the private channel and are identity-rebound before the host logger accepts them. The host placement
 adapter owns the later durable terminal barrier. Plans remain in the canonical owner-scoped host
-store behind the exact `runtime.plans` method. The guest receives a host-path-free skill catalog and
+store behind `runtime.plans` revision `v2`. Host mutations require the current run's plan binding;
+read/list do not change it. Retention deletion additionally requires a matching durable completed
+run record, a canonical completed/discard plan and host-selected CAS. Large arguments and results
+use 128 KiB binary chunks encoded as base64, preserving the 8 MiB document and 32 MiB list-page
+contracts without widening shared RPC frames. Transfer count and aggregate payload reservations
+are bounded before provider effects, and unfinished transfers are released on run revocation.
+The guest receives a host-path-free skill catalog and
 can disclose only an admitted skill body or bounded text resource through the read-only
 `runtime.skills` method. The model-facing body operation accepts only a skill name, while a separate
 strict resource operation requires its relative path and byte offset; active plugins'
@@ -177,7 +212,28 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 7 and a rebuilt compatible worker image.
+require runtime protocol revision 9 and a rebuilt compatible worker image. Remote filesystem skills
+are disclosed by name and resource tools, using opaque locators rather than advertised guest
+directories. Helper guidance requires preparing read resources in the writable workspace before
+guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
+host's resolved non-secret loop defaults and ceilings, validated through the canonical environment
+schema. Missing, coerced or extra policy fields are refused; owner, logging and retention settings
+stay on the host.
+
+Docker and Podman share attachment, bootstrap, private RPC, previews and shutdown in
+`container-session.ts`. Engine-specific identity, rootless setup, mounts and policy inspection
+remain in their backends. Bootstrap has a 30-second response deadline. A run may cancel its own
+initialization wait while another run retains the shared acquisition. Host shutdown signals the
+generation and awaits cleanup; image downloads, recipe build leases and engine preparation observe
+that signal. Interrupted creation is reconciled against its generation label before deleting an
+immutable container ID.
+
+Private RPC admission limits both directions to 256 outstanding requests, and inbound requests also
+share a 128 MiB serialized-message budget until handler and response settlement. Matching late cancellations
+are accepted through 256 completion identities; malformed or mismatched cancellations still close
+the channel. Capability brokers retain at most 16,384 attempted call identities per run and 8 MiB
+of replay responses plus pending response reservations. Non-idempotent calls retain only replay
+fencing metadata, and repeated IDs cannot substitute different arguments.
 
 Ordinary HTTP/SSE MCP tools and resources also use host-owned connections through the closed
 `runtime.mcp` grant. The host pins enabled server declarations and the owner; the guest supplies
@@ -568,6 +624,14 @@ without a client-side settings workaround.
 
 ## Remote-ready transport
 
+Public stdio and private execution RPC share a 64 MiB logical JSON limit. Larger-than-frame
+messages use contiguous 256 KiB binary fragments, canonical base64 and a 30-second transfer deadline;
+the physical frame limits remain 8 MiB and 4 MiB respectively. Serialized queued data is bounded at
+128 MiB per direction. Oversized or unserializable local requests fail before sending bytes and
+preserve other runs; excess handler results return a bounded error. Invalid inbound fragments and
+physical transport failures close the connection. These limits cover composer images, model context,
+continuation records and final traces; they do not promise unlimited conversation size.
+
 The transport layer maps the same kernel services to Clarvis wire methods:
 
 - `createKernelServer` exposes a kernel over a connection.
@@ -822,8 +886,9 @@ names the file, and clients read it back through `PlansService`.
 The internal transport negotiates the exact `CLARVIS_WIRE_VERSION` declared in
 [`wire.ts`](src/transport/wire.ts). This is independent of the guest execution RPC revision. Hello is
 mandatory before every read, control or mutation even for in-process/default-owner connections;
-request envelopes reject unknown fields, stdio frames are capped at 8 MiB, and the serialized writer
-has bounded count/bytes plus a 30-second stall timeout. `run.result` settles execution independently
+request envelopes reject unknown fields, physical stdio frames are capped at 8 MiB, and logical
+messages are capped at 64 MiB. The serialized writer has bounded count/bytes plus a 30-second
+transfer timeout. `run.result` settles execution independently
 from `run.stream_end`, which closes the event channel only after its tail. In-process and remote run
 streams use the same 1,024-event policy and exhaustive coalescing/drop registry. Capability events
 cross the closed protocol union only after sanitization and a 64-KiB bound. Established plan

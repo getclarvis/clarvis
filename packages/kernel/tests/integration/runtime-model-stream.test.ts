@@ -8,7 +8,7 @@ import {
 } from "../../src/runtime/authority-brokers.ts";
 import { createExecutionPeer } from "../../src/runtime/execution-rpc.ts";
 import { streamHostModelCall } from "../../src/runtime/model-stream.ts";
-import { runtimeModelPairs } from "../../src/runtime/local-podman-runtime.ts";
+import { runtimeModelPairs } from "../../src/runtime/local-container-runtime.ts";
 
 function deferred() {
   let resolve!: () => void;

@@ -648,6 +648,19 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
+In isolated execution, the host independently enforces this retention path. Mutation authority is
+bound to a plan created through that run's grant or its host-selected continuation ref. Read/list
+do not rebind it. Deletion requires the current owner's durable completed run record and matching
+provider/id/final revisions, plus canonical `completed`/`discard` state. The host supplies CAS from
+its own read, so a concurrent retention change prevents deletion even if the guest omitted CAS.
+Production: `createHostPlansGrant` in
+[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createLocalContainerRuntime`
+in [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
+Test: foreign-plan, retained/active-plan, trace identity and CAS refusals in
+[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts), and
+real guest keep/discard lifecycle in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits
 `plan_updated{change:"recovery"}` (`packages/plan/src/capability/index.ts`). Pinned at

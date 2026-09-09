@@ -1,4 +1,3 @@
-import type { SkillResource } from "./types.ts";
 import type { LLMToolCall, TracePort } from "@clarvis/capability";
 import type { AgentRole, ToolArgValidate } from "@clarvis/capability";
 import { openCallEnvelope } from "@clarvis/capability";
@@ -10,7 +9,11 @@ import {
   readSkillResourceTool,
   type SkillsProvider,
 } from "./tool.ts";
-import { MAX_SKILL_RESOURCE_FILE_BYTES } from "./limits.ts";
+import {
+  formatSkillBody,
+  formatSkillResourceChunk,
+  formatSkillResourceLegacy,
+} from "./disclosure.ts";
 
 /**
  * The result of a skill tool call: model-facing `text` and whether it is an error.
@@ -24,58 +27,6 @@ export interface LoadSkillCallResult {
 function availableNames(skills: SkillsProvider): string {
   const names = skills.listSkills().map((s) => s.name);
   return names.length > 0 ? names.join(", ") : "(none)";
-}
-
-/**
- * Render the trailing "Bundled resources" hint listing a skill's resources and
- * how to fetch one; empty when the skill bundles none.
- */
-function renderResourceList(resources: readonly SkillResource[]): string {
-  if (resources.length === 0) return "";
-  const lines = resources.map((r) => `- ${r.rel} (${r.kind})`).join("\n");
-  return (
-    `\n\nBundled resources (call ${READ_SKILL_RESOURCE_TOOL_NAME} with name, the exact ` +
-    `resource path, and offset=0):\n${lines}`
-  );
-}
-
-function validateResourceChunk(
-  chunk: ReturnType<NonNullable<SkillsProvider["readResourceChunk"]>>,
-  requestedOffset: number,
-  maxChars: number,
-): string | undefined {
-  if (!Number.isSafeInteger(chunk.offset) || chunk.offset !== requestedOffset) {
-    return "provider returned a mismatched resource offset";
-  }
-  if (
-    !Number.isSafeInteger(chunk.totalBytes) ||
-    chunk.totalBytes < 0 ||
-    chunk.totalBytes > MAX_SKILL_RESOURCE_FILE_BYTES ||
-    chunk.offset > chunk.totalBytes
-  ) {
-    return "provider returned an invalid resource size";
-  }
-  if (chunk.text.length > maxChars) return "provider exceeded the resource character bound";
-  const decodedEnd = chunk.offset + Buffer.byteLength(chunk.text, "utf8");
-  if (decodedEnd > chunk.totalBytes) return "provider returned text past the resource size";
-  if (chunk.nextOffset !== undefined) {
-    if (
-      !Number.isSafeInteger(chunk.nextOffset) ||
-      chunk.nextOffset <= chunk.offset ||
-      chunk.nextOffset > chunk.totalBytes
-    ) {
-      return "provider returned an invalid resource continuation offset";
-    }
-    if (chunk.nextOffset !== decodedEnd) {
-      return "provider returned a continuation offset that does not match its text";
-    }
-    if (decodedEnd === chunk.totalBytes) {
-      return "provider returned a redundant continuation offset at the resource end";
-    }
-  } else if (decodedEnd !== chunk.totalBytes) {
-    return "provider omitted a required resource continuation offset";
-  }
-  return undefined;
 }
 
 /**
@@ -130,23 +81,7 @@ export function handleLoadSkillCall(args: {
     return fail(`unknown skill '${name}'. Available skills: ${availableNames(skills)}.`);
   }
 
-  const body = content.body.length > 0 ? content.body : "(this skill has an empty body)";
-  const executionHint =
-    content.executionRoot === undefined
-      ? ""
-      : `Package execution root: ${content.executionRoot}\n` +
-        "Run bundled helpers through the normal shell tool so its command guard applies. " +
-        "When a native sandbox is active, the package root is mounted read-only.\n";
-  return ok(
-    `Skill '${content.name}' — ${content.description}\n\n` +
-      (content.source === "builtin"
-        ? "Builtin instructions embedded in Clarvis; no skill file or execution directory.\n"
-        : `Skill directory: ${content.dir}\n` +
-          "Resolve bundled relative paths from that directory.\n") +
-      executionHint +
-      "\n" +
-      `${body}${renderResourceList(content.resources)}`,
-  );
+  return ok(formatSkillBody(content));
 }
 
 /**
@@ -206,18 +141,7 @@ export function handleReadSkillResourceCall(args: {
   if (skills.readResourceChunk !== undefined) {
     try {
       const chunk = skills.readResourceChunk(name, resource, offset, maxChars);
-      const invalidChunk = validateResourceChunk(chunk, offset, maxChars);
-      if (invalidChunk !== undefined) throw new Error(invalidChunk);
-      const continuation =
-        chunk.nextOffset === undefined
-          ? ""
-          : `\n\n[resource continues; call ${READ_SKILL_RESOURCE_TOOL_NAME} with the same name ` +
-            `and resource and offset=${String(chunk.nextOffset)}]`;
-      return ok(
-        `Resource '${resource}' of skill '${name}' (bytes ${String(chunk.offset)}-${String(
-          chunk.nextOffset ?? chunk.totalBytes,
-        )} of ${String(chunk.totalBytes)}):\n\n${chunk.text}${continuation}`,
-      );
+      return ok(formatSkillResourceChunk(name, resource, chunk, offset, maxChars));
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       return fail(`could not read resource '${resource}' of skill '${name}': ${reason}`);
@@ -236,14 +160,5 @@ export function handleReadSkillResourceCall(args: {
     const reason = err instanceof Error ? err.message : String(err);
     return fail(`could not read resource '${resource}' of skill '${name}': ${reason}`);
   }
-  const end = Math.min(maxChars, text.length);
-  const continuation =
-    end < text.length
-      ? "\n\n[resource truncated; this provider does not support byte-offset continuation]"
-      : "";
-  return ok(
-    `Resource '${resource}' of skill '${name}' (characters 0-${String(end)} of ${String(
-      text.length,
-    )}):\n\n${text.slice(0, end)}${continuation}`,
-  );
+  return ok(formatSkillResourceLegacy(name, resource, text, maxChars));
 }

@@ -8,17 +8,37 @@ shell uses the same typed kernel RPC over a private local socket or Windows name
 
 The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
 revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it
-again. Hosted completion waits for observation delivery and host reconciliation; a lost connection
+again. Hosted completion waits for observation delivery, host reconciliation, terminal index commit and
+released admission. After consuming a controlled result, the adapter acknowledges it and releases
+its observation before reporting readiness, allowing long conversations to reclaim retained entries.
+Observers and abandoned or failed observations do not acknowledge an unseen result. Print and TUI
+consumers share that retention lifecycle through `createHostedObservationLease`. A lost connection
 rejects observation without inventing an execution result. The session cache supports explicit
-canonical refresh and confirmed revision sequencing. The workspace manager launches or discovers
+canonical refresh and confirmed revision sequencing. Its usage adapter converts presentation fields
+and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
 `/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
-uncertain handoff leaves the interface open. Reopening the same workspace offers the previous work
-or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
+uncertain handoff leaves the interface open.
+An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
+after its cause is resolved. Uncertain or unclassified failures retain their operation identity
+and use receipt lookup without repeating the mutation. Reopening the same workspace offers the
+previous work or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
 the same execution, and `/background cancel <execution-id>` requests cancellation without treating
 its acknowledgement as physical completion. Another TUI's controller is observed by default;
-taking control requires an explicit action in the list. Saved results remain in Sessions.
+taking control requires an explicit action in the list. Saved results remain in Sessions. The
+background list controller owns polling, loading/errors and serialized attach/cancel operations;
+the view owns selection, keyboard navigation, confirmation and painting.
+Taking control while already observing preserves the existing session, transcript and event stream.
+After confirmation, that observation gains interactive questions and normal foreground result
+acknowledgement; it does not replay the snapshot or retire the conversation.
+
+For an old run whose physical state is unknown, `/background list` offers `archive recovery`.
+First verify that every process and container from that host has stopped, then explicitly confirm
+the displayed host/run identity. The host records this operator verification in the saved session
+before releasing its physical-work block. The conversation is archived and new work requires a new
+conversation; existing history and any known result remain. Failed confirmation or persistence keeps
+the recovery pending. The application does not infer physical closure from a missing host process.
 After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
 that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
 exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
@@ -786,6 +806,8 @@ resolution as the TUI and fails clearly when no interactive entry agent exists. 
 the interactive and other headless paths, is opened through `WorkspaceClientManager`; a selected
 Docker or Podman runtime therefore receives the same lazy local factory instead of failing before
 the run starts.
+Runtime release-manifest acquisition observes the host generation's initialization cancellation
+as well as its bounded download deadline, allowing shutdown to interrupt image preparation.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever

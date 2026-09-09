@@ -200,6 +200,25 @@ export const OPERATIONS = {
     },
   }),
   hosting: serviceOperations<HostingService, "start" | "attach">({
+    resolveRecovery: {
+      method: "hosting.resolveRecovery",
+      metadata: write(),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        requireHosting(services).resolveRecovery(
+          p.input as Parameters<HostingService["resolveRecovery"]>[0],
+        ),
+    },
+    controlObservation: {
+      method: "hosting.controlObservation",
+      metadata: write(),
+      encode: (observationId, control) => ({ observation_id: observationId, control }),
+      invoke: (services, p) =>
+        requireHosting(services).controlObservation(
+          p.observation_id as string,
+          p.control as "acquire" | "takeover",
+        ),
+    },
     list: {
       method: "hosting.list",
       metadata: read(),

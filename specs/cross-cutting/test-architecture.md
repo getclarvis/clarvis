@@ -666,6 +666,19 @@ output are outside this inventory by construction. The extension matrix is pinne
 
 ### 4.6 Test-process isolation: `tooling/test-runtime/clarvis-home-preload.ts`
 
+Real-Git release and candidate-install fixtures use the shared `withoutGitRepositoryEnvironment`
+helper for every child process, including tag automation and launchers. Hook-provided
+repository/index context must not redirect fixture Git commands into the caller's checkout or
+linked worktree. Production: `withoutGitRepositoryEnvironment` in
+[git-environment.ts](../../packages/paths/src/git-environment.ts). Test harness: the `run` helper in
+[gitflow-release-git.test.ts](../../tooling/tests/unit/gitflow-release-git.test.ts).
+Test: `signed candidate sequence and final merge tag survive retries without rewriting refs` in
+that file and `candidate installation checks out the published commit with real Git and launches
+it with Bun` in
+[candidate-install.test.ts](../../packages/code/tests/unit/candidate-install.test.ts) execute
+their complete temporary-repository journeys with deliberately conflicting inherited Git directory,
+worktree and index paths.
+
 At preload time — before any test module is evaluated — the file checks whether
 `process.env[HOME_ENV]` (i.e. `CLARVIS_HOME`, `packages/paths/src/roots.ts`) is unset or blank.
 If so it `mkdtempSync`es `clarvis-test-home-` under the OS temp dir, assigns it, and registers a

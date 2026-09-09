@@ -53,6 +53,8 @@ export function hostingFixture(overrides: Partial<HostingService> = {}): {
     throw new Error("unexpected hosted operation");
   };
   const service: HostingService = {
+    controlObservation: unsupported,
+    resolveRecovery: unsupported,
     list: async () => [hostedRef()],
     start: unsupported,
     detach: unsupported,

@@ -1086,6 +1086,38 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     only as a provider-opaque seed and the four
     canonical read tools. Mutating memory tools are absent from the guest descriptor, definitions
     and prompt, and the host rejects a forged mutation even when its provider is writable.
+    Host plan mutation authority is pinned to the current run's created or continued plan.
+    Retention deletion requires the same canonical completed/discard plan and revisions in the
+    owner's durable completed run trace, then uses host-selected CAS. Reading another plan never
+    grants mutation or deletion. Bounded multipart transfer preserves canonical plan sizes while
+    reserving response capacity before effects and revoking unfinished transfers on teardown.
+    Production: `createHostPlansGrant` in
+    [`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createPlanTransferGrant`
+    in [`plan-transfer.ts`](../../packages/kernel/src/runtime/plan-transfer.ts).
+    Test: retention and CAS cases in
+    [`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts),
+    and transfer count/byte, cancellation and revocation cases in
+    [`runtime-plan-transfer.test.ts`](../../packages/kernel/tests/contract/runtime-plan-transfer.test.ts).
+    Guest coding tools preserve the host's enablement, confinement and grant ceiling and the
+    host's choice to omit tools. Preview requires enabled tools, `exec` and `run_commands`.
+    Production: `createLocalContainerRuntime` in
+    [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+    `createGuestLoopExecutor` in
+    [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+    Test: native/guest policy parity in
+    [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+    Private RPC admits at most 256 pending requests per direction and 8 MiB of inbound frame bytes
+    before handler invocation; cancelled handlers retain admission until settlement. Capability
+    brokers bound attempted call identities and aggregate replay responses, retaining no response
+    body for non-idempotent calls. Matching late cancellations use bounded completion identities;
+    mismatches fail closed. Production: `createExecutionPeer` in
+    [`execution-rpc.ts`](../../packages/kernel/src/runtime/execution-rpc.ts) and
+    `createCapabilityBroker` in
+    [`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts).
+    Test: floods and late cancellation races in
+    [`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts),
+    and retained-result admission in
+    [`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts).
     Cancellation keeps `runtime.start` pending until the guest settles; a matching late result for
     another locally cancelled RPC is consumed through a bounded identity tombstone, while a dead
     process/channel retires the generation before the next run. Control-pump rejection cannot skip
@@ -1119,7 +1151,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     credentials there. Remote effects remain possible with container network `none`. Elicitation
     returns to the live guest relay, and run disposal aborts acquisitions and releases leases.
     Production: `hostModelBroker` in
-    [`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts),
+    [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts),
     `encodeRuntimeProviderError` in
     [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), and
     `createHostRemoteMcpBridge` in
@@ -1131,16 +1163,16 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     Production: `createHostHooksBridge` in `packages/kernel/src/runtime/hooks-bridge.ts`;
     `createHostTasksGrant` in `packages/kernel/src/runtime/tasks-bridge.ts`;
     `createHostWorkflowBridge` in `packages/kernel/src/runtime/workflows-bridge.ts`;
-    `runtimeModelPairs` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `runtimeModelPairs` in `packages/kernel/src/runtime/local-container-runtime.ts`;
     `streamHostModelCall` in `packages/kernel/src/runtime/model-stream.ts`; `.dockerignore`;
     `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`; `readOnlyWorkspacePaths` in
-    `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `packages/kernel/src/runtime/local-container-runtime.ts`;
     `prepareRuntimeCapabilityRoot` in
     `packages/kernel/src/runtime/runtime-workspace-control.ts`;
     `createArgs` in `packages/kernel/src/runtime/docker-backend.ts` and
     `packages/kernel/src/runtime/podman-backend.ts`; `prepareMiseCache` and `prepareCacheOwnership` in
     `packages/kernel/src/runtime/container-mise-cache.ts`; `createRuntimeAuthorityRouter` in
-    `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
+    `packages/kernel/src/runtime/local-container-runtime.ts`; `createRuntimePortPreview` and
     `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
     `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
     `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
@@ -1196,7 +1228,7 @@ the live-session/resume test in [run-host.test.ts](../../packages/code/tests/com
 | Path swapped between check and open | `packages/tools/src/lib/files.ts` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
-| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-podman-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
+| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-container-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
 | Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
 | Operational Docker startup failure with configured fallback | Required native Sandbox is probed and latched for the session; if unavailable, the run fails closed and never executes bare | `createLazyRuntimeCoordinator`; lazy-runtime and sandbox-policy tests |
 | Runtime image integrity, effective-policy or guest-handshake failure | No fallback; the launch fails closed | `createLazyRuntimeCoordinator`; lazy-runtime tests |

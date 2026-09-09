@@ -36,7 +36,11 @@ async function main(): Promise<void> {
           const local = await import("@clarvis/kernel/local");
           if (value.settings.backend !== "docker") return local.createLocalPodmanRuntime(value);
           return local.createLocalDockerRuntime(value, {
-            resolveImage: () => resolveClarvisRuntimeImage({ currentVersion: productVersion() }),
+            resolveImage: (signal) =>
+              resolveClarvisRuntimeImage({
+                currentVersion: productVersion(),
+                ...(signal === undefined ? {} : { signal }),
+              }),
             onRecipePreparation(name) {
               host?.host.runtimeNotice(`Preparing Docker environment: ${name}`);
             },

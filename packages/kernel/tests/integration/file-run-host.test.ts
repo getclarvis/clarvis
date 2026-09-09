@@ -11,6 +11,7 @@ import { createFileRunHost, type FileRunHostOptions } from "../../src/bootstrap.
 import { openHostedProjection } from "../../src/hosting/projection.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
 import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transport/local.ts";
+import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -63,7 +64,7 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
   }
   const released = Promise.withResolvers<void>();
   const entered: string[] = [];
-  const host = await createFileRunHost({
+  const hostOptions: FileRunHostOptions = {
     kernel: {
       workspaceRoot,
       globalDir,
@@ -115,7 +116,8 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
         writeFileDurableSync(paths.registryFile, JSON.stringify(state));
       },
     },
-  });
+  };
+  const host = await createFileRunHost(hostOptions);
   cleanups.push(() => host.close());
   const listener = await listenLocalKernel(host.server, paths.endpoint);
   cleanups.push(() => listener.close());
@@ -156,10 +158,78 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
     control_epoch: run.control_epoch,
     operation_id: "handoff",
   });
-  return { host, paths, client, connect, input, entered, released, handoff };
+  return { host, hostOptions, listener, paths, client, connect, input, entered, released, handoff };
 }
 
 describe("file kernel behind the hosted RPC", () => {
+  test("operator recovery preserves the session audit and unlocks maintenance over local IPC", async () => {
+    const f = await fixture();
+    const attached = await f.client.hosting!.start(await f.input("interrupted"));
+    await until(() => f.entered.includes("interrupted"));
+    const crashIndex = decodeHostedRegistryState(
+      JSON.parse(await readFile(f.paths.registryFile, "utf8")),
+    );
+    const crashSession = (await f.client.sessions.get("conversation"))!;
+    expect(crashSession.turns[0]!.status).toBe("running");
+    await f.client.close();
+    await f.listener.close();
+    await f.host.close();
+    const recovered = await createFileRunHost({
+      ...f.hostOptions,
+      hostGeneration: "recovered",
+      storage: {
+        ...f.hostOptions.storage,
+        initialState: crashIndex,
+        removeProjection: async (id, generation) => {
+          await rm(f.paths.projectionFile(generation, id), { force: true });
+        },
+      },
+    });
+    cleanups.push(() => recovered.close());
+    await recovered.kernel.sessions.save(crashSession);
+    const listener = await listenLocalKernel(recovered.server, f.paths.endpoint);
+    cleanups.push(() => listener.close());
+    const transport = await connectLocalKernelTransport(f.paths.endpoint);
+    cleanups.push(() => transport.close());
+    const client = await connectKernelClient(transport, { auth: "operator-token" });
+    const row = (await client.hosting!.list()).find(
+      (value) => value.execution_id === attached.run.execution_id,
+    )!;
+    expect(row.execution_state).toBe("unknown");
+    await expect(client.localHost!.requestRestart()).rejects.toMatchObject({ code: "conflict" });
+    const resolved = await client.hosting!.resolveRecovery({
+      execution_id: row.execution_id,
+      host_generation: row.host_generation,
+      revision: row.revision,
+      physical_work_stopped: true,
+    });
+    expect(resolved.outcome).toBeUndefined();
+    await client.hosting!.acknowledge(row.execution_id);
+    expect(await client.hosting!.list()).toEqual([]);
+    const archived = (await client.sessions.get("conversation"))!;
+    expect(archived.turns[0]).toMatchObject({
+      status: "interrupted",
+      recovery_resolution: resolved.recovery_resolution,
+    });
+    expect(archived.turns[0]!.ended_at).toBeUndefined();
+    await expect(
+      client.hosting!.start({
+        session_id: archived.id,
+        session_revision: archived.revision!,
+        kind: "conversation",
+        user_preview: "Never replay",
+        params: {
+          execution_id: "no-replay",
+          agent: "solo",
+          messages: [{ role: "user", content: "Never replay" }],
+        },
+      }),
+    ).rejects.toThrow("archived");
+    await client.localHost!.requestRestart();
+    expect(recovered.stats().restartRequested).toBe(true);
+    expect(f.entered).toEqual(["interrupted"]);
+  });
+
   test("runtime preparation notices reach operator inspection as bounded sequenced data", async () => {
     const f = await fixture();
     f.host.runtimeNotice("Preparing Docker environment: test");

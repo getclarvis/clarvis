@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 import {
   candidateJson,
   installCandidate,
@@ -150,10 +151,20 @@ test("candidate installation checks out the published commit with real Git and l
   const root = await mkdtemp(join(tmpdir(), "clarvis-candidate-git-"));
   const source = join(root, "source");
   await mkdir(source);
+  const inheritedEnv = {
+    ...process.env,
+    GIT_DIR: join(root, "unrelated.git"),
+    GIT_WORK_TREE: join(root, "unrelated-worktree"),
+    GIT_INDEX_FILE: join(root, "unrelated-index"),
+  };
   const execute = (argv: readonly string[], cwd: string): string => {
     const executable = argv[0];
     if (executable === undefined) throw new Error("empty fixture command");
-    const result = spawnSync(executable, argv.slice(1), { cwd, encoding: "utf8" });
+    const result = spawnSync(executable, argv.slice(1), {
+      cwd,
+      env: withoutGitRepositoryEnvironment(inheritedEnv),
+      encoding: "utf8",
+    });
     if (result.status !== 0) throw new Error(result.stderr || String(result.error));
     return result.stdout.trim();
   };

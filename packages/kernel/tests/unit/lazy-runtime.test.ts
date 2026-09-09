@@ -87,6 +87,83 @@ function coordinator(options: {
 }
 
 describe("lazy runtime coordinator", () => {
+  it("cancels one waiter while another retains the shared initializing generation", async () => {
+    const entered = Promise.withResolvers<RuntimeHostInput>();
+    const ready = Promise.withResolvers<RuntimeHost>();
+    let creates = 0;
+    let executions = 0;
+    let native = 0;
+    const c = coordinator({
+      factory: async (input) => {
+        creates++;
+        entered.resolve(input);
+        return ready.promise;
+      },
+      native: async () => {
+        native++;
+        return outcome;
+      },
+    });
+    const cancelled = new AbortController();
+    const first = c.value.executeRun({ ...args, externalSignal: cancelled.signal });
+    const refusal = first.catch((error: unknown) => error);
+    const input = await entered.promise;
+    const second = c.value.executeRun(args);
+    cancelled.abort(new Error("caller cancelled"));
+    expect(await refusal).toMatchObject({ message: "caller cancelled" });
+    expect(input.signal?.aborted).toBe(false);
+    expect(executions).toBe(0);
+    ready.resolve({
+      closed: false,
+      info: info(input.generation),
+      executeRun: async () => {
+        executions++;
+        return outcome;
+      },
+      close: async () => {},
+    });
+    expect(await second).toBe(outcome);
+    expect(creates).toBe(1);
+    expect(executions).toBe(1);
+    expect(native).toBe(0);
+    await c.value.close();
+  });
+
+  it("aborts generation creation on shutdown and waits for its physical cleanup", async () => {
+    const entered = Promise.withResolvers<void>();
+    const aborted = Promise.withResolvers<void>();
+    const cleaned = Promise.withResolvers<void>();
+    let shutdownFinished = false;
+    let native = 0;
+    const c = coordinator({
+      factory: async (input) => {
+        const signal = input.signal!;
+        signal.addEventListener("abort", () => aborted.resolve(), { once: true });
+        entered.resolve();
+        await aborted.promise;
+        await cleaned.promise;
+        throw signal.reason;
+      },
+      native: async () => {
+        native++;
+        return outcome;
+      },
+    });
+    const run = c.value.executeRun(args);
+    const refusal = run.catch((error: unknown) => error);
+    await entered.promise;
+    const closing = c.value.close().then(() => {
+      shutdownFinished = true;
+    });
+    await aborted.promise;
+    expect(await refusal).toMatchObject({ message: "runtime coordinator is closed" });
+    expect(shutdownFinished).toBe(false);
+    cleaned.resolve();
+    await closing;
+    expect(native).toBe(0);
+    expect(c.value.current().lifecycle).not.toBe("ready");
+  });
+
   it("surfaces failed shutdown and retries retained cleanup without reopening admission", async () => {
     let attempts = 0;
     const c = coordinator({

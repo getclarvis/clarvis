@@ -1,5 +1,7 @@
 import { bestEffort, NOOP_LOGGER, sanitizeErrorMessage, type Logger } from "@clarvis/capability";
 import type {
+  HostedHandoffFailureDetails,
+  HostedRecoveryResolution,
   HostedExecutionConfig,
   HostedRunAttachment,
   HostedRunReceipt,
@@ -53,6 +55,11 @@ export interface HostedRegistryOptions {
   /** Remove only the acknowledged run's private observation artifact, never canonical history. */
   removeProjection(executionId: string, generation: string): Promise<void>;
   commit(state: HostedRegistryState): Promise<void>;
+  /** Durably archive the canonical session before releasing old-generation physical uncertainty. */
+  archiveRecovery?(
+    run: HostedRunRef,
+    resolution: HostedRecoveryResolution,
+  ): Promise<HostedRecoveryResolution>;
   /** Prior process index. Only discovery metadata returns; no execution or consent is restored. */
   initialState?: HostedRegistryState;
   retireConfigurationSession(scope: string): void;
@@ -107,12 +114,13 @@ interface Entry {
   stopRequested: boolean;
   preparationSettled: PromiseWithResolvers<void>;
   pruning?: Promise<void>;
+  recovery?: Promise<HostedRunRef>;
   handoff?: { id: string; promise: Promise<HostedRunReceipt> };
 }
 
 interface ConnectionState {
   peer: HostingPeer;
-  observations: Map<string, Entry>;
+  observations: Map<string, { entry: Entry; epoch: number }>;
   snapshots: Map<string, { entry: Entry; observationId: string }>;
   activities: Map<string, HostedOccupancy>;
   observing: number;
@@ -219,12 +227,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     const state = entry.execution?.state();
     if (state === undefined) return;
     entry.ref.attention = state.attention;
-    entry.ref.execution_state =
-      state.physicalClosed && state.reconciled
-        ? "closed"
-        : state.result === undefined
-          ? "running"
-          : "finishing";
+    entry.ref.execution_state = state.terminalCommitted
+      ? "closed"
+      : state.result === undefined
+        ? "running"
+        : "finishing";
     if (state.recoveryError !== undefined) {
       entry.ref.recovery_error = "Hosted observation or conversation reconciliation failed.";
       entry.ref.execution_state = "unknown";
@@ -257,7 +264,11 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     });
   };
 
-  const persist = (change?: { run?: HostedRunRef; receipt?: HostedRunReceipt }): Promise<void> => {
+  const persist = (change?: {
+    run?: HostedRunRef;
+    receipt?: HostedRunReceipt;
+    terminalExecutionId?: string;
+  }): Promise<void> => {
     if (writes >= 16)
       return Promise.reject(kernelError("resource_exhausted", "host state commit queue exhausted"));
     writes++;
@@ -266,10 +277,24 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         const state: HostedRegistryState = {
           schema_version: 1,
           host_generation: options.hostGeneration,
-          runs: [...entries.values()].map((entry) => ({
-            run: change?.run?.execution_id === entry.ref.execution_id ? change.run : view(entry),
-            acknowledged: entry.acknowledged,
-          })),
+          runs: [...entries.values()].map((entry) => {
+            const current = view(entry);
+            const proposed =
+              change?.run?.execution_id === entry.ref.execution_id ? change.run : current;
+            return {
+              run: {
+                ...proposed,
+                execution_state:
+                  change?.terminalExecutionId === entry.ref.execution_id
+                    ? ("closed" as const)
+                    : current.execution_state,
+                attention: current.attention,
+                outcome: current.outcome,
+                recovery_error: current.recovery_error,
+              },
+              acknowledged: entry.acknowledged,
+            };
+          }),
           receipts: [...receipts.values()]
             .filter((item) => item.expires_at > now())
             .map((item) => ({ ...item, receipt: receiptView(item.receipt) })),
@@ -336,7 +361,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       return;
     if (
       [...connections.values()].some((connection) =>
-        [...connection.observations.values()].includes(entry),
+        [...connection.observations.values()].some((observation) => observation.entry === entry),
       )
     )
       return;
@@ -373,26 +398,26 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       throw kernelError("conflict", "run is still preparing");
     if (connection.observations.size + connection.observing >= 4)
       throw kernelError("resource_exhausted", "connection observation limit reached");
-    let epoch = -1;
+    const observation = { entry, epoch: -1 };
     const source = entry.source;
     connection.observing++;
     let attachment: Awaited<ReturnType<HostedExecution["observe"]>> | undefined;
     try {
       attachment = await entry.execution.observe({
         async steer(message) {
-          assertControl(connection, entry, epoch);
+          assertControl(connection, entry, observation.epoch);
           await source.steer(message);
         },
         async compact(request) {
-          assertControl(connection, entry, epoch);
+          assertControl(connection, entry, observation.epoch);
           await source.compact(request);
         },
         async cancel() {
-          assertControl(connection, entry, epoch);
+          assertControl(connection, entry, observation.epoch);
           await source.cancel();
         },
         async respond(response) {
-          assertControl(connection, entry, epoch);
+          assertControl(connection, entry, observation.epoch);
           await source.respond(response);
         },
       });
@@ -400,10 +425,14 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       if (entry.handoff !== undefined)
         throw kernelError("conflict", "handoff began during observation preparation");
       if (control !== "observe" && entry.occupancy !== undefined) {
-        epoch = admission.acquire(connection.peer, entry.occupancy, control === "takeover").epoch;
+        observation.epoch = admission.acquire(
+          connection.peer,
+          entry.occupancy,
+          control === "takeover",
+        ).epoch;
         touch(entry);
       }
-      connection.observations.set(attachment.observation_id, entry);
+      connection.observations.set(attachment.observation_id, observation);
       connection.snapshots.set(attachment.snapshot.snapshot_id, {
         entry,
         observationId: attachment.observation_id,
@@ -433,7 +462,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         "interactive consent cleanup failed after control retirement",
       );
     }
-    for (const [id, entry] of connection.observations) entry.execution?.releaseObservation(id);
+    for (const [id, observation] of connection.observations)
+      observation.entry.execution?.releaseObservation(id);
     connection.observations.clear();
     connection.snapshots.clear();
     await Promise.all(
@@ -546,28 +576,25 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
             projection: entry.projection,
             logger,
             reconcile: (result) => entry.prepared!.reconcile(result),
-            changed: () => touch(entry),
-          });
-          touch(entry);
-          void entry.execution.settled
-            .then(async () => {
+            async commitTerminal() {
               try {
-                await persist();
-                const state = entry.execution!.state();
-                if (state.physicalClosed && state.reconciled) {
-                  entry.ref.control_epoch = admission.control(occupancy).epoch;
-                  admission.release(occupancy);
-                  delete entry.occupancy;
-                }
+                await persist({ terminalExecutionId: entry.ref.execution_id });
+                entry.ref.control_epoch = admission.control(occupancy).epoch;
+                admission.release(occupancy);
+                delete entry.occupancy;
               } catch {
                 entry.ref.execution_state = "unknown";
                 entry.ref.recovery_error = "Host could not commit the terminal run index.";
+                throw kernelError("unavailable", entry.ref.recovery_error);
               }
-            })
-            .catch(() => {
-              entry.ref.execution_state = "unknown";
-              entry.ref.recovery_error = "Hosted execution closure could not be observed.";
-            });
+            },
+            changed: () => touch(entry),
+          });
+          touch(entry);
+          void entry.execution.settled.catch(() => {
+            entry.ref.execution_state = "unknown";
+            entry.ref.recovery_error = "Hosted execution closure could not be observed.";
+          });
           if (entry.stopRequested) await entry.source.cancel();
           return await observe(connection, entry, "acquire");
         } catch (error) {
@@ -592,9 +619,9 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
               await entry.projection?.close();
               entry.ref.execution_state = "closed";
               entry.ref.outcome = { status: failed.status, error: failed.error };
+              await persist();
               admission.release(occupancy);
               delete entry.occupancy;
-              await persist();
             } catch {
               entry.ref.execution_state = "unknown";
               entry.ref.recovery_error = "Hosted turn preparation could not be reconciled.";
@@ -609,74 +636,106 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         identifier(input.host_generation, "host generation");
         return observe(connection, find(input.execution_id, input.host_generation), input.control);
       },
-      async detach(input) {
+      async controlObservation(id, control) {
         assertConnection(connection, true);
-        identifier(input.host_generation, "host generation");
-        identifier(input.operation_id, "handoff operation id");
-        const previous = receipts.get(input.operation_id);
-        if (previous !== undefined && previous.expires_at > now()) {
-          if (
-            previous.receipt.run.execution_id !== input.execution_id ||
-            previous.receipt.run.host_generation !== input.host_generation
-          )
-            throw kernelError("conflict", "handoff id belongs to a different execution");
-          return receiptView(previous.receipt, peer);
-        }
-        const entry = find(input.execution_id, input.host_generation);
-        if (entry.handoff?.id === input.operation_id)
-          return entry.handoff.promise.then((receipt) => receiptView(receipt, peer));
-        if (seenOperations.has(input.operation_id))
-          throw kernelError(
-            "conflict",
-            "handoff result is unknown or expired; mutation will not be replayed",
-          );
+        if (control !== "acquire" && control !== "takeover")
+          throw kernelError("invalid_request", "unknown observation control mode");
+        const observation = connection.observations.get(id);
+        if (observation === undefined)
+          throw kernelError("not_found", "observation does not belong to this connection");
+        const { entry } = observation;
         if (entry.handoff !== undefined)
-          throw kernelError("conflict", "another handoff is committing");
-        if (seenOperations.size >= maxReceipts)
-          throw kernelError("resource_exhausted", "handoff receipt history is full");
-        assertControl(connection, entry, input.control_epoch);
-        if (entry.ref.revision !== input.revision)
-          throw kernelError("conflict", "run revision changed; refresh before handoff");
-        if (entry.execution === undefined || entry.prepared?.detachable !== true)
-          throw kernelError("conflict", "preparing or native configuration runs cannot detach");
-        if (entry.execution.state().recoveryError !== undefined)
-          throw kernelError("unavailable", "hosted recovery is unavailable");
-        seenOperations.add(input.operation_id);
-        const promise = (async (): Promise<HostedRunReceipt> => {
-          await entry.projection!.sync();
-          const run: HostedRunRef = {
-            ...view(entry),
-            revision: entry.ref.revision + 1,
-            disconnect_policy: "continue",
-            control_epoch: input.control_epoch + 1,
-            control: "available",
-          };
-          const receipt: HostedRunReceipt = {
-            operation_id: input.operation_id,
-            run,
-            committed_at: now(),
-          };
-          await persist({ run, receipt });
-          entry.ref.disconnect_policy = "continue";
-          receipts.set(input.operation_id, { receipt, expires_at: now() + receiptLifetime });
-          if (connections.get(peer.id) === connection) {
-            try {
-              admission.closeSession(peer, entry.ref.session_id);
-            } catch {
-              logger.warn(
-                { event: "hosting.consent.retirement_failed" },
-                "handoff committed after interactive control retirement",
-              );
-            }
-          }
-          touch(entry);
-          return receipt;
-        })();
-        entry.handoff = { id: input.operation_id, promise };
+          throw kernelError("conflict", "handoff is committing; reconcile its receipt first");
+        if (entry.occupancy === undefined || entry.execution === undefined)
+          throw kernelError("conflict", "observation no longer has active execution");
+        observation.epoch = admission.acquire(
+          connection.peer,
+          entry.occupancy,
+          control === "takeover",
+        ).epoch;
+        touch(entry);
+        return view(entry, connection.peer);
+      },
+      async detach(input) {
+        let admitted = seenOperations.has(input.operation_id) || receipts.has(input.operation_id);
         try {
-          return receiptView(await promise, peer);
-        } finally {
-          delete entry.handoff;
+          assertConnection(connection, true);
+          identifier(input.host_generation, "host generation");
+          identifier(input.operation_id, "handoff operation id");
+          const previous = receipts.get(input.operation_id);
+          if (previous !== undefined && previous.expires_at > now()) {
+            if (
+              previous.receipt.run.execution_id !== input.execution_id ||
+              previous.receipt.run.host_generation !== input.host_generation
+            )
+              throw kernelError("conflict", "handoff id belongs to a different execution");
+            return receiptView(previous.receipt, peer);
+          }
+          const entry = find(input.execution_id, input.host_generation);
+          if (entry.handoff?.id === input.operation_id)
+            return await entry.handoff.promise.then((receipt) => receiptView(receipt, peer));
+          if (seenOperations.has(input.operation_id))
+            throw kernelError(
+              "conflict",
+              "handoff result is unknown or expired; mutation will not be replayed",
+            );
+          if (entry.handoff !== undefined)
+            throw kernelError("conflict", "another handoff is committing");
+          if (seenOperations.size >= maxReceipts)
+            throw kernelError("resource_exhausted", "handoff receipt history is full");
+          assertControl(connection, entry, input.control_epoch);
+          if (entry.ref.revision !== input.revision)
+            throw kernelError("conflict", "run revision changed; refresh before handoff");
+          if (entry.execution === undefined || entry.prepared?.detachable !== true)
+            throw kernelError("conflict", "preparing or native configuration runs cannot detach");
+          if (entry.execution.state().recoveryError !== undefined)
+            throw kernelError("unavailable", "hosted recovery is unavailable");
+          seenOperations.add(input.operation_id);
+          admitted = true;
+          const promise = (async (): Promise<HostedRunReceipt> => {
+            await entry.projection!.sync();
+            const run: HostedRunRef = {
+              ...view(entry),
+              revision: entry.ref.revision + 1,
+              disconnect_policy: "continue",
+              control_epoch: input.control_epoch + 1,
+              control: "available",
+            };
+            const receipt: HostedRunReceipt = {
+              operation_id: input.operation_id,
+              run,
+              committed_at: now(),
+            };
+            await persist({ run, receipt });
+            entry.ref.disconnect_policy = "continue";
+            receipts.set(input.operation_id, { receipt, expires_at: now() + receiptLifetime });
+            if (connections.get(peer.id) === connection) {
+              try {
+                admission.closeSession(peer, entry.ref.session_id);
+              } catch {
+                logger.warn(
+                  { event: "hosting.consent.retirement_failed" },
+                  "handoff committed after interactive control retirement",
+                );
+              }
+            }
+            touch(entry);
+            return receipt;
+          })();
+          entry.handoff = { id: input.operation_id, promise };
+          try {
+            return receiptView(await promise, peer);
+          } finally {
+            delete entry.handoff;
+          }
+        } catch (error) {
+          const failure = toKernelError(error);
+          throw kernelError(failure.code, failure.message, {
+            handoff: {
+              operation_id: input.operation_id,
+              admission: admitted ? "uncertain" : "refused",
+            },
+          } satisfies HostedHandoffFailureDetails);
         }
       },
       async receipt(id) {
@@ -700,7 +759,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       },
       async releaseObservation(id) {
         assertConnection(connection);
-        const entry = connection.observations.get(id);
+        const entry = connection.observations.get(id)?.entry;
         entry?.execution?.releaseObservation(id);
         connection.observations.delete(id);
         for (const [snapshotId, owner] of connection.snapshots) {
@@ -718,6 +777,81 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         );
         admission.closeSession(peer, sessionId);
         await Promise.all(owned.map(cancelAfterDisconnect));
+      },
+      async resolveRecovery(input) {
+        assertConnection(connection, true);
+        if (
+          typeof input !== "object" ||
+          input === null ||
+          Object.keys(input).some(
+            (key) =>
+              !["execution_id", "host_generation", "revision", "physical_work_stopped"].includes(
+                key,
+              ),
+          ) ||
+          typeof input.execution_id !== "string" ||
+          typeof input.host_generation !== "string" ||
+          !Number.isSafeInteger(input.revision) ||
+          input.revision < 0 ||
+          input.physical_work_stopped !== true
+        )
+          throw kernelError(
+            "invalid_request",
+            "recovery requires explicit physical closure confirmation and an observed revision",
+          );
+        const entry = entries.get(input.execution_id);
+        if (entry === undefined || entry.pruning !== undefined)
+          throw kernelError("not_found", "hosted execution is not retained by this host");
+        if (
+          entry.ref.host_generation !== input.host_generation ||
+          input.host_generation === options.hostGeneration
+        )
+          throw kernelError("conflict", "recovery must name an ended host generation");
+        if (entry.ref.revision !== input.revision)
+          throw kernelError("conflict", "recovery revision changed; refresh before confirming");
+        if (
+          entry.occupancy !== undefined ||
+          entry.execution !== undefined ||
+          entry.ref.execution_state !== "unknown"
+        )
+          throw kernelError("conflict", "only old unknown physical work can be resolved");
+        if (entry.recovery !== undefined) return entry.recovery;
+        const archive = options.archiveRecovery?.bind(options);
+        if (archive === undefined)
+          throw kernelError("unavailable", "durable recovery archive is unavailable");
+        const recovery = (async (): Promise<HostedRunRef> => {
+          const resolution = await archive(structuredClone(entry.ref), {
+            kind: "operator_verified_physical_closure",
+            previous_host_generation: entry.ref.host_generation,
+            resolving_host_generation: options.hostGeneration,
+            operator_connection_id: peer.id,
+            resolved_at: now(),
+          });
+          const proposed: HostedRunRef = {
+            ...entry.ref,
+            execution_state: "closed",
+            recovery_resolution: resolution,
+            revision: entry.ref.revision + 1,
+            updated_at: now(),
+          };
+          await persist({ run: proposed, terminalExecutionId: entry.ref.execution_id });
+          entry.ref = proposed;
+          if (
+            ![...entries.values()].some(
+              (other) =>
+                other.ref.session_id === entry.ref.session_id &&
+                other.ref.execution_state === "unknown",
+            )
+          )
+            unresolvedSessions.delete(entry.ref.session_id);
+          return view(entry, peer);
+        })();
+        entry.recovery = recovery;
+        try {
+          return await recovery;
+        } finally {
+          if (entry.recovery === recovery) delete entry.recovery;
+        }
       },
       async acknowledge(id) {
         assertConnection(connection, true);
@@ -800,6 +934,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       await Promise.all([...connections.values()].map(closeConnection));
       await Promise.all(
         [...entries.values()].map(async (entry) => {
+          await bestEffort(() => entry.recovery, { operation: "hosting.recovery.settle", logger });
           entry.preparation.abort();
           await entry.preparationSettled.promise;
           await entry.source?.cancel();

@@ -11,6 +11,7 @@ import {
   type SteerMessage,
 } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
+import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import type { Memory } from "@clarvis/memory";
 import {
   MEMORY_READ_TOOL_NAMES,
@@ -173,9 +174,36 @@ test.skipIf(!enabled)(
       dir: join(skillRoot, "runtime-method"),
       path: join(skillRoot, "runtime-method", "SKILL.md"),
     };
+    const helperResources = new Map([
+      [
+        "scripts/main.sh",
+        '. "$(dirname "$0")/lib/value.sh"\nemit_value > /workspace/skill-helper.txt\n',
+      ],
+      ["scripts/lib/value.sh", 'emit_value() { printf "SKILL_HELPER_PREPARED\\n"; }\n'],
+    ]);
+    const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+    const prepareHelper = [
+      "mkdir -p /workspace/prepared-skill/scripts/lib",
+      ...[...helperResources].map(
+        ([resource, content]) =>
+          `printf %s ${shellQuote(content)} > /workspace/prepared-skill/${resource}`,
+      ),
+      "sh /workspace/prepared-skill/scripts/main.sh",
+    ].join("; ");
     const skillContents = new Map<string, SkillContent>([
       [bootstrapSkill.name, { ...bootstrapSkill, body: "DOCKER_RUNTIME_BOOTSTRAP", resources: [] }],
-      [methodSkill.name, { ...methodSkill, body: "DOCKER_RUNTIME_SKILL_BODY", resources: [] }],
+      [
+        methodSkill.name,
+        {
+          ...methodSkill,
+          body: "DOCKER_RUNTIME_SKILL_BODY\nRun scripts/main.sh after preparing its relative library.",
+          resources: [...helperResources.keys()].map((rel) => ({
+            kind: "scripts" as const,
+            rel,
+            path: join(methodSkill.dir, rel),
+          })),
+        },
+      ],
     ]);
     const memory = {} as Memory;
     const memoryFactory: MemoryFactory = {
@@ -272,11 +300,30 @@ test.skipIf(!enabled)(
           };
         }
         if (workloadModelCall === 2) {
+          expect(transcript).toContain("read_skill_resource");
+          expect(transcript).not.toContain("/runtime/skills/");
+          return {
+            toolCalls: [...helperResources.keys()].map((resource, index) => ({
+              id: `read-helper-${index}`,
+              name: "read_skill_resource",
+              arguments: { name: methodSkill.name, resource, offset: 0 },
+            })),
+            usage,
+          };
+        }
+        if (workloadModelCall === 3) {
+          const resourceText = params.messages
+            .filter((message) => message.role === "tool")
+            .map((message) => message.content)
+            .join("\n");
+          for (const content of helperResources.values())
+            expect(resourceText).toContain(content.trim());
           expect(transcript).toContain("DOCKER_RUNTIME_STEER");
           expect(transcript).toContain("DOCKER_RUNTIME_SKILL_BODY");
           expect(transcript).toContain("DOCKER_RUNTIME_MEMORY_DOCUMENT");
           return {
             toolCalls: [
+              { id: "prepare-skill-helpers", name: "shell", arguments: { command: prepareHelper } },
               {
                 id: "npm-install",
                 name: "shell",
@@ -290,7 +337,10 @@ test.skipIf(!enabled)(
             usage,
           };
         }
-        if (workloadModelCall === 3) {
+        if (workloadModelCall === 4) {
+          expect(await readFile(join(workspaceRoot, "skill-helper.txt"), "utf8")).toBe(
+            "SKILL_HELPER_PREPARED\n",
+          );
           expect(await readFile(join(workspaceRoot, "guest-created.txt"), "utf8")).toBe(
             "guest write\n",
           );
@@ -310,7 +360,7 @@ test.skipIf(!enabled)(
             usage,
           };
         }
-        if (workloadModelCall === 4) {
+        if (workloadModelCall === 5) {
           return {
             toolCalls: [
               {
@@ -323,7 +373,13 @@ test.skipIf(!enabled)(
           };
         }
         const previewUrl = transcript.match(/http:\/\/127\.0\.0\.1:\d+\//u)?.[0];
-        if (previewUrl === undefined) throw new Error("preview tool returned no loopback URL");
+        if (previewUrl === undefined) {
+          throw new Error(
+            `preview tool returned no loopback URL: ${JSON.stringify(
+              params.messages.filter((message) => message.role === "tool"),
+            )}`,
+          );
+        }
         const response = await fetch(`${previewUrl}package.json`, { signal: params.signal });
         if (!response.ok) throw new Error(`preview returned HTTP ${String(response.status)}`);
         const manifest = (await response.json()) as { dependencies?: Record<string, string> };
@@ -338,7 +394,12 @@ test.skipIf(!enabled)(
       },
     };
     const store = traceStore();
-    const deps = { env: loadEnv({}), llm, traceStore: store } as ExecuteRunDeps;
+    const deps = {
+      env: loadEnv({ CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
+      capabilities: [createAgentToolsCapability()],
+      llm,
+      traceStore: store,
+    } as ExecuteRunDeps;
     let runtime: Awaited<ReturnType<typeof createLocalDockerRuntime>> | undefined;
     try {
       const settings = runtimeSettingsSchema.parse({
@@ -374,8 +435,10 @@ test.skipIf(!enabled)(
           skillsProvider: {
             listSkills: () => [bootstrapSkill, methodSkill],
             loadSkill: (name) => skillContents.get(name),
-            readResource: () => {
-              throw new Error("Docker canary skills have no bundled resource");
+            readResource: (name, resource) => {
+              const content = name === methodSkill.name ? helperResources.get(resource) : undefined;
+              if (content === undefined) throw new Error("unknown helper resource");
+              return content;
             },
           },
           skillBootstraps: () => [

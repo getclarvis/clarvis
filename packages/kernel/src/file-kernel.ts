@@ -80,6 +80,7 @@ import {
   type GuardResolverDeps,
   type GuardSettings,
 } from "./guard/resolver.ts";
+import { createGuardSessionAllowlist } from "./guard/guard-elicit.ts";
 import { createInProcessKernel, type InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
@@ -766,6 +767,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           store: createFileSubscriptionStore({ dir: globalDir }),
           logger: componentLogger("subscriptions"),
         });
+  const defaultGuardAllowlist =
+    opts.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
+  const sessionAllowlistFor = opts.sessionAllowlistFor ?? (() => defaultGuardAllowlist);
   const built = await buildExecuteRunDeps({
     env,
     environment: environment.values,
@@ -778,9 +782,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       loadSettings: loadGuardSettings,
       logger: componentLogger("guard"),
       audit: auditLogger,
-      ...(opts.sessionAllowlistFor === undefined
-        ? {}
-        : { sessionAllowlistFor: opts.sessionAllowlistFor }),
+      sessionAllowlistFor,
     }),
     resolveSandbox: () => sandboxPolicy.resolve(),
     resolveSecretNames: loadSecretNames,
@@ -1004,6 +1006,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     ...(memoryFactory === undefined ? {} : { memoryFactory }),
     loadGuardSettings,
     guardAudit: auditLogger,
+    sessionAllowlistFor,
     logger: componentLogger("runtime"),
     assertFallbackSandbox: async () => {
       const inspection = await sandboxPolicy.inspect({ refresh: true });

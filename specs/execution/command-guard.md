@@ -88,7 +88,7 @@ package — `packages/tools/src/guard/index.ts` does not re-export them.
 | `guardParksOnHuman` | fn | `packages/kernel/src/guard/resolver.ts` | `(param, guard, judgeConfigured) => boolean` |
 | `GuardSettings` | iface | `packages/kernel/src/guard/resolver.ts` | `{ guard?: GuardConfig; providers?: ProviderConfig[]; defaultModel?: string }` |
 | `GuardSettingsLoader` | type | `packages/kernel/src/guard/resolver.ts` | `() => GuardSettings` |
-| `GuardResolverDeps` | iface | `packages/kernel/src/guard/resolver.ts` | `{ loadSettings; logger?; audit? }` |
+| `GuardResolverDeps` | iface | `packages/kernel/src/guard/resolver.ts` | `{ loadSettings; logger?; audit?; sessionAllowlistFor?; humanApprovalFor? }` |
 | `createShellGuard` | fn | `packages/kernel/src/guard/shell-guard.ts` | `(opts?: ShellGuardOptions) => Guard` |
 | `ShellGuardOptions` | iface | `packages/kernel/src/guard/shell-guard.ts` | `{ allowedCommands?; deniedCommands?; onDecision? }` |
 | `ShellGuardDecision` | iface | `packages/kernel/src/guard/shell-guard.ts` | `{ tool; verdict; matched; reason?; escalate?; commandDigest? }` |
@@ -614,7 +614,9 @@ Per run:
 3. `audit = auditRoot.child({ run_id: ctx.executionId, owner: ctx.owner })`.
 4. `buildGuard` returns `undefined` for mode `off` → the resolver returns
    `undefined` and the run is unguarded.
-5. `humanElicit` = `createGuardElicit(ctx.elicit, …)` only when the run has an elicit channel.
+5. Human consent uses `humanApprovalFor` when supplied by the guest adapter, otherwise
+   `createGuardHumanApproval` over `ctx.elicit` and the current `sessionAllowlistFor` lookup.
+   Both paths consult the same host scope and reject stale answers.
 6. `judgeElicit` = `createJudgeElicit(…)` only when `guardMode === "auto"` **and**
    `ctx.request.guard_judge !== undefined`. The judge's model falls back to
    `settings.defaultModel`, then `ctx.env.CLARVIS_DEFAULT_MODEL`.
@@ -645,8 +647,19 @@ The composed elicit (`packages/kernel/src/guard/resolver.ts`):
 | judge exists | call it and record the returned final `answerer`; a judge fallback is attributed to `human` | `createGuardResolver` |
 | no judge, human fallback exists | call the human and record `answerer: "human"` | `createGuardResolver` |
 
-`answered` reads the allow list before and after so it can distinguish `allow_session` from `allow`
-without the elicit bridge reporting it.
+`createGuardHumanApproval` reads the current allowlist before and after the question to distinguish
+`allow_session` from `allow`. It captures the scope before awaiting the answer, then refuses approval
+if the signal aborted or the scope retired, including a late one-time approval. `humanApprovalFor`
+lets the guest use that same host decision through `runtime.guard_approval`; the guest has no local
+human allowlist or memoized fallback answer. The host reconstructs shell facts from displayed argv
+text and never accepts guest-supplied segments or scope identifiers.
+Production: [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts),
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and
+[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts).
+Test: [runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
+checks native/guest detach, takeover, disconnect, conversation close and late answers;
+[runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts)
+executes the guest loop and refuses a repeated command after detach without fresh approval.
 
 `createGuardElicit`'s own mapping (`packages/kernel/src/guard/guard-elicit.ts`):
 
@@ -707,7 +720,7 @@ State table for one `judgeOnce` :
 | `decide` → `deny` | deny, `answerer:"judge"` | yes | `createJudgeElicit` |
 | unparsable / wrong tool / schema mismatch, human fallback permitted/present | human answer, `answerer:"human"` | **no** | `createJudgeElicit` |
 | unparsable / wrong tool / schema mismatch, no permitted human fallback | deny, `answerer:"judge"` | **no** | `createJudgeElicit` |
-| `unsure`, `on_unsure !== "deny"`, human channel present | human answer, `answerer:"human"` | yes | `createJudgeElicit` |
+| `unsure`, `on_unsure !== "deny"`, human channel present | human answer, `answerer:"human"` | **no** | `createJudgeElicit` |
 | `unsure`, otherwise | deny, `answerer:"judge"` | yes | `createJudgeElicit` |
 | the escalated human elicit **rejects** | rethrows | **evicted** | — |
 
@@ -1033,7 +1046,9 @@ broken.
 
 46. **The session allowlist is never persisted; its host can revoke it independently of the
     resolver.** The default lifetime remains one resolver, while `sessionAllowlistFor` chooses the
-    current interactive scope per command. A revoked instance cannot be repopulated. Production:
+    current interactive scope per command. A revoked instance cannot be repopulated; a pending
+    answer from that scope cannot approve even once. Container calls use the same host lookup and
+    never cache human answers in the guest judge. Production:
     `createGuardSessionAllowlist` and `createGuardResolver` in
     [guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts) and
     [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test: the default across-run and
@@ -1163,7 +1178,7 @@ broken.
     nested native sandbox is treated as a guard bypass. Production: `guestGuardSettings` and
     `createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`;
     `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
-    `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+    `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/isolated-run-executor.ts`. Test:
     `runtime guard audit bridge` in
     `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`; `runtime guest loop` in
     `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.

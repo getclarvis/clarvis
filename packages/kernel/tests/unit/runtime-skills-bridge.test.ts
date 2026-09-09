@@ -1,3 +1,4 @@
+import { withBuiltinSkills } from "../../src/skills/builtin-skills.ts";
 import { describe, expect, it } from "bun:test";
 import {
   createCapabilityServices,
@@ -9,6 +10,8 @@ import {
 } from "@clarvis/capability";
 import type { SkillContent, SkillInfo } from "@clarvis/skills";
 import {
+  handleLoadSkillCall,
+  handleReadSkillResourceCall,
   LOAD_SKILL_TOOL_NAME,
   READ_SKILL_RESOURCE_TOOL_NAME,
   SKILL_RESOURCE_MAX_CHARS,
@@ -139,6 +142,148 @@ function bridge(capability: GuestExecutionBridge["capability"]): GuestExecutionB
 }
 
 describe("runtime skills bridge", () => {
+  async function handlerFor(skills: SkillsProvider) {
+    const catalog = createRuntimeSkillCatalog(skills);
+    const grant = createHostSkillsGrant(skills, catalog);
+    const run = await createGuestSkillsCapability(
+      catalog,
+      bridge((_id, request, signal) =>
+        grant.invoke(request.arguments, signal ?? new AbortController().signal),
+      ),
+    ).forRun(runContext(true));
+    const built = buildContext();
+    const agent = run?.forAgent({ agent: "subagent", entry: true, grants: ["use_skills"] });
+    const handler = agent?.attach(built.context).handlers?.[0];
+    if (handler === undefined) throw new Error("expected guest skill handler");
+    return { run, handler, built };
+  }
+
+  it("preserves builtin priority and exactly matches native embedded disclosure", async () => {
+    const skills = withBuiltinSkills({
+      ...provider(),
+      listSkills: () => [{ ...info, name: "aaa-external", dependencies: [] }],
+    });
+    const { run, handler, built } = await handlerFor(skills);
+    const section =
+      run?.systemSection?.({ agent: "subagent", entry: true, grants: ["use_skills"] }) ?? "";
+    expect(section).toContain("clarvis-configure");
+    expect(section.indexOf("clarvis-configure")).toBeLessThan(section.indexOf("aaa-external"));
+    expect(section).toContain("builtin; load by name");
+    expect(section).not.toContain("clarvis-configure/SKILL.md");
+    const call = {
+      id: "builtin",
+      name: LOAD_SKILL_TOOL_NAME,
+      arguments: { name: "clarvis-configure" },
+    };
+    const native = handleLoadSkillCall({
+      call,
+      skills,
+      trace: built.context.trace,
+      validateArgs: built.context.validateArgs,
+      agent: "subagent",
+      iteration: 1,
+    });
+    const guest = await handler.handle(call, 1);
+    expect(guest).toMatchObject({ kind: "result", progress: true, text: native.text });
+    expect(native.text).toContain("no skill file or execution directory");
+  });
+
+  it("gives remote resource instructions in both the guest catalog and body", async () => {
+    const { run, handler } = await handlerFor({
+      ...provider(),
+      listSkills: () => [{ ...info, dependencies: [] }],
+    });
+    const section = run?.systemSection?.({
+      agent: "subagent",
+      entry: true,
+      grants: ["use_skills"],
+    });
+    expect(section).toContain("remote; load by name; resources via read_skill_resource");
+    expect(section).not.toContain("/runtime/skills");
+    expect(section).not.toContain(hostRoot);
+    const result = await handler.handle(
+      {
+        id: "remote-body",
+        name: LOAD_SKILL_TOOL_NAME,
+        arguments: { name: info.name },
+      },
+      1,
+    );
+    expect(result).toMatchObject({ kind: "result", progress: true });
+    if (result.kind !== "result") throw new Error("expected disclosure");
+    expect(result.text).toContain("read all required resource pages");
+    expect(result.text).toContain("writable workspace directory");
+    expect(result.text).not.toContain("Skill directory:");
+    expect(result.text).not.toContain(hostRoot);
+  });
+
+  it.each([
+    { text: "x", offset: 1, totalBytes: 1 },
+    { text: "x", offset: 0, totalBytes: 9 * 1024 * 1024 },
+    { text: "x", offset: 0, totalBytes: 2 },
+    { text: "x", offset: 0, totalBytes: 2, nextOffset: 0 },
+    { text: "x", offset: 0, totalBytes: 2, nextOffset: 2 },
+    { text: "x", offset: 0, totalBytes: 1, nextOffset: 1 },
+    { text: "é", offset: 0, totalBytes: 1 },
+    {
+      text: "x".repeat(SKILL_RESOURCE_MAX_CHARS + 1),
+      offset: 0,
+      totalBytes: SKILL_RESOURCE_MAX_CHARS + 1,
+    },
+  ])("rejects the same invalid provider resource pages as the native handler", async (chunk) => {
+    const skills = {
+      ...provider(),
+      listSkills: () => [{ ...info, dependencies: [] }],
+      readResourceChunk: () => chunk,
+    };
+    const { handler, built } = await handlerFor(skills);
+    const call = {
+      id: "resource",
+      name: READ_SKILL_RESOURCE_TOOL_NAME,
+      arguments: { name: info.name, resource: "references/checklist.md", offset: 0 },
+    };
+    const native = handleReadSkillResourceCall({
+      call,
+      skills,
+      trace: built.context.trace,
+      validateArgs: built.context.validateArgs,
+      agent: "subagent",
+      iteration: 1,
+    });
+    const guest = await handler.handle(call, 1);
+    expect(native.error).toBe(true);
+    expect(guest).toMatchObject({ kind: "result", progress: false, text: native.text });
+  });
+
+  it("matches legacy disclosure without promising a cursor the provider cannot read", async () => {
+    const skills = {
+      ...provider(),
+      listSkills: () => [{ ...info, dependencies: [] }],
+      readResourceChunk: undefined,
+      readResource: () => "x".repeat(SKILL_RESOURCE_MAX_CHARS + 1),
+    };
+    const { handler, built } = await handlerFor(skills);
+    const call = {
+      id: "resource",
+      name: READ_SKILL_RESOURCE_TOOL_NAME,
+      arguments: { name: info.name, resource: "references/checklist.md", offset: 0 },
+    };
+    const native = handleReadSkillResourceCall({
+      call,
+      skills,
+      trace: built.context.trace,
+      validateArgs: built.context.validateArgs,
+      agent: "subagent",
+      iteration: 1,
+    });
+    expect(await handler.handle(call, 1)).toMatchObject({
+      kind: "result",
+      progress: true,
+      text: native.text,
+    });
+    expect(native.text).toContain("does not support byte-offset continuation");
+  });
+
   it("projects a host-path-free catalog and discloses admitted content read-only", async () => {
     const skills = provider();
     const catalog = createRuntimeSkillCatalog(skills);
@@ -161,15 +306,16 @@ describe("runtime skills bridge", () => {
       { operation: "load", name: "container-review" },
       new AbortController().signal,
     );
-    expect(loaded).toEqual({
+    expect(JSON.stringify(loaded)).toContain("references/checklist.md (references)");
+    expect(JSON.stringify(loaded)).not.toContain("Package execution root");
+    expect(JSON.stringify(loaded)).not.toContain(hostRoot);
+    expect(loaded).toMatchObject({
       kind: "skill",
       name: "container-review",
-      description: "Review a container change",
-      body: "Inspect the proposed change.",
-      directory: "/runtime/skills/container-review",
-      resources: [{ kind: "references", rel: "references/checklist.md" }],
+      text: expect.stringContaining(
+        "Remote skill instructions; no skill file or directory is mounted",
+      ),
     });
-    expect(JSON.stringify(loaded)).not.toContain(hostRoot);
 
     await expect(
       grant.invoke(
@@ -183,7 +329,7 @@ describe("runtime skills bridge", () => {
       ),
     ).resolves.toMatchObject({
       kind: "resource",
-      chunk: { text: "first ", offset: 0, nextOffset: 6, totalBytes: 12 },
+      text: expect.stringContaining("(bytes 0-6 of 12)"),
     });
   });
 
@@ -250,12 +396,9 @@ describe("runtime skills bridge", () => {
         new AbortController().signal,
       ),
     ).resolves.toMatchObject({
-      chunk: {
-        text: "x".repeat(SKILL_RESOURCE_MAX_CHARS),
-        offset: 0,
-        totalBytes: text.length,
-        nextOffset: SKILL_RESOURCE_MAX_CHARS,
-      },
+      text: expect.stringContaining(
+        "[resource truncated; this provider does not support byte-offset continuation]",
+      ),
     });
     await expect(
       grant.invoke(
@@ -273,7 +416,9 @@ describe("runtime skills bridge", () => {
     ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
       grant.invoke({ operation: "load", name: info.name }, new AbortController().signal),
-    ).resolves.toMatchObject({ resources: [{ rel: "references/checklist.md" }] });
+    ).resolves.toMatchObject({
+      text: expect.stringContaining("references/checklist.md (references)"),
+    });
   });
 
   it("validates resource shape, offsets and catalog metadata", () => {
@@ -337,31 +482,11 @@ describe("runtime skills bridge", () => {
     const calls: unknown[] = [];
     const runtimeBridge = bridge(async (_callId, request) => {
       calls.push(request.arguments);
-      const input = request.arguments as { operation: string; offset?: number };
-      if (input.operation === "resource") {
-        return {
-          kind: "resource",
-          name: info.name,
-          resource: "references/checklist.md",
-          chunk: {
-            text: "first ",
-            offset: input.offset ?? 0,
-            totalBytes: 12,
-            nextOffset: 6,
-          },
-        };
-      }
-      return {
-        kind: "skill",
-        name: info.name,
-        description: info.description,
-        body: "Inspect the proposed change.",
-        directory: "/runtime/skills/container-review",
-        resources: [
-          { kind: "references", rel: "references/checklist.md" },
-          { kind: "invalid", rel: "ignored" },
-        ],
-      };
+      const skills = provider();
+      return createHostSkillsGrant(skills, createRuntimeSkillCatalog(skills)).invoke(
+        request.arguments,
+        new AbortController().signal,
+      );
     });
     const run = await createGuestSkillsCapability(
       createRuntimeSkillCatalog(provider()),

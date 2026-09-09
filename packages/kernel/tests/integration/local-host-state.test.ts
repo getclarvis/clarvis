@@ -26,7 +26,7 @@ async function fixture() {
     owner: "operator",
   });
   const acquire = async (): Promise<LocalHostState> => {
-    const state = await acquireLocalHostState(identity, "test-artifact");
+    const state = await acquireLocalHostState(identity, "test-artifact", "0".repeat(64));
     if (state === null) throw new Error("fixture unexpectedly contended");
     cleanups.push(() => state.close());
     return state;
@@ -70,7 +70,7 @@ describe("private local host state", () => {
     const f = await fixture();
     expect(await readLocalHostConnection(f.identity)).toBeNull();
     const state = await f.acquire();
-    expect(await acquireLocalHostState(f.identity, "test-artifact")).toBeNull();
+    expect(await acquireLocalHostState(f.identity, "test-artifact", "0".repeat(64))).toBeNull();
     await state.publish("workspace");
     const record = (await readLocalHostConnection(f.identity))!;
     expect(state.authenticate(record.credential)).toBe("operator");
@@ -96,7 +96,9 @@ describe("private local host state", () => {
     await state.publish("workspace");
     const original = await readFile(f.identity.paths.connectionFile, "utf8");
     await state.lease.release();
-    await expect(acquireLocalHostState(f.identity, "test-artifact")).rejects.toMatchObject({
+    await expect(
+      acquireLocalHostState(f.identity, "test-artifact", "0".repeat(64)),
+    ).rejects.toMatchObject({
       code: "conflict",
     });
     expect(await readFile(f.identity.paths.connectionFile, "utf8")).toBe(original);

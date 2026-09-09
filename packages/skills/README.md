@@ -80,9 +80,15 @@ Extension Profiles.
 
 `executionRoot` is a separate, host-controlled opt-in. When present on a root, discovery exposes
 only each selected skill's own directory as that skill's `executionRoot`; it never exposes the
-broader collection or package directory. `load_skill` always identifies the skill directory for
+broader collection or package directory. Filesystem-backed `load_skill` identifies the skill directory for
 relative resource paths and emits the helper-execution hint only for this opted-in field. Execution
 still goes through the normal shell command guard and native sandbox policy.
+
+Host bridges mark tool-only disclosure with `resourceAccess: "remote"`. The catalog then advertises
+loading by name and resource reads through `read_skill_resource`; body disclosure advertises no
+mounted directory or execution root. Bundled helpers must first be read through all resource pages
+and prepared with their relative directory structure in the writable workspace, then invoked
+through the ordinary guarded shell. Remote locations are opaque locators.
 
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
 a resource while enforcing that it stays inside the selected skill directory.
@@ -119,6 +125,12 @@ descriptions, then omits a deterministic tail. The capability filters a skill wh
 `agents/openai.yaml` declares `dependencies.tools` entries of `type: mcp` unless the run carries
 that MCP server (including its plugin-qualified form), while the protocol/UI retain the dependency
 metadata for diagnosis.
+
+`./capability` also exports the pure `formatSkillBody`, `formatSkillResourceChunk`,
+`formatSkillResourceLegacy` and `validateResourceChunk` helpers. Native handlers and the kernel
+container bridge use the same disclosure and page validation. The bridge preserves builtin identity
+and priority, strips host-only paths before formatting, and sends the resulting text through its
+read-only RPC. A whole-resource provider never advertises a byte cursor it cannot continue.
 
 The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedTextChunk`,
 `hashBoundedFile`, their option/result types, and the bounded skill file/resource limits. The legacy

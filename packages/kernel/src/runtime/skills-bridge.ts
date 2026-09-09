@@ -11,8 +11,11 @@ import {
   type ToolHandler,
   type Logger,
 } from "@clarvis/capability";
-import type { SkillInfo, SkillResource } from "@clarvis/skills";
+import type { SkillInfo } from "@clarvis/skills";
 import {
+  formatSkillBody,
+  formatSkillResourceChunk,
+  formatSkillResourceLegacy,
   LOAD_SKILL_TOOL_NAME,
   READ_SKILL_RESOURCE_TOOL_NAME,
   SKILL_RESOURCE_MAX_CHARS,
@@ -28,7 +31,7 @@ import type { GuestExecutionBridge } from "./execution-worker.ts";
 
 /** Exact private method used to disclose one host-admitted skill or resource. */
 export const RUNTIME_SKILLS_METHOD = "runtime.skills";
-export const RUNTIME_SKILLS_REVISION = "v1";
+export const RUNTIME_SKILLS_REVISION = "v2";
 
 /** Host-path-free catalog row sent to the guest at run admission. */
 export interface RuntimeSkillCatalogEntry {
@@ -108,12 +111,12 @@ function validSkillRequest(
   );
 }
 
-function runtimePath(name: string): string {
-  return `/runtime/skills/${name}`;
+function runtimeLocator(name: string): string {
+  return `runtime-skill:${name}`;
 }
 
 function runtimeSource(source: string): string {
-  return /^(?:clarvis|agents|plugin:[A-Za-z0-9._-]+)$/u.test(source) ? source : "runtime";
+  return /^(?:builtin|clarvis|agents|plugin:[A-Za-z0-9._-]+)$/u.test(source) ? source : "runtime";
 }
 
 /** Project only model-relevant metadata, replacing every host path with a guest-only locator. */
@@ -183,14 +186,18 @@ export function createHostSkillsGrant(
         return {
           kind: "skill",
           name: skill.name,
-          description: skill.description,
-          body: skill.body,
-          directory: runtimePath(skill.name),
-          resources: skill.resources.flatMap((resource) =>
-            safeResource(resource.rel) ? [{ kind: resource.kind, rel: resource.rel }] : [],
-          ),
+          text: formatSkillBody({
+            name: skill.name,
+            description: skill.description,
+            body: skill.body,
+            source: runtimeSource(skill.source),
+            dir: skill.source === "builtin" ? `builtin:${skill.name}` : runtimeLocator(skill.name),
+            ...(skill.source === "builtin" ? {} : { resourceAccess: "remote" as const }),
+            resources: skill.resources.filter((resource) => safeResource(resource.rel)),
+          }),
         };
       }
+
       const offset = value.offset;
       const chunk = provider.readResourceChunk?.(
         value.name,
@@ -203,7 +210,7 @@ export function createHostSkillsGrant(
           kind: "resource",
           name: value.name,
           resource: value.resource,
-          chunk,
+          text: formatSkillResourceChunk(value.name, value.resource, chunk, offset),
         };
       }
       if (offset !== 0) {
@@ -212,24 +219,19 @@ export function createHostSkillsGrant(
         });
       }
       const text = provider.readResource(value.name, value.resource);
-      const sliced = text.slice(0, SKILL_RESOURCE_MAX_CHARS);
       return {
         kind: "resource",
         name: value.name,
         resource: value.resource,
-        chunk: {
-          text: sliced,
-          offset: 0,
-          totalBytes: Buffer.byteLength(text, "utf8"),
-          ...(sliced.length < text.length ? { nextOffset: Buffer.byteLength(sliced, "utf8") } : {}),
-        },
+        text: formatSkillResourceLegacy(value.name, value.resource, text),
       };
     },
   };
 }
 
 function skillInfo(entry: RuntimeSkillCatalogEntry): SkillInfo {
-  const directory = runtimePath(entry.name);
+  const builtin = entry.source === "builtin";
+  const directory = builtin ? `builtin:${entry.name}` : runtimeLocator(entry.name);
   return {
     name: entry.name,
     description: entry.description,
@@ -237,9 +239,10 @@ function skillInfo(entry: RuntimeSkillCatalogEntry): SkillInfo {
     userInvocable: true,
     scope: entry.scope,
     source: entry.source,
-    root: "/runtime/skills",
+    ...(builtin ? {} : { resourceAccess: "remote" as const }),
+    root: builtin ? "builtin:" : "runtime-skill:",
     dir: directory,
-    path: `${directory}/SKILL.md`,
+    path: directory,
     ...(entry.catalogSuppressed === undefined
       ? {}
       : { catalogSuppressed: entry.catalogSuppressed }),
@@ -247,73 +250,16 @@ function skillInfo(entry: RuntimeSkillCatalogEntry): SkillInfo {
   };
 }
 
-function bodyResult(value: unknown): string | undefined {
+function disclosureResult(value: unknown, name: string, resource?: string): string | undefined {
   const result = record(value);
   if (
-    result?.kind !== "skill" ||
-    typeof result.name !== "string" ||
-    typeof result.description !== "string" ||
-    typeof result.body !== "string" ||
-    typeof result.directory !== "string" ||
-    !Array.isArray(result.resources)
-  ) {
+    result?.kind !== (resource === undefined ? "skill" : "resource") ||
+    result.name !== name ||
+    typeof result.text !== "string"
+  )
     return undefined;
-  }
-  const resources = result.resources.flatMap((value) => {
-    const resource = record(value);
-    return resource !== undefined &&
-      typeof resource.rel === "string" &&
-      (resource.kind === "scripts" ||
-        resource.kind === "references" ||
-        resource.kind === "assets" ||
-        resource.kind === "examples" ||
-        resource.kind === "other")
-      ? [{ kind: resource.kind, rel: resource.rel } satisfies Pick<SkillResource, "kind" | "rel">]
-      : [];
-  });
-  const resourceList =
-    resources.length === 0
-      ? ""
-      : `\n\nBundled resources (call ${READ_SKILL_RESOURCE_TOOL_NAME} with name, the exact ` +
-        `resource path, and offset=0):\n${resources
-          .map((resource) => `- ${resource.rel} (${resource.kind})`)
-          .join("\n")}`;
-  return (
-    `Skill '${result.name}' — ${result.description}\n\n` +
-    `Skill directory: ${result.directory}\n` +
-    "Resolve bundled relative paths from that directory.\n\n" +
-    `${result.body.length > 0 ? result.body : "(this skill has an empty body)"}${resourceList}`
-  );
-}
-
-function resourceResult(value: unknown, requestedOffset: number): string | undefined {
-  const result = record(value);
-  const chunk = record(result?.chunk);
-  if (
-    result?.kind !== "resource" ||
-    typeof result.name !== "string" ||
-    typeof result.resource !== "string" ||
-    chunk === undefined ||
-    typeof chunk.text !== "string" ||
-    !Number.isSafeInteger(chunk.offset) ||
-    chunk.offset !== requestedOffset ||
-    !Number.isSafeInteger(chunk.totalBytes) ||
-    (chunk.totalBytes as number) < 0 ||
-    (chunk.nextOffset !== undefined && !Number.isSafeInteger(chunk.nextOffset))
-  ) {
-    return undefined;
-  }
-  const offset = chunk.offset;
-  const totalBytes = chunk.totalBytes as number;
-  const nextOffset = chunk.nextOffset as number | undefined;
-  const continuation =
-    nextOffset === undefined
-      ? ""
-      : `\n\n[resource continues; call ${READ_SKILL_RESOURCE_TOOL_NAME} with the same name and ` +
-        `resource and offset=${String(nextOffset)}]`;
-  return `Resource '${result.resource}' of skill '${result.name}' (bytes ${String(
-    offset,
-  )}-${String(nextOffset ?? totalBytes)} of ${String(totalBytes)}):\n\n${chunk.text}${continuation}`;
+  if (resource !== undefined && result.resource !== resource) return undefined;
+  return result.text;
 }
 
 const SKILL_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = {
@@ -419,9 +365,11 @@ export function createGuestSkillsCapability(
                       },
                       scope.signal,
                     );
-                    const text = readsResource
-                      ? resourceResult(value, args.offset)
-                      : bodyResult(value);
+                    const text = disclosureResult(
+                      value,
+                      args.name,
+                      readsResource ? args.resource : undefined,
+                    );
                     if (text === undefined) {
                       return {
                         kind: "result",

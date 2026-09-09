@@ -67,7 +67,7 @@ workflow store or bypass the host's completion barrier.
 
 Production: `createHostWorkflowBridge` and `consumeGuestWorkflowEvent` in
 `packages/kernel/src/runtime/workflows-bridge.ts`; `createLocalContainerRuntime` in
-`packages/kernel/src/runtime/local-podman-runtime.ts`.
+`packages/kernel/src/runtime/local-container-runtime.ts`.
 Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (manager/leader
 execution, host ledger and durable workflow edge).
 

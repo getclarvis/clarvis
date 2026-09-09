@@ -1,14 +1,8 @@
-import type {
-  ModelCost,
-  RunResult,
-  RunDetail,
-  Session,
-  SessionTotals,
-  StartRunParams,
-} from "@clarvis/protocol";
+import type { ModelCost, RunDetail, Session, StartRunParams } from "@clarvis/protocol";
 import type { HostedRegistryOptions, PreparedHostedTurn } from "./registry.ts";
 import { kernelError } from "../core/errors.ts";
 import type { FileSessionService } from "../sessions/session-service.ts";
+import { addRunUsage } from "../sessions/usage.ts";
 import { buildSkillRunDigest } from "../runs/recovered-context.ts";
 
 /** An immutable execution binding prepared without starting inference or consuming a run stream. */
@@ -38,41 +32,6 @@ function revision(session: Session | null): number {
   return value;
 }
 
-/** Preserve the existing measured/unknown cache semantics without inventing model prices. */
-function addUsage(
-  totals: SessionTotals,
-  result: RunResult,
-  priceFor: HostedSessionOptions["priceFor"],
-): void {
-  const usage = result.usage;
-  if (usage === undefined) return;
-  if (usage.by_agent === undefined) {
-    const input = usage.input_tokens ?? 0;
-    totals.input += input;
-    totals.output += usage.output_tokens ?? 0;
-    if (totals.cached !== undefined) {
-      if (usage.cached_tokens !== undefined) totals.cached += usage.cached_tokens;
-      else if (input > 0) delete totals.cached;
-    }
-    return;
-  }
-  for (const agent of usage.by_agent) {
-    totals.input += agent.input_tokens;
-    totals.output += agent.output_tokens;
-    if (totals.cached !== undefined) totals.cached += agent.cached_tokens;
-    const price = priceFor?.(agent.model);
-    if (price === undefined) continue;
-    const fresh = Math.max(0, agent.input_tokens - agent.cached_tokens);
-    const cost =
-      (fresh * price.input +
-        agent.output_tokens * price.output +
-        agent.cached_tokens * (price.cache_read ?? price.input) +
-        (agent.cache_write_tokens ?? 0) * (price.cache_write ?? price.input)) /
-      1e6;
-    totals.cost_usd = (totals.cost_usd ?? 0) + cost;
-  }
-}
-
 /**
  * Own hosted turn intent and settlement on the existing session document. Interactive saves may
  * edit metadata/pending observations between activities or under their own local activity lease,
@@ -84,6 +43,7 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
   /** A host-authenticated local activity may persist its pending observation before releasing admission. */
   saveDuringActivity(value: Session, ownsActivity: () => boolean): Promise<void>;
   prepare: HostedRegistryOptions["prepare"];
+  archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]>;
 } {
   const active = new Set<string>();
   const now = options.now ?? Date.now;
@@ -161,6 +121,11 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
       authority.signal.throwIfAborted();
       const current = await get(input.session_id);
       if (current === null) throw kernelError("not_found", "hosted conversation does not exist");
+      if (current.turns.some((turn) => turn.recovery_resolution !== undefined))
+        throw kernelError(
+          "conflict",
+          "conversation was archived after an unknown outcome; start a new conversation",
+        );
       if (revision(current) !== input.session_revision)
         throw kernelError("conflict", "conversation changed before hosted turn admission");
       if (current.turns.some((turn) => turn.execution_id === input.params.execution_id))
@@ -272,11 +237,40 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
             turn.ended_at = now();
             stored.updated_at = turn.ended_at;
             stored.revision = revision(stored) + 1;
-            addUsage(stored.totals, result, (model) => options.priceFor?.(model));
+            addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
             await options.sessions.save(stored);
           });
         },
       };
     });
-  return { sessions, saveDuringActivity: save, prepare };
+  const archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]> = (
+    run,
+    resolution,
+  ) =>
+    locked(run.session_id, async () => {
+      const stored = await get(run.session_id);
+      if (stored === null) throw kernelError("not_found", "recovery conversation does not exist");
+      let turn = stored.turns.find((value) => value.execution_id === run.execution_id);
+      if (turn?.recovery_resolution !== undefined) {
+        if (turn.recovery_resolution.previous_host_generation !== run.host_generation)
+          throw kernelError("conflict", "recovery audit belongs to a different host generation");
+        return structuredClone(turn.recovery_resolution);
+      }
+      if (turn === undefined) {
+        turn = {
+          kind: "transcript",
+          execution_id: run.execution_id,
+          user_preview: options.redact(run.title).slice(0, 4096),
+          status: "interrupted",
+        };
+        stored.turns.push(turn);
+      }
+      if (turn.status === "running" || turn.status === "pending") turn.status = "interrupted";
+      turn.recovery_resolution = structuredClone(resolution);
+      stored.revision = revision(stored) + 1;
+      stored.updated_at = now();
+      await options.sessions.save(stored);
+      return structuredClone(resolution);
+    });
+  return { sessions, saveDuringActivity: save, prepare, archiveRecovery };
 }

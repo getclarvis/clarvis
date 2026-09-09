@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { HostedRunRef } from "@clarvis/protocol";
+import type { HostedRunRef, HostedRecoveryResolution } from "@clarvis/protocol";
 import { createHostedRegistry, type HostedRegistryState } from "../../src/hosting/registry.ts";
 import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
 
@@ -43,6 +43,9 @@ function state(): HostedRegistryState {
 function fixture(initialState = state()) {
   const commits: HostedRegistryState[] = [];
   const removed: Array<[string, string]> = [];
+  const audits: HostedRecoveryResolution[] = [];
+  let rejectCommit = false;
+  let archiveGate: Promise<void> | undefined;
   const registry = createHostedRegistry({
     workspaceId: "workspace",
     hostGeneration: "current",
@@ -56,17 +59,168 @@ function fixture(initialState = state()) {
       throw new Error("recovery must never open a live projection");
     },
     async commit(value) {
+      if (rejectCommit) throw new Error("index write failed");
       commits.push(value);
+    },
+    async archiveRecovery(_run, resolution) {
+      audits.push(structuredClone(resolution));
+      await archiveGate;
+      return structuredClone(resolution);
     },
     async removeProjection(id, generation) {
       removed.push([id, generation]);
     },
     retireConfigurationSession() {},
   });
-  return { registry, commits, removed };
+  return {
+    gateArchive: (gate: Promise<void>) => {
+      archiveGate = gate;
+    },
+    registry,
+    commits,
+    removed,
+    audits,
+    failCommit: (value: boolean) => {
+      rejectCommit = value;
+    },
+  };
 }
 
 describe("host generation recovery", () => {
+  test("coalesces confirmations and awaits the durable session audit during shutdown", async () => {
+    const f = fixture();
+    const gate = Promise.withResolvers<void>();
+    f.gateArchive(gate.promise);
+    try {
+      const peer = f.registry.connect("operator");
+      const row = (await peer.service.list()).find(
+        (value) => value.execution_id === "interrupted",
+      )!;
+      const input = {
+        execution_id: row.execution_id,
+        host_generation: row.host_generation,
+        revision: row.revision,
+        physical_work_stopped: true as const,
+      };
+      const first = peer.service.resolveRecovery(input);
+      const second = peer.service.resolveRecovery(input);
+      expect(f.audits).toHaveLength(1);
+      expect(f.commits).toHaveLength(0);
+      expect(f.registry.stats().unresolved).toBe(1);
+      let closed = false;
+      const close = f.registry.close().then(() => {
+        closed = true;
+      });
+      await Bun.sleep(0);
+      expect(closed).toBe(false);
+      gate.resolve();
+      const [a, b] = await Promise.all([first, second]);
+      expect(a.recovery_resolution).toEqual(b.recovery_resolution);
+      await close;
+      expect(closed).toBe(true);
+      expect(f.commits).toHaveLength(1);
+    } finally {
+      gate.resolve();
+      await f.registry.close();
+    }
+  });
+
+  test("requires operator confirmation and an exact revision before releasing unknown physical work", async () => {
+    const f = fixture();
+    try {
+      const peer = f.registry.connect("operator");
+      const observer = f.registry.connect("observer");
+      const row = (await peer.service.list()).find(
+        (value) => value.execution_id === "interrupted",
+      )!;
+      const input = {
+        execution_id: row.execution_id,
+        host_generation: row.host_generation,
+        revision: row.revision,
+        physical_work_stopped: true as const,
+      };
+      await expect(observer.service.resolveRecovery(input)).rejects.toMatchObject({
+        code: "unauthorized",
+      });
+      await expect(
+        peer.service.resolveRecovery({ ...input, physical_work_stopped: false as true }),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      await expect(peer.service.resolveRecovery({ ...input, revision: 0 })).rejects.toMatchObject({
+        code: "conflict",
+      });
+      await expect(
+        peer.service.resolveRecovery({ ...input, host_generation: "current" }),
+      ).rejects.toMatchObject({ code: "conflict" });
+      expect(f.audits).toHaveLength(0);
+      const resolved = await peer.service.resolveRecovery(input);
+      expect(resolved.execution_state).toBe("closed");
+      expect(resolved.outcome).toBeUndefined();
+      expect(resolved.recovery_resolution).toMatchObject({
+        previous_host_generation: "previous",
+        resolving_host_generation: "current",
+        operator_connection_id: peer.peer.id,
+      });
+      expect(f.registry.stats().unresolved).toBe(0);
+      expect(f.registry.occupied(row.session_id)).toBe(false);
+      const persisted = f.commits.at(-1)!;
+      expect(
+        persisted.runs.find((item) => item.run.execution_id === row.execution_id)!.run
+          .recovery_resolution,
+      ).toEqual(resolved.recovery_resolution);
+      const restarted = createHostedRegistry({
+        workspaceId: "workspace",
+        hostGeneration: "next",
+        owner: "owner",
+        initialState: persisted,
+        prepare: async () => {
+          throw new Error("no replay");
+        },
+        projection: async () => {
+          throw new Error("no live projection");
+        },
+        commit: async () => {},
+        removeProjection: async () => {},
+        retireConfigurationSession: () => {},
+      });
+      expect(restarted.stats().unresolved).toBe(0);
+      await restarted.close();
+      await peer.service.acknowledge(row.execution_id);
+      expect(f.removed).toEqual([[row.execution_id, "previous"]]);
+      expect(f.audits).toHaveLength(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  test("retains uncertainty when publishing the recovery index fails", async () => {
+    const f = fixture();
+    try {
+      const peer = f.registry.connect("operator");
+      const row = (await peer.service.list()).find(
+        (value) => value.execution_id === "interrupted",
+      )!;
+      const input = {
+        execution_id: row.execution_id,
+        host_generation: row.host_generation,
+        revision: row.revision,
+        physical_work_stopped: true as const,
+      };
+      f.failCommit(true);
+      await expect(peer.service.resolveRecovery(input)).rejects.toThrow("index write failed");
+      expect(f.registry.stats().unresolved).toBe(1);
+      expect(
+        (await peer.service.list()).find((value) => value.execution_id === row.execution_id)!
+          .execution_state,
+      ).toBe("unknown");
+      f.failCommit(false);
+      expect((await peer.service.resolveRecovery(input)).execution_state).toBe("closed");
+      expect(f.registry.stats().unresolved).toBe(0);
+    } finally {
+      f.failCommit(false);
+      await f.registry.close();
+    }
+  });
+
   test("preserves terminal history and handoff receipts without restoring controls or execution", async () => {
     const f = fixture();
     try {

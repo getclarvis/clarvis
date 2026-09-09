@@ -1,3 +1,4 @@
+import { invalidContainerHostPolicies } from "../helpers/container-policy-cases.ts";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "bun:test";
 import {
@@ -47,6 +48,7 @@ function fakeControl(
     readonly protocolRevision?: string;
     readonly rmFailures?: number;
     readonly effective?: (value: Record<string, unknown>) => void;
+    readonly bootstrap?: () => Promise<unknown>;
   } = {},
 ) {
   const calls: readonly string[][] & string[][] = [];
@@ -117,6 +119,7 @@ function fakeControl(
                   ReadonlyRootfs: true,
                   Memory: spec.limits.memoryBytes,
                   PidsLimit: spec.limits.processCount,
+                  CapAdd: null,
                   NanoCpus: spec.limits.cpuCount * 1_000_000_000,
                   SecurityOpt: ["no-new-privileges"],
                   Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${spec.limits.storageBytes}` },
@@ -176,11 +179,13 @@ function fakeControl(
         input: hostToGuest,
         output: guestToHost,
         handlers: {
-          "runtime.bootstrap": async () => ({
-            generation: spec.generation,
-            imageDigest: overrides.handshakeDigest ?? digest,
-            runtimeProtocolRevision: overrides.protocolRevision ?? RUNTIME_PROTOCOL_REVISION,
-          }),
+          "runtime.bootstrap":
+            overrides.bootstrap ??
+            (async () => ({
+              generation: spec.generation,
+              imageDigest: overrides.handshakeDigest ?? digest,
+              runtimeProtocolRevision: overrides.protocolRevision ?? RUNTIME_PROTOCOL_REVISION,
+            })),
           "runtime.start": async ({ runId }) => ({ runId, status: "done" }),
           "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
@@ -207,31 +212,101 @@ function fakeControl(
 }
 
 describe("Podman runtime backend", () => {
-  it.each([
-    ["ReadonlyRootfs", false],
-    ["Memory", spec.limits.memoryBytes * 2],
-    ["PidsLimit", 0],
-    ["NanoCpus", 0],
-    ["NetworkMode", "host"],
-    ["UsernsMode", "keep-id"],
-    ["SecurityOpt", []],
-    ["Tmpfs", { "/tmp": "rw,exec,size=99999999" }],
-    [
-      "Tmpfs",
-      { "/tmp": `rw,nosuid,nodev,noexec,size=${spec.limits.storageBytes}`, "/extra": "rw" },
-    ],
-  ])("refuses effective HostConfig.%s drift before attachment", async (field, value) => {
+  it("reconciles cancellation during create through the generation label and immutable ID", async () => {
+    const fake = fakeControl();
+    const entered = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const immutableId = "f".repeat(64);
+    let probes = 0;
+    let attached = false;
+    const control: PodmanControl = {
+      async run(args, signal, options) {
+        if (args[0] === "create") {
+          entered.resolve();
+          return new Promise((_resolve, reject) => {
+            const abort = () => reject(signal?.reason as Error);
+            if (signal?.aborted) abort();
+            else signal?.addEventListener("abort", abort, { once: true });
+          });
+        }
+        if (args[0] === "container" && args[1] === "inspect") {
+          probes++;
+          expect(signal?.aborted).not.toBe(true);
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              { Id: immutableId, Config: { Labels: { "io.clarvis.generation": spec.generation } } },
+            ]),
+            stderr: "",
+          };
+        }
+        if (args[0] === "rm") expect(signal?.aborted).not.toBe(true);
+        return fake.control.run(args, signal, options);
+      },
+      attach() {
+        attached = true;
+        throw new Error("cancelled initialization must not attach");
+      },
+    };
+    const backend = createPodmanRuntimeBackend({ control, signal: controller.signal });
+    try {
+      await backend.inspect();
+      const refused = backend.start(spec).catch((error: unknown) => error);
+      await entered.promise;
+      controller.abort(new Error("generation closed during create"));
+      expect(await refused).toMatchObject({ message: "generation closed during create" });
+      expect(probes).toBe(1);
+      expect(fake.calls.at(-1)).toEqual(["rm", "--force", immutableId]);
+      expect(attached).toBe(false);
+    } finally {
+      fake.close();
+    }
+  });
+
+  it.each(["deadline", "cancel"] as const)("cleans a silent bootstrap after %s", async (mode) => {
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<unknown>();
     const fake = fakeControl({
-      effective: (inspection) => {
-        (inspection.HostConfig as Record<string, unknown>)[field as string] = value;
+      bootstrap: () => {
+        entered.resolve();
+        return pending.promise;
       },
     });
-    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    const controller = new AbortController();
+    const backend = createPodmanRuntimeBackend({
+      control: fake.control,
+      signal: controller.signal,
+      bootstrapTimeoutMs: mode === "deadline" ? 50 : 5000,
+    });
     await backend.inspect();
-    await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
-    expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+    const refusal = backend.start(spec).catch((error: unknown) => error);
+    await entered.promise;
+    if (mode === "cancel") controller.abort(new Error("cancelled generation"));
+    expect(await refusal).toMatchObject({
+      message: expect.stringContaining(
+        mode === "deadline" ? "bootstrap response timed out" : "cancelled generation",
+      ),
+    });
     expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    pending.resolve({});
+    fake.close();
   });
+
+  it.each([...invalidContainerHostPolicies(spec), ["UsernsMode", "keep-id"]])(
+    "refuses effective HostConfig.%s drift before attachment",
+    async (field, value) => {
+      const fake = fakeControl({
+        effective: (inspection) => {
+          (inspection.HostConfig as Record<string, unknown>)[field as string] = value;
+        },
+      });
+      const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+      expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    },
+  );
 
   it.each(["EffectiveCaps", "BoundingCaps"])("rejects widened or missing %s", async (field) => {
     for (const value of [["CAP_SYS_ADMIN"], undefined]) {

@@ -14,6 +14,7 @@
 import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
+import type { HostedRecoveryResolution } from "./hosting.ts";
 
 /** Lifecycle status of one turn in a session. */
 export type SessionTurnStatus =
@@ -54,6 +55,8 @@ export interface SessionTurn {
   /** Extension Profile snapshot under which this turn started. */
   extension_profile?: ExtensionProfileRunRef;
   status: SessionTurnStatus;
+  /** Archives this conversation after an unknown run; subsequent work requires a new conversation. */
+  recovery_resolution?: HostedRecoveryResolution;
   /** Epoch-ms start; absent until the turn begins. See {@link Timestamp}. */
   started_at?: Timestamp;
   /** Epoch-ms end; absent while the turn is unfinished. See {@link Timestamp}. */

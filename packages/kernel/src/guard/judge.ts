@@ -163,7 +163,8 @@ function allowedFromElicit(answer: Awaited<ReturnType<GuardElicit>>): boolean {
  *   then degrades to mode `on`.
  * @remarks Each distinct command ({@link memoKey}) is judged once and its
  *   verdict cached. A call/parse failure is *not* cached, so a later attempt can retry even when a
- *   human answered the failed attempt. A rejected promise is also evicted and rethrown.
+ *   human answered the failed attempt. Human fallback answers are never retained as judge verdicts;
+ *   their lifetime belongs to the host's current consent scope. A rejected promise is evicted.
  */
 export function createJudgeElicit(
   deps: JudgeDeps,
@@ -269,7 +270,7 @@ export function createJudgeElicit(
     if (cached !== undefined) return cached;
     const verdict = judgeOnce(req).then(
       (r) => {
-        if (!r.clean) verdicts.delete(key);
+        if (!r.clean || r.value.answerer === "human") verdicts.delete(key);
         return r.value;
       },
       (err: unknown) => {

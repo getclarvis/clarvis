@@ -143,6 +143,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       workspaceId: kernel.workspace.id,
       owner: workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
       prepare: sessions.prepare,
+      archiveRecovery: sessions.archiveRecovery,
       retireConfigurationSession: (scope) => kernel.nativeConfiguration.retireSession(owner, scope),
       logger,
     });

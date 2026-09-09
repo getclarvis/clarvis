@@ -1,3 +1,37 @@
+import type { Readable, Writable } from "node:stream";
+
+/** Captured result of one bounded engine control invocation. */
+export interface ContainerCommandResult {
+  readonly exitCode: number | null;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+/** Private RPC streams whose lifecycle is owned by the engine backend. */
+export interface ContainerAttachedProcess {
+  readonly stdin: Writable;
+  readonly stdout: Readable;
+  readonly stderr: Readable;
+  readonly exited: Promise<number | null>;
+  kill(signal: NodeJS.Signals): void;
+}
+
+/** Exceptional command bounds, clamped by the concrete process adapter. */
+export interface ContainerRunOptions {
+  readonly timeoutMs?: number;
+  readonly maxOutputBytes?: number;
+}
+
+/** Argv-only engine effects, separate from effective policy and guest authority. */
+export interface ContainerControl {
+  run(
+    args: readonly string[],
+    signal?: AbortSignal,
+    options?: ContainerRunOptions,
+  ): Promise<ContainerCommandResult>;
+  attach(args: readonly string[]): ContainerAttachedProcess;
+}
+
 import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
 
 /** Runtime placement selected by the operator. */

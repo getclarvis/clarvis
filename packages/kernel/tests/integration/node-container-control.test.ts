@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,11 @@ beforeAll(async () => {
     executable,
     `#!/bin/sh
 case "$*" in
+  *stubborn*)
+    trap '' TERM
+    printf '%s' "$$" > "$PID_FILE"
+    while :; do :; done
+    ;;
   *overflow*)
     index=0
     while [ "$index" -lt 2048 ]; do
@@ -162,6 +167,54 @@ describe("Node container engine controls", () => {
     });
     await expect(podman.run(["info"])).rejects.toBeInstanceOf(Error);
   });
+
+  unixIt.each(["Docker", "Podman"] as const)(
+    "reaps %s commands that ignore SIGTERM before rejecting cancellation",
+    async (engine) => {
+      const pidFile = join(root, `stubborn-${engine}.pid`);
+      const opts = { executable, environment: { PID_FILE: pidFile }, timeoutMs: 1_000 };
+      const control =
+        engine === "Docker"
+          ? createNodeDockerControl({ ...opts, context: "ctx" })
+          : createNodePodmanControl({ ...opts, connection: "local" });
+      const controller = new AbortController();
+      let settled = false;
+      const pending = control.run(["stubborn"], controller.signal).then(
+        () => {
+          settled = true;
+          throw new Error("command unexpectedly completed");
+        },
+        (error: unknown) => {
+          settled = true;
+          return error;
+        },
+      );
+      let pid: number | undefined;
+      try {
+        const deadline = Date.now() + 2_000;
+        while (pid === undefined && Date.now() < deadline) {
+          const text = await readFile(pidFile, "utf8").catch(() => "");
+          if (/^\d+$/u.test(text)) pid = Number(text);
+          else await Bun.sleep(5);
+        }
+        expect(pid).toBeDefined();
+        controller.abort(new Error("stop requested"));
+        await Bun.sleep(50);
+        expect(settled).toBe(false);
+        process.kill(pid!, 0);
+        expect(await pending).toMatchObject({ message: "stop requested" });
+        expect(() => process.kill(pid!, 0)).toThrow();
+      } finally {
+        controller.abort();
+        if (pid !== undefined) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {}
+        }
+        await pending;
+      }
+    },
+  );
 
   unixIt("attaches bidirectional streams and exposes process termination", async () => {
     const docker = createNodeDockerControl({

@@ -8,13 +8,15 @@ import type { PlanFactory } from "@clarvis/plan";
 import type { TaskProviderResolver } from "@clarvis/tasks";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { ProjectRef, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
-import type { GuardSettings } from "../guard/resolver.ts";
+import type { GuardResolverDeps, GuardSettings } from "../guard/resolver.ts";
 import type { RunExecutor } from "../runs/run-service.ts";
 import type { RuntimeSettingsBlock } from "./settings.ts";
 import { RuntimeLaunchError, type RuntimeInfo } from "./types.ts";
 
 /** Inputs a host adapter needs to construct one isolated runtime generation. */
 export interface RuntimeHostInput {
+  /** Generation-owned initialization cancellation; each waiting run has a separate signal. */
+  readonly signal?: AbortSignal;
   readonly settings: Exclude<RuntimeSettingsBlock, { backend: "native" }>;
   readonly generation: string;
   readonly ownerId: string;
@@ -40,6 +42,8 @@ export interface RuntimeHostInput {
   readonly loadGuardSettings?: () => GuardSettings;
   /** Dedicated host audit sink for validated guard records returned by the guest. */
   readonly guardAudit?: Logger;
+  /** Dynamic consent shared with the native resolver and revoked by interactive ownership. */
+  readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
 }
 
 /** One ready host runtime and its placement-neutral run executor. */
@@ -51,7 +55,7 @@ export interface RuntimeHost {
   close(): Promise<void>;
 }
 
-/** Host-specific constructor for an explicitly selected isolated execution generation. */
+/** Host constructor that observes generation cancellation and cleans partial resources before rejecting. */
 export interface FileKernelRuntimeFactory {
   create(input: RuntimeHostInput): Promise<RuntimeHost>;
 }
@@ -136,6 +140,34 @@ function failureDetail(error: unknown): string {
     .slice(0, 300);
 }
 
+/** Stop one caller's wait without cancelling acquisition shared with other runs. */
+function waitForInitialization<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const aborted = (): void =>
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("runtime initialization cancelled", { cause: signal.reason }),
+      );
+    signal.addEventListener("abort", aborted, { once: true });
+    void work.then(
+      (value) => {
+        signal.removeEventListener("abort", aborted);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", aborted);
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("runtime initialization failed", { cause: error }),
+        );
+      },
+    );
+    if (signal.aborted) aborted();
+  });
+}
+
 /**
  * Select native or container execution at run time, starting a container only
  * when the first run actually needs it.
@@ -163,6 +195,7 @@ export function createLazyRuntimeCoordinator(options: {
   readonly memoryFactory?: MemoryFactory;
   readonly loadGuardSettings?: () => GuardSettings;
   readonly guardAudit?: Logger;
+  readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
   readonly assertFallbackSandbox?: () => Promise<void>;
   readonly onPlacement?: (notice: RuntimePlacementNotice) => void;
   readonly logger?: Logger;
@@ -171,6 +204,7 @@ export function createLazyRuntimeCoordinator(options: {
   const slots = new Map<string, RuntimeSlot>();
   const ownedSlots = new Set<RuntimeSlot>();
   const launches = new Map<string, Promise<RuntimeSlot>>();
+  const initialization = new AbortController();
   const fallback = new Map<string, string>();
   let closed = false;
   let closing: Promise<void> | undefined;
@@ -225,6 +259,7 @@ export function createLazyRuntimeCoordinator(options: {
     }
     publish(containerStatus(selected, "starting"));
     const host = await options.runtimeFactory.create({
+      signal: initialization.signal,
       settings: selected,
       generation: randomUUID(),
       ownerId: options.ownerId,
@@ -246,9 +281,16 @@ export function createLazyRuntimeCoordinator(options: {
         ? {}
         : { loadGuardSettings: options.loadGuardSettings }),
       ...(options.guardAudit === undefined ? {} : { guardAudit: options.guardAudit }),
+      ...(options.sessionAllowlistFor === undefined
+        ? {}
+        : { sessionAllowlistFor: options.sessionAllowlistFor }),
     });
     const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0, retire: false };
     ownedSlots.add(slot);
+    if (closed) {
+      await closeSlot(slot);
+      throw new Error("runtime coordinator is closed");
+    }
     slots.set(slot.key, slot);
     publish(readyStatus(host.info));
     return slot;
@@ -325,6 +367,11 @@ export function createLazyRuntimeCoordinator(options: {
     },
     async executeRun(args) {
       if (closed) throw new Error("runtime coordinator is closed");
+      args.externalSignal?.throwIfAborted();
+      const waitingSignal =
+        args.externalSignal === undefined
+          ? initialization.signal
+          : AbortSignal.any([initialization.signal, args.externalSignal]);
       const selected = options.selection();
       if (selected.settings.backend === "native") {
         publish({
@@ -347,8 +394,9 @@ export function createLazyRuntimeCoordinator(options: {
       }
       let slot: RuntimeSlot;
       try {
-        slot = await slotFor(selected.settings, selected);
+        slot = await waitForInitialization(slotFor(selected.settings, selected), waitingSignal);
       } catch (error) {
+        waitingSignal.throwIfAborted();
         if (
           selected.settings.backend === "docker" &&
           selected.settings.fallback === "sandbox" &&
@@ -359,6 +407,7 @@ export function createLazyRuntimeCoordinator(options: {
         throw error;
       }
       await retireIdleSlots(key);
+      waitingSignal.throwIfAborted();
       slot.active += 1;
       try {
         return await slot.host.executeRun(args);
@@ -393,6 +442,7 @@ export function createLazyRuntimeCoordinator(options: {
     async close() {
       if (closing !== undefined) return closing;
       closed = true;
+      initialization.abort(new Error("runtime coordinator is closed"));
       closing = (async () => {
         await Promise.allSettled(launches.values());
         const results = await Promise.allSettled([...ownedSlots].map((slot) => closeSlot(slot)));

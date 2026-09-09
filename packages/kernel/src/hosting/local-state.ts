@@ -27,9 +27,10 @@ import {
 import type { FileRunHostOptions } from "./file-host.ts";
 
 const connectionSchema = z.strictObject({
-  schema_version: z.literal(1),
+  schema_version: z.literal(2),
   wire_version: z.number().int().positive(),
   artifact_id: z.string().min(1).max(256),
+  policy_id: z.string().regex(/^[a-f0-9]{64}$/u),
   identity: z.string().regex(/^[a-f0-9]{64}$/u),
   host_generation: z.string().uuid(),
   host: z.string().min(1).max(256),
@@ -132,10 +133,13 @@ export interface LocalHostState {
 export async function acquireLocalHostState(
   identity: LocalHostIdentity,
   artifactId: string,
+  policyId: string,
   logger: Logger = NOOP_LOGGER,
 ): Promise<LocalHostState | null> {
   if (artifactId.length === 0 || artifactId.length > 256)
     throw kernelError("invalid_request", "local host artifact identity is invalid");
+  if (!/^[a-f0-9]{64}$/u.test(policyId))
+    throw kernelError("invalid_request", "local host policy identity is invalid");
   await preparePrivateHostDirectory(identity.paths.root);
   const lease = await acquireLocalLease(identity.paths.leaseFile, {
     staleMs: 30_000,
@@ -219,9 +223,10 @@ export async function acquireLocalHostState(
           throw kernelError("conflict", "host discovery was already published or retired");
         await lease.assertOwned();
         const record: LocalHostConnectionRecord = {
-          schema_version: 1,
+          schema_version: 2,
           wire_version: CLARVIS_WIRE_VERSION,
           artifact_id: artifactId,
+          policy_id: policyId,
           identity: paths.identity,
           host_generation: generation,
           host: hostname(),

@@ -230,3 +230,10 @@ function buildSkillsHandler(deps: { base: HandlerBase; skills: SkillsProvider })
     },
   };
 }
+
+export {
+  formatSkillBody,
+  formatSkillResourceChunk,
+  formatSkillResourceLegacy,
+  validateResourceChunk,
+} from "./disclosure.ts";

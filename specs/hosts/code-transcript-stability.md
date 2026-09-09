@@ -622,6 +622,18 @@ annotation. Session resume brackets stored events with `beginReconcile`/`endReco
 `complete`. Physical markers are never persisted or replayed; they are remeasured for the current
 terminal.
 
+Conversation `/loop` occurrences use the same immutable run publication path and additionally wait
+for physical closure before the next automatic turn. Live scheduling notices append only to the
+matching conversation generation; job status updates belong to the separate loop view. They never
+patch an older prompt/publication or invoke the explicit human-submit scroll-to-tail action.
+Production: `submitScheduledTurn` in [run-host.ts](../../packages/code/src/run-host.ts), the loop
+notice callback in [runtime.tsx](../../packages/code/src/runtime.tsx), and `LoopView` in
+[view.tsx](../../packages/code/src/features/loop/view.tsx).
+Test: scheduled closure/reconciliation and stale-conversation cases in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), and in-place loop controls
+in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+Registration lifetime is owned by [loop-scheduling.md](loop-scheduling.md).
+
 ### 4.8 Retention and detail hydration
 
 Mutable raw tool bodies may dehydrate/rehydrate for detail. Publication reserves its bounded snapshot

@@ -501,6 +501,45 @@ shortcut`; the removed command palette is not presented as a fallback route. The
 normalized-event diagnostic is reachable from Doctor; it stores only capability verdicts and never
 raw escape sequences, hostnames, addresses or typed text.
 
+### Repeat prompts in the current conversation
+
+`/loop` schedules an explicit prompt while this TUI stays open:
+
+```text
+/loop 5m check the PR comments
+/loop 90m --max-runs 8 -- review the test results
+/loop cron "0 9 * * 1-5" --tz America/Recife -- prepare the summary
+```
+
+Intervals use positive integer minutes, hours or days (`m`, `h`, `d`), with a one-minute minimum.
+The first run waits a full interval; later runs wait that interval after the preceding execution
+finishes. Cron uses five numeric calendar fields, with lists, ranges, steps and Sunday 0/7. A
+restricted day of month and weekday use OR. The timezone is captured at creation; DST gaps are
+skipped and repeated local times use their first occurrence. Missed cron times become one pending
+run. Options go before `--`; everything after it is literal prompt text, even `/quit`, `/loop` or
+`!command`.
+
+Creation opens details with the prompt, id, conversation, agent/model, schedule, next eligibility
+and attempt limit. `/loop` or `/loop list` opens help and the list; `/loop show <id>` opens details.
+Use `/loop pause <id>`, `/loop resume <id>` or `/loop cancel <id>`. Pause and cancel leave the current
+run to finish; `/loop cancel <id> --running` also requests cancellation of that job's own run.
+The detail/list controls expose the same actions. Invalid commands preserve your draft for correction.
+
+Runs use the current conversation context and ordinary tools, permissions, approvals and budgets.
+They wait while you have a draft, attachments, an open dialog or another execution still settling.
+There are at most ten live jobs per conversation and twenty admitted attempts per job by default;
+`--max-runs` changes the latter. A prompt is limited to 64 KiB, with at most one hundred retained
+registrations across the TUI. Errors, cancellation, unavailable results, connection loss or changed
+execution configuration pause the job. Changing conversations also pauses it; returning requires
+explicit resume, which shows the revalidated configuration and schedules a future occurrence.
+Clearing/deleting a conversation cancels its registrations. Closing the TUI forgets all jobs;
+normal run history remains, and restarting or resuming a conversation never restarts a loop.
+
+The host owns this feature, with no model call needed to create or control a registration. It uses
+the pinned Croner dependency solely for calendar calculations; its bundled MIT license is preserved
+in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). The behavioral contract and test ownership
+are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
+
 ### The command guard, and answering it automatically
 
 Before a shell command runs, the guard rules on it. Its mode lives in

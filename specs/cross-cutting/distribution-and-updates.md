@@ -73,6 +73,15 @@ supplied by those packages remain in their copied package directories. Productio
 `packages/code/tooling/release/package.ts` (`copySource`, `copyRuntime`, `runtimeClosure`,
 `copyDependencies`).
 
+The static notice also contains the complete upstream MIT license of the pinned Croner library,
+which is bundled into the terminal UI's calendar adapter. It remains available when Croner is not
+an external member of the packaged dependency closure. Production: `copySource` in
+[package.ts](../../packages/code/tooling/release/package.ts), the Code dependency manifest and
+[THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
+Test: packaged static-notice validation in
+[smoke.ts](../../packages/code/tooling/release/smoke.ts); calendar behavior belongs to
+[loop-scheduling.md](../hosts/loop-scheduling.md).
+
 `release.json` is schema 1:
 
 ```json

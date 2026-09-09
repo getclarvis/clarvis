@@ -42,6 +42,8 @@ function resultToContent(result: RunResult | undefined): MessageContent | null {
 /** A live session's turn-tracking, message history, and persistence. */
 export interface Session {
   meta(): SessionMeta | null;
+  /** Materialize a conversation without sending a model turn or inventing history. */
+  ensureIdentity(title: string): SessionMeta;
   messages(): Message[];
   /** Current semantic history and pending payload counters for diagnostics. */
   memory(): {
@@ -295,6 +297,11 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
 
   return {
     meta: () => meta,
+    ensureIdentity: (title) => {
+      const current = ensureMeta(title, now());
+      deps.store.save(current);
+      return current;
+    },
     messages: () => history,
     memory: () => ({
       session_messages: history.length,

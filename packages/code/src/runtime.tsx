@@ -10,7 +10,7 @@ import { open as openFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
 import { getTreeSitterClient, RGBA } from "@opentui/core";
-import { batch, createEffect, createRoot, createSignal } from "solid-js";
+import { batch, createEffect, createMemo, createRoot, createSignal } from "solid-js";
 import type { RunDetail, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import { formatToolCall } from "./views/tools/signature.ts";
 import { mutationStats, type DiffStats } from "./views/tools/mutation-gate.ts";
@@ -36,6 +36,7 @@ import {
   type WorktreeBootstrapResult,
 } from "./bootstrap/worktree.ts";
 import { createRunHost, type RunHost } from "./run-host.ts";
+import { createLoopController, type LoopController } from "./features/loop/controller.ts";
 import { knownPlanProviderKey } from "./adapters/capability-providers.ts";
 import {
   automaticAgentFallback,
@@ -1019,6 +1020,12 @@ async function runApp(
   });
   publishWorkspaceAdapters(workspaceAdapters);
 
+  const loopReadiness = (): string | null =>
+    conn.state().phase !== "ready"
+      ? "Backend is not connected"
+      : !agents.active() || !agents.isRunnable(agents.active())
+        ? "Choose a runnable agent"
+        : null;
   const buildRunHost = (input: {
     client: KernelRunClient;
     sessionStore: SessionStore;
@@ -1029,8 +1036,20 @@ async function runApp(
     catalog: () => ModelsCatalog | null;
     adapters: WorkspaceAdaptersSnapshot;
     profiles: () => ProfileInfo[];
-  }): RunHost =>
-    createRunHost({
+  }): RunHost => {
+    const executionConfiguration = createMemo(() => {
+      const profile = input.adapters.agents.active();
+      const effective = input.settings.effective();
+      const records = input.profiles();
+      const fingerprint = new Bun.CryptoHasher("sha256")
+        .update(JSON.stringify([effective, input.adapters.agentFiles.list(), records]))
+        .digest("hex");
+      return {
+        fingerprint,
+        label: `model ${effective.default_model ?? records.find((record) => record.name === profile)?.model ?? "configured default"}`,
+      };
+    });
+    return createRunHost({
       store,
       activity,
       sessionStore: input.sessionStore,
@@ -1058,7 +1077,11 @@ async function runApp(
       attention,
       presentStatus: presentStatusLine,
       describeToolCall,
+      executionConfiguration,
+      scheduledBlockedReason: () => loops?.executionBlockedReason() ?? loopReadiness(),
+      onSessionInvalidated: (id, reason) => loops?.invalidateSession(id, reason),
     });
+  };
 
   const runHost = buildRunHost({
     client: runClient,
@@ -1071,6 +1094,19 @@ async function runApp(
     adapters: workspaceAdapters,
     profiles,
   });
+  const loops: LoopController = createLoopController({
+    binding: (materialize) => runHost.scheduledBinding(materialize),
+    blockedReason: loopReadiness,
+    submit: (request) => runHost.submitScheduledTurn(request),
+    notice: (message, job) => {
+      const binding = runHost.scheduledBinding();
+      if (
+        binding?.sessionId === job.binding.sessionId &&
+        binding.generation === job.binding.generation
+      )
+        store.appendNotice(message);
+    },
+  });
   runCallbackTarget.bind(runHost);
   if (historyFailure !== undefined) runHost.setRunStatus(historyFailure);
   const runStatus = (): string => runHost.runStatus();
@@ -1080,6 +1116,7 @@ async function runApp(
   let workspaceCloseFlight: Promise<void> | undefined;
   const closeWorkspace = (): Promise<void> => {
     workspaceCloseFlight ??= (async () => {
+      loops?.dispose();
       runHost.flushSession();
       await history.flush();
       await sessionStore.flushPending?.();
@@ -1123,6 +1160,7 @@ async function runApp(
         message: "run in progress " + glyph("emDash") + " cancel it before reconnecting",
       };
     conn.set({ phase: "connecting", detail: "reconnecting" });
+    loops?.refresh();
     try {
       await runClient.reconnect();
       await keys.reload();
@@ -1316,6 +1354,8 @@ async function runApp(
     );
   });
   const runControls: AppRunControls = {
+    loops,
+    scheduledBusy: runHost.scheduledBusy,
     status: runStatus,
     submit: (c) => detachObserved("submit_turn", () => runHost.submitTurn(c)),
     submitPrompt: (messages, display, skill) => runHost.submitPromptTurn(messages, display, skill),
@@ -1361,6 +1401,7 @@ async function runApp(
     delete: async (item) => {
       const meta = await sessionStore.load(item.meta.id);
       if (!meta) return;
+      loops?.invalidateSession(meta.id, "clear");
       if (runHost.sessionMeta()?.id === meta.id) runHost.clearSession({ flush: false });
       await deleteSession(meta, sessionStore, (execId) => runClient.deleteRun(execId));
     },

@@ -3,7 +3,7 @@ import type { Accessor, JSX } from "solid-js";
 import { createSignal } from "solid-js";
 import { useRenderer } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
-import { KeyEvent } from "@opentui/core";
+import { KeyEvent, TextareaRenderable, type Renderable } from "@opentui/core";
 import { TestRecorder } from "@opentui/core/testing";
 import type {
   MemoryService,
@@ -30,6 +30,7 @@ import type { BackendProbe } from "../../src/onboarding/doctor.ts";
 import type { ElicitRequestParams } from "../../src/adapters/elicit-types.ts";
 import { TOKEN_ORDER } from "../../src/theme/model.ts";
 import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
+import { glyph } from "../../src/theme/glyphs.ts";
 import type { RunEvent } from "@clarvis/protocol";
 import { applyRunEvents, runEvent } from "../helpers/run-events.ts";
 import { captureUntil } from "../helpers/render-support.ts";
@@ -37,6 +38,9 @@ import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
 import { productVersion } from "../../src/cli-args.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+import { createLoopController, type LoopController } from "../../src/features/loop/controller.ts";
+import { TestLoopClock } from "../helpers/loop-clock.ts";
+import type { LoopTurnCompletion, ScheduledTurnRequest } from "../../src/core/loop-schedule.ts";
 
 const ev = runEvent;
 
@@ -659,6 +663,175 @@ test("/clear clears the current session", async () => {
   await captureUntil(t, "started a new session");
   expect(clears).toEqual([1]);
   t.renderer.destroy();
+});
+
+function composerIn(node: Renderable): TextareaRenderable | undefined {
+  if (node instanceof TextareaRenderable) return node;
+  for (const child of node.getChildren()) {
+    const composer = composerIn(child);
+    if (composer) return composer;
+  }
+  return undefined;
+}
+
+async function loopApp(size?: { width: number; height: number }) {
+  const clock = new TestLoopClock();
+  let loops!: LoopController;
+  const requests: ScheduledTurnRequest[] = [];
+  const finishes: ((result: LoopTurnCompletion) => void)[] = [];
+  let setElicit!: (value: ElicitRequestParams | null) => void;
+  const human: unknown[] = [];
+  const t = await mountApp((renderer) => {
+    const [elicit, updateElicit] = createSignal<ElicitRequestParams | null>(null);
+    setElicit = updateElicit;
+    loops = createLoopController({
+      clock,
+      binding: () => ({
+        sessionId: "session_loop",
+        generation: 1,
+        owner: "user",
+        workspaceId: "ws",
+        agentId: "coder",
+        configFingerprint: "config",
+        configLabel: "model test",
+      }),
+      blockedReason: () => null,
+      submit: (request) => {
+        requests.push(request);
+        return {
+          status: "admitted",
+          executionId: `exec_${requests.length}`,
+          completion: new Promise((resolve) => {
+            finishes.push(resolve);
+          }),
+          cancel: async () => {},
+        };
+      },
+    });
+    const props = defaultProps({
+      elicit,
+      submit: (content) => {
+        human.push(content);
+      },
+    })(renderer);
+    return { ...props, run: { ...props.run, loops } };
+  }, size);
+  const submit = async (line: string): Promise<void> => {
+    composerIn(t.renderer.root)!.setText(line);
+    await t.renderOnce();
+    t.mockInput.pressEnter();
+    await t.renderOnce();
+  };
+  const closeView = async (): Promise<void> => {
+    press(t, "escape");
+    await t.renderOnce();
+    press(t, "escape");
+    await t.renderOnce();
+  };
+  return { t, loops, clock, requests, finishes, human, setElicit, submit, closeView };
+}
+
+test("/loop keeps invalid input for correction and presents the exact prompt without submitting a turn", async () => {
+  const f = await loopApp();
+  try {
+    await f.submit("/loop 1m");
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("/loop 1m");
+    expect(f.loops.list()).toEqual([]);
+    expect(f.human).toEqual([]);
+    await f.submit("/loop 90m --max-runs 8 -- /quit !echo literal  ");
+    const frame = await captureUntil(f.t, "90 minutes after each execution");
+    expect(frame).toContain("loop_1");
+    expect(frame).toContain("Agent: coder");
+    expect(frame).toContain("session_loop");
+    expect(frame).toContain("attempts 0/8");
+    expect(f.loops.list()[0]!.prompt).toBe("/quit !echo literal  ");
+    expect(f.requests).toEqual([]);
+    expect(f.human).toEqual([]);
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("");
+  } finally {
+    f.t.renderer.destroy();
+  }
+});
+
+test("an empty loop list keeps its help legible in an 80 by 24 terminal", async () => {
+  const f = await loopApp({ width: 80, height: 24 });
+  try {
+    await f.submit("/loop");
+    const frame = await captureUntil(f.t, "Closing the TUI forgets");
+    expect(frame).toContain("No loops in this conversation");
+    expect(frame).toContain("/loop 5m <prompt>  |  /loop 90m --max-runs 8 -- <prompt>");
+    expect(frame).toContain("Closing the TUI forgets registrations. Normal run history remains.");
+  } finally {
+    f.t.renderer.destroy();
+  }
+});
+
+test("loop controls update in place and automatic turns wait for drafts, attachments, dialogs and elicitations", async () => {
+  const f = await loopApp();
+  try {
+    await f.submit("/loop 1m first");
+    expect(await captureUntil(f.t, "State: scheduled")).toContain("State: scheduled");
+    await f.clock.advance(60_000);
+    expect(f.requests).toHaveLength(0);
+    expect(f.loops.list()[0]!.pending).toBeDefined();
+    expect(await captureUntil(f.t, "Pending:")).toContain("Pending:");
+    press(f.t, "p");
+    expect(await captureUntil(f.t, "State: paused")).toContain("Paused by you");
+    expect(f.loops.list()[0]!.pending).toBeUndefined();
+    press(f.t, "r");
+    expect(await captureUntil(f.t, "State: scheduled")).toContain("State: scheduled");
+    await f.closeView();
+    await f.submit("/loop 1m second");
+    const secondDetail = await captureUntil(f.t, "loop_2");
+    expect(secondDetail).toContain("loop_2");
+    expect(secondDetail).toContain("second");
+    expect(secondDetail).not.toContain("loop_1");
+    await f.closeView();
+    composerIn(f.t.renderer.root)!.setText("human draft");
+    await f.t.renderOnce();
+    await f.clock.advance(60_000);
+    expect(f.requests).toHaveLength(0);
+    composerIn(f.t.renderer.root)!.setText("");
+    f.t.renderer.keyInput.processPaste(new Uint8Array([137, 80, 78, 71]), {
+      kind: "binary",
+      mimeType: "image/png",
+    });
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.loops.blockedReason()).toContain("attachment");
+    expect(f.requests).toHaveLength(0);
+    const rows = f.t.captureCharFrame().split("\n");
+    const closeRow = rows.findIndex((row) => row.includes(`4B ${glyph("close")}`));
+    expect(closeRow).toBeGreaterThanOrEqual(0);
+    await f.t.mockMouse.click(rows[closeRow]!.lastIndexOf(glyph("close")), closeRow);
+    await f.t.renderOnce();
+    expect(f.t.captureCharFrame()).not.toContain("4B");
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("");
+    expect(f.loops.blockedReason()).toBeNull();
+    f.setElicit({
+      message: "approve this run",
+      requestedSchema: { type: "object", properties: {} },
+    });
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.requests).toHaveLength(0);
+    f.setElicit(null);
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.loops.blockedReason()).toBeNull();
+    expect(f.requests).toHaveLength(1);
+    expect(f.requests[0]!.prompt).toBe("first");
+    await f.submit("/loop pause loop_2");
+    f.finishes[0]!({ status: "completed", usage: { input: 1, output: 1 } });
+    await f.clock.advance(0);
+    expect(f.requests).toHaveLength(1);
+    await f.submit("/loop cancel loop_1");
+    expect(f.loops.get("loop_1").state).toBe("cancelled");
+    expect(f.loops.get("loop_2").state).toBe("paused");
+    expect(f.human).toEqual([]);
+  } finally {
+    f.t.renderer.destroy();
+  }
 });
 
 test("a documented slash token wins over a loose fuzzy match on another command", async () => {

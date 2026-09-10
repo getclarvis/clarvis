@@ -20,6 +20,26 @@ import {
 const workflowsBlock = { default_model: "compat/m", workflows: { max_concurrency: 8 } };
 
 describe("kernelSettingsSchema", () => {
+  it("admits bounded goal defaults only through the kernel settings registry", () => {
+    const block = { goals: { max_net_tokens: 6000 } };
+    expect(settingsSchema.safeParse(block).success).toBe(false);
+    expect(kernelSettingsSchema.parse(block)).toMatchObject({
+      goals: { max_net_tokens: 6000, max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+    });
+    expect(kernelSettingsSchema.parse({ goals: {} })).toMatchObject({
+      goals: { max_auto_continuations: 8, max_no_progress_checkpoints: 3 },
+    });
+    for (const goals of [
+      { max_net_tokens: 0 },
+      { max_net_tokens: Infinity },
+      { max_auto_continuations: 256 },
+      { max_no_progress_checkpoints: 0 },
+      { deadline_at: -1 },
+      { enabled: true },
+    ])
+      expect(kernelSettingsSchema.safeParse({ goals }).success).toBe(false);
+  });
+
   it("admits a registered capability's block that the engine's bare schema rejects", () => {
     expect(settingsSchema.safeParse(workflowsBlock).success).toBe(false);
     const parsed = kernelSettingsSchema.safeParse(workflowsBlock);

@@ -32,6 +32,17 @@ owned by [isolated agent runtime](isolated-agent-runtime.md).
 
 ## Code integration
 
+Host-started goal stages use `RunHost.synchronizeGoal` in the already selected conversation.
+This path must not call session-switch teardown or retire controller authority. Its painted-turn
+cursor is independent of canonical metadata, which may already contain a following stage. Closed
+stages are reconstructed from persisted history; live stages attach through normal hosted
+observation. Delayed reads revalidate the conversation generation before painting or attaching.
+Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
+[run-host.ts](../../packages/code/src/run-host.ts), connected by
+[runtime.tsx](../../packages/code/src/runtime.tsx).
+Test: automatic-stage and delayed-goal-read cases in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
 `WorkspaceClientManager` discovers or launches Code's companion `local-host` entry, selected by
 `resolveLocalKernelArtifact`. The application entry composes the local subscription manager,
 memory and lazy runtime factory without importing the renderer. Closing the manager closes its
@@ -284,6 +295,57 @@ forged-peer, takeover, conversation-resume, independent-limit and revocation-fai
 
 ## Execution pump and subscribers
 
+### Internal continuation authority
+
+A prepared host turn may provide `HostedTurnContinuation`. The registry captures an opaque
+`HostedContinuationAuthority` from that execution's actual controller. Its session and predecessor
+are fixed, it cannot be reconstructed from a DTO, and reservation consumes it once after physical
+occupancy has been released. New stages reuse `startEntry`, including ordinary preparation, intent
+commit, host index persistence and supervision. They create neither a public peer nor an observation.
+The internal preparation context records the predecessor; public start arguments cannot assert that
+an admission is automatic.
+
+Only a successful checkpoint with physical closure, event drainage, canonical reconciliation,
+terminal index commit and admission release reaches continuation preparation. A pending or failed
+barrier prevents it. Read-only continuation preparation and its stop notification each have a
+five-second default deadline. Late results cannot start work after timeout or revocation. The
+host policy must still revalidate its durable revisions during ordinary intent commit and start.
+
+Disconnect, conversation close, takeover and background handoff revoke future control without
+granting physical release. Revocation notifies the host policy immediately, even while the current
+stage is running. A new human reservation supersedes pending automatic work; it is distinguished
+from controller retirement so the old policy does not pause the newly admitted human stage.
+Stop notifications are delivered once and bounded failures are logged without payloads. Cleanup
+of an old authority cannot revoke a successor. Retention keeps pending continuation ownership until
+its callback settles, and host shutdown awaits its notification before disposing the entry.
+
+Production: `captureContinuation`, `reserveContinuation` and `retireContinuation` in
+[admission.ts](../../packages/kernel/src/hosting/admission.ts); `startEntry`, `continueEntry` and
+`stopContinuation` in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: [hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts) checks
+identity forgery, single-use reservation, controller retirement and independent conversations;
+[hosted-continuation.test.ts](../../packages/kernel/tests/component/hosted-continuation.test.ts)
+holds physical closure and durable barriers separately and covers two automatic successors,
+human/disconnect/takeover races, foreign proposals and bounded late preparation.
+
+### Physical execution and observation
+
+Goal user controls also hold a `HostedConversationAuthority` between stages. It belongs to one
+registered operator peer and cannot be forged from its visible fields. Physical release retains
+this proof; disconnect, close and takeover revoke it. A different peer must explicitly take over,
+including while the goal is physically idle. Old proof cleanup cannot retire a newer controller.
+`startControlled` and `cancelControlled` are host-only registry methods using this proof and the
+existing start/cancel machinery. They cannot target another session or bypass physical exclusion.
+The proof crosses preparation only through the private host context. Process-owned start admission
+also applies to automatic starts, and pending continuations/goal controls prevent maintenance.
+Production: `claimConversation`, `assertConversation` and `releaseConversation` in
+[admission.ts](../../packages/kernel/src/hosting/admission.ts), and the controlled start methods in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: `keeps conversation control between stages and requires explicit takeover` and
+`physical takeover retires old goal control without releasing occupancy` in
+[hosted-admission.test.ts](../../packages/kernel/tests/unit/hosted-admission.test.ts), and
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
 `createHostedExecution` immediately consumes one managed `RunHandle`. That source consumer survives
 zero subscribers, an abandoned iterator and a saturated observer. Each observer defaults to 1,024
 buffered items and 16 MiB, with at most four observers per execution. Events coalesce without loss;
@@ -475,6 +537,10 @@ requires refreshing discovery before another action. Production: `BackgroundView
 must supply the host generation, durable index/projection operations and a token verifier; RPC
 parameters cannot select them. A successful hello binds the configured workspace and an operator or
 observer role; a supplied workspace selector must match that workspace's id or canonical path.
+Operator authority and machine-local application controls are separate. The bootstrap may set
+`exposeLocalControls: false`; the connection then retains hosting and goal services but advertises no
+`local_host` capability and receives no local inspection, browser handoff, runtime retry or restart
+service. This is the required composition boundary for a later remote transport.
 Every operation checks the current connection role against the existing catalog:
 operators retain local kernel services, including subscription control; observers can issue only
 reads without a sensitive service category. Disconnect removes the role before asynchronous cleanup.
@@ -491,9 +557,53 @@ Production: `createFileRunHost` in [file-host.ts](../../packages/kernel/src/host
 exported through [bootstrap.ts](../../packages/kernel/src/bootstrap.ts). Test:
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts) exercises a
 FileKernel, real loop with MockLLM, file-backed projection/index and Unix socket. It verifies
+withholding local controls without removing hosted goal authority,
 completion with no connected client, the same execution id after attach, canonical turn settlement,
 authentication, observer restrictions and native configuration revocation. This is not evidence of
 a surviving child process, a subscription provider, or a TUI journey.
+
+`serveRemoteFileKernelOverStdio` composes that same file host for one process-owned authenticated
+channel. The launcher that owns the channel must establish machine and user authority before the
+process starts, for example through SSH. The stdio process therefore binds its sole peer as the
+operator, fixes owner and canonical workspace from server-side inputs, sets
+`exposeLocalControls: false`, and publishes neither a listener nor a Clarvis connection credential.
+Its hosted capability may expose the server-owned `default_owner` needed by an application client;
+the client must not derive that namespace with path rules from another operating system.
+It acquires the ordinary durable workspace lease, so another local or remote host cannot serve the
+same workspace generation concurrently. EOF, pipe failure or explicit close shuts down the host,
+persists the existing durable state and releases the lease. This bootstrap does not make generic
+stdio safe to expose directly on a network.
+
+Production: `serveRemoteFileKernelOverStdio` in
+[serve-remote-stdio.ts](../../packages/kernel/src/hosting/serve-remote-stdio.ts), exported through
+[bootstrap.ts](../../packages/kernel/src/bootstrap.ts). Test:
+[remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts) uses
+the real NDJSON transport, FileKernel and durable lease to verify hosted goal authority, withheld
+local controls, contender refusal and shutdown on EOF.
+
+`connectRemoteKernelOverSsh` starts OpenSSH with argv and no local shell, requests no TTY, disables
+port, agent and X11 forwarding and negotiates the existing stdio wire. It validates the destination
+and every fixed remote command token because OpenSSH joins those tokens for the remote shell. The application places
+workspace and Extension Profile selection in one closed, bounded base64url payload; neither local
+provider credentials nor a local discovery token enters argv. Closing or losing the channel closes
+the process-owned remote host, which retires conversation authority and applies the ordinary goal
+pause-on-disconnect policy. Reconnect creates a new SSH process and never replays a mutation.
+OpenSSH owns encryption, integrity, host-key verification and user authentication. It uses the
+operator's default identities, configuration and local agent, while the explicit no-forwarding flags
+keep agent/socket, X11 and port authority off the remote account. Clarvis provides no password or
+identity-file UI and does not override `StrictHostKeyChecking` or `BatchMode`; an interactive SSH
+prompt is outside the stdio/TUI contract. The operator must establish the host key and usable login
+before launch. SSH is the only transport encryption layer, and the authenticated endpoints see the
+decrypted protocol.
+
+Production: `connectRemoteKernelOverSsh` in
+[connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts), Code's
+`remote-host.ts`, `remote-kernel-arguments.ts` and `WorkspaceClientManager` in
+[packages/code/src](../../packages/code/src). Test:
+[remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) uses a process fake
+for SSH around a real remote stdio worker; Code's argument, manager and CLI architecture suites pin
+the closed payload, remote namespace, reconnection and private entry selection. This deterministic
+coverage does not establish interoperability with an SSH server on another machine.
 
 `prepareKernelRun` resolves the actual entry and model through the settings assembler, including a
 user-invoked skill's entry override and rendered seed. `snapshotRunConfiguration` captures the

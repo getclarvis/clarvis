@@ -35,7 +35,8 @@ export interface LiveTranscriptTailProps {
   elicit: Accessor<ElicitRequestParams | null>;
   resolveElicit: (result: ElicitResult) => void;
   selectedSubagent: Accessor<string | null>;
-  visibleCommittedKeys: Accessor<ReadonlySet<string>>;
+  /** Published keys at or before resident history, including older virtualized batches. */
+  historyOwnedKeys: Accessor<ReadonlySet<string>>;
   followingTail: Accessor<boolean>;
   isOwnerVisible: (owner: Renderable) => boolean;
   onHandoffKeysChange?: (keys: ReadonlySet<string>) => void;
@@ -180,14 +181,14 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   createEffect(() => {
     const current = liveGrouped().ordered;
     const currentByKey = new Map(current.map((node) => [node.key, node] as const));
-    const visible = props.visibleCommittedKeys();
+    const historical = props.historyOwnedKeys();
     const committed = committedByKey();
     const committedPublicationIds = new Set(
       [...committed.values()].map(({ publication }) => publication.id),
     );
-    const visiblePublicationIds = new Set(
+    const historicalPublicationIds = new Set(
       [...committed]
-        .filter(([key]) => visible.has(key))
+        .filter(([key]) => historical.has(key))
         .map(([, { publication }]) => publication.id),
     );
     const next: PresentedTranscriptNode[] = [];
@@ -197,7 +198,7 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       const published = committed.get(previous.key);
       if (published !== undefined) {
         previous.publish(published);
-        if (!visible.has(previous.key)) {
+        if (!historical.has(previous.key)) {
           if (props.followingTail() || previous.visible(props.isOwnerVisible)) next.push(previous);
           else {
             const rows = previous.measuredRows();
@@ -224,7 +225,7 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       if (retained.has(node.key)) continue;
       const published = committed.get(node.key);
       if (published !== undefined) {
-        if (!visible.has(node.key) && props.followingTail())
+        if (!historical.has(node.key) && props.followingTail())
           next.push(present(published.node, published.publication));
         continue;
       }
@@ -236,7 +237,10 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     const nextReleased = new Map<string, ReleasedTranscriptRows>();
     if (!props.followingTail()) {
       for (const [publicationId, releasedBlock] of previousReleased)
-        if (committedPublicationIds.has(publicationId) && !visiblePublicationIds.has(publicationId))
+        if (
+          committedPublicationIds.has(publicationId) &&
+          !historicalPublicationIds.has(publicationId)
+        )
           nextReleased.set(publicationId, releasedBlock);
       for (const [publicationId, releasedBlock] of released) {
         const prior = nextReleased.get(publicationId);
@@ -255,10 +259,10 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     if (!sameReleased) setReleasedRows(nextReleased);
   });
   const handoffKeys = createMemo(() => {
-    const visible = props.visibleCommittedKeys();
+    const historical = props.historyOwnedKeys();
     return new Set(
       presentedNodes()
-        .filter((node) => node.publication() !== undefined && !visible.has(node.key))
+        .filter((node) => node.publication() !== undefined && !historical.has(node.key))
         .map((node) => node.key),
     );
   });

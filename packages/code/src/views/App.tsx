@@ -1,5 +1,6 @@
 import type { Accessor, JSX } from "solid-js";
 import type { BackgroundController } from "../features/background/controller.ts";
+import type { GoalController } from "../features/goal/controller.ts";
 import {
   createEffect,
   createMemo,
@@ -198,6 +199,8 @@ export interface AppRunControls {
   backgrounds?: BackgroundController;
   /** Process-local recurrence controller; omitted by hosts without interactive scheduling. */
   loops?: LoopController;
+  /** Host-owned persistent objective controls and canonical display state. */
+  goals?: GoalController;
   /** Reads host preparation, reconciliation and physical ownership for scheduler wakeups. */
   scheduledBusy?: Accessor<boolean>;
   status: () => string;
@@ -923,6 +926,7 @@ export function App(props: AppProps): JSX.Element {
     commands,
     ...(props.run.loops ? { loops: props.run.loops } : {}),
     ...(props.run.backgrounds ? { backgrounds: props.run.backgrounds } : {}),
+    ...(props.run.goals ? { goals: props.run.goals } : {}),
     backgroundExitAllowed: () =>
       !draftNonEmpty() && overlays.overlay() === "none" && transientOverlay() === "none",
     ui: overlays.ui,
@@ -1255,8 +1259,9 @@ export function App(props: AppProps): JSX.Element {
     return "working";
   };
   const leadActivityDetail = (): string => {
-    if (!props.run.active()) return "";
-    const detail: string[] = [];
+    const goal = props.run.goals?.view()?.state.current;
+    const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
+    if (!props.run.active()) return detail.join(` ${glyph("separator")} `);
     if (props.run.continuesOnExit?.()) detail.push("continues after exit");
     const startedAt = props.run.startedAt();
     if (startedAt !== null) detail.push(formatElapsed(tickNow() - startedAt));

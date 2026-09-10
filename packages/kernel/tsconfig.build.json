@@ -10,6 +10,7 @@
     "outDir": "dist",
     "paths": {
       "@clarvis/protocol": ["../protocol/dist/index.d.ts"],
+      "@clarvis/goal": ["../goal/dist/index.d.ts"],
       "@clarvis/mcp-client": ["../mcp-client/dist/index.d.ts"],
       "@clarvis/plan": ["../plan/dist/index.d.ts"],
       "@clarvis/tasks": ["../tasks/dist/index.d.ts"],
@@ -18,6 +19,9 @@
     }
   },
   "references": [
+    {
+      "path": "../goal/tsconfig.build.json"
+    },
     {
       "path": "../mcp-client/tsconfig.build.json"
     },

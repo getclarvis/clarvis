@@ -56,6 +56,10 @@ export interface LLMUsage {
   output_tokens: number;
   cached_tokens: number;
   cache_write_tokens: number;
+  /** At least one physical attempt lacks complete input/output counters; numeric fields are partial. */
+  usage_unknown?: true;
+  /** Cache-read counters were absent on at least one attributed attempt. */
+  cache_unknown?: true;
 }
 
 /**
@@ -109,8 +113,9 @@ export interface LLMCallResult {
    *   attempt alone; a caller charging a budget must add this, or the ledger
    *   under-counts by exactly the amount an unhealthy provider cost — making
    *   the hard token cap least accurate precisely when a run is burning money
-   *   for nothing. Absent when nothing was retried, or when no failed attempt's
-   *   usage could be read.
+   *   for nothing. Absent when no attempt failed. Unreported attempts retain
+   *   `usage_unknown` rather than
+   *   claiming that their zero placeholders are measured consumption.
    */
   retriedUsage?: LLMUsage;
 }

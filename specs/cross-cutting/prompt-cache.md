@@ -67,6 +67,42 @@ The same suite captures complete SDK catalogs and history through HTTP retry, tw
 same-profile child instances, cancellation of an in-flight physical request, guard-policy resume
 and the real memory indexing pass. The pass rejects an inherited workspace tool at dispatch while
 retaining its advertised name, description, schema and position.
+Auxiliary indexing retains the source planning mode and catalog but must not acquire its
+plan lifecycle. The host projects planning to catalog-only participation, so an open plan
+cannot nudge indexing, fail on its behalf or be removed by its retention policy. Production:
+`composeIndexPassDeps` in `packages/kernel/src/memory/pass-deps.ts`,
+`createPlansCatalogCapability` in `packages/plan/src/capability/index.ts` and
+`buildIndexerContinuationRequest` in `packages/memory/src/indexer/request.ts`. Test:
+`packages/kernel/tests/integration/goal-file-host-memory.test.ts` captures the serialized
+catalog and prefix for all planning modes and verifies an open discard plan stays unchanged
+after indexing a paused goal checkpoint.
+
+A bound goal contributes its own named stable block rather than replacing the plan's canonical
+state. Objective state belongs in appended context, never in a rewritten system head. Its tool
+catalog does not depend on revision or remaining budget, and checkpoint does not change the
+persisted entry-agent cache identity. Production: `createGoalCapability` and `goalContextBlock` in
+[capability.ts](../../packages/goal/src/capability.ts) and
+[context.ts](../../packages/goal/src/context.ts).
+Before an iteration, the goal capability awaits the current host snapshot. An external pause is
+appended after the preceding complete tool exchange without requiring the model to poll goal state;
+the earlier active reminder remains history. A failed or retired read cannot publish delayed state.
+Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts).
+Test: `delivers an external pause before another model call without polling a goal tool` in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+compares the real SDK prefix, tool exchange, catalog and cache key across that host control.
+Test: [goal-capability-composition.test.ts](../../packages/kernel/tests/integration/goal-capability-composition.test.ts)
+captures actual SDK JSON across two manually admitted goal stages with the durable kernel goal port,
+plan gates and a final schema;
+the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
+prove serialization, not remote cache hits or automatic host continuation.
+
+Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
+all tool results. A pause received during inference must not insert a user reminder inside the
+assistant-call/tool-result exchange. The complete exchange persists unchanged into resume; cached
+prefix preservation alone would not prove this provider message-order requirement.
+Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts).
+Test: `resumes a paused checkpoint with its complete tool exchange before the changed reminder` in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
 
 ## Persistent identity
 
@@ -115,6 +151,14 @@ and the kernel composition test. Workflow manager/leader separation, SDK-seriali
 continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
+The guest goal bridge keeps this same session/instance affinity through checkpoint continuation;
+its binding never substitutes the new execution ID or goal ID for the agent identity.
+Production: [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts) and
+[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+Test: `preserves goal authority, plan checkpoint and SDK prefix across guest continuation` in
+[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+compares SDK-serialized messages, catalogs and keys. Controlled responses prove prefix preservation,
+not backend cache reuse.
 
 ## Provider wire and replay
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { executeRun } from "@clarvis/loop";
-import { MockLLM } from "@clarvis/loop/testing";
+import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { globalPaths, localHostPaths, writeFileDurableSync } from "@clarvis/paths";
 import type { ElicitationRequest, HostedRunRef, StartHostedTurnParams } from "@clarvis/protocol";
 import { createFileRunHost, type FileRunHostOptions } from "../../src/bootstrap.ts";
@@ -34,19 +34,81 @@ async function until(predicate: () => boolean | Promise<boolean>): Promise<void>
   }
 }
 
-async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
+async function fixture(
+  authenticate?: FileRunHostOptions["authenticate"],
+  script?: MockLLMScriptStep[],
+  exposeLocalControls = true,
+) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-file-run-host-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const workspaceRoot = join(root, "workspace");
   const globalDir = join(root, "global");
   await mkdir(workspaceRoot);
   await mkdir(globalDir);
+  const goalLlm = script === undefined ? undefined : new MockLLM({ script });
+  const responder =
+    goalLlm ?? new MockLLM({ script: [{ text: "Finished with no TUI connected." }] });
+  const provider = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const wire = (await request.json()) as { prompt_cache_key: string };
+      const result = await responder.call({
+        model: "test",
+        provider: "fixture",
+        messages: [],
+        tools: [],
+        promptCacheKey: wire.prompt_cache_key,
+      });
+      const calls = result.toolCalls ?? [];
+      const chunk = {
+        id: "file-host-fixture",
+        object: "chat.completion.chunk",
+        created: 1,
+        model: "test",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              role: "assistant",
+              ...(calls.length === 0
+                ? { content: result.text }
+                : {
+                    tool_calls: calls.map((call, index) => ({
+                      index,
+                      id: call.id,
+                      type: "function",
+                      function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+                    })),
+                  }),
+            },
+            finish_reason: calls.length === 0 ? "stop" : "tool_calls",
+          },
+        ],
+        usage: {
+          prompt_tokens: result.usage.input_tokens,
+          completion_tokens: result.usage.output_tokens,
+          prompt_tokens_details: { cached_tokens: result.usage.cached_tokens },
+        },
+      };
+      return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+        headers: { "content-type": "text/event-stream" },
+      });
+    },
+  });
+  cleanups.push(() => Promise.resolve(provider.stop(true)));
   const global = globalPaths(globalDir);
   await writeFile(
     global.settingsFile,
     JSON.stringify({
-      default_model: "anthropic/test",
-      providers: [{ name: "anthropic", kind: "anthropic" }],
+      default_model: "fixture/test",
+      providers: [
+        {
+          name: "fixture",
+          kind: "openai-compatible",
+          base_url: `http://127.0.0.1:${String(provider.port)}/v1`,
+        },
+      ],
       runtime: { backend: "native" },
       plans: { mode: "off" },
     }),
@@ -82,13 +144,7 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
         else args.externalSignal?.addEventListener("abort", abort, { once: true });
         try {
           await Promise.race([released.promise, cancelled.promise]);
-          return await executeRun({
-            ...args,
-            deps: {
-              ...args.deps,
-              llm: new MockLLM({ script: [{ text: "Finished with no TUI connected." }] }),
-            },
-          });
+          return await executeRun(args);
         } finally {
           args.externalSignal?.removeEventListener("abort", abort);
         }
@@ -103,6 +159,7 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
           : token === "observer-token"
             ? "observer"
             : undefined),
+    exposeLocalControls,
     storage: {
       projection: (id) =>
         openHostedProjection(paths.projectionFile("generation", id), {
@@ -139,6 +196,7 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
     updated_at: 1,
     turns: [],
     totals: { input: 0, output: 0, cached: 0 },
+    agent_profile: "solo",
   });
   const input = async (id: string): Promise<StartHostedTurnParams> => ({
     session_id: "conversation",
@@ -158,10 +216,279 @@ async function fixture(authenticate?: FileRunHostOptions["authenticate"]) {
     control_epoch: run.control_epoch,
     operation_id: "handoff",
   });
-  return { host, hostOptions, listener, paths, client, connect, input, entered, released, handoff };
+  return {
+    host,
+    hostOptions,
+    listener,
+    paths,
+    client,
+    connect,
+    input,
+    entered,
+    released,
+    handoff,
+    goalLlm,
+  };
 }
 
 describe("file kernel behind the hosted RPC", () => {
+  test("keeps hosted goal authority while withholding machine-local controls", async () => {
+    const f = await fixture(undefined, undefined, false);
+
+    expect(f.client.capabilities.hosting).toEqual({ host_generation: "generation" });
+    expect(f.client.capabilities.goals).toBe(true);
+    expect(f.client.capabilities.local_host).toBeUndefined();
+    expect(f.client.localHost).toBeUndefined();
+    expect(await f.client.goals.availability()).toEqual({ available: true });
+  });
+
+  test("starts a durable goal over IPC and admits its checkpoint continuation through the real kernel", async () => {
+    const f = await fixture(undefined, [
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "checkpoint",
+                summary: "First stage",
+                next_step: "Finish the task",
+              },
+            },
+          },
+        ],
+      },
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Finished",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "The synthetic task is complete",
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      { text: "Done" },
+    ]);
+    expect(await f.client.goals.availability()).toEqual({ available: true });
+    expect(await f.host.kernel.goals.availability()).toMatchObject({ available: false });
+    expect(f.host.kernel.scopePolicy.goals).toEqual(["owner", "workspace", "connection"]);
+    const observer = await f.connect("observer-token");
+    const invalidations: unknown[] = [];
+    const unsubscribe = await observer.goals.subscribe("conversation", (change) => {
+      invalidations.push(change);
+    });
+    await expect(observer.goals.subscribe("missing-session", () => {})).rejects.toMatchObject({
+      code: "not_found",
+    });
+    const request = {
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create" as const,
+        objective: "Complete both fixture stages",
+        limits: { max_net_tokens: 10000 },
+      },
+    };
+    await expect(observer.goals.control(request)).rejects.toMatchObject({ code: "unauthorized" });
+    expect((await observer.goals.get("conversation")).state.current).toBeUndefined();
+    const receipt = await f.client.goals.control(request);
+    expect(receipt.execution_id).toBeDefined();
+    expect(f.entered).toEqual([receipt.execution_id!]);
+    expect(await f.client.goals.control(request)).toEqual(receipt);
+    expect(await observer.goals.receipt("conversation", "create-goal")).toEqual(receipt);
+    expect(f.entered).toHaveLength(1);
+    f.released.resolve();
+    await until(
+      async () => (await f.client.goals.get("conversation")).state.current?.status === "complete",
+    );
+    await until(() => f.host.stats().runs === 0);
+    const view = await f.client.goals.get("conversation");
+    expect(view.state.current).toMatchObject({ status: "complete", auto_continuations: 1 });
+    expect(view.state.current!.runs.map((run) => run.execution_id)).toEqual(f.entered);
+    expect(f.entered).toHaveLength(2);
+    expect(view.physical_run).toBeUndefined();
+    await until(() => invalidations.length >= 5);
+    expect(
+      invalidations.every((change) => JSON.stringify(change) === '{"session_id":"conversation"}'),
+    ).toBe(true);
+    unsubscribe();
+    expect(new Set(f.goalLlm!.calls.map((call) => call.promptCacheKey)).size).toBe(1);
+    const session = (await f.client.sessions.get("conversation"))!;
+    expect(session.turns.map((turn) => turn.execution_id)).toEqual(f.entered);
+    expect(session.agent_instance_id).toBeDefined();
+    expect(await f.client.goals.control(request)).toEqual(receipt);
+    expect(f.entered).toHaveLength(2);
+  });
+
+  test("pause retains physical work, fences foreign control and prevents automatic continuation", async () => {
+    const f = await fixture(undefined, [
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: {
+              update: { action: "checkpoint", summary: "Stage", next_step: "Next stage" },
+            },
+          },
+        ],
+      },
+    ]);
+    const receipt = await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create",
+        objective: "Continue after a checkpoint",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    const other = await f.connect();
+    const current = await f.client.goals.get("conversation");
+    const pause = {
+      session_id: "conversation",
+      expected_revision: current.state.revision,
+      operation_id: "pause",
+      action: { kind: "pause" as const },
+    };
+    await expect(other.goals.control(pause)).rejects.toMatchObject({ code: "conflict" });
+    await f.client.goals.control(pause);
+    expect((await f.client.goals.get("conversation")).physical_run?.execution_id).toBe(
+      receipt.execution_id,
+    );
+    f.released.resolve();
+    await until(() => f.host.stats().runs === 0);
+    expect((await f.client.goals.get("conversation")).state.current?.status).toBe("paused");
+    expect(f.entered).toHaveLength(1);
+    await expect(f.client.hosting!.start(await f.input("ordinary"))).rejects.toMatchObject({
+      code: "conflict",
+    });
+    expect(f.entered).toHaveLength(1);
+  });
+
+  test("background retires goal authority and receipt replay cannot reacquire it", async () => {
+    const f = await fixture(undefined, [
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: { update: { action: "checkpoint", summary: "Stage", next_step: "Finish" } },
+          },
+        ],
+      },
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: {
+              update: {
+                action: "candidate",
+                summary: "Finished",
+                assessments: [
+                  {
+                    criterion_id: "objective",
+                    kind: "qualitative",
+                    justification: "Task finished",
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      { text: "Done" },
+    ]);
+    const request = {
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create" as const,
+        objective: "Finish after explicit resume",
+        limits: { max_net_tokens: 10000 },
+      },
+    };
+    const receipt = await f.client.goals.control(request);
+    const attachment = await f.client.hosting!.attach({
+      execution_id: receipt.execution_id!,
+      host_generation: "generation",
+      control: "acquire",
+    });
+    await f.client.hosting!.detach(f.handoff(attachment.run));
+    await until(
+      async () => (await f.client.goals.get("conversation")).state.current?.status === "paused",
+    );
+    f.released.resolve();
+    await until(() => f.host.stats().runs === 0);
+    expect(f.entered).toHaveLength(1);
+    expect(await f.client.goals.control(request)).toEqual(receipt);
+    const next = await f.connect();
+    const current = await next.goals.get("conversation");
+    await next.goals.control({
+      session_id: "conversation",
+      expected_revision: current.state.revision,
+      operation_id: "resume",
+      action: { kind: "resume" },
+    });
+    await until(
+      async () => (await next.goals.get("conversation")).state.current?.status === "complete",
+    );
+    await until(() => f.host.stats().runs === 0);
+    expect(f.entered).toHaveLength(2);
+    expect(
+      (await next.goals.get("conversation")).state.current!.consumption.net_tokens,
+    ).toBeGreaterThan(0);
+  });
+
+  test("lost process authority blocks the internal automatic start before inference", async () => {
+    const f = await fixture(undefined, [
+      {
+        toolCalls: [
+          {
+            name: "update_goal",
+            arguments: {
+              update: { action: "checkpoint", summary: "Stage", next_step: "Continue" },
+            },
+          },
+        ],
+      },
+    ]);
+    await f.client.goals.control({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "create-goal",
+      action: {
+        kind: "create",
+        objective: "Preserve host authority",
+        limits: { max_net_tokens: 10000 },
+      },
+    });
+    f.hostOptions.assertAuthority = async () => {
+      throw new Error("Fixture process lease was retired");
+    };
+    f.released.resolve();
+    await until(
+      async () =>
+        (await f.host.kernel.sessions.get("conversation"))?.goal_state?.current?.status ===
+        "blocked",
+    );
+    await until(() => f.host.stats().runs === 0);
+    expect(f.entered).toHaveLength(1);
+    expect(f.goalLlm!.calls).toHaveLength(1);
+  });
+
   test("operator recovery preserves the session audit and unlocks maintenance over local IPC", async () => {
     const f = await fixture();
     const attached = await f.client.hosting!.start(await f.input("interrupted"));
@@ -303,7 +630,7 @@ describe("file kernel behind the hosted RPC", () => {
     const f = await fixture();
     const started = await f.client.hosting!.start(await f.input("background-run"));
     await until(() => f.entered.length === 1);
-    expect(started.run.config).toMatchObject({ agent: "solo", model: "anthropic/test" });
+    expect(started.run.config).toMatchObject({ agent: "solo", model: "fixture/test" });
     expect(started.run.config.extension_profile?.fingerprint).toBeString();
     const intent = (await f.client.sessions.get("conversation"))!;
     expect(intent.turns).toHaveLength(1);

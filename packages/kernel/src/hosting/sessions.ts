@@ -1,29 +1,59 @@
-import type { ModelCost, RunDetail, Session, StartRunParams } from "@clarvis/protocol";
+import type { ModelCost, RunDetail, RunResult, Session, StartRunParams } from "@clarvis/protocol";
 import type { HostedRegistryOptions, PreparedHostedTurn } from "./registry.ts";
 import { kernelError } from "../core/errors.ts";
-import type { FileSessionService } from "../sessions/session-service.ts";
+import type { FileSessionService, HostSessionStore } from "../sessions/session-service.ts";
 import { addRunUsage } from "../sessions/usage.ts";
 import { buildSkillRunDigest } from "../runs/recovered-context.ts";
 import { randomUUID } from "node:crypto";
+import type { HostedConversationAuthority } from "./admission.ts";
+import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
 /** An immutable execution binding prepared without starting inference or consuming a run stream. */
-export type HostedExecutionBinding = Omit<
+export interface HostedExecutionBinding extends Omit<
   PreparedHostedTurn,
   "title" | "reconcile" | "commitIntent"
->;
+> {
+  /** Apply host-owned capability intent in the same short transaction as the new turn. */
+  commitSessionIntent?(session: Session): void;
+  /**
+   * Validate terminal evidence outside the session lock, after physical closure. The returned
+   * synchronous decision must revalidate its revision fences before changing state or charging usage.
+   */
+  prepareSettlement?(result: RunResult): Promise<(session: Session) => boolean>;
+}
+
+/** Host-assigned conversation and continuation provenance, never taken from model arguments. */
+export interface HostedPreparationContext {
+  session: Session;
+  signal: AbortSignal;
+  continuationOf?: string;
+  conversation?: HostedConversationAuthority;
+}
 
 /** Canonical conversation stores and immutable run preparation supplied by the owning file host. */
 export interface HostedSessionOptions {
-  sessions: FileSessionService;
+  sessions: HostSessionStore;
   workspaceId: string;
   projectId: string;
   occupied(sessionId: string): boolean;
-  prepareExecution(params: StartRunParams): Promise<HostedExecutionBinding>;
+  prepareExecution(
+    params: StartRunParams,
+    context: HostedPreparationContext,
+  ): Promise<HostedExecutionBinding>;
   redact(text: string): string;
   priceFor?(model: string): ModelCost | undefined;
   /** Canonical result/trace used for a separately invoked skill's pending conversation digest. */
   readRun?(executionId: string): Promise<RunDetail | null>;
+  /**
+   * Settle a bound objective in the same durable write as its turn. Invoked only after the host's
+   * physical closure barrier, including replay for late usage. True means it owns usage charging;
+   * false leaves ordinary session accounting unchanged. The callback is synchronous and host-only.
+   */
+  settleSession?(session: Session, result: RunResult): boolean;
   now?: () => number;
+  logger?: Logger;
+  /** Best-effort display invalidation after canonical publication, never part of mutation authority. */
+  goalChanged?(sessionId: string): void;
 }
 
 function revision(session: Session | null): number {
@@ -33,13 +63,23 @@ function revision(session: Session | null): number {
   return value;
 }
 
+/** Synchronous host mutation, committed with the canonical conversation under one short lock. */
+export interface HostedSessionTransactions {
+  transact<T>(
+    sessionId: string,
+    mutation: (session: Session) => { session: Session; result: T },
+  ): Promise<T>;
+}
+
 /**
  * Own hosted turn intent and settlement on the existing session document. Interactive saves may
  * edit metadata/pending observations between activities or under their own local activity lease,
  * and only at the observed revision. Execution history and totals remain exclusively host-owned.
  * Locks reserve before the first await and never retain an unbounded queue of stale UI documents.
  */
-export function createHostedSessionCoordinator(options: HostedSessionOptions): {
+export function createHostedSessionCoordinator(
+  options: HostedSessionOptions,
+): HostedSessionTransactions & {
   sessions: FileSessionService;
   /** A host-authenticated local activity may persist its pending observation before releasing admission. */
   saveDuringActivity(value: Session, ownsActivity: () => boolean): Promise<void>;
@@ -47,7 +87,19 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
   archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]>;
 } {
   const active = new Set<string>();
+  const preparing = new Set<string>();
   const now = options.now ?? Date.now;
+  const goalChanged = (session: Session): void => {
+    if (session.goal_state === undefined) return;
+    try {
+      options.goalChanged?.(session.id);
+    } catch {
+      (options.logger ?? NOOP_LOGGER).warn(
+        { event: "goal.change.delivery_failed", session_id: session.id },
+        "Goal change observer failed",
+      );
+    }
+  };
   const scoped = (session: Session): void => {
     if (session.workspace !== options.workspaceId || session.project_id !== options.projectId)
       throw kernelError("invalid_request", "hosted conversation belongs to a different workspace");
@@ -88,12 +140,16 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
         current !== null &&
         (current.agent_instance_id !== input.agent_instance_id ||
           JSON.stringify(current.turns) !== JSON.stringify(input.turns) ||
-          JSON.stringify(current.totals) !== JSON.stringify(input.totals))
+          JSON.stringify(current.totals) !== JSON.stringify(input.totals) ||
+          JSON.stringify(current.goal_state) !== JSON.stringify(input.goal_state))
       )
         throw kernelError("conflict", "hosted turn history and totals are owned by the host");
       if (
         current === null &&
-        (input.turns.length !== 0 || input.totals.input !== 0 || input.totals.output !== 0)
+        (input.turns.length !== 0 ||
+          input.totals.input !== 0 ||
+          input.totals.output !== 0 ||
+          input.goal_state !== undefined)
       )
         throw kernelError("invalid_request", "new hosted conversations must have empty history");
       await options.sessions.save({ ...input, revision: revision(current) + 1 });
@@ -118,10 +174,15 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
     },
   };
 
-  const prepare: HostedRegistryOptions["prepare"] = (input, authority) =>
-    locked(input.session_id, async () => {
+  const prepare: HostedRegistryOptions["prepare"] = async (input, authority) => {
+    if (preparing.has(input.session_id))
+      throw kernelError("conflict", "conversation preparation already in progress");
+    if (preparing.size >= 4)
+      throw kernelError("resource_exhausted", "hosted conversation preparation limit reached");
+    preparing.add(input.session_id);
+    try {
       authority.signal.throwIfAborted();
-      const current = await get(input.session_id);
+      const current = await locked(input.session_id, () => get(input.session_id));
       if (current === null) throw kernelError("not_found", "hosted conversation does not exist");
       if (current.turns.some((turn) => turn.recovery_resolution !== undefined))
         throw kernelError(
@@ -155,7 +216,14 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
             : params.messages.length;
         params.messages.splice(insertion, 0, ...current.pending);
       }
-      const binding = await options.prepareExecution(params);
+      const binding = await options.prepareExecution(params, {
+        session: structuredClone(current),
+        signal: authority.signal,
+        conversation: authority.conversation,
+        ...(authority.continuationOf === undefined
+          ? {}
+          : { continuationOf: authority.continuationOf }),
+      });
       authority.signal.throwIfAborted();
       const latest = await get(input.session_id);
       if (JSON.stringify(current) !== JSON.stringify(latest))
@@ -193,7 +261,9 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
             if (committed) throw kernelError("conflict", "hosted turn intent already committed");
             if (JSON.stringify(await get(input.session_id)) !== JSON.stringify(current))
               throw kernelError("conflict", "conversation changed before intent commit");
-            await options.sessions.save(intent);
+            binding.commitSessionIntent?.(intent);
+            await options.sessions.saveHost(intent);
+            goalChanged(intent);
             committed = true;
           });
         },
@@ -204,15 +274,18 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
           started = true;
           return binding.start();
         },
-        reconcile(result) {
+        async reconcile(result) {
+          if (!["completed", "failed", "cancelled"].includes(result.status))
+            throw kernelError(
+              "invalid_request",
+              "hosted reconciliation requires a terminal result",
+            );
+          if (result.execution_id !== params.execution_id)
+            throw kernelError("conflict", "result does not belong to this hosted turn");
+          const decision = await binding.prepareSettlement?.(result);
+          const settle = (session: Session): boolean =>
+            decision?.(session) === true || options.settleSession?.(session, result) === true;
           return locked(input.session_id, async () => {
-            if (!["completed", "failed", "cancelled"].includes(result.status))
-              throw kernelError(
-                "invalid_request",
-                "hosted reconciliation requires a terminal result",
-              );
-            if (result.execution_id !== params.execution_id)
-              throw kernelError("conflict", "result does not belong to this hosted turn");
             const stored = await get(input.session_id);
             const turn = stored?.turns.find((value) => value.execution_id === params.execution_id);
             if (
@@ -223,7 +296,17 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
               return;
             if (stored === null || turn === undefined)
               throw kernelError("conflict", "hosted turn intent disappeared before reconciliation");
-            if (turn.ended_at !== undefined) return;
+            if (turn.ended_at !== undefined) {
+              const before = JSON.stringify(stored);
+              settle(stored);
+              if (before !== JSON.stringify(stored)) {
+                stored.revision = revision(stored) + 1;
+                stored.updated_at = now();
+                await options.sessions.saveHost(stored);
+                goalChanged(stored);
+              }
+              return;
+            }
             if (input.kind === "transcript" && params.skill !== undefined) {
               const detail = await options.readRun?.(params.execution_id);
               const digest = buildSkillRunDigest(
@@ -243,12 +326,18 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
             turn.ended_at = now();
             stored.updated_at = turn.ended_at;
             stored.revision = revision(stored) + 1;
-            addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
-            await options.sessions.save(stored);
+            const settled = settle(stored);
+            if (!settled)
+              addRunUsage(stored.totals, result.usage, (model) => options.priceFor?.(model));
+            await options.sessions.saveHost(stored);
+            goalChanged(stored);
           });
         },
       };
-    });
+    } finally {
+      preparing.delete(input.session_id);
+    }
+  };
   const archiveRecovery: NonNullable<HostedRegistryOptions["archiveRecovery"]> = (
     run,
     resolution,
@@ -278,5 +367,25 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
       await options.sessions.save(stored);
       return structuredClone(resolution);
     });
-  return { sessions, saveDuringActivity: save, prepare, archiveRecovery };
+  const transact: HostedSessionTransactions["transact"] = (sessionId, mutation) =>
+    locked(sessionId, async () => {
+      const current = await get(sessionId);
+      if (current === null) throw kernelError("not_found", "hosted conversation does not exist");
+      const { session, result } = mutation(structuredClone(current));
+      scoped(session);
+      if (session.id !== sessionId || revision(session) !== revision(current))
+        throw kernelError(
+          "conflict",
+          "host mutation cannot change conversation identity or revision",
+        );
+      if (JSON.stringify(session) === JSON.stringify(current)) return result;
+      await options.sessions.saveHost({
+        ...session,
+        revision: revision(current) + 1,
+        updated_at: now(),
+      });
+      goalChanged(session);
+      return result;
+    });
+  return { sessions, saveDuringActivity: save, prepare, archiveRecovery, transact };
 }

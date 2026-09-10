@@ -243,4 +243,68 @@ describe("WorkspaceClientManager", () => {
     expect(manager.defaultOwner).not.toBe(ownerFromWorkspace(primaryRoot));
     await manager.close();
   });
+
+  it("uses the remote host namespace, reconnects SSH and never requests local controls", async () => {
+    const root = openTempDir("clarvis-workspace-remote-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    const backing = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "global"),
+    });
+    const backingClient = (await backing.open()).client;
+    const closures: Array<ReturnType<typeof Promise.withResolvers<string>>> = [];
+    const launches: unknown[] = [];
+    let connects = 0;
+    const manager = await WorkspaceClientManager.create(
+      {
+        workspaceRoot: "/srv/remote/project",
+        globalDir: join(root, "unused-client-global"),
+        remote: { destination: "operator@example.test", workspace: "/srv/remote/project" },
+      },
+      {
+        resolveArtifact: async () => {
+          throw new Error("remote connection must not resolve a local host artifact");
+        },
+        connectRemoteHost: async (options) => {
+          launches.push(options);
+          connects++;
+          const closed = Promise.withResolvers<string>();
+          closures.push(closed);
+          return {
+            client: {
+              ...backingClient,
+              workspace: { ...backingClient.workspace, path: "/srv/remote/project" },
+              capabilities: {
+                ...backingClient.capabilities,
+                hosting: {
+                  host_generation: `remote-${connects}`,
+                  default_owner: "remote-owner",
+                },
+                local_host: undefined,
+              },
+              localHost: undefined,
+            },
+            closed: closed.promise,
+          };
+        },
+      },
+    );
+    try {
+      expect(manager.defaultOwner).toBe("remote-owner");
+      expect(manager.current.path).toBe("/srv/remote/project");
+      expect(JSON.stringify(launches[0])).toContain("operator@example.test");
+      await manager.recover(manager.current.id);
+      expect(connects).toBe(2);
+      await expect(manager.invalidate(manager.current.id)).rejects.toThrow("reload is unavailable");
+      const failures: string[] = [];
+      manager.subscribeConnectionFailure((reason) => failures.push(reason));
+      closures[1]!.resolve("remote pipe ended");
+      await Promise.resolve();
+      expect(failures).toEqual(["remote pipe ended"]);
+    } finally {
+      await manager.close();
+      await backing.close();
+    }
+  });
 });

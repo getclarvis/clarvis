@@ -1672,7 +1672,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             .map((node) => node.key);
           for (const key of transientAnnotations) remove(key);
           pendingElicitations.length = 0;
-          const ok = event.reason === "completed";
+          const ok = event.status === "completed";
           // A rehydrated session is rebuilt from the persisted trace alone, and
           // `appendRunFailure` — the live path's error node — is a runtime
           // append that never reaches it. The trace does carry the failure's
@@ -1701,6 +1701,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           patchKind(index, "run", (n) => {
             n.reason = ok ? "done" : event.reason;
             n.status = ok ? "ok" : "error";
+            n.disposition = ok ? event.disposition : undefined;
             if (elapsed !== undefined && elapsed >= 0) n.elapsedMs = elapsed;
             if (leadToolCalls > 0) n.toolCalls = leadToolCalls;
             if (leadInput > 0) n.inputTokens = leadInput;

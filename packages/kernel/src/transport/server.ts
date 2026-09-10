@@ -310,6 +310,7 @@ export function createKernelServer(
     workspace: kernel.workspace,
     services: {
       ...kernel.operatorServices,
+      goals: kernel.goals,
       providerAuth: createUnavailableProviderAuthService(),
       ...kernel.defaultOwnerServices,
     },
@@ -328,7 +329,7 @@ export function createKernelServer(
         string,
         { handle: RunHandle; resultSettled: boolean; streamSettled: boolean }
       >();
-      const subs = new Map<string, { kind: "config"; off: () => void }>();
+      const subs = new Map<string, { kind: "config" | "goals"; off: () => void }>();
       let releaseLifecycle: (() => void) | undefined;
       let connectionClosed = false;
       let helloStarted = false;
@@ -369,6 +370,8 @@ export function createKernelServer(
           [M.runsRespond]: ["execution_id", "response"],
           [M.configSubscribe]: ["kinds", "subscription_id"],
           [M.configUnsubscribe]: ["subscription_id"],
+          [M.goalsSubscribe]: ["session_id", "subscription_id"],
+          [M.goalsUnsubscribe]: ["subscription_id"],
         };
         const keys = new Set(allowed[method] ?? []);
         if (!Object.keys(params).every((key) => keys.has(key))) {
@@ -600,6 +603,53 @@ export function createKernelServer(
                 p.response as ElicitationResponse,
               );
               return {};
+            case M.goalsSubscribe: {
+              const id = p.subscription_id;
+              if (typeof id !== "string" || !/^[a-zA-Z0-9._:-]{1,256}$/u.test(id))
+                throw kernelError("invalid_request", "Invalid goal subscription identity");
+              if (subs.has(id)) throw kernelError("conflict", "Subscription is already active");
+              if ([...subs.values()].filter((sub) => sub.kind === "goals").length >= 8)
+                throw kernelError("resource_exhausted", "Goal subscription limit reached");
+              let disposed = false;
+              let unsubscribe: (() => void) | undefined;
+              const off = (): void => {
+                disposed = true;
+                const release = unsubscribe;
+                unsubscribe = undefined;
+                release?.();
+              };
+              const subscription = { kind: "goals" as const, off };
+              subs.set(id, subscription);
+              try {
+                unsubscribe = await services().goals.subscribe(p.session_id as string, (change) => {
+                  if (!disposed)
+                    suppressSecondaryRejection(
+                      notifications.notify(N.goalChange, { subscription_id: id, change }),
+                      "the kernel transport close channel",
+                    );
+                });
+                if (disposed || connectionClosed) {
+                  off();
+                  assertConnectionOpen();
+                }
+                return {};
+              } catch (error) {
+                off();
+                if (subs.get(id) === subscription) subs.delete(id);
+                throw error;
+              }
+            }
+            case M.goalsUnsubscribe: {
+              const id = p.subscription_id;
+              if (typeof id !== "string" || !/^[a-zA-Z0-9._:-]{1,256}$/u.test(id))
+                throw kernelError("invalid_request", "Invalid goal subscription identity");
+              const sub = subs.get(id);
+              if (sub !== undefined && sub.kind !== "goals")
+                throw kernelError("invalid_request", "Subscription is not a goal subscription");
+              sub?.off();
+              subs.delete(id);
+              return {};
+            }
             case M.configSubscribe: {
               const id = p.subscription_id as string;
               if (subs.has(id)) {

@@ -8,28 +8,28 @@ import {
 } from "./wire.ts";
 import type { CacheCall, CachePurpose, CacheScenario, CacheUsage } from "./types.ts";
 
-export interface CacheRecorderOptions {
-  scenario: CacheScenario;
+export interface CacheRecorderOptions<Scenario extends string = CacheScenario> {
+  scenario: Scenario;
   trial: number;
   sdkVersion: string;
   requestedModel: string;
   effort: string | (() => string | undefined);
   leaderId: string;
-  budget: CacheBudget;
-  globalBudget: CacheBudget;
+  budget: CacheBudget<Scenario>;
+  globalBudget: CacheBudget<Scenario>;
   /** Safe serialized hashes from the preceding process; no raw reasoning or credentials. */
-  previousCalls?: readonly CacheCall[];
+  previousCalls?: readonly CacheCall<Scenario>[];
   phase(): string;
   base(): number;
   transition?(): string | undefined;
   purpose?(identity: { sessionId: string; agentInstanceId: string }): CachePurpose;
   executionId?(): string | undefined;
-  completed?(call: CacheCall): void;
+  completed?(call: CacheCall<Scenario>): void;
 }
 
 /** Inspect a bounded response stream without retaining text, credentials or opaque reasoning. */
 async function responseEvidence(
-  response: Response,
+  response: { body: Response["body"]; headers: Pick<Headers, "get"> },
   streaming: boolean,
   signal: AbortSignal,
 ): Promise<{
@@ -139,11 +139,11 @@ async function responseEvidence(
  * Authorization headers and response bodies are never written to the report. The
  * provider's stream is returned immediately while a bounded tee observes its usage.
  */
-export function createCacheRecorder(
+export function createCacheRecorder<Scenario extends string = CacheScenario>(
   fetcher: typeof globalThis.fetch,
-  options: CacheRecorderOptions,
-): { fetch: typeof globalThis.fetch; drain(): Promise<void>; calls: CacheCall[] } {
-  const calls: CacheCall[] = [...(options.previousCalls ?? [])];
+  options: CacheRecorderOptions<Scenario>,
+): { fetch: typeof globalThis.fetch; drain(): Promise<void>; calls: CacheCall<Scenario>[] } {
+  const calls: CacheCall<Scenario>[] = [...(options.previousCalls ?? [])];
   const previous = new Map<
     string,
     { prompt: CapturedPrompt; iteration: number; attempt: number; base: number }
@@ -195,7 +195,7 @@ export function createCacheRecorder(
       new Headers(init?.headers).forEach((value, name) => headers.set(name, value));
       const affinity = headers.get("session-id") ?? headers.get("x-session-id");
       const transition = options.transition?.();
-      const call: CacheCall = {
+      const call: CacheCall<Scenario> = {
         scenario: options.scenario,
         trial: options.trial,
         ...identity,
@@ -315,7 +315,10 @@ export function createCacheRecorder(
 }
 
 /** Compare a restarted request against independently persisted wire hashes. */
-function restoredDivergence(previous: CacheCall, current: CapturedPrompt): CacheCall["divergence"] {
+function restoredDivergence(
+  previous: CacheCall<string>,
+  current: CapturedPrompt,
+): CacheCall["divergence"] {
   if (previous.instructionsHash !== cacheHash(current.instructions))
     return { surface: "instructions" };
   if (previous.toolsHash !== cacheHash(current.tools)) return { surface: "tools" };

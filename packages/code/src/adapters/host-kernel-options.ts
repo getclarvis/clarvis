@@ -1,0 +1,77 @@
+import type { CreateFileKernelOptions } from "@clarvis/kernel/bootstrap";
+import type {
+  createLocalDockerRuntime as CreateLocalDockerRuntime,
+  createLocalPodmanRuntime as CreateLocalPodmanRuntime,
+} from "@clarvis/kernel/local";
+import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import { readStartupKeySources } from "./startup-key-sources.ts";
+import { resolveClarvisRuntimeImage } from "./runtime-image.ts";
+import { productVersion } from "../cli-args.ts";
+
+/** Inputs shared by local discovery hosting and the SSH-owned stdio entry. */
+export interface CodeHostKernelOptions {
+  workspaceRoot: string;
+  globalDir: string;
+  defaultOwner?: string;
+  extensionProfileSelector?: string;
+  logger: CreateFileKernelOptions["logger"];
+  runtimeNotice(message: string): void;
+}
+
+interface LocalRuntimeModule {
+  createLocalDockerRuntime: typeof CreateLocalDockerRuntime;
+  createLocalPodmanRuntime: typeof CreateLocalPodmanRuntime;
+}
+
+/** Effectful dependencies used only when the lazy container runtime is first selected. */
+export interface CodeHostRuntimeDependencies {
+  loadLocalRuntime(): Promise<LocalRuntimeModule>;
+  resolveRuntimeImage: typeof resolveClarvisRuntimeImage;
+  productVersion: typeof productVersion;
+}
+
+const DEFAULT_RUNTIME_DEPENDENCIES: CodeHostRuntimeDependencies = {
+  loadLocalRuntime: () => import("@clarvis/kernel/local"),
+  resolveRuntimeImage: resolveClarvisRuntimeImage,
+  productVersion,
+};
+
+/** Compose the application-owned FileKernel policy without coupling it to one transport. */
+export function createCodeHostKernelOptions(
+  options: CodeHostKernelOptions,
+  runtimeDependencies: CodeHostRuntimeDependencies = DEFAULT_RUNTIME_DEPENDENCIES,
+): Omit<CreateFileKernelOptions, "sessionAllowlistFor" | "ownershipMode"> {
+  const dirs = {
+    global: globalPaths(options.globalDir),
+    workspace: workspacePaths(options.workspaceRoot),
+    state: workspaceStatePaths(options.workspaceRoot),
+  };
+  return {
+    workspaceRoot: options.workspaceRoot,
+    globalDir: options.globalDir,
+    ...(options.defaultOwner === undefined ? {} : { defaultOwner: options.defaultOwner }),
+    ...(options.extensionProfileSelector === undefined
+      ? {}
+      : { extensionProfileSelector: options.extensionProfileSelector }),
+    memory: true,
+    subscriptions: true,
+    logger: options.logger,
+    keySources: readStartupKeySources(dirs),
+    runtimeFactory: {
+      async create(value) {
+        const local = await runtimeDependencies.loadLocalRuntime();
+        if (value.settings.backend !== "docker") return local.createLocalPodmanRuntime(value);
+        return local.createLocalDockerRuntime(value, {
+          resolveImage: (signal) =>
+            runtimeDependencies.resolveRuntimeImage({
+              currentVersion: runtimeDependencies.productVersion(),
+              ...(signal === undefined ? {} : { signal }),
+            }),
+          onRecipePreparation(name) {
+            options.runtimeNotice(`Preparing Docker environment: ${name}`);
+          },
+        });
+      },
+    },
+  };
+}

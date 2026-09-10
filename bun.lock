@@ -46,6 +46,13 @@
         "eslint-plugin-unicorn": "^71.1.0",
       },
     },
+    "packages/goal": {
+      "name": "@clarvis/goal",
+      "dependencies": {
+        "@clarvis/capability": "workspace:*",
+        "zod": "^4.4.3",
+      },
+    },
     "packages/hooks": {
       "name": "@clarvis/hooks",
       "dependencies": {
@@ -60,6 +67,7 @@
       },
       "dependencies": {
         "@clarvis/capability": "workspace:*",
+        "@clarvis/goal": "workspace:*",
         "@clarvis/loop": "workspace:*",
         "@clarvis/mcp-client": "workspace:*",
         "@clarvis/memory": "workspace:*",
@@ -287,6 +295,8 @@
     "@clarvis/capability": ["@clarvis/capability@workspace:packages/capability"],
 
     "@clarvis/code": ["@clarvis/code@workspace:packages/code"],
+
+    "@clarvis/goal": ["@clarvis/goal@workspace:packages/goal"],
 
     "@clarvis/hooks": ["@clarvis/hooks@workspace:packages/hooks"],
 

@@ -130,8 +130,8 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 
 ### 2.5 Settings schema composition
 
-`kernelCapabilityRegistry` is a module-level constant with four registrations, in this order:
-`memorySettingsSpec`, `plansSettingsSpec`, `workflowsSettingsSpec`, `tasksSettingsSpec`. There is no
+`kernelCapabilityRegistry` registers `memorySettingsSpec`, `plansSettingsSpec`, `goalsSettingsSpec`,
+`workflowsSettingsSpec`, `tasksSettingsSpec` and `runtimeSettingsSpec` at module load. There is no
 worktree settings block: worktrees are a launch-time Code choice rather than a kernel capability.
 `kernelSettingsSchema =
 settingsSchemaFor(kernelCapabilityRegistry)`, which extends the engine's `settingsSchema` with
@@ -140,10 +140,24 @@ one optional key per spec and re-applies `.strict()`
 this registry — "those are spread statically into `settingsSchema`" (`packages/kernel/src/config/capability-registry.ts`).
 
 `KernelSettingsFile` (`packages/kernel/src/config/capability-registry.ts`) is the engine's
-`SettingsFile` intersected with the four optional capability blocks. Production:
+`SettingsFile` intersected with those optional settings blocks. Production:
 `packages/kernel/src/config/capability-registry.ts`. Test:
 `packages/kernel/tests/integration/file-kernel.test.ts`; the absence of a worktree
 lifecycle/settings capability is owned by [worktrees.md](../capabilities/worktrees.md).
+
+The `goals` block comes from the lightweight `@clarvis/goal/settings` entry. It uses whole-block
+last-scope precedence and is unavailable to plugins or model run parameters. Its finite token cap,
+continuation/progress defaults and optional absolute deadline are copied only on goal creation or
+replacement; existing goals require an explicit user edit to change limits. The domain bounds and
+precedence over the finite entry budget are owned by [goals](../capabilities/goals.md).
+Production: `goalsSettingsSpec` in [settings.ts](../../packages/goal/src/settings.ts),
+`kernelCapabilityRegistry` in
+[capability-registry.ts](../../packages/kernel/src/config/capability-registry.ts) and
+`createFileRunHost` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: `admits bounded goal defaults only through the kernel settings registry` in
+[capability-settings-schema.test.ts](../../packages/kernel/tests/integration/capability-settings-schema.test.ts)
+and the persisted creation, replay, scope precedence and resume cases in
+[goal-file-host-settings.test.ts](../../packages/kernel/tests/integration/goal-file-host-settings.test.ts).
 
 ## 3. Data and formats
 

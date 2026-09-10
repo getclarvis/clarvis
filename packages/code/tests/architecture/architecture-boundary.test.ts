@@ -73,14 +73,16 @@ describe("code's internal architecture", () => {
     const runtime = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
     const host = readFileSync(join(SRC, "local-host.ts"), "utf8");
+    const options = readFileSync(join(SRC, "adapters", "host-kernel-options.ts"), "utf8");
     expect(runtime).not.toContain("loadFileKernelFactory");
     expect(runtime).not.toContain("createFileKernel(");
     expect(manager).not.toContain("createFileKernel(");
     expect(manager).toContain("connectOrLaunchLocalKernel");
     expect(host).toContain("serveLocalFileKernel(");
-    expect(host).toContain("local.createLocalDockerRuntime(value, {");
-    expect(host).toContain("onRecipePreparation(name)");
-    expect(host).toContain("local.createLocalPodmanRuntime(value)");
+    expect(host).toContain("serveLocalFileKernel(");
+    expect(options).toContain("local.createLocalDockerRuntime(value, {");
+    expect(options).toContain("onRecipePreparation(name)");
+    expect(options).toContain("local.createLocalPodmanRuntime(value)");
   });
 
   it("does not tie process-owned memory recovery to TUI paint or connection recovery", () => {
@@ -165,6 +167,7 @@ describe("code's internal architecture", () => {
         relativeFile === "index.tsx" ||
         relativeFile === "runtime.tsx" ||
         relativeFile === "local-host.ts" ||
+        relativeFile === "remote-host.ts" ||
         relativeFile === "startup-foundation.ts" ||
         relativeFile.startsWith("bootstrap/") ||
         relativeFile.startsWith("adapters/")

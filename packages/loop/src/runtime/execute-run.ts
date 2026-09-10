@@ -181,7 +181,7 @@ async function raceWithBudget(
  * Collect every capability's durable state for the run's record.
  *
  * @param capabilities - the run's activated capabilities, in registration order.
- * @param status - the run's terminal status, handed to each `finalizeRun`.
+ * @param outcome - the run's terminal status and accepted finalization disposition.
  * @param prior - the continued run's state, carried forward for any capability
  *   that did not run this time.
  * @param logger - warns on a `finalizeRun` that throws.
@@ -196,19 +196,30 @@ async function raceWithBudget(
  */
 export async function collectCapabilityState(
   capabilities: readonly RunCapability[],
-  status: ExecutionStatus,
+  outcome: { status: ExecutionStatus; disposition?: "final" | "checkpoint" },
   prior: Record<string, unknown> | undefined,
   logger?: Logger,
   timeoutMs = 2000,
 ): Promise<Record<string, unknown> | undefined> {
   const state: Record<string, unknown> = { ...(prior ?? {}) };
+  const preserveState =
+    outcome.disposition === "checkpoint" ||
+    (outcome.status !== "completed" &&
+      capabilities.some((capability) => capability.preserveStateOnInterruption === true));
   const finalized = await Promise.all(
     capabilities.map(async (capability) => {
       if (capability.finalizeRun === undefined) return { capability, value: undefined };
       let timedOut = false;
       try {
         const value = await boundPromise(
-          () => Promise.resolve(capability.finalizeRun?.({ status })),
+          () =>
+            Promise.resolve(
+              capability.finalizeRun?.({
+                status: outcome.status,
+                ...(outcome.disposition === undefined ? {} : { disposition: outcome.disposition }),
+                preserveState,
+              }),
+            ),
           {
             timeoutMs,
             onTimeout: () => {
@@ -431,7 +442,7 @@ export async function executeRun({
 
       const capabilityState = await collectCapabilityState(
         runCapabilities,
-        response.status,
+        response,
         continuation?.capability_state,
         runLogger,
         deps.env.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS,

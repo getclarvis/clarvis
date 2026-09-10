@@ -44,6 +44,8 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
 
 export { dispatch, listTools } from "./core.ts";
 export type { DispatchResult, ToolInfo } from "./core.ts";
+export { readRawFile } from "./lib/files.ts";
+export type { ReadFileOptions, ReadConfinement } from "./lib/files.ts";
 
 export {
   resolveConfig,

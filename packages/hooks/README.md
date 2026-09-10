@@ -58,6 +58,10 @@ tier together.
 
 ## The subprocess contract
 
+`pre_finalize` also receives stage handoffs with `mode: "checkpoint"` and a separately bounded
+`checkpoint: { summary, next_step }`. That metadata is not a final `value`; the ordinary deny/pass
+policy still applies before the loop accepts the stage. The external event spelling remains `Stop`.
+
 - **stdin** — one JSON object, then EOF, **flat**:
 
   ```json

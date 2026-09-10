@@ -10,8 +10,8 @@ import { open as openFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
 import { getTreeSitterClient, RGBA } from "@opentui/core";
-import { batch, createEffect, createMemo, createRoot, createSignal } from "solid-js";
-import type { RunDetail, RunEvent, RuntimeStatus } from "@clarvis/protocol";
+import { batch, createEffect, createMemo, createRoot, createSignal, untrack } from "solid-js";
+import type { GoalView, RunDetail, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import { formatToolCall } from "./views/tools/signature.ts";
 import { mutationStats, type DiffStats } from "./views/tools/mutation-gate.ts";
 import {
@@ -27,6 +27,7 @@ import {
   type DebugRequest,
   type Mode,
   type PrintFormat,
+  type RemoteWorkspaceRequest,
 } from "./cli-args.ts";
 import { createPrintStream, drainPrintEvents, resolveResumeMeta } from "./cli-mode.ts";
 import {
@@ -38,6 +39,7 @@ import {
 import { createRunHost, type RunHost } from "./run-host.ts";
 import { createLoopController, type LoopController } from "./features/loop/controller.ts";
 import { createBackgroundController } from "./features/background/controller.ts";
+import { createGoalController, type GoalBinding } from "./features/goal/controller.ts";
 import { knownPlanProviderKey } from "./adapters/capability-providers.ts";
 import {
   automaticAgentFallback,
@@ -138,6 +140,16 @@ import { resolveStartupComposerHandoff } from "./views/StartupComposer.tsx";
 
 let workspace = workspaceRoot();
 let extensionProfileSelector: string | undefined;
+let remoteWorkspace: RemoteWorkspaceRequest | undefined;
+
+function workspaceClientTarget(): {
+  workspaceRoot: string;
+  remote?: RemoteWorkspaceRequest;
+} {
+  return remoteWorkspace === undefined
+    ? { workspaceRoot: workspace }
+    : { workspaceRoot: remoteWorkspace.workspace, remote: remoteWorkspace };
+}
 
 const ownerOverride = process.env.CLARVIS_OWNER;
 
@@ -180,7 +192,7 @@ async function bootSilentSessionStore(): Promise<{
   owner: string;
 }> {
   const manager = await WorkspaceClientManager.create({
-    workspaceRoot: workspace,
+    ...workspaceClientTarget(),
     globalDir: globalRoot(),
     ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
     ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
@@ -242,7 +254,7 @@ async function runPrintMode(opts: {
     code = createCodeConfigStore(printDirs);
   });
   const manager = await WorkspaceClientManager.create({
-    workspaceRoot: workspace,
+    ...workspaceClientTarget(),
     globalDir: printDirs.global.root,
     ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
@@ -402,7 +414,7 @@ async function runRefreshMode(): Promise<never> {
   let opened: Awaited<ReturnType<WorkspaceClientManager["open"]>> | undefined;
   try {
     manager = await WorkspaceClientManager.create({
-      workspaceRoot: workspace,
+      ...workspaceClientTarget(),
       globalDir: globalRoot(),
       ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
       logger: activeDiagnosticLogger() ?? createLogger("silent"),
@@ -538,7 +550,7 @@ async function runApp(
     () =>
       preparedWorkspaceManager ??
       WorkspaceClientManager.create({
-        workspaceRoot: workspace,
+        ...workspaceClientTarget(),
         globalDir: globalRoot(),
         ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
         ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
@@ -611,10 +623,11 @@ async function runApp(
 
   const elicit = createElicitSlot();
 
+  const clientStateRoot = remoteWorkspace === undefined ? activeWorkspacePath : workspace;
   const dirs: ClarvisDirs = {
     global: globalPaths(),
-    workspace: workspacePaths(activeWorkspacePath),
-    state: workspaceStatePaths(activeWorkspacePath),
+    workspace: workspacePaths(clientStateRoot),
+    state: workspaceStatePaths(clientStateRoot),
   };
   const createOwnedCode = (
     targetDirs: ClarvisDirs,
@@ -890,13 +903,14 @@ async function runApp(
     throw error;
   });
   if (bootShutdownRequested) return;
-  void runBootstrapGit(activeWorkspacePath, ["branch", "--show-current"])
-    .then((result) => {
-      setActiveBranch(result.stdout.trim() || undefined);
-    })
-    .catch((error: unknown) => {
-      diagnosticEvent("worktree.branch.unavailable", { reason: errorText(error) }, "warn");
-    });
+  if (remoteWorkspace === undefined)
+    void runBootstrapGit(activeWorkspacePath, ["branch", "--show-current"])
+      .then((result) => {
+        setActiveBranch(result.stdout.trim() || undefined);
+      })
+      .catch((error: unknown) => {
+        diagnosticEvent("worktree.branch.unavailable", { reason: errorText(error) }, "warn");
+      });
   setProfiles(bootProfiles);
   conn.set(
     bootProfiles.length === 0
@@ -1109,6 +1123,50 @@ async function runApp(
     },
   });
   runCallbackTarget.bind(runHost);
+  let pendingGoalView: { binding: GoalBinding; view: GoalView } | undefined;
+  let followingGoal = false;
+  const followGoal = (): void => {
+    if (followingGoal) return;
+    followingGoal = true;
+    detachObserved(
+      "goal.observe",
+      async () => {
+        try {
+          while (pendingGoalView !== undefined) {
+            const pending = pendingGoalView;
+            pendingGoalView = undefined;
+            await runHost.synchronizeGoal(pending.binding, pending.view);
+          }
+        } finally {
+          followingGoal = false;
+        }
+      },
+      (error) => store.appendNotice(`Goal observation interrupted: ${errorText(error)}`, "warn"),
+    );
+  };
+  const goals = createGoalController({
+    binding: () => runHost.goalBinding(),
+    prepare: () => runHost.prepareGoalConversation(),
+    service: () => runClient.goals,
+    updated: (binding, view) => {
+      if (view.state.current === undefined && view.state.archive.length === 0) return;
+      pendingGoalView = { binding, view };
+      followGoal();
+    },
+  });
+  let goalBindingKey = "";
+  createEffect(() => {
+    const binding = runHost.goalBinding();
+    const phase = conn.state().phase;
+    const key = JSON.stringify([binding?.sessionId, binding?.generation, phase]);
+    if (key === goalBindingKey) return;
+    goalBindingKey = key;
+    untrack(() => {
+      pendingGoalView = undefined;
+      goals.reset();
+      if (phase === "ready") detachObserved("goal.refresh", () => goals.refresh());
+    });
+  });
   if (historyFailure !== undefined) runHost.setRunStatus(historyFailure);
   const runStatus = (): string => runHost.runStatus();
   const setRunStatus = (value: string): void => {
@@ -1118,6 +1176,8 @@ async function runApp(
   const closeWorkspace = (): Promise<void> => {
     workspaceCloseFlight ??= (async () => {
       loops?.dispose();
+      goals.dispose();
+      pendingGoalView = undefined;
       await runHost.stopLocalWork();
       runHost.flushSession();
       await history.flush();
@@ -1163,7 +1223,7 @@ async function runApp(
   async function reconnectBackend(
     mode: ReconnectMode = "reload",
   ): Promise<{ ok: boolean; message: string }> {
-    if (runHost.scheduledBusy())
+    if (runHost.scheduledBusy() || goals.busy())
       return {
         ok: false,
         message: "this conversation is busy; wait for its work to settle before reconnecting",
@@ -1376,6 +1436,7 @@ async function runApp(
   });
   const runControls: AppRunControls = {
     loops,
+    goals,
     ...(runClient.hosting === undefined
       ? {}
       : {
@@ -1600,6 +1661,7 @@ export async function runInteractiveMode(
   preparedMode?: PreparedInteractiveMode,
 ): Promise<void> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = mode.remote;
   let selectedWorktree = preparedMode?.selectedWorktree;
   if (preparedMode === undefined && mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
@@ -1630,6 +1692,7 @@ export async function prepareInteractiveMode(
   mode: Extract<InteractiveMode, { kind: "resume" | "continue" }>,
 ): Promise<PreparedInteractiveMode> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = mode.remote;
   let selectedWorktree: WorktreeBootstrapResult | undefined;
   if (mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
@@ -1644,6 +1707,7 @@ export async function prepareInteractiveMode(
 /** Continue a non-interactive invocation after the lightweight CLI argument fast path. */
 export async function runHeadlessMode(mode: HeadlessMode): Promise<void> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = "remote" in mode ? mode.remote : undefined;
   if ("worktree" in mode && mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
     const selected = await bootstrapWorktree(workspace, mode.worktree);

@@ -89,7 +89,7 @@ export function fakeExecutionRecord(
   const response: RunResponse =
     status === "error"
       ? { status, error: { code: "test_error", message: "test error" }, usage }
-      : { status, result: null, usage };
+      : { status, disposition: "final", result: null, usage };
   return {
     id: "run-1",
     owner_key_name: "test",

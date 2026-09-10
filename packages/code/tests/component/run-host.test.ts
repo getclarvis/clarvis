@@ -22,6 +22,7 @@ import { runEvent } from "../helpers/run-events.ts";
 import { MAX_COMPOSER_IMAGE_BYTES } from "../../src/core/attachments.ts";
 import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "../../src/core/loop-schedule.ts";
 import { hostingFixture } from "../helpers/hosted-run.ts";
+import { goalRun, goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
 
@@ -851,6 +852,79 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
   });
   return { ...mounted, calls, ref, meta, sessions, run, hosting };
 }
+
+test("observes an automatic goal stage without retiring the conversation or replaying painted history", async () => {
+  const f = mountHosted("cancel");
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  const binding = f.host.goalBinding()!;
+  f.store.appendNotice("Existing painted history");
+  const nodes = [...f.store.nodes];
+  const state = goalView({ runs: [goalRun(f.ref.execution_id)] }, f.ref);
+  const observing = f.host.synchronizeGoal(binding, state);
+  await flush();
+  expect(f.calls.attaches).toBe(1);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.host.goalBinding()).toEqual(binding);
+  expect(f.store.nodes[0]).toBe(nodes[0]);
+  expect(f.store.nodes[0]?.key).toBe(nodes[0]?.key);
+  expect(f.host.runActive()).toBe(true);
+  f.meta.turns[0]!.status = "done";
+  f.ref.execution_state = "closed";
+  f.run.resolve({
+    ...completed(f.ref.execution_id),
+    disposition: "checkpoint",
+    checkpoint: { summary: "First stage", next_step: "Continue" },
+  });
+  await observing;
+  expect(f.host.runStatus()).toBe("checkpoint saved");
+  expect(f.calls.retired).toEqual([]);
+  const count = f.store.nodes.length;
+  await f.host.synchronizeGoal(binding, state);
+  expect(f.store.nodes).toHaveLength(count);
+  expect(f.calls.attaches).toBe(1);
+});
+
+test("hydrates a goal stage that finished before attachment without replacing the painted prefix", async () => {
+  const f = mountHosted();
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  f.ref.execution_state = "closed";
+  f.meta.turns[0]!.status = "done";
+  f.store.appendNotice("Retained prefix");
+  const old = f.store.nodes[0];
+  await f.host.synchronizeGoal(
+    f.host.goalBinding()!,
+    goalView({ status: "complete", runs: [goalRun(f.ref.execution_id, "closed")] }),
+  );
+  expect(f.store.nodes[0]).toBe(old);
+  expect(f.store.nodes[0]?.key).toBe(old?.key);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.host.memory().transcript_resident_turns).toBe(1);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("does not follow a delayed goal read into another conversation", async () => {
+  const f = mountHosted();
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  const entered = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<SessionMeta | null>();
+  f.sessions.load = async () => {
+    entered.resolve();
+    return gate.promise;
+  };
+  const pending = f.host.synchronizeGoal(
+    f.host.goalBinding()!,
+    goalView({ runs: [goalRun(f.ref.execution_id)] }, f.ref),
+  );
+  await entered.promise;
+  f.host.clearSession();
+  gate.resolve(f.meta);
+  await pending;
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.store.nodes).toHaveLength(0);
+  f.run.resolve(completed(f.ref.execution_id));
+});
 
 test("resume refuses an unknown hosted outcome without treating its trace as an ordinary continuation", async () => {
   const f = mountHosted();

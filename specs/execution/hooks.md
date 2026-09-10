@@ -257,11 +257,18 @@ image bytes and reports `image_count` instead (test at
 Every event's exact field set (`packages/hooks/src/event-serialization.ts`), each individually pinned by a
 `payloadFor("<event>", …)` assertion in `packages/hooks/tests/component/capability.test.ts`:
 
+`pre_finalize` receives `mode: "checkpoint"` for a stage handoff, with separate `checkpoint`
+metadata and no validated final `value`. The same deny/pass policy and external `Stop` event name
+apply. Production: `SERIALIZE.pre_finalize` in
+[event-serialization.ts](../../packages/hooks/src/event-serialization.ts).
+Test: `a checkpoint finalize carries its stage handoff separately from the final value` in
+[capability.test.ts](../../packages/hooks/tests/component/capability.test.ts).
+
 | Event | Fields on the stdin payload | Test |
 | --- | --- | --- |
 | `pre_tool_use` | `tool_name`, `tool_input` (clamped value) | shape: `packages/hooks/tests/component/runner.test.ts`; clamping: `packages/hooks/tests/component/capability.test.ts` |
 | `post_tool_use` | `tool_name`, `tool_input`, `tool_response: { text, progress, task_id, image_count }` | `packages/hooks/tests/component/capability.test.ts` |
-| `pre_finalize` | `agent`, `subagent_instance_id`, `mode`, `text`, `value` (clamped) | `packages/hooks/tests/component/capability.test.ts` |
+| `pre_finalize` | `agent`, `subagent_instance_id`, `mode`, `text`, `value` (clamped); `checkpoint` (clamped) only for checkpoint mode | `packages/hooks/tests/component/capability.test.ts` |
 | `pre_delegate_task` | `title`, `task` (clamped text), `profile`, `task_id` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_start` | `mode`, `entry`, `lead_model`, `subagent_model` | `packages/hooks/tests/component/capability.test.ts` |
 | `run_end` | `status`, `error_code`, `iterations_used`, `elapsed_ms` | `packages/hooks/tests/component/capability.test.ts` |

@@ -8,6 +8,7 @@ import type {
   RunResponse,
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
+import type { FinalizationDisposition } from "./finalization.ts";
 import type { CommandGuardReview } from "./trace-kinds.ts";
 
 /**
@@ -255,6 +256,7 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       reason: RunEndedReason;
       code?: ErrorCode;
+      disposition?: FinalizationDisposition;
     }
   | {
       type: "delegation_started";

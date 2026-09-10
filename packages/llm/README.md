@@ -9,6 +9,11 @@ It depends on `@clarvis/capability` and nothing else in the workspace. `@clarvis
 
 ## Contract
 
+Usage normalization preserves missing input/output and cache-read telemetry with the optional
+`LLMUsage.usage_unknown` and `cache_unknown` flags. Transport retries retain those flags when
+combining failed attempts, including an attempt with no reported counters. Numeric placeholders
+remain compatible with accumulators; they do not establish complete accounting for host admission.
+
 Provider adaptation, decorators, error classification, and the lazy entry split are specified in
 [`foundations/llm.md`](../../specs/foundations/llm.md). Prefix caching and session affinity are
 specified in [`cross-cutting/prompt-cache.md`](../../specs/cross-cutting/prompt-cache.md).

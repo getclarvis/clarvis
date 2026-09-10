@@ -1,5 +1,6 @@
 import type { LiveMessage, ToolTransport } from "./api.ts";
 import type { TokenCounts } from "./usage.ts";
+import type { RunFinalization } from "./finalization.ts";
 
 /**
  * Why a run ended.
@@ -185,6 +186,7 @@ export const BUILTIN_ERROR_CODES = [
   "background_children_failing",
   "mcp_connection_failed",
   "mcp_unavailable",
+  "required_capability_unavailable",
   "all_tools_unavailable",
   "provider_error",
   "context_overflow",
@@ -283,13 +285,15 @@ export type ResultValue = StructuredResult;
  * rebuilt from a journal after the process died, where the usage is what the
  * journal proved was spent and `result` is necessarily absent.
  */
-export type RunResponse =
-  | { status: "completed"; result: ResultValue; usage: Usage }
-  | { status: "budget_exhausted"; result: ResultValue; usage: Usage }
-  | { status: "cancelled"; result: ResultValue; usage: Usage }
-  | { status: "soft_limit_declined"; result: ResultValue; usage: Usage }
-  | { status: "interrupted"; result: ResultValue; usage: Usage }
-  | { status: "error"; error: ErrorBody; usage: Usage };
+export type RunResponse = RunFinalization &
+  (
+    | { status: "completed"; result: ResultValue; usage: Usage }
+    | { status: "budget_exhausted"; result: ResultValue; usage: Usage }
+    | { status: "cancelled"; result: ResultValue; usage: Usage }
+    | { status: "soft_limit_declined"; result: ResultValue; usage: Usage }
+    | { status: "interrupted"; result: ResultValue; usage: Usage }
+    | { status: "error"; error: ErrorBody; usage: Usage }
+  );
 
 /** A {@link RunResponse} stamped with the run's `execution_id` for transport back to a caller. */
 export type WireRunResponse = RunResponse & { execution_id: string };

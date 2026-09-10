@@ -34,6 +34,17 @@ confirmed independently below (§7).
 
 ## 2. Surface
 
+`KernelClient.goals` always exposes the `GoalService` facade. The optional `KernelCapabilities.goals`
+flag advertises authenticated conversation controls; absent/false means unavailable. Reads expose
+durable goal state, physical-run discovery and idempotent receipts. Mutations require a session,
+expected revision and operation ID; start receipts may include the reserved execution identity.
+No DTO contains a controller proof or allows the model to select another owner. Domain runtime
+validation remains in the kernel and goal package, preserving this package's type-only boundary.
+Production: [goals.ts](../../packages/protocol/src/goals.ts) and
+[client.ts](../../packages/protocol/src/client.ts).
+Test: [public-contract.fixture.ts](../../packages/protocol/tests/contract/public-contract.fixture.ts)
+and [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
 ### 2.1 Module list
 
 Source ownership:
@@ -44,6 +55,7 @@ Source ownership:
 | `common.ts` | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
 | `runs.ts` | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
 | `hosting.ts` | Hosted-run identity, snapshot pages, handoff receipts, control epochs, attachments and the `HostingService` interface |
+| `goals.ts` | Persistent goal state, criteria, usage, operation receipts and authenticated user-control DTOs and `GoalService` contract |
 | `local-host.ts` | Optional local operator process state, bounded browser handoff DTOs and explicit runtime retry/restart controls |
 | `config.ts` | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
 | `plugins.ts` | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
@@ -63,6 +75,29 @@ Source ownership:
 | `client.ts` | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions` |
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
+
+`Session.goal_state` is an optional host-owned projection of the goal domain, including its bounded
+audit archive. A public session save cannot create, remove or rewrite that field. Goal service DTOs
+do not independently advertise availability; actual host composition must supply the conversation
+control contract. `GoalRun.progress` carries a bounded summary and evidence references; it neither
+accepts a checkpoint nor completes the objective. The protocol keeps no runtime dependency on the
+domain package.
+Production: `GoalState` and `GoalService` in [goals.ts](../../packages/protocol/src/goals.ts),
+`Session` in [sessions.ts](../../packages/protocol/src/sessions.ts), and the kernel's
+`goalStateFromSession` / `goalStateToDto` in
+[session-state.ts](../../packages/kernel/src/goals/session-state.ts).
+Test: [goal-repository.test.ts](../../packages/kernel/tests/integration/goal-repository.test.ts)
+verifies persisted projection, public-save refusal and foreign archived state. Progress, pause and
+checkpoint separation are exercised in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts).
+
+`GoalService.subscribe(sessionId, listener)` asynchronously installs a live display subscription
+and returns its disposer. Await installation before reading state to cover concurrent publication.
+`GoalChange` contains only the session ID; clients reread `GoalView` rather than deriving control or
+completion from a notification. The host bounds subscriptions and disposes them on disconnect.
+Production: `GoalChange` and `GoalService` in [goals.ts](../../packages/protocol/src/goals.ts).
+Test: acknowledgement ordering and notification validation in
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts), and
+late-registration disposal in [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts).
 
 `KernelClient.hosting` is an optional `HostingService`, advertised by
 `KernelCapabilities.hosting.host_generation`. `connectKernelClient` exposes it only when that
@@ -447,13 +482,21 @@ are owned by [explicit operator recovery](hosted-runs.md#explicit-operator-recov
 
 ### 3.3 `RunEvent` — the 39-variant discriminated union
 
+Successful run endings may carry finalization disposition; it does not replace execution status
+or confer goal-continuation authority. Clients must distinguish `checkpoint` from ordinary final
+completion in live and restored history. Production: `RunEvent` in
+[runs.ts](../../packages/protocol/src/runs.ts) and `engineEventToProto` in
+[map-events.ts](../../packages/kernel/src/runs/map-events.ts).
+Test: [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts)
+and [checkpoint-render.test.tsx](../../packages/code/tests/integration/checkpoint-render.test.tsx).
+
 Defined as `RunEvent` in `packages/protocol/src/runs.ts`, one large union type. Every variant and its
 distinguishing fields:
 
 | `type` | Extra fields (beyond `at`/attribution) | Source |
 | --- | --- | --- |
 | `run_started` | `lead_model?`, `subagent_model?` | `packages/protocol/src/runs.ts` |
-| `run_ended` | `status`, `reason?`, `code?` | `packages/protocol/src/runs.ts` |
+| `run_ended` | `status`, `reason?`, `code?`, `disposition?: "final"\|"checkpoint"` | `packages/protocol/src/runs.ts` |
 | `iteration_started` | `iteration`, `model?` | `packages/protocol/src/runs.ts` |
 | `iteration_completed` | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts` |
 | `tool_call_started` | `call_id`, `tool`, `server`, `arguments?` | `packages/protocol/src/runs.ts` |
@@ -620,7 +663,7 @@ on the same part rather than separate variants.
 | `AgentRole` | `"lead" \| "subagent"` | `packages/protocol/src/runs.ts` |
 | `PerAgentUsage` | `{ role: AgentRole \| "vision"; model; input_tokens; output_tokens; cached_tokens; cache_write_tokens; iterations? }` | `packages/protocol/src/runs.ts` |
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts` |
-| `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message } }` | `packages/protocol/src/runs.ts` |
+| `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message } }` plus final disposition or `disposition: "checkpoint"` with separate `checkpoint: { summary, next_step }` | `packages/protocol/src/runs.ts` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts` |
 | `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts` |
 
@@ -630,6 +673,14 @@ escape-hatch shape as `capability_event`'s open string (§5 invariant 4), applie
 rather than to the event union. `RunUsage.by_agent` is optional because "a live run's final result may
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
+
+Checkpoint disposition is separate from execution status and final `result`. Missing disposition
+means the ordinary final path. `engineResultToProto` copies the bounded handoff for both live and
+stored results, including failure/cancellation status without relabeling either as completed.
+The DTO grants no continuation authority. Production: [runs.ts](../../packages/protocol/src/runs.ts)
+and [map-result.ts](../../packages/kernel/src/runs/map-result.ts).
+Test: `checkpoint protocol mapping` in [map-result.test.ts](../../packages/kernel/tests/unit/map-result.test.ts)
+and [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
 
 `ExtensionProfileRunRef` is deliberately only `{ id, fingerprint }`. `RunDetail.extension_profile`,
 `SessionTurn.extension_profile`, and `SessionSummary.last_extension_profile` retain that identity without

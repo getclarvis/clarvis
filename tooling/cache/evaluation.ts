@@ -29,7 +29,8 @@ function evaluateWindow(
 ): CacheWindowEvaluation {
   const reasons: string[] = [];
   const known = calls.filter(
-    (call) => call.status === "completed" && validCacheUsage(call.usage) && call.usage.input > 0,
+    (call): call is CacheCall & { usage: CacheUsage } =>
+      call.status === "completed" && validCacheUsage(call.usage) && call.usage.input > 0,
   );
   let incomplete = known.length !== calls.length || known.length < (requireGrowth ? 10 : 3);
   const input = known.reduce((sum, call) => sum + call.usage.input, 0);

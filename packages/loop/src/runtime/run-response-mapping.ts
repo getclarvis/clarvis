@@ -1,5 +1,5 @@
 import { CodedError, ProviderError } from "@clarvis/capability";
-import type { ErrorCode, RunResponse, Usage } from "@clarvis/capability";
+import type { ErrorCode, RunFinalization, RunResponse, Usage } from "@clarvis/capability";
 import { sanitizeDeep, sanitizeErrorMessage } from "@clarvis/capability";
 import { errorResponse } from "./support/run-response.ts";
 import type { AgentResult } from "./loop/loop-shared.ts";
@@ -88,6 +88,10 @@ export function loopResultToResponse(
   usage: Usage,
   fallbackMessage: (code: ErrorCode) => string,
 ): RunResponse {
+  const finalization: RunFinalization =
+    loopResult.disposition === "checkpoint"
+      ? { disposition: "checkpoint", checkpoint: loopResult.checkpoint }
+      : {};
   const partialValue = loopResult.partialStructured
     ? loopResult.partialStructured.value
     : loopResult.partialText;
@@ -95,20 +99,29 @@ export function loopResultToResponse(
     case "completed":
       return {
         status: "completed",
-        result: loopResult.structuredResult
-          ? loopResult.structuredResult.value
-          : (loopResult.text ?? loopResult.partialText),
+        ...finalization,
+        result:
+          loopResult.disposition === "checkpoint"
+            ? undefined
+            : loopResult.structuredResult
+              ? loopResult.structuredResult.value
+              : (loopResult.text ?? loopResult.partialText),
         usage,
       };
     case "budget_exhausted":
-      return { status: "budget_exhausted", result: partialValue, usage };
+      return { status: "budget_exhausted", ...finalization, result: partialValue, usage };
     case "cancelled":
-      return { status: "cancelled", result: partialValue, usage };
+      return { status: "cancelled", ...finalization, result: partialValue, usage };
     case "soft_limit_declined":
-      return { status: "soft_limit_declined", result: partialValue, usage };
+      return { status: "soft_limit_declined", ...finalization, result: partialValue, usage };
     case "error": {
       const code = loopResult.error?.code ?? "empty_response";
-      return errorResponse(usage, code, loopResult.error?.message ?? fallbackMessage(code));
+      return {
+        status: "error",
+        error: { code, message: loopResult.error?.message ?? fallbackMessage(code) },
+        usage,
+        ...finalization,
+      };
     }
   }
 }

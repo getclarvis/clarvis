@@ -162,6 +162,17 @@ T-13): `init`, `terminate`, `agent_registered`,
 
 #### `BUILTIN_TRACE_EVENT_TYPES`
 
+Successful `run_ended` events retain optional `disposition: "final" | "checkpoint"` from the engine
+detail. Missing disposition is ordinary final semantics. Unsuccessful reasons never advertise an
+accepted checkpoint. This field survives the same durable projection used by live delivery and
+restored kernel run details; checkpoint metadata remains separate in the final run response.
+Production: `RunEndedDetail` and `BuiltinTraceEvent` in
+[trace-kinds.ts](../../packages/capability/src/trace-kinds.ts) and
+[trace-events.ts](../../packages/capability/src/trace-events.ts); `mapEntry` in
+[trace-mapper.ts](../../packages/trace/src/trace-mapper.ts).
+Test: [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts)
+compares the live terminal event with the restored event after reopening the kernel and file store.
+
 The mapped/persisted-side vocabulary — the runtime list `isBuiltinTraceEvent` tests against
 (`packages/capability/src/trace-events.ts`, `BUILTIN_TRACE_EVENT_TYPES`). Every name here except
 `init`/`terminate` and the four `agent_*`
@@ -501,6 +512,18 @@ Mechanics inside the builtin branches:
 `packages/trace/src/record-builder.ts`: sum `response.usage.by_agent` into four totals,
 take `elapsed_ms` from `usage.elapsed_ms`, derive `ended_at = wallStartedAt + elapsed_ms`, include `final_context`/`capability_state`/`host_metadata` only when supplied.
 Pinned at `packages/trace/tests/unit/record-builder.test.ts`.
+
+The response also retains accepted checkpoint disposition and bounded handoff metadata, independently
+of its status. A stage checkpoint has no validated final result value; persistence and reopening
+must preserve that distinction. Journal recovery still produces an interrupted outcome, never an
+invented checkpoint acceptance. Production: `buildRecord` in
+[record-builder.ts](../../packages/trace/src/record-builder.ts), response serialization in
+[json-trace-store.ts](../../packages/trace/src/json-trace-store.ts), and `journalToRecord` in
+[journal-recovery.ts](../../packages/trace/src/journal-recovery.ts).
+Test: the real kernel/SDK/plan/trace reopen journey in
+[checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts)
+and the interrupted-record matrix in
+[journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.test.ts).
 
 ### 4e. `insert` on the JSON store
 

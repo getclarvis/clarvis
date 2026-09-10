@@ -61,9 +61,9 @@ identity`) inspects that guidance in the actual tool-less request. The cross-sur
 
 | Symbol | Location | Shape |
 | --- | --- | --- |
-| `runVisionPrepass(p: VisionPrepassArgs): Promise<void>` | `packages/loop/src/runtime/vision-prepass.ts` | the entry point; no return value, all effects are side effects (message append, trace, ledger, usage) |
+| `runVisionPrepass(p: VisionPrepassArgs): Promise<string \| undefined>` | `packages/loop/src/runtime/vision-prepass.ts` | returns an optional reading note; records trace, ledger and usage effects |
 | `VisionPrepassDeps` | `packages/loop/src/runtime/vision-prepass.ts` | `{ env: EnvConfig; llm: LLMProvider; logger?: Logger }` |
-| `VisionPrepassArgs` | `packages/loop/src/runtime/vision-prepass.ts` | `{ signal, deps, request: RunRequest, trace: TracePort, ledger: TokenLedger, seed: EntrySeed, accounting: UsageAccounting }` |
+| `VisionPrepassArgs` | `packages/loop/src/runtime/vision-prepass.ts` | `{ signal, deps, request: RunRequest, trace: TracePort, ledger: TokenLedger, seed: Pick<EntrySeed, "entryStripsImages" \| "turnImages">, accounting: UsageAccounting }` |
 | `VISION_SYSTEM_PROMPT` | `packages/loop/src/runtime/vision-prepass.ts` | the fixed system prompt for the reading call |
 | `VISION_MAX_OUTPUT_TOKENS` | `packages/loop/src/runtime/vision-prepass.ts` | `4_096` — the hard output ceiling for the reading |
 | `partialUsageOf(err): LLMUsage \| undefined` | `packages/loop/src/runtime/vision-prepass.ts` | reads `(err as { partialUsage? }).partialUsage`, so a failed call can still report billed tokens |
@@ -253,19 +253,32 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
 
 ### 4.3 The prepass itself
 
-Invoked from `orchestrator.ts` inside `runWithClockAndTimeout`'s `buildLoop` callback, **before**
-`runAgent` is called (`packages/loop/src/runtime/orchestrator.ts`):
+The orchestrator supplies the prepass through `runAgent`'s `prepareContext` inside the existing
+`runWithClockAndTimeout` boundary. The actual entry capability attachment and contribution fold
+finish first, then the shared budget admits preparation:
 
 ```ts
-await runVisionPrepass({ signal, deps, request, trace: traceHandle, ledger, seed, accounting });
-return runAgent(buildEntryInput(clock, signal));
+return runAgent({
+  ...buildEntryInput(clock, signal),
+  prepareContext: async (ctx) => {
+    const reading = await runVisionPrepass({ signal, deps, request, trace: traceHandle, ledger, seed, accounting });
+    if (reading !== undefined) ctx.appendNote(reading);
+  },
+});
 ```
 
-`seed.entryMessages` and the `EntryInputBuilder`'s captured `entryMessages` are the **same array
-object** (`packages/loop/src/runtime/entry-inputs.ts: messages: p.entryMessages`), so a `push` onto `seed.entryMessages`
-inside the prepass is visible to the subsequent `buildEntryInput(clock, signal)` call — this is why the
-reading is appended after the complete restored history, including earlier runtime notes and
-plan reminders (`packages/loop/src/runtime/vision-prepass.ts`).
+`runVisionPrepass` returns a reading note rather than mutating an earlier seed array. The orchestrator
+appends it after the complete restored history and current capability reminders in the actual live
+context. An unavailable required entry, including an exception in `attach`, cannot consume an
+auxiliary call. Preparation charges the shared ledger, which is checked again before entry inference.
+Production: `runEntryAgent` in [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts),
+`runAgent` in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts), and `runVisionPrepass`
+in [vision-prepass.ts](../../packages/loop/src/runtime/vision-prepass.ts).
+Test: required-entry scope/attach cases in
+[host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts), `context
+preparation admission` in [run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts), and
+the existing reading, usage, truncation and failure matrix in
+[image-vision-routing.test.ts](../../packages/loop/tests/integration/image-vision-routing.test.ts).
 
 Step by step inside `runVisionPrepass` (`packages/loop/src/runtime/vision-prepass.ts`):
 
@@ -281,16 +294,18 @@ Step by step inside `runVisionPrepass` (`packages/loop/src/runtime/vision-prepas
 | 8 | `packages/loop/src/runtime/vision-prepass.ts` | on throw: `failure` is `"the vision pass was cancelled"` if `signal.aborted`, else the error's message; `usage = partialUsageOf(err)`; logs `vision.call_failed` |
 | 9 | `packages/loop/src/runtime/vision-prepass.ts` | `finally`: if `usage` is defined (success **or** a failure carrying `partialUsage`), `ledger.consume(usage)` and set `accounting.vision.current` |
 | 10 | `packages/loop/src/runtime/vision-prepass.ts` | always record one `vision_analysis` trace entry: `status: text !== null ? "completed" : "failed"`, `result: text ?? failure ?? "the vision pass produced no usable reading"` |
-| 11 | `packages/loop/src/runtime/vision-prepass.ts` | only if `text !== null`: push the `[image analysis]` user message onto `seed.entryMessages`, labelling it `CUT OFF` when `truncated` |
+| 11 | `packages/loop/src/runtime/vision-prepass.ts` | only if `text !== null`: return the `[image analysis]` note for the orchestrator to append to the live entry context, labelling it `CUT OFF` when `truncated` |
 
 `timeoutMs` is the fixed environment default `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` (default `180000`,
-`packages/capability/src/env.ts`) — **not** derived from `request.budget.timeout_ms`; the run's own
-configured timeout does not scope this call.
+`packages/capability/src/env.ts`) — **not** derived from `request.budget.timeout_ms`. The enclosing
+run clock/timeout still bounds preparation through its shared abort signal.
 
 Nothing in `runVisionPrepass` checks `ledger.wouldExceed(...)` before making the call — it spends
 first and charges after; `TokenLedger.consume` has no rejecting path
 (`packages/loop/src/runtime/budget/budget.ts`), so the pass can push the ledger past
-`total_token_limit` on its own.
+`total_token_limit` on its own. The caller checks the shared budget before preparation and again
+afterward, so an exhausted ledger refuses entry inference; this does not reserve the full cost of
+an in-flight reading or promise zero overshoot.
 
 ### 4.4 `read_image` (the direct, sighted-model route)
 
@@ -496,12 +511,11 @@ Nothing in this subsystem retries a failed vision call; a run makes at most one 
   a vision-model call that declared `vision` still reaches the provider with real image parts rather
   than placeholders (`toUserContent`, `packages/llm/src/to-model-messages.ts`).
 
-**Forces the calling order**: `packages/loop/src/runtime/orchestrator.ts` calls `runVisionPrepass` and only then builds
-the entry agent's `RunAgentInput` via `buildEntryInput(clock, signal)` — the shared-array-reference
-mechanism (§4.3) is what makes appending to `seed.entryMessages` visible to the entry agent's first
-call. Nothing in the type system enforces this order; it is enforced only by the two statements'
-sequence in `orchestrator.ts` and by the docstring's own warning
-(`packages/loop/src/runtime/vision-prepass.ts`).
+**Forces the calling order**: `runEntryAgent` in `packages/loop/src/runtime/orchestrator.ts` supplies
+`prepareContext` to `runAgent`. `packages/loop/src/runtime/loop/run-agent.ts` attaches and folds the
+actual entry capabilities, then admits preparation under the shared budget and signal. The returned
+reading is appended to that context before its first call; seed-array mutation is not a delivery
+mechanism. The required-entry integration and preparation-admission tests in §4.3 pin this ordering.
 
 **Depended on by**: `packages/loop/src/runtime/orchestrator.ts` (the only call site of
 `runVisionPrepass`). Nothing outside `@clarvis/loop` calls it directly — the kernel and `code` reach it

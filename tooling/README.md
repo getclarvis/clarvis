@@ -55,9 +55,10 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
-Both Containerfiles and the build helper carry private protocol revision 10, matching the kernel
+Both Containerfiles and the build helper carry private protocol revision 11, matching the kernel
 worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
-model policy and resolved operator loop defaults/ceilings. Older images are refused at admission and must be rebuilt; changing an active runtime
+model policy, resolved operator loop defaults/ceilings and the bound goal capability projection.
+Older images are refused at admission and must be rebuilt; changing an active runtime
 image remains an operator choice.
 
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
@@ -89,6 +90,24 @@ before attaching that identity to a source prerelease. The official workflow acc
 tags and verifies anonymous image pulls before public release activation.
 
 ## Prompt-cache evidence
+
+`goal/` qualifies the persistent-goal host with a synthetic implementation, delegated helper,
+checkpoint and automatic verification stage. Run `bun tooling/goal/live.ts --models
+gpt-5.6-terra,gpt-5.6-luna --trials 2 --output <directory>` locally with the existing global Clarvis
+OAuth. The Linux Bubblewrap host view below keeps credentials authoritative while isolating
+configuration and state. Each worker uses the real FileRunHost, IPC and subscription SDK; its
+observation wrapper calls the existing provider, retaining the host's goal usage tracker.
+The shared HTTP recorder and finite attempt ledger accept a typed scenario namespace; goal reports
+use `goal-continuation`, separately from the C01-C11 cache qualification matrix.
+Per trial, the limits are 32 physical calls, 500,000 input tokens, 24,000 output tokens and six
+minutes; the invocation caps all trials at 128 calls, 2,000,000 input tokens, 96,000 output tokens
+and thirty minutes. Reports retain failed/incomplete trials, serialized hashes, per-agent usage,
+model/affinity checks and independently verified output. The baseline must fail the fixture tests.
+Version 2 also retains bounded tool outcomes and argument shapes, excluding argument values and
+successful payloads, to diagnose rejected controls before isolated traces are removed. The ChatGPT
+affinity check accounts for the header already being the SHA-256 of the composed cache key.
+This host qualification does not establish real PTY behavior, an installed artifact or container
+execution. No goal live command runs in CI. Its contract is [goals](../specs/capabilities/goals.md).
 
 `cache/` owns the typed schema-versioned physical-call report, independent per-agent evaluator,
 bounded HTTP observation and synthetic sequential-cursor fixture. `bun run test:cache` runs the

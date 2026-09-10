@@ -16,6 +16,9 @@ import {
 } from "@clarvis/capability";
 import { buildExecuteRunDeps, type BuildRunDepsOptions } from "@clarvis/loop/host";
 import { executeRun } from "@clarvis/loop";
+import { AiSdkAdapter } from "@clarvis/llm/adapter";
+import { createGoalCapability, settleGoalRun } from "@clarvis/goal";
+import { goalHostFixture } from "../helpers/goal-host.ts";
 import { HOME_ENV } from "@clarvis/paths";
 import { createMCPAuthorizationCoordinator } from "@clarvis/mcp-client";
 import { remoteServer } from "../helpers/runtime-remote-server.ts";
@@ -212,6 +215,188 @@ async function fixture(
 }
 
 describe("runtime capability composition", () => {
+  it("preserves goal authority, plan checkpoint and SDK prefix across guest continuation", async () => {
+    const host = await goalHostFixture();
+    cleanup.push(host.close);
+    const planStore = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const plans: PlanFactory = {
+      storeFor: async () => ({ key: "markdown:host", providerKind: "markdown", store: planStore }),
+    };
+    const wire: Array<{ messages: unknown[]; tools: unknown[]; prompt_cache_key: string }> = [];
+    const adapter = new AiSdkAdapter({
+      fetch: Object.assign(
+        async (_url: string | URL | Request, init?: RequestInit) => {
+          if (typeof init?.body !== "string") throw new Error("Expected serialized SDK body");
+          wire.push(JSON.parse(init.body) as (typeof wire)[number]);
+          const step = wire.length;
+          let call: { name: string; arguments: unknown } | undefined;
+          if (step === 1)
+            call = {
+              name: "create_plan",
+              arguments: {
+                title: "Guest goal stage",
+                objective: "Verify the fixture",
+                tasks: [{ title: "Verify" }],
+                validation: [],
+              },
+            };
+          else if (step === 2)
+            call = {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "checkpoint",
+                  summary: "Plan prepared",
+                  next_step: "Verify the fixture",
+                },
+              },
+            };
+          else if (step === 3) {
+            const plan = (await planStore.list()).plans[0]!;
+            call = {
+              name: "transition_plan_task",
+              arguments: {
+                expected_revision: plan.revision,
+                expected_digest: plan.digest,
+                expected_spec_digest: plan.spec_digest,
+                task_id: plan.tasks[0]!.id,
+                status: "done",
+                result: "Synthetic fixture verified",
+              },
+            };
+          } else if (step === 4)
+            call = {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "candidate",
+                  summary: "Result verified",
+                  assessments: [
+                    {
+                      criterion_id: "objective",
+                      kind: "qualitative",
+                      justification: "The fixture was verified",
+                    },
+                  ],
+                },
+              },
+            };
+          else if (step !== 5) throw new Error("Unexpected extra inference");
+          const chunk = {
+            id: `goal-${step}`,
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "model",
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: "assistant",
+                  ...(call === undefined
+                    ? { content: "Fixture complete" }
+                    : {
+                        tool_calls: [
+                          {
+                            index: 0,
+                            id: `goal-call-${step}`,
+                            type: "function",
+                            function: {
+                              name: call.name,
+                              arguments: JSON.stringify(call.arguments),
+                            },
+                          },
+                        ],
+                      }),
+                },
+                finish_reason: call === undefined ? "stop" : "tool_calls",
+              },
+            ],
+            usage: {
+              prompt_tokens: 1000 + step * 10,
+              completion_tokens: 10,
+              prompt_tokens_details: { cached_tokens: 0 },
+            },
+          };
+          return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    });
+    const f = await fixture(adapter, { plans });
+    const request = {
+      ...body("first", ["edit_workspace"]),
+      session_id: "session",
+      agent_instance_id: "entry",
+      providers: [
+        { name: "test", kind: "openai-compatible" as const, base_url: "https://goal.invalid/v1" },
+      ],
+      plans: { mode: "on", retention: "keep" },
+    };
+    await host.admit();
+    const first = await host.runtime();
+    const checkpoint = await f.runtime.executeRun({
+      rawBody: request,
+      owner: "owner",
+      deps: f.deps,
+      capabilities: [createGoalCapability(first.port)],
+      onEvent: (event) => first.evidence.observe(event),
+    });
+    expect(checkpoint.response).toMatchObject({ status: "completed", disposition: "checkpoint" });
+    expect((await planStore.list()).plans[0]!.tasks[0]!.status).toBe("pending");
+    const firstState = (await host.repository.read("session"))!.current!;
+    expect(firstState.status).toBe("active");
+    expect(firstState.runs[0]!.checkpoint!.summary).toBe("Plan prepared");
+    expect(f.deps.traceStore.getById("owner", "first")).toMatchObject({
+      response: { disposition: "checkpoint" },
+    });
+    await host.repository.transact("session", (state) => ({
+      state: settleGoalRun(state!, {
+        goal_id: firstState.goal_id,
+        execution_id: "first",
+        physical_closed: true,
+        outcome: "completed",
+        disposition: "checkpoint",
+        completion_validated: false,
+        usage: { kind: "measured", input: 2030, output: 20, cached: 0 },
+        now: 200,
+      }),
+      result: undefined,
+    }));
+    await host.admit("second");
+    const second = await host.runtime("second");
+    const final = await f.runtime.executeRun({
+      rawBody: {
+        ...request,
+        execution_id: "second",
+        continue_from: "first",
+        messages: [{ role: "user", content: "Continue the checkpoint" }],
+      },
+      owner: "owner",
+      deps: f.deps,
+      capabilities: [createGoalCapability(second.port)],
+      onEvent: (event) => second.evidence.observe(event),
+    });
+    expect(final.response).toMatchObject({ status: "completed" });
+    expect(final.response.disposition).not.toBe("checkpoint");
+    expect((await planStore.list()).plans[0]!.tasks[0]!.status).toBe("done");
+    expect(await second.port.validateCompletion()).toMatchObject({ valid: true });
+    expect((await host.repository.read("session"))!.current!.status).toBe("active");
+    expect(wire).toHaveLength(5);
+    expect(new Set(wire.map((request) => request.prompt_cache_key))).toEqual(
+      new Set(["session_entry"]),
+    );
+    for (let index = 1; index < wire.length; index++) {
+      const previous = wire[index - 1]!;
+      expect(wire[index]!.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
+      expect(wire[index]!.tools).toEqual(previous.tools);
+    }
+    const serialized = JSON.stringify(f.guestEnvelopes);
+    expect(serialized).toContain('"goal"');
+    expect(serialized).not.toContain('"goal_state"');
+    expect(serialized).not.toContain('"receipts"');
+  });
   it("preserves admitted images, accumulated context and final trace through the real guest loop", async () => {
     let calls = 0;
     const f = await fixture({
@@ -1418,20 +1603,55 @@ describe("runtime capability composition", () => {
     expect(JSON.stringify(record)).toContain("workflow_run_completed");
   });
 
-  it("refuses a host capability it cannot project instead of dropping it", async () => {
-    const f = await fixture({
-      async call() {
-        throw new Error("no model call may start");
-      },
-    });
-    const capability: Capability = { name: "operator-policy", forRun: () => null };
-    await expect(
-      f.runtime.executeRun({
-        rawBody: body("unprojected"),
-        owner: "owner",
-        deps: f.deps,
-        capabilities: [capability],
-      }),
-    ).rejects.toMatchObject({ code: "unsupported_policy" });
-  });
+  it.each(["operator-policy", "goal"])(
+    "refuses an unprojectable or forged %s capability",
+    async (name) => {
+      const f = await fixture({
+        async call() {
+          throw new Error("no model call may start");
+        },
+      });
+      const capability: Capability = { name, forRun: () => null };
+      await expect(
+        f.runtime.executeRun({
+          rawBody: body("unprojected"),
+          owner: "owner",
+          deps: f.deps,
+          capabilities: [capability],
+        }),
+      ).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(f.guestEnvelopes).toEqual([]);
+    },
+  );
+
+  it.each(["duplicate", "workflow", "child"])(
+    "refuses %s goal admission before guest execution",
+    async (mode) => {
+      const host = await goalHostFixture();
+      cleanup.push(host.close);
+      await host.admit();
+      const { port } = await host.runtime();
+      const f = await fixture({
+        call: async () => {
+          throw new Error("No model call may start");
+        },
+      });
+      const capability = createGoalCapability(port);
+      await expect(
+        f.runtime.executeRun({
+          rawBody: {
+            ...body("first", mode === "workflow" ? ["workflow"] : []),
+            session_id: "session",
+            agent_instance_id: "entry",
+          },
+          owner: "owner",
+          deps: f.deps,
+          capabilities:
+            mode === "duplicate" ? [capability, createGoalCapability(port)] : [capability],
+          ...(mode === "child" ? { runtimeParentRunId: "parent" } : {}),
+        }),
+      ).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(f.guestEnvelopes).toEqual([]);
+    },
+  );
 });

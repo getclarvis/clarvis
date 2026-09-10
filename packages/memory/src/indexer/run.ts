@@ -205,6 +205,7 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
       previous.final_context.length > 0
     ) {
       const resumed = buildIndexerContinuationRequest({
+        capabilityRegistry: plan.deps.capabilityRegistry,
         executionId: indexerRunId,
         subject: previous,
         providers: indexer.providers,
@@ -342,8 +343,10 @@ export interface PassPlan {
  *   *prepended*: contributions fold in registration order and dispatch takes the
  *   first match, so the pass's handlers shadow the host memory capability's
  *   without removing a single advertised tool. Nothing is filtered here — the
- *   host already handed over deps with hooks absent and the enqueue suppressed,
- *   because it is the host that owns capability composition.
+ *   host already handed over deps with hooks absent, enqueue suppressed and
+ *   source-work lifecycle projected out while retaining its catalog. Registered
+ *   capability request parameters are carried through on initial and recovered
+ *   passes so source modes still select the same advertised tools.
  *
  *   The **cold** path replaces the list outright and pushes a digest, which is
  *   correct under every condition and merely costs more. It is what runs when
@@ -376,6 +379,7 @@ export function planPass(args: {
     if (blocker === null && subject !== null) {
       return {
         rawBody: buildIndexerContinuationRequest({
+          capabilityRegistry: passDeps.capabilityRegistry,
           executionId: indexerRunId,
           subject,
           providers: indexer.providers,

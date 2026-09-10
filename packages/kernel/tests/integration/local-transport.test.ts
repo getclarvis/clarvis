@@ -84,7 +84,11 @@ async function setup(options?: LocalKernelListenerOptions) {
       return {
         ...kernelIdentity(root),
         principal: { id: "fixture-operator" },
-        services: { ...kernel.operatorServices, ...kernel.defaultOwnerServices },
+        services: {
+          ...kernel.operatorServices,
+          goals: kernel.goals,
+          ...kernel.defaultOwnerServices,
+        },
       };
     },
     authorize: ({ principal, metadata }) =>

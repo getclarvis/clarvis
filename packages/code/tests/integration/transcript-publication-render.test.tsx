@@ -304,6 +304,143 @@ function matchingRow(frame: string, pattern: RegExp): { text: string; row: numbe
   return undefined;
 }
 
+test.each([0, 30])(
+  "keeps fast checkpoint stages in chronological flow after an inactive goal view (%i extra rows)",
+  async (extraRows) => {
+    const store = createTranscriptStore();
+    const [active, setActive] = createSignal(false);
+    const activity = createMutable({
+      subagents: [],
+      plan: null,
+      usage: null,
+      context: null,
+    }) as unknown as ActivityStore;
+    const transcript = createTranscriptState({
+      nodes: () => store.committedNodes(),
+      preserveOrder: true,
+      subagents: () => [],
+      notify: () => {},
+      defaultFolded: (key) => store.defaultFolded(key),
+    });
+    let history: CommittedHistoryHandle | undefined;
+    const rendered = await openRender(
+      () => (
+        <TranscriptRegion
+          store={store}
+          transcript={transcript}
+          activity={activity}
+          interaction={
+            {
+              keymap: createFakeKeymap().keymap,
+              pushOverlayContext: () => {},
+              popOverlayContext: () => {},
+              syncContext: () => {},
+            } as unknown as Interaction
+          }
+          run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
+          layout={{
+            mode: () => "wide",
+            sidebarVisible: () => false,
+            sidebarWidth: () => 28,
+            drawerOpen: () => false,
+            contentInset: () => 0,
+            width: () => 120,
+            height: () => 20,
+          }}
+          active={active}
+          contextWindow={() => 32768}
+          agent={() => "coder"}
+          model={() => "fixture"}
+          openPlan={() => {}}
+          notify={() => {}}
+          onScrollbox={() => {}}
+          onHistoryHandle={(value) => (history = value)}
+        />
+      ),
+      { width: 120, height: 20 },
+    );
+    try {
+      for (let stage = 1; stage <= 3; stage++) {
+        const id = `stage-${stage}`;
+        store.appendUserMessage(
+          `GOAL_STAGE_${stage}\n${"fixture detail\n".repeat(extraRows)}`,
+          undefined,
+          id,
+        );
+        const sink = store.openRun(id);
+        sink.beginReconcile();
+        applyEvent(sink, runStarted(), "replay");
+        await rendered.renderOnce();
+        applyEvent(
+          sink,
+          toolCall(
+            "update",
+            "update_goal",
+            { action: stage < 3 ? "checkpoint" : "candidate" },
+            "Saved",
+          ),
+          "replay",
+        );
+        applyEvent(
+          sink,
+          {
+            type: "run_ended",
+            at: 20,
+            status: "completed",
+            ...(stage < 3 ? { disposition: "checkpoint" as const } : {}),
+          },
+          "replay",
+        );
+        sink.endReconcile();
+        sink.complete();
+        await rendered.renderOnce();
+      }
+      setActive(true);
+      await waitForPhysicalFixedPoint(rendered, history!);
+      const initial = rendered.captureCharFrame();
+      const publications = store.publicationBatches;
+      const rank = new Map(
+        publications.flatMap((publication, index) =>
+          publication.nodes.map((node) => [node.key, index] as const),
+        ),
+      );
+      const lastHistory = history!.snapshot().end - 1;
+      const tailOwners = descendants(
+        byId(rendered.renderer.root, "live-transcript-tail"),
+        (node): node is Renderable => node.id.startsWith("live-transcript-owner:"),
+      );
+      for (const owner of tailOwners) {
+        const key = owner.id.slice("live-transcript-owner:".length);
+        expect(rank.get(key) ?? publications.length).toBeGreaterThan(lastHistory);
+      }
+      const initialRows = initial.split("\n");
+      const initialCompleted = initialRows.findIndex((row) => row.includes("Completed"));
+      expect(initialCompleted).toBeGreaterThanOrEqual(0);
+      expect(
+        initialRows.slice(initialCompleted + 1).some((row) => row.includes("Checkpoint saved")),
+      ).toBe(false);
+      for (const key of ["stage-1::run", "stage-2::run"]) {
+        history!.revealKey(key);
+        await waitForPhysicalFixedPoint(rendered, history!);
+        expect(rendered.captureCharFrame()).toContain("Checkpoint saved");
+      }
+      const snapshot = history!.snapshot();
+      const owners = snapshot.activeBatchIds.map((id) =>
+        byId(rendered.renderer.root, `history:${id}`),
+      );
+      expect(owners.map((owner) => owner.y)).toEqual(
+        owners.map((owner) => owner.y).toSorted((a, b) => a - b),
+      );
+      history!.returnToTail();
+      await waitForPhysicalFixedPoint(rendered, history!);
+      expect(rendered.captureCharFrame()).toContain("Completed");
+      expect(store.publicationBatches).toEqual(publications);
+    } finally {
+      rendered.renderer.destroy();
+    }
+  },
+);
+
 test("production TranscriptRegion keeps committed memory, diff, and write syntax owners stable", async () => {
   const scheduler = new ManualPublicationScheduler();
   const store = createTranscriptStore({

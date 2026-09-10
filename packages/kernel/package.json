@@ -65,6 +65,7 @@
   },
   "dependencies": {
     "@clarvis/capability": "workspace:*",
+    "@clarvis/goal": "workspace:*",
     "@clarvis/loop": "workspace:*",
     "@clarvis/mcp-client": "workspace:*",
     "@clarvis/memory": "workspace:*",

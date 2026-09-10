@@ -12,8 +12,8 @@ export interface CacheUsage {
 }
 
 /** One actual HTTP attempt, including failed, cancelled and auxiliary calls. */
-export interface CacheCall {
-  scenario: CacheScenario;
+export interface CacheCall<Scenario extends string = CacheScenario> {
+  scenario: Scenario;
   trial: number;
   sessionId: string;
   agentInstanceId: string;

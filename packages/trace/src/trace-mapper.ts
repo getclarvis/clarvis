@@ -394,6 +394,8 @@ function mapEntryRaw(
         reason: d.reason,
       };
       if (d.code !== undefined) event.code = d.code;
+      if (d.reason === "completed" && d.disposition !== undefined)
+        event.disposition = d.disposition;
       return event;
     }
     case "delegation_started": {

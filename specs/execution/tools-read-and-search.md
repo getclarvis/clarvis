@@ -315,6 +315,16 @@ Step 5's extra byte and step 6's re-stat are pinned directly:
 `readRawFile` requests exactly `[9]` bytes for `maxBytes = 8`, stats twice, closes once, and reports
 `size: 32` from the second stat (`packages/tools/tests/integration/bounded-read.test.ts`).
 
+The root `@clarvis/tools` entry also exports this reader and its policy types for trusted host
+composition. Goal artifact verification supplies only the selected workspace as confinement and
+a 16 MiB byte ceiling; it does not inherit tool spill or temporary-root exceptions. Missing,
+non-regular, oversized or escaping artifacts cannot produce valid goal evidence.
+Production: `readRawFile` in [files.ts](../../packages/tools/src/lib/files.ts), re-exported by
+[index.ts](../../packages/tools/src/index.ts), and `createGoalEvidenceSource` in
+[evidence.ts](../../packages/kernel/src/goals/evidence.ts).
+Test: `refuses outside workspace artifacts, including directory links, and unavailable bytes` in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
+
 `readTextFile` layers a binary rejection on top: a UTF-16 BOM exempts the buffer, otherwise a NUL
 anywhere in the scan windows is `is_binary` (`packages/tools/src/lib/textfile.ts`).
 `readTextBuffer` is the best-effort twin — every failure collapses to `null` **except** `path_escape`,

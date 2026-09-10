@@ -17,6 +17,7 @@ import type { LifecycleHook, RunRequest } from "./api.ts";
 import type { NamespacedTool } from "./run.ts";
 import type { ExecutionRecord } from "./trace-events.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
+import type { FinalizationDisposition } from "./finalization.ts";
 import type { CompactionAnchor } from "./compaction-anchor.ts";
 import type {
   AgentBuildContext,
@@ -131,6 +132,8 @@ export interface RunCapabilityContext extends CapabilityRequestView {
  */
 export interface Capability {
   readonly name: string;
+  /** Fail before inference if activation, a declared seed or entry-agent attachment is unavailable. */
+  readonly required?: boolean;
   /** Static persisted projections this capability owns, collected before activation. */
   readonly persistedTraceProjectors?: readonly PersistedTraceProjector[];
   /** Grants this capability adds to the request vocabulary before validation. */
@@ -185,7 +188,7 @@ export interface Capability {
    *
    * @remarks The engine awaits activations concurrently under
    * {@link EnvConfig.CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS}; a capability that
-   * exceeds that wall budget is skipped for this run. Long work must observe
+   * exceeds that wall budget is skipped unless `required` makes activation mandatory. Long work must observe
    * {@link RunCapabilityContext.signal} because timing out stops waiting but
    * cannot forcibly stop arbitrary host code.
    */
@@ -218,6 +221,10 @@ export interface AgentScope extends AgentIdentity {
  */
 export interface RunCapability {
   readonly name: string;
+  /** Required registration propagated by the host; children retain ordinary per-scope filtering. */
+  readonly required?: boolean;
+  /** Preserve contributed durable state when this run stops before a final result is accepted. */
+  readonly preserveStateOnInterruption?: boolean;
   /**
    * Where this capability's contributions sit in the run's fold order; lower
    * runs first, registration order breaks ties. Defaults to `0`.
@@ -234,7 +241,8 @@ export interface RunCapability {
    * never into the system prompt — the system head stays byte-stable across
    * runs to preserve provider prompt caching). Degrade internally: a throw
    * here fails the run. The engine stops waiting after
-   * {@link EnvConfig.CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS} and omits the block.
+   * {@link EnvConfig.CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS} and omits the block unless this
+   * capability is required, in which case unavailable or empty declared seed content fails the run.
    */
   seedBlock?(): Promise<string | undefined> | string | undefined;
   /**
@@ -280,7 +288,12 @@ export interface RunCapability {
    * {@link EnvConfig.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS}; a timeout likewise
    * forfeits only this turn's replacement value.
    */
-  finalizeRun?(outcome: { status: ExecutionStatus }): unknown;
+  finalizeRun?(outcome: {
+    status: ExecutionStatus;
+    disposition?: FinalizationDisposition;
+    /** A stage ended or a registered capability requires retaining interrupted state. */
+    preserveState?: boolean;
+  }): unknown;
   /**
    * Error codes this capability terminates a run with that should read as a
    * guard trip rather than a plain fault.

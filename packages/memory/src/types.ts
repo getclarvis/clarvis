@@ -49,10 +49,12 @@ export interface IndexerRuntime {
    * The deps a pass uses when it continues the run it indexes, when the host
    * built them.
    *
-   * @remarks Distinct from {@link IndexerRuntime.deps} in exactly two ways, both
-   * assembled by the host because the host is what owns capability composition:
+   * @remarks The host owns capability composition:
    * the workspace hooks capability is **absent**, and the memory capability
-   * carries `enqueueOnRunEnd: false`.
+   * carries `enqueueOnRunEnd: false`. Stateful source capabilities must retain
+   * their advertised catalog without taking ownership of the source work's
+   * lifecycle or gates. The kernel projects planning this way; dispatch denial
+   * alone cannot suppress capability finalization or recovery mutations.
    *
    * Workspace hooks are absent so an unattended index pass cannot execute a
    * user's hooks against its memory writes. Historical capability blocks remain

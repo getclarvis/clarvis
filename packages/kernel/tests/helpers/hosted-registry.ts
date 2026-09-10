@@ -1,9 +1,15 @@
 import { expect } from "bun:test";
-import type { HostedRunAttachment, RunResult, StartHostedTurnParams } from "@clarvis/protocol";
+import type {
+  HostedRunAttachment,
+  RunHandle,
+  RunResult,
+  StartHostedTurnParams,
+} from "@clarvis/protocol";
 import {
   createHostedRegistry,
   type HostedRegistryOptions,
   type HostedRegistryState,
+  type HostedTurnContinuation,
 } from "../../src/hosting/registry.ts";
 import { createHostedProjection, type ProjectionStorage } from "../../src/hosting/projection.ts";
 import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
@@ -32,6 +38,9 @@ export function fixture(
     detachable?: boolean;
     maxRetainedRuns?: number;
     now?: () => number;
+    continuation?: (executionId: string) => HostedTurnContinuation;
+    continuationTimeoutMs?: number;
+    handle?: (handle: RunHandle) => RunHandle;
   } = {},
 ) {
   const contexts = new Map<string, ManagedRunContext>();
@@ -49,6 +58,7 @@ export function fixture(
     now: overrides.now,
     receiptLifetimeMs: 100,
     maxRetainedRuns: overrides.maxRetainedRuns,
+    continuationTimeoutMs: overrides.continuationTimeoutMs,
     async prepare(value, authority) {
       scopes.push(authority.scope);
       await overrides.prepare?.();
@@ -57,12 +67,15 @@ export function fixture(
         title: "Prepared title",
         config: { agent: "admiral", model: "test/model" },
         detachable: overrides.detachable ?? true,
+        ...(overrides.continuation === undefined
+          ? {}
+          : { continuation: overrides.continuation(value.params.execution_id) }),
         async commitIntent() {
           await overrides.commitIntent?.();
         },
         async start() {
           starts++;
-          return createManagedRun({
+          const handle = createManagedRun({
             executionId: value.params.execution_id,
             execute(context) {
               contexts.set(context.executionId, context);
@@ -76,6 +89,7 @@ export function fixture(
               });
             },
           });
+          return overrides.handle?.(handle) ?? handle;
         },
         async reconcile(result) {
           await overrides.reconcile?.();
@@ -127,8 +141,13 @@ export function fixture(
     removed,
     handoff,
     starts: () => starts,
-    finish(id = "run-1") {
-      endings.get(id)!({ execution_id: id, status: "completed", result: "done" });
+    finish(
+      id = "run-1",
+      finalization:
+        | { disposition?: "final"; checkpoint?: never }
+        | { disposition: "checkpoint"; checkpoint: { summary: string; next_step: string } } = {},
+    ) {
+      endings.get(id)!({ execution_id: id, status: "completed", result: "done", ...finalization });
     },
   };
 }

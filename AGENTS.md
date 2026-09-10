@@ -143,7 +143,7 @@ Editing files and running builds, tests, typechecks, lint, and read-only Git com
 
 ## Repository map
 
-Clarvis is a pre-release Bun/TypeScript monorepo of 18 packages. The current package list and concise
+Clarvis is a pre-release Bun/TypeScript monorepo of 19 packages. The current package list and concise
 descriptions live in [`README.md`](README.md); the authoritative dependency graph is generated in
 [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md).
 
@@ -154,7 +154,7 @@ foundation             capability · paths
 host contract          protocol
 execution service      llm · mcp-client · supervision · trace · tools · hooks · skills
 engine                 loop
-product capability     memory · plan · tasks · workflows
+product capability     memory · plan · goal · tasks · workflows
 host implementation    kernel
 application            code (terminal UI) · server (MCP over HTTP)
 ```

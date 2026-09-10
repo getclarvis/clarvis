@@ -15,6 +15,7 @@ import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
 import type { HostedRecoveryResolution } from "./hosting.ts";
+import type { GoalState } from "./goals.ts";
 
 /** Lifecycle status of one turn in a session. */
 export type SessionTurnStatus =
@@ -74,6 +75,8 @@ export interface Session {
   agent_instance_id?: string;
   /** Hosted conversation revision. Zero precedes host ownership; hosted writes require a matching value. */
   revision?: number;
+  /** Private host-owned goal state; client saves cannot create, remove or rewrite it. */
+  goal_state?: GoalState;
   title: string;
   /** Project this conversation belongs to. */
   project_id: string;

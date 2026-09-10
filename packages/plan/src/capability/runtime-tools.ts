@@ -6,11 +6,12 @@ import {
   TRANSITION_PLAN_TASK_TOOL_NAME,
   planToolDefinitions,
   revisePlanInputSchema,
+  readPlanInputSchema,
+  listPlansInputSchema,
 } from "../tools.ts";
 import {
   MAX_PLAN_ASSIGNEE_CHARS,
   MAX_PLAN_BATCH_OPERATIONS,
-  MAX_PLAN_LOCATOR_CHARS,
   MAX_PLAN_SECTION_CHARS,
   MAX_PLAN_TASK_FIELD_CHARS,
   MAX_PLAN_TASKS,
@@ -110,13 +111,6 @@ const createInputSchema = z.object({
   retention: z.enum(["discard", "keep"]).optional(),
 });
 
-const readInputSchema = z.object({ id: z.string().max(MAX_PLAN_LOCATOR_CHARS).optional() });
-const listInputSchema = z.object({
-  cursor: z.string().max(MAX_PLAN_LOCATOR_CHARS).optional(),
-  limit: z.number().int().min(1).max(100).optional(),
-  status: z.enum(["awaiting_approval", "active", "completed", "cancelled", "failed"]).optional(),
-  retention: z.enum(["discard", "keep"]).optional(),
-});
 const casSchema = z.object({
   expected_revision: z.number().int().positive(),
   expected_digest: z.string().min(1).max(256),
@@ -291,13 +285,13 @@ export async function handlePlanRuntimeCall(
         break;
       }
       case READ_PLAN_TOOL_NAME: {
-        const input = readInputSchema.parse(args);
+        const input = readPlanInputSchema.parse(args);
         const document = await session.read(input.id);
         result = success(name, document ?? null);
         break;
       }
       case LIST_PLANS_TOOL_NAME:
-        result = success(name, await session.list(listInputSchema.parse(args)));
+        result = success(name, await session.list(listPlansInputSchema.parse(args)));
         break;
       case REVISE_PLAN_TOOL_NAME: {
         assertRawArrayLimit(args, "operations", MAX_PLAN_BATCH_OPERATIONS, "Plan revision batch");

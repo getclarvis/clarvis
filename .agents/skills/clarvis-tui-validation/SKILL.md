@@ -49,6 +49,13 @@ and workspace mount. The header alone does not prove placement. Sandbox fallback
 result and cannot pass a Docker checkpoint. Match development versus installed runtime resolution
 to the artifact being tested; use a workspace shared by the configured macOS engine.
 
+For `--remote`, record local and remote artifact identities, the destination form without private
+host data, absolute remote workspace, OpenSSH executable/config posture, host-key verification and
+the authentication mechanism without key material. Verify port, agent and X11 forwarding stay
+disabled, only the remote installation supplies settings/OAuth/state, and reconnect creates one new
+SSH process. A fake SSH executable proves argv/wire composition; it does not qualify encryption,
+host-key authentication, network interoperability or a second physical machine.
+
 ## Drive and observe the journey
 
 Use the available `tui-driver` skill for PTY mechanics. If unavailable, use an equivalent real PTY

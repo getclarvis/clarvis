@@ -13,6 +13,8 @@ import { registerLoopCommands } from "../features/loop/commands.ts";
 import type { LoopController } from "../features/loop/controller.ts";
 import { registerBackgroundCommands } from "../features/background/commands.ts";
 import type { BackgroundController } from "../features/background/controller.ts";
+import { registerGoalCommands } from "../features/goal/commands.ts";
+import type { GoalController } from "../features/goal/controller.ts";
 
 /** Feature dependencies consumed by the application command composition root. */
 export interface FeatureCommandDeps {
@@ -35,6 +37,7 @@ export interface CodeCommandDeps extends AppCommandDeps {
   features: FeatureCommandDeps;
   loops?: LoopController;
   backgrounds?: BackgroundController;
+  goals?: GoalController;
   backgroundExitAllowed?: () => boolean;
 }
 
@@ -65,6 +68,8 @@ export function registerCodeCommands(deps: CodeCommandDeps): CodeCommandWiring {
         });
   if (deps.loops)
     registerLoopCommands(featureScope, { loops: deps.loops, ui: deps.ui, notify: deps.notify });
+  if (deps.goals)
+    registerGoalCommands(featureScope, { goals: deps.goals, ui: deps.ui, notify: deps.notify });
   registerProvidersCommands(featureScope, {
     settings: features.settings,
     catalog: features.catalog,

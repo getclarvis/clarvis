@@ -293,6 +293,46 @@ describe("createPlansCapability — provider resolution", () => {
 });
 
 describe("createPlansCapability — finalizeRun edge cases", () => {
+  it.each([
+    { status: "completed", disposition: "checkpoint" },
+    { status: "cancelled", preserveState: true },
+    { status: "error", preserveState: true },
+  ] as const)(
+    "preserves the plan and discard retention on a non-final stage %j",
+    async (outcome) => {
+      const { run, events } = await forRun({ mode: "on", retention: "discard" });
+      const contribution = attachEntry(run!);
+      await dispatch(contribution, {
+        id: "create",
+        name: CREATE_PLAN_TOOL_NAME,
+        arguments: { title: "T", objective: "o", tasks: [{ title: "Open task" }], validation: [] },
+      });
+      const before = (await run!.finalizeRun!({
+        status: "completed",
+        disposition: "checkpoint",
+      })) as PlanRef;
+      const after = (await run!.finalizeRun!(outcome)) as PlanRef;
+      expect(after).toEqual(before);
+      expect(after.status).not.toBe("completed");
+      const record = fakeExecutionRecord(outcome.status, { plans: after });
+      if (record.response.status === "completed") {
+        record.response = {
+          ...record.response,
+          disposition: "checkpoint",
+          checkpoint: { summary: "stage", next_step: "continue" },
+        };
+      }
+      await run!.onRunEnd!(record);
+      expect(events.filter((event) => event.kind === "plan_removed")).toHaveLength(0);
+      const read = await dispatch(contribution, {
+        id: "read",
+        name: READ_PLAN_TOOL_NAME,
+        arguments: {},
+      });
+      expect(read.kind).toBe("result");
+      if (read.kind === "result") expect(read.text).toContain("Open task");
+    },
+  );
   it("maps a non-completed, non-cancelled status to the plan status 'failed'", async () => {
     const { run } = await forRun("on");
     const contribution = attachEntry(run!);

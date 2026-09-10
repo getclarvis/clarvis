@@ -1419,3 +1419,14 @@ rather than cached.
 Because OpenTUI requires a PTY, use `bun run smoke` for the repeatable bundle boot assertion and the
 `tui-driver` skill for interactive reproduction. Do not launch the app through plain redirected
 stdin and treat that as a renderer test.
+
+## Prompt-cache continuity
+
+Session metadata round-trips the persisted leader instance through the kernel. Starting another turn sends the session identity and lets hosted preparation retain its agent identity, keeping provider affinity stable after restart.
+
+Hosted admission bounds and redacts its display preview independently of the full prompt. Long
+messages remain intact in the model request and do not exceed the host's 4096-character preview
+limit.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

@@ -55,7 +55,7 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
-Both Containerfiles and the build helper carry private protocol revision 9, matching the kernel
+Both Containerfiles and the build helper carry private protocol revision 10, matching the kernel
 worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
 model policy and resolved operator loop defaults/ceilings. Older images are refused at admission and must be rebuilt; changing an active runtime
 image remains an operator choice.
@@ -87,3 +87,53 @@ access synthetic host files outside it. That hook canary also covers early lifec
 argument rewriting. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
 before attaching that identity to a source prerelease. The official workflow accepts only stable
 tags and verifies anonymous image pulls before public release activation.
+
+## Prompt-cache evidence
+
+`cache/` owns the typed schema-versioned physical-call report, independent per-agent evaluator,
+bounded HTTP observation and synthetic sequential-cursor fixture. `bun run test:cache` runs the
+credential-free real-SDK contracts; `bun run test:cache:live -- --scenarios C01,C02 --models
+gpt-6-astra --trials 3 --output <directory>` uses the kernel's host subscription authority. Every
+live invocation prints fixed per-trial/global limits and retains failed or incomplete trials.
+The JSON verdict and scenario checkpoints govern qualification, including absent usage and missing
+drivers; a process exit alone is insufficient. See the
+[prompt-cache contract](../specs/cross-cutting/prompt-cache.md) for the full matrix and final installed
+artifact requirements. Source evidence does not qualify an installed bundle.
+
+The deterministic cache gate also runs in every pull request, without credentials or provider
+calls. Live qualification runs locally with the operator's existing Clarvis subscription OAuth;
+it does not require an API key or a GitHub secret.
+For a reduced local C01/C02/C06 series, run `bun run test:cache:live --scenarios C01,C02,C06
+--models gpt-6-astra --trials 1 --output <directory>`. Keep its JSON evidence; this reduced
+coverage does not grant full release qualification.
+
+`bun run test:cache:artifact --login --global-dir <isolated-global-directory>` uses the normal
+application device-login flow for isolated qualification; it does not copy an existing credential
+file. Build the install flavor and existing release archive first. Then use
+`bun run test:cache:artifact --global-dir <isolated-global-directory> --output <evidence-directory>`
+for the installed launcher journey. The observer loads the exact installed JavaScript bytes while
+hashing them, and tees the unchanged production HTTP transport. Synthetic workspace data and
+credential-free reports remain separate from the application's credential store. The source
+matrix and installed result must identify the same final build inputs.
+
+On Linux with Bubblewrap, `--use-global-oauth` reuses the existing global subscription store.
+The host's mount namespace keeps that renewable store authoritative while binding disposable
+settings, sessions, traces and caches over the other global entries. It copies no credentials,
+does not change the installed resolver or HTTP protocol, and removes test-created empty mountpoints
+after the owned processes stop. This flag is available to both artifact and full-matrix commands;
+it requires no new login. This filesystem qualification method makes no claim for other platforms.
+
+After packaging, `bun run test:cache:artifact --seal --manifest <manifest.json>` binds the existing
+archive and bundle to the full source-input digest. Run `bun run test:cache:live --full
+--artifact-manifest <manifest.json> --artifact-global-dir <isolated-global-directory> --output
+<evidence-directory>` to execute the mandatory Astra matrix and the separate Sol comparison,
+three trials each, including the installed journey. The runner stops scheduling on source drift
+or exhausted global limits and retains incomplete results. Reports outside the ignored proposal
+tree must live outside the checkout so writing evidence cannot change the source-input digest.
+The audit recomputes each agent's windows and physical/trace totals, requires scenario checkpoints,
+and checks every trial's artifact binding and every installed trial's loaded bundle hash.
+Restart-worker failures retain observed physical calls in the global budget. The PTY driver waits
+for a ready composer between turns and settled memory traces before reconciling the UI's session
+cache percentage, uncached input and output against the captured leader calls.
+Compaction retains the production summarizer options, including omitted requested reasoning effort;
+its recorded usage contributes to budgets without entering an agent's cache-performance window.

@@ -101,13 +101,8 @@ const VISION_MAX_OUTPUT_TOKENS = 4_096;
  *   already rejected a request whose `vision_model` names an undeclared provider,
  *   so an unresolved config here means only that no per-provider overrides apply.
  *
- *   The append lands at the absolute end of `entryMessages`, which is sound only
- *   because `buildEntrySeed` leaves no volatile entry in the seed: it drops the
- *   ones a continuation restored, and none of the durable ones it emits is
- *   canonical or a runtime note. A volatile entry at the tail would be spliced
- *   out on the next iteration and shift this message, invalidating the cached
- *   prefix that covered it. If the seed ever grows a volatile tail, this push has
- *   to move ahead of it.
+ *   The reading is appended after every restored entry, including runtime notes
+ *   and capability reminders. Earlier published observations retain their position.
  */
 export async function runVisionPrepass(p: VisionPrepassArgs): Promise<void> {
   if (!p.seed.entryStripsImages || p.seed.turnImages.length === 0) return;

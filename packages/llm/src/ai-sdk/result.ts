@@ -62,7 +62,12 @@ export function normalizeUsage(usage: Partial<LanguageModelUsage> | undefined): 
  */
 export function buildCallResult(raw: {
   text: string;
-  toolCalls: ReadonlyArray<{ toolCallId: string; toolName: string; input: unknown }>;
+  toolCalls: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    input: unknown;
+    providerMetadata?: Record<string, Record<string, unknown>>;
+  }>;
   usage: LanguageModelUsage;
   reasoningText: string | undefined;
   content?: readonly unknown[];
@@ -78,6 +83,7 @@ export function buildCallResult(raw: {
           id: tc.toolCallId,
           name: tc.toolName,
           arguments: norm.ok ? norm.args : {},
+          ...(tc.providerMetadata === undefined ? {} : { providerOptions: tc.providerMetadata }),
           ...(norm.ok ? {} : { malformedArguments: norm.preview }),
         };
       })
@@ -153,6 +159,11 @@ export function buildCallResult(raw: {
     ...(text !== undefined ? { text } : {}),
     ...(toolCalls !== undefined ? { toolCalls } : {}),
     usage: normalizeUsage(raw.usage),
+    cacheUsageKnown: [
+      raw.usage.inputTokens,
+      raw.usage.outputTokens,
+      raw.usage.inputTokenDetails?.cacheReadTokens,
+    ].every((value) => typeof value === "number" && Number.isFinite(value)),
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningParts !== undefined && reasoningParts.length > 0 ? { reasoningParts } : {}),
     ...(textParts !== undefined && textParts.length > 0 ? { textParts } : {}),

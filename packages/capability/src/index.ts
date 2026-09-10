@@ -9,6 +9,8 @@
  */
 
 export { projected } from "./contract.ts";
+export { composePromptCacheKey, isPromptCacheIdentityComponent } from "./prompt-cache-identity.ts";
+export type { PromptCacheIdentity } from "./prompt-cache-identity.ts";
 export type {
   CapabilityEvent,
   CapabilityEventListener,

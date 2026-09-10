@@ -570,11 +570,12 @@ their own:**
 
 - **A capability's `seedMarker`/`reservedWireNames`/`toolEffects` are computed over every
   *registered* capability, never only the activated subset**, so a gated-off capability's tool
-  names stay reserved and its seed marker still strips a stale continuation entry. Production:
+  names stay reserved. Its historical seed entries survive continuation in place; inactive
+  registration does not authorize deleting previously sent history. Production:
   `packages/capability/src/contract.ts`;
   `packages/loop/src/runtime/orchestrator.ts`. Test:
   `packages/loop/tests/unit/entry-seed-markers.test.ts`
-  ("still drops a block whose capability is no longer active").
+  (inactive capability history remains in place).
 - **Skill discovery approval does not become plugin-root execution.** The tools resolver receives
   only `SkillInfo.executionRoot`; the skills registry exposes that field only for an approved root
   and sets it to the individual skill directory. Missing approval contributes no path, and a

@@ -7,11 +7,14 @@ export type { ServeLocalFileKernelOptions, LocalFileKernelHost } from "./hosting
 export { connectOrLaunchLocalKernel, parseLocalHostArguments } from "./hosting/launcher.ts";
 export type { LocalKernelLaunchOptions, ConnectedLocalKernel } from "./hosting/launcher.ts";
 export type {
+  FileKernel,
   CreateFileKernelOptions,
   ExtensionProfileDriftNotice,
   FileKernelRuntimeFactory,
   RuntimePlacementNotice,
 } from "./file-kernel.ts";
+export { SubscriptionManager } from "./subscriptions/manager.ts";
+export { createOpenAICodexAdapter } from "./subscriptions/openai-codex.ts";
 export type { ExtensionProfileSkillDriftNotice } from "./extension-profiles/extension-profile-manager.ts";
 export { createOwnerScopedFileStores } from "./owner-scoped-file-stores.ts";
 export type {

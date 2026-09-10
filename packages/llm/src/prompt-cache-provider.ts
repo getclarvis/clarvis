@@ -1,30 +1,18 @@
 import type { PromptCacheTtl } from "@clarvis/capability";
 import type { LLMCallParams, LLMCallResult, LLMProvider } from "@clarvis/capability";
+import { composePromptCacheKey, type PromptCacheIdentity } from "@clarvis/capability";
 
-/**
- * The run-level prompt-cache settings a provider decorator fills in.
- *
- * @remarks `promptCacheKey` is the routing hint that keeps a run's calls landing
- *   on a cache-warm backend; `promptCacheTtl` is how long a written prefix
- *   survives.
- */
+/** Persisted session/instance identity and independent provider cache lifetime. */
 export interface PromptCacheDefaults {
-  promptCacheKey: string;
+  identity: PromptCacheIdentity;
   promptCacheTtl: PromptCacheTtl;
 }
 
 /**
- * Wraps a provider so every call carries the run's prompt-cache settings,
- * improving hit rates and cache lifetime across a run's calls.
+ * Bind the session and compose affinity from each effective agent instance.
  *
- * @param inner - the provider to decorate.
- * @param defaults - the run-level {@link PromptCacheDefaults}.
- * @returns a provider that forwards each call, filling in each default only
- *   where the caller left that field unset.
- * @remarks The two default **independently**: a call that pins its own key still
- *   inherits the run's TTL. Treating them as a unit would silently drop the TTL
- *   for sub-agent and compaction calls, which set their own key and flow through
- *   this same decorator.
+ * @remarks A child may supply its persisted instance ID; raw cache-key overrides
+ * cannot reintroduce shared affinity. Explicit per-call TTL remains independent.
  */
 export function withPromptCacheDefaults(
   inner: LLMProvider,
@@ -32,9 +20,14 @@ export function withPromptCacheDefaults(
 ): LLMProvider {
   return {
     call(params: LLMCallParams): Promise<LLMCallResult> {
+      const identity = {
+        sessionId: defaults.identity.sessionId,
+        agentInstanceId: params.agentInstanceId ?? defaults.identity.agentInstanceId,
+      };
       return inner.call({
         ...params,
-        ...(params.promptCacheKey === undefined ? { promptCacheKey: defaults.promptCacheKey } : {}),
+        ...identity,
+        promptCacheKey: composePromptCacheKey(identity),
         ...(params.promptCacheTtl === undefined ? { promptCacheTtl: defaults.promptCacheTtl } : {}),
       });
     },

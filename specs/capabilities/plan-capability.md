@@ -521,7 +521,7 @@ Two halves, deliberately separated by cost:
 
 | Half | Function | Contents | Republished |
 | --- | --- | --- | --- |
-| volatile header | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, open tasks, **all** task statuses | end of transcript, every iteration |
+| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, open tasks, **all** task statuses | end of transcript, every iteration |
 | stable spec block | `planSpecBlock(document)` (`packages/plan/src/capability/canonical-state.ts`) | objective, context, per-task `id`/`title`/`detail`/`exit`, validation | appended only when the substance changes |
 
 The block's field set "deliberately mirrors `@clarvis/plan`'s `specDigest` … so these bytes change if
@@ -961,7 +961,7 @@ Numbered; each carries production evidence and the pinning test.
     `planSpecBlock`'s field set mirrors `specDigest` — `packages/plan/src/capability/canonical-state.ts`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
-43. **The volatile header carries every task's status, so the spec block need not.**
+43. **The latest appended reminder carries every task's status; older reminders remain history.**
     `packages/plan/src/capability/canonical-state.ts`; the test also caps it: `header.length < 1000`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
@@ -1218,3 +1218,14 @@ the code or in any test message.
 `request_changes` (`packages/plan/src/capability/orchestration.ts`). So `presented` and `approved` on the first round both
 carry `0`. No test asserts the field's value, so whether that is the intended indexing is
 undetermined.
+
+## Historical publication invariant
+
+Plan publication retains its per-iteration frequency. Every header is appended; unchanged bodies
+remain at their original positions, and changed bodies append. The latest reminder describes
+current state. Historical CAS values cannot authorize stale writes, and human review remains bound
+to the current store revision. Compaction retains current state through the capability anchor.
+Production: [`buildPlansOrchestration`](../../packages/plan/src/capability/orchestration.ts) and
+[`planCasHeader`](../../packages/plan/src/capability/canonical-state.ts).
+Test: [`prompt-cache-composition.test.ts`](../../packages/kernel/tests/integration/prompt-cache-composition.test.ts)
+uses real kernel/loop/SDK composition, external mutation, stale CAS and persisted replay.

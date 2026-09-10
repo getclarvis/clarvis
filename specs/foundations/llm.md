@@ -75,7 +75,7 @@ the reason: re-exporting it "would statically pull `@ai-sdk/anthropic`, `@ai-sdk
 | `createModelCallAdmissionController` | fn | `packages/llm/src/model-call-admission.ts` | `(options?) => ModelCallAdmissionController` |
 | `withModelCallAdmission` | fn | `packages/llm/src/model-call-admission.ts` | `(inner, controller) => LLMProvider` |
 | `withPromptCacheDefaults` | fn | `packages/llm/src/prompt-cache-provider.ts` | `(inner, defaults: PromptCacheDefaults) => LLMProvider` |
-| `PromptCacheDefaults` | iface | `packages/llm/src/prompt-cache-provider.ts` | `{ promptCacheKey: string; promptCacheTtl: PromptCacheTtl }` |
+| `PromptCacheDefaults` | iface | `packages/llm/src/prompt-cache-provider.ts` | `{ identity: PromptCacheIdentity; promptCacheTtl: PromptCacheTtl }` |
 | `backoffDelayMs` | fn | `packages/llm/src/retry-llm-provider.ts` | `(n, retryAfterMs, baseDelayMs, maxDelayMs, maxRetryAfterMs?) => number` |
 | `withTransportRetry` | fn | `packages/llm/src/retry-llm-provider.ts` | `(inner, opts: TransportRetryOptions) => LLMProvider` |
 | `TransportRetryOptions` | iface | `packages/llm/src/retry-llm-provider.ts` | `{ maxRetries; baseDelayMs; maxDelayMs; maxRetryAfterMs?; logger? }` |
@@ -729,7 +729,7 @@ createAiSdkProvider(...)                       :453
 ```
 
 and `packages/loop/src/runtime/execute-run.ts` wraps that again per run with
-`withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl })`. This places retry
+`withPromptCacheDefaults(deps.llm, { identity, promptCacheTtl })`. This places retry
 **outside** logging, which is exactly the arrangement `attemptsByParams` depends on
 (`packages/llm/src/logging-llm-provider.ts`), and admission **inside** logging, so each
 physical attempt takes one permit.
@@ -1296,3 +1296,18 @@ takes one value import, `contentToText`).
     `inner.call` release path both have code (added to the section 4.13 state table
     above) but no test in `packages/llm/tests/unit/model-call-admission.test.ts` exercises either
     one.
+
+## Persisted replay and serialized-prefix diagnostics
+
+Tool-call provider metadata retains an existing Responses item ID separately from `call_id`.
+`withResponsesReplayIds` restores that item ID if the SDK omits it, without inventing IDs for
+optional user/tool-output items. `SerializedPrefixWatch` compares bounded content hashes at the
+actual JSON fetch boundary and reports the first changed instruction/catalog/history surface.
+`cacheUsageKnown: false` distinguishes absent cache counters from observed zero.
+Production: [`withResponsesReplayIds`](../../packages/llm/src/ai-sdk/responses-replay.ts),
+[`SerializedPrefixWatch`](../../packages/llm/src/ai-sdk/request-prefix.ts),
+[`buildCallResult`](../../packages/llm/src/ai-sdk/result.ts).
+Test: [`wire-cache-diff.test.ts`](../../packages/llm/tests/integration/wire-cache-diff.test.ts) and
+[`request-prefix.test.ts`](../../packages/llm/tests/unit/request-prefix.test.ts).
+See the [prompt-cache contract](../cross-cutting/prompt-cache.md) for per-instance composition,
+provider-specific fields and performance qualification.

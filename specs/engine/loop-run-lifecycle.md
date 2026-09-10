@@ -301,14 +301,13 @@ can assert `run_started` is the *first* persisted event even though `init` was r
 
 1. one `system` message — `buildSystemSections({ workspaceRoot, basePrompt?, capabilitySections? })`
    joined with `"\n\n"`;
-2. the filtered continuation history, image-collapsed when the entry agent lacks `vision`;
+2. the persisted continuation history, retaining image payloads, notes and reminders;
 3. the pinned capability seed blocks the continuation did not already carry, as `user` entries;
 4. this turn's request `messages`.
 
-The filter drops (a) restored *volatile* entries — those with `canonical === true` or a `note_kind`
- — and (b) any restored entry whose leading marker belongs to a
-capability that contributed no fresh block this run. A marker still live is *kept*, and
-the freshly rendered block for that marker is *discarded*.
+Restored entries retain their contents and order, including inactive capability blocks. A carried
+seed marker suppresses another initial copy of that seed. Later changes publish appended entries;
+they do not erase earlier publications.
 
 Worked example, from `packages/loop/tests/unit/entry-seed-markers.test.ts`: with a carried
 block `<cap-block>\nwhat the session started with\n</cap-block>` and a fresh `SEED` for the same
@@ -352,7 +351,7 @@ contributed, so the record stays clean.
 | 10 | choose the execution id; **throw** `ConflictError` if `traceStore.existsForOwner` | `packages/loop/src/runtime/execute-run.ts` |
 | 11 | bind the run-scoped logger with `execution_id`, `owner_key_name`, `mode` | `packages/loop/src/runtime/execute-run.ts` |
 | 12 | reserve the id in the per-store in-flight set | `packages/loop/src/runtime/execute-run.ts` |
-| 13 | derive `promptCacheKey = prompt_cache_key ?? executionId`, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `packages/loop/src/runtime/execute-run.ts` |
+| 13 | persist missing `session_id` and `agent_instance_id`, validate their composed key, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `packages/loop/src/runtime/execute-run.ts` |
 | 14 | load the continuation; **throw** `ContinuationUnavailableError` if absent/empty | `packages/loop/src/runtime/execute-run.ts` |
 | 15 | build the swallowing capability-event emitter | `packages/loop/src/runtime/execute-run.ts` |
 | 16 | create the run's `AbortController` and forward `externalSignal` (including an already-aborted one) | `packages/loop/src/runtime/execute-run.ts` |
@@ -923,8 +922,7 @@ Every way a run reaches its terminal `RunResponse`:
 23. **Two consecutive empty-or-reasoning-only completions end the agent; one does not.** —
     `packages/loop/src/runtime/loop/loop.ts`. Tests:
     `packages/loop/tests/integration/empty-response.test.ts`.
-24. **The empty-response nudge is a *replaceable* runtime note: a second empty replaces the first
-    rather than accumulating.** — `ctx.appendRuntimeNote("empty_response", …)` at
+24. **An empty-response nudge appends after existing history and preserves earlier notes.** — `ctx.appendRuntimeNote("empty_response", …)` at
     `packages/loop/src/runtime/loop/loop.ts`. Test:
     `packages/loop/tests/unit/run-agent.test.ts`.
 25. **A reasoning-only completion's `reasoningParts` are appended to the context before the nudge, so
@@ -1033,14 +1031,14 @@ Every way a run reaches its terminal `RunResponse`:
 49. **`cacheReadRatio`'s denominator is `input_tokens` alone.** —
     `packages/loop/src/runtime/loop/iteration-metrics.ts`, reason stated. Tests:
     `packages/loop/tests/unit/iteration-metrics.test.ts`.
-50. **A restored volatile entry (canonical block or runtime note) is never carried into a
-    continuation's seed.** — `packages/loop/src/runtime/entry-seed.ts`. Test:
-    `packages/loop/tests/unit/entry-seed-markers.test.ts`.
+50. **Restored canonical reminders and runtime notes retain their content and order in a
+    continuation seed.** Production: [`buildEntrySeed`](../../packages/loop/src/runtime/entry-seed.ts).
+    Test: [`entry-seed-markers.test.ts`](../../packages/loop/tests/unit/entry-seed-markers.test.ts).
 51. **A seed block the continuation already carries is kept verbatim and the freshly rendered copy is
     dropped; a newly active capability's block is appended *after* the restored history.** —
     `packages/loop/src/runtime/entry-seed.ts`. Tests:
     `packages/loop/tests/unit/entry-seed-markers.test.ts`, and the prefix property.
-52. **A block whose capability is no longer active is dropped from the continuation.** —
+52. **A block whose capability is no longer active remains historical context in the continuation.** —
     `packages/loop/src/runtime/entry-seed.ts`. Test:
     `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 53. **A continuation's restored transcript is reproduced byte-identically under a fresh system

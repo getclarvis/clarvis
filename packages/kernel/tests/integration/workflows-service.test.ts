@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
 import {
+  composePromptCacheKey,
   createCapabilityRegistry,
   loadEnv,
   type Capability,
@@ -19,6 +20,7 @@ import {
   type NamespacedTool,
 } from "@clarvis/capability";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
+import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { MockLLM, type MockLLMRoute, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
@@ -27,7 +29,7 @@ import { createMemoryCapability, type MemoryFactory } from "@clarvis/memory/capa
 import { memorySettingsSpec } from "@clarvis/memory/settings";
 import { plansSettingsSpec } from "@clarvis/plan/settings";
 import { tasksSettingsSpec } from "@clarvis/tasks/settings";
-import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
+import { createAskUserCapability, executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import { managerLiveChildrenFloor } from "@clarvis/workflows";
 import type { RunEvent } from "@clarvis/protocol";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
@@ -1218,6 +1220,200 @@ describe("WorkflowsService", () => {
     expect(assembled.map((params) => params.task)).toEqual([task, task]);
     await deps.connections.closeAll();
   });
+
+  it.each([false, true])(
+    "separates workflow leader cache identities (prepared=%s)",
+    async (prepared) => {
+      const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-cache-"));
+      const globalConfigDir = join(ws, "global");
+      const deps = buildDeps(
+        ws,
+        [],
+        [
+          {
+            name: "manager",
+            when: IS_MANAGER,
+            script: [
+              {
+                toolCalls: [
+                  {
+                    id: "first",
+                    name: "run_leader",
+                    arguments: { title: "First", prompt: "first job" },
+                  },
+                  {
+                    id: "second",
+                    name: "run_leader",
+                    arguments: { title: "Second", prompt: "second job" },
+                  },
+                ],
+              },
+              { toolCalls: [{ name: "await_agents", arguments: {} }] },
+              { text: "manager synthesis" },
+            ],
+          },
+          {
+            name: "leaders",
+            when: () => true,
+            script: Array.from({ length: 6 }, () => ({ text: "leader result" })),
+          },
+        ],
+      );
+      const assembler = createSettingsRunAssembler(seededConfig());
+      const scripted = deps.llm as MockLLM;
+      const wireKeys: string[] = [];
+      deps.llm = {
+        async call(params) {
+          const result = await scripted.call(params);
+          const adapter = new AiSdkAdapter({
+            fetch: Object.assign(
+              async (_input: string | URL | Request, init?: RequestInit) => {
+                if (typeof init?.body !== "string") throw new Error("Expected serialized SDK body");
+                const wire = JSON.parse(init.body) as { prompt_cache_key: string };
+                wireKeys.push(wire.prompt_cache_key);
+                const toolCalls = result.toolCalls ?? [];
+                const chunk = {
+                  id: "workflow-fixture",
+                  object: "chat.completion.chunk",
+                  created: 1,
+                  model: "x",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        role: "assistant",
+                        ...(toolCalls.length === 0
+                          ? { content: result.text }
+                          : {
+                              tool_calls: toolCalls.map((call, index) => ({
+                                index,
+                                id: call.id,
+                                type: "function",
+                                function: {
+                                  name: call.name,
+                                  arguments: JSON.stringify(call.arguments),
+                                },
+                              })),
+                            }),
+                      },
+                      finish_reason: toolCalls.length === 0 ? "stop" : "tool_calls",
+                    },
+                  ],
+                  usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+                };
+                return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+                  headers: { "content-type": "text/event-stream" },
+                });
+              },
+              { preconnect: globalThis.fetch.preconnect },
+            ),
+          });
+          return adapter.call({
+            ...params,
+            providerConfig: { kind: "openai-compatible", baseUrl: "https://workflow.invalid/v1" },
+          });
+        },
+      };
+      deps.capabilityRegistry = createCapabilityRegistry({
+        specs: [memorySettingsSpec, plansSettingsSpec],
+      });
+      const settings = { max_concurrency: 2, max_total_leaders: 32, budget_tokens: null };
+      const workflows = createWorkflowsService({
+        deps,
+        owner: "kernel-test",
+        workspace: ws,
+        globalConfigDir,
+        assembleRunRequest: assembler,
+        store: createWorkflowStore({ dir: join(ws, "workflows"), owner: "kernel-test" }),
+        readSettings: () => settings,
+        resolveLeaderDefault: () => "leader",
+      });
+      const params = {
+        execution_id: "manager-turn",
+        session_id: "persisted-session",
+        agent_instance_id: "persisted-manager",
+        agent: "manager",
+        messages: [{ role: "user" as const, content: "run both jobs" }],
+      };
+      try {
+        const result = await workflows.runManagerWorkflow(
+          params,
+          prepared
+            ? {
+                managerBody: assembler(params),
+                assembleRunRequest: assembler,
+                settings,
+                leaderProfiles: [{ name: "leader" }],
+                defaultLeader: "leader",
+              }
+            : undefined,
+        ).done;
+        expect(result.status).toBe("completed");
+        const calls = scripted.calls;
+        const managerCalls = calls.filter(IS_MANAGER);
+        const leaderCalls = calls.filter((call) => !IS_MANAGER(call));
+        const edges = (await workflows.get(params.execution_id)).nodes.filter(
+          (node) => node.kind === "leader",
+        );
+        expect(managerCalls.length).toBeGreaterThanOrEqual(3);
+        expect(leaderCalls).toHaveLength(2);
+        expect(edges).toHaveLength(2);
+        expect(new Set(calls.map((call) => call.sessionId))).toEqual(new Set([params.session_id]));
+        expect(new Set(managerCalls.map((call) => call.agentInstanceId))).toEqual(
+          new Set([params.agent_instance_id]),
+        );
+        expect(new Set(leaderCalls.map((call) => call.agentInstanceId))).toEqual(
+          new Set(edges.map((edge) => edge.run_id)),
+        );
+        expect(new Set(calls.map((call) => call.promptCacheKey)).size).toBe(3);
+        for (const call of calls) {
+          expect(call.promptCacheKey).toBe(
+            composePromptCacheKey({
+              sessionId: params.session_id,
+              agentInstanceId: call.agentInstanceId!,
+            }),
+          );
+        }
+        for (const edge of edges) {
+          expect(deps.traceStore.getById("kernel-test", edge.run_id)?.request).toMatchObject({
+            session_id: params.session_id,
+            agent_instance_id: edge.run_id,
+          });
+          let previous = edge.run_id;
+          for (let turn = 0; turn < 2; turn++) {
+            const execution_id = `continue-${edge.run_id}-${turn}`;
+            const resumed = await executeRun({
+              owner: "kernel-test",
+              deps,
+              elicit: async () => ({ action: "cancel" }),
+              rawBody: {
+                ...deps.traceStore.getById("kernel-test", previous)!.request,
+                execution_id,
+                continue_from: previous,
+                session_id: undefined,
+                agent_instance_id: undefined,
+                messages: [{ role: "user", content: "continue this leader instance" }],
+              },
+            });
+            expect(resumed.response.status).toBe("completed");
+            expect(calls.at(-1)).toMatchObject({
+              sessionId: params.session_id,
+              agentInstanceId: edge.run_id,
+              promptCacheKey: composePromptCacheKey({
+                sessionId: params.session_id,
+                agentInstanceId: edge.run_id,
+              }),
+            });
+            previous = execution_id;
+          }
+        }
+        expect(wireKeys.toSorted()).toEqual(calls.map((call) => call.promptCacheKey!).toSorted());
+      } finally {
+        await deps.connections.closeAll();
+        rmSync(ws, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("raises the manager's live-children ceiling to what its leader concurrency needs", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-ceiling-"));

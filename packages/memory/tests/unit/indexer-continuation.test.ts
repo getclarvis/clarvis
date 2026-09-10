@@ -151,14 +151,14 @@ describe("assembling the continuation request", () => {
   });
 
   it("derives a stable Memory-only branch from the indexed run's prompt cache key", () => {
-    const keyed = withRequest({ prompt_cache_key: "session_42" });
+    const keyed = withRequest({ session_id: "session_42" });
     expect(
       buildIndexerContinuationRequest({
         executionId: "run_pass",
         subject: keyed,
         providers: LIVE_PROVIDERS,
-      }).prompt_cache_key,
-    ).toBe("session_42_memory");
+      }).session_id,
+    ).toBe("session_42");
   });
 
   it("derives the Memory branch from the indexed run id when no explicit key exists", () => {
@@ -167,19 +167,19 @@ describe("assembling the continuation request", () => {
         executionId: "run_pass",
         subject: subject(),
         providers: LIVE_PROVIDERS,
-      }).prompt_cache_key,
-    ).toBe("run_subject_memory");
+      }).session_id,
+    ).toBe("run_subject");
   });
 
-  it("keeps the _memory suffix within the request key's 512-character ceiling", () => {
-    const keyed = withRequest({ prompt_cache_key: "x".repeat(512) });
-    const key = buildIndexerContinuationRequest({
+  it("preserves both persisted components without silently truncating identifiers", () => {
+    const keyed = withRequest({ session_id: "x".repeat(510) });
+    const request = buildIndexerContinuationRequest({
       executionId: "run_pass",
       subject: keyed,
       providers: LIVE_PROVIDERS,
-    }).prompt_cache_key!;
-    expect(key).toHaveLength(512);
-    expect(key.endsWith("_memory")).toBe(true);
+    });
+    expect(request.session_id).toBe(keyed.request.session_id);
+    expect(request.agent_instance_id).toBe("run_pass");
   });
 });
 

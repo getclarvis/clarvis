@@ -56,7 +56,6 @@ export interface LiveEntryStore {
   readonly messages: LiveMessage[];
   totalChars(): number;
   appendDurable(entry: LiveEntry): void;
-  appendVolatile(entry: LiveEntry): void;
   removeAt(index: number): void;
   push(
     message: LiveMessage,
@@ -69,13 +68,8 @@ export interface LiveEntryStore {
   sync(): void;
   snapshot(): ContextSnapshotEntry[];
   /**
-   * The index one past the last durable entry — the boundary between the cached
-   * prefix and the trailing volatile run.
-   *
-   * @returns `entries.length` when nothing volatile trails the transcript.
-   * @remarks Exposed so a caller that mutates an entry *through* `entries` can
-   *   decide whether it just broke the prefix, without duplicating the volatile
-   *   rule that only this module owns.
+   * The index after the complete retained transcript. Every published item is durable
+   * until deliberate compaction replaces the context base.
    */
   durablePrefixEnd(): number;
   /**
@@ -112,6 +106,7 @@ export function createLiveEntryStore(
           ...(item.task_id !== undefined ? { taskId: item.task_id } : {}),
           ...(item.note_kind !== undefined ? { noteKind: item.note_kind } : {}),
           ...(item.block_kind !== undefined ? { blockKind: item.block_kind } : {}),
+          ...(item.superseded === undefined ? {} : { superseded: item.superseded }),
         }
       : {
           message: item,
@@ -127,12 +122,7 @@ export function createLiveEntryStore(
     messages.length = 0;
     for (const entry of entries) messages.push(entry.message);
   };
-  const isVolatile = (entry: LiveEntry): boolean => entry.canonical || entry.noteKind !== undefined;
-  const durableInsertIndex = (): number => {
-    let index = entries.length;
-    while (index > 0 && isVolatile(entries[index - 1]!)) index -= 1;
-    return index;
-  };
+  const durablePrefixEnd = (): number => entries.length;
   /**
    * Emit `context.prefix_break`, pricing the damage the way a provider does.
    *
@@ -154,22 +144,12 @@ export function createLiveEntryStore(
         chars_recharged: total - charOffset,
         cause,
       },
-      "a durable transcript entry moved or changed; the provider re-charges every token behind it",
+      "a historical transcript entry moved or changed; measure backend reuse for the affected suffix",
     );
   };
-  /**
-   * Insert ahead of the trailing volatile run.
-   *
-   * @remarks This site reports nothing, and that is the design rather than an
-   *   omission: {@link durableInsertIndex} lands the entry immediately after the
-   *   last durable one, so the only entries it can shift are volatile — the
-   *   canonical block and the runtime notes, which are spliced out and
-   *   re-appended every iteration anyway and are precisely the region
-   *   `cacheBreakpoints()` already refuses to place a breakpoint behind. Every
-   *   tool result flows through here, so a log line would be both wrong and hot.
-   */
+  /** Append after every historical entry, including capability reminders and runtime notes. */
   const appendDurable = (entry: LiveEntry): void => {
-    entries.splice(durableInsertIndex(), 0, entry);
+    entries.push(entry);
     total += entry.chars;
   };
 
@@ -178,14 +158,10 @@ export function createLiveEntryStore(
     messages,
     totalChars: () => total,
     appendDurable,
-    durablePrefixEnd: durableInsertIndex,
+    durablePrefixEnd: durablePrefixEnd,
     reportPrefixBreak,
-    appendVolatile(entry: LiveEntry): void {
-      entries.push(entry);
-      total += entry.chars;
-    },
     removeAt(index: number): void {
-      if (index < durableInsertIndex()) reportPrefixBreak(index, "remove");
+      if (index < durablePrefixEnd()) reportPrefixBreak(index, "remove");
       total -= entries[index]!.chars;
       entries.splice(index, 1);
     },
@@ -202,7 +178,7 @@ export function createLiveEntryStore(
       sync();
     },
     replace(next: RewriteEntry[], cause: PrefixBreakCause = "replace"): void {
-      const boundary = durableInsertIndex();
+      const boundary = durablePrefixEnd();
       let firstChange = -1;
       const limit = Math.min(boundary, next.length);
       for (let i = 0; i < limit; i += 1) {
@@ -231,6 +207,7 @@ export function createLiveEntryStore(
           ...(entry.taskId !== undefined ? { task_id: entry.taskId } : {}),
           ...(entry.noteKind !== undefined ? { note_kind: entry.noteKind } : {}),
           ...(entry.blockKind !== undefined ? { block_kind: entry.blockKind } : {}),
+          ...(entry.superseded === undefined ? {} : { superseded: entry.superseded }),
         });
       }
       return out;

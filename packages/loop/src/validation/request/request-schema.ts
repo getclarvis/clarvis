@@ -25,26 +25,12 @@ const executionIdField = z
   .optional()
   .describe("Optional caller-provided execution ID.");
 
-/**
- * Optional stable routing hint (≤512 chars) for provider prompt caching.
- *
- * @remarks Defaults to the run's `execution_id`, which stabilizes the key within
- *   one run but changes per turn; pass an explicit stable value to keep cache
- *   affinity across a conversation's `continue_from` turns.
- */
-const promptCacheKeyField = z
+/** Canonical persisted identity component; the composed key is validated before inference. */
+const cacheIdentityField = z
   .string()
-  .min(1, "prompt_cache_key must be a non-empty string")
-  .max(512, "prompt_cache_key must be at most 512 characters")
-  .optional()
-  .describe(
-    "Optional stable routing hint for provider prompt caching (OpenAI and openai-compatible " +
-      "providers; Anthropic and Google key their caches on the prompt prefix and ignore it). " +
-      "Defaults to the run's execution_id when omitted, which stabilizes the key within a single " +
-      "run (Lead, Sub-agents, retries, and compaction share it). To keep cache affinity ACROSS a " +
-      "conversation's continue_from turns, pass your own stable value (e.g. a conversation id) on " +
-      "every turn — the execution_id default changes per turn and does not carry over.",
-  );
+  .regex(/^[A-Za-z0-9._:-]+$/)
+  .max(510)
+  .optional();
 
 /**
  * Optional per-run lifetime for a written prompt-cache prefix.
@@ -161,7 +147,8 @@ export const runRequestSchema = z
   .object({
     execution_id: executionIdField,
     continue_from: continueFromField,
-    prompt_cache_key: promptCacheKeyField,
+    session_id: cacheIdentityField,
+    agent_instance_id: cacheIdentityField,
     prompt_cache_ttl: promptCacheTtlField,
     messages: messagesField,
     servers: z

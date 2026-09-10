@@ -387,16 +387,12 @@ export interface ContextSnapshotEntry {
   summary: boolean;
   canonical: boolean;
   task_id?: string;
-  /**
-   * The replaceable-note identity, when the entry is a runtime note.
-   *
-   * @remarks Without it a continued run restores the note as an anonymous entry
-   *   that `appendRuntimeNote` can no longer find, so the next iteration appends
-   *   a second copy instead of replacing the first.
-   */
+  /** Active runtime-note kind. Older publications remain historical and become superseded. */
   note_kind?: string;
   /** The position-holding block identity, when the entry is a stable block. */
   block_kind?: string;
+  /** Historical publication eligible for deliberate compaction without a recent-tail reservation. */
+  superseded?: boolean;
 }
 
 /**

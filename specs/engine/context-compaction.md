@@ -1,4 +1,4 @@
-# Live context, volatile entries, compaction selection and rewrite
+# Live context, historical entries, compaction selection and rewrite
 
 > Implemented at `packages/loop/src/runtime/context/**` and
 > `packages/kernel/src/runs/compaction-queue.ts`. Every claim below is anchored to a file and a named symbol or test.
@@ -20,12 +20,12 @@ and a model's context window does not, so something has to decide what to drop, 
 into a summary, and do so without breaking tool-call/tool-result pairing. Second — and this is the
 part the module comments treat as the actual point — a provider's implicit prompt cache serves only
 the longest byte-identical prefix of a request, so *how* an entry is mutated is as consequential as
-*whether* it is: an append costs nothing, while a rewrite anywhere before the trailing volatile run
+*whether* it is: an append preserves earlier items, while a rewrite anywhere in the historical sequence
 recharges every token behind it
 (`packages/loop/src/runtime/context/live-entry-store.ts`, `packages/loop/src/runtime/context/compaction-contracts.ts`).
 The pricing model itself — why appending is free and rewriting is not — is [cross-cutting/prompt-cache.md](../cross-cutting/prompt-cache.md)'s
 territory; this document covers the mechanism that is built around that constraint: the durable/
-volatile split, the eviction and summarization policies, the pairing-preserving rewrite, and the
+historical publication contract, the eviction and summarization policies, the pairing-preserving rewrite, and the
 `/compact` control-plane path that lets a user or a workspace hook ask for an off-schedule pass.
 
 ## 2. Surface
@@ -358,14 +358,9 @@ while open, `false` once `close()` has been called; `drain()` returns and emptie
 
 ### 4.2 Appending (`packages/loop/src/runtime/context/live-context.ts`)
 
-Every `append*` method eventually calls `store.push`/`store.appendDurable`/`store.appendVolatile`.
-`appendDurable` (`packages/loop/src/runtime/context/live-entry-store.ts`) splices the new entry at `durableInsertIndex()` —
-one index past the last durable (non-volatile) entry — **not** at the array's end. `durableInsertIndex`
-(`packages/loop/src/runtime/context/live-entry-store.ts`) walks backward from the end while `isVolatile` holds
-(`canonical || noteKind !== undefined`), so a durable append always lands ahead of the trailing
-volatile run (the canonical block and runtime notes) rather than behind it. This costs nothing to
-report (`packages/loop/src/runtime/context/live-entry-store.ts`): the entries it can displace are exactly the ones spliced out
-and re-appended every iteration anyway.
+Every append uses `store.push` or `store.appendDurable` and lands after the complete historical
+sequence. Canonical reminders and runtime notes already sent retain their positions.
+`durablePrefixEnd()` is the array length; there is no replaceable tail.
 
 `appendToolMessage` (`packages/loop/src/runtime/context/live-context.ts`) additionally: checks `willTruncateToolResult`
 (config-gated, content-length-gated — `packages/loop/src/runtime/context/compaction-policy.ts`); if truncating, computes
@@ -376,19 +371,16 @@ and builds the marker (see §3); either way it pushes the tool entry as **evicta
 
 ### 4.3 `enforceToolImageBudget` (`packages/loop/src/runtime/context/live-context.ts`)
 
-Walks entries newest-to-oldest; for each tool message carrying `images`, keeps images until
-`MAX_TOOL_IMAGES_PER_RESULT` (4) or `MAX_LIVE_TOOL_IMAGE_CHARS` (12,000,000 total remaining) is
-exhausted, or a single image exceeds `MAX_TOOL_IMAGE_CHARS` (8,000,000); dropped images are replaced
-by the marker text appended to `content`, and the entry's `chars` is recomputed. If any entry changed,
-and the **lowest** rewritten index is inside the durable prefix, it reports a `prefix_break` with
-cause `"image_budget"` before calling `store.replace(...)`.
+Walks entries oldest-to-newest, reserving capacity for retained images. New results keep at most
+`MAX_TOOL_IMAGES_PER_RESULT` (4), each at most `MAX_TOOL_IMAGE_CHARS` (8,000,000), within
+`MAX_LIVE_TOOL_IMAGE_CHARS` (12,000,000). Excess new payload is replaced by a marker before its
+first request. Hydration rejects an oversized persisted image snapshot instead of altering it.
 
 ### 4.4 `setCanonicalState` / `appendRuntimeNote` (`packages/loop/src/runtime/context/live-context.ts`)
 
-Both are **volatile** (`canonical: true` / `noteKind` set): each replaces its single prior instance
-by `removeAt` (which reports a `prefix_break` with cause `"remove"` if the removed index was inside
-the durable prefix) then `appendVolatile` (which pushes to the array's absolute end, unreported —
-`packages/loop/src/runtime/context/live-entry-store.ts`), then `store.sync()` to refresh the projected `messages` array.
+Both append a new historical publication, including repeated identical reminders. The previous
+entry loses its active `canonical`/`noteKind` marker and becomes evictable and superseded; its
+message content, identity and position remain unchanged. Snapshot persistence retains those flags.
 
 ### 4.5 `setStableBlock` (`packages/loop/src/runtime/context/live-context.ts`, contract at `packages/loop/src/runtime/context/compaction-contracts.ts`)
 
@@ -400,8 +392,9 @@ ahead of them survives untouched.
 
 ### 4.6 `cacheBreakpoints` (`packages/loop/src/runtime/context/compaction-selection.ts`)
 
-`lastStableIndex(from)` scans forward from 0, stopping at the first volatile entry, tracking the
-last index that `isStable` (not volatile, not system-role). `stable` is `lastStableIndex(length-1)`.
+`lastStableIndex(from)` scans all retained entries up to `from`, excluding only system-role
+entries. Canonical reminders and runtime notes are stable historical items.
+`stable` is `lastStableIndex(length-1)`.
 `prior` walks back from `stable` to the nearest preceding assistant-role entry, then computes
 `lastStableIndex(that_index - 1)` — this crosses exactly one tool-call batch of any width, landing on
 the position `stable` held one iteration ago.
@@ -441,7 +434,7 @@ This method's sole production caller is the mid-call overflow-recovery loop in
 
 If no anchor entry exists yet: builds `content = SUMMARY_ANCHOR_PREFIX + summary`, calls
 `rewriteDroppingTools(drop, { content, evictable: false, summary: true })` — the new anchor is
-**inserted** at the oldest dropped position (never appended past the volatile tail — see §4.11) —
+**inserted** at the oldest dropped position (as an explicitly recorded new context base — see §4.11) —
 and reports `anchor_updated: false`. If an anchor already exists: the existing entry's `message`/
 `chars` are rewritten **in place**, `reportPrefixBreak` fires with cause `"summary_anchor"` if that
 index was inside the durable prefix, then `rewriteDroppingTools(drop)` (no insert — the span is
@@ -466,7 +459,7 @@ simply removed) rebuilds the total, and `anchor_updated: true` is reported.
 ### 4.12 `store.replace` (`packages/loop/src/runtime/context/live-entry-store.ts`)
 
 Compares the new array against the old, entry-by-identity, up to
-`min(durableInsertIndex(), next.length)`; the first differing index (or `next.length` itself if the
+`min(entries.length, next.length)`; the first differing index (or `next.length` itself if the
 new array is shorter than the durable boundary) is reported as a `prefix_break` with the given
 `cause` (default `"replace"`) **before** the array is actually swapped in.
 
@@ -636,19 +629,14 @@ path matches `compaction|live-context|live-entry` — implementation modules sta
 outside the package.
 Test: `packages/loop/tests/architecture/context-compaction-facade.test.ts`.
 
-**CTX-01.** A durable append always lands at `durableInsertIndex()`, strictly ahead of
-every trailing volatile (`canonical || noteKind !== undefined`) entry — never at the array's
-absolute end.
-Production: `packages/loop/src/runtime/context/live-entry-store.ts`.
-Test: `packages/loop/tests/unit/context-compaction.test.ts` ("volatile entries stay in one
-trailing run, so a cached prefix survives").
+**CTX-01.** Every new publication appends after the complete history, including earlier reminders.
+Production: [`createLiveEntryStore`](../../packages/loop/src/runtime/context/live-entry-store.ts).
+Test: [`cache-prefix-capture.test.ts`](../../packages/loop/tests/integration/cache-prefix-capture.test.ts).
 
-**CTX-02.** `cacheBreakpoints().stable` never lands on a volatile or system-role entry;
-`.prior` exactly crosses one assistant→tool-call batch of any width.
-Production: `packages/loop/src/runtime/context/compaction-selection.ts`.
-Test: `packages/loop/tests/unit/context-compaction.test.ts` (`"never anchors on a system-role entry"`,
-`"skips the canonical block and the runtime note at the tail"`, `"keeps prior exact across a wide
-parallel tool batch"`).
+**CTX-02.** `cacheBreakpoints().stable` excludes system entries and includes historical reminders;
+`.prior` crosses the preceding assistant/tool batch.
+Production: [`createCompactionSelector`](../../packages/loop/src/runtime/context/compaction-selection.ts).
+Test: [`context-compaction.test.ts`](../../packages/loop/tests/unit/context-compaction.test.ts).
 
 **CTX-03.** `setStableBlock` is a byte-identical no-op, down to object identity, when
 re-supplied content equal to the current live block's rendered text; a genuine change always

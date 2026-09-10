@@ -344,11 +344,11 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 5; clientInfo?: { name, version? }; workspace?: string; auth?:
+`HelloParams` = `{ wire_version: 6; clientInfo?: { name, version? }; workspace?: string; auth?:
 string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 5`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 5; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 6; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
@@ -404,7 +404,7 @@ In the order the function runs (`packages/kernel/src/transport/client.ts`):
    the **original** error.
 6. On a structurally invalid result: same teardown, then throw
    `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` ``.
-   The checks are `hasOnly` over the permitted keys, `wire_version === 5`, `capabilities` /
+   The checks are `hasOnly` over the permitted keys, `wire_version === 6`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.

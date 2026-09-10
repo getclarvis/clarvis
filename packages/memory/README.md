@@ -210,30 +210,33 @@ simply told, ahead of your text, that structure is not yours to set, so such a
 line is wasted rather than harmful.
 
 The composed text is appended to the isolated pass's base prompt and to the
-continuation's trailing message — the two positions that cost no prompt cache.
+continuation's trailing message, preserving the continuation's existing history.
 It must never reach the capability's `systemSection`, which sits in every
 ordinary run's system head, where editing the file would invalidate every run's
 cached prefix.
 
 ### The two passes
 
-A pass runs one of two ways, and the difference is entirely about what the
-provider's prefix cache will serve.
+A pass either continues the indexed run's context or starts from a rendered digest.
+The choice determines its context and capability composition; actual cache reuse
+requires measured provider usage.
 
-**Continuation (hot).** The pass is a `continue_from` of the run it indexes, with
-the indexing instruction appended as a trailing user message — an append, which
-`specs/cross-cutting/prompt-cache.md` prices at full prefix survival. It runs on the host's own
+**Continuation.** The pass is a `continue_from` of the run it indexes, with
+the indexing instruction appended as a trailing user message under the
+[prompt-history contract](../../specs/cross-cutting/prompt-cache.md). It runs on the host's own
 capability list with the pass capability **prepended**: that capability
 advertises no tools, no system section and no seed block, so the indexed run's
 tool array and system head survive byte-identical, and its handlers win by
 registration order alone. Tools the pass inherited are advertised and then
-**refused at dispatch** — dropping them from the array would re-bill the request.
-The pass uses the session's key with `_memory` appended, so its divergent trailing
-instruction cannot displace the interactive conversation's hot prefix. A key at
-the 512-character request limit is truncated before the suffix, never after it.
+**refused at dispatch**, preserving the advertised catalog. The pass uses the
+persisted session ID and its own persisted indexing instance ID through
+`composePromptCacheKey`. Retries preserve that identity; a new indexing conversation
+gets another instance. The composed key must fit 512 characters and is never
+truncated. Its first calls have their own measured warmup; copying the leader's
+history does not guarantee a hit under the indexing instance's distinct key.
 
-**Isolated (cold).** The pass gets its own `memory-indexer` profile, its own tool
-array and a rendered run digest. Always correct, and merely more expensive. It is
+**Isolated.** The pass gets its own `memory-indexer` profile, its own tool
+array and a rendered run digest. It is
 what runs when the indexed run left no resumable `final_context`, declared MCP
 servers (whose tools are part of the cached array), or was answered by a
 different model than the one indexing it — a cache belongs to a model, so setting
@@ -395,13 +398,12 @@ cannot keep the workspace as its current directory while the caller tears that w
 
 Three of these are worth their own note.
 
-**`continuation_blocker` used to be computed and thrown away.** `planPass` produces it and
-`IndexReport` carries it, and no source file read it — so "why did every pass fall back to the
-isolated form and pay full price instead of hitting the provider's prefix cache?" had no answer in
-production. It is now on `memory.index.pass` **and** on `MemoryDrainReport.jobs[]`. The event is
+**`continuation_blocker` explains digest fallback.** `planPass` produces it and
+`IndexReport` carries it to `memory.index.pass` **and** `MemoryDrainReport.jobs[]`. The event is
 emitted from `indexRun` after `planPass` has returned, never from inside
 `buildIndexerContinuationRequest`, and it reads nothing off the subject's `final_context`: the
-continuation's three byte-identical surfaces are the whole point of the hot path.
+continuation preserves the indexed history, tool catalog and system instructions.
+This diagnostic identifies the selected context path; physical-call usage establishes cache reuse.
 
 **`memory.lock.held_long` is the enforcement for a rule nothing else enforces.** "Never start a pass
 from inside `store.exclusive`" cannot deadlock, because the store's lock is re-entrant — it would
@@ -556,3 +558,10 @@ bun --filter @clarvis/memory format:check
 
 The package requires Bun 1.4.0 or newer, which is also the version the
 monorepo pins.
+
+## Prompt-cache continuity
+
+Durable indexing jobs persist a distinct agent instance and reserve execution identity on claim before inference. Retries retain the instance and replay the previous indexing context when available. Indexing uses the same typed session/instance key composer without shared leader affinity or truncation.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

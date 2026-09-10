@@ -181,7 +181,7 @@ describe("native configuration consent", () => {
       approvals++;
       return approved(req, opts);
     };
-    await f.run({ configuration_session_id: undefined, prompt_cache_key: "saved-session" }, elicit);
+    await f.run({ configuration_session_id: undefined, session_id: "saved-session" }, elicit);
     await f.run({ configuration_session_id: undefined, continue_from: "old" }, elicit);
     expect(approvals).toBe(2);
   });

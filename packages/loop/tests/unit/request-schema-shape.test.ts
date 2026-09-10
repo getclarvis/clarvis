@@ -10,7 +10,7 @@ describe("run request schema", () => {
         ...VALID_REQUEST,
         execution_id: "run:one",
         continue_from: "run:zero",
-        prompt_cache_key: "conversation-one",
+        session_id: "conversation-one",
         prompt_cache_ttl: "1h",
         output_schema: { type: "object" },
       }).success,

@@ -93,7 +93,10 @@
     "check:bun-version": "bun run tooling/checks/bun-version.ts",
     "check:bun-sources": "bun run tooling/checks/bun-sources.ts",
     "check:imports": "bun run tooling/checks/import-extensions.ts",
-    "check:release": "bun run tooling/checks/release-readiness.ts"
+    "check:release": "bun run tooling/checks/release-readiness.ts",
+    "test:cache": "bun run tooling/cache/deterministic.ts",
+    "test:cache:live": "bun run tooling/cache/live.ts",
+    "test:cache:artifact": "bun run tooling/cache/artifact.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -70,6 +70,8 @@ export interface SessionTurn {
  */
 export interface Session {
   id: string;
+  /** Assigned before first inference and retained across turns and process restarts. */
+  agent_instance_id?: string;
   /** Hosted conversation revision. Zero precedes host ownership; hosted writes require a matching value. */
   revision?: number;
   title: string;

@@ -53,7 +53,7 @@ function imageParts(messages: LiveMessage[]): string[] {
 }
 
 describe("continue_from — image marker alignment for a no-vision entry", () => {
-  it("collapses prior-turn images so current-turn markers align with image_refs", async () => {
+  it("preserves prior-turn images while current-turn delegation references remain local", async () => {
     const store = createMemoryTraceStore();
 
     const llm1 = new MockLLM({
@@ -112,14 +112,14 @@ describe("continue_from — image marker alignment for a no-vision entry", () =>
     const imgs = imageParts(leadCall.messages);
     expect(imgs).toContain(IMG_A);
     expect(imgs).toContain(IMG_B);
-    expect(imgs).not.toContain(IMG_OLD);
+    expect(imgs).toContain(IMG_OLD);
     const hasHistoricalMarker = leadCall.messages.some(
       (m) =>
         m.role === "user" &&
         Array.isArray(m.content) &&
         m.content.some((p) => p.type === "text" && p.text.includes("earlier turn")),
     );
-    expect(hasHistoricalMarker).toBe(true);
+    expect(hasHistoricalMarker).toBe(false);
   });
 
   it("preserves prior-turn images verbatim when the entry model CAN see them (no collapse)", async () => {

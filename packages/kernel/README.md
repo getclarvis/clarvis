@@ -212,13 +212,19 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 9 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 10 and a rebuilt compatible worker image. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
 directories. Helper guidance requires preparing read resources in the writable workspace before
 guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
 host's resolved non-secret loop defaults and ceilings, validated through the canonical environment
 schema. Missing, coerced or extra policy fields are refused; owner, logging and retention settings
 stay on the host.
+
+The host model broker accepts only inline base64 images, either raw bytes encoded as base64 or
+`data:image/...;base64,...` URLs, within its existing serialized-request byte bound. It checks both
+user content and tool-result images before invoking the provider. Remote media URLs are refused
+even when a model would strip them: the SDK asset downloader must not grant the guest additional
+host-network access. Admitted inline data remains unchanged.
 
 Docker and Podman share attachment, bootstrap, private RPC, previews and shutdown in
 `container-session.ts`. Engine-specific identity, rootless setup, mounts and policy inspection
@@ -1103,3 +1109,20 @@ bun --filter @clarvis/kernel format:check
 
 When a dependency's public TypeScript surface changes, rebuild it before
 typechecking this package. The package requires Bun 1.4.0 or newer.
+
+## Prompt-cache continuity
+
+Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native/guest execution. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
+Workflow leaders retain the manager's session identity and use their reserved child execution ID
+as their own persisted agent instance. Two leaders of the same profile therefore have distinct
+cache keys, separate from the manager, in both direct and prepared host assembly.
+The captured SDK requests also cover transport retry, two same-profile children, physical-call
+cancellation, guard-policy resume and the actual indexing pass. Restricting indexing dispatch
+preserves the complete advertised catalog while rejecting inherited workspace tools.
+
+The SDK composition tests declare `@clarvis/llm` as a development dependency. Runtime provider
+construction remains owned by the loop's host services; the dependency does not add an eager
+provider import to the kernel.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

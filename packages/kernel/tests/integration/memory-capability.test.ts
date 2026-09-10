@@ -133,7 +133,7 @@ describe("kernel memory composition root", () => {
       llm.calls[1]!.messages.some((message) =>
         contentToText(message.content).startsWith("<memory>"),
       ),
-    ).toBe(false);
+    ).toBe(true);
 
     await kernel.close();
   });

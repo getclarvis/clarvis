@@ -252,6 +252,8 @@ units and are not published independently.
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product
 model. The generated
 [package coupling report](specs/package-coupling-analysis.md) is the exact graph authority.
+The kernel's [prompt-cache composition tests](specs/cross-cutting/prompt-cache.md) additionally
+use `@clarvis/llm` as a development dependency; this does not change the runtime graph.
 
 ## License
 

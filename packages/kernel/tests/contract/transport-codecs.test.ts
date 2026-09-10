@@ -8,14 +8,14 @@ import {
   ORDINARY_OPERATIONS,
   SPECIAL_OPERATIONS,
 } from "../../src/transport/operations.ts";
-import type { HelloResult } from "../../src/transport/wire.ts";
+import { CLARVIS_WIRE_VERSION, type HelloResult } from "../../src/transport/wire.ts";
 import {
   createRecordingKernelServices,
   RECORDED_OPERATION,
 } from "../helpers/recording-kernel-services.ts";
 
 const HELLO = {
-  wire_version: 5,
+  wire_version: CLARVIS_WIRE_VERSION,
   capabilities: {
     memory: false,
     skills: false,

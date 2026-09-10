@@ -52,6 +52,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run typecheck
+      - name: serialized prompt cache contracts (no credentials)
+        run: bun run test:cache
       - run: bun run format:check
       - run: bun run lint
       # The server image installs from the workspace manifests before copying

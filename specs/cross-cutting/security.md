@@ -1140,7 +1140,11 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     host capabilities refuse placement. Model leases admit exact profile, vision and effective judge
     pairs, with bounded, correlated progress frames and a separate terminal result.
     The host resolves provider/model overrides from its captured registry and reconstructs model
-    capabilities, ignoring guest-supplied configuration. Per-call retry limits cross unchanged;
+    capabilities, ignoring guest-supplied configuration. Before any adapter call, user and tool
+    media must be inline base64 image data within the complete-request byte bound; URL-backed
+    media is rejected even for non-vision models. SDK asset downloads cannot extend an admitted
+    provider destination to arbitrary guest-controlled host-network destinations. Payloads and
+    URLs are excluded from refusal diagnostics. Per-call retry limits cross unchanged;
     bounded FIFO admission uses host model policy rather than container CPU allocation. Typed
     provider errors carry only sanitized bounded messages and closed recovery/usage fields, never
     stacks, causes, headers or response bodies. Ordinary HTTP/SSE MCP operations also remain on
@@ -1152,12 +1156,16 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     returns to the live guest relay, and run disposal aborts acquisitions and releases leases.
     Production: `hostModelBroker` in
     [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts),
+    `assertInlineModelMedia` in
+    [`model-media.ts`](../../packages/kernel/src/runtime/model-media.ts),
     `encodeRuntimeProviderError` in
     [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), and
     `createHostRemoteMcpBridge` in
     [`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts).
     Test: authenticated HTTP/SSE and real SDK model cases in
     [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+    including the guest-media download refusal, and inline/malformed-media checks in
+    [`runtime-model-media.test.ts`](../../packages/kernel/tests/unit/runtime-model-media.test.ts),
     and closed snapshot/lease/catalog checks in
     [`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts).
     Production: `createHostHooksBridge` in `packages/kernel/src/runtime/hooks-bridge.ts`;

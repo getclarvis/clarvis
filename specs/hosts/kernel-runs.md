@@ -190,7 +190,7 @@ memory notices. Production and test ownership live in
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
 | `vision_model` | `merged.default_vision_model`, only when a string |
-| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
+| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
 | `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
 | `plans` | request value, else settings block with the skill-mode override, else settings block, else absent |

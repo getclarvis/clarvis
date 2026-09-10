@@ -91,7 +91,7 @@ describe("buildLeadInputPersona", () => {
     });
   });
 
-  it("budget notes share one replaceable kind, so a live context keeps only the latest value", () => {
+  it("budget notes retain their frequency and append each observation", () => {
     const ctx = createLiveContext([], DISABLED_COMPACTION, { agent: "lead" });
     const bc = {
       ctx,
@@ -106,6 +106,6 @@ describe("buildLeadInputPersona", () => {
     const notes = ctx.messages.filter(
       (m) => typeof m.content === "string" && m.content.includes("tokens_remaining="),
     );
-    expect(notes).toHaveLength(1);
+    expect(notes).toHaveLength(2);
   });
 });

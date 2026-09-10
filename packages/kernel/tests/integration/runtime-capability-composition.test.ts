@@ -698,6 +698,81 @@ describe("runtime capability composition", () => {
     expect(JSON.stringify(f.guestEnvelopes)).not.toContain("synthetic-model-header");
   });
 
+  it("rejects guest media URLs before the real SDK can download on the host", async () => {
+    let downloads = 0;
+    let providerCalls = 0;
+    const assetServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        downloads++;
+        return new Response(
+          Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j65kAAAAASUVORK5CYII=",
+            "base64",
+          ),
+          { headers: { "content-type": "image/png" } },
+        );
+      },
+    });
+    cleanup.push(() => Promise.resolve(assetServer.stop(true)));
+    const providerServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        providerCalls++;
+        return Response.json({ error: { message: "unexpected provider call" } }, { status: 400 });
+      },
+    });
+    cleanup.push(() => Promise.resolve(providerServer.stop(true)));
+    const f = await fixture(undefined);
+    const request = body("guest-media-url");
+    request.providers = [
+      {
+        name: "test",
+        kind: "openai-compatible",
+        base_url: `http://127.0.0.1:${String(providerServer.port)}/v1`,
+        models: { model: { context_window_tokens: 10000, capabilities: ["vision"] } },
+      },
+    ];
+    request.profiles[0]!.retry = { max_retries: 0 };
+    request.messages = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            image: `http://guest-media.invalid:${String(assetServer.port)}/private.png`,
+          },
+        ],
+      },
+    ];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.hostname === "guest-media.invalid") {
+          url.hostname = "127.0.0.1";
+          return originalFetch(url, init);
+        }
+        return originalFetch(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const outcome = await f.runtime.executeRun({
+        rawBody: request,
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(downloads).toBe(0);
+      expect(providerCalls).toBe(0);
+      expect(outcome.response).toMatchObject({ status: "error" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it.each(["disabled", "retry-after-cap"])(
     "honors %s retries in the actual host retry decorator",
     async (mode) => {

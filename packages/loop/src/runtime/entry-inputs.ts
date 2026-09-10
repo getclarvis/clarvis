@@ -165,7 +165,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
   const { entryProfile, entryResolved, isLead } = shape;
 
   const elicitWaitMs = request.elicit_wait_ms ?? deps.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
-  const subagentInstanceId = isLead ? undefined : randomUUID();
+  const subagentInstanceId = isLead ? undefined : (request.agent_instance_id ?? randomUUID());
   const subagentTaskBody = isLead ? "" : userText(request.messages);
   const entryHasBuiltins = agentToolsActive(deps.env, entryProfile.grants);
   const spillToolResult = createToolSpill(deps.workspaceRoot, deps.logger);

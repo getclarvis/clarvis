@@ -1,4 +1,5 @@
-import { sanitizeErrorMessage } from "@clarvis/capability";
+import { composePromptCacheKey, sanitizeErrorMessage } from "@clarvis/capability";
+import { randomUUID } from "node:crypto";
 import type { EnvConfig } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
@@ -343,7 +344,6 @@ export async function executeRun({
 
   const releaseExecutionId = reserveExecutionId(deps.traceStore, owner, executionId);
   try {
-    const promptCacheKey = parsed.prompt_cache_key ?? executionId;
     const promptCacheTtl = parsed.prompt_cache_ttl ?? (shape.humanParkLikely ? "1h" : "5m");
 
     let continuation: RunContinuation | undefined;
@@ -358,6 +358,19 @@ export async function executeRun({
           ? {}
           : { capability_state: prior.capability_state }),
       };
+      parsed.session_id ??= prior.request.session_id ?? prior.id;
+      parsed.agent_instance_id ??= prior.request.agent_instance_id;
+    }
+    parsed.session_id ??= executionId;
+    parsed.agent_instance_id ??= randomUUID();
+    const identity = { sessionId: parsed.session_id, agentInstanceId: parsed.agent_instance_id };
+    try {
+      composePromptCacheKey(identity);
+    } catch {
+      throw new ValidationError(
+        "invalid_prompt_cache_key",
+        "Invalid session/agent prompt-cache identity or composed key exceeds 512 characters",
+      );
     }
 
     const emit: CapabilityEventListener = (event: CapabilityEvent): void => {
@@ -395,7 +408,7 @@ export async function executeRun({
             return journal;
           },
           env: deps.env,
-          llm: withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl }),
+          llm: withPromptCacheDefaults(deps.llm, { identity, promptCacheTtl }),
           connections: deps.connections,
           logger: runLogger,
           onEvent,

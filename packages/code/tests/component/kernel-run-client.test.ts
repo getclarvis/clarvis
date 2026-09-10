@@ -319,6 +319,32 @@ test("hosted admission uses the persisted session and waits for projection plus 
   await c.dispose();
 });
 
+test("long hosted prompts bound only the preview and preserve the complete model message", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const prompt = "synthetic corpus ".repeat(5000);
+  const handle = c.startRun({
+    executionId: "hosted-execution",
+    profile: "coder",
+    session: {
+      session_id: "conversation",
+      session_revision: 1,
+      kind: "conversation",
+      user_preview: prompt,
+    },
+    messages: [{ role: "user", content: prompt }],
+  });
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed", result: "verified" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  await handle.closed;
+  expect(f.starts[0]!.user_preview.length).toBeLessThanOrEqual(4096);
+  expect(f.starts[0]!.params.messages).toEqual([{ role: "user", content: prompt }]);
+  await c.dispose();
+});
+
 test("attach observes the same execution, leaves observer questions untouched and never starts", async () => {
   const f = hostedFixture();
   let questions = 0;

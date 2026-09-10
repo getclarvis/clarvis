@@ -364,6 +364,22 @@ For each admitted pair, `hostModelBroker` resolves the captured host registry th
 reconstructs `capabilities` from that model's captured entry, including an explicit empty set; the
 guest cannot substitute provider configuration or claim vision support. Unsupported images are
 stripped only by adapter serialization, without rewriting the loop's retained message prefix.
+Before invoking any host adapter, `assertInlineModelMedia` rejects URL-backed images in user
+content and tool results. Only raw base64 or `data:image/...;base64,...` payloads are admitted,
+unchanged and within the broker's existing complete-request byte bound. This check also applies
+to non-vision models: SDK downloads must never create a guest-controlled host destination,
+regardless of container network mode or provider URL support. Refusal diagnostics contain no
+guest URL or payload.
+
+Production: `hostModelBroker` in
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+`assertInlineModelMedia` in [model-media.ts](../../packages/kernel/src/runtime/model-media.ts).
+Test: `rejects guest media URLs before the real SDK can download on the host` and the admitted
+10 MiB image/continuation cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts);
+inline preservation, malformed media and URL refusals in
+[`runtime-model-media.test.ts`](../../packages/kernel/tests/unit/runtime-model-media.test.ts).
+
 `modelBody` forwards `maxRetries` and `maxRetryAfterMs` unchanged when present, including zero
 retries, so profile policy and output-token reservations remain effective.
 

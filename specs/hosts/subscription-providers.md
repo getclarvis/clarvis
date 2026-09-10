@@ -162,8 +162,8 @@ The loop resolves subscription authorization only through the host seam passed t
 Resolution occurs inside the SDK fetch callback immediately before I/O; tokens never enter
 `ResolvedProviderConfig`, `LLMCallParams`, request decorators, or traces. Both schemes use a Responses
 factory, streaming and tools. Subscription requests send `store: false`; ChatGPT omits the output cap
-its backend rejects and sends the session-stable `prompt_cache_key` without an inline cache
-breakpoint, while Grok retains its catalog-supported cap. Grok also sends the session-stable
+its backend rejects and sends the session-and-instance-stable `prompt_cache_key` without an inline cache
+breakpoint, while Grok retains its catalog-supported cap. Grok also sends the session-and-instance-stable
 conversation identity both as the Responses body `prompt_cache_key` and, after one-way hashing by the
 credential-owning transport, as `x-grok-conv-id`; it receives no OpenAI explicit-cache breakpoint.
 Provider-issued reasoning parts
@@ -242,3 +242,13 @@ Remote server authentication, browser cookies, copied CLI state, installed CLI s
 multi-account aliases, and browser PKCE callbacks are outside this phase. `@clarvis/server` exposes
 neither login nor subscription inference; its protocol service reports `unavailable`. Browser login
 may be added later only with provider-registered S256 PKCE and exact loopback callback validation.
+
+### Per-instance affinity and replay
+
+ChatGPT derives `session-id` from SHA-256 of the same composed session/agent key sent as
+`prompt_cache_key`. Its existing `x-client-request-id` semantics remain unchanged; physical attempt
+numbering belongs to the qualification harness. Credentials stay in the host resolver.
+Production: [`createOpenAICodexAdapter`](../../packages/kernel/src/subscriptions/openai-codex.ts).
+Test: [`provider-request-shape.test.ts`](../../packages/llm/tests/integration/provider-request-shape.test.ts).
+The complete [cache contract](../cross-cutting/prompt-cache.md) distinguishes wire replay from
+measured backend reuse and installed-artifact qualification.

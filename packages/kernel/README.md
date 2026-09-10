@@ -220,6 +220,12 @@ host's resolved non-secret loop defaults and ceilings, validated through the can
 schema. Missing, coerced or extra policy fields are refused; owner, logging and retention settings
 stay on the host.
 
+The host model broker accepts only inline base64 images, either raw bytes encoded as base64 or
+`data:image/...;base64,...` URLs, within its existing serialized-request byte bound. It checks both
+user content and tool-result images before invoking the provider. Remote media URLs are refused
+even when a model would strip them: the SDK asset downloader must not grant the guest additional
+host-network access. Admitted inline data remains unchanged.
+
 Docker and Podman share attachment, bootstrap, private RPC, previews and shutdown in
 `container-session.ts`. Engine-specific identity, rootless setup, mounts and policy inspection
 remain in their backends. Bootstrap has a 30-second response deadline. A run may cancel its own
@@ -1107,6 +1113,9 @@ typechecking this package. The package requires Bun 1.4.0 or newer.
 ## Prompt-cache continuity
 
 Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native/guest execution. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
+Workflow leaders retain the manager's session identity and use their reserved child execution ID
+as their own persisted agent instance. Two leaders of the same profile therefore have distinct
+cache keys, separate from the manager, in both direct and prepared host assembly.
 The captured SDK requests also cover transport retry, two same-profile children, physical-call
 cancellation, guard-policy resume and the actual indexing pass. Restricting indexing dispatch
 preserves the complete advertised catalog while rejecting inherited workspace tools.

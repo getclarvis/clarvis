@@ -76,6 +76,9 @@ persist the leader's `agent_instance_id` in the session intent before starting i
 persist missing identities in their request: the execution ID supplies the conversation ID and a
 single assigned agent ID supplies the instance. Continuations inherit both unless explicitly
 branching into another agent instance. Each spawned child uses its existing persisted delegation ID.
+Workflow leaders share the manager's session and use the scheduler's reserved child execution ID
+as their agent instance. The manager and same-profile workflow leaders must have distinct keys;
+prepared host assembly and the guest workflow bridge retain this identity in the persisted request.
 
 The typed `composePromptCacheKey(PromptCacheIdentity)` is the only composer. Raw components accept
 the existing ASCII execution-ID alphabet: letters, digits, `.`, `_`, `:`, `-`. Embedded underscores
@@ -102,12 +105,16 @@ have different jobs and are not interchangeable.
 [`executeRun`](../../packages/loop/src/runtime/execute-run.ts),
 [`withPromptCacheDefaults`](../../packages/llm/src/prompt-cache-provider.ts),
 [hosted session preparation](../../packages/kernel/src/hosting/sessions.ts),
+[`assembleLeader`](../../packages/kernel/src/workflows/workflows-service.ts),
 [`runSubagent`](../../packages/loop/src/runtime/subagents/run-subagent.ts) and
 [memory queue claims](../../packages/memory/src/file-store/jobs.ts).
 Test: [`prompt-cache-identity.test.ts`](../../packages/capability/tests/unit/prompt-cache-identity.test.ts),
 [`prompt-cache-provider.test.ts`](../../packages/llm/tests/unit/prompt-cache-provider.test.ts),
 [`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts)
-and the kernel composition test.
+and the kernel composition test. Workflow manager/leader separation, SDK-serialized keys and
+continuation from persisted requests are
+covered by `separates workflow leader cache identities` in
+[`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
 
 ## Provider wire and replay
 

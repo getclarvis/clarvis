@@ -384,7 +384,8 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       }
     };
 
-    const assembleLeader: LeaderRequestAssembler = (spec) => {
+    const assembleLeader: LeaderRequestAssembler = (spec, { runId }) => {
+      if (runId === undefined) throw new Error("Workflow leader requires a reserved run ID");
       const leaderAgent =
         spec.profile ??
         (prepared === undefined
@@ -392,7 +393,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           : prepared.defaultLeader) ??
         params.agent;
       const leaderParams: StartRunParams & { execution_id: string } = {
-        execution_id: "",
+        execution_id: runId,
         messages: [{ role: "user", content: spec.prompt }],
         plans: "off",
         memory: "off",
@@ -401,10 +402,8 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
         ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
         ...(params.task !== undefined ? { task: params.task } : {}),
-        ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
-        ...(params.agent_instance_id !== undefined
-          ? { agent_instance_id: params.agent_instance_id }
-          : {}),
+        session_id: params.session_id ?? managerRunId,
+        agent_instance_id: runId,
         ...(params.prompt_cache_ttl !== undefined
           ? { prompt_cache_ttl: params.prompt_cache_ttl }
           : {}),

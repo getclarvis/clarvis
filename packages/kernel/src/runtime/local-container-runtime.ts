@@ -40,6 +40,7 @@ import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
 import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
 import { resolveGuardMode, type GuardSettings } from "../guard/resolver.ts";
 import { streamHostModelCall } from "./model-stream.ts";
+import { assertInlineModelMedia } from "./model-media.ts";
 import { createHostRemoteMcpBridge, RUNTIME_MCP_METHOD } from "./remote-mcp.ts";
 import { createGuardSessionAllowlist } from "../guard/guard-elicit.ts";
 import {
@@ -264,6 +265,7 @@ function hostModelBroker(
       },
       (request, authority) => {
         const body = request.body as LLMCallParams;
+        assertInlineModelMedia(body.messages);
         return streamHostModelCall(
           args.deps.llm,
           {

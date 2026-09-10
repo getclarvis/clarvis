@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "../helpers/bun-test.ts";
 import { generateText as realGenerateText } from "ai";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
-import type { LLMCallParams, ResolvedProviderConfig } from "@clarvis/capability";
+import type { LLMCallParams, ResolvedProviderConfig, LiveMessage } from "@clarvis/capability";
 
 const mockGenerate = vi.fn();
 const BASE = "https://openrouter.test/api/v1";
@@ -126,5 +126,136 @@ describe("what an implicit-cache openai-compatible request actually carries", ()
       expect(c.headers["x-session-id"]).toBe(String(c.body.session_id));
     }
     expect(new Set(calls.map((c) => c.headers["x-session-id"])).size).toBe(1);
+  });
+});
+
+describe("Responses response, persistence and serialized replay", () => {
+  it("retains tool item ids, call correlation, phase and complete reasoning metadata", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const response = {
+      id: "resp_replay",
+      object: "response",
+      created_at: 1,
+      status: "completed",
+      model: "test-model",
+      output: [
+        {
+          type: "reasoning",
+          id: "rs_original",
+          encrypted_content: "opaque-final-part",
+          summary: [
+            { type: "summary_text", text: "First part." },
+            { type: "summary_text", text: "Last part." },
+          ],
+        },
+        {
+          type: "message",
+          id: "msg_original",
+          status: "completed",
+          role: "assistant",
+          phase: "commentary",
+          content: [{ type: "output_text", text: "Reading.", annotations: [] }],
+        },
+        {
+          type: "function_call",
+          id: "fc_original",
+          call_id: "call_original",
+          status: "completed",
+          name: "read",
+          arguments: '{"path":"synthetic.txt"}',
+        },
+      ],
+      usage: {
+        input_tokens: 20000,
+        output_tokens: 20,
+        input_tokens_details: { cached_tokens: 18000 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
+    };
+    const subject = new AiSdkAdapter({
+      resolveSubscription: async (scheme) => ({
+        scheme,
+        async apply(_input, init) {
+          if (typeof init?.body !== "string") throw new Error("expected serialized SDK body");
+          captured.push(JSON.parse(init.body));
+          return Response.json(response);
+        },
+      }),
+    });
+    const params: LLMCallParams = {
+      provider: "subscription",
+      providerConfig: { kind: "xai-grok" },
+      model: "test-model",
+      promptCacheKey: "session_agent",
+      reasoningEffort: "medium",
+      messages: [
+        { role: "system", content: "Preserve the synthetic conversation." },
+        { role: "user", content: "Read the fixture." },
+      ],
+      tools: [
+        {
+          fullName: "read",
+          wireName: "read",
+          mcpName: "",
+          toolName: "read",
+          inputSchema: {
+            type: "object",
+            properties: { path: { type: "string" } },
+            required: ["path"],
+          },
+        },
+      ],
+    };
+    const first = await subject.call(params);
+    expect(first.toolCalls?.[0]?.providerOptions?.openai?.itemId).toBe("fc_original");
+    const persisted = JSON.parse(
+      JSON.stringify({
+        role: "assistant",
+        content: first.text ?? "",
+        text_parts: first.textParts,
+        reasoning: first.reasoningParts,
+        tool_calls: first.toolCalls,
+      }),
+    ) as LiveMessage;
+    if ("reasoning" in persisted && persisted.reasoning?.[0]?.providerOptions?.openai) {
+      delete persisted.reasoning[0].providerOptions.openai.reasoningEncryptedContent;
+    }
+    await subject.call({
+      ...params,
+      messages: [
+        ...params.messages,
+        persisted,
+        { role: "tool", tool_call_id: "call_original", content: "synthetic result" },
+      ],
+    });
+    const input = captured[1]!.input as Array<Record<string, unknown>>;
+    const previous = captured[0]!.input as Array<Record<string, unknown>>;
+    expect(input.slice(0, previous.length)).toEqual(previous);
+    expect(input).toContainEqual({
+      type: "function_call",
+      id: "fc_original",
+      call_id: "call_original",
+      name: "read",
+      arguments: '{"path":"synthetic.txt"}',
+    });
+    expect(input).toContainEqual({
+      type: "function_call_output",
+      call_id: "call_original",
+      output: "synthetic result",
+    });
+    expect(input.find((item) => item.id === "msg_original")).toMatchObject({
+      phase: "commentary",
+      role: "assistant",
+    });
+    expect(input.find((item) => item.id === "rs_original")).toMatchObject({
+      encrypted_content: "opaque-final-part",
+      summary: [
+        { type: "summary_text", text: "First part." },
+        { type: "summary_text", text: "Last part." },
+      ],
+    });
+    expect(
+      input.filter((item) => item.role === "user").every((item) => item.id === undefined),
+    ).toBe(true);
   });
 });

@@ -76,7 +76,6 @@ identity`) inspects that guidance in the actual tool-less request. The cross-sur
 | `buildEntrySeed(a): EntrySeed` | `packages/loop/src/runtime/entry-seed.ts` | composes the entry agent's opening messages |
 | `EntrySeedDeps` | `packages/loop/src/runtime/entry-seed.ts` | `{ workspaceRoot, continuation?, runCapabilities?, seedBlocks?, seedMarkers? }` — the parameter type `buildEntrySeed`'s argument is built from |
 | `EntrySeed` | `packages/loop/src/runtime/entry-seed.ts` | `{ entryMessages: LiveSeedEntry[]; turnImages: ImagePart[]; entryStripsImages: boolean }` |
-| `collapseHistoricalImages(entry)` | `packages/loop/src/runtime/entry-seed.ts` | replaces prior-turn image parts with `[image from an earlier turn]` text |
 
 ### Image vocabulary (`build-subagent-input.ts`, `@clarvis/capability`, `@clarvis/tools`)
 
@@ -184,7 +183,6 @@ vision-prepass.ts:              parseModelRef(modelRef) → { provider, modelId 
 | --- | --- | --- |
 | `[image #${idx} omitted: active model lacks vision]` | `toModelMessages`'s image-stripping path, for a `user` message whose target model is blind | `packages/llm/src/to-model-messages.ts` |
 | `[image analysis] The '${modelRef}' model read the attached image(s) on your behalf (your model cannot view images directly). Its reading[, which was CUT OFF at the output limit and may omit detail]:\n\n${text}` | the prepass's injected message | `packages/loop/src/runtime/vision-prepass.ts` |
-| `[image from an earlier turn]` | `collapseHistoricalImages`, replacing a continuation's stale image parts for a blind entry agent | `packages/loop/src/runtime/entry-seed.ts` |
 
 ### Trace and usage records
 
@@ -248,10 +246,9 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
 2. `entryStripsImages = !(entryResolved.capabilities?.has("vision") ?? true)` — true only when the
    entry agent's resolved model **declares** capabilities and `vision` is not among them; an
    undeclared/unknown capability set defaults to sighted (`packages/loop/src/runtime/entry-seed.ts`).
-3. If `entryStripsImages`, every image part in the **restored continuation** history (not this turn's)
-   is replaced by `collapseHistoricalImages` with `[image from an earlier turn]`
-   (`packages/loop/src/runtime/entry-seed.ts`) — this turn's images are left as real image parts in `messages` and
-   carried separately as `turnImages`.
+3. Restored continuation entries, including images, retain their exact contents and order.
+   New-turn images are carried separately as `turnImages`; routing them does not rewrite the
+   persisted history (`packages/loop/src/runtime/entry-seed.ts`).
 4. Returns `{ entryMessages, turnImages, entryStripsImages }`.
 
 ### 4.3 The prepass itself
@@ -267,9 +264,8 @@ return runAgent(buildEntryInput(clock, signal));
 `seed.entryMessages` and the `EntryInputBuilder`'s captured `entryMessages` are the **same array
 object** (`packages/loop/src/runtime/entry-inputs.ts: messages: p.entryMessages`), so a `push` onto `seed.entryMessages`
 inside the prepass is visible to the subsequent `buildEntryInput(clock, signal)` call — this is why the
-docstring's ordering constraint holds: "The append lands at the absolute end of `entryMessages`... If
-the seed ever grows a volatile tail, this push has to move ahead of it."
-(`packages/loop/src/runtime/vision-prepass.ts`).
+reading is appended after the complete restored history, including earlier runtime notes and
+plan reminders (`packages/loop/src/runtime/vision-prepass.ts`).
 
 Step by step inside `runVisionPrepass` (`packages/loop/src/runtime/vision-prepass.ts`):
 
@@ -385,15 +381,14 @@ from the other).
     `packages/loop/src/runtime/vision-prepass.ts` (`tools: []`); pinned by "reads with no tools and no agent identity — it is
     a call, not a sub-agent" (`packages/loop/tests/integration/image-vision-routing.test.ts`, asserting `reader.tools` is
     `[]` and exactly two total calls were made).
-12. **A continuation's own prior-turn images are collapsed to `[image from an earlier turn]` text for a
-    blind entry agent, while the new turn's images stay real image parts and the entry index numbering
-    aligns with `image_refs`.** Production `packages/loop/src/runtime/entry-seed.ts`; pinned by "collapses prior-turn
-    images so current-turn markers align with image_refs"
-    (`packages/loop/tests/integration/continuation-image-alignment.test.ts`).
-13. **When the entry model CAN see images, a continuation carries prior-turn images forward verbatim —
-    no collapse.** Production: the `entryStripsImages ?... : continuationSeed` branch at
-    `packages/loop/src/runtime/entry-seed.ts`; pinned by "preserves prior-turn images verbatim when the entry model CAN see
-    them (no collapse)" (`packages/loop/tests/integration/continuation-image-alignment.test.ts`).
+12. **Restored images retain content and position for every entry model.**
+    Production: `buildEntrySeed` in `packages/loop/src/runtime/entry-seed.ts`.
+    Test: `packages/loop/tests/integration/continuation-image-alignment.test.ts` verifies
+    continuation history and independent current-turn image references.
+13. **Model-specific image routing does not rewrite persisted historical entries.**
+    Production: `buildEntrySeed` in `packages/loop/src/runtime/entry-seed.ts`.
+    Test: `packages/loop/tests/integration/continuation-image-alignment.test.ts` covers sighted
+    and non-vision entry models.
 14. **`collectTurnImages` walks messages in order and only inspects `user`-role, array-content
     messages.** Production `packages/loop/src/runtime/subagents/build-subagent-input.ts`; pinned by "collects image parts across
     user messages in global order" and "returns empty when there are no images"

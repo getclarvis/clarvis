@@ -341,3 +341,10 @@ exact and the `SettingsFile` / `ParsedRunRequest` drift locks keep working. `Cap
 the open half: a capability shipped in its own package registers its block, and the host validates
 it against `CapabilitySettingsSpec.schema` rather than the engine declaring it. Registration must
 happen before settings are parsed.
+
+## Prompt-cache continuity
+
+The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted session and agent instance, escaping embedded underscores and rejecting keys over 512 characters. `RunRequest` carries `session_id` and `agent_instance_id`; tool-call provider metadata, assistant phase and reasoning remain persisted replay data.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

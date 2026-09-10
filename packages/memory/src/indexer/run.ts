@@ -97,6 +97,12 @@ export class MemoryIndexError extends Error {
 /** Everything one pass needs beyond its runtime. */
 export interface IndexRunArgs {
   run: RunSnapshot;
+  /** Durable job identity and reserved execution; direct passes allocate once. */
+  agentInstanceId?: string;
+  executionId?: string;
+  continueFrom?: string;
+  /** Durable predecessor reservations allow recovery across claims with no created trace. */
+  priorExecutions?: readonly string[];
   store: MemoryStore;
   budgets: MemoryBudgets;
   /** Resolves the deps, owner, model and providers this pass runs with. */
@@ -178,7 +184,7 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
   const loop = await import("@clarvis/loop");
   const execute = indexer.executeRun ?? loop.executeRun;
   const { generateExecutionId } = loop;
-  const indexerRunId = generateExecutionId();
+  const indexerRunId = args.executionId ?? generateExecutionId();
   const plan = planPass({
     run,
     indexer,
@@ -188,13 +194,47 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
     ledger,
     ...(mutationFence !== undefined ? { mutationFence } : {}),
   });
+  if (args.agentInstanceId !== undefined) plan.rawBody.agent_instance_id = args.agentInstanceId;
+  plan.rawBody.session_id ??= run.run_id;
+  for (const executionId of args.priorExecutions ??
+    (args.continueFrom ? [args.continueFrom] : [])) {
+    const previous = indexer.deps.traceStore.getById(indexer.owner, executionId);
+    if (
+      previous !== null &&
+      previous.final_context !== undefined &&
+      previous.final_context.length > 0
+    ) {
+      const resumed = buildIndexerContinuationRequest({
+        executionId: indexerRunId,
+        subject: previous,
+        providers: indexer.providers,
+        policy: indexer.policy,
+      });
+      resumed.agent_instance_id = args.agentInstanceId ?? previous.request.agent_instance_id;
+      plan.rawBody = resumed;
+      break;
+    } else if ((previous?.total_input_tokens ?? 0) > 0) {
+      throw new MemoryIndexError(
+        "generate",
+        "indexer history is unavailable for the persisted conversation",
+        { indexerRunId, terminal: true },
+      );
+    }
+  }
 
   let outcome;
   try {
+    const provider = plan.deps.llm;
     outcome = await execute({
       rawBody: plan.rawBody,
       owner: indexer.owner,
-      deps: plan.deps,
+      deps: {
+        ...plan.deps,
+        llm: {
+          call: (params) =>
+            provider.call({ ...params, callPurpose: params.callPurpose ?? "memory" }),
+        },
+      },
       elicit: declineElicit,
       ...(signal !== undefined ? { externalSignal: signal } : {}),
     });

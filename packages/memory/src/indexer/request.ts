@@ -376,12 +376,10 @@ export interface ContinuationRequestArgs {
  *   (`max(0, input - cached) + output`), so a large continued transcript does
  *   not consume the pass's allowance merely by being re-sent each iteration.
  *
- *   `prompt_cache_key` derives a stable Memory-only branch from the indexed
- *   run's key. A continuation pass deliberately diverges from the interactive
- *   conversation at its trailing instruction; sharing the exact affinity key
- *   let that background branch displace the conversation's hot prefix on
- *   providers that retain one active prefix per session. The suffix is kept
- *   when a maximum-length caller key must be truncated.
+ *   The source session is retained, while the indexing instance has its own
+ *   persisted agent identity. Queue recovery supplies the same instance again.
+ *   Cache-key composition is centralized in the provider decorator and never
+ *   truncates identifiers.
  */
 export function buildIndexerContinuationRequest(args: ContinuationRequestArgs): RunRequest {
   const { executionId, subject } = args;
@@ -389,7 +387,8 @@ export function buildIndexerContinuationRequest(args: ContinuationRequestArgs): 
   return {
     execution_id: executionId,
     continue_from: subject.id,
-    prompt_cache_key: `${(request.prompt_cache_key ?? subject.id).slice(0, 505)}_memory`,
+    session_id: request.session_id ?? subject.id,
+    agent_instance_id: executionId,
     messages: [
       { role: "user", content: withPolicy(INDEXER_CONTINUATION_INSTRUCTION, args.policy) },
     ],

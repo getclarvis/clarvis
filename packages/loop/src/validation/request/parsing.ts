@@ -13,7 +13,7 @@ function classifyIssue(issue: ZodIssue): ErrorCode {
     return "invalid_execution_id";
   }
 
-  if (top === "prompt_cache_key") {
+  if (top === "session_id" || top === "agent_instance_id") {
     return "invalid_prompt_cache_key";
   }
 

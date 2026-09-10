@@ -401,8 +401,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
         ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
         ...(params.task !== undefined ? { task: params.task } : {}),
-        ...(params.prompt_cache_key !== undefined
-          ? { prompt_cache_key: params.prompt_cache_key }
+        ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
+        ...(params.agent_instance_id !== undefined
+          ? { agent_instance_id: params.agent_instance_id }
           : {}),
         ...(params.prompt_cache_ttl !== undefined
           ? { prompt_cache_ttl: params.prompt_cache_ttl }
@@ -509,8 +510,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             ...(params.task !== undefined ? { task: params.task } : {}),
             ...(params.plans !== undefined ? { plans: params.plans } : {}),
             ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
-            ...(params.prompt_cache_key !== undefined
-              ? { prompt_cache_key: params.prompt_cache_key }
+            ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
+            ...(params.agent_instance_id !== undefined
+              ? { agent_instance_id: params.agent_instance_id }
               : {}),
             ...(params.prompt_cache_ttl !== undefined
               ? { prompt_cache_ttl: params.prompt_cache_ttl }

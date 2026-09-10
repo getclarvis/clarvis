@@ -4,6 +4,7 @@ import { kernelError } from "../core/errors.ts";
 import type { FileSessionService } from "../sessions/session-service.ts";
 import { addRunUsage } from "../sessions/usage.ts";
 import { buildSkillRunDigest } from "../runs/recovered-context.ts";
+import { randomUUID } from "node:crypto";
 
 /** An immutable execution binding prepared without starting inference or consuming a run stream. */
 export type HostedExecutionBinding = Omit<
@@ -85,7 +86,8 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
         throw kernelError("conflict", "conversation revision changed; reload before saving");
       if (
         current !== null &&
-        (JSON.stringify(current.turns) !== JSON.stringify(input.turns) ||
+        (current.agent_instance_id !== input.agent_instance_id ||
+          JSON.stringify(current.turns) !== JSON.stringify(input.turns) ||
           JSON.stringify(current.totals) !== JSON.stringify(input.totals))
       )
         throw kernelError("conflict", "hosted turn history and totals are owned by the host");
@@ -142,6 +144,9 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
           "continuation does not name this conversation's latest model turn",
         );
       const params = structuredClone(input.params);
+      const agentInstanceId = current.agent_instance_id ?? randomUUID();
+      params.session_id = current.id;
+      params.agent_instance_id = input.kind === "conversation" ? agentInstanceId : randomUUID();
       params.configuration_session_id = authority.scope;
       if (input.kind === "conversation" && current.pending !== undefined) {
         const insertion =
@@ -158,6 +163,7 @@ export function createHostedSessionCoordinator(options: HostedSessionOptions): {
       const stamp = now();
       const intent: Session = {
         ...current,
+        agent_instance_id: agentInstanceId,
         ...(input.kind === "conversation" ? { agent_profile: binding.config.agent } : {}),
         revision: revision(current) + 1,
         updated_at: stamp,

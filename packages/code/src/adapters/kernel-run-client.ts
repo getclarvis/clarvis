@@ -1,4 +1,5 @@
 import { createHostedObservationLease } from "./hosted-observation.ts";
+import { redactPreview } from "./session-store.ts";
 import { resolveAgentsByName } from "@clarvis/kernel/config";
 import { readHostedSnapshot } from "@clarvis/kernel";
 import type {
@@ -162,7 +163,7 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
-    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
+    ...(input.sessionId ? { session_id: input.sessionId } : {}),
     ...(input.guardMode ? { guard_mode: input.guardMode } : {}),
     ...(input.guardJudge
       ? {
@@ -456,7 +457,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       input.session === undefined
         ? Promise.reject(new Error("hosted turn requires a persisted conversation revision"))
         : service
-            .start({ ...input.session, params: { ...params, execution_id: executionId } })
+            .start({
+              ...input.session,
+              user_preview: redactPreview(input.session.user_preview, { max: 4096 }),
+              params: { ...params, execution_id: executionId },
+            })
             .then((attachment) => hostedHandle(service, attachment, true));
     return driveHandle(executionId, handle, true);
   }

@@ -500,7 +500,7 @@ manager as its leader profile.
    leader's agent as `spec.profile ?? resolveLeaderDefault(managerAgent) ?? managerAgent`
    (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
    and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
-   `prompt_cache_key`/`ttl` from the manager's own params when present, runs the result through the shared `assembleRunRequest`, then calls
+   `session_id`, `agent_instance_id` and cache TTL from the manager's own params when present, runs the result through the shared `assembleRunRequest`, then calls
    `stripWorkflowGrant` on every profile in the assembled body — defense-in-depth beyond simply not
    injecting the workflows capability into a leader.
    The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also

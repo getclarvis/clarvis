@@ -24,6 +24,10 @@ Proposals under `specs/proposals/` are ignored local working documents, not part
 corpus. Do not commit them or link to them from tracked documentation. Promote durable contracts
 into the owning spec without making the local proposal a repository dependency.
 
+The [prompt-cache contract](cross-cutting/prompt-cache.md) owns the kernel's real-SDK composition
+tests and their development-only LLM dependency; the generated coupling graph describes runtime
+dependencies.
+
 The corpus's one hard rule is that **every non-trivial statement carries checkable source or test
 evidence.** Cite a stable repository file and name the relevant symbol, test, or section in prose.
 Never encode a source line number or range: unrelated edits make that locator stale without changing
@@ -104,7 +108,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`request-and-settings-schema.md`](engine/request-and-settings-schema.md) | The engine's input boundary on both untrusted documents — a run request and `settings.json` — plus agent frontmatter and the profile-readiness advisory | `loop`, `kernel` |
 | [`capability-composition.md`](engine/capability-composition.md) | How a host extends the engine without editing it: registration, folding, the five public entrypoints, and the eager-path rule that keeps optional packages genuinely optional | `loop`, `capability` |
 | [`tool-dispatch.md`](engine/tool-dispatch.md) | Wire names and reservations, the MCP registry and its two dispatchers, the fail-open argument validator, and the `submit_result` finalize contract with its schema budget | `loop`, `mcp-client` |
-| [`context-compaction.md`](engine/context-compaction.md) | The mutable message window an iteration appends to, volatile entries, and the selection/rewrite policy that sheds tokens without breaking call/result pairing or the cached prefix | `loop`, `kernel` |
+| [`context-compaction.md`](engine/context-compaction.md) | The message window an iteration appends to, preserved historical entries, and the selection/rewrite policy that sheds tokens without breaking call/result pairing or the cached prefix | `loop`, `kernel` |
 | [`budgets-and-guards.md`](engine/budgets-and-guards.md) | Five self-defence mechanisms: the shared token ledger and iteration counter, the pausable compute clock, the concurrency-safe output-token reservation, admission control and convergence guards | `loop`, `capability` |
 | [`delegation-and-subagents.md`](engine/delegation-and-subagents.md) | How one run produces children: independent `spawn_subagent`, tracked `delegate_task`, inline/background execution, and the five `agent_*` supervision tools | `loop`, `supervision`, `capability` |
 | [`vision-routing.md`](engine/vision-routing.md) | The two ways an image enters a run, and the tool-less vision pre-pass spliced in when the entry agent's own model cannot see it | `loop`, `code`, `tools` |

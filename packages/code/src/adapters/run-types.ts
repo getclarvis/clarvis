@@ -45,7 +45,7 @@ export interface StartRunInput {
   /** Volatile authorization identity, replaced whenever a session is opened or resumed. */
   configurationSessionId?: string;
   continueFrom?: string;
-  promptCacheKey?: string;
+  sessionId?: string;
   guardMode?: GuardMode;
   guardJudge?: GuardJudgeInput;
   memory?: "on" | "off";

@@ -258,7 +258,7 @@ three per-agent override blocks. `AgentProfile` is the full agent definition: `n
 | --- | --- | --- |
 | `execution_id?` | `string` | a clash raises `execution_id_conflict` |
 | `continue_from?` | `string` | resumes a prior run's persisted trace |
-| `prompt_cache_key?` | `string` | defaults to the execution id |
+| `session_id?` / `agent_instance_id?` | `string` | persisted conversation and agent instance; composed centrally without truncation |
 | `prompt_cache_ttl?` | `PromptCacheTtl` (`5m \| 1h`) | Anthropic-only; see below |
 | `messages` | `Message[]` | seed conversation |
 | `servers` | `McpServerConfig[]` | — |
@@ -657,10 +657,10 @@ a collision-free wire name: `fullName`, `wireName`, `mcpName`, `toolName`, optio
 `ContextSnapshotEntry` is one entry in a persisted context snapshot used to continue a run:
 `message: LiveMessage`, `evictable`, `summary`, `canonical` (booleans marking what compaction may drop,
 what is a compaction-produced summary, and what is always retained), optional `task_id` (associates the
-entry with a plan task), `note_kind?` (a replaceable-note identity — without it a continued run restores
-a runtime note as anonymous and `appendRuntimeNote` appends a second copy instead of replacing the
-first), `block_kind?` (a stable block's position-holding identity). `RunContinuation` (§3.3) carries an
-array of these plus `capability_state`.
+entry with a plan task), `note_kind?` (runtime reminder identity), `block_kind?` (stable-block
+identity), and `superseded?` (an older publication eligible for deliberate compaction). New
+publications append; identity metadata never authorizes rewriting historical messages.
+`RunContinuation` (§3.3) carries an array of these plus `capability_state`.
 
 ### 3.14 `AgentResult` (`agent-result.ts`)
 

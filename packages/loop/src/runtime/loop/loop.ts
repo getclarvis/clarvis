@@ -438,6 +438,7 @@ function buildModelCall(
   const cacheBreakpoints = [breakpoints.prior, breakpoints.stable].filter((i) => i >= 0);
   return {
     model: target.model,
+    ...(core.subagentInstanceId === undefined ? {} : { agentInstanceId: core.subagentInstanceId }),
     provider: target.provider,
     ...(target.providerConfig ? { providerConfig: target.providerConfig } : {}),
     ...(target.capabilities !== undefined ? { capabilities: target.capabilities } : {}),
@@ -916,7 +917,11 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
         model: target.model,
         counter: budget.counter,
         allToolsUnavailable: core.allToolsUnavailable,
-        compact: buildCompactionThunk(core, d),
+        compact: async () => {
+          const event = await buildCompactionThunk(core, d)();
+          if (event !== undefined) cacheWatch.resetForCompaction();
+          return event;
+        },
       });
       if (!pre.proceed) {
         if (pre.reason === "cancelled") return d.maybeCancelled()!;

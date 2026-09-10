@@ -89,8 +89,8 @@ const MEMORY_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.fromEnt
  * @param factory - Resolves a {@link Memory} for the run's owner; when absent
  *   (or it yields none for the owner) the capability is inactive for the run.
  * @returns A {@link Capability} that declares the seed block's open tag as its
- *   `seedMarker` (so a stale block is stripped from a continuation even when
- *   memory is gated off), returns null from `forRun` when the run requests
+ *   `seedMarker` for context ownership while historical publications retain
+ *   their persisted position, returns null from `forRun` when the run requests
  *   `memory: "off"` or memory is off or disabled, and otherwise activates the
  *   wiki seed, tools and post-run index pass.
  *
@@ -134,10 +134,10 @@ export interface MemoryCapabilityOptions {
    *   it is indexing — or the pass enqueues itself and the queue never empties.
    *
    *   It has to be this narrow. The obvious alternatives all break the prefix
-   *   cache the pass exists to exploit: leaving the capability out drops the
-   *   memory seed block from the middle of the continued transcript and erases
-   *   its system section from the head, and requesting `memory: "off"` does both
-   *   at once by returning `null` from `forRun`. The pass needs every one of
+   *   cache the pass exists to exploit: leaving the capability out removes its
+   *   system section and advertised tools, and requesting `memory: "off"`
+   *   returns `null` from `forRun`. The historical seed remains intact, but
+   *   the pass also needs every one of
    *   this capability's wire surfaces intact and exactly one of its behaviours
    *   gone, so the flag governs `onRunEnd` **alone** — `seedMarker`,
    *   `seedBlock`, `systemSection` and the advertised tools are deliberately

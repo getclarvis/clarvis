@@ -38,6 +38,8 @@ describe("tool surface", () => {
     expect(Object.keys(input.properties ?? {})).not.toContain("guard_mode");
     expect(Object.keys(input.properties ?? {})).not.toContain("guard_judge");
     expect(Object.keys(input.properties ?? {})).not.toContain("prompt_cache_key");
+    expect(Object.keys(input.properties ?? {})).not.toContain("session_id");
+    expect(Object.keys(input.properties ?? {})).not.toContain("agent_instance_id");
     expect(Object.keys(input.properties ?? {})).not.toContain("prompt_cache_ttl");
     expect(Object.keys(input.properties ?? {})).not.toContain("task");
     expect(Object.keys(output.properties ?? {})).not.toContain("active_task");

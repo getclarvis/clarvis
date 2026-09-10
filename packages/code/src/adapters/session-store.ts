@@ -72,6 +72,7 @@ export type TurnRef = ConversationTurnRef | TranscriptTurnRef;
 /** A session's persisted metadata: its turns, totals, and any unflushed pending messages. */
 export interface SessionMeta {
   id: SessionId;
+  agentInstanceId?: string;
   /** Last canonical hosted revision observed by this cache; never a control or consent token. */
   revision?: number;
   title: string;
@@ -346,6 +347,7 @@ export function metaToSession(m: SessionMeta): Session {
   if (m.projectId === undefined) throw new Error("session project identity is required");
   return {
     id: m.id,
+    ...(m.agentInstanceId === undefined ? {} : { agent_instance_id: m.agentInstanceId }),
     ...(m.revision === undefined ? {} : { revision: m.revision }),
     title: m.title,
     project_id: m.projectId,
@@ -379,6 +381,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
   const lastExtensionProfile = persistedExtensionProfile(s.turns.at(-1)?.extension_profile);
   return {
     id: s.id,
+    ...(s.agent_instance_id === undefined ? {} : { agentInstanceId: s.agent_instance_id }),
     ...(s.revision === undefined ? {} : { revision: s.revision }),
     title: s.title,
     projectId: s.project_id,

@@ -84,8 +84,10 @@ export interface StartRunParams {
   agent?: string;
   /** Continue a prior run (resume / steer-after-end). */
   continue_from?: string;
-  /** Provider prompt-cache hint. */
-  prompt_cache_key?: string;
+  /** Persisted conversation identity used for provider affinity. */
+  session_id?: string;
+  /** Persisted entry-agent instance; hosted turns obtain it from the session. */
+  agent_instance_id?: string;
   /**
    * How long a written prompt-cache prefix survives.
    *

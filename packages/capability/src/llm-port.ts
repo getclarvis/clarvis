@@ -17,6 +17,8 @@ export interface LLMToolCall {
   id: string;
   name: string;
   arguments: unknown;
+  /** Provider-owned replay metadata, including an item id when supplied. */
+  providerOptions?: Record<string, Record<string, unknown>>;
   /**
    * A bounded preview of the payload the provider sent when it did not decode
    * to an argument object, set by the provider layer and absent otherwise.
@@ -66,6 +68,14 @@ export interface LLMCallResult {
   text?: string;
   toolCalls?: LLMToolCall[];
   usage: LLMUsage;
+  /** False when the SDK did not supply complete input/output/cache-read counters. */
+  cacheUsageKnown?: boolean;
+  /** Safe comparison of consecutive SDK-serialized requests; no prompt or opaque metadata. */
+  requestPrefix?: {
+    previousItems: number;
+    currentItems: number;
+    divergence?: { surface: "instructions" | "tools" | "history"; item?: number };
+  };
   reasoning?: string;
   /** Explicit billing authority when the host used renewable subscription credentials. */
   billing_source?: "subscription";
@@ -192,6 +202,8 @@ export interface RetryInfo {
  *   wrapper's defaults per call.
  */
 export interface LLMCallParams {
+  /** Semantic accounting purpose; operational metadata, never part of the provider prompt. */
+  callPurpose?: "generation" | "memory" | "compaction";
   model: string;
   messages: LiveMessage[];
   tools: NamespacedTool[];
@@ -205,6 +217,10 @@ export interface LLMCallParams {
   reasoningSummary?: ReasoningSummary;
   reasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  /** Persisted conversation identity, independent of this physical attempt. */
+  sessionId?: string;
+  /** Persisted agent instance; two children of one profile have different ids. */
+  agentInstanceId?: string;
   /** How long a written prompt-cache prefix should survive; Anthropic only. */
   promptCacheTtl?: PromptCacheTtl;
   /**

@@ -258,10 +258,10 @@ function buildRefusalHandler(deps: {
  *   indexed run, so it is served from the provider's prefix cache only while the
  *   request is byte-identical up to the appended instruction — and all three of
  *   those surfaces sit ahead of it. Contributing one tool reorders the array;
- *   contributing a system section changes the head at byte 0; failing to
- *   contribute a seed block would drop the marker from `liveMarkers` and delete
- *   the carried block out of the middle of the transcript
- *   (`runtime/entry-seed.ts`). Only handlers and a finalize gate are invisible
+ *   contributing a system section changes the head at byte 0. The loop retains
+ *   the previously published memory seed in its persisted position even when
+ *   the active capability does not contribute another seed block.
+ *   Only handlers and a finalize gate are invisible
  *   on the wire, so only those are used.
  *
  *   Prepending is what makes it win: contributions fold in registration order

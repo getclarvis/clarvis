@@ -629,7 +629,7 @@ describe("settings run assembler · prompt cache", () => {
   const START = { agent: "solo", messages: [{ role: "user" as const, content: "hi" }] };
 
   interface CacheBody {
-    prompt_cache_key?: string;
+    session_id?: string;
     prompt_cache_ttl?: string;
   }
 
@@ -641,22 +641,22 @@ describe("settings run assembler · prompt cache", () => {
     return (assemble({ ...START, execution_id: "e", ...params }) as CacheBody).prompt_cache_ttl;
   };
 
-  it("passes an explicit prompt_cache_key and prompt_cache_ttl through", async () => {
+  it("passes an explicit session_id and prompt_cache_ttl through", async () => {
     const assemble = await assemblerWith(SOLO);
     const body = assemble({
       ...START,
       execution_id: "e",
-      prompt_cache_key: "conversation-42",
+      session_id: "conversation-42",
       prompt_cache_ttl: "5m",
     }) as CacheBody;
-    expect(body.prompt_cache_key).toBe("conversation-42");
+    expect(body.session_id).toBe("conversation-42");
     expect(body.prompt_cache_ttl).toBe("5m");
   });
 
   it("omits both when the caller sets neither and no guard parks on a human", async () => {
     const assemble = await assemblerWith(SOLO, { guard: { mode: "off" } });
     const body = assemble({ ...START, execution_id: "e" }) as CacheBody;
-    expect(body.prompt_cache_key).toBeUndefined();
+    expect(body.session_id).toBeUndefined();
     expect(body.prompt_cache_ttl).toBeUndefined();
   });
 

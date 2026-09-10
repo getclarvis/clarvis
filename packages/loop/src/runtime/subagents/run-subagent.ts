@@ -162,7 +162,13 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
       agent: "subagent",
       subagentInstanceId: input.subagentInstanceId,
       messages,
-      target: toLlmTarget(input.llm, input),
+      target: toLlmTarget(
+        {
+          call: (params) =>
+            input.llm.call({ ...params, agentInstanceId: input.subagentInstanceId }),
+        },
+        input,
+      ),
       budget: { ledger: input.ledger, counter, usage },
       runtime: { trace: input.trace, ...(input.signal ? { signal: input.signal } : {}) },
       compaction: input.compaction ?? DISABLED_COMPACTION,

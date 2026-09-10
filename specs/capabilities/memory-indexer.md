@@ -176,6 +176,10 @@ snapshot deliberately (`packages/kernel/src/memory/memory-service.ts`). Transpor
 ```ts
 interface MemoryIndexJob {
   run_id: string;
+  agent_instance_id?: string;          // assigned and persisted once before inference
+  indexer_execution_id?: string;       // execution reserved by the current claim
+  indexer_continue_from?: string;      // previous indexing execution for recovery
+  indexer_prior_executions?: string[]; // newest-first reservations across empty crashed claims
   state: "pending" | "running" | "retry_wait" | "completed" | "failed";
   enqueued_at: number;  updated_at: number;  attempts: number;
   provider_key?: string;
@@ -309,7 +313,8 @@ rendered at budgets.digest_tokens * 4 chars>` plus an optional
 
 ```ts
 { execution_id, continue_from: subject.id,
-  prompt_cache_key: `${(request.prompt_cache_key ?? subject.id).slice(0, 505)}_memory`,
+  session_id: request.session_id ?? subject.id,
+  agent_instance_id: executionId, // overridden by a persisted job instance on queue recovery
   messages: [{ role: "user", content: INDEXER_CONTINUATION_INSTRUCTION (+ policy) }],
   servers: [...(request.servers ?? [])],
   providers: [...args.providers],          // live settings, NOT the trace
@@ -327,9 +332,9 @@ lands exactly at `INDEXER_TOKEN_LIMIT`
 (`packages/memory/tests/unit/indexer-continuation.test.ts`); a run with `input=264_503, cached=0,
 iterations=2` yields a limit above 264_503 (`packages/memory/tests/unit/indexer-continuation.test.ts`).
 
-`prompt_cache_key` examples from tests: `"session_42"` → `"session_42_memory"`; no explicit key →
-`"run_subject_memory"`; a 512-char key stays 512 chars and still ends `_memory`
-(`packages/memory/tests/unit/indexer-continuation.test.ts`).
+Session identity remains unchanged; a distinct indexing instance supplies its own cache key through
+`composePromptCacheKey`. No suffix truncation is permitted.
+Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-continuation.test.ts).
 
 ---
 
@@ -756,21 +761,22 @@ Production: `packages/memory/src/indexer/request.ts`.
 Test: `packages/memory/tests/component/continuation-sanitized-trace.test.ts`.
 
 **MIX-05.** A continuation carries `entry`, `profiles` (including grants and tools) and
-`prompt_cache_key` from the indexed run. On the entry profile it changes only `iteration_limit` and
+`session_id` from the indexed run; its agent instance is separate. On the entry profile it changes only `iteration_limit` and
 `retry.max_retries`; it also replaces the run `budget`. None of those values changes the provider's
 prompt-prefix bytes.
 Production: `packages/memory/src/indexer/request.ts`.
 Test: `packages/memory/tests/unit/indexer-continuation.test.ts`;
 `packages/memory/tests/integration/continuation-elicitation.test.ts`.
 
-**MIX-06.** `prompt_cache_key` is the indexed run's key (or its id) truncated to 505 chars
-with `_memory` appended, so the composite never exceeds 512 characters. The doc comment states why the
-key must diverge from the interactive session's own key rather than reuse it: "sharing the exact
-affinity key let that background branch displace the conversation's hot prefix on providers that
-retain one active prefix per session."
-Production: the `prompt_cache_key` construction and its rationale in
-`packages/memory/src/indexer/request.ts`.
-Test: `packages/memory/tests/unit/indexer-continuation.test.ts`.
+**MIX-06.** Indexing has a distinct persisted agent instance. Queue enqueue/claim persist the
+instance and reserve an execution ID before inference. A reclaimed job retains its instance and
+continues the previous indexing execution when available. The same session/instance composer and
+512-character non-truncating bound apply to leader, memory and children.
+Production: [`indexRun`](../../packages/memory/src/indexer/run.ts),
+[`buildIndexerContinuationRequest`](../../packages/memory/src/indexer/request.ts), and
+[`createJobRepository`](../../packages/memory/src/file-store/jobs.ts).
+Test: [`job-durability.test.ts`](../../packages/memory/tests/integration/job-durability.test.ts) and
+[`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-continuation.test.ts).
 
 **MIX-07.** The hot path *prepends* the pass capability to the host's list and the cold
 path *replaces* it with a single-element list.

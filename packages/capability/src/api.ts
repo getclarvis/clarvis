@@ -75,6 +75,8 @@ export interface ToolCallRef {
   id: string;
   name: string;
   arguments: unknown;
+  /** Provider-owned item metadata, separate from the call/result correlation id. */
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 /** An image returned by a tool: `data` (base64/data payload) plus its `mediaType`. */
@@ -416,8 +418,8 @@ export interface AgentProfile {
  * `budget` supply the MCP servers, model providers, and resource caps. Optional
  * fields tune the run: `execution_id` sets/asserts the run's id (a clash raises
  * `execution_id_conflict`); `continue_from` resumes a prior run's persisted
- * trace; `prompt_cache_key` overrides the prompt-cache key (defaulting to the
- * execution id); `prompt_cache_ttl` sets how long a written cache prefix
+ * trace; `session_id` and `agent_instance_id` name the persisted conversation
+ * and agent instance; `prompt_cache_ttl` sets how long a written cache prefix
  * survives; `output_schema` constrains the agent's result;
  * `elicit_wait_ms` bounds user elicitation; and `agents`, `guard_mode`,
  * `guard_judge` toggle or tune the corresponding capabilities for this run.
@@ -445,7 +447,10 @@ export type PromptCacheTtl = "5m" | "1h";
 export interface RunRequest {
   execution_id?: string;
   continue_from?: string;
-  prompt_cache_key?: string;
+  /** Persisted conversation identity; defaults once to the first execution id. */
+  session_id?: string;
+  /** Persisted entry-agent instance, reused when continuing that instance. */
+  agent_instance_id?: string;
   prompt_cache_ttl?: PromptCacheTtl;
   messages: Message[];
   servers: McpServerConfig[];

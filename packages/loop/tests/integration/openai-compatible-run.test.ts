@@ -157,7 +157,7 @@ describe("run a model behind an openai-compatible endpoint", () => {
     expect(calls[0]!.body.tools?.[0]!.function.name).toBeTruthy();
   });
 
-  it("requests usage accounting and forwards prompt_cache_key from the run request", async () => {
+  it("requests usage accounting with session and persisted instance affinity", async () => {
     const { calls } = stubFetch(() => jsonResponse(completion({ content: "ok" })));
     harness = await makeHarness({
       llm: new AiSdkAdapter(),
@@ -166,7 +166,8 @@ describe("run a model behind an openai-compatible endpoint", () => {
     });
 
     await harness.run({
-      prompt_cache_key: "conversation-42",
+      session_id: "conversation-42",
+      agent_instance_id: "agent-1",
       messages: [{ role: "user", content: "hi" }],
       servers: [],
       profiles: [
@@ -178,10 +179,10 @@ describe("run a model behind an openai-compatible endpoint", () => {
     });
 
     expect(calls[0]!.body.usage).toEqual({ include: true });
-    expect(calls[0]!.body.prompt_cache_key).toBe("conversation-42");
+    expect(calls[0]!.body.prompt_cache_key).toBe("conversation-42_agent-1");
   });
 
-  it("defaults prompt_cache_key to the run's execution_id when the request omits it", async () => {
+  it("persists newly assigned identity before inference", async () => {
     const { calls } = stubFetch(() => jsonResponse(completion({ content: "ok" })));
     harness = await makeHarness({
       llm: new AiSdkAdapter(),
@@ -202,7 +203,12 @@ describe("run a model behind an openai-compatible endpoint", () => {
     });
 
     expect(res.execution_id).toBe("exec_fixed_1");
-    expect(calls[0]!.body.prompt_cache_key).toBe("exec_fixed_1");
+    const stored = await harness.getRun(res.execution_id);
+    expect(stored?.request.session_id).toBe("exec_fixed_1");
+    expect(stored?.request.agent_instance_id).toBeDefined();
+    expect(calls[0]!.body.prompt_cache_key).toBe(
+      `exec%5Ffixed%5F1_${stored!.request.agent_instance_id}`,
+    );
   });
 
   it("proceeds on text when the endpoint ignores supplied tools", async () => {

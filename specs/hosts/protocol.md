@@ -536,7 +536,7 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `messages` | `Message[]` | required |
 | `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
 | `continue_from?` | `string` | resume / steer-after-end |
-| `prompt_cache_key?` | `string` | provider prompt-cache hint |
+| `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
 | `configuration_session_id?` | `string` | volatile owner-scoped nonce for the currently open session; generate anew on open/resume, never persist or derive from cache/continuation ids; omission requires consent per run |
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
 | `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |

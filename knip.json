@@ -10,7 +10,8 @@
         "tooling/checks/**/*.ts",
         "tooling/release/**/*.ts",
         "tooling/runtime/**/*.ts",
-        "tooling/test-runtime/**/*.ts"
+        "tooling/test-runtime/**/*.ts",
+        "tooling/cache/**/*.ts"
       ],
       "project": ["*.js", "tooling/**/*.{ts,js}"]
     },

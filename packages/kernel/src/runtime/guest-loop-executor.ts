@@ -215,6 +215,9 @@ function modelBody(params: LLMCallParams): unknown {
     ...(params.reasoningSummary === undefined ? {} : { reasoningSummary: params.reasoningSummary }),
     ...(params.reasoningEffort === undefined ? {} : { reasoningEffort: params.reasoningEffort }),
     ...(params.promptCacheKey === undefined ? {} : { promptCacheKey: params.promptCacheKey }),
+    ...(params.callPurpose === undefined ? {} : { callPurpose: params.callPurpose }),
+    ...(params.sessionId === undefined ? {} : { sessionId: params.sessionId }),
+    ...(params.agentInstanceId === undefined ? {} : { agentInstanceId: params.agentInstanceId }),
     ...(params.promptCacheTtl === undefined ? {} : { promptCacheTtl: params.promptCacheTtl }),
     ...(params.cacheBreakpoints === undefined ? {} : { cacheBreakpoints: params.cacheBreakpoints }),
   };

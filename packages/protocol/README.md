@@ -280,3 +280,10 @@ bun --filter @clarvis/protocol format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Prompt-cache continuity
+
+Run start carries `session_id` and `agent_instance_id`; the hosted session persists `agent_instance_id`. These identify a conversation and one agent instance rather than a profile or physical request. Clients preserve them across turns and resume; a separately created instance gets another ID.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

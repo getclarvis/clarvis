@@ -74,6 +74,9 @@
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
       },
+      "devDependencies": {
+        "@clarvis/llm": "workspace:*",
+      },
     },
     "packages/llm": {
       "name": "@clarvis/llm",

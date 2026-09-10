@@ -1196,7 +1196,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       );
     const continueFrom = sess.beginTurn(msg, executionId);
     rememberResidentTurn({ userKey });
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
     const guardArgs = {
@@ -1272,7 +1272,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               },
             }
           : {}),
-        ...(promptCacheKey ? { promptCacheKey } : {}),
+        ...(sessionId ? { sessionId } : {}),
         configurationSessionId: configurationSessionId(sess),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...guardArgs,
@@ -1314,7 +1314,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                       },
                     }
                   : {}),
-                ...(promptCacheKey ? { promptCacheKey } : {}),
+                ...(sessionId ? { sessionId } : {}),
                 configurationSessionId: configurationSessionId(sess),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...guardArgs,
@@ -1412,7 +1412,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const hostedSession = await prepareHostedSession(sess, label);
     if (session !== sess) return;
     const userKey = store.appendUserMessage(label, label, executionId);
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     sess.beginTranscriptTurn(label, executionId);
     rememberResidentTurn({ userKey });
     const skillGuardMode = deps.guardMode();
@@ -1429,7 +1429,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           skill: { name, task },
           executionId,
           profile,
-          ...(promptCacheKey ? { promptCacheKey } : {}),
+          ...(sessionId ? { sessionId } : {}),
           configurationSessionId: configurationSessionId(sess),
           guardMode: skillGuardMode,
           ...deps.judgePayload(skillGuardMode),
@@ -1485,7 +1485,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const userKey = store.appendUserMessage(message, display, executionId);
     sess.beginTurn(message, executionId);
     rememberResidentTurn({ userKey });
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
     workflowRunId = executionId;
@@ -1503,7 +1503,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           profile,
           executionId,
           task: sessionTask,
-          ...(promptCacheKey ? { promptCacheKey } : {}),
+          ...(sessionId ? { sessionId } : {}),
           configurationSessionId: configurationSessionId(sess),
           guardMode,
           ...deps.judgePayload(guardMode),

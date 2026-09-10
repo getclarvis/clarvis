@@ -54,14 +54,9 @@ export interface IndexerRuntime {
    * the workspace hooks capability is **absent**, and the memory capability
    * carries `enqueueOnRunEnd: false`.
    *
-   * Absent — not merely inactive — is the load-bearing word. A registered
-   * capability that declines to emit its seed block leaves its marker out of the
-   * live set, and `buildEntrySeed` then drops the block the continuation
-   * carried, deleting an entry from the middle of the transcript and re-billing
-   * everything behind it. A capability the run never registers is not
-   * recognised at all, so its carried block reads as ordinary history and
-   * survives in place. Removing hooks therefore keeps the prefix intact *and*
-   * keeps a user's `PreToolUse` hooks from firing on the pass's own writes.
+   * Workspace hooks are absent so an unattended index pass cannot execute a
+   * user's hooks against its memory writes. Historical capability blocks remain
+   * in the restored sequence even when a capability is inactive in this pass.
    *
    * When undefined the pass has no continuation path available and runs
    * isolated, which is always correct and merely more expensive.

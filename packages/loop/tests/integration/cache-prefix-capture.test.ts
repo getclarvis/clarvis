@@ -6,6 +6,7 @@ import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import type { Capability, LLMCallParams } from "@clarvis/capability";
 import { contentToText } from "@clarvis/capability";
+import { AiSdkAdapter } from "@clarvis/llm/adapter";
 
 let harness: TestHarness | null = null;
 afterEach(async () => {
@@ -33,15 +34,137 @@ function firstDivergence(a: string, b: string): number {
 }
 
 describe("what a provider's prefix cache actually sees", () => {
+  it("preserves every serialized historical item across reminders and revisions", async () => {
+    const requests: Array<{ messages: unknown[]; tools: unknown; stream?: boolean }> = [];
+    let steps = 0;
+    const reminders: Capability = {
+      name: "cache-reminders",
+      forRun: () => ({
+        name: "cache-reminders",
+        forAgent: () => ({
+          attach: (bc) => ({
+            hooks: {
+              beforeIteration: () => {
+                bc.ctx.setStableBlock(
+                  "test-document",
+                  `Document revision ${Math.floor(steps / 2)}`,
+                );
+                bc.ctx.setCanonicalState(`Plan reminder revision ${Math.floor(steps / 2)}`);
+              },
+            },
+            tools: [
+              {
+                fullName: "cache_step",
+                wireName: "cache_step",
+                mcpName: "",
+                toolName: "cache_step",
+                description: "Read the next synthetic cursor.",
+                inputSchema: { type: "object", properties: {} },
+              },
+            ],
+            handlers: [
+              {
+                matches: (call) => call.name === "cache_step",
+                handle: () => {
+                  steps += 1;
+                  return Promise.resolve({
+                    kind: "result" as const,
+                    text: `cursor ${steps}`,
+                    progress: true,
+                  });
+                },
+              },
+            ],
+          }),
+        }),
+      }),
+    };
+    const transport = Object.assign(
+      async (_input: string | URL | Request, init?: RequestInit) => {
+        if (typeof init?.body !== "string") throw new Error("expected serialized SDK body");
+        const body = JSON.parse(init.body) as (typeof requests)[number];
+        requests.push(body);
+        const name = steps < 4 ? "cache_step" : "submit_result";
+        const args = name === "submit_result" ? { result: "complete" } : {};
+        const tool = {
+          index: 0,
+          id: `call-${requests.length}`,
+          type: "function",
+          function: { name, arguments: JSON.stringify(args) },
+        };
+        const chunk = {
+          id: `response-${requests.length}`,
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "cache-test",
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", tool_calls: [tool] },
+              finish_reason: "tool_calls",
+            },
+          ],
+          usage: {
+            prompt_tokens: 20000 + steps * 1000,
+            completion_tokens: 10,
+            prompt_tokens_details: { cached_tokens: 0 },
+          },
+        };
+        return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+          headers: { "content-type": "text/event-stream" },
+        });
+      },
+      { preconnect: globalThis.fetch.preconnect },
+    );
+    harness = await makeHarness({
+      llm: new AiSdkAdapter({ fetch: transport }),
+      mcpFactory: mockMCPFactory({}),
+      capabilities: [reminders],
+    });
+    const result = await harness.run({
+      messages: [{ role: "user", content: "Follow all four cursors then submit the result." }],
+      servers: [],
+      entry: "lead",
+      profiles: [
+        {
+          name: "lead",
+          model: "openai-compatible/cache-test",
+          tools: [],
+          can_spawn: ["worker"],
+          iteration_limit: 8,
+        },
+        { name: "worker", model: "openai-compatible/cache-test", tools: [], iteration_limit: 4 },
+      ],
+      budget: { on_exceed: "stop", total_token_limit: 300000 },
+      output_schema: {
+        type: "object",
+        properties: { result: { type: "string" } },
+        required: ["result"],
+        additionalProperties: false,
+      },
+    });
+    expect(result).toMatchObject({ status: "completed" });
+    expect(steps).toBe(4);
+    expect(requests).toHaveLength(5);
+    for (let index = 1; index < requests.length; index += 1) {
+      const previous = requests[index - 1]!;
+      const current = requests[index]!;
+      expect(current.tools).toEqual(previous.tools);
+      expect(
+        current.messages.slice(0, previous.messages.length),
+        `serialized request ${index + 1}`,
+      ).toEqual(previous.messages);
+    }
+  });
+
   it("captures every request and reports where consecutive ones diverge", async () => {
     const ws = mkdtempSync(join(tmpdir(), "cache-capture-"));
     /**
-     * Stands in for the planning capability's canonical block: a volatile entry
-     * rewritten in place after every mutating call. It is the one thing in a
-     * run that is *not* an append, so it is the thing a prefix-stability check
-     * has to exercise. Written here rather than imported, because
-     * `@clarvis/loop` may not depend on `@clarvis/plan` — that edge would close
-     * a cycle, and `check:graph` enforces it.
+     * Stands in for a capability's canonical reminder: each revision appends
+     * while earlier publications remain in the serialized history. The real
+     * product composition belongs to the kernel tests, because
+     * `@clarvis/loop` may not depend on product capabilities;
+     * `check:graph` enforces that ownership boundary.
      */
     let blockRevision = 0;
     const canonicalBlock: Capability = {

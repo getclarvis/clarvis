@@ -1,3 +1,4 @@
+import { CLARVIS_WIRE_VERSION } from "../../src/transport/wire.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -454,7 +455,7 @@ describe("kernel loopback transport", () => {
       const { kernel } = makeRemote();
       const transport = createLoopbackTransport(createKernelServer(kernel));
       await expect(
-        transport.request(WIRE_METHODS.hello, { wire_version: 5, ...identity }),
+        transport.request(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION, ...identity }),
       ).rejects.toMatchObject({ code: "invalid_request" });
       await transport.close();
       await kernel.close();
@@ -574,7 +575,7 @@ describe("kernel loopback transport", () => {
         },
       );
 
-      await connection.handle(WIRE_METHODS.hello, { wire_version: 5 });
+      await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
       await connection.handle(WIRE_METHODS.runsStart, {
         params: { messages: [{ role: "user", content: "finish" }], agent: "solo" },
       });
@@ -669,7 +670,7 @@ describe("kernel loopback transport", () => {
       },
       () => {},
     );
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 5 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await sendStarted.promise;
 
@@ -716,7 +717,7 @@ describe("kernel loopback transport", () => {
       () => {},
     );
 
-    const hello = connection.handle(WIRE_METHODS.hello, { wire_version: 5 });
+    const hello = connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
     await Promise.resolve();
     connection.close();
     resolveContext(context);
@@ -767,7 +768,7 @@ describe("kernel loopback transport", () => {
       () => {},
     );
 
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 5 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await connection.handle(WIRE_METHODS.runsCompact, {
       execution_id: handle.execution_id,
@@ -825,7 +826,7 @@ describe("kernel loopback transport", () => {
       () => disconnected.resolve(),
     );
 
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 5 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await disconnected.promise;
     await expect(connection.handle(WIRE_METHODS.listAgents, {})).rejects.toMatchObject({

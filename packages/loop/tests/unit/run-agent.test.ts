@@ -735,8 +735,8 @@ describe("pre-loop budget exhaustion mirrors the checkpoint exit path", () => {
   });
 });
 
-describe("empty-response runtime note is replaceable (single live note)", () => {
-  it("a second empty completion replaces the earlier note instead of appending another", async () => {
+describe("empty-response runtime notes preserve history", () => {
+  it("a second empty completion appends a fresh reminder", async () => {
     const contribution: AgentLoopContribution = {
       tools: [
         {
@@ -772,6 +772,6 @@ describe("empty-response runtime note is replaceable (single live note)", () => 
       (m) =>
         typeof m.content === "string" && m.content.includes("the previous completion was empty"),
     );
-    expect(emptyNotes).toHaveLength(1);
+    expect(emptyNotes).toHaveLength(2);
   });
 });

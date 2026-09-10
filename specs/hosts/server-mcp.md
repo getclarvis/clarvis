@@ -69,7 +69,7 @@ namespace collision risk, `packages/server/src/mcp/tools.ts`).
 | `elicitations` | `"auto_decline" \| "await"`, default `"auto_decline"` |  |
 | `elicitation_wait_ms` | `number`, 1,000–600,000, optional |  |
 
-Deliberately **absent**: `guard_mode`, `guard_judge`, `prompt_cache_key`,
+Deliberately **absent**: `guard_mode`, `guard_judge`, `prompt_cache_key`, `session_id`, `agent_instance_id`,
 `prompt_cache_ttl` (as caller input) — see Invariant 5 and the remark at
 `packages/server/src/mcp/tools.ts`. `task` is absent too — it names no field of
 `runInputShape` (`packages/server/src/mcp/tools.ts`), and
@@ -685,14 +685,12 @@ Test: `packages/server/tests/architecture/tool-surface.test.ts`.
 
 **Invariant 5 (INV-242).** The `clarvis_run` tool's input/output schemas omit
 every caller-controlled policy or local-only field: `guard_mode`,
-`guard_judge`, `prompt_cache_key`, `prompt_cache_ttl` (as input),
+`guard_judge`, `prompt_cache_key`, `session_id`, `agent_instance_id`, `prompt_cache_ttl` (as input),
 `task` (input), and `active_task` (output) are all absent.
 Production: `runInputShape` (`packages/server/src/mcp/tools.ts`) and `runOutputShape`
-(`packages/server/src/mcp/tools.ts`) enumerate every field of each schema; none of the six
-named fields appears. The remark at `packages/server/src/mcp/tools.ts` states the reasoning
-for `guard_mode`/`guard_judge`/`prompt_cache_key` explicitly (the guard
-omission "is the whole protection," and `prompt_cache_key` "becomes a
-cross-owner cache-poisoning vector once owners share a kernel").
+(`packages/server/src/mcp/tools.ts`) enumerate every field of each schema; none of the named
+fields appears. The remark at `packages/server/src/mcp/tools.ts` explains that guard policy and
+cache affinity belong to the host. Continuation reuses the owner-scoped persisted identities.
 Test: `packages/server/tests/architecture/tool-surface.test.ts`.
 
 **Invariant 5a.** The production executable's MCP `serverInfo.version` equals the single

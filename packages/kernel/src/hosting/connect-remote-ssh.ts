@@ -7,6 +7,32 @@ import { createStdioTransport } from "../transport/stdio.ts";
 const SAFE_SSH_DESTINATION = /^[A-Za-z0-9_.:@-]+$/u;
 const SAFE_REMOTE_TOKEN = /^[A-Za-z0-9_./:=@+-]+$/u;
 const MAX_STDERR_BYTES = 32 * 1024;
+const SSH_ENVIRONMENT_KEYS = [
+  "HOME",
+  "USERPROFILE",
+  "PATH",
+  "Path",
+  "PATHEXT",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "WINDIR",
+  "SSH_AUTH_SOCK",
+  "SSH_ASKPASS",
+  "SSH_ASKPASS_REQUIRE",
+  "DISPLAY",
+  "WAYLAND_DISPLAY",
+  "XAUTHORITY",
+] as const;
+
+/** Keep only local process-discovery and SSH authentication inputs, never provider credentials. */
+export function remoteSshEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = {};
+  for (const key of SSH_ENVIRONMENT_KEYS) {
+    const value = source[key];
+    if (value !== undefined) environment[key] = value;
+  }
+  return environment;
+}
 
 /** Operator-selected SSH process and fixed remote Clarvis command. */
 export interface RemoteSshKernelOptions {
@@ -83,7 +109,11 @@ export async function connectRemoteKernelOverSsh(
       options.destination,
       ...options.remoteCommand,
     ],
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      windowsHide: true,
+      env: remoteSshEnvironment(process.env),
+    },
   );
   if (child.stdin === null || child.stdout === null || child.stderr === null) {
     child.kill();
@@ -126,7 +156,6 @@ export async function connectRemoteKernelOverSsh(
   }, timeout);
   try {
     const client = await connectKernelClient(transport, {
-      workspace: options.workspace,
       clientInfo: { name: "clarvis-ssh" },
       logger,
     });

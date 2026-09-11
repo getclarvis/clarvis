@@ -157,6 +157,7 @@ export function createGoalRuntimePort(options: {
           valid: false,
           reasons: ["The current stage has no completion candidate"],
           qualitative_criteria: [],
+          revision: goal.revision,
         };
       const result = await validateGoalCandidate(goal, goal.candidate, evidence);
       const latest = bound(
@@ -173,6 +174,7 @@ export function createGoalRuntimePort(options: {
           valid: false,
           reasons: ["Goal or evidence changed during completion validation"],
           qualitative_criteria: result.qualitative_criteria,
+          revision: latest.revision,
         };
       return result;
     }, signal);

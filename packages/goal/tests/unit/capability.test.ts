@@ -102,11 +102,17 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         valid: completionValid,
         reasons: completionValid ? [] : ["Human acceptance is missing"],
         qualitative_criteria: ["objective"],
+        revision: state.current!.revision,
       };
     },
     validateCompletion: async () => {
       calls.push("validate");
-      return { valid: completionValid, reasons: [], qualitative_criteria: ["objective"] };
+      return {
+        valid: completionValid,
+        reasons: [],
+        qualitative_criteria: ["objective"],
+        revision: state.current!.revision,
+      };
     },
     blocked: async (reason) => {
       calls.push("blocked");

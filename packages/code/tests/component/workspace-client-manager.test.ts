@@ -255,7 +255,9 @@ describe("WorkspaceClientManager", () => {
     const backingClient = (await backing.open()).client;
     const closures: Array<ReturnType<typeof Promise.withResolvers<string>>> = [];
     const launches: unknown[] = [];
+    const lifecycle: string[] = [];
     let connects = 0;
+    let active = 0;
     const manager = await WorkspaceClientManager.create(
       {
         workspaceRoot: "/srv/remote/project",
@@ -267,10 +269,14 @@ describe("WorkspaceClientManager", () => {
           throw new Error("remote connection must not resolve a local host artifact");
         },
         connectRemoteHost: async (options) => {
+          lifecycle.push(`connect-${connects + 1}`);
+          if (active !== 0) throw new Error("another kernel host owns this workspace");
           launches.push(options);
           connects++;
+          active++;
           const closed = Promise.withResolvers<string>();
           closures.push(closed);
+          let clientClosed = false;
           return {
             client: {
               ...backingClient,
@@ -284,6 +290,13 @@ describe("WorkspaceClientManager", () => {
                 local_host: undefined,
               },
               localHost: undefined,
+              close: async () => {
+                if (clientClosed) return;
+                clientClosed = true;
+                lifecycle.push(`close-${connects}`);
+                active--;
+                closed.resolve("SSH transport closed");
+              },
             },
             closed: closed.promise,
           };
@@ -291,14 +304,16 @@ describe("WorkspaceClientManager", () => {
       },
     );
     try {
+      const failures: string[] = [];
+      manager.subscribeConnectionFailure((reason) => failures.push(reason));
       expect(manager.defaultOwner).toBe("remote-owner");
       expect(manager.current.path).toBe("/srv/remote/project");
       expect(JSON.stringify(launches[0])).toContain("operator@example.test");
       await manager.recover(manager.current.id);
       expect(connects).toBe(2);
+      expect(lifecycle.slice(0, 3)).toEqual(["connect-1", "close-1", "connect-2"]);
+      expect(failures).toEqual([]);
       await expect(manager.invalidate(manager.current.id)).rejects.toThrow("reload is unavailable");
-      const failures: string[] = [];
-      manager.subscribeConnectionFailure((reason) => failures.push(reason));
       closures[1]!.resolve("remote pipe ended");
       await Promise.resolve();
       expect(failures).toEqual(["remote pipe ended"]);

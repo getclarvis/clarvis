@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { globalPaths } from "@clarvis/paths";
 import { connectRemoteKernelOverSsh } from "../../src/bootstrap.ts";
+import { remoteSshEnvironment } from "../../src/hosting/connect-remote-ssh.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
@@ -46,9 +47,10 @@ describe("remote SSH kernel connection", () => {
     );
     const fakeSsh = fileURLToPath(new URL("../helpers/fake-ssh.ts", import.meta.url));
     const worker = fileURLToPath(new URL("../helpers/remote-stdio-worker.ts", import.meta.url));
+    const aliasedWorkspace = join(workspace, "..", "workspace");
     const connected = await connectRemoteKernelOverSsh({
       destination: "test@example.invalid",
-      workspace,
+      workspace: aliasedWorkspace,
       sshCommand: [process.execPath, fakeSsh],
       remoteCommand: [process.execPath, worker, workspace, globalDir],
     });
@@ -61,6 +63,22 @@ describe("remote SSH kernel connection", () => {
     expect(connected.client.localHost).toBeUndefined();
     expect(await connected.client.sessions.list()).toEqual([]);
     expect(connected.stderr()).toContain("fake-ssh-ok");
+  });
+
+  test("passes only process discovery and local SSH authentication environment", () => {
+    expect(
+      remoteSshEnvironment({
+        HOME: "/home/operator",
+        PATH: "/usr/bin",
+        SSH_AUTH_SOCK: "/run/user/1000/agent",
+        OPENAI_API_KEY: "must-not-cross",
+        CLARVIS_CHATGPT_ACCESS_TOKEN: "must-not-cross",
+      }),
+    ).toEqual({
+      HOME: "/home/operator",
+      PATH: "/usr/bin",
+      SSH_AUTH_SOCK: "/run/user/1000/agent",
+    });
   });
 
   test("rejects destination and remote command injection before spawning", async () => {

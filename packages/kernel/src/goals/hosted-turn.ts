@@ -219,7 +219,8 @@ export async function prepareHostedGoalTurn(options: {
           !options.context.signal.aborted
         ) {
           try {
-            if ((await runtime.validateCompletion()).valid) validationRevision = before.revision;
+            const validation = await runtime.validateCompletion();
+            if (validation.valid) validationRevision = validation.revision;
           } catch (error) {
             const latest = (await options.repository.read(sessionId))?.current;
             if (

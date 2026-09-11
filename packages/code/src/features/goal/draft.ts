@@ -10,6 +10,11 @@ export interface GoalDraft {
   objective: string;
   criteria: GoalCriterion[];
   limits: Partial<GoalLimits>;
+  initial?: {
+    objective: string;
+    criteria: GoalCriterion[];
+    limits: Partial<GoalLimits>;
+  };
 }
 
 /** Start an explicit user review without mutating or clearing the current goal. */
@@ -32,11 +37,20 @@ export function createGoalDraft(
     objective: objective ?? current?.objective ?? "",
     criteria: objective === undefined ? structuredClone(current?.criteria ?? []) : [],
     limits: structuredClone(current?.limits ?? {}),
+    ...(current === undefined
+      ? {}
+      : {
+          initial: {
+            objective: current.objective,
+            criteria: structuredClone(current.criteria),
+            limits: structuredClone(current.limits),
+          },
+        }),
   };
 }
 
 /** Validate editable values locally; the authenticated host remains the schema and CAS authority. */
-export function goalDraftAction(draft: GoalDraft): GoalControlAction {
+export function goalDraftAction(draft: GoalDraft): GoalControlAction | undefined {
   const objective = draft.objective.trim();
   if (!objective || objective.length > 16384)
     throw new Error("Enter an objective of 1 to 16384 characters.");
@@ -50,10 +64,26 @@ export function goalDraftAction(draft: GoalDraft): GoalControlAction {
         "Goal limits require whole positive values; automatic continuations may be zero.",
       );
   }
+  if (draft.kind !== "edit")
+    return {
+      kind: draft.kind,
+      objective,
+      criteria: structuredClone(draft.criteria),
+      limits: { ...draft.limits },
+    };
+  if (draft.initial === undefined) throw new Error("Goal edit draft has no original snapshot.");
+  const limits = Object.fromEntries(
+    Object.entries(draft.limits).filter(
+      ([key, value]) => value !== draft.initial!.limits[key as keyof GoalLimits],
+    ),
+  ) as Partial<GoalLimits>;
+  const objectiveChanged = objective !== draft.initial.objective;
+  const criteriaChanged = JSON.stringify(draft.criteria) !== JSON.stringify(draft.initial.criteria);
+  if (!objectiveChanged && !criteriaChanged && Object.keys(limits).length === 0) return undefined;
   return {
-    kind: draft.kind,
-    objective,
-    criteria: structuredClone(draft.criteria),
-    limits: { ...draft.limits },
+    kind: "edit",
+    ...(objectiveChanged ? { objective } : {}),
+    ...(criteriaChanged ? { criteria: structuredClone(draft.criteria) } : {}),
+    ...(Object.keys(limits).length === 0 ? {} : { limits }),
   };
 }

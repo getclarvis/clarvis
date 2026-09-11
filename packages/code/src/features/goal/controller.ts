@@ -252,7 +252,9 @@ export function createGoalController(deps: {
           }
           receipt = recovered;
         }
-        if (current(entry)) await refreshEntry(entry);
+        if (current(entry)) {
+          await refreshEntry(entry).catch(() => undefined);
+        }
         return receipt;
       } catch (error) {
         if (entry === undefined || current(entry)) setFailure(message(error));
@@ -271,7 +273,8 @@ export function createGoalController(deps: {
       try {
         const receipt = await lookup(entry);
         if (current(entry)) {
-          await refreshEntry(entry);
+          if (receipt === null) await refreshEntry(entry);
+          else await refreshEntry(entry).catch(() => undefined);
           if (pending.has(binding.sessionId))
             setFailure(
               "The host has not confirmed the previous goal change. No mutation was repeated.",

@@ -57,6 +57,11 @@ export function GoalForm(
     if (deps.goals.busy()) return;
     const value = draft();
     const action = goalDraftAction(value);
+    if (action === undefined) {
+      host.markDirty(false);
+      deps.close();
+      return;
+    }
     if (
       value.kind === "replace" &&
       !(await host.confirm({

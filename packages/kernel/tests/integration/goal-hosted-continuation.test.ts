@@ -3,7 +3,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCapabilityRegistry, loadEnv, type Capability } from "@clarvis/capability";
-import { applyGoalControl, type GoalControl, type GoalRecord } from "@clarvis/goal";
+import {
+  applyGoalControl,
+  type GoalControl,
+  type GoalCriterion,
+  type GoalRecord,
+} from "@clarvis/goal";
 import { executeRun, type RunRequest } from "@clarvis/loop";
 import { MockLLM, type MockLLMScriptStep } from "@clarvis/loop/testing";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
@@ -72,6 +77,7 @@ async function fixture(
     capabilities?: Capability[];
     now?: () => number;
     deadlineAt?: number;
+    criteria?: GoalCriterion[];
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-hosted-"));
@@ -301,7 +307,7 @@ async function fixture(
   await control({
     kind: "create",
     objective: "Complete the synthetic stages",
-    criteria: [],
+    criteria: options.criteria ?? [],
     limits: {
       max_net_tokens: 10000,
       max_auto_continuations: 8,
@@ -636,6 +642,47 @@ describe("goals through real hosted continuation, loop and SDK", () => {
         f.wire[index - 1]!.messages,
       );
     }
+  });
+
+  it("settles the exact revision validated after a non-revoking human confirmation", async () => {
+    let confirmed = false;
+    const f = await fixture({
+      criteria: [{ id: "review", kind: "human", description: "Operator approval" }],
+      script: [
+        {
+          toolCalls: [
+            {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "candidate",
+                  summary: "Approved result",
+                  assessments: [
+                    {
+                      criterion_id: "review",
+                      kind: "human",
+                      justification: "Operator approved",
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+        { text: "Done" },
+      ],
+      async beforeEvidence(goal) {
+        if (goal.runs.at(-1)?.phase !== "settling" || confirmed) return;
+        confirmed = true;
+        await f.control({ kind: "accept", criterion_id: "review", objective_revision: 1 });
+      },
+    });
+    await f.control({ kind: "accept", criterion_id: "review", objective_revision: 1 });
+    const run = await f.start();
+    expect(await run.handle.done).toMatchObject({ status: "completed" });
+    await run.handle.closed;
+    expect(confirmed).toBe(true);
+    expect((await f.state())!.current).toMatchObject({ status: "complete" });
   });
 
   it("persists pause during continuation preparation and refuses the stale start", async () => {

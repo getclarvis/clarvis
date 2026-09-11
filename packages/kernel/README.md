@@ -169,10 +169,15 @@ Clarvis connection credential. EOF or a broken pipe closes the physical host and
 lease. The remote stdio integration test exercises the real framed transport and FileKernel with
 controlled responses; it does not establish SSH, TUI or provider behavior.
 `connectRemoteKernelOverSsh` launches OpenSSH with argv and no local shell, disables port, agent and
-X11 forwarding, validates the destination and every remote command token, bounds retained stderr, negotiates the
-ordinary hello and owns exactly that SSH process. OpenSSH joins remote command arguments through the
+X11 forwarding, validates the destination and every remote command token, filters the child
+environment to home/path, platform process-discovery and local SSH authentication inputs, bounds
+retained stderr, negotiates the ordinary hello and owns exactly that SSH process. Provider keys,
+Clarvis OAuth values and unrelated environment variables cannot reach OpenSSH or its `SendEnv`
+processing. OpenSSH joins remote command arguments through the
 remote shell, so unsafe tokens are refused before spawn. The server advertises its default session
 namespace because a client on another operating system cannot derive it from remote path semantics.
+The pinned server also owns the canonical workspace identity used by hello, so a symlink or lexical
+alias in the launch request is not compared again after remote canonicalization.
 OpenSSH owns encryption, integrity, host-key checks and user authentication. It reads the operator's
 normal configuration, default identities and local `ssh-agent`; using the agent for login does not
 forward its socket. Clarvis neither forces `StrictHostKeyChecking`/`BatchMode` nor provides an

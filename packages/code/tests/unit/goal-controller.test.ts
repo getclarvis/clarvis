@@ -161,6 +161,37 @@ describe("goal presentation controller", () => {
     expect(f.controller.view()?.state.revision).toBe(1);
   });
 
+  it("returns a confirmed receipt when the follow-up view refresh fails", async () => {
+    const f = fixture();
+    const get = f.service.get.bind(f.service);
+    let reads = 0;
+    f.service.get = async (sessionId) => {
+      if (reads++ === 0) return get(sessionId);
+      throw new Error("Refresh unavailable");
+    };
+    const receipt = await f.controller.control({ kind: "pause" });
+    expect(receipt.operation_id).toBe("operation-1");
+    expect(f.controller.pendingOperation()).toBeUndefined();
+    expect(f.controller.failure()).toBe("Refresh unavailable");
+  });
+
+  it("returns a recovered receipt when its follow-up view refresh fails", async () => {
+    const f = fixture();
+    f.service.control = async (request) => {
+      f.requests.push(request);
+      throw new Error("Reply lost");
+    };
+    await expect(f.controller.control({ kind: "pause" })).rejects.toThrow("Reply lost");
+    const receipt = { operation_id: "operation-1", fingerprint: "fixture", revision: 1 };
+    f.receipts.set(receipt.operation_id, receipt);
+    f.service.get = async () => {
+      throw new Error("Refresh unavailable");
+    };
+    expect(await f.controller.recover()).toEqual(receipt);
+    expect(f.controller.pendingOperation()).toBeUndefined();
+    expect(f.controller.failure()).toBe("Refresh unavailable");
+  });
+
   it("keeps an uncertain operation across reconnect and never resubmits while its receipt is absent", async () => {
     const f = fixture();
     f.service.control = async (request) => {

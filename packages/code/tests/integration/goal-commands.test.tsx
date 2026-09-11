@@ -188,7 +188,6 @@ test("goal form displays explicit whole-goal limits and submits its pinned revis
     action: {
       kind: "edit",
       objective: "Reviewed fixture objective",
-      limits: { max_net_tokens: 10000 },
     },
   });
   f.controls.escape();
@@ -204,6 +203,7 @@ test.each([
   };
   await f.goals.refresh();
   const draft = createGoalDraft(f.goals.view(), f.goals.binding());
+  draft.objective = "Edited fixture objective";
   const rendered = await openRender(() => GoalView(f.host, { ...f, initialDraft: draft }), {
     width: 110,
     height: 32,
@@ -213,6 +213,22 @@ test.each([
   await settled();
   await settled();
   expect(f.notices).toContain(notice);
+});
+
+test("saving an unchanged goal review closes without a host mutation", async () => {
+  const f = fixture(goalView({ status: "paused" }));
+  await f.goals.refresh();
+  const draft = createGoalDraft(f.goals.view(), f.goals.binding());
+  const rendered = await openRender(() => GoalView(f.host, { ...f, initialDraft: draft }), {
+    width: 110,
+    height: 32,
+  });
+  await rendered.renderOnce();
+  f.keys.press("ctrl+s");
+  await settled();
+  await rendered.renderOnce();
+  expect(f.requests).toHaveLength(0);
+  expect(rendered.captureCharFrame()).toContain("Goal: paused");
 });
 
 test("goal detail renders durable progress diagnostics and accepts a pending human criterion", async () => {
@@ -386,6 +402,7 @@ test("a reviewed form cannot mutate another conversation with the same revision"
   const f = fixture(goalView({ status: "paused" }));
   await f.goals.refresh();
   const draft = createGoalDraft(f.goals.view(), f.goals.binding());
+  draft.objective = "Reviewed before conversation switch";
   const rendered = await openRender(() => GoalView(f.host, { ...f, initialDraft: draft }), {
     width: 110,
     height: 32,

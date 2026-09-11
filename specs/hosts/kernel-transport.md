@@ -1169,20 +1169,25 @@ closure. It creates no network listener or reusable Clarvis credential; exposing
 network remains invalid.
 The Code launcher wraps that stdio in OpenSSH. SSH supplies confidentiality, integrity, host-key
 verification and user authentication; Clarvis adds no application encryption. The launcher disables
-port, agent and X11 forwarding but retains normal local-agent authentication. Identity selection,
+port, agent and X11 forwarding but retains normal local-agent authentication. Its child environment
+is allowlisted to home/path, platform process-discovery and local agent/askpass inputs; provider
+keys, Clarvis OAuth values and unrelated variables never reach OpenSSH or `SendEnv`. Identity selection,
 jump hosts, host-key policy and authentication order come from the operator's SSH configuration.
 Clarvis does not force `StrictHostKeyChecking`/`BatchMode` or own passwords, private keys and
 passphrases. Interactive prompts are outside the framed stdio/TUI contract, so operators establish a
 verified usable login first. Production: `connectRemoteKernelOverSsh` in
 [connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts). Test:
 [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) pins the hardened
-process arguments and wire composition; it is not a network confidentiality test.
+process arguments, environment boundary, remote canonical-path handshake and wire composition; it
+is not a network confidentiality test.
 The remote file host may include `default_owner` beside `host_generation` in its hosting capability.
 This value is fixed by server-side canonicalization and lets an application scope session metadata
 without applying the client's operating-system path rules to a remote path. Local hosts omit it
 because their application already derives the same owner from the selected local workspace.
 Code's workspace manager connects to that process composition. Its state belongs outside guest mounts and
-agent-readable roots. The generic server must not be exposed on a network by assuming that a successful
+agent-readable roots. Remote reconnect closes and drains the prior SSH-owned client before launching
+the replacement so the exclusive workspace lease is retired; its expected close is not surfaced as
+a failure. The generic server must not be exposed on a network by assuming that a successful
 unauthenticated hello established a principal.
 
 Production: `OPERATIONS.secrets` in

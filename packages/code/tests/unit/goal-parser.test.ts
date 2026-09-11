@@ -62,4 +62,32 @@ describe("goal review validation", () => {
       "whole positive",
     );
   });
+
+  it("emits only changed edit fields and treats an unchanged review as a no-op", () => {
+    const initial = {
+      objective: "Verify the change",
+      criteria: [{ id: "review", kind: "human" as const, description: "Approve it" }],
+      limits: { max_net_tokens: 1000, max_auto_continuations: 2 },
+    };
+    const draft = {
+      kind: "edit" as const,
+      expectedRevision: 4,
+      binding: { sessionId: "session", generation: 1 },
+      objective: initial.objective,
+      criteria: structuredClone(initial.criteria),
+      limits: { ...initial.limits },
+      initial: structuredClone(initial),
+    };
+    expect(goalDraftAction(draft)).toBeUndefined();
+    expect(
+      goalDraftAction({
+        ...draft,
+        limits: { ...draft.limits, max_auto_continuations: 3 },
+      }),
+    ).toEqual({ kind: "edit", limits: { max_auto_continuations: 3 } });
+    expect(goalDraftAction({ ...draft, objective: "Verify the revised change" })).toEqual({
+      kind: "edit",
+      objective: "Verify the revised change",
+    });
+  });
 });

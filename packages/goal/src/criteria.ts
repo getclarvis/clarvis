@@ -12,6 +12,8 @@ export interface GoalCompletionValidation {
   valid: boolean;
   reasons: string[];
   qualitative_criteria: string[];
+  /** Exact durable goal-state revision fenced by this validation. */
+  revision: number;
 }
 
 /** Check exact criterion coverage and scoped evidence; qualitative judgments remain explicitly labeled. */
@@ -81,5 +83,5 @@ export async function validateGoalCandidate(
         reasons.push(result.reason ?? `Evidence ${evidence.id} is invalid or stale`);
     }
   }
-  return { valid: reasons.length === 0, reasons, qualitative_criteria };
+  return { valid: reasons.length === 0, reasons, qualitative_criteria, revision: goal.revision };
 }

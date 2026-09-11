@@ -79,6 +79,7 @@ const validationSchema = z
     valid: z.boolean(),
     reasons: z.array(z.string().max(8192)).max(512),
     qualitative_criteria: z.array(goalEvidenceRefSchema.shape.id).max(32),
+    revision: z.number().int().nonnegative(),
   })
   .strict();
 

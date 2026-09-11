@@ -42,6 +42,11 @@ bounded to 32 conversations. A missing receipt remains distinct from a failed re
 explicit refusal with a successful absent-receipt lookup permits another user action; unknown
 outcomes block further mutations until recovered. A stale form cannot silently apply to a newer
 revision or another conversation whose revision happens to match.
+The edit form compares its reviewed snapshot and submits only changed fields. Saving an unchanged
+draft performs no mutation; changing limits alone does not send objective or criteria. A confirmed
+control or recovered receipt remains successful if its independent follow-up state read fails; the
+controller reports a stale view and keeps the confirmed receipt instead of inviting a conflicting
+retry.
 
 `registerGoalCommands` exposes `/goal`, literal objective creation and the edit/pause/resume/cancel/
 clear controls through the normal Code registry. Unsupported hosts refuse controls explicitly.
@@ -73,7 +78,8 @@ Production: `parseGoalCommand` in [parser.ts](../../packages/code/src/features/g
 `createGoalController` in [controller.ts](../../packages/code/src/features/goal/controller.ts).
 Test: [goal-parser.test.ts](../../packages/code/tests/unit/goal-parser.test.ts) and
 [goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts) cover literal
-commands, CAS, receipt recovery, unavailable hosts, invalidation races and disposal.
+commands, sparse edits, CAS, confirmed-receipt refresh failure, receipt recovery, unavailable hosts,
+invalidation races and disposal.
 Production: `registerGoalCommands`, `GoalForm` and `GoalView` in
 [commands.ts](../../packages/code/src/features/goal/commands.ts),
 [form.tsx](../../packages/code/src/features/goal/form.tsx) and
@@ -438,7 +444,9 @@ Preparation errors record bounded blocking without inventing a physical run or b
 The turn and `admitGoalRun` intent publish atomically in the private session. Start then advances the
 same binding, rejecting a control revision revoked during preparation. After physical closure the
 host advances to settlement, revalidates the actual candidate/evidence outside the session lock,
-and commits completion only if the validated revision is still current. A pause or cancellation
+and records the exact revision returned by that validation. It commits completion only if that
+validated revision is still current. A non-revoking human confirmation that lands before the
+validation snapshot can therefore settle, while a later revision still fails the fence. A pause or cancellation
 that wins during validation is preserved while the run's confirmed usage is still charged. A slow
 callback cannot restore completion from an old objective or reopen a closed execution.
 
@@ -453,6 +461,9 @@ replacement and successor admission without releasing physical work.
 Production: [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
 `stopGoalContinuation` in [execution.ts](../../packages/goal/src/execution.ts), and the admission,
 registry and coordinator in [hosting](../hosts/hosted-runs.md).
+Test: `settles the exact revision validated after a non-revoking human confirmation` in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+pins the validation/settlement race.
 Test: `host continuation retirement` in
 [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), and
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).

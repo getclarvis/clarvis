@@ -67,6 +67,7 @@ export class WorkspaceClientManager {
   private readonly connectionListeners = new Set<(reason: string) => void>();
   private connectionFailure: string | undefined;
   private readonly browserAttempts = new Set<string>();
+  private readonly retiringClients = new WeakSet<KernelClient>();
   private reconnecting: { mode: ReconnectMode; task: Promise<void> } | undefined;
 
   private constructor(
@@ -199,12 +200,12 @@ export class WorkspaceClientManager {
     if (closed === undefined) return;
     void closed
       .then((reason) => {
-        if (this.closed || this.kernel !== client) return;
+        if (this.closed || this.kernel !== client || this.retiringClients.has(client)) return;
         this.connectionFailure = sanitizeErrorMessage(reason);
         for (const listener of this.connectionListeners) listener(this.connectionFailure);
       })
       .catch((error: unknown) => {
-        if (this.closed || this.kernel !== client) return;
+        if (this.closed || this.kernel !== client || this.retiringClients.has(client)) return;
         this.connectionFailure = sanitizeErrorMessage(String(error));
         for (const listener of this.connectionListeners) listener(this.connectionFailure);
       });
@@ -329,11 +330,22 @@ export class WorkspaceClientManager {
     }
     const reconnect = (async () => {
       const previous = this.kernel;
+      const retirePrevious = async (): Promise<void> => {
+        this.retiringClients.add(previous);
+        try {
+          await previous.close();
+        } catch (error) {
+          this.retiringClients.delete(previous);
+          throw error;
+        }
+      };
       if (mode === "reload" && previous.localHost === undefined)
         throw new Error("remote workspace reload is unavailable; reconnect instead");
       if (mode === "reload") await previous.localHost!.requestRestart();
       clearTimeout(this.timer);
-      if (mode === "reload") await previous.close();
+      if (mode === "reload" || this.options.remote !== undefined) {
+        await retirePrevious();
+      }
       const connection = await this.connectHost();
       const { client } = connection;
       let state: LocalHostStatus | undefined;
@@ -348,7 +360,9 @@ export class WorkspaceClientManager {
         ) {
           throw new Error("remote workspace host identity changed during reconnect");
         }
-        if (mode === "connection") await previous.close();
+        if (mode === "connection" && this.options.remote === undefined) {
+          await retirePrevious();
+        }
         if (this.closed) throw new Error("workspace client is closed");
       } catch (error) {
         await client.close();

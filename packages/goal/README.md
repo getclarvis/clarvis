@@ -17,7 +17,8 @@ automatic continuation, a TUI journey, a container or an installed artifact.
 - `admitGoalRun`, `advanceGoalRun` and `settleGoalRun` separate durable intent, physical lifecycle,
   confirmed usage and semantic status. Late usage belongs to its original goal, including archives.
 - `recordGoalCheckpoint`, `recordGoalCandidate` and `validateGoalCandidate` retain scoped evidence,
-  explicitly labeled qualitative judgments and recorded human acceptance.
+  explicitly labeled qualitative judgments and recorded human acceptance. Validation returns the
+  exact goal revision it inspected so a host can fence the later completion commit.
 - `recordGoalProgress` stores a bounded annotation without ending a stage or resetting stagnation.
 - `blockGoalRun` records a running stage's blocker without claiming physical closure or overriding
   a later user pause/cancel decision.

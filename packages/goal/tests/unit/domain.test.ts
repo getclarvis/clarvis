@@ -760,7 +760,12 @@ describe("goal criteria and completion", () => {
     const validation = await validateGoalCandidate(state.current!, proposed, {
       verify: async () => ({ valid: false }),
     });
-    expect(validation).toEqual({ valid: true, reasons: [], qualitative_criteria: ["objective"] });
+    expect(validation).toEqual({
+      valid: true,
+      reasons: [],
+      qualitative_criteria: ["objective"],
+      revision: state.current!.revision,
+    });
     state = recordGoalCandidate(state, {
       goal_id: "goal-1",
       execution_id: "run-1",

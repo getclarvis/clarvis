@@ -342,9 +342,11 @@ VPS browser/inspection/runtime-retry/reload controls are unavailable; /reconnect
 
 OpenSSH encrypts/authenticates the kernel stdio stream; Clarvis opens no listener or second crypto.
 SSH aliases, keys, certificates and local ssh-agent work, with port/agent/X11 forwarding disabled.
-Clarvis has no --identity-file/password store and does not force StrictHostKeyChecking/BatchMode.
-Verify host key/login first and unlock protected keys in ssh-agent. /dev/tty or askpass prompts are
-outside the TUI contract and may fail or disturb it. The VPS sees plaintext and remains trusted.
+Clarvis has no --identity-file/password store, leaves StrictHostKeyChecking to OpenSSH configuration
+and forces BatchMode=yes so failures cannot prompt over the TUI. Test
+ssh -o BatchMode=yes <destination> true first; unlock protected keys in ssh-agent. Local and remote
+Code hosts default their tool ceiling to exec; CLARVIS_AGENT_TOOLS_MAX_GRANT can narrow it. The VPS
+sees plaintext and remains trusted.
 
 ## TUI loops, background runs and reload
 

@@ -2,12 +2,15 @@ import { spawn } from "node:child_process";
 
 const argv = process.argv.slice(2);
 const separator = argv.indexOf("--");
+const optionValues = argv.flatMap((value, index) =>
+  value === "-o" && index + 1 < separator ? [argv[index + 1]] : [],
+);
 if (
   separator < 0 ||
   !argv.slice(0, separator).includes("-a") ||
   !argv.slice(0, separator).includes("-x") ||
-  argv[separator - 2] !== "-o" ||
-  argv[separator - 1] !== "ClearAllForwardings=yes" ||
+  !optionValues.includes("ClearAllForwardings=yes") ||
+  !optionValues.includes("BatchMode=yes") ||
   argv[separator + 1] !== "test@example.invalid"
 ) {
   process.stderr.write("invalid fake SSH arguments\n");

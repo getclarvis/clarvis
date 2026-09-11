@@ -291,7 +291,7 @@ do not implement runtime worktree switching:
 | `CLARVIS_CODE_DEBUG` | `packages/code/src/cli-args.ts` | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts`); its value also doubles as a level (`packages/code/src/cli-args.ts`) |
 | `CLARVIS_CODE_DEBUG_LEVEL` | `packages/code/src/cli-args.ts` | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG` |
 | `CLARVIS_OWNER` | `packages/code/src/startup-foundation.ts`, `packages/code/src/runtime.tsx` | passed as `defaultOwner` to `WorkspaceClientManager.create` |
-| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) | defaulted (`??=`) to `"exec"` before workspace-kernel construction |
+| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) and `packages/code/src/adapters/host-kernel-options.ts` (`codeHostEnvironment`) | defaulted to `"exec"` before launcher policy identity or local/remote workspace-kernel construction |
 | `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx` (`runInteractive`) | `dev` flag into `buildRendererConfig`; the runtime passes it to `createPlatform` |
 | `SSH_TTY` / `SSH_CONNECTION` | `packages/code/src/index.tsx` (`runInteractive`) | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"` |
 | `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx` | memory-fuse limit (owned by the memory-pressure adapter) |
@@ -1440,10 +1440,12 @@ TUI module starts application lifecycle work.
 Production: `tooling/checks/coverage.ts` (`NO_COUNTER_ALLOWLIST.code`).
 Self-pinning: `tooling/checks/coverage.ts` reports allowlist entries that are no longer needed.
 
-**INV-CB-40.** `CLARVIS_AGENT_TOOLS_MAX_GRANT` defaults to `"exec"` before any kernel is constructed,
-and only if unset.
-Production: `packages/code/src/index.tsx` (`runInteractive`, `??=` before either foundation path).
-Unpinned.
+**INV-CB-40.** `CLARVIS_AGENT_TOOLS_MAX_GRANT` defaults to `"exec"` before any local or remote Code
+kernel is constructed, and only if unset. The local launcher's policy identity uses the same resolved
+environment as the child host. Production: `packages/code/src/index.tsx` (`runInteractive`),
+`codeHostEnvironment` in `packages/code/src/adapters/host-kernel-options.ts`, and
+`WorkspaceClientManager` in `packages/code/src/adapters/workspace-client-manager.ts`. Test:
+`packages/code/tests/unit/host-kernel-options.test.ts`.
 
 **INV-CB-41.** Durable memory recovery follows the independent host lifecycle, not a TUI paint or
 transport reconnect. Production: `serveLocalFileKernel` in
@@ -1553,8 +1555,9 @@ new SSH process without replaying an operation; reload is unavailable. Client di
 prompt history use the local invocation's state while workspace files and sessions use the remote
 services. OpenSSH owns encryption, integrity, host-key verification and user authentication using
 its normal configuration, default identities and local agent. Clarvis disables port, agent and X11
-forwarding, but does not force `StrictHostKeyChecking`/`BatchMode` or implement password and
-identity-file UI; operators prepare a verified, usable SSH login before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/code/src/remote-host.ts`,
+forwarding, leaves `StrictHostKeyChecking` to OpenSSH configuration, forces `BatchMode=yes`, and does
+not implement password or identity-file UI; operators prepare a verified, noninteractive SSH login
+before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/code/src/remote-host.ts`,
 `packages/code/src/adapters/remote-kernel-arguments.ts`, and
 `packages/code/src/adapters/workspace-client-manager.ts`. Test:
 `packages/code/tests/unit/cli-args.test.ts`,
@@ -1595,7 +1598,7 @@ identity-file UI; operators prepare a verified, usable SSH login before starting
 | An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/runtime.tsx` (`writeExportChunk`) |
 | `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before a kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts`; `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`) |
 | Remote flags are unpaired, combined with `--worktree`, or contain an unsafe SSH destination/remote command | argument or transport admission rejects before a remote kernel handshake | usage error or top-level failure, no mutation replay | `packages/code/src/cli-args.ts`; `packages/kernel/src/hosting/connect-remote-ssh.ts` |
-| SSH needs interactive host-key, password or key-passphrase input | OpenSSH may use its controlling terminal or askpass, but Clarvis reserves process stdin/stdout for the kernel wire and supplies no login UI | startup can fail, time out or disturb the TUI; establish the host key and key/agent/certificate login first | `connectRemoteKernelOverSsh`; [security](../cross-cutting/security.md) |
+| SSH needs interactive host-key, password or key-passphrase input | `BatchMode=yes` prevents OpenSSH from prompting after the TUI owns the terminal | startup fails with captured, sanitized SSH diagnostics; establish the host key and key/agent/certificate login first | `connectRemoteKernelOverSsh`; [security](../cross-cutting/security.md) |
 | SSH stdio closes | in-flight runs settle unavailable, connection state exposes `/reconnect`, and the remote host retires conversation authority | future goal continuation pauses; reconnect starts one new SSH process | `WorkspaceClientManager`; `serveRemoteFileKernelOverStdio`; goal-service authority retirement |
 | Worktree ignore protection cannot be created or verified | bootstrap rejects before `git worktree add` or any kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `ensureWorktreeIgnore` in `packages/code/src/bootstrap/worktree.ts`; `seedFile` in `packages/paths/src/ensure.ts` |
 | Exit cleanup sees new pending changes or `git worktree remove` fails | checkout and branch are kept; `worktree.remove.failed` records the error before normal exit continues | normal exit | `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`; pre-shutdown removal in `packages/code/src/runtime.tsx` |

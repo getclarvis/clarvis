@@ -1,4 +1,4 @@
-import type { CreateFileKernelOptions } from "@clarvis/kernel/bootstrap";
+import { createKernelEnvironment, type CreateFileKernelOptions } from "@clarvis/kernel/bootstrap";
 import type {
   createLocalDockerRuntime as CreateLocalDockerRuntime,
   createLocalPodmanRuntime as CreateLocalPodmanRuntime,
@@ -15,6 +15,8 @@ export interface CodeHostKernelOptions {
   defaultOwner?: string;
   extensionProfileSelector?: string;
   logger: CreateFileKernelOptions["logger"];
+  /** Raw host environment; defaults to the current process and is snapshotted once. */
+  environment?: Readonly<Record<string, string | undefined>>;
   runtimeNotice(message: string): void;
 }
 
@@ -36,6 +38,16 @@ const DEFAULT_RUNTIME_DEPENDENCIES: CodeHostRuntimeDependencies = {
   productVersion,
 };
 
+/** Apply Code's tool ceiling default before launch policy identity and host construction. */
+export function codeHostEnvironment(
+  source: Readonly<Record<string, string | undefined>>,
+): Record<string, string | undefined> {
+  return {
+    ...source,
+    CLARVIS_AGENT_TOOLS_MAX_GRANT: source.CLARVIS_AGENT_TOOLS_MAX_GRANT ?? "exec",
+  };
+}
+
 /** Compose the application-owned FileKernel policy without coupling it to one transport. */
 export function createCodeHostKernelOptions(
   options: CodeHostKernelOptions,
@@ -46,6 +58,7 @@ export function createCodeHostKernelOptions(
     workspace: workspacePaths(options.workspaceRoot),
     state: workspaceStatePaths(options.workspaceRoot),
   };
+  const environment = options.environment ?? process.env;
   return {
     workspaceRoot: options.workspaceRoot,
     globalDir: options.globalDir,
@@ -55,6 +68,7 @@ export function createCodeHostKernelOptions(
       : { extensionProfileSelector: options.extensionProfileSelector }),
     memory: true,
     subscriptions: true,
+    environment: createKernelEnvironment(codeHostEnvironment(environment)),
     logger: options.logger,
     keySources: readStartupKeySources(dirs),
     runtimeFactory: {

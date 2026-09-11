@@ -11,6 +11,7 @@ import { resolveLocalKernelArtifact } from "./local-kernel-artifact.ts";
 import { sanitizeErrorMessage } from "@clarvis/kernel/policy";
 import type { ReconnectMode } from "./connection-state.ts";
 import { encodeRemoteKernelArguments } from "./remote-kernel-arguments.ts";
+import { codeHostEnvironment } from "./host-kernel-options.ts";
 
 type ExtensionDriftNotice = NonNullable<LocalHostStatus["extension_drift"]>;
 
@@ -97,7 +98,10 @@ export class WorkspaceClientManager {
         globalDir: options.globalDir,
         owner: defaultOwner,
         logger: options.logger,
-        environment: { ...process.env, CLARVIS_HOST_EXTENSION_PROFILE: selector },
+        environment: codeHostEnvironment({
+          ...process.env,
+          CLARVIS_HOST_EXTENSION_PROFILE: selector,
+        }),
       };
       const local = deps.connectHost ?? connectLocalKernel;
       connectHost = () => local(launch);

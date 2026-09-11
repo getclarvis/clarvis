@@ -774,19 +774,21 @@ OpenSSH chooses default identity files, `IdentityFile` entries, certificates and
 loaded in `ssh-agent`; Clarvis has no separate identity-file or password store. A local agent may
 authenticate the connection, but `-a`, `-x` and `ClearAllForwardings=yes` prevent agent, X11 and port
 forwarding to the VPS. Host-key verification, jump hosts and authentication order retain the user's
-SSH configuration. Clarvis does not force `StrictHostKeyChecking` or `BatchMode`.
+SSH configuration. Clarvis leaves `StrictHostKeyChecking` to that configuration and forces
+`BatchMode=yes`: an unknown host key, unavailable identity or locked key fails startup instead of
+asking for input after OpenTUI owns the terminal.
 The SSH child receives only home/path, platform process-discovery, local agent and askpass/display
 variables from the client environment. Provider keys, Clarvis OAuth values and unrelated variables
 are absent, so OpenSSH `SendEnv` cannot forward them. The already-pinned remote process supplies the
 canonical workspace identity during hello; the client does not resend the operator's raw path.
 
-Before opening the TUI, establish the host key and verify login with the same alias using ordinary
-`ssh`. Password and key-passphrase prompts are not a Clarvis UI contract: SSH may try its controlling
-terminal or askpass helper while Clarvis has reserved stdin/stdout for its protocol, which can make
-interactive startup fail or disturb the display. Prefer a verified host key plus a key, certificate
-or hardware-backed identity already available to `ssh-agent`. The wire receives no second Clarvis
-encryption layer; prompts, events and results are confidential and integrity-protected in transit by
-SSH, while the authenticated remote account can read them after decryption.
+Before opening the TUI, establish the host key and verify noninteractive login with the same alias,
+for example `ssh -o BatchMode=yes user@host true`. Use a key, certificate or hardware-backed identity
+that OpenSSH can use without prompting; unlock protected keys in `ssh-agent` first. The wire receives
+no second Clarvis encryption layer; prompts, events and results are confidential and
+integrity-protected in transit by SSH, while the authenticated remote account can read them after
+decryption. Both local and remote Code hosts apply the product's `exec` tool-grant ceiling by default;
+an explicit `CLARVIS_AGENT_TOOLS_MAX_GRANT` on the machine hosting the kernel still narrows it.
 
 Normal interactive launches use the full Unicode glyph theme. Plain ASCII is
 an explicit compatibility choice through `--ascii` or the saved Theme setting.

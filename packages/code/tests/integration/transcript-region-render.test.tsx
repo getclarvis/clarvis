@@ -163,7 +163,6 @@ function baseProps(overrides: Partial<TranscriptRegionProps> = {}): TranscriptRe
     onScrollbox: overrides.onScrollbox ?? (() => {}),
     onHistoryHandle: overrides.onHistoryHandle,
     memoryPressure: overrides.memoryPressure,
-    historyMeasurementRecovery: overrides.historyMeasurementRecovery,
   };
 }
 
@@ -623,6 +622,7 @@ test("one selected sub-agent transcript excludes every sibling transcript", asyn
   expect(t.captureCharFrame()).not.toContain("Reviewer");
   props.transcript.toggleSubagent("researcher");
   await settleSyntaxSurfaces(t);
+  for (let pass = 0; pass < 10; pass += 1) await t.renderOnce();
   expect(props.transcript.overrideOf(researcherCard.key)).toBe("expanded");
   const frame = t.captureCharFrame();
   expect(frame).toContain("Researcher");
@@ -1045,17 +1045,15 @@ test("Lead keeps its physical reader state while one bounded child projection is
   const leadHandle = activeHandle;
   expect(leadScrollbox).toBeDefined();
   expect(leadHandle).toBeDefined();
-  leadScrollbox!.stickyScroll = false;
-  leadScrollbox!.scrollTo({ x: 0, y: 6 });
+  expect(leadHandle!.scrollBy(-6)).toBe("scrolled");
   await t.renderOnce();
-  const retainedTop = leadScrollbox!.scrollTop;
-  expect(retainedTop).toBeGreaterThan(0);
+  expect(leadScrollbox!.scrollTop).toBeGreaterThan(0);
 
   props.transcript.toggleSubagent("a");
   await settleSyntaxSurfaces(t);
   const childA = activeScrollbox;
   expect(childA).toBeDefined();
-  expect(childA).not.toBe(leadScrollbox);
+  expect(childA).toBe(leadScrollbox);
   expect(t.captureCharFrame()).toContain("CHILD A TRANSCRIPT");
   expect(leadScrollbox!.isDestroyed).toBe(false);
 
@@ -1063,8 +1061,8 @@ test("Lead keeps its physical reader state while one bounded child projection is
   await settleSyntaxSurfaces(t);
   const childB = activeScrollbox;
   expect(childB).toBeDefined();
-  expect(childB).not.toBe(childA);
-  expect(childA!.isDestroyed).toBe(true);
+  expect(childB).toBe(childA);
+  expect(childA!.isDestroyed).toBe(false);
   expect(t.captureCharFrame()).toContain("CHILD B TRANSCRIPT");
 
   await new Promise<void>((resolve) => process.nextTick(resolve));
@@ -1090,10 +1088,11 @@ test("Lead keeps its physical reader state while one bounded child projection is
   }
 
   props.transcript.toggleSubagent("b");
-  await t.renderOnce();
+  leadHandle!.returnToTail();
+  await settleSyntaxSurfaces(t);
   expect(activeScrollbox).toBe(leadScrollbox);
   expect(activeHandle).toBe(leadHandle);
-  expect(leadScrollbox!.scrollTop).toBe(retainedTop);
+  expect(leadScrollbox!.isDestroyed).toBe(false);
   expect(t.captureCharFrame()).toContain("LEAD ROW");
   expect(t.captureCharFrame()).not.toContain("CHILD B TRANSCRIPT");
   t.renderer.destroy();

@@ -261,43 +261,27 @@ the independently bounded tool fields, never the raw hydration payload. The live
 semantic turns beyond its 20-turn resident history; that same action evicts complete immutable
 publication batches for the removed prefix and installs one frozen notice.
 
-Within that semantic bound, `CommittedHistory` retains marker metadata but mounts native owners only
-for the measured visible rows, two prepared viewports ahead in the last vertical-scroll direction
-and one retained viewport behind. One serial transparent candidate may coexist while syntax and two
-equal physical observations settle. Direct publication
-owners are pinned to exact marker rows; lightweight exact before/active/after extents preserve scroll
-geometry, and an unknown range costs one boundary row rather than an estimated spacer. After
-settlement, owner count is therefore independent of completed-turn count. ScrollBox viewport culling
-is enabled in that steady state and suspended only for the one transparent candidate whose native
-syntax render hooks must run; this does not expand the physical owner window. A candidate has one
-two-second retry lease before a parser-independent semantic retry owner preserves the same
-Markdown/diff/code presentation while bypassing only unfinished parser work; its frame listener is
-released immediately after the exact marker commits. The vertical scrollbar permanently owns one
-layout column and changes opacity only, preventing overflow from repeatedly invalidating width
-epochs. Before an earlier-history prepend publishes changed children, the exact anchor correction is
-queued and then consumed by the ScrollBox update and public content-size callback; the reader sees
-the corrected position in the first painted frame. Boundary-aware Page Up and vertical-wheel input
-remains on the prepared owner window until one serial candidate settles, so a fast scroll cannot
-reveal spacer-only rows or multiply native measurement owners. Repeated old/new navigation must also
-leave every registered lifecycle pass reachable from the live renderer root; current lifecycle-set
-size may vary with the active batch's syntax complexity, but detached/destroyed entries are
-forbidden. `LiveTranscriptTail` is instead the
+Within that semantic bound, `CommittedHistory` mounts every owner through 80 committed batches and
+a sliding 40-batch index slice for longer sessions. Direct publication owners stay native ScrollBox
+children with viewport culling enabled; each non-empty hidden prefix or suffix costs one passive row,
+not estimated or measured spacer geometry. After settlement, owner count is therefore independent of
+completed-turn count. The vertical scrollbar permanently owns one layout column and changes opacity
+only. Boundary-aware Page Up and native wheel input slide the index window at its edges. Repeated
+old/new navigation must leave every registered lifecycle pass reachable from the live renderer root;
+detached or destroyed entries are forbidden. `LiveTranscriptTail` is the
 content-height final child of that same ScrollBox. There is no second scroll area or fixed live-row
 reservation: while tail-following, live growth uses the native bottom-following flow; while the user
-reads older history, the tail is not mounted in the visible window and newer semantic batches are
-represented only by the bounded top overlay until downward scroll admits them. This keeps one
-chronological surface without making the mutable frontier a permanent empty allocation
-(`packages/code/src/views/history/{CommittedHistory.tsx,TranscriptScrollBox.ts,physical-window.ts}`,
+reads older history, the tail stays mounted below the viewport and a bounded top overlay notes that
+the reader is off the tail. This keeps one chronological surface
+(`packages/code/src/views/history/{CommittedHistory.tsx,visible-slice.ts}`,
 `packages/code/src/views/live/LiveTranscriptTail.tsx`, and
 [`code-transcript-stability.md`](code-transcript-stability.md)). Renderer regressions are pinned by
 `packages/code/tests/integration/{transcript-publication-render,transcript-window-render}.test.tsx`.
-The application retains one permanent Lead projection plus at most one explicitly selected child
-projection. They own separate ScrollBoxes, physical-window controllers, marker ledgers and scroll
-positions; selecting a different child disposes the previously retained child and its listeners,
-while returning to Lead reveals its unchanged reader state. Child and workflow activity therefore
-cannot grow the main transcript's owner window; their lifecycle summaries stay in the bounded
-footer/Sidebar projections. Production:
-`packages/code/src/views/app/TranscriptRegion.tsx` (`TranscriptProjection`, `retainedChildId`) and
+The application keeps one native ScrollBox and swaps Lead versus child children. Returning to Lead
+restores a numeric `scrollTop` when that still maps; otherwise it follows the tail rather than
+duplicating the tree. Child and workflow activity therefore cannot grow a second owner window; their
+lifecycle summaries stay in the bounded footer/Sidebar projections. Production:
+`packages/code/src/views/app/TranscriptRegion.tsx` and
 `packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistory`). Test:
 `packages/code/tests/integration/transcript-region-render.test.tsx` ("Lead keeps its physical reader
 state while one bounded child projection is visited").

@@ -15,8 +15,8 @@ renders**. It no longer owns the cross-event question of when a snapshot becomes
 whether background work may move/remount it, or where mutable loaders live. The current
 committed-history/live-frontier contract for those questions is isolated in
 [code-transcript-stability.md](code-transcript-stability.md). Semantic filtering, grouping and
-legacy reordering remain described here as rendering inputs. Physical residency is delegated to
-measured publication batches. Committed history consumes grouping/section metadata already frozen
+legacy reordering remain described here as rendering inputs. Physical residency is delegated to a
+bounded index slice of publication batches. Committed history consumes grouping/section metadata already frozen
 by the publisher; the mutable tail still derives those projections live.
 
 Within that scope it owns four concerns that are visible in the code as four separate layers:
@@ -54,7 +54,7 @@ The recurring problem the code solves is cost: a long streaming reply re-parsed 
 100 KiB tool payload handed to a native text renderable, a 6,000-node session mounted at once. The
 answers are, respectively, prefix-stable segmentation
 (`packages/code/src/core/transcript/segment.ts`), a cached bounded payload projection
-(`packages/code/src/core/transcript/tool-display.ts`), and the physically measured owner window
+(`packages/code/src/core/transcript/tool-display.ts`), and the native ScrollBox index slice
 owned by [code-transcript-stability.md](code-transcript-stability.md).
 
 ---
@@ -183,13 +183,12 @@ for each delegation — or nodes for exactly one selected child. It does not est
 page or label hidden turns. The immutable publisher and backing store retain the complete resident
 ledger, including child nodes hidden from the main view;
 `CommittedHistory` later maps batches matching the active projection into the
-measured owner window defined by
+bounded index window defined by
 [code-transcript-stability.md](code-transcript-stability.md). This separation lets grouping, focus
-and detail navigation retain the complete active projection while OpenTUI mounts only the rows
-around the viewport. Page commands are admitted by that physical owner before coordinates change;
-native wheel/trackpad input updates the ScrollBox normally and reports direction afterward so an
-edge can prefetch its adjacent owner. Projection completeness therefore does not require exposing an
-unmounted spacer.
+and detail navigation retain the complete active projection while OpenTUI mounts only the selected
+batch slice. Native wheel/trackpad input updates the ScrollBox normally; reaching an edge slides the
+slice, and focus navigation includes its target batch before scrolling it into view. Projection
+completeness therefore does not require estimated or measured spacer geometry.
 
 ### 2.7 `views/transcript-state.ts`
 
@@ -210,7 +209,7 @@ Also exported: `withRunMarkersLast(nodes)`.
 | `views/tool-groups.ts` | `MIN_GROUP = 2`, `ToolGroupInfo`, `computeToolGroups`, `aggregateStatus`, `failureCount` | — |
 | `views/subagent-sections.ts` | `SectionHeader`, `GroupedTranscript` (incl. `anchors: Map<string,string>`), `computeGroupedNodes` | / |
 | `views/block-focus.ts` | `BlockOverride`, `Overrides`, `isFoldedAway`, `computeFocusables`, `toggleOverride`, `nextFocus` | — |
-| `views/transcript-completion.ts` | `completionBeforeFinalAnswer` | — |
+
 | `views/transcript-markdown.ts` | `transcriptMarkdownHeader`, `renderTranscriptMarkdownChunks`, `renderTranscriptMarkdown` | — |
 | `views/truncate.ts` | `truncateEnd`, `truncateStart`, `fmtCount`, `moreChip`, `padColumn` | — |
 | `views/spinner.ts` | `SPINNER_FRAMES`, `SPINNER_ASCII`, `charForFrame`, `spinnerChar`, `thinkingDots`, `tickNow`, `formatElapsed` (re-export), `useSpinnerClock` | — |
@@ -275,7 +274,7 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 
 | Pattern | Meaning | Read at |
 | --- | --- | --- |
-| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts`, `packages/code/src/views/transcript-completion.ts`, `packages/code/src/views/subagent-sections.ts` |
+| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts`, `packages/code/src/views/subagent-sections.ts` |
 | `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts` |
 | `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`addUser`) |
 | `local:<n>` | a locally-appended `!bash` node | `packages/code/src/views/subagent-sections.ts`, produced at `packages/code/src/adapters/store.ts` |
@@ -387,27 +386,25 @@ its final content-height child. The committed chain is:
 | 2. choose the Lead-only main projection or one child-only isolated projection | `visibleNodes` memo | `packages/code/src/views/transcript-state.ts` (`visibleNodes`) |
 | 3. derive section/group/focus state over that complete current projection | `computeGroupedNodes`, `computeToolGroups`, `computeFocusables` | `packages/code/src/views/transcript-state.ts` |
 | 4. select immutable publication batches intersecting that semantic projection | `semanticBatches` | `packages/code/src/views/history/CommittedHistory.tsx` |
-| 5. admit only physically measured batches around the viewport | `createPhysicalWindowController` | `packages/code/src/views/history/physical-window.ts` |
-| 6. render each resident frozen batch's `BlockView` using its frozen group/header/default-fold metadata | `PhysicalPublicationOwner` | `packages/code/src/views/history/CommittedHistory.tsx` |
+| 5. admit an index slice of frozen batches around the current reader | `createVisibleSliceController` | `packages/code/src/views/history/visible-slice.ts` |
+| 6. render each resident frozen batch's `BlockView` using its frozen group/header/default-fold metadata | `PublicationOwner` | `packages/code/src/views/history/CommittedHistory.tsx` |
 
 Step 3 deliberately precedes physical residency. `computeToolGroups` assigns head/member by semantic
 adjacency, `isFoldedAway` resolves a section anchor, and `computeFocusables` keeps keyboard navigation
 complete even when its target owner is not mounted. `App` hands a selected key to
-`CommittedHistoryHandle.revealKey`, which admits adjacent measured batches before placing the exact
-target row. Page commands route through `CommittedHistoryHandle.scrollBy`, keeping the current
-measured interval visible until one serial adjacent owner settles. Wheel and trackpad packets do not
-take that command path: `TranscriptScrollBoxRenderable.onMouseEvent` first delegates to OpenTUI's
-native `ScrollBoxRenderable.onMouseEvent`, then reports only the vertical direction through
-`onVerticalScrollIntent`. `CommittedHistory` uses that callback to prefetch an adjacent range when
-the native viewport reaches an edge; it does not replay the gesture as a page jump. Committed
+`CommittedHistoryHandle.revealKey`, which slides the index window to include the target batch and
+pauses native stick until the reader returns to the tail. Page commands route through
+`CommittedHistoryHandle.scrollBy`, which scrolls the native ScrollBox and reveals older or newer
+batches at the edges. Wheel and trackpad packets stay on OpenTUI's native ScrollBox path;
+`CommittedHistory` pauses follow-the-tail when the reader leaves the bottom. Committed
 `BlockView` structure still reads frozen publication metadata rather than these dynamic maps.
 `LiveTranscriptTail` independently applies the same
 Lead-or-selected-child filter and derives grouping from `store.frontierNodes()` because mutation is
-allowed there. It retains a frozen handoff snapshot until the matching measured owner is visible.
+allowed there. Committed keys transfer to the frozen history projection without a second scroll area.
 It has no fixed reservation or nested scrollbox; the complete placement and handoff contract are
 normative in [code-transcript-stability.md](code-transcript-stability.md).
 
-### 4.2 Semantic projection and measured residency
+### 4.2 Semantic projection and index residency
 
 `visibleNodes` starts from `deps.nodes()` and chooses exactly one of two projections:
 
@@ -435,12 +432,12 @@ No node count, source-character total, estimated render cost or turn boundary sl
 `semanticNodes` therefore remains suitable for grouping and focus inside the active view. Explicit
 detail lookup may use `detailNodes()` to inspect the complete store independently. Physical
 mounting is a later and independent concern: `CommittedHistory` intersects frozen publication
-batches with the semantic key set, and the marker controller admits owners by settled OpenTUI row
-measurements. Its exact bounds, anchors, lazy boundaries and disposal contract are normative in
+batches with the semantic key set, and the visible-slice controller admits a bounded batch interval.
+Its exact bounds, native-scroll behavior, lazy boundaries and disposal contract are normative in
 [code-transcript-stability.md](code-transcript-stability.md).
 
 `reset()` clears focus and fold overrides without truncating the backing ledger. Changing sub-agent
-selection changes only the semantic filter; the physical controller then re-admits the matching
+selection changes only the semantic filter; the visible-slice controller then admits the matching
 immutable batches. Tests in `packages/code/tests/unit/transcript-window-state.test.ts` ("the main
 transcript excludes sub-agent work until that transcript is selected") and
 `packages/code/tests/integration/transcript-region-render.test.tsx` ("the main transcript hides
@@ -451,7 +448,7 @@ eviction prunes it immediately, independently of which Lead/child projection is 
 
 ### 4.3 Legacy mutable-node ordering helpers and committed order
 
-Two ordering helpers remain specified and unit-tested for callers that construct state without
+One ordering helper remains specified and unit-tested for callers that construct state without
 `preserveOrder`, but the publisher now decides production committed order before first visibility.
 
 `withRunMarkersLast` (`packages/code/src/views/transcript-state.ts`) moves each `<exec>::run` node **after** the last
@@ -460,12 +457,9 @@ the code: events for work that had already finished can land after `run_ended`, 
 cancellation (`packages/code/src/views/transcript-state.ts`). It is a projection rather than a store mutation
 because the store guarantees node identity across a reconcile.
 
-`completionBeforeFinalAnswer` (`packages/code/src/views/transcript-completion.ts`) moves a run node
-before its final lead assistant node for legacy snapshot callers. `CommittedHistory` does not call
-it: `TranscriptPublisher.completeRun` creates `[final answer, run outcome]` as one batch to preserve
-the live answer's row during physical handoff, and
-`createTranscriptState` receives `preserveOrder: true`. Runs without a lead answer keep protocol
-order (`packages/code/tests/unit/transcript-completion.test.ts`).
+Production `createTranscriptState` receives `preserveOrder: true`.
+`TranscriptPublisher.completeRun` creates `[final answer, run outcome]` as one batch so the live
+answer row is not moved when the terminal outcome appends.
 
 ### 4.4 Sub-agent sectioning inside an isolated transcript
 
@@ -511,7 +505,7 @@ tool-call count (`packages/code/src/views/subagent-sections.ts`); `SectionHead` 
 tool calls, a sub-agent section's is hidden entries, and the code states they "must not share a word"
 (`packages/code/src/views/blocks.tsx`).
 The chevron on either branch is a real affordance: clicking the section header toggles its anchor;
-an inactive physical measurement owner cannot run that callback.
+an inactive history projection cannot run that callback.
 
 `GroupedTranscript.anchors` (`packages/code/src/views/subagent-sections.ts`) is a `Map<string,string>`
 from every folded body node's key to its section's anchor key — the data structure `isFoldedAway`
@@ -1411,13 +1405,13 @@ semantic projection. Production: `createTranscriptState` (`reset`). Test:
 `packages/code/tests/unit/transcript-window-state.test.ts` (reset case).
 
 **INV-T13.** No estimated node-cost, character-cost or turn-count selector may decide ordinary
-physical residency. Production: `CommittedHistory` and `createPhysicalWindowController`. Tests:
+physical residency. Production: `CommittedHistory` and `createVisibleSliceController`. Tests:
 `packages/code/tests/architecture/architecture-boundary.test.ts` (estimated-paging exclusion) and
-`packages/code/tests/unit/transcript-physical-window.test.ts` (equal-marker metamorphic case).
+`packages/code/tests/unit/transcript-visible-slice.test.ts` (equal-marker metamorphic case).
 
 **INV-T14.** Committed block structure reads frozen publication group/header/default-fold metadata;
 live grouping maps may drive navigation or the same-selection `LiveTranscriptTail`, but cannot
-reshape an already committed owner. Production: `PhysicalPublicationOwner` and
+reshape an already committed owner. Production: `PublicationOwner` and
 `LiveTranscriptTail`. Test:
 `packages/code/tests/integration/transcript-publication-render.test.tsx` (stable memory, diff and
 write owners while later activity changes).
@@ -1757,20 +1751,14 @@ stacking ready or working above it") and
 `packages/code/tests/integration/transcript-region-render.test.tsx` (plan exclusion and normal versus
 compact runway bands).
 
-**INV-T56.** Syntax recovery cannot reduce the semantic quality of a transcript artifact. Once a
-Markdown, diff or code body has painted, a later physical measurement lease retains that exact tree,
-waits for the public syntax-completion contract and commits only after two equal positive dimensions;
-while pending, it remains visible and cannot be remounted or replaced with a warning. A candidate
-that has never painted may stop waiting for Tree-sitter after the bounded retry, but it still renders
-through the same `BlockView`, `MarkdownRenderable`, `DiffRenderable` and `CodeRenderable`
-presentation. Its `rich` or `plain-semantic` choice persists by batch id across physical
-eviction/remount and is purged with the source publication. Measurement also re-arms across every
-`number -> undefined -> number` revision lifecycle. Production:
-`packages/code/src/ui/patterns/stable-syntax.tsx` (`SyntaxPublicationBoundary`,
-`freezeUnsettledSyntax`, `StableMarkdown`, `StableDiff`) and
-`packages/code/src/views/history/CommittedHistory.tsx` (`PhysicalPublicationOwner`). Tests:
-`packages/code/tests/integration/transcript-publication-render.test.tsx` (inactive revision re-arm,
-painted `write_memory` handoff across a resize and forced short-lease semantic recovery).
+**INV-T56.** Index-slice admission cannot reduce the semantic quality of a transcript artifact.
+Frozen Markdown, diff and code bodies render through the same `BlockView`, `MarkdownRenderable`,
+`DiffRenderable` and `CodeRenderable` presentation used elsewhere; history does not introduce a
+geometry placeholder or plain-text fallback. Production:
+`packages/code/src/views/history/CommittedHistory.tsx` (`PublicationOwner`) and
+`packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`). Tests:
+`packages/code/tests/integration/transcript-publication-render.test.tsx` (stable Markdown, diff and
+`write_memory` owners).
 
 **INV-T57.** Within one running assistant `geometryEpoch`, `StableMarkdown` retains the greatest
 visible row height it has observed as a layout floor. OpenTUI may later parse and conceal an
@@ -1897,7 +1885,7 @@ document. Four concrete couplings matter here:
 
 | Consumer | What it uses |
 | --- | --- |
-| `packages/code/src/views/history/CommittedHistory.tsx` | `BlockView` and the user-driven semantic subset of `TranscriptState`; group/section metadata comes from frozen publication batches, while physical boundary labels come from measured batch counts |
+| `packages/code/src/views/history/CommittedHistory.tsx` | `BlockView` and the user-driven semantic subset of `TranscriptState`; group/section metadata comes from frozen publication batches, while passive boundary labels come from hidden batch counts |
 | `packages/code/src/views/live/LiveTranscriptTail.tsx` | `BlockView`, `computeGroupedNodes` and `computeToolGroups` over mutable frontier nodes, plus the frozen live-to-committed handoff |
 | `views/overlays/DiffViewer.tsx` | `resolveToolRenderer` with `full`/`wrap` set (`packages/code/src/views/tools/registry.tsx`) |
 | `views/config/McpBrowser.tsx` | `renderToolPreview` (`packages/code/src/views/tools/registry.tsx`, `renderToolPreview`) |

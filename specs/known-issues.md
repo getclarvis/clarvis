@@ -1075,16 +1075,12 @@ that does not depend on the trace, and no such source of truth exists today.
 
 ## Settled transcript blocks can remount and flicker under unrelated live activity
 
-**Resolved under OpenTUI 0.5.9.** Code now freezes terminal candidates into immutable
-publication batches, commits semantics independently from view readiness, mounts history through a
-narrow publication-only port, and renders the content-height `LiveTranscriptTail` as the final child
-of the same chronological ScrollBox. One serial hidden owner settles syntax and two equal physical
-observations; the same owner then becomes visible at its exact marker row, while the tail retains the
-handoff snapshot until that owner is ready. Direct ScrollBox children outside two prepared
-viewports in the last scroll direction and one retained viewport behind are disposed, while exact
-extents preserve the reader anchor. Native scroll admits lazy history at either edge, and an
-off-tail newer count is a top overlay rather than another row
-below history. Stored reconciliation closes the publisher explicitly. The normative contract is
+**Resolved under OpenTUI 0.5.9 by removing the physical-window machine.** Code freezes
+terminal candidates into immutable publication batches and mounts history through one native
+OpenTUI `<scrollbox>` with `stickyStart="bottom"` and `viewportCulling` always on. The live tail
+stays mounted as the final chronological child. Long sessions keep an index slice of frozen
+batches plus one-row hints, never Yoga-measured spacers or hidden geometry clones. Native sticky
+scrolling is the only follow-the-tail authority. The normative contract is
 [`hosts/code-transcript-stability.md`](hosts/code-transcript-stability.md).
 
 The quoted `later batch` wording below is retained only as the exact historical symptom. That
@@ -1108,16 +1104,12 @@ The controller and both owner forms now share the inner transcript width, so exp
 settles without a resize or parser downgrade.
 
 The corrected composition leaves the tail in chronological flow and lets OpenTUI's own manual-scroll
-state pause sticky-bottom behavior. A live owner that commits while intersecting the viewport stays
-painted through physical handoff. One already below the viewport releases its tool/Markdown/syntax
-tree and transfers its measured rows to one aggregate spacer until its batch is admitted. The
-newer-entry overlay also includes the mutable frontier without increasing for repeated deltas on the
-same artifact. The regression drives native wheel input, a 72-paragraph streaming response,
-terminal publication and 64 offscreen tool completions; the reader row remains exact and native
-owner count stays bounded (`packages/code/tests/integration/transcript-publication-render.test.tsx`,
-"scrolling above a live tail preserves the reader while terminal updates stay physically bounded").
-The companion test "expanding a tall committed tool cannot strand physical measurement or newer
-batches" fixes the 99/96-column mismatch and proves that a later terminal publication is admitted.
+state pause sticky-bottom behavior. Unmounting the live tail is not a valid way to pause follow, and
+Clarvis no longer latches a one-shot `scrollTop` clamp after that pause. The regression drives native
+wheel input and a streaming response; the live tail remains in the tree while the reader is away
+from the bottom (`packages/code/tests/integration/transcript-publication-render.test.tsx`,
+"scrolling above a live tail preserves the reader while terminal updates stay physically bounded"
+and "the live tail stays mounted after the reader leaves the sticky edge").
 
 **Two presentation follow-ons were resolved under OpenTUI 0.5.9.** Elicitation used a
 one-frame `scrollBy` after replacing the composer. With a long physical history, the virtual tail or
@@ -1232,7 +1224,7 @@ markers, and selecting a child opened its isolated transcript without collapsing
 primary tests are
 `packages/code/tests/integration/transcript-publication-render.test.tsx` and
 `packages/code/tests/integration/transcript-window-render.test.tsx`; the pure publication and marker
-ledgers are covered by `packages/code/tests/unit/{transcript-publication,transcript-physical-window}.test.ts`,
+ledgers are covered by `packages/code/tests/unit/{transcript-publication,transcript-visible-slice}.test.ts`,
 and the architecture guard is in
 `packages/code/tests/architecture/architecture-boundary.test.ts`.
 

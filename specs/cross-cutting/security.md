@@ -1245,10 +1245,10 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     credentials and global configuration do not enter argv or the kernel wire. A local `ssh-agent`
     may authenticate without its socket being forwarded. OpenSSH selects identities, certificates,
     jump hosts, authentication order and host-key policy from its ordinary configuration; Clarvis
-    does not force `StrictHostKeyChecking` or `BatchMode`, and offers no identity-file/password store.
-    Password or passphrase prompting through a controlling terminal/askpass helper is not a TUI
-    contract because kernel stdin/stdout already carry the wire. Operators establish the host key and
-    noninteractive authentication before launch. There is no second application encryption layer:
+    leaves `StrictHostKeyChecking` to that configuration, forces `BatchMode=yes`, and offers no
+    identity-file/password store. Operators establish the host key and noninteractive authentication
+    before launch; missing access fails through captured SSH stderr rather than a controlling-terminal
+    or askpass prompt after the TUI owns the screen. There is no second application encryption layer:
     SSH protects prompts, tool traffic and events in transit, while both endpoints see plaintext.
     The remote process resolves its own global state and subscription OAuth, fixes owner/workspace
     server-side, advertises the resulting session namespace, exposes hosted runs/goals but no
@@ -1261,7 +1261,8 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     [remote-host.ts](../../packages/code/src/remote-host.ts). Test:
     [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts),
     [remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts),
-    and [remote-kernel-arguments.test.ts](../../packages/code/tests/unit/remote-kernel-arguments.test.ts).
+    [remote-kernel-arguments.test.ts](../../packages/code/tests/unit/remote-kernel-arguments.test.ts),
+    and [host-kernel-options.test.ts](../../packages/code/tests/unit/host-kernel-options.test.ts).
 
 ## 6. Failure modes and degradation
 

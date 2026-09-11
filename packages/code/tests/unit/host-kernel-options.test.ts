@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
 import type { FileKernelRuntimeFactory } from "@clarvis/kernel/bootstrap";
 import {
+  codeHostEnvironment,
   createCodeHostKernelOptions,
   type CodeHostRuntimeDependencies,
 } from "../../src/adapters/host-kernel-options.ts";
@@ -43,6 +44,16 @@ function runtimeHost(
 }
 
 describe("code host kernel options", () => {
+  it("uses one tool ceiling default for launcher identity and host construction", () => {
+    expect(codeHostEnvironment({ HOME: "/home/operator" })).toEqual({
+      HOME: "/home/operator",
+      CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+    });
+    expect(codeHostEnvironment({ CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" })).toEqual({
+      CLARVIS_AGENT_TOOLS_MAX_GRANT: "read",
+    });
+  });
+
   it("shares host policy across local and remote transports without inventing identity", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-code-host-options-"));
     const logger = createLogger("silent");
@@ -51,6 +62,7 @@ describe("code host kernel options", () => {
         workspaceRoot: join(root, "workspace"),
         globalDir: join(root, "global"),
         logger,
+        environment: {},
         runtimeNotice: () => {},
       });
       expect(base).toMatchObject({
@@ -58,6 +70,9 @@ describe("code host kernel options", () => {
         globalDir: join(root, "global"),
         memory: true,
         subscriptions: true,
+        environment: {
+          values: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+        },
         logger,
         keySources: {},
       });
@@ -71,11 +86,15 @@ describe("code host kernel options", () => {
         defaultOwner: "owner",
         extensionProfileSelector: "global:remote",
         logger,
+        environment: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
         runtimeNotice: () => {},
       });
       expect(scoped).toMatchObject({
         defaultOwner: "owner",
         extensionProfileSelector: "global:remote",
+        environment: {
+          values: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
+        },
       });
     } finally {
       await rm(root, { recursive: true, force: true });

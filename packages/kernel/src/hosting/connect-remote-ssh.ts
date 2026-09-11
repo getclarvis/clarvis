@@ -85,10 +85,11 @@ function validateOptions(options: RemoteSshKernelOptions): number {
  *
  * @remarks SSH owns machine/user authentication, host-key verification and encryption. Clarvis
  * sends no local discovery credential or provider secret in argv, and disables port, agent and X11
- * forwarding without preventing the local agent from authenticating the connection. OpenSSH still
- * joins command arguments for the remote shell, so every remote token is restricted to a
- * conservative shell-safe alphabet. Closing the client closes stdin and terminates only the SSH
- * process owned by this connection.
+ * forwarding without preventing the local agent from authenticating the connection. Authentication
+ * and host-key verification must already be noninteractive so OpenSSH cannot compete with the TUI
+ * for its controlling terminal. OpenSSH still joins command arguments for the remote shell, so every
+ * remote token is restricted to a conservative shell-safe alphabet. Closing the client closes stdin
+ * and terminates only the SSH process owned by this connection.
  */
 export async function connectRemoteKernelOverSsh(
   options: RemoteSshKernelOptions,
@@ -105,6 +106,8 @@ export async function connectRemoteKernelOverSsh(
       "-x",
       "-o",
       "ClearAllForwardings=yes",
+      "-o",
+      "BatchMode=yes",
       "--",
       options.destination,
       ...options.remoteCommand,

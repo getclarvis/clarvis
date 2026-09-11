@@ -591,10 +591,12 @@ pause-on-disconnect policy. Reconnect creates a new SSH process and never replay
 OpenSSH owns encryption, integrity, host-key verification and user authentication. It uses the
 operator's default identities, configuration and local agent, while the explicit no-forwarding flags
 keep agent/socket, X11 and port authority off the remote account. Clarvis provides no password or
-identity-file UI and does not override `StrictHostKeyChecking` or `BatchMode`; an interactive SSH
-prompt is outside the stdio/TUI contract. The operator must establish the host key and usable login
-before launch. SSH is the only transport encryption layer, and the authenticated endpoints see the
-decrypted protocol.
+identity-file UI, leaves `StrictHostKeyChecking` to OpenSSH configuration and forces
+`BatchMode=yes`. The operator must establish the host key and a usable noninteractive identity before
+launch; otherwise startup fails through captured stderr instead of letting OpenSSH prompt on the
+TUI's controlling terminal. SSH is the only transport encryption layer, and the authenticated
+endpoints see the decrypted protocol. Code composes the same default `exec` tool ceiling into local
+and remote hosts; an explicit remote environment setting can narrow that ceiling.
 
 Production: `connectRemoteKernelOverSsh` in
 [connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts), Code's

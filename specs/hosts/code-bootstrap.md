@@ -112,14 +112,17 @@ the numerically highest RC among the latest 100 source releases that are non-dra
 have `runtime-candidate.json`. The manifest must declare `installation: "source-v1"`; older image-only
 RCs are not installable through this path. Exact tags must satisfy the same publication filter.
 The installer checks the fetched tag's commit against `source_revision`, root version and pinned Bun,
-installs frozen dependencies, pulls and inspects the digest-pinned candidate Docker image, and smokes
-`--version` before atomically switching the marked launcher. Failure removes only the new checkout
+installs frozen dependencies, and smokes `--version` before atomically switching the marked launcher.
+When Docker or Podman is installed, it tries the available engines in that order and requires one to
+pull and inspect the digest-pinned candidate image. When neither is installed it skips prefetch,
+activates the native-capable candidate and reports that container isolation still needs an engine.
+Failure from every installed engine removes only the new checkout
 and preserves the previous launcher; downloaded registry layers can remain. Successful older
 checkouts are retained. Candidate mode cannot combine with installer clearing or maintenance modes.
 The candidate launcher exports `CLARVIS_RUNTIME_CANDIDATE` and `CLARVIS_RUNTIME_CANDIDATE_REVISION`;
 local launchers unset both to avoid inheriting a candidate selection. Updates require another explicit
-candidate installation, and uninstall still removes only the launcher. Git, the exact Bun runtime,
-and a working Docker engine are prerequisites; candidate installation does not install the engine.
+candidate installation, and uninstall still removes only the launcher. Git and the exact Bun runtime
+are prerequisites; candidate installation does not install a container engine.
 Production: `packages/code/tooling/candidate-install.ts` (`installCandidate`, `candidateJson`,
 `selectCandidateRelease`), `packages/code/tooling/development-install.ts`
 (`parseDevelopmentInstallArgs`, `developmentLauncherSource`).

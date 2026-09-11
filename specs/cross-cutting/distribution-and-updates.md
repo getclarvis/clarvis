@@ -312,7 +312,10 @@ The distribution repository accepts new stable releases only. Candidate runtime 
 GHCR package names associated with the source repository and are recorded in `runtime-candidate.json`
 on source prereleases. Installable candidates add `installation: "source-v1"` to that schema-1
 manifest. `dev-install.sh --candidate [tag]` installs the published source snapshot with the
-candidate's pinned Bun version and pulls its Docker image before activation; candidates do not
+candidate's pinned Bun version. It prefetches and verifies the image through an available Docker or
+Podman engine; with no engine it activates the native-capable source candidate and reports that
+container isolation remains unavailable. Failure from every installed engine prevents activation;
+candidates do not
 carry portable stable installers. The shared reader requires the exact manifest key set, RC tag,
 base product version, source repository and revision, Linux platform pair, protocol revision, and
 candidate-only immutable image references. Existing image-only candidates are refused rather than

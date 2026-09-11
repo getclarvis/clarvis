@@ -155,7 +155,7 @@ bun --filter @clarvis/code setup
 clarvis
 ```
 
-To test a published source candidate and its Docker image, use:
+To test a published source candidate and its container image, use:
 
 ```bash
 ./dev-install.sh --candidate                 # newest published RC among the latest 100 releases
@@ -163,14 +163,18 @@ To test a published source candidate and its Docker image, use:
 clarvis-develop
 ```
 
-This requires Git, the candidate's pinned Bun version, and a running Docker engine. The installer
+This requires Git and the candidate's pinned Bun version. The installer
 verifies the source prerelease and its `runtime-candidate.json`, checks out the exact tag commit
-under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies, pulls
-the image by digest, and checks the CLI version before replacing the managed launcher. Select the
-Docker runtime in Clarvis to use that image. The launcher pins the RC and source revision; runtime
+under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
+checks the CLI version before replacing the managed launcher. When Docker or Podman is available,
+it also pulls and inspects the image by digest, preferring Docker and falling back to Podman. If
+neither is installed, candidate installation still succeeds for native use and reports that the
+container image was not prefetched; selecting container isolation remains unavailable until an
+engine is installed. The launcher pins the RC and source revision; runtime
 resolution validates the matching image manifest and protocol. The ordinary `./dev-install.sh`
 continues to select the working checkout and locally built development image. Candidate installation
-does not install Docker, alter the working checkout, or replace the stable `clarvis` command.
+does not install a container engine, alter the working checkout, or replace the stable `clarvis`
+command.
 Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
 Previous candidate checkouts and downloaded images are retained; `--uninstall` removes only the
 launcher. Older image-only RCs without the `source-v1` installation marker are refused.

@@ -231,8 +231,10 @@ describe("code's internal architecture", () => {
     expect(state).not.toContain("windowTranscript");
     expect(state).not.toContain("WINDOW_RENDER_BUDGET");
     expect(history).not.toContain("history-page");
+    expect(history).not.toContain("queuePhysicalScrollDelta");
+    expect(history).not.toContain("layoutEpoch");
     expect(history).toContain("viewportCulling");
-    expect(history).toContain("controller.rowOf(batch.id)");
+    expect(history).toContain('stickyStart="bottom"');
   });
 
   it("uses top-level Markdown blocks only for the mutable streaming tail", () => {

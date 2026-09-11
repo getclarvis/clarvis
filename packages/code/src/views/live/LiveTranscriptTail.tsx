@@ -1,14 +1,11 @@
-import type { Renderable } from "@opentui/core";
 import {
   For,
   Show,
-  batch,
   createEffect,
   createMemo,
   createSignal,
   onCleanup,
   untrack,
-  useContext,
   type Accessor,
   type JSX,
 } from "solid-js";
@@ -16,12 +13,10 @@ import type { ElicitRequestParams, ElicitResult } from "../../adapters/elicit-ty
 import type { ActivityStore } from "../../adapters/activity-store.ts";
 import type { MemoryPressureSnapshot } from "../../adapters/memory-pressure.ts";
 import type { NodeStatus, TranscriptNode, TranscriptStore } from "../../adapters/store.ts";
-import type { TranscriptPublicationBatch } from "../../adapters/transcript-publication.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import { BlockView } from "../blocks.tsx";
 import { ElicitBlock } from "../ElicitBlock.tsx";
-import { CommittedHistoryBlockPresentationContext } from "../history/CommittedHistory.tsx";
 import { MemoryPressureBanner } from "../MemoryPressureBanner.tsx";
 import { computeGroupedNodes } from "../subagent-sections.ts";
 import { computeToolGroups } from "../tool-groups.ts";
@@ -35,11 +30,8 @@ export interface LiveTranscriptTailProps {
   elicit: Accessor<ElicitRequestParams | null>;
   resolveElicit: (result: ElicitResult) => void;
   selectedSubagent: Accessor<string | null>;
-  /** Published keys at or before resident history, including older virtualized batches. */
+  /** Published keys that already have a committed-history owner. */
   historyOwnedKeys: Accessor<ReadonlySet<string>>;
-  followingTail: Accessor<boolean>;
-  isOwnerVisible: (owner: Renderable) => boolean;
-  onHandoffKeysChange?: (keys: ReadonlySet<string>) => void;
   onFrontierCountChange?: (count: number) => void;
   splitOpen: Accessor<boolean>;
   notify: (message: string) => void;
@@ -52,66 +44,22 @@ export interface LiveTranscriptTailProps {
   };
 }
 
-interface PublishedTranscriptNode {
-  readonly node: TranscriptNode;
-  readonly publication: TranscriptPublicationBatch;
-}
-
 interface PresentedTranscriptNode {
   readonly key: string;
-  readonly order: number;
   readonly node: Accessor<TranscriptNode>;
-  readonly publication: Accessor<TranscriptPublicationBatch | undefined>;
-  attach(owner: Renderable): void;
-  measure(): void;
-  measuredRows(): number;
-  visible(isOwnerVisible: (owner: Renderable) => boolean): boolean;
-  updateMutable(node: TranscriptNode): void;
-  publish(value: PublishedTranscriptNode): void;
+  update(node: TranscriptNode): void;
 }
 
-function createPresentedNode(
-  initialNode: TranscriptNode,
-  order: number,
-  initialPublication?: TranscriptPublicationBatch,
-): PresentedTranscriptNode {
+function createPresentedNode(initialNode: TranscriptNode): PresentedTranscriptNode {
   const [node, setNode] = createSignal(initialNode);
-  const [publication, setPublication] = createSignal(initialPublication);
-  let owner: Renderable | undefined;
-  let ownerRows = 0;
   return Object.freeze({
     key: initialNode.key,
-    order,
     node,
-    publication,
-    attach: (value: Renderable): void => {
-      owner = value;
-      ownerRows = Math.max(ownerRows, value.height);
-    },
-    measure: (): void => {
-      ownerRows = Math.max(ownerRows, owner?.height ?? 0);
-    },
-    measuredRows: (): number => ownerRows,
-    visible: (isOwnerVisible: (owner: Renderable) => boolean): boolean =>
-      owner !== undefined && isOwnerVisible(owner),
-    updateMutable: (nextNode: TranscriptNode): void => {
-      if (publication() === undefined) setNode(nextNode);
-    },
-    publish: (value: PublishedTranscriptNode): void => {
-      batch(() => {
-        setNode(value.node);
-        setPublication(value.publication);
-      });
+    update: (nextNode: TranscriptNode): void => {
+      setNode(nextNode);
     },
   });
 }
-
-interface ReleasedTranscriptRows {
-  readonly rows: number;
-  readonly order: number;
-}
-
-const RELEASED_HANDOFF_SPACER = Symbol("released-handoff-spacer");
 
 function samePresentedNodes(
   left: readonly PresentedTranscriptNode[],
@@ -123,15 +71,11 @@ function samePresentedNodes(
 /**
  * Renders the content-height mutable tail in the transcript's chronological flow.
  *
- * @remarks A frontier artifact that seals remains here as its frozen publication
- * snapshot until the measured committed owner is resident. The handoff prevents
- * an empty frame while keeping physical publication out of the semantic store.
- * The tail stays in ScrollBox flow after manual upward scroll. Offscreen sealed
- * owners release their render trees into one measured spacer, so native sticky
- * state keeps its geometry without accumulating one syntax subtree per tool.
+ * @remarks The tail stays mounted after manual upward scroll. Native sticky
+ * state owns follow-the-end behavior; this owner never unmounts while the run
+ * is open.
  */
 export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element {
-  const historyPresentation = useContext(CommittedHistoryBlockPresentationContext);
   const active = (): boolean => props.active?.() ?? true;
   const belongsToSelection = (node: TranscriptNode): boolean => {
     const selected = props.selectedSubagent();
@@ -157,25 +101,16 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   );
   const liveGrouped = createMemo(() => computeGroupedNodes(frontier(), subagentStatus()));
   const liveToolGroups = createMemo(() => computeToolGroups(liveGrouped().ordered));
-  let nextPresentationOrder = 0;
-  const present = (
-    node: TranscriptNode,
-    publication?: TranscriptPublicationBatch,
-  ): PresentedTranscriptNode => createPresentedNode(node, nextPresentationOrder++, publication);
   const committedByKey = createMemo(() => {
-    const nodes = new Map<string, PublishedTranscriptNode>();
-    const publications = historyPresentation?.publications() ?? props.store.publicationBatches;
-    for (const publication of publications)
+    const nodes = new Map<string, TranscriptNode>();
+    for (const publication of props.store.publicationBatches)
       if (publication.phase === "committed")
         for (const node of publication.nodes)
-          if (belongsToSelection(node)) nodes.set(node.key, { node, publication });
+          if (belongsToSelection(node)) nodes.set(node.key, node);
     return nodes;
   });
   const [presentedNodes, setPresentedNodes] = createSignal<readonly PresentedTranscriptNode[]>(
-    Object.freeze(liveGrouped().ordered.map((node) => present(node))),
-  );
-  const [releasedRows, setReleasedRows] = createSignal<ReadonlyMap<string, ReleasedTranscriptRows>>(
-    new Map(),
+    Object.freeze(liveGrouped().ordered.map((node) => createPresentedNode(node))),
   );
 
   createEffect(() => {
@@ -183,117 +118,28 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     const currentByKey = new Map(current.map((node) => [node.key, node] as const));
     const historical = props.historyOwnedKeys();
     const committed = committedByKey();
-    const committedPublicationIds = new Set(
-      [...committed.values()].map(({ publication }) => publication.id),
-    );
-    const historicalPublicationIds = new Set(
-      [...committed]
-        .filter(([key]) => historical.has(key))
-        .map(([, { publication }]) => publication.id),
-    );
     const next: PresentedTranscriptNode[] = [];
     const retained = new Set<string>();
-    const released = new Map<string, ReleasedTranscriptRows>();
     for (const previous of untrack(presentedNodes)) {
-      const published = committed.get(previous.key);
-      if (published !== undefined) {
-        previous.publish(published);
-        if (!historical.has(previous.key)) {
-          if (props.followingTail() || previous.visible(props.isOwnerVisible)) next.push(previous);
-          else {
-            const rows = previous.measuredRows();
-            if (rows > 0) {
-              const prior = released.get(published.publication.id);
-              released.set(published.publication.id, {
-                rows: (prior?.rows ?? 0) + rows,
-                order: Math.min(prior?.order ?? previous.order, previous.order),
-              });
-            }
-          }
-          retained.add(previous.key);
-        }
-        continue;
-      }
+      if (historical.has(previous.key)) continue;
       const currentNode = currentByKey.get(previous.key);
-      if (currentNode !== undefined) {
-        previous.updateMutable(currentNode);
-        next.push(previous);
-        retained.add(previous.key);
-      }
+      const published = committed.get(previous.key);
+      if (currentNode === undefined && published === undefined) continue;
+      if (!belongsToSelection(currentNode ?? published!)) continue;
+      if (currentNode !== undefined && published === undefined) previous.update(currentNode);
+      else if (published !== undefined) previous.update(published);
+      next.push(previous);
+      retained.add(previous.key);
     }
     for (const node of current) {
-      if (retained.has(node.key)) continue;
-      const published = committed.get(node.key);
-      if (published !== undefined) {
-        if (!historical.has(node.key) && props.followingTail())
-          next.push(present(published.node, published.publication));
-        continue;
-      }
-      next.push(present(node));
+      if (retained.has(node.key) || historical.has(node.key)) continue;
+      next.push(createPresentedNode(committed.get(node.key) ?? node));
     }
     const frozen = Object.freeze(next);
     if (!samePresentedNodes(untrack(presentedNodes), frozen)) setPresentedNodes(frozen);
-    const previousReleased = untrack(releasedRows);
-    const nextReleased = new Map<string, ReleasedTranscriptRows>();
-    if (!props.followingTail()) {
-      for (const [publicationId, releasedBlock] of previousReleased)
-        if (
-          committedPublicationIds.has(publicationId) &&
-          !historicalPublicationIds.has(publicationId)
-        )
-          nextReleased.set(publicationId, releasedBlock);
-      for (const [publicationId, releasedBlock] of released) {
-        const prior = nextReleased.get(publicationId);
-        nextReleased.set(publicationId, {
-          rows: (prior?.rows ?? 0) + releasedBlock.rows,
-          order: Math.min(prior?.order ?? releasedBlock.order, releasedBlock.order),
-        });
-      }
-    }
-    const sameReleased =
-      previousReleased.size === nextReleased.size &&
-      [...nextReleased].every(([key, block]) => {
-        const previous = previousReleased.get(key);
-        return previous?.rows === block.rows && previous.order === block.order;
-      });
-    if (!sameReleased) setReleasedRows(nextReleased);
   });
-  const handoffKeys = createMemo(() => {
-    const historical = props.historyOwnedKeys();
-    return new Set(
-      presentedNodes()
-        .filter((node) => node.publication() !== undefined && !historical.has(node.key))
-        .map((node) => node.key),
-    );
-  });
-  createEffect(() => props.onHandoffKeysChange?.(handoffKeys()));
   createEffect(() => props.onFrontierCountChange?.(frontier().length));
-  const releasedRowCount = createMemo(() =>
-    [...releasedRows().values()].reduce((total, block) => total + block.rows, 0),
-  );
-  /**
-   * Keep the aggregate spacer at the earliest released owner's chronological
-   * boundary. Owners before that boundary retain both identity and flow offset
-   * when a later, fully offscreen publication completes out of order.
-   */
-  const presentedFlow = createMemo<
-    readonly (PresentedTranscriptNode | typeof RELEASED_HANDOFF_SPACER)[]
-  >(() => {
-    if (releasedRowCount() < 1) return presentedNodes();
-    const earliestReleasedOrder = Math.min(
-      ...[...releasedRows().values()].map((block) => block.order),
-    );
-    const nodes = presentedNodes();
-    const insertion = nodes.findIndex((node) => node.order > earliestReleasedOrder);
-    const index = insertion < 0 ? nodes.length : insertion;
-    return Object.freeze([
-      ...nodes.slice(0, index),
-      RELEASED_HANDOFF_SPACER,
-      ...nodes.slice(index),
-    ]);
-  });
   onCleanup(() => {
-    props.onHandoffKeysChange?.(new Set());
     props.onFrontierCountChange?.(0);
   });
 
@@ -306,77 +152,35 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       minHeight={0}
       flexShrink={0}
     >
-      <For each={presentedFlow()}>
-        {(item) => {
-          if (item === RELEASED_HANDOFF_SPACER)
-            return (
-              <box id="live-transcript-handoff-spacer" height={releasedRowCount()} flexShrink={0} />
-            );
-          const presented = item;
-          const publication = presented.publication;
-          const published = (): boolean => publication() !== undefined;
-          return (
-            <box
-              id={`live-transcript-owner:${presented.key}`}
-              ref={(owner: Renderable) => presented.attach(owner)}
-              onSizeChange={() => presented.measure()}
-              flexDirection="column"
-              width="100%"
-              minWidth={0}
-              flexShrink={0}
-            >
-              <BlockView
-                node={presented.node()}
-                interactive={active}
-                maxWidth={props.splitOpen() ? undefined : "100%"}
-                forceExpand={() => published() && !!historyPresentation?.forceExpand()}
-                folded={() => {
-                  const value = publication();
-                  if (value === undefined) return false;
-                  return (
-                    historyPresentation?.folded(value, presented.key) ??
-                    value.sectionFoldedKeys.includes(presented.key)
-                  );
-                }}
-                sectionFolded={() => {
-                  const value = publication();
-                  if (value === undefined) return false;
-                  return value.sectionFoldedKeys.some(
-                    (key) =>
-                      value.sectionAnchors[key] === presented.key &&
-                      (historyPresentation?.folded(value, key) ?? true),
-                  );
-                }}
-                group={() =>
-                  publication()?.toolGroups[presented.key] ?? liveToolGroups().get(presented.key)
-                }
-                sectionHeader={() => {
-                  const publishedHeader = publication()?.sectionHeaders[presented.key];
-                  if (publishedHeader !== undefined) return publishedHeader;
-                  const liveHeader = liveGrouped().headers.get(presented.key);
-                  return liveHeader?.lead ? undefined : liveHeader;
-                }}
-                overrideOf={(key) =>
-                  published() ? historyPresentation?.overrideOf(key) : undefined
-                }
-                focused={() => published() && historyPresentation?.focusedKey() === presented.key}
-                onToggle={
-                  historyPresentation === undefined
-                    ? undefined
-                    : () => {
-                        if (published()) historyPresentation.toggleAt(presented.key);
-                      }
-                }
-                defaultFolded={() =>
-                  publication()?.defaultFolded[presented.key] ??
-                  props.store.defaultFolded(presented.key)
-                }
-                onOpenDetail={props.onOpenDetail}
-                fillAvailableWidth={props.splitOpen}
-              />
-            </box>
-          );
-        }}
+      <For each={presentedNodes()}>
+        {(presented) => (
+          <box
+            id={`live-transcript-owner:${presented.key}`}
+            flexDirection="column"
+            width="100%"
+            minWidth={0}
+            flexShrink={0}
+          >
+            <BlockView
+              node={presented.node()}
+              interactive={active}
+              maxWidth={props.splitOpen() ? undefined : "100%"}
+              forceExpand={() => false}
+              folded={() => false}
+              sectionFolded={() => false}
+              group={() => liveToolGroups().get(presented.key)}
+              sectionHeader={() => {
+                const liveHeader = liveGrouped().headers.get(presented.key);
+                return liveHeader?.lead ? undefined : liveHeader;
+              }}
+              overrideOf={() => undefined}
+              focused={() => false}
+              defaultFolded={() => props.store.defaultFolded(presented.key)}
+              onOpenDetail={props.onOpenDetail}
+              fillAvailableWidth={props.splitOpen}
+            />
+          </box>
+        )}
       </For>
       <Show when={props.memoryPressure !== undefined}>
         <MemoryPressureBanner

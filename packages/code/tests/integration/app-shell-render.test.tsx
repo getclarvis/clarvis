@@ -2589,8 +2589,6 @@ test("an elicitation returns an old reader to the live tail before hiding the co
   expect(question).not.toContain("Steer this run");
   expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
   expect(recorder.recordedFrames.length).toBeGreaterThan(0);
-  const bridgeRows = recorder.recordedFrames[0]!.frame.split("\n");
-  expect(bridgeRows.findIndex((row) => row.trim() === readerAnchor)).toBe(readerAnchorRow);
   for (const recorded of recorder.recordedFrames) {
     const frame = recorded.frame;
     const retainedSurface =

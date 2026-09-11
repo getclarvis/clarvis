@@ -180,9 +180,9 @@ The pinned server also owns the canonical workspace identity used by hello, so a
 alias in the launch request is not compared again after remote canonicalization.
 OpenSSH owns encryption, integrity, host-key checks and user authentication. It reads the operator's
 normal configuration, default identities and local `ssh-agent`; using the agent for login does not
-forward its socket. Clarvis neither forces `StrictHostKeyChecking`/`BatchMode` nor provides an
-identity-file or password prompt. Interactive authentication is outside the stdio product contract;
-operators should verify the host key and make authentication available before TUI launch.
+forward its socket. Clarvis leaves `StrictHostKeyChecking` to OpenSSH configuration, forces
+`BatchMode=yes`, and provides no identity-file or password prompt. Operators should verify the host
+key and make a noninteractive key, certificate or agent identity available before TUI launch.
 The process integration test uses a fake SSH executable and a real child FileKernel; it establishes
 transport and lifecycle behavior without claiming network SSH interoperability.
 

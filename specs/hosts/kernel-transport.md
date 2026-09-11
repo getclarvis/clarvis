@@ -1173,9 +1173,10 @@ port, agent and X11 forwarding but retains normal local-agent authentication. It
 is allowlisted to home/path, platform process-discovery and local agent/askpass inputs; provider
 keys, Clarvis OAuth values and unrelated variables never reach OpenSSH or `SendEnv`. Identity selection,
 jump hosts, host-key policy and authentication order come from the operator's SSH configuration.
-Clarvis does not force `StrictHostKeyChecking`/`BatchMode` or own passwords, private keys and
-passphrases. Interactive prompts are outside the framed stdio/TUI contract, so operators establish a
-verified usable login first. Production: `connectRemoteKernelOverSsh` in
+Clarvis leaves `StrictHostKeyChecking` to OpenSSH configuration, forces `BatchMode=yes`, and does not
+own passwords, private keys or passphrases. Interactive prompts cannot share the framed stdio/TUI
+terminal, so operators establish a verified usable login first. Production:
+`connectRemoteKernelOverSsh` in
 [connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts). Test:
 [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) pins the hardened
 process arguments, environment boundary, remote canonical-path handshake and wire composition; it

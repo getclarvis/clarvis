@@ -323,8 +323,9 @@ function snapshot(
  *   at zero opacity, waits for its descendant highlights, and swaps the two retained slots in one
  *   Solid batch. At most two Markdown trees exist, and only during settlement. While content is
  *   streaming, a row high-water mark reserves any height an unstable trailing token already used;
- *   later syntax concealment can change only the mutable rows, not pull earlier transcript rows
- *   back down. A response epoch resets that view-local reservation.
+ *   later syntax concealment cannot pull earlier transcript rows back down while that tree remains
+ *   mutable. The atomic final-tree swap releases the reservation, and a response epoch also resets
+ *   it while streaming continues.
  */
 export function StableMarkdown(props: {
   conceal?: boolean;
@@ -369,6 +370,7 @@ export function StableMarkdown(props: {
         setters[slot]((existing) =>
           existing?.id === value.id ? { ...existing, ready: true } : existing,
         );
+        if (!value.streaming) setLiveHeightFloor(0);
         const previous = activeSlot();
         setActiveSlot(slot);
         if (previous !== slot) setters[previous](undefined);
@@ -468,7 +470,7 @@ export function StableMarkdown(props: {
       position="relative"
       width="100%"
       minWidth={0}
-      minHeight={liveHeightFloor()}
+      minHeight={slots[activeSlot()]()?.streaming ? liveHeightFloor() : 0}
       flexDirection="column"
     >
       <Show when={slot0()}>{(value: Accessor<SyntaxSnapshot>) => layer(0, value)}</Show>

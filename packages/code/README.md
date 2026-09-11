@@ -184,10 +184,12 @@ binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvi
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
 package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
 or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. The bundled Bun executable is installed as `runtime/clarvis` on POSIX and
-`runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the foreground
-process and its CPU and memory use to Clarvis rather than Bun. Developer source commands still run
-under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
+targets for this beta. Neither stable installer probes or requires Docker or Podman; the installed
+application defaults to the native runtime, and a container engine is needed only if the operator
+later selects container isolation. The bundled Bun executable is installed as `runtime/clarvis` on
+POSIX and `runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the
+foreground process and its CPU and memory use to Clarvis rather than Bun. Developer source commands
+still run under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
 only as a compatibility entry for an older launcher; current installers and updates do not select it.
 Runtime dependency discovery accepts only installed bare package specifiers from generated imports
 and calls, including minified `createRequire` bindings; relative, absolute,

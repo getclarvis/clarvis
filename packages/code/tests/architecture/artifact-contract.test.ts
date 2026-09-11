@@ -194,3 +194,14 @@ test("portable packaging and installation pin archive commands to the C locale",
   expect(smoke).toContain("observed the complete-app marker after");
   expect(smoke).not.toContain("reached first paint in");
 });
+
+test("portable installers remain independent of container engines", () => {
+  const installers = [
+    readFileSync(new URL("../../../../install.sh", import.meta.url), "utf8"),
+    readFileSync(new URL("../../../../install.ps1", import.meta.url), "utf8"),
+  ];
+  for (const installer of installers) {
+    expect(installer.toLowerCase()).not.toContain("docker");
+    expect(installer.toLowerCase()).not.toContain("podman");
+  }
+});

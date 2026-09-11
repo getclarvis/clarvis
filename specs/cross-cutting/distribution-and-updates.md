@@ -179,6 +179,14 @@ must be regular non-linked files when present and are revalidated immediately be
 Archive creation, POSIX checksum parsing/calculation, and POSIX extraction all force the portable
 `C` locale, so an unsupported inherited locale cannot add a warning or alter archive/checksum
 interpretation.
+Stable installation and self-update are independent of container engines. The POSIX and PowerShell
+installers download, verify, smoke, and activate the target-native portable archive without probing
+or invoking Docker or Podman. Clarvis defaults to its native runtime; an engine becomes necessary
+only when the operator selects container isolation after installation. Production: `install.sh`,
+`install.ps1`, `packages/code/src/update/installation.ts` (`verifyStagedRelease`), and
+`packages/kernel/src/file-kernel.ts` (`FileKernel`). Test:
+`packages/code/tests/architecture/artifact-contract.test.ts` (`portable installers remain independent
+of container engines`) and `packages/code/tooling/release/installer-smoke.ts` (`main`).
 Only then does the installer store the ownership marker, activate the version, and atomically
 replace its own marked launcher. The stable launcher validates the `current` identifier before using
 it in a path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard

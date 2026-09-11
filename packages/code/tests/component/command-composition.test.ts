@@ -129,8 +129,8 @@ function harness(): {
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openSafetyPresetPicker: () => calls.push("safety-picker"),
-      cycleGuardMode: () => calls.push("guard-cycle"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
+      openReviewPicker: () => calls.push("review-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),

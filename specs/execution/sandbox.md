@@ -460,6 +460,22 @@ Production: `packages/code/src/views/config/SandboxConfigPanel.tsx` (`SandboxCon
 `packages/code/tests/integration/run-controls-render.test.tsx`, and
 `packages/code/tests/integration/doctor.test.ts`.
 
+### 4.6 Required fallback for simple Docker isolation
+
+When effective runtime settings select Docker with `fallback: "sandbox"`, the kernel materializes a
+native Sandbox policy even if the authored Sandbox block is absent, disabled or optional. It keeps
+custom filesystem, network, environment and toolchain tuning but forces `enabled: true` and
+`availability: "required"`. The lazy runtime coordinator probes that policy after an operational
+Docker startup failure and before executing the run; an unavailable native backend fails closed
+instead of degrading to bare host execution. Image-integrity, policy and handshake failures do not
+enter this fallback, and a failure after guest execution starts is never replayed.
+
+Production: `packages/kernel/src/sandbox/policy.ts` (`effectiveSandboxSettings`),
+`packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`), and
+`packages/kernel/src/file-kernel.ts` (`assertFallbackSandbox`). Tests:
+`packages/kernel/tests/integration/sandbox-policy.test.ts` and
+`packages/kernel/tests/unit/lazy-runtime.test.ts`.
+
 ## 5. Invariants
 
 **INV-S1 — Platform selection is local and explicit.** One `type: "native"` policy selects
@@ -604,6 +620,15 @@ macOS canary packs a local package fixture outside the sandbox, then requires np
 execute, and materialize its output inside Seatbelt with `network: "none"`. Network enforcement is
 proved independently by INV-S14, so public-registry latency cannot fail this package-execution gate.
 
+**INV-S16 — Docker fallback means required native Sandbox, never direct host execution.** A disabled
+or optional authored Sandbox is strengthened for a Docker selection. The operational fallback path
+must prove that backend available before it invokes native execution; failure remains fail-closed.
+
+- Production: `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts` and
+  `runFallback` in `packages/kernel/src/runtime/lazy-runtime.ts`.
+- Test: `packages/kernel/tests/integration/sandbox-policy.test.ts` and
+  `packages/kernel/tests/unit/lazy-runtime.test.ts`.
+
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
   `SEATBELT_SYSTEM_READ_FILTERS`, `SEATBELT_SYSTEM_METADATA_FILTERS`) and
   `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`).
@@ -624,6 +649,8 @@ proved independently by INV-S14, so public-registry latency cannot fail this pac
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
 | Required backend unavailable | `ToolError("io_error")`; no command spawn |
+| Docker fails before guest execution and fallback Sandbox is available | One visible placement notice; this session latches required native Sandbox for later runs |
+| Docker fails before guest execution and fallback Sandbox is unavailable | `RuntimeLaunchError("operational_failure")`; no bare-host execution |
 | Relative, broad, canonically broad, or workspace-containing mechanism path | `ToolError("invalid_input")` |
 | Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned |
 | Missing configured extra path | Omitted from resolved roots and surfaced unavailable in inspection |

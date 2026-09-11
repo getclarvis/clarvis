@@ -1,4 +1,5 @@
-import { sanitizeErrorMessage } from "@clarvis/capability";
+import { composePromptCacheKey, sanitizeErrorMessage } from "@clarvis/capability";
+import { randomUUID } from "node:crypto";
 import type { EnvConfig } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
@@ -180,7 +181,7 @@ async function raceWithBudget(
  * Collect every capability's durable state for the run's record.
  *
  * @param capabilities - the run's activated capabilities, in registration order.
- * @param status - the run's terminal status, handed to each `finalizeRun`.
+ * @param outcome - the run's terminal status and accepted finalization disposition.
  * @param prior - the continued run's state, carried forward for any capability
  *   that did not run this time.
  * @param logger - warns on a `finalizeRun` that throws.
@@ -195,19 +196,30 @@ async function raceWithBudget(
  */
 export async function collectCapabilityState(
   capabilities: readonly RunCapability[],
-  status: ExecutionStatus,
+  outcome: { status: ExecutionStatus; disposition?: "final" | "checkpoint" },
   prior: Record<string, unknown> | undefined,
   logger?: Logger,
   timeoutMs = 2000,
 ): Promise<Record<string, unknown> | undefined> {
   const state: Record<string, unknown> = { ...(prior ?? {}) };
+  const preserveState =
+    outcome.disposition === "checkpoint" ||
+    (outcome.status !== "completed" &&
+      capabilities.some((capability) => capability.preserveStateOnInterruption === true));
   const finalized = await Promise.all(
     capabilities.map(async (capability) => {
       if (capability.finalizeRun === undefined) return { capability, value: undefined };
       let timedOut = false;
       try {
         const value = await boundPromise(
-          () => Promise.resolve(capability.finalizeRun?.({ status })),
+          () =>
+            Promise.resolve(
+              capability.finalizeRun?.({
+                status: outcome.status,
+                ...(outcome.disposition === undefined ? {} : { disposition: outcome.disposition }),
+                preserveState,
+              }),
+            ),
           {
             timeoutMs,
             onTimeout: () => {
@@ -343,7 +355,6 @@ export async function executeRun({
 
   const releaseExecutionId = reserveExecutionId(deps.traceStore, owner, executionId);
   try {
-    const promptCacheKey = parsed.prompt_cache_key ?? executionId;
     const promptCacheTtl = parsed.prompt_cache_ttl ?? (shape.humanParkLikely ? "1h" : "5m");
 
     let continuation: RunContinuation | undefined;
@@ -358,6 +369,19 @@ export async function executeRun({
           ? {}
           : { capability_state: prior.capability_state }),
       };
+      parsed.session_id ??= prior.request.session_id ?? prior.id;
+      parsed.agent_instance_id ??= prior.request.agent_instance_id;
+    }
+    parsed.session_id ??= executionId;
+    parsed.agent_instance_id ??= randomUUID();
+    const identity = { sessionId: parsed.session_id, agentInstanceId: parsed.agent_instance_id };
+    try {
+      composePromptCacheKey(identity);
+    } catch {
+      throw new ValidationError(
+        "invalid_prompt_cache_key",
+        "Invalid session/agent prompt-cache identity or composed key exceeds 512 characters",
+      );
     }
 
     const emit: CapabilityEventListener = (event: CapabilityEvent): void => {
@@ -395,7 +419,7 @@ export async function executeRun({
             return journal;
           },
           env: deps.env,
-          llm: withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl }),
+          llm: withPromptCacheDefaults(deps.llm, { identity, promptCacheTtl }),
           connections: deps.connections,
           logger: runLogger,
           onEvent,
@@ -418,7 +442,7 @@ export async function executeRun({
 
       const capabilityState = await collectCapabilityState(
         runCapabilities,
-        response.status,
+        response,
         continuation?.capability_state,
         runLogger,
         deps.env.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS,

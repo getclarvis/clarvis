@@ -19,6 +19,36 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
   };
 
   return {
+    goals: {
+      subscribe: record("goals.subscribe"),
+      availability: record("goals.availability"),
+      get: record("goals.get"),
+      control: record("goals.control"),
+      receipt: record("goals.receipt"),
+    },
+    localHost: {
+      inspect: record("localHost.inspect"),
+      takeBrowserRequest: record("localHost.takeBrowserRequest"),
+      respondBrowser: record("localHost.respondBrowser"),
+      retryRuntime: record("localHost.retryRuntime"),
+      requestRestart: record("localHost.requestRestart"),
+    },
+    hosting: {
+      list: record("hosting.list"),
+      start: record("hosting.start"),
+      attach: record("hosting.attach"),
+      controlObservation: record("hosting.controlObservation"),
+      resolveRecovery: record("hosting.resolveRecovery"),
+      detach: record("hosting.detach"),
+      receipt: record("hosting.receipt"),
+      readSnapshot: record("hosting.readSnapshot"),
+      releaseSnapshot: record("hosting.releaseSnapshot"),
+      releaseObservation: record("hosting.releaseObservation"),
+      closeSession: record("hosting.closeSession"),
+      acknowledge: record("hosting.acknowledge"),
+      reserveActivity: record("hosting.reserveActivity"),
+      releaseActivity: record("hosting.releaseActivity"),
+    },
     runs: {
       start: record("runs.start"),
       compact: record("runs.compact"),

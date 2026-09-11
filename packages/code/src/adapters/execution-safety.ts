@@ -2,23 +2,30 @@ import { parseModelRef, PLANS_DEFAULTS } from "@clarvis/kernel/config";
 import type { SettingsFile } from "./settings.ts";
 import type { GuardMode } from "./guard-mode.ts";
 import type { MemoryMode } from "./memory-mode.ts";
+import type { RuntimeStatus } from "@clarvis/protocol";
 
-/**
- * A named sandbox/guard combination Run Controls offers, or `"custom"` when
- * the current settings don't match any named preset.
- */
-export type SafetyPreset =
-  "free" | "judged" | "approval" | "isolated" | "reviewed" | "protected" | "custom";
-/** The presets a user can actually select — every {@link SafetyPreset} but `"custom"`. */
-export type CanonicalSafetyPreset = Exclude<SafetyPreset, "custom">;
+/** User-facing execution boundary, independent from command review. */
+export type IsolationMode = "host" | "sandbox" | "docker" | "podman";
+
+/** Actual active native placement overrides next-run preferences; an idle native host does not. */
+export function effectiveRunIsolation(
+  configured: IsolationMode,
+  runtime: RuntimeStatus | undefined,
+  active: boolean,
+): IsolationMode {
+  if (runtime?.kind === "native" && (active || runtime.lifecycle === "fallback"))
+    return runtime.isolation;
+  if (runtime?.kind === "container") return runtime.engine;
+  return configured;
+}
 
 /** Effective safety, memory and planning state consumed by the shell and Run Controls. */
 export interface RunControlsState {
-  preset: SafetyPreset;
+  isolation: IsolationMode;
   sandboxEnabled: boolean;
   sandboxRequired: boolean;
   filesystem: "workspace-write" | "workspace-read-only";
-  network: "host" | "none";
+  network: "host" | "none" | "internet" | "outbound";
   guardMode: GuardMode;
   memory: MemoryState;
   plans: PlansState;
@@ -106,34 +113,12 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
   return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
 }
 
-/**
- * Classify the sandbox/guard pair as one of the six canonical safety presets.
- *
- * @param settings - the effective settings, read for its `sandbox` block.
- * @param guardMode - the session's guard mode.
- * @returns the preset, or `"custom"` when the combination is not canonical.
- * @remarks A preset is reported only when the sandbox and guard settings
- *   exactly match its canonical shape (see {@link settingsForPreset}); any
- *   other combination reports `"custom"` rather than guessing the closest one.
- *   This describes what is *configured* — whether the sandbox can actually run
- *   on this host is a separate question, and a caller that shows the preset to a
- *   user owes them that second answer too.
- */
-export function deriveSafetyPreset(settings: SettingsFile, guardMode: GuardMode): SafetyPreset {
+/** Resolve the configured execution boundary without folding command review into it. */
+export function deriveIsolation(settings: SettingsFile): IsolationMode {
+  if (settings.runtime?.backend === "docker") return "docker";
+  if (settings.runtime?.backend === "podman") return "podman";
   const sandbox = settings.sandbox;
-  const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
-  const canonicalSandbox =
-    sandboxEnabled &&
-    (sandbox.availability ?? "required") === "required" &&
-    (sandbox.filesystem ?? "workspace-write") === "workspace-write" &&
-    (sandbox.network ?? "host") === "host";
-  if (!sandboxEnabled && guardMode === "off") return "free";
-  if (!sandboxEnabled && guardMode === "auto") return "judged";
-  if (!sandboxEnabled && guardMode === "on") return "approval";
-  if (canonicalSandbox && guardMode === "off") return "isolated";
-  if (canonicalSandbox && guardMode === "auto") return "reviewed";
-  if (canonicalSandbox && guardMode === "on") return "protected";
-  return "custom";
+  return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
 }
 
 /**
@@ -147,13 +132,18 @@ export function deriveRunControls(
 ): RunControlsState {
   const sandbox = settings.sandbox;
   const sandboxEnabled = sandbox !== undefined && sandbox.enabled !== false;
+  const isolation = deriveIsolation(settings);
+  const runtimeNetwork =
+    settings.runtime?.backend === "docker" || settings.runtime?.backend === "podman"
+      ? (settings.runtime.network ?? "outbound")
+      : undefined;
 
   return {
-    preset: deriveSafetyPreset(settings, guardMode),
+    isolation,
     sandboxEnabled,
     sandboxRequired: (sandbox?.availability ?? "required") === "required",
     filesystem: sandbox?.filesystem ?? "workspace-write",
-    network: sandbox?.network ?? "host",
+    network: runtimeNetwork ?? sandbox?.network ?? "host",
     guardMode,
     memory: memoryState(settings, memoryMode),
     plans: plansState(settings),
@@ -163,6 +153,27 @@ export function deriveRunControls(
 /** Plain-language lines describing what the current sandbox/guard state means for a run. */
 export function safetyDescription(state: RunControlsState): string[] {
   const lines: string[] = [];
+  if (state.isolation === "docker" || state.isolation === "podman") {
+    lines.push(
+      `Agent tools run inside a Linux ${state.isolation === "docker" ? "Docker" : "Podman"} container.`,
+    );
+    lines.push(
+      "The selected workspace is mounted directly; changes appear on the host immediately.",
+    );
+    lines.push(
+      state.network === "none"
+        ? "Container network access is disabled."
+        : "Outbound network access is enabled; guest services can be exposed to the host.",
+    );
+    lines.push(
+      state.guardMode === "off"
+        ? "Commands run without command review."
+        : state.guardMode === "auto"
+          ? "Commands use model review; uncertain actions ask you."
+          : "Risky commands ask before running.",
+    );
+    return lines;
+  }
   if (state.sandboxEnabled) {
     lines.push(
       !state.sandboxRequired
@@ -212,28 +223,4 @@ export function planRetentionDescription(retention: PlanRetention): string[] {
         "Successful runs delete their plan after the result is recorded.",
         "Failed, cancelled or interrupted runs keep their plan.",
       ];
-}
-
-/** The canonical `guard`/`sandbox` settings shape for a given named preset. */
-export function settingsForPreset(
-  preset: CanonicalSafetyPreset,
-): Pick<SettingsFile, "guard" | "sandbox"> {
-  const sandboxOn = preset === "isolated" || preset === "reviewed" || preset === "protected";
-  const guardMode: GuardMode =
-    preset === "judged" || preset === "reviewed"
-      ? "auto"
-      : preset === "approval" || preset === "protected"
-        ? "on"
-        : "off";
-  return {
-    guard: { type: "shell", mode: guardMode },
-    sandbox: {
-      type: "native",
-      enabled: sandboxOn,
-      availability: "required",
-      filesystem: "workspace-write",
-      network: "host",
-      toolchains: { mode: "auto" },
-    },
-  };
 }

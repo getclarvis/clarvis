@@ -29,12 +29,10 @@ export interface LeaderProfileInfo {
 }
 
 const RUN_LEADER_DESCRIPTION =
-  "Spawn a full, autonomous leader run to handle a sub-goal. Each leader has its own fresh " +
-  "context and token budget and can delegate sub-agents of its own, but cannot spawn further " +
-  "leaders. Prefer one leader per independent sub-goal; issue several run_leader calls in one turn " +
-  "to run them in parallel. Each call answers immediately with the leader's agent handle and the " +
-  "leader runs on in the background; collect it with await_agents or agent_poll. When you already " +
-  "have a decomposition into work items, prefer run_work_items, which schedules the whole batch.";
+  "Start one background leader with fresh context, a shared workspace and a share of the " +
+  "auxiliary token budget. It may delegate if its profile permits, but cannot start leaders. " +
+  "Returns a handle, not a result; collect with await_agents or agent_poll. Keep ad-hoc scopes " +
+  "independent; use run_work_items for dependency/file-aware scheduling of a batch.";
 
 /**
  * Build the `run_leader` tool, enumerating the manager-selectable leader profiles.
@@ -50,18 +48,15 @@ export function buildRunLeaderTool(profiles?: readonly LeaderProfileInfo[]): Nam
       type: "string",
       minLength: 1,
       maxLength: LEADER_TITLE_MAX,
-      description:
-        'A short label for this leader, a few words naming what it is doing (e.g. "migrate the ' +
-        'storage schema"). It is what a human sees in the agent list and the transcript while the ' +
-        "leader runs, so write it for them, not for yourself.",
+      description: "Short single-line label for the operator; put full instructions in prompt.",
     },
     prompt: {
       type: "string",
       minLength: 1,
       maxLength: WORKFLOW_LIMITS.textChars,
       description:
-        "The full task for this leader — be specific about the goal, the constraints, and what a " +
-        "successful result looks like. The leader runs autonomously and cannot ask you follow-ups.",
+        "Self-contained goal, needed context, file scope, constraints and expected result. " +
+        "The leader does not inherit your conversation.",
     },
   };
   if (profiles !== undefined && profiles.length > 0) {
@@ -71,17 +66,14 @@ export function buildRunLeaderTool(profiles?: readonly LeaderProfileInfo[]): Nam
       maxLength: WORKFLOW_LIMITS.identifierChars,
       enum: profiles.map((p) => p.name),
       description:
-        "OPTIONAL — the agent profile this leader runs as. Each profile has its own model, base " +
-        "prompt and tool scope; pick the one whose specialty fits the sub-goal. Omit to use the " +
-        "default profile. Available profiles — " +
+        "Choose a profile for its role and tools; omit for the default. Available profiles: " +
         profiles.map((p) => `${p.name}: ${p.description ?? "(no description)"}`).join("; "),
     };
   }
   properties.expect_schema = {
     type: "object",
     description:
-      "OPTIONAL — a JSON Schema; when set, the leader is required to return a structured result " +
-      "matching it instead of free text.",
+      "JSON Schema for the leader's result; omit for free text. Failure may yield no matching result.",
   };
   return {
     fullName: RUN_LEADER_TOOL_NAME,

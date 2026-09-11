@@ -50,6 +50,44 @@ afterEach(() => {
 });
 
 describe("local filesystem leases", () => {
+  test("cancels contention promptly without replacing its live holder", async () => {
+    const path = fixture();
+    const holder = await acquireLocalLease(path, { staleMs: 30_000 });
+    const controller = new AbortController();
+    const contended = Promise.withResolvers<void>();
+    const waiting = acquireLocalLease(path, {
+      staleMs: 30_000,
+      waitMs: 60_000,
+      retryMs: 30_000,
+      signal: controller.signal,
+      logger: { debug: () => contended.resolve(), info: () => {}, warn: () => {}, error: () => {} },
+    });
+    const refusal = waiting.catch((error: unknown) => error);
+    await contended.promise;
+    controller.abort(new Error("cancelled build"));
+    expect(await refusal).toBeInstanceOf(Error);
+    expect(await holder!.owned()).toBe(true);
+    await holder!.release();
+  }, 2000);
+
+  test("abandons a publication cancelled during admission and retains no ownership", async () => {
+    const path = fixture();
+    const controller = new AbortController();
+    await expect(
+      acquireLocalLease(path, {
+        staleMs: 30_000,
+        signal: controller.signal,
+        afterPublish: () => {
+          controller.abort(new Error("cancelled publication"));
+        },
+      }),
+    ).rejects.toThrow("cancelled publication");
+    expect(existsSync(path)).toBe(false);
+    const next = await acquireLocalLease(path, { staleMs: 30_000 });
+    expect(next).not.toBeNull();
+    await next!.release();
+  });
+
   test("publishes one complete owner record and releases only the holder", async () => {
     const path = fixture();
     const lease = await acquireLocalLease(path, {

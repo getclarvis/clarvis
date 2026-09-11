@@ -10,12 +10,22 @@ External systems remain authoritative; the only durable Clarvis state is the
 minimal task binding and content-free uncertain-write replay metadata stored
 with a run.
 
+For Docker/Podman placement the kernel registers this same capability and request schema in the guest,
+backed by a per-run host provider bridge. Provider resolution, connections and credentials remain on
+the host; active binding, strict tool inputs, provider errors and write gates are preserved. This
+does not add a dependency from Tasks to the kernel or loop.
+
 ## Contract
 
 The canonical domain, provider protocol, schemas, errors, MCP adapter, and conformance harness are
 specified in [`tasks-domain.md`](../../specs/capabilities/tasks-domain.md). Run binding, tools,
 settings, gates, and kernel composition are specified in
 [`tasks-capability.md`](../../specs/capabilities/tasks-capability.md).
+
+Tool descriptions distinguish provider task ids from plan task ids and expose the cross-field review
+requirement: evidence, an artifact, or `no_evidence_reason`. `allow_without_artifacts` requests human
+approval after a definitive publication failure; it cannot bypass a conflict or uncertain outcome.
+See [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
 Public entries:
 

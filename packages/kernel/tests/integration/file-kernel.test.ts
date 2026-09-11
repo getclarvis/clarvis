@@ -60,6 +60,173 @@ function seedTrace(traceDir: string, owner: string, id: string, ageDays: number)
 }
 
 describe("createFileKernel", () => {
+  it("retries failed container removal through the public kernel close path", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global-runtime-retry");
+    seedFile(
+      join(globalDir, "settings.json"),
+      JSON.stringify({ runtime: { backend: "docker", fallback: "fail" } }),
+    );
+    let closes = 0;
+    const kernel = await createFileKernel({
+      workspaceRoot: ws,
+      globalDir,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      runtimeFactory: {
+        async create(input) {
+          return {
+            closed: false,
+            info: {
+              kind: "container",
+              generation: input.generation,
+              engine: "docker",
+              engineVersion: "test",
+              hostPlatform: process.platform,
+              guestPlatform: "linux",
+              imageDigest: `sha256:${"a".repeat(64)}`,
+              runtimeProtocolRevision: "5",
+              network: "none",
+              lifecycle: "ready",
+              limits: {
+                cpuCount: 1,
+                memoryBytes: 1024,
+                processCount: 8,
+                outputBytes: 1024,
+                storageBytes: 1024,
+              },
+            },
+            executeRun: async () => {
+              throw new Error("fixture run settles without a provider");
+            },
+            async close() {
+              if (++closes === 1) throw new Error("transient container removal");
+            },
+          };
+        },
+      },
+    });
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "runtime cleanup fixture" }],
+      agent: "coder",
+    });
+    expect((await handle.done).error?.message).toContain("fixture run settles");
+    await handle.closed;
+    await expect(kernel.close()).rejects.toBeInstanceOf(AggregateError);
+    expect(closes).toBe(1);
+    await kernel.close();
+    await kernel.close();
+    expect(closes).toBe(2);
+  });
+
+  it("keeps native startup free of runtime factory work", async () => {
+    const ws = seedWorkspace();
+    let creates = 0;
+    const kernel = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      globalDir: join(ws, "global-native"),
+      runtimeFactory: {
+        async create() {
+          creates += 1;
+          throw new Error("must not run");
+        },
+      },
+    });
+    expect(creates).toBe(0);
+    expect(kernel.runtime).toEqual({
+      kind: "native",
+      host_platform: process.platform,
+      isolation: "host",
+      lifecycle: "ready",
+    });
+    await kernel.close();
+  });
+
+  it("keeps an explicit Podman selection cold until the first run", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global-podman");
+    seedFile(
+      join(globalDir, "settings.json"),
+      JSON.stringify({
+        runtime: {
+          backend: "podman",
+          image_digest: `sha256:${"a".repeat(64)}`,
+          network: "none",
+          executable: "/usr/bin/podman",
+          connection: "local",
+          limits: {
+            cpu_count: 1,
+            memory_bytes: 1024,
+            process_count: 8,
+            output_bytes: 1024,
+            storage_bytes: 2048,
+          },
+        },
+      }),
+    );
+    const base = {
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      globalDir,
+    };
+    const withoutFactory = await createFileKernel(base);
+    expect(withoutFactory.runtime).toMatchObject({
+      kind: "container",
+      engine: "podman",
+      lifecycle: "cold",
+    });
+    await withoutFactory.close();
+
+    let creates = 0;
+    let closes = 0;
+    const kernel = await createFileKernel({
+      ...base,
+      runtimeFactory: {
+        async create(input) {
+          creates += 1;
+          expect(input.settings.backend).toBe("podman");
+          if (input.settings.backend !== "podman") throw new Error("expected Podman settings");
+          return {
+            closed: false,
+            executeRun: async () => {
+              throw new Error("not exercised");
+            },
+            info: {
+              kind: "container",
+              generation: input.generation,
+              engine: "podman",
+              engineVersion: "5",
+              hostPlatform: "linux",
+              guestPlatform: "linux",
+              imageDigest: input.settings.image_digest,
+              runtimeProtocolRevision: "2",
+              network: input.settings.network,
+              limits: {
+                cpuCount: 1,
+                memoryBytes: 1024,
+                processCount: 8,
+                outputBytes: 1024,
+                storageBytes: 2048,
+              },
+              lifecycle: "ready",
+            },
+            async close() {
+              closes += 1;
+            },
+          };
+        },
+      },
+    });
+    expect(kernel.runtime).toMatchObject({
+      kind: "container",
+      engine: "podman",
+      lifecycle: "cold",
+    });
+    expect(creates).toBe(0);
+    await kernel.close();
+    expect(closes).toBe(0);
+  });
+
   it("rejects incomplete multi-owner store wiring before boot", async () => {
     const ws = seedWorkspace();
     const base = {

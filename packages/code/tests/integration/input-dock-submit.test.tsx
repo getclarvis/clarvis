@@ -188,7 +188,7 @@ test("inline composition is height-bounded and the expanded Task editor preserve
   expect(inlineRows.length).toBeLessThanOrEqual(5);
   expect(h.t.captureCharFrame()).not.toContain("New task");
 
-  h.pressKey("g", { ctrl: true });
+  h.pressKey("e", { ctrl: true });
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);
   expect(h.t.captureCharFrame()).toContain("Task editor");
@@ -278,7 +278,7 @@ test("Escape closes autocomplete before collapsing the expanded Task editor", as
     query: () => [{ value: "coder", label: "coder", insert: "coder" }],
   };
   const h = await mount("handled", [provider]);
-  h.pressKey("g", { ctrl: true });
+  h.pressKey("e", { ctrl: true });
   h.el().setText("@");
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);

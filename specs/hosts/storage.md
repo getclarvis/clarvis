@@ -29,6 +29,17 @@ Stable logical categories are `traces`, `sessions`, `workflow_records`, `project
 `memory`, `plans`, `diagnostics`, `run_scratch`, `workspace_state`, and `cache`. A row
 contains no pathname and no persisted content.
 
+Docker's content-addressed recipe images/base aliases and both engines' persistent `/mise` caches are engine-owned
+objects rather than paths under the Clarvis global root. They are therefore deliberately absent from
+this filesystem inventory and from `StorageService.cleanup`; the service must not imply it measured
+or removed engine storage. The isolated-runtime contract owns their labels, opaque identities and
+lifecycle.
+Production: `prepareMiseCache` in `packages/kernel/src/runtime/container-mise-cache.ts`; inspection roots
+in `packages/kernel/src/storage/storage-service.ts`. Test:
+`packages/kernel/tests/unit/runtime-docker-backend.test.ts`,
+`packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts` and
+`packages/kernel/tests/integration/storage-service.test.ts`.
+
 Git worktree checkout roots are outside this inventory and cleanup service. Code selects or creates
 a checkout before kernel construction and may run explicitly confirmed clean-checkout removal after
 the workspace closes; the kernel still has no `worktrees` storage category or cleanup target.
@@ -37,6 +48,15 @@ Production: `CATEGORIES` and the inspection roots in
 `packages/code/src/bootstrap/worktree.ts`. Test:
 `packages/kernel/tests/integration/storage-service.test.ts` and
 `packages/code/tests/integration/worktree-bootstrap.test.ts`.
+
+The per-workspace `runtimes/` state tree contains only host-accepted execution checkpoints grouped
+by generation. The selected workspace/worktree is mounted in place and is not copied into that tree;
+there is no runtime registry, baseline, apply journal, transaction staging or lifecycle record for
+storage cleanup to interpret. Production: `WorkspaceStatePaths` and `workspaceStatePaths` in
+`packages/paths/src/workspace-state.ts`; `appendRuntimeCheckpoint` in
+`packages/kernel/src/runtime/runtime-checkpoints.ts`. Test:
+`packages/paths/tests/component/workspace-state.test.ts` and
+`packages/kernel/tests/integration/runtime-checkpoints.test.ts`.
 
 ## Inventory boundaries
 
@@ -70,6 +90,11 @@ traces, sessions, workflow records,
 projects, memory, plans, diagnostics, settings, agents, keys and subscriptions cannot be
 expressed as cleanup targets. The TUI always calls dry-run first and asks for confirmation before
 apply.
+
+Likewise, `cache` cleanup names only the rebuildable global filesystem cache. It does not invoke a
+Docker executable, select a Docker context or delete labelled recipe images or mise volumes.
+Engine-cache inspection and explicit cleanup remain an advanced Docker operation until Clarvis
+exposes a separately reviewed engine-storage contract.
 
 Production: `createStorageService.cleanup` in `packages/kernel/src/storage/storage-service.ts`,
 `sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and `StorageView` in
@@ -115,3 +140,5 @@ Test: `packages/paths/tests/integration/housekeeping.test.ts`,
 6. Housekeeping is bounded and preserves recent, occupied and unrecognized state.
 7. Storage maintenance does not read, rewrite or reorder the model message list; prompt-prefix
    stability is unaffected.
+8. Filesystem inventory and cleanup never claim visibility or authority over Docker-managed recipe
+   images or mise volumes.

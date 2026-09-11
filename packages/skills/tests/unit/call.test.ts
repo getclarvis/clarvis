@@ -1,7 +1,12 @@
 import { describe, it, expect } from "bun:test";
-import { handleLoadSkillCall, LOAD_SKILL_TOOL_NAME, loadSkillTool } from "../../src/capability.ts";
+import {
+  handleLoadSkillCall,
+  handleReadSkillResourceCall,
+  LOAD_SKILL_TOOL_NAME,
+  loadSkillTool,
+} from "../../src/capability.ts";
 import { makeTrace } from "../helpers/capability-fakes.ts";
-import { call, fakeSkills, validateArgs } from "../helpers/call-fixtures.ts";
+import { call, fakeSkills, resourceCall, validateArgs } from "../helpers/call-fixtures.ts";
 import { makeContent } from "../helpers/skill-fixtures.ts";
 
 function toolCallDetail(trace: ReturnType<typeof makeTrace>): unknown {
@@ -94,8 +99,8 @@ describe("handleLoadSkillCall", () => {
 
   it("rejects a resource lookup before reading when the skill is unknown", () => {
     let reads = 0;
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "ghost", resource: "notes.md" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "ghost", resource: "notes.md", offset: 0 } }),
       skills: fakeSkills({
         readResource: () => {
           reads += 1;
@@ -187,42 +192,55 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).toContain("native sandbox");
   });
 
-  it("loads the skill body when resource names a sentinel or the skill's own manifest", () => {
-    for (const resource of [
-      " ",
-      ". ",
-      "/",
-      "./",
-      "SKILL.md",
-      "./SKILL.md",
-      ".agents/skills/alpha/SKILL.md",
-      "/tmp/catalog/alpha/SKILL.md",
-      ".agents\\skills\\alpha\\SKILL.md",
+  it("requires resource disclosure and writable preparation for remote helpers", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha" } }),
+      skills: fakeSkills({
+        loadSkill: () =>
+          makeContent("alpha", {
+            resourceAccess: "remote",
+            executionRoot: "/private/host/skill",
+          }),
+      }),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(false);
+    expect(res.text).toContain("no skill file or directory is mounted");
+    expect(res.text).toContain("read_skill_resource");
+    expect(res.text).toContain("read all required resource pages");
+    expect(res.text).toContain("writable workspace directory");
+    expect(res.text).toContain("normal shell tool");
+    expect(res.text).not.toContain("/private/host");
+    expect(res.text).not.toContain("Skill directory:");
+    expect(res.text).not.toContain("Package execution root:");
+  });
+
+  it("rejects every resource-shaped argument on the name-only load operation", () => {
+    for (const arguments_ of [
+      { name: "alpha", resource: "/dev/null? no resource omitted actually." },
+      { name: "alpha", resource: "alpha/SKILL.md", offset: 0 },
+      { name: "alpha", offset: 0 },
     ]) {
-      const reads: string[] = [];
       const res = handleLoadSkillCall({
-        call: call({ arguments: { name: "alpha", resource } }),
-        skills: fakeSkills({
-          readResource: (_name, rel) => {
-            reads.push(rel);
-            return "unreachable";
-          },
-        }),
+        call: call({ arguments: arguments_ }),
+        skills: fakeSkills(),
         trace: makeTrace(),
         agent: "subagent",
         iteration: 1,
         validateArgs,
       });
-      expect(res.error).toBe(false);
-      expect(res.text).toContain("ALPHA BODY");
-      expect(reads).toEqual([]);
+      expect(res.error).toBe(true);
+      expect(res.text).toContain("InputValidationError");
     }
   });
 
-  it("rejects a non-string / empty resource argument", () => {
-    for (const resource of [42, ""]) {
-      const res = handleLoadSkillCall({
-        call: call({ arguments: { name: "alpha", resource } }),
+  it("rejects malformed or unsafe resource paths at the declared schema", () => {
+    for (const resource of [42, "", "/absolute", "C:/absolute", "../escape", "a//b", "a\\b"]) {
+      const res = handleReadSkillResourceCall({
+        call: resourceCall({ arguments: { name: "alpha", resource, offset: 0 } }),
         skills: fakeSkills(),
         trace: makeTrace(),
         agent: "subagent",
@@ -235,8 +253,8 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("rejects an offset without a resource", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", offset: 1 } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", offset: 1 } }),
       skills: fakeSkills(),
       trace: makeTrace(),
       agent: "subagent",
@@ -244,12 +262,27 @@ describe("handleLoadSkillCall", () => {
       validateArgs,
     });
     expect(res.error).toBe(true);
-    expect(res.text).toContain("offset requires a bundled resource path");
+    expect(res.text).toContain("InputValidationError");
+  });
+
+  it("rejects undeclared resource-operation arguments", () => {
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({
+        arguments: { name: "alpha", resource: "notes.md", offset: 0, extra: true },
+      }),
+      skills: fakeSkills(),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(true);
+    expect(res.text).toContain("InputValidationError");
   });
 
   it("rejects a resource offset past the end", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "notes.md", offset: 4 } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", resource: "notes.md", offset: 4 } }),
       skills: fakeSkills({
         readResourceChunk: () => {
           throw new Error("offset 4 is past the end");
@@ -274,8 +307,8 @@ describe("handleLoadSkillCall", () => {
       () => ({ text: "x", offset: 0, nextOffset: 1, totalBytes: 1 }),
       () => ({ text: "x", offset: 0, totalBytes: 2 }),
     ]) {
-      const res = handleLoadSkillCall({
-        call: call({ arguments: { name: "alpha", resource: "notes.md" } }),
+      const res = handleReadSkillResourceCall({
+        call: resourceCall({ arguments: { name: "alpha", resource: "notes.md", offset: 0 } }),
         skills: fakeSkills({ readResourceChunk }),
         trace: makeTrace(),
         agent: "subagent",
@@ -288,8 +321,8 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("does not reinterpret a byte cursor through a legacy whole-text provider", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "notes.md", offset: 1 } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", resource: "notes.md", offset: 1 } }),
       skills: fakeSkills({ readResource: () => "éclair" }),
       trace: makeTrace(),
       agent: "subagent",
@@ -313,8 +346,10 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("handles a non-Error thrown while reading a resource", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "scripts/run.sh" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({
+        arguments: { name: "alpha", resource: "scripts/run.sh", offset: 0 },
+      }),
       skills: fakeSkills({
         readResource: () => {
           throw "raw string failure";
@@ -329,9 +364,9 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).toContain("raw string failure");
   });
 
-  it("surfaces a resource rejection (e.g. path escape) as a tool error", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "../escape" } }),
+  it("surfaces a provider resource rejection as a tool error", () => {
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", resource: "missing", offset: 0 } }),
       skills: fakeSkills({
         readResource: () => {
           throw new Error("resolved path escapes the skill directory");
@@ -343,7 +378,7 @@ describe("handleLoadSkillCall", () => {
       validateArgs,
     });
     expect(res.error).toBe(true);
-    expect(res.text).toContain("could not read resource '../escape'");
+    expect(res.text).toContain("could not read resource 'missing'");
     expect(res.text).toContain("escapes the skill directory");
   });
 

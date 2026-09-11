@@ -1,4 +1,6 @@
 import type { Accessor, JSX } from "solid-js";
+import type { BackgroundController } from "../features/background/controller.ts";
+import type { GoalController } from "../features/goal/controller.ts";
 import {
   createEffect,
   createMemo,
@@ -34,15 +36,16 @@ import type { ModelsCatalog } from "../adapters/models-catalog.ts";
 import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import { guardAutoResolves, type GuardMode, type GuardModeStore } from "../adapters/guard-mode.ts";
+import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls } from "../adapters/execution-safety.ts";
+import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
+import type { LoopController } from "../features/loop/controller.ts";
 import type { BackendProbe } from "../onboarding/doctor.ts";
-import type { ConnectionState } from "../adapters/connection-state.ts";
+import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { McpClientCaps } from "../adapters/mcp-capabilities-bridge.ts";
 import type {
   ModelCatalogService,
@@ -52,6 +55,7 @@ import type {
   ProviderAuthService,
   SkillsService,
   RunDetail,
+  RuntimeStatus,
   StorageService,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -110,9 +114,14 @@ import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 import { productVersion } from "../cli-args.ts";
 
-const SafetyPresetPicker = lazy(async () => {
-  const module = await import("./overlays/SafetyPresetPicker.tsx");
-  return { default: module.SafetyPresetPicker };
+const IsolationPicker = lazy(async () => {
+  const module = await import("./overlays/IsolationPicker.tsx");
+  return { default: module.IsolationPicker };
+});
+
+const ReviewPicker = lazy(async () => {
+  const module = await import("./overlays/ReviewPicker.tsx");
+  return { default: module.ReviewPicker };
 });
 
 /** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
@@ -186,6 +195,14 @@ export interface AppShell {
 
 /** The active run's live surface: submit/cancel/status plus the pending elicitation, if any. */
 export interface AppRunControls {
+  /** Live workspace discovery and explicit handoff; omitted by hosts without hosted admission. */
+  backgrounds?: BackgroundController;
+  /** Process-local recurrence controller; omitted by hosts without interactive scheduling. */
+  loops?: LoopController;
+  /** Host-owned persistent objective controls and canonical display state. */
+  goals?: GoalController;
+  /** Reads host preparation, reconciliation and physical ownership for scheduler wakeups. */
+  scheduledBusy?: Accessor<boolean>;
   status: () => string;
   submit: (content: MessageContent) => void;
   submitPrompt: (
@@ -201,6 +218,8 @@ export interface AppRunControls {
   /** Detach an unresponsive run after the memory fuse's cancellation grace. */
   forceStop?: () => void;
   active: () => boolean;
+  /** Host-confirmed continuation of the observed run; independent of volatile tool consent. */
+  continuesOnExit?: Accessor<boolean>;
   /** True until every backend handle and local process has physically settled. */
   physicalActive?: () => boolean;
   /** Host-owned retained-memory and event-queue counters. */
@@ -220,6 +239,8 @@ export interface AppRunControls {
     name: string;
     source?: string;
   } | null>;
+  /** Latest one-shot Docker-to-Sandbox fallback explanation from the host. */
+  runtimePlacementNotice?: Accessor<{ sequence: number; message: string } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -283,7 +304,11 @@ export interface AppBackend {
   skills: SkillsService;
   tasks: TasksController;
   storage: StorageService;
-  reconnect: () => Promise<{ ok: boolean; message: string }>;
+  /** Host-reported execution placement and effective container policy. */
+  runtime?: () => RuntimeStatus | undefined;
+  /** Clear a session-latched Docker fallback; the next run starts it lazily again. */
+  retryRuntime: () => void;
+  reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** Everything {@link App} needs to render: transcript/activity state, shell handles and the run/session/fleet/backend controls. */
@@ -363,6 +388,14 @@ export function App(props: AppProps): JSX.Element {
             "withheld until reconnect",
       "warn",
     );
+  });
+  let shownRuntimePlacementNotice = 0;
+  createEffect(() => {
+    const notice = props.run.runtimePlacementNotice?.();
+    if (notice === undefined || notice === null || notice.sequence === shownRuntimePlacementNotice)
+      return;
+    shownRuntimePlacementNotice = notice.sequence;
+    notify(notice.message, "warn");
   });
   let shownUpdateVersion: string | undefined;
   createEffect(() => {
@@ -476,6 +509,9 @@ export function App(props: AppProps): JSX.Element {
   const [editorExpanded, setEditorExpanded] = createSignal(false);
   const [inputPopupOpen, setInputPopupOpen] = createSignal(false);
   const [draftNonEmpty, setDraftNonEmpty] = createSignal(false);
+  const [elicitComposerHidden, setElicitComposerHidden] = createSignal(false);
+  let elicitTransitionRevision = 0;
+  let elicitTransitionStartedRevision = 0;
   type TransientOverlay = "none" | "activityDetail" | "worktreeExit";
   const [transientOverlay, setTransientOverlay] = createSignal<TransientOverlay>("none");
   const [activityDetail, setActivityDetail] = createSignal<ActivityDetailValue | null>(null);
@@ -580,7 +616,7 @@ export function App(props: AppProps): JSX.Element {
   let requestFinalQuit = props.shell.quit;
   const quitConfirm = createQuitConfirm({
     isDirtyView: () => overlays.viewDirty(),
-    isRunActive: () => props.run.active(),
+    isRunAtRisk: () => props.run.active() && props.run.continuesOnExit?.() !== true,
     isDraftNonEmpty: () => (inputEl?.plainText ?? "").trim().length > 0,
     notify,
     quit: () => requestFinalQuit(),
@@ -621,16 +657,6 @@ export function App(props: AppProps): JSX.Element {
    */
   const refuseAtFloor = (): boolean => layoutMode() === "floor";
 
-  const warnIfAutoDegrades = (mode: GuardMode): void => {
-    if (mode !== "auto") return;
-    if (!guardAutoResolves(props.fleet.settings)) {
-      notify(
-        `guard 'auto' needs a usable default_model for the LLM judge ${glyph("emDash")} it will fall back to asking you (on)`,
-        "warn",
-      );
-    }
-  };
-
   const effects: InteractionEffects = {
     interactionBlocked: () => props.run.switching?.() ?? false,
     cancelRun: () => props.run.cancel(),
@@ -652,14 +678,11 @@ export function App(props: AppProps): JSX.Element {
     openAgentPicker: (onClose) => {
       if (overlays.openPicker("agentPicker", onClose)) notify("");
     },
-    openSafetyPresetPicker: () => {
-      if (overlays.openPicker("safetyPicker")) notify("");
+    openIsolationPicker: () => {
+      if (overlays.openPicker("isolationPicker")) notify("");
     },
-    cycleGuardMode: () => {
-      if (overlays.overlay() !== "none") return;
-      const mode = props.fleet.guard.cycle();
-      notify(`guard: ${mode} (this session)`);
-      warnIfAutoDegrades(mode);
+    openReviewPicker: () => {
+      if (overlays.openPicker("reviewPicker")) notify("");
     },
     focusNext: () => {
       ts.clearFocus();
@@ -901,6 +924,11 @@ export function App(props: AppProps): JSX.Element {
 
   const appWiring = registerCodeCommands({
     commands,
+    ...(props.run.loops ? { loops: props.run.loops } : {}),
+    ...(props.run.backgrounds ? { backgrounds: props.run.backgrounds } : {}),
+    ...(props.run.goals ? { goals: props.run.goals } : {}),
+    backgroundExitAllowed: () =>
+      !draftNonEmpty() && overlays.overlay() === "none" && transientOverlay() === "none",
     ui: overlays.ui,
     effects,
     session: {
@@ -930,6 +958,7 @@ export function App(props: AppProps): JSX.Element {
     refreshAgentProfiles: props.fleet.refreshAgentProfiles,
     keys: props.fleet.keys,
     reconnectBackend: props.backend.reconnect,
+    retryRuntime: props.backend.retryRuntime,
     env,
     preview: props.fleet.preview,
     platform: props.shell.platform,
@@ -989,8 +1018,60 @@ export function App(props: AppProps): JSX.Element {
       notify,
     },
   });
-  overlays.setRecheck(appWiring.recheck);
+  let backgroundOfferLive = true;
   onCleanup(() => {
+    backgroundOfferLive = false;
+  });
+  onMount(() => {
+    const offer = (): void =>
+      detachObserved(
+        "background.startup",
+        () =>
+          appWiring.offerBackgrounds(
+            () =>
+              backgroundOfferLive &&
+              !draftNonEmpty() &&
+              overlays.overlay() === "none" &&
+              transientOverlay() === "none" &&
+              !inputPopupOpen() &&
+              !props.run.active() &&
+              !props.run.elicit() &&
+              !props.run.switching?.(),
+          ),
+        (error) => notify(error instanceof Error ? error.message : String(error), "warn"),
+      );
+    if (props.shell.afterPaint) props.shell.afterPaint(offer);
+    else queueMicrotask(offer);
+  });
+  props.run.loops?.setInteractionGate(
+    () =>
+      draftNonEmpty()
+        ? "The composer has an unsent draft or attachment."
+        : overlays.overlay() !== "none" ||
+            transientOverlay() !== "none" ||
+            inputPopupOpen() ||
+            props.run.elicit() ||
+            props.run.switching?.() ||
+            refuseAtFloor()
+          ? "A dialog or interaction is open."
+          : null,
+    pressureBlockedReason,
+  );
+  createEffect(() => {
+    draftNonEmpty();
+    overlays.overlay();
+    transientOverlay();
+    inputPopupOpen();
+    props.run.elicit();
+    props.run.switching?.();
+    props.run.scheduledBusy?.();
+    props.backend.connection();
+    pressureBlocked();
+    refuseAtFloor();
+    props.run.loops?.refresh();
+  });
+  onCleanup(() => {
+    props.run.loops?.dispose();
     if (transientOverlay() !== "none") {
       setTransientOverlay("none");
       interaction.popOverlayContext();
@@ -1007,6 +1088,8 @@ export function App(props: AppProps): JSX.Element {
     );
   const agentName = (): string =>
     props.fleet.agents.view()?.name ?? (props.fleet.agents.active() || "no agent");
+  const effectiveIsolation = () =>
+    effectiveRunIsolation(runControls().isolation, props.backend.runtime?.(), props.run.active());
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,
@@ -1015,10 +1098,12 @@ export function App(props: AppProps): JSX.Element {
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),
-      safetyPreset: runControls().preset,
-      guardMode: runControls().guardMode,
+      isolation: effectiveIsolation(),
+      review: runControls().guardMode,
       sandboxUnavailable:
-        runControls().sandboxEnabled && appWiring.sandboxInspection()?.backend.available === false,
+        effectiveIsolation() === "sandbox" &&
+        props.backend.runtime?.()?.lifecycle !== "fallback" &&
+        appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
       plans: runControls().plans,
@@ -1045,7 +1130,8 @@ export function App(props: AppProps): JSX.Element {
       const child = path[2]!;
       const parent = commands.entries().find((entry) => entry.slashes.includes(parentSlash));
       if (parent?.subcommands.some((subcommand) => subcommand.name === child)) {
-        if (commands.route(parent.name, [child, args].filter(Boolean).join(" "))) return "handled";
+        const routed = commands.route(parent.name, [child, args].filter(Boolean).join(" "));
+        if (routed) return routed === "block" ? "block" : "handled";
       }
     }
     const hit = classifySlashSubmit(name, {
@@ -1057,7 +1143,8 @@ export function App(props: AppProps): JSX.Element {
       return "handled";
     }
     if (hit.kind === "command") {
-      if (args && commands.route(hit.command, args)) return "handled";
+      const routed = args ? commands.route(hit.command, args) : false;
+      if (routed) return routed === "block" ? "block" : "handled";
       pendingSlashArgs = args;
       commands.runCommand(hit.command);
       pendingSlashArgs = "";
@@ -1171,8 +1258,10 @@ export function App(props: AppProps): JSX.Element {
     return "working";
   };
   const leadActivityDetail = (): string => {
-    if (!props.run.active()) return "";
-    const detail: string[] = [];
+    const goal = props.run.goals?.view()?.state.current;
+    const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
+    if (!props.run.active()) return detail.join(` ${glyph("separator")} `);
+    if (props.run.continuesOnExit?.()) detail.push("continues after exit");
     const startedAt = props.run.startedAt();
     if (startedAt !== null) detail.push(formatElapsed(tickNow() - startedAt));
     const iteration = /iteration\s+(\d+)/i.exec(props.run.status())?.[1];
@@ -1282,38 +1371,96 @@ export function App(props: AppProps): JSX.Element {
     interaction.setModalContext(props.run.elicit() != null || switching ? "elicitation" : "none");
   });
 
-  const revealHistoryTail = (): void => {
-    queueMicrotask(() => {
-      const revealAfterLayout = (): void => {
-        scrollEl?.scrollBy({ x: 0, y: 1_000_000 });
-        if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
-      };
-      if (historyHandle === undefined) {
-        revealAfterLayout();
+  const revealHistoryTail = (afterLayout?: () => void): void => {
+    if (historyHandle !== undefined) {
+      const handle = historyHandle;
+      handle.returnToTail();
+      props.shell.renderer.once("frame", () => {
+        if (props.shell.renderer.isDestroyed) return;
+        handle.returnToTail();
+        afterLayout?.();
+      });
+      return;
+    }
+    const element = scrollEl;
+    if (element === undefined) return;
+    const clamp = (): void => {
+      element.stickyScroll = false;
+      element.scrollTo({ x: 0, y: Math.max(0, element.scrollHeight - element.viewport.height) });
+      element.stickyScroll = true;
+    };
+    clamp();
+    props.shell.renderer.once("frame", () => {
+      if (props.shell.renderer.isDestroyed) return;
+      clamp();
+      afterLayout?.();
+    });
+    if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
+  };
+
+  const elicitationIsVisible = (): boolean => {
+    const element = scrollEl;
+    const elicitation = element?.content.findDescendantById("active-elicitation");
+    if (element === undefined || elicitation === undefined || elicitation.isDestroyed) return false;
+    const viewportStart = element.viewport.screenY;
+    const viewportEnd = viewportStart + element.viewport.height;
+    return (
+      elicitation.screenY < viewportEnd && elicitation.screenY + elicitation.height > viewportStart
+    );
+  };
+
+  const beginElicitTransition = (req: ElicitRequestParams, revision: number): void => {
+    if (elicitTransitionStartedRevision === revision) return;
+    elicitTransitionStartedRevision = revision;
+    const finishTransition = (): void => {
+      if (revision !== elicitTransitionRevision || props.run.elicit() !== req) return;
+      if (overlays.overlay() !== "none" || transientOverlay() !== "none") {
+        if (elicitTransitionStartedRevision === revision) elicitTransitionStartedRevision = 0;
         return;
       }
-      props.shell.renderer.once("frame", revealAfterLayout);
-      historyHandle.returnToTail();
-    });
+      if (!elicitationIsVisible()) {
+        revealHistoryTail(finishTransition);
+        return;
+      }
+      setElicitComposerHidden(true);
+      if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
+    };
+    revealHistoryTail(finishTransition);
   };
 
   createEffect(
     on(
-      () => props.run.elicit(),
-      (req, previous) => {
-        if (req == null) {
-          if (previous != null) revealHistoryTail();
+      () => [props.run.elicit(), overlays.overlay(), transientOverlay()] as const,
+      ([req, overlay, transient], previous) => {
+        const previousRequest = previous?.[0] ?? null;
+        if (req !== previousRequest) {
+          elicitTransitionRevision += 1;
+          elicitTransitionStartedRevision = 0;
+          setElicitComposerHidden(false);
+          if (req == null) {
+            if (previousRequest != null) revealHistoryTail();
+            return;
+          }
+          dock?.closeEditor();
+          closeTransientOverlay();
+          overlays.dismissTopUnlessDirty({
+            reason:
+              "the agent is waiting for an answer " +
+              glyph("emDash") +
+              " save changes or leave this view to reply",
+          });
+        }
+        if (req == null) return;
+        if (
+          overlay !== "none" ||
+          transient !== "none" ||
+          overlays.overlay() !== "none" ||
+          transientOverlay() !== "none"
+        ) {
+          elicitTransitionStartedRevision = 0;
           return;
         }
-        dock?.closeEditor();
-        closeTransientOverlay();
-        overlays.dismissTopUnlessDirty({
-          reason:
-            "the agent is waiting for an answer " +
-            glyph("emDash") +
-            " save changes or leave this view to reply",
-        });
-        revealHistoryTail();
+        beginElicitTransition(req, elicitTransitionRevision);
       },
     ),
   );
@@ -1438,13 +1585,33 @@ export function App(props: AppProps): JSX.Element {
           )}
         </SurfaceBoundary>
         <SurfaceBoundary
-          active={() => overlays.overlay() === "safetyPicker"}
+          active={() => overlays.overlay() === "isolationPicker"}
           retention="retain-one"
           placement="portal"
         >
           {(lifecycle) => (
-            <Suspense fallback={<text>Loading safety presets{glyph("ellipsis")}</text>}>
-              <SafetyPresetPicker
+            <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
+              <IsolationPicker
+                interaction={interaction}
+                settings={props.fleet.settings}
+                runActive={props.run.active}
+                active={lifecycle.active}
+                retryRuntime={props.backend.retryRuntime}
+                notify={notify}
+                onClose={() => overlays.dismissTop()}
+                onApplied={() => overlays.dismissTop()}
+              />
+            </Suspense>
+          )}
+        </SurfaceBoundary>
+        <SurfaceBoundary
+          active={() => overlays.overlay() === "reviewPicker"}
+          retention="retain-one"
+          placement="portal"
+        >
+          {(lifecycle) => (
+            <Suspense fallback={<text>Loading command review{glyph("ellipsis")}</text>}>
+              <ReviewPicker
                 interaction={interaction}
                 settings={props.fleet.settings}
                 guard={props.fleet.guard}
@@ -1530,7 +1697,7 @@ export function App(props: AppProps): JSX.Element {
             history={props.session.history}
             providers={providerList()}
             visible={() =>
-              overlays.overlay() === "none" && !props.run.elicit() && !props.run.switching?.()
+              overlays.overlay() === "none" && !elicitComposerHidden() && !props.run.switching?.()
             }
             runActive={() => props.run.active()}
             submissionBlocked={pressureBlockedReason}

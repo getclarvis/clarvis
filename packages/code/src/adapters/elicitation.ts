@@ -103,6 +103,7 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   guard_confirm: GUARD_DECISION_LABELS,
+  configuration_access: { deny: "deny", allow_session: "allow while this session is open" },
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
 };
@@ -140,10 +141,17 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
   const detail =
-    params.detail !== undefined && params.detail.command.trim().length > 0
+    params.detail !== undefined &&
+    "command" in params.detail &&
+    params.detail.command.trim().length > 0
       ? params.detail
       : undefined;
-  return { mode: "form", message, fields, ...(detail !== undefined ? { detail } : {}) };
+  return {
+    mode: "form",
+    message,
+    fields,
+    ...(detail !== undefined ? { detail } : {}),
+  };
 }
 
 /** How an un-defaulted choice field starts. */

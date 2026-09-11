@@ -20,7 +20,10 @@ describe("buildSubmitResultTool", () => {
   it("carries an operational-only description (no domain content, Article III.3)", () => {
     const t = buildSubmitResultTool(schema);
     const desc = (t.description ?? "").toLowerCase();
-    expect(desc).toContain("finalize");
+    expect(desc).toContain("accepted submission ends the run");
+    expect(desc).toContain("runtime gate rejects it");
+    expect(desc).toContain("before retrying");
+    expect(desc).not.toContain("exactly once");
     expect(desc).not.toMatch(/extract|plaintiff|legal|persona|domain/);
   });
 });

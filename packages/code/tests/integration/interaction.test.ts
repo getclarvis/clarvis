@@ -64,11 +64,11 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     openAgentPicker: () => {
       calls.push("openAgentPicker");
     },
-    openSafetyPresetPicker: () => {
-      calls.push("openSafetyPresetPicker");
+    openIsolationPicker: () => {
+      calls.push("openIsolationPicker");
     },
-    cycleGuardMode: () => {
-      calls.push("cycleGuardMode");
+    openReviewPicker: () => {
+      calls.push("openReviewPicker");
     },
     focusNext: () => {
       calls.push("focusNext");
@@ -200,10 +200,12 @@ test("Ctrl+P toggles the plan; enhanced terminals also retain Alt+P", () => {
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Ctrl+S opens safety presets everywhere and enhanced terminals retain Alt+S", () => {
-  expect(portable()["safety.picker"]).toBe("ctrl+s");
-  expect(enhanced()["safety.picker"]).toEqual(["alt+s", "ctrl+s"]);
-  for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "safety.picker"))
+test("Isolation and review have portable Ctrl keys plus enhanced Alt keys", () => {
+  expect(portable()["isolation.picker"]).toBe("ctrl+s");
+  expect(enhanced()["isolation.picker"]).toEqual(["alt+s", "ctrl+s"]);
+  expect(portable()["review.picker"]).toBe("ctrl+g");
+  expect(enhanced()["review.picker"]).toEqual(["alt+g", "ctrl+g"]);
+  for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "isolation.picker"))
     expect(binding.when).toBe("overlay==none");
 });
 
@@ -226,7 +228,7 @@ test("background commands are gated to overlay==none so the active window owns i
     expect(b?.when).toBe("overlay==none");
   }
   expect(find(vital, "run.cancel")[0]?.when).toBeUndefined();
-  for (const cmd of ["agent.picker", "safety.picker"])
+  for (const cmd of ["agent.picker", "isolation.picker", "review.picker"])
     expect(find(vital, cmd)[0]?.when).toBe("overlay==none");
   expect(find(vital, "plan.open")[0]?.when).toBe("overlay in (none, plan)");
 });
@@ -250,7 +252,8 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
   for (const cmd of [
     "app.escape",
     "agent.picker",
-    "safety.picker",
+    "isolation.picker",
+    "review.picker",
     "transcript.toggleCollapse",
     "transcript.focusPrev",
   ]) {
@@ -454,19 +457,19 @@ test("createInteraction: one Escape both clears an invisible pending sequence an
   t.renderer.destroy();
 });
 
-test("createInteraction: Ctrl+S and Alt+S dispatch the safety picker", async () => {
+test("createInteraction: Ctrl+S and Alt+S dispatch the isolation picker", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
   const interaction = createInteraction(t.renderer, fakePlatform(), effects);
   const off = interaction.keymap.registerLayer({
     commands: [
       uiCommand({
-        id: "safety.picker",
-        title: "Safety preset",
-        description: "Open the safety-preset picker",
+        id: "isolation.picker",
+        title: "Isolation",
+        description: "Open the isolation picker",
         category: "navigation",
         surfaces: [],
-        run: () => effects.openSafetyPresetPicker(),
+        run: () => effects.openIsolationPicker(),
       }),
     ],
   });
@@ -475,7 +478,7 @@ test("createInteraction: Ctrl+S and Alt+S dispatch the safety picker", async () 
   press(t.renderer, "s", { meta: true });
   await settle();
 
-  expect(effects.calls).toEqual(["openSafetyPresetPicker", "openSafetyPresetPicker"]);
+  expect(effects.calls).toEqual(["openIsolationPicker", "openIsolationPicker"]);
   off();
   interaction.dispose();
   t.renderer.destroy();

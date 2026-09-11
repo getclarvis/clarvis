@@ -8,9 +8,9 @@ import {
 import { createLiveEntryStore } from "../../src/runtime/context/live-entry-store.ts";
 
 describe("live entry store", () => {
-  it("keeps durable entries ahead of the volatile tail and snapshots their identity", () => {
+  it("appends after runtime observations and snapshots their identity", () => {
     const store = createLiveEntryStore([{ role: "user", content: "seed" }]);
-    store.appendVolatile({
+    store.appendDurable({
       message: { role: "user", content: "runtime" },
       chars: 7,
       evictable: false,
@@ -21,8 +21,8 @@ describe("live entry store", () => {
     store.push({ role: "assistant", content: "work" }, false);
     store.sync();
 
-    expect(store.messages.map((message) => message.content)).toEqual(["seed", "work", "runtime"]);
-    expect(store.snapshot().at(-1)?.note_kind).toBe("status");
+    expect(store.messages.map((message) => message.content)).toEqual(["seed", "runtime", "work"]);
+    expect(store.snapshot()[1]?.note_kind).toBe("status");
     expect(store.totalChars()).toBe(15);
   });
 });

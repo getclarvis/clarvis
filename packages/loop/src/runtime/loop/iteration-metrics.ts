@@ -45,10 +45,18 @@ export interface CachePrefixWatch {
    * Fold in one iteration's cache read.
    *
    * @param cachedTokens - the iteration's `cached_tokens`.
-   * @returns `true` when the provider could no longer serve a prefix as long as
-   *   the one it had already served, and that break has not been reported yet.
+   * @returns `true` for a newly observed cache drop or cached-token stagnation
+   *   during sufficient input growth after the initial warming observations.
    */
-  observe(cachedTokens: number): boolean;
+  observe(cachedTokens: number, inputTokens?: number): boolean;
+  resetForCompaction(): void;
+  diagnostics(): {
+    reason?: "drop" | "stagnation";
+    observations: number;
+    base: number;
+    input_growth?: number;
+    cached_growth?: number;
+  };
 }
 
 /**
@@ -67,57 +75,65 @@ export interface CachePrefixWatch {
  */
 const CACHE_PREFIX_LOSS = 0.1;
 
-/**
- * Create the per-agent-loop {@link CachePrefixWatch}.
- *
- * @returns a watch that reports each distinct break once.
- * @remarks A prompt-cache prefix that collapses mid-run is the single most
- *   expensive defect the repository has measured — 2,929,430 tokens across one
- *   session — and it is invisible in aggregate, because the run still completes
- *   and the totals only look large.
- *
- *   The signal is `cached_tokens` *falling*, not the cache-read **ratio**
- *   falling. A ratio drops for reasons that have nothing to do with the prefix:
- *   one large `read_file` takes an iteration from 5000/4000 to 30000/5000 — a
- *   0.63 drop with the prefix perfectly intact. What cannot happen while the
- *   prefix holds is the provider serving *fewer* tokens than it served last
- *   iteration: an implicit cache returns the longest byte-identical prefix, and
- *   an explicit breakpoint only ever moves forward, so the served length is
- *   monotonic until something ahead of it changes.
- *
- *   The comparison is against the previous iteration's `cached_tokens` rather
- *   than its `input_tokens`, which would look like the stricter test and is in
- *   fact wrong: the trailing volatile run — the canonical block and the runtime
- *   notes — is spliced out and re-appended every iteration by design and is
- *   never inside the cached prefix, so `cached < previous input` is true of a
- *   perfectly healthy Anthropic run from its second iteration onwards.
- *   {@link CACHE_PREFIX_LOSS} absorbs the block rounding every provider reports
- *   in, and a first iteration with nothing cached arms nothing, so a provider
- *   that caches at all is the only one this can speak about.
- *
- *   It does not latch for the run. A latch spends the run's one warning on the
- *   first trip whatever caused it — a cache TTL expiring across a slow tool call
- *   trips it just as a rewrite does — and then leaves the genuine break at
- *   iteration 30 undetectable. Instead a break stays quiet only while it
- *   persists: the next iteration that does not lose ground re-arms the watch, so
- *   one break is one line and a second break is still reported.
- */
+/** Observe cache loss and a flat cached-token series during measured context growth. */
 export function createCachePrefixWatch(): CachePrefixWatch {
   let previous: number | undefined;
   let reported = false;
+  let stagnationReported = false;
+  let observations = 0;
+  let base = 0;
+  let reason: "drop" | "stagnation" | undefined;
+  const window: Array<{ input: number; cached: number }> = [];
+  let inputGrowth: number | undefined;
+  let cachedGrowth: number | undefined;
   return {
-    observe(cachedTokens: number): boolean {
+    resetForCompaction(): void {
+      previous = undefined;
+      reported = false;
+      stagnationReported = false;
+      observations = 0;
+      window.length = 0;
+      inputGrowth = undefined;
+      cachedGrowth = undefined;
+      reason = undefined;
+      base += 1;
+    },
+    diagnostics: () => ({
+      reason,
+      observations,
+      base,
+      input_growth: inputGrowth,
+      cached_growth: cachedGrowth,
+    }),
+    observe(cachedTokens: number, inputTokens?: number): boolean {
+      if (
+        !Number.isFinite(cachedTokens) ||
+        cachedTokens < 0 ||
+        (inputTokens !== undefined && (!Number.isFinite(inputTokens) || inputTokens < cachedTokens))
+      )
+        return false;
+      observations += 1;
       const prior = previous;
       previous = cachedTokens;
       const lost =
         prior !== undefined && prior > 0 && cachedTokens < prior * (1 - CACHE_PREFIX_LOSS);
-      if (!lost) {
-        reported = false;
-        return false;
+      let stagnant = false;
+      if (inputTokens !== undefined && observations > 2) {
+        window.push({ input: inputTokens, cached: cachedTokens });
+        if (window.length > 10) window.shift();
+        const first = window[0]!;
+        inputGrowth = inputTokens - first.input;
+        cachedGrowth = cachedTokens - first.cached;
+        stagnant =
+          window.length >= 10 &&
+          (inputGrowth >= 8000 || inputGrowth >= first.input * 0.25) &&
+          cachedGrowth < inputGrowth * 0.1;
       }
-      if (reported) return false;
-      reported = true;
-      return true;
+      reason = stagnant ? "stagnation" : lost ? "drop" : undefined;
+      const notify = (lost && !reported) || (stagnant && !stagnationReported);
+      reported = lost;
+      stagnationReported = stagnant;
+      return notify;
     },
   };
 }
@@ -235,20 +251,28 @@ export function recordIterationMetrics(args: IterationMetricsArgs): void {
  *   completes either way and only the bill changes.
  */
 function reportIterationCache(logger: Logger, args: IterationMetricsArgs, ratio: number): void {
-  const lost = args.cacheWatch?.observe(args.llmResult.usage.cached_tokens) === true;
+  const lost =
+    args.llmResult.cacheUsageKnown !== false &&
+    args.cacheWatch?.observe(
+      args.llmResult.usage.cached_tokens,
+      args.llmResult.usage.input_tokens,
+    ) === true;
   if (!lost && !levelEnabled(logger, "debug")) return;
   const fields = {
     event: "iteration.cache",
+    ...args.cacheWatch?.diagnostics(),
     iteration: args.iteration,
     input_tokens: args.llmResult.usage.input_tokens,
     cached_tokens: args.llmResult.usage.cached_tokens,
     ratio,
+    usage_known: args.llmResult.cacheUsageKnown !== false,
+    prefix_divergence: args.llmResult.requestPrefix?.divergence?.surface,
+    prefix_divergence_item: args.llmResult.requestPrefix?.divergence?.item,
   };
   if (lost) {
     logger.warn(
       fields,
-      "the provider served a shorter cached prefix than it served last iteration; " +
-        "something rewrote the transcript ahead of the tail and every token behind it is billed again",
+      "provider cache reuse dropped or stagnated while input grew; inspect serialized request evidence",
     );
     return;
   }

@@ -81,6 +81,8 @@ export interface LocalLeaseRecoveryOptions {
 
 /** Options for {@link acquireLocalLease}. */
 export interface AcquireLocalLeaseOptions extends LocalLeaseRecoveryOptions {
+  /** Cancel contention waits and abandon a raced publication before returning ownership. */
+  signal?: AbortSignal;
   /** Total contention wait. Zero performs one acquisition attempt. */
   waitMs?: number;
   /** Delay between attempts while another live holder owns the path. */
@@ -987,6 +989,7 @@ async function tryPublish(
         await abandonPublishedLease(lease);
         return null;
       }
+      options.signal?.throwIfAborted();
       return lease;
     } catch (error) {
       await abandonPublishedLease(lease);
@@ -1067,9 +1070,12 @@ export async function acquireLocalLease(
   const retryMs = Math.max(1, options.retryMs ?? 25);
   const attempts = Math.max(1, Math.ceil(waitMs / retryMs) + 1);
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    options.signal?.throwIfAborted();
     const lease = await tryPublish(path, options);
     if (lease !== null) return lease;
+    options.signal?.throwIfAborted();
     if (await reclaimLocalLease(path, options)) {
+      options.signal?.throwIfAborted();
       const recovered = await tryPublish(path, options);
       if (recovered !== null) return recovered;
     }
@@ -1078,7 +1084,7 @@ export async function acquireLocalLease(
       { event: "paths.lease_contended", path, attempt, waited_ms: attempt * retryMs },
       "another live holder owns this lock; waiting before another attempt",
     );
-    await delay(retryMs);
+    await delay(retryMs, undefined, { signal: options.signal });
   }
   return null;
 }

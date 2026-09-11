@@ -7,11 +7,15 @@ import {
   type Usage,
 } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
-import { createWorkflowsCapability } from "../../src/capability.ts";
+import { createWorkflowsCapability, workflowContextOf } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
 import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
-import { runLeader } from "../../src/run-leader.ts";
+import {
+  createLeaderOutputBudgetCapability,
+  runLeader,
+  workflowOutputBudgetOf,
+} from "../../src/run-leader.ts";
 import type { LeaderSpec } from "../../src/types.ts";
 import { LEADER_TITLE_MAX } from "../../src/tool.ts";
 import {
@@ -79,6 +83,50 @@ function throwingBc(throwOnKind: string): {
 }
 
 describe("runLeader", () => {
+  test("exposes a reserved budget only for the original host-created capability", () => {
+    const budget = createWorkflowLedger(100);
+    const capability = createLeaderOutputBudgetCapability(budget, 3);
+    const context = makeCtx({ ledger: budget });
+    const workflows = createWorkflowsCapability(context);
+
+    expect(workflowContextOf(workflows)).toBe(context);
+    expect(workflowContextOf({ ...workflows })).toBeUndefined();
+    expect(workflowContextOf(capability)).toBeUndefined();
+    expect(workflowOutputBudgetOf(capability)).toEqual({
+      outputBudget: budget,
+      maxParallelSubagents: 3,
+    });
+    expect(workflowOutputBudgetOf({ ...capability })).toBeUndefined();
+    expect(workflowOutputBudgetOf(workflows)).toBeUndefined();
+  });
+
+  test("awaits host assembly with the exact parent and child identities before execution", async () => {
+    const assembled = Promise.withResolvers<RunRequest>();
+    const entered = Promise.withResolvers<void>();
+    const runDeps = workflowRunDeps(() => Promise.resolve(completed("done", 1)));
+    const ctx = makeCtx({
+      runDeps,
+      managerRunId: "manager-fixed",
+      assemble: (spec, context) => {
+        expect(spec).toEqual({ title: "leader", prompt: "hello" });
+        expect(context).toEqual({ parentRunId: "manager-fixed", runId: "leader-fixed" });
+        entered.resolve();
+        return assembled.promise;
+      },
+    });
+    const pending = runLeader({ title: "leader", prompt: "hello" }, ctx, "leader-fixed");
+    await entered.promise;
+    expect(runDeps.calls).toHaveLength(0);
+    assembled.resolve(leaderAssembler({ title: "leader", prompt: "host-approved" }));
+
+    expect((await pending).status).toBe("completed");
+    expect(runDeps.calls).toHaveLength(1);
+    expect(runDeps.calls[0]!.rawBody).toMatchObject({
+      execution_id: "leader-fixed",
+      messages: [{ role: "user", content: "host-approved" }],
+    });
+  });
+
   test("returns budget_exhausted without assembling or starting a run", async () => {
     const runDeps = workflowRunDeps(() => Promise.resolve(completed("impossible", 1)));
     const ledger = createWorkflowLedger(1);

@@ -60,52 +60,21 @@ function entrySeedMarker(
 }
 
 /**
- * Whether a restored entry is one the engine rewrites or repositions on the
- * first iteration of the new run.
- *
- * @remarks Mirrors `isVolatile` in `context-compaction.ts`: the canonical block
- *   and the runtime notes are spliced out and re-appended rather than surviving
- *   in place.
- */
-function isRestoredVolatile(entry: ContextSnapshotEntry): boolean {
-  return entry.canonical || entry.note_kind !== undefined;
-}
-
-/** Replace image parts in a continuation user message with a text placeholder, so
- * a non-vision entry agent carries no stale image bytes from earlier turns; a
- * text-only or image-free entry is returned unchanged. */
-function collapseHistoricalImages(entry: ContextSnapshotEntry): ContextSnapshotEntry {
-  const m = entry.message;
-  if (m.role !== "user" || typeof m.content === "string") return entry;
-  if (!m.content.some((p) => p.type === "image")) return entry;
-  const content = m.content.map((p) =>
-    p.type === "image" ? { type: "text" as const, text: "[image from an earlier turn]" } : p,
-  );
-  return { ...entry, message: { ...m, content } };
-}
-
-/**
  * Compose the entry agent's opening messages: a system head (base prompt plus
- * active capability sections), the filtered continuation history, any capability
+ * active capability sections), the preserved continuation history, any capability
  * seed block the continuation did not already carry, and this turn's messages.
  *
  * @returns the {@link EntrySeed} — messages, this turn's images, and whether the
  *   agent strips images.
- * @remarks A non-vision entry agent (no `vision` capability) has both its
- *   continuation images collapsed to placeholders and this turn's images
- *   available separately.
+ * @remarks Prior image entries remain intact. This turn's images are also
+ *   available separately for model-specific routing.
  *
  *   **Two rules here exist to keep a continued run's prompt prefix intact**, and
  *   both were learned from a measured session that paid for breaking them.
  *
- *   *Restored volatile entries are dropped.* The canonical block and the runtime
- *   notes are spliced out and re-appended by their owners on the first iteration
- *   anyway, so carrying them forward only buries them mid-array — and the next
- *   splice then shifts every entry behind them. It is also the right content
- *   decision: a `convergence_warning` or `empty_response` note describes a moment
- *   in the *previous* turn and has no business instructing this one. The shape's
- *   canonical-state pin is republished by its owning capability's
- *   `beforeIteration` before the first model call, so nothing is lost.
+ *   Restored entries retain their exact order, including prior capability reminders and
+ *   runtime notes. Their owners append new observations; earlier observations are
+ *   history and remain subject to current dispatch, CAS and approval policy.
  *
  *   *A seed block the continuation already carries is kept, not regenerated.*
  *   The block was persisted as an ordinary entry, and it sits ahead of the whole
@@ -117,11 +86,9 @@ function collapseHistoricalImages(entry: ContextSnapshotEntry): ContextSnapshotE
  *   block stable for the life of a session; the rewritten content therefore
  *   reaches the *next* session, not the current one.
  *
- *   A block whose capability is no longer active is still dropped (its marker is
- *   absent from this run's blocks), and a newly active capability's block is
- *   appended *after* the restored history rather than at the head, so it costs
- *   nothing ahead of it. On a fresh run `continuationSeed` is empty and the
- *   result is the historical one: system head, pinned blocks, this turn.
+ *   A block whose capability is no longer active remains historical context.
+ *   A newly active capability's block is appended after restored history.
+ *   On a fresh run the order is system head, pinned blocks, this turn.
  */
 export function buildEntrySeed(a: {
   messages: readonly Message[];
@@ -149,15 +116,7 @@ export function buildEntrySeed(a: {
   };
   const markers = deps.seedMarkers ?? [];
   const freshBlocks = deps.seedBlocks ?? [];
-  const liveMarkers = new Set(
-    freshBlocks.map((b) => seedMarkerOf(b, markers)).filter((m): m is string => m !== undefined),
-  );
-
-  const continuationSeed = (deps.continuation?.context ?? []).filter((entry) => {
-    if (isRestoredVolatile(entry)) return false;
-    const marker = entrySeedMarker(entry, markers);
-    return marker === undefined || liveMarkers.has(marker);
-  });
+  const continuationSeed = deps.continuation?.context ?? [];
 
   const carriedMarkers = new Set(
     continuationSeed
@@ -173,7 +132,7 @@ export function buildEntrySeed(a: {
 
   const entryMessages: LiveSeedEntry[] = [
     systemHead,
-    ...(entryStripsImages ? continuationSeed.map(collapseHistoricalImages) : continuationSeed),
+    ...continuationSeed,
     ...pinnedEntries,
     ...messages,
   ];

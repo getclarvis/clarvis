@@ -87,6 +87,13 @@ function createDescendantOutputBudget(ctx: WorkflowCtx): OutputTokenBudget {
   return createFairShareOutputBudget(ctx.ledger, ctx.maxConcurrency + ctx.maxParallelSubagents);
 }
 
+const workflowContexts = new WeakMap<Capability, WorkflowCtx>();
+
+/** Recover this package's admitted composition for a trusted placement adapter, never by name alone. */
+export function workflowContextOf(capability: Capability): WorkflowCtx | undefined {
+  return workflowContexts.get(capability);
+}
+
 /**
  * Build the `workflows` {@link Capability} bound to one workflow's {@link WorkflowCtx}.
  *
@@ -177,7 +184,7 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
       },
     };
   };
-  return {
+  const capability: Capability = {
     name: WORKFLOWS_CAPABILITY_NAME,
     grants: [WORKFLOW_GRANT_DECLARATION],
     persistedTraceProjectors: WORKFLOW_PERSISTED_TRACE_PROJECTORS,
@@ -199,6 +206,8 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
       return runCapabilityFor(agents);
     },
   };
+  workflowContexts.set(capability, ctx);
+  return capability;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { MAX_JSON_MESSAGE_BYTES } from "../../src/core/json-message.ts";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "bun:test";
 import { kernelError } from "../../src/core/errors.ts";
@@ -29,6 +30,76 @@ class GatedWritable extends Writable {
 }
 
 describe("stdio NDJSON codec", () => {
+  it("transfers the full composer image budget and isolates oversized requests and results", async () => {
+    const toHost = new PassThrough();
+    const toClient = new PassThrough();
+    let closed = 0;
+    const server: KernelServer = {
+      connect: () => ({
+        handle: async (method, params) =>
+          method === "large-result" ? "x".repeat(MAX_JSON_MESSAGE_BYTES) : params,
+        close: () => {
+          closed++;
+        },
+      }),
+    };
+    const host = serveKernelOverStdio(server, { input: toHost, output: toClient });
+    const client = createStdioTransport({ input: toClient, output: toHost });
+    try {
+      const image = Buffer.alloc(5 * 1024 * 1024, 65).toString("base64");
+      const params = { images: [image, image] };
+      expect(await client.request<typeof params>("images", params)).toEqual(params);
+      await expect(
+        client.request("excess", "x".repeat(MAX_JSON_MESSAGE_BYTES)),
+      ).rejects.toMatchObject({ code: "resource_exhausted" });
+      await expect(client.request("large-result")).rejects.toMatchObject({
+        code: "resource_exhausted",
+      });
+      expect(await client.request<string>("later", "ok")).toBe("ok");
+      expect(closed).toBe(0);
+    } finally {
+      await client.close();
+      host.close();
+      toHost.destroy();
+      toClient.destroy();
+    }
+  });
+
+  it.each(["count", "bytes"] as const)(
+    "bounds inbound %s before invoking another handler",
+    async (kind) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const closed = Promise.withResolvers<void>();
+      let admitted = 0;
+      const server: KernelServer = {
+        connect() {
+          return {
+            handle(_method, _params, signal) {
+              admitted += 1;
+              return new Promise((resolve) =>
+                signal?.addEventListener("abort", () => resolve({}), { once: true }),
+              );
+            },
+            close: () => closed.resolve(),
+          };
+        },
+      };
+      output.resume();
+      const host = serveKernelOverStdio(server, { input, output });
+      const count = kind === "count" ? 129 : 22;
+      const params = kind === "count" ? {} : { body: "x".repeat(6 * 1024 * 1024) };
+      for (let id = 1; id <= count; id++)
+        input.write(`${JSON.stringify({ t: "req", id, method: "probe", params })}\n`);
+      await Bun.sleep(0);
+      expect(admitted).toBe(kind === "count" ? 128 : 21);
+      expect(input.destroyed).toBe(false);
+      expect(output.destroyed).toBe(false);
+      host.close();
+      await closed.promise;
+    },
+  );
+
   it("reassembles chunked frames and dispatches notifications", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
@@ -268,7 +339,7 @@ describe("stdio NDJSON codec", () => {
     }
   });
 
-  it("fails the transport cleanly when a frame cannot be serialized", async () => {
+  it("refuses a local unserializable message without closing the transport", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const transport = createStdioTransport({ input, output });
@@ -276,7 +347,7 @@ describe("stdio NDJSON codec", () => {
     cyclic.self = cyclic;
 
     await expect(transport.request("probe.cyclic", cyclic)).rejects.toMatchObject({
-      code: "unavailable",
+      code: "invalid_request",
     });
     await transport.close();
   });
@@ -406,11 +477,11 @@ describe("transport.frame_dropped", () => {
     output.resume();
     const transport = createStdioTransport({ input, output }, logger);
     await expect(
-      transport.request("probe.request", { blob: "y".repeat(MAX_WIRE_FRAME_BYTES) }),
+      transport.request("probe.request", { blob: "y".repeat(MAX_JSON_MESSAGE_BYTES) }),
     ).rejects.toThrow(/exceeds/);
     expect(logger.events("transport.frame_dropped")[0]).toMatchObject({
       direction: "outbound",
-      reason: "oversize",
+      reason: "resource_exhausted",
     });
     await transport.close();
   });
@@ -424,10 +495,11 @@ describe("transport.frame_dropped", () => {
     for (let i = 0; i < 2_000; i++) {
       pending.push(transport.request("probe.request").catch(() => undefined));
     }
+    await transport.close();
     await Promise.all(pending);
     expect(logger.events("transport.frame_dropped").at(-1)).toMatchObject({
       direction: "outbound",
-      reason: "queue_full",
+      reason: "resource_exhausted",
     });
     await transport.close();
   });

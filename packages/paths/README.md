@@ -81,8 +81,11 @@ g.subscriptionsFile; //         …/subscriptions.json (renewable subscription c
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
 g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
+g.runtimeRecipesDir; //               …/runtime-recipes (operator-authored Docker scripts)
 g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
 g.updateCheckCacheFile; //             …/cache/update-check.json (discardable version-check result)
+g.runtimeRecipeStateDir; //            …/state/runtime-recipes (host build coordination)
+g.runtimeRecipeLeaseFile("sha256:…"); // …/state/runtime-recipes/<segment>.lock
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -92,6 +95,12 @@ that invokes Clarvis inherits a variable that points at the right tree. They rep
 removed rather than deprecated.
 
 ## The four trees
+
+`configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
+scopes for native self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents`. It neither creates directories nor authorizes access. The kernel owns consent
+and the credential-excluding file policy described in
+[self-configuration.md](../../specs/hosts/self-configuration.md).
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
@@ -107,11 +116,19 @@ wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segme
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
+The sibling `runtimes/` tree owns only host-accepted per-run checkpoints beneath each encoded
+isolated-runtime generation. Runtime and run IDs pass through `ownerSegment`; no workspace copy,
+baseline, apply journal, transaction staging, registry or lifecycle record is stored there. The
+container mounts the already-selected workspace directly, so that checkout remains outside runtime
+state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
-user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
-`cache/` (including the models.dev snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
+`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
+records, Docker runtime recipes, `guard-judge.md`, `auth.json` — and nests only what a user never
+edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, content-addressed
+runtime-recipe build leases, the per-workspace machinery above), `cache/` (including the models.dev
+snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
+it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.
@@ -268,6 +285,11 @@ Every acquired asynchronous lease must be released, including after `renew()`, `
 remove the canonical entry as its own, but it still stops heartbeat work and closes the held file
 handle. Leaving a lost lease unreleased delegates descriptor cleanup to runtime garbage collection.
 
+Asynchronous acquisition accepts an optional `signal`. Cancellation interrupts contention waits,
+checks admission before returning ownership, and abandons a publication that raced cancellation.
+It rejects instead of returning the contention sentinel; cancelling acquisition does not release
+a lease already handed to its caller.
+
 `acquireLocalLeaseSync` publishes and releases the same record synchronously, with no contention
 wait or heartbeat. It exists only for APIs whose whole filesystem transaction is synchronous; an
 asynchronous caller uses `acquireLocalLease` so it never blocks the event loop while waiting.
@@ -351,6 +373,14 @@ returns `void`, so a workspace past that threshold would otherwise stop being sw
 permanently.
 
 ## Owner segments
+
+`localHostPaths` builds the private state and short IPC endpoint namespace for an operator account,
+data owner, canonical workspace and effective global root. Its lease, discovery credentials and
+handoff index live under global `state/hosts/`, apart from agent scratch. Unix endpoints use a short
+temporary directory so HOME length does not consume the socket path budget; Windows endpoints use
+named pipes. The builder neither opens a listener nor grants access. Hosts must verify directory
+ownership, protect credentials and authenticate their connections. See
+[hosted runs](../../specs/hosts/hosted-runs.md) for the observation/storage coupling.
 
 Owner-derived builders take the **raw owner id** and encode it themselves:
 `exportsDirForOwner`, `plansRootForOwner`, `memoryRootForOwner`,

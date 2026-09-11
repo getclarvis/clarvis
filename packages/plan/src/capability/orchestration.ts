@@ -507,7 +507,7 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
         const g = await presentPlanReviewGate();
         if (g.kind === "terminal") return { kind: "terminal", result: g.result };
         if (g.kind === "approved") {
-          if (attempt.mode === "submit") return { kind: "pass" };
+          if (attempt.mode !== "text") return { kind: "pass" };
           return { kind: "nudge", note: PLAN_REVIEW_EXECUTE_NOTE };
         }
         recordRejection(g.feedback);
@@ -537,7 +537,8 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
           ?.tasks.some((task) => task.status !== "done" && task.status !== "abandoned") ??
           false)
       ),
-    async check(): Promise<GateOutcome> {
+    async check(attempt): Promise<GateOutcome> {
+      if (attempt.disposition === "checkpoint") return { kind: "pass" };
       const pg = await pendingTaskGate();
       if (pg.kind === "terminal") return { kind: "terminal", result: pg.result };
       if (pg.kind === "nudge") {

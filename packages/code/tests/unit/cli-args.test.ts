@@ -257,6 +257,24 @@ test("parseMode: a value that merely looks unusual still parses (not a flag)", (
   });
 });
 
+test("parseMode: remote workspace selection is paired and excludes local worktrees", () => {
+  expect(
+    parseMode(["--remote", "operator@example.test", "--remote-workspace", "/srv/project"]),
+  ).toEqual({
+    kind: "run",
+    ascii: false,
+    debug: { enabled: false },
+    remote: { destination: "operator@example.test", workspace: "/srv/project" },
+  });
+  for (const argv of [
+    ["--remote", "operator@example.test"],
+    ["--remote-workspace", "/srv/project"],
+    ["--remote", "operator@example.test", "--remote-workspace", "/srv/project", "--worktree"],
+  ]) {
+    expect(parseMode(argv).kind).toBe("usage-error");
+  }
+});
+
 test("helpText and usageText derive from the flags table; version reports the product", () => {
   const help = helpText();
   const usage = usageText();

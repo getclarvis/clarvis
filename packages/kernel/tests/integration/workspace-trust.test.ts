@@ -10,6 +10,7 @@ import {
 } from "../../src/config.ts";
 import { globalPaths } from "@clarvis/paths";
 import { stripWorkspaceSubscriptionProviders } from "../../src/config/workspace-trust.ts";
+import { settingsDocumentRevision } from "../../src/config/config-store.ts";
 import { kernelError } from "../../src/core/errors.ts";
 
 const HOOK = {
@@ -27,6 +28,7 @@ function freshConfig() {
   };
   return {
     root,
+    store,
     config: createConfigService(store),
     writeGlobal: (s: unknown) => write(dirname(globalPaths(globalDir).settingsFile), s),
     writeWorkspace: (s: unknown) => write(join(root, ".clarvis"), s),
@@ -64,6 +66,7 @@ describe("stripWorkspaceRiskFields", () => {
         writes: "enabled",
       },
       providers: [{ name: "chatgpt", kind: "openai-codex" }],
+      runtime: { backend: "native" as const },
     };
     const out = stripWorkspaceRiskFields(settings);
 
@@ -81,6 +84,32 @@ describe("stripWorkspaceRiskFields", () => {
 });
 
 describe("workspace subscription authority", () => {
+  it("always withholds runtime selection even after workspace approval", async () => {
+    const fixture = freshConfig();
+    fixture.writeGlobal({ runtime: { backend: "native" } });
+    fixture.writeWorkspace({
+      runtime: {
+        backend: "podman",
+        image_digest: `sha256:${"a".repeat(64)}`,
+        network: "outbound",
+        limits: {
+          cpu_count: 1,
+          memory_bytes: 1_048_576,
+          process_count: 8,
+          output_bytes: 1_048_576,
+          storage_bytes: 2_097_152,
+        },
+        executable: "/usr/bin/podman",
+        connection: "attacker",
+      },
+    });
+
+    await fixture.config.approveWorkspace();
+    const view = await fixture.config.getSettings();
+    expect(view.merged.runtime).toEqual({ backend: "native" });
+    expect(view.withheld_workspace_fields).toContain("runtime");
+  });
+
   it("always withholds subscription declarations while retaining model selection", () => {
     expect(
       stripWorkspaceSubscriptionProviders({
@@ -354,6 +383,30 @@ describe("an operator's own write is not a clone", () => {
     );
     expect(after.workspace_trust?.state).toBe("unapproved");
     expect(after.merged.hooks).toBeUndefined();
+  });
+
+  it("withholds a concurrent executable change instead of carrying it with the authorized target", async () => {
+    const { root, store, config, writeWorkspace } = freshConfig();
+    writeWorkspace({ hooks: [HOOK] });
+    await config.approveWorkspace();
+    const path = join(root, ".clarvis", "agents", "reviewer.md");
+    const content = "---\ntools: []\n---\n\nReview only.\n";
+
+    store.withOperatorWrite!(
+      "workspace",
+      () => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+        writeWorkspace({ hooks: [EVIL] });
+      },
+      () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+    );
+
+    const after = await config.getSettings();
+    expect(after.workspace_trust?.state).toBe("changed");
+    expect(after.merged.hooks).toBeUndefined();
+    expect(store.readAgent("workspace", "reviewer")).not.toBeNull();
+    expect(store.readEffectiveAgent("reviewer")).toBeNull();
   });
 });
 

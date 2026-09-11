@@ -23,6 +23,14 @@ Manager-to-leader execution, waves, rounds, limits, and the shared ledger are sp
 result schemas, persistence, tree projection, and routing are specified in
 [`workflows-service.md`](../../specs/capabilities/workflows-service.md).
 
+The compact prompt contract is in
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Built-in verification
+briefs carry the exact finding id, respect read-only tools and allow `inconclusive`. Their acceptance
+predicate counts **refutations**: a rejected refutation threshold means not refuted, not confirmed.
+Synthesis retains uncertainty and inspects partial writes after failed or stopped implementation.
+Scheduling protects declared file conflicts within a batch, not against unrelated concurrent work.
+The three built-in definitions have an 11,000-character serialized regression ceiling.
+
 ## Entry points
 
 | Entry                         | Contents                                                                                                                                                                                                                                             |
@@ -32,6 +40,15 @@ result schemas, persistence, tree projection, and routing are specified in
 | `@clarvis/workflows/artifact` | `loadWorkflows` and the `WORKFLOW.md` loader                                                                                                                                                                                                         |
 
 ## The workflow tools
+
+For container placement, the kernel keeps the native manager scheduler, supervision registry and
+shared subtree output budget together in the guest. The host still assembles each leader's canonical
+request, owns provider credentials and persists workflow progress. `LeaderRequestAssembler` may be
+asynchronous and receives both parent and child run identities. The root entry also exposes
+`workflowContextOf`, `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` as trusted host
+composition seams; lookup recognizes factory-created capability objects by identity, not guest names.
+The [isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns this projection and its
+fail-closed behavior.
 
 In ascending order of how much structure they assume:
 
@@ -157,6 +174,12 @@ frontmatter validated by zod, plus a Markdown body that is the synthesis brief. 
 global root first and the workspace root second, so precedence is `workspace > global > built-in`.
 An override replaces the complete definition; it is not merged round by round. A malformed document
 is diagnosed and contributes no override, leaving a same-named built-in available.
+
+The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
+and a separate skill launcher targeting Admiral. Its native configuration mode can write those files;
+an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
+independent of Extension Profile selection, while a standalone launcher must be selected by a custom
+profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.
 
 Every round declares both `title` and `brief`. The title is an interpolated, single-line label for the
 leader roster; the brief is the complete task prompt. A title is required, cannot exceed 60 Unicode
@@ -318,7 +341,7 @@ descriptor and bypass a TUI host's silencing.
 | debug        | `workflow.round_folded`                                   | the folded result's shape, and how many replicas missed it                    |
 | debug/warn   | `workflow.schedule_derived` / `workflow.schedule_refused` | the waves, the unscoped writers, or the graph that cannot run                 |
 | debug/warn   | `workflow.elicit_queued` / `workflow.elicit_skipped`      | the tree-wide prompt queue, and a prompt abandoned with its agent             |
-| info         | `workflow.review_resolved`                               | the workflow preflight outcome and human wait duration                        |
+| info         | `workflow.review_resolved`                                | the workflow preflight outcome and human wait duration                        |
 
 A workflow preflight uses the manager run's effective `elicit_wait_ms` and a timeout also emits the
 shared `capability.elicit_no_response` event. Its tool result distinguishes an explicit decline, a
@@ -362,6 +385,13 @@ execution port — is built by the kernel in
 `packages/kernel/src/workflows/workflows-service.ts`. The kernel binds that port to the loop's real
 `executeRun` and `generateExecutionId`; tests bind a per-context fake instead of replacing the
 process-wide loop module.
+
+The manager and its leaders share the conversation session, while each leader uses the scheduler's
+reserved run ID as both execution ID and persisted agent-instance ID. Leaders therefore keep stable
+cache affinity across their own continuation and remain distinct from the manager and from another
+leader using the same Agent Profile. Missing reserved IDs are refused before assembly. The owning
+cross-package assertions live in the
+[workflow service contract](../../specs/capabilities/workflows-service.md).
 
 The only engine adapter this package consumes from `@clarvis/loop/workflows` is
 `createElicitSerializer`. Agent, run, tool, compute-clock, trace and elicitation contracts come

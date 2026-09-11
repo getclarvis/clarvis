@@ -6,7 +6,7 @@ export { SUBMIT_RESULT_TOOL_NAME };
 
 /**
  * Build the `submit_result` {@link NamespacedTool} whose input schema is the run's
- * `output_schema`, so calling it with valid arguments finalizes the run.
+ * `output_schema`; acceptance also requires the run's finalization gates to pass.
  *
  * @param outputSchema - the JSON Schema the submitted result object must satisfy.
  * @returns the tool descriptor advertised to the model.
@@ -18,10 +18,9 @@ export function buildSubmitResultTool(outputSchema: Record<string, unknown>): Na
     mcpName: "",
     toolName: SUBMIT_RESULT_TOOL_NAME,
     description:
-      "Finalize the run by submitting the final answer. Call this exactly once, with " +
-      "arguments conforming to the schema. Calling it with valid arguments ends the run; " +
-      "the submitted object becomes the run result. If a call is rejected for not matching " +
-      "the schema, correct the arguments and call it again.",
+      "Submit the completed result matching this schema. An accepted submission ends the run. " +
+      "If validation or a runtime gate rejects it, follow the returned guidance before retrying; " +
+      "a rejected submission is not completion.",
     inputSchema: outputSchema,
   };
 }

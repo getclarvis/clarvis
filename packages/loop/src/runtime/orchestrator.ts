@@ -1,6 +1,12 @@
 import type { EnvConfig } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
-import { bind, HOOKS_CAPABILITY_NAME, levelEnabled, parseModelRef } from "@clarvis/capability";
+import {
+  bind,
+  CapabilityUnavailableError,
+  HOOKS_CAPABILITY_NAME,
+  levelEnabled,
+  parseModelRef,
+} from "@clarvis/capability";
 import type { CompactionSource, RunRequest, SteerSource, LifecycleHook } from "@clarvis/capability";
 import type {
   ContextSnapshotEntry,
@@ -278,6 +284,8 @@ export async function runOrchestrator(
               },
               "the host's extension gate is saturated; forRun is skipped before invocation",
             );
+            if (capability.required === true && deps.signal?.aborted !== true)
+              throw new CapabilityUnavailableError(capability.name, "activation");
             return null;
           }
           if (timedOut) {
@@ -291,7 +299,11 @@ export async function runOrchestrator(
               "forRun exceeded its wall budget; the capability contributes nothing this run",
             );
           }
-          if (activated === null) return null;
+          if (activated === null) {
+            if (capability.required === true && deps.signal?.aborted !== true)
+              throw new CapabilityUnavailableError(capability.name, "activation");
+            return null;
+          }
           if (deps.logger !== undefined && levelEnabled(deps.logger, "debug")) {
             deps.logger.debug(
               {
@@ -304,7 +316,10 @@ export async function runOrchestrator(
               "a capability activated for this run and contributed its share of the agent's surface",
             );
           }
-          return admittedRunCapability(capability.name, activated, extensionAdmission, deps.logger);
+          return {
+            ...admittedRunCapability(capability.name, activated, extensionAdmission, deps.logger),
+            ...(capability.required === true ? { required: true } : {}),
+          };
         }),
       )
     ).filter((capability): capability is RunCapability => capability !== null),
@@ -335,6 +350,12 @@ export async function runOrchestrator(
             "seedBlock exceeded its wall budget; the block is omitted from the seed",
           );
         }
+        if (
+          capability.required === true &&
+          deps.signal?.aborted !== true &&
+          (block === undefined || block.trim().length === 0)
+        )
+          throw new CapabilityUnavailableError(capability.name, "seed");
         return block;
       }),
     )
@@ -573,7 +594,7 @@ interface RunEntryParams {
 /**
  * Build and run the entry agent's loop, wiring its tool registry, token ledger,
  * iteration cap, usage accounting, seed and input builder, then executing it under
- * a clock and timeout (after a vision prepass).
+ * a clock and timeout, with auxiliary vision admitted after entry attachment.
  *
  * @param p - the prepared run context; see {@link RunEntryParams}.
  * @returns the entry agent's {@link EntryAgentOutcome} — response plus captured
@@ -643,16 +664,22 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     clockHolder: p.clockHolder,
     finalize: accounting.finalize,
     buildLoop: async ({ clock, signal }) => {
-      await runVisionPrepass({
-        signal,
-        deps,
-        request,
-        trace: traceHandle,
-        ledger,
-        seed,
-        accounting,
+      const entryInput = buildEntryInput(clock, signal);
+      return runAgent({
+        ...entryInput,
+        prepareContext: async (ctx) => {
+          const reading = await runVisionPrepass({
+            signal,
+            deps,
+            request,
+            trace: traceHandle,
+            ledger,
+            seed,
+            accounting,
+          });
+          if (reading !== undefined) ctx.appendNote(reading);
+        },
       });
-      return runAgent(buildEntryInput(clock, signal));
     },
     toResponse: (loopResult, usage) =>
       loopResultToResponse(loopResult, usage, (code) =>

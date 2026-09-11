@@ -59,7 +59,10 @@ export interface LeaderResult {
  *   forces `memory: "off"` because only the primary manager run may enqueue a
  *   memory job for the workflow.
  */
-export type LeaderRequestAssembler = (spec: LeaderSpec, ctx: { parentRunId: string }) => RunRequest;
+export type LeaderRequestAssembler = (
+  spec: LeaderSpec,
+  ctx: { parentRunId: string; runId?: string },
+) => RunRequest | Promise<RunRequest>;
 
 /**
  * The two loop operations workflow orchestration needs at runtime.

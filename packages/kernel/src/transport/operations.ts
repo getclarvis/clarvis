@@ -16,8 +16,12 @@ import type {
   WorkspaceService,
   WorkflowsService,
   ExtensionProfileService,
+  HostingService,
+  LocalHostService,
+  GoalService,
 } from "@clarvis/protocol";
 import type { KernelTransport } from "@clarvis/protocol";
+import { kernelError } from "../core/errors.ts";
 
 /** Services addressable through ordinary kernel transport operations. */
 export type KernelServices = Pick<
@@ -37,7 +41,23 @@ export type KernelServices = Pick<
   | "sessions"
   | "tasks"
   | "storage"
+  | "hosting"
+  | "localHost"
+  | "goals"
 >;
+
+function requireLocalHost(services: KernelServices): LocalHostService {
+  if (services.localHost === undefined)
+    throw kernelError("unsupported", "this connection does not support local process controls");
+  return services.localHost;
+}
+
+/** A transport cannot acquire hosting authority merely by naming a hosting operation. */
+export function requireHosting(services: KernelServices): HostingService {
+  if (services.hosting === undefined)
+    throw kernelError("unsupported", "this connection does not support hosted runs");
+  return services.hosting;
+}
 
 /** Authorization hints attached to a transport operation. */
 export interface KernelOperationMetadata {
@@ -148,6 +168,155 @@ function listWorkflows(
 
 /** Exhaustive stateless operation catalog, grouped by protocol service. */
 export const OPERATIONS = {
+  goals: serviceOperations<Omit<GoalService, "subscribe">>({
+    availability: {
+      method: "goals.availability",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => services.goals.availability(),
+    },
+    get: {
+      method: "goals.get",
+      metadata: read(),
+      encode: (sessionId) => ({ session_id: sessionId }),
+      invoke: (services, params) => services.goals.get(params.session_id as string),
+    },
+    control: {
+      method: "goals.control",
+      metadata: write(),
+      encode: (request) => ({ request }),
+      invoke: (services, params) =>
+        services.goals.control(params.request as Parameters<GoalService["control"]>[0]),
+    },
+    receipt: {
+      method: "goals.receipt",
+      metadata: read(),
+      encode: (sessionId, operationId) => ({ session_id: sessionId, operation_id: operationId }),
+      invoke: (services, params) =>
+        services.goals.receipt(params.session_id as string, params.operation_id as string),
+    },
+  }),
+  localHost: serviceOperations<LocalHostService>({
+    inspect: {
+      method: "localHost.inspect",
+      metadata: read("plugins"),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).inspect(),
+    },
+    takeBrowserRequest: {
+      method: "localHost.takeBrowserRequest",
+      metadata: write("provider_auth"),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).takeBrowserRequest(),
+    },
+    respondBrowser: {
+      method: "localHost.respondBrowser",
+      metadata: write("provider_auth"),
+      encode: (requestId, opened) => ({ request_id: requestId, opened }),
+      invoke: (services, p) =>
+        requireLocalHost(services).respondBrowser(p.request_id as string, p.opened as boolean),
+    },
+    retryRuntime: {
+      method: "localHost.retryRuntime",
+      metadata: write(),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).retryRuntime(),
+    },
+    requestRestart: {
+      method: "localHost.requestRestart",
+      metadata: write(),
+      encode: () => ({}),
+      invoke: (services) => requireLocalHost(services).requestRestart(),
+    },
+  }),
+  hosting: serviceOperations<HostingService, "start" | "attach">({
+    resolveRecovery: {
+      method: "hosting.resolveRecovery",
+      metadata: write(),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        requireHosting(services).resolveRecovery(
+          p.input as Parameters<HostingService["resolveRecovery"]>[0],
+        ),
+    },
+    controlObservation: {
+      method: "hosting.controlObservation",
+      metadata: write(),
+      encode: (observationId, control) => ({ observation_id: observationId, control }),
+      invoke: (services, p) =>
+        requireHosting(services).controlObservation(
+          p.observation_id as string,
+          p.control as "acquire" | "takeover",
+        ),
+    },
+    list: {
+      method: "hosting.list",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => requireHosting(services).list(),
+    },
+    detach: {
+      method: "hosting.detach",
+      metadata: write(),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        requireHosting(services).detach(p.input as Parameters<HostingService["detach"]>[0]),
+    },
+    receipt: {
+      method: "hosting.receipt",
+      metadata: read(),
+      encode: (operationId) => ({ operation_id: operationId }),
+      invoke: (services, p) => requireHosting(services).receipt(p.operation_id as string),
+    },
+    readSnapshot: {
+      method: "hosting.readSnapshot",
+      metadata: read(),
+      encode: (snapshotId, offset) => ({ snapshot_id: snapshotId, offset }),
+      invoke: (services, p) =>
+        requireHosting(services).readSnapshot(p.snapshot_id as string, p.offset as number),
+    },
+    releaseSnapshot: {
+      method: "hosting.releaseSnapshot",
+      metadata: read(),
+      encode: (snapshotId) => ({ snapshot_id: snapshotId }),
+      invoke: (services, p) => requireHosting(services).releaseSnapshot(p.snapshot_id as string),
+    },
+    releaseObservation: {
+      method: "hosting.releaseObservation",
+      metadata: read(),
+      encode: (observationId) => ({ observation_id: observationId }),
+      invoke: (services, p) =>
+        requireHosting(services).releaseObservation(p.observation_id as string),
+    },
+    closeSession: {
+      method: "hosting.closeSession",
+      metadata: write(),
+      encode: (sessionId) => ({ session_id: sessionId }),
+      invoke: (services, p) => requireHosting(services).closeSession(p.session_id as string),
+    },
+    acknowledge: {
+      method: "hosting.acknowledge",
+      metadata: write(),
+      encode: (executionId) => ({ execution_id: executionId }),
+      invoke: (services, p) => requireHosting(services).acknowledge(p.execution_id as string),
+    },
+    reserveActivity: {
+      method: "hosting.reserveActivity",
+      metadata: write(),
+      encode: (sessionId, kind) => ({ session_id: sessionId, kind }),
+      invoke: (services, p) =>
+        requireHosting(services).reserveActivity(
+          p.session_id as string,
+          p.kind as Parameters<HostingService["reserveActivity"]>[1],
+        ),
+    },
+    releaseActivity: {
+      method: "hosting.releaseActivity",
+      metadata: write(),
+      encode: (leaseId) => ({ lease_id: leaseId }),
+      invoke: (services, p) => requireHosting(services).releaseActivity(p.lease_id as string),
+    },
+  }),
   runs: serviceOperations<RunService, "start" | "compact">({
     get: {
       method: "runs.get",
@@ -859,6 +1028,12 @@ export const OPERATIONS = {
 /** Specialized connection-stateful operations registered beside ordinary CRUD. */
 export const SPECIAL_OPERATIONS = {
   hello: { method: "hello", metadata: read() },
+  hostingStart: { method: "hosting.start", metadata: write() },
+  hostingAttach: { method: "hosting.attach", metadata: read() },
+  hostingSteer: { method: "hosting.steer", metadata: write() },
+  hostingCompact: { method: "hosting.compact", metadata: write() },
+  hostingCancel: { method: "hosting.cancel", metadata: write() },
+  hostingRespond: { method: "hosting.respond", metadata: write() },
   runsStart: { method: "runs.start", metadata: write() },
   runsSteer: { method: "runs.steer", metadata: write() },
   runsCompact: { method: "runs.compact", metadata: write() },
@@ -866,12 +1041,17 @@ export const SPECIAL_OPERATIONS = {
   runsRespond: { method: "runs.respond", metadata: write() },
   configSubscribe: { method: "config.subscribe", metadata: read() },
   configUnsubscribe: { method: "config.unsubscribe", metadata: read() },
+  goalsSubscribe: { method: "goals.subscribe", metadata: read() },
+  goalsUnsubscribe: { method: "goals.unsubscribe", metadata: read() },
 } as const;
 
 type AnyOperation = KernelOperation<never[], unknown>;
 
 /** Flat ordinary-operation list used to build server dispatch and completeness tests. */
 export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
+  ...Object.values(OPERATIONS.goals),
+  ...Object.values(OPERATIONS.localHost),
+  ...Object.values(OPERATIONS.hosting),
   ...Object.values(OPERATIONS.runs),
   ...Object.values(OPERATIONS.config),
   ...Object.values(OPERATIONS.plugins),

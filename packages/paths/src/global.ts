@@ -41,6 +41,8 @@ export interface GlobalPaths {
   pluginsDir: string;
   /** Operator-authored reusable Extension Profile definitions. */
   extensionProfilesDir: string;
+  /** Operator-authored Docker runtime recipe scripts. */
+  runtimeRecipesDir: string;
   /** Recorded workspace-surface trust decisions. */
   workspaceTrustFile: string;
   /** Global skill directory. */
@@ -83,6 +85,8 @@ export interface GlobalPaths {
   modelsCacheFile: string;
   /** Cached result of the automatic release-version check. */
   updateCheckCacheFile: string;
+  /** Host-only coordination directory for content-addressed runtime recipe builds. */
+  runtimeRecipeStateDir: string;
   /** Agent-context candidates for this scope, absolute, in search order. */
   contextCandidates: readonly string[];
   /**
@@ -99,6 +103,8 @@ export interface GlobalPaths {
    * @returns the absolute path to `<agentsDir>/<name>.md`.
    */
   agentFile(name: string): string;
+  /** Resolve the local cross-process lease for one opaque runtime recipe identity. */
+  runtimeRecipeLeaseFile(identity: string): string;
 }
 
 /**
@@ -125,6 +131,7 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     mcpOAuthFile: join(state, "mcp-oauth.json"),
     pluginsDir: join(base, "plugins"),
     extensionProfilesDir: join(base, "extension-profiles"),
+    runtimeRecipesDir: join(base, "runtime-recipes"),
     workspaceTrustFile: join(base, "workspace-trust.json"),
     skillsDir: join(base, "skills"),
     workflowsDir: join(base, "workflows"),
@@ -139,8 +146,11 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     codeConfigFile: join(state, "code.json"),
     modelsCacheFile: join(cache, "models-dev.json"),
     updateCheckCacheFile: join(cache, "update-check.json"),
+    runtimeRecipeStateDir: join(state, "runtime-recipes"),
     contextCandidates: CONTEXT_FILENAMES.map((name) => join(base, name)),
     exportsDirForOwner: (owner: string) => join(base, "exports", ownerSegment(owner)),
     agentFile: (name: string) => join(agentsDir, `${name}.md`),
+    runtimeRecipeLeaseFile: (identity: string) =>
+      join(state, "runtime-recipes", `${ownerSegment(identity)}.lock`),
   };
 }

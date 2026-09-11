@@ -210,30 +210,33 @@ simply told, ahead of your text, that structure is not yours to set, so such a
 line is wasted rather than harmful.
 
 The composed text is appended to the isolated pass's base prompt and to the
-continuation's trailing message — the two positions that cost no prompt cache.
+continuation's trailing message, preserving the continuation's existing history.
 It must never reach the capability's `systemSection`, which sits in every
 ordinary run's system head, where editing the file would invalidate every run's
 cached prefix.
 
 ### The two passes
 
-A pass runs one of two ways, and the difference is entirely about what the
-provider's prefix cache will serve.
+A pass either continues the indexed run's context or starts from a rendered digest.
+The choice determines its context and capability composition; actual cache reuse
+requires measured provider usage.
 
-**Continuation (hot).** The pass is a `continue_from` of the run it indexes, with
-the indexing instruction appended as a trailing user message — an append, which
-`specs/cross-cutting/prompt-cache.md` prices at full prefix survival. It runs on the host's own
+**Continuation.** The pass is a `continue_from` of the run it indexes, with
+the indexing instruction appended as a trailing user message under the
+[prompt-history contract](../../specs/cross-cutting/prompt-cache.md). It runs on the host's own
 capability list with the pass capability **prepended**: that capability
 advertises no tools, no system section and no seed block, so the indexed run's
 tool array and system head survive byte-identical, and its handlers win by
 registration order alone. Tools the pass inherited are advertised and then
-**refused at dispatch** — dropping them from the array would re-bill the request.
-The pass uses the session's key with `_memory` appended, so its divergent trailing
-instruction cannot displace the interactive conversation's hot prefix. A key at
-the 512-character request limit is truncated before the suffix, never after it.
+**refused at dispatch**, preserving the advertised catalog. The pass uses the
+persisted session ID and its own persisted indexing instance ID through
+`composePromptCacheKey`. Retries preserve that identity; a new indexing conversation
+gets another instance. The composed key must fit 512 characters and is never
+truncated. Its first calls have their own measured warmup; copying the leader's
+history does not guarantee a hit under the indexing instance's distinct key.
 
-**Isolated (cold).** The pass gets its own `memory-indexer` profile, its own tool
-array and a rendered run digest. Always correct, and merely more expensive. It is
+**Isolated.** The pass gets its own `memory-indexer` profile, its own tool
+array and a rendered run digest. It is
 what runs when the indexed run left no resumable `final_context`, declared MCP
 servers (whose tools are part of the cached array), or was answered by a
 different model than the one indexing it — a cache belongs to a model, so setting
@@ -244,15 +247,17 @@ for the primary manager run. Retrying that continuation would fail validation
 before a model call, so the digest path preserves memory indexing instead.
 `IndexReport.continuation_blocker` reports which applied.
 
-The host composes the continuation's deps (`IndexerRuntime.passDeps`) and must
-**remove** the workspace hooks capability rather than deactivate it: the engine
-keeps a carried seed block only while its marker is still live, so a registered
-but inactive capability makes the block the continuation carried get dropped out
-of the middle of the transcript. A capability the run never registers is
-unrecognised instead, and its block survives in place.
+The host composes the continuation's deps (`IndexerRuntime.passDeps`) and removes
+workspace hooks so they cannot execute on the indexer's writes. Historical blocks
+remain in their persisted positions.
 The ordinary memory capability is replaced, not duplicated, by the pass form
-whose `onRunEnd` is disabled; every other long-lived capability, including tasks,
-stays in registration order.
+whose `onRunEnd` is disabled. Stateful source capabilities must preserve their
+catalog without inheriting source-work gates or lifecycle. The kernel replaces
+planning in place with its catalog projection: indexing neither waits for open
+plan tasks nor reconciles, finalizes or deletes the source plan. Other capabilities,
+including tasks, stay in registration order. The continuation carries host-registered
+capability request parameters on both initial and recovered passes, preserving
+source modes such as planning `off` or `review` without importing those packages.
 
 ## The index queue
 
@@ -395,13 +400,12 @@ cannot keep the workspace as its current directory while the caller tears that w
 
 Three of these are worth their own note.
 
-**`continuation_blocker` used to be computed and thrown away.** `planPass` produces it and
-`IndexReport` carries it, and no source file read it — so "why did every pass fall back to the
-isolated form and pay full price instead of hitting the provider's prefix cache?" had no answer in
-production. It is now on `memory.index.pass` **and** on `MemoryDrainReport.jobs[]`. The event is
+**`continuation_blocker` explains digest fallback.** `planPass` produces it and
+`IndexReport` carries it to `memory.index.pass` **and** `MemoryDrainReport.jobs[]`. The event is
 emitted from `indexRun` after `planPass` has returned, never from inside
 `buildIndexerContinuationRequest`, and it reads nothing off the subject's `final_context`: the
-continuation's three byte-identical surfaces are the whole point of the hot path.
+continuation preserves the indexed history, tool catalog and system instructions.
+This diagnostic identifies the selected context path; physical-call usage establishes cache reuse.
 
 **`memory.lock.held_long` is the enforcement for a rule nothing else enforces.** "Never start a pass
 from inside `store.exclusive`" cannot deadlock, because the store's lock is re-entrant — it would
@@ -430,6 +434,15 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
+Native runs retain that seven-tool surface. An isolated container run is deliberately narrower:
+`prepareMemoryRuntime` resolves the canonical provider on the host and projects only the four read
+operations, a provider-opaque digest and the bounded seed. Provider configuration, credentials,
+store paths and all three mutating tools stay out of the guest. The host grant validates the
+canonical read schema again, so a forged `write_memory`, `edit_memory` or `delete_memory` request is
+rejected even when the host provider is writable. Once the guest's completed trace is persisted on
+the host, the guest lifecycle bridge asks the host to run the same canonical `onRunEnd` path; durable
+enqueueing and later indexing therefore remain host work rather than guest memory authority.
+
 The read-only `file` provider accepts at most 64 declared paths, 1 MiB per
 document and 8 MiB across one call by default. Oversized inputs are not loaded
 and the answer explicitly says it is incomplete. Durable file-backed job scans
@@ -437,8 +450,9 @@ visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-The agent may write memory directly during a run; the same tools back an owner's
-kernel/MCP editing surface.
+A write-enabled native entry agent may write memory directly during a run; an isolated guest may
+not. The same host tools back an owner's kernel/MCP editing surface and the host-owned dedicated
+indexing pass.
 
 `pinned:` and `authority: confirmed` are the owner's alone, and the rule binds
 every non-owner caller — the model's tools exactly as much as the autonomous
@@ -465,8 +479,9 @@ cannot be interrupted once it has started.
 - `@clarvis/memory/testing` — an in-memory store, its conformance suite, and a
   clock whose time only moves when a test moves it.
 - `@clarvis/memory/capability` — the loop adapter: `createMemoryCapability`, the
-  per-owner `MemoryFactory`, the post-run index enqueue, the
-  `ExecutionRecord` → `RunSnapshot` adapter and the memory toolset.
+  per-owner `MemoryFactory`, canonical memory tool contracts, the read-only isolated-runtime lease
+  from `prepareMemoryRuntime`, the post-run index enqueue, the `ExecutionRecord` → `RunSnapshot`
+  adapter and the memory toolset.
 
 `@clarvis/memory/settings` carries the `memory:` block and the per-run `memory` param, plus
 the capability's name and its ingest event kind. A host registers the spec —
@@ -545,3 +560,10 @@ bun --filter @clarvis/memory format:check
 
 The package requires Bun 1.4.0 or newer, which is also the version the
 monorepo pins.
+
+## Prompt-cache continuity
+
+Durable indexing jobs persist a distinct agent instance and reserve execution identity on claim before inference. Retries retain the instance and replay the previous indexing context when available. Indexing uses the same typed session/instance key composer without shared leader affinity or truncation.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

@@ -11,12 +11,14 @@ export {
   AGENT_TOOLS_CAPABILITY_NAME,
   defaultGuardMode,
   agentToolsActive,
+  withGuardElicitWaitBound,
 } from "./runtime/capabilities/tools.ts";
 export type {
   AgentToolsCapabilityOptions,
   GuardConfig,
   GuardResolution,
   GuardResolver,
+  HostVcsDispatcherResolver,
 } from "./runtime/capabilities/tools.ts";
 export {
   analyzeShell,

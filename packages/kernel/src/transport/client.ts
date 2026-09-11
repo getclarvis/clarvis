@@ -28,6 +28,8 @@ import type {
   ExtensionProfileService,
 } from "@clarvis/protocol";
 import { createEventStream, type EventStream } from "../core/event-stream.ts";
+import { unavailableGoalService } from "../goals/unavailable.ts";
+import { createGoalClient } from "./goal-client.ts";
 import {
   M,
   N,
@@ -50,6 +52,9 @@ import {
 } from "../runs/coalesce-events.ts";
 import { CLARVIS_WIRE_VERSION } from "./wire.ts";
 import { decodeRunEvent } from "./run-event-codec.ts";
+import { createHostingClient } from "./hosting-client.ts";
+import { createLocalHostClient } from "./local-host-client.ts";
+import { wireId } from "./hosting-codec.ts";
 
 /**
  * A client-side kernel façade over a {@link KernelTransport} — the remote-ready
@@ -67,8 +72,8 @@ export interface RemoteKernel extends KernelClient {
   /** List the agents available in the bound workspace (a convenience alias for `config.listAgents`). */
   listAgents(): Promise<AgentSummary[]>;
   /**
-   * Close the connection: settle every in-flight run as `unavailable`, detach the
-   * close listener, and close the transport. Idempotent.
+   * Close the connection: settle ordinary in-flight handles as `unavailable`, reject unfinished
+   * hosted observations without fabricating a run result, and release the transport. Idempotent.
    */
   close(): Promise<void>;
 }
@@ -149,6 +154,8 @@ export async function connectKernelClient(
   const configSubs = new Map<string, (change: ConfigChange) => void>();
   const notificationOffs: Array<() => void> = [];
   let closed = false;
+  let hosted: ReturnType<typeof createHostingClient> | undefined;
+  let goals: ReturnType<typeof createGoalClient> | undefined;
   let offClose: (() => void) | undefined;
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -183,6 +190,8 @@ export async function connectKernelClient(
   };
   const clearClientSubscriptions = (): void => {
     configSubs.clear();
+    hosted?.close();
+    goals?.close();
   };
   const observe = (method: string, handler: (params: unknown) => void): void => {
     notificationOffs.push(transport.onNotification(method, handler));
@@ -285,7 +294,8 @@ export async function connectKernelClient(
       typeof params.request.execution_id !== "string" ||
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
-      (params.request.detail !== undefined && !isCommandDetail(params.request.detail))
+      (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
+      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
     ) {
       protocolViolation("invalid run.elicitation notification");
       return;
@@ -335,11 +345,69 @@ export async function connectKernelClient(
     }
     throw error;
   }
+  const runtime =
+    isRecord(hello) && isRecord(hello.capabilities) ? hello.capabilities.runtime : undefined;
+  const validRuntime =
+    runtime === undefined ||
+    (isRecord(runtime) &&
+      ((runtime.kind === "native" &&
+        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle", "fallback_from"]) &&
+        typeof runtime.host_platform === "string" &&
+        (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
+        (runtime.lifecycle === "ready" || runtime.lifecycle === "fallback") &&
+        (runtime.fallback_from === undefined ||
+          runtime.fallback_from === "docker" ||
+          runtime.fallback_from === "podman")) ||
+        (runtime.kind === "container" &&
+          hasOnly(runtime, [
+            "kind",
+            "generation",
+            "engine",
+            "engine_version",
+            "host_platform",
+            "guest_platform",
+            "image_digest",
+            "runtime_protocol_revision",
+            "network",
+            "lifecycle",
+          ]) &&
+          (runtime.engine === "podman" || runtime.engine === "docker") &&
+          typeof runtime.host_platform === "string" &&
+          runtime.guest_platform === "linux" &&
+          (runtime.generation === undefined || typeof runtime.generation === "string") &&
+          (runtime.engine_version === undefined || typeof runtime.engine_version === "string") &&
+          (runtime.image_digest === undefined || typeof runtime.image_digest === "string") &&
+          (runtime.runtime_protocol_revision === undefined ||
+            typeof runtime.runtime_protocol_revision === "string") &&
+          ["none", "internet", "outbound"].includes(String(runtime.network)) &&
+          [
+            "cold",
+            "inspecting",
+            "preparing",
+            "starting",
+            "ready",
+            "stopping",
+            "stopped",
+            "disconnected",
+            "failed",
+          ].includes(String(runtime.lifecycle)))));
   if (
     !isRecord(hello) ||
     !hasOnly(hello, ["wire_version", "capabilities", "project", "workspace", "principal"]) ||
     hello.wire_version !== CLARVIS_WIRE_VERSION ||
     !isRecord(hello.capabilities) ||
+    (hello.capabilities.local_host !== undefined &&
+      (hello.capabilities.local_host !== true || hello.capabilities.hosting === undefined)) ||
+    (hello.capabilities.goals !== undefined &&
+      (typeof hello.capabilities.goals !== "boolean" ||
+        (hello.capabilities.goals && hello.capabilities.hosting === undefined))) ||
+    (hello.capabilities.hosting !== undefined &&
+      (!isRecord(hello.capabilities.hosting) ||
+        !hasOnly(hello.capabilities.hosting, ["host_generation", "default_owner"]) ||
+        !wireId(hello.capabilities.hosting.host_generation) ||
+        (hello.capabilities.hosting.default_owner !== undefined &&
+          !wireId(hello.capabilities.hosting.default_owner)))) ||
+    !validRuntime ||
     !isRecord(hello.project) ||
     !isRecord(hello.workspace) ||
     typeof hello.project.id !== "string" ||
@@ -363,6 +431,23 @@ export async function connectKernelClient(
       `kernel selected an invalid or unsupported Clarvis wire contract '${String(selected)}'`,
     );
   }
+
+  if (hello.capabilities.hosting !== undefined) {
+    hosted = createHostingClient({
+      transport,
+      generation: hello.capabilities.hosting.host_generation,
+      workspaceId: hello.workspace.id,
+      logger,
+      protocolViolation,
+    });
+  }
+  if (hello.capabilities.goals === true)
+    goals = createGoalClient({
+      transport,
+      workspaceId: hello.workspace.id,
+      logger,
+      protocolViolation,
+    });
 
   /**
    * Build a client-side streaming handle (a {@link RunHandle}) whose
@@ -556,6 +641,10 @@ export async function connectKernelClient(
     workspace: hello.workspace,
     ...(hello.principal !== undefined ? { principal: hello.principal } : {}),
     runs,
+    ...(hosted === undefined ? {} : { hosting: hosted.service }),
+    ...(hello.capabilities.local_host === true
+      ? { localHost: createLocalHostClient(transport, hello.capabilities.hosting!.host_generation) }
+      : {}),
     config,
     plugins,
     extensionProfiles,
@@ -565,6 +654,7 @@ export async function connectKernelClient(
     files,
     memory,
     plans,
+    goals: goals?.service ?? unavailableGoalService(),
     workflows,
     skills,
     sessions,

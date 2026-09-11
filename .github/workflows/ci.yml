@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
   workflow_dispatch:
 
@@ -52,6 +52,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - run: bun run typecheck
+      - name: serialized prompt cache contracts (no credentials)
+        run: bun run test:cache
       - run: bun run format:check
       - run: bun run lint
       # The server image installs from the workspace manifests before copying
@@ -150,7 +152,7 @@ jobs:
   # @clarvis/tools suite runs a Seatbelt canary against actual host files and a
   # loopback listener; the keyboard tests retain the platform policy coverage.
   sandbox-macos:
-    # `Protect main` requires this exact status context. Keep the stable public
+    # Both permanent-branch rulesets require this exact status context. Keep the stable public
     # name when extending the job with additional macOS-specific canaries.
     name: keyboard policy (macos)
     runs-on: macos-14

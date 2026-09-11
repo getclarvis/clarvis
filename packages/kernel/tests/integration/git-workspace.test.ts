@@ -43,6 +43,9 @@ describe("discoverGitWorkspace", () => {
     expect(a.workspace.id).not.toBe(b.workspace.id);
     expect(a.workspace.kind).toBe("primary");
     expect(b.workspace.kind).toBe("external_worktree");
+    expect(a.commonDir).toBe(a.gitDir);
+    expect(b.commonDir).toBe(a.commonDir);
+    expect(b.gitDir).not.toBe(b.commonDir);
   });
 
   it("falls back deterministically outside Git", async () => {

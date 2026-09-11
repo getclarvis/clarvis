@@ -81,28 +81,28 @@ running tool rows.
 
 Publication and physical markers are internal Code contracts, not public workspace-package APIs.
 
-| Surface                                                              | Responsibility                                                                                                                                            |
+| Surface | Responsibility |
 | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TRANSCRIPT_EVENT_POLICY`                                            | compile-time-exhaustive disposition of every `RunEvent["type"]`                                                                                           |
-| `TranscriptPublisher`                                                | turns terminal semantic candidates into ordered immutable publication batches                                                                             |
-| `snapshotTranscriptNode`                                             | deep-freezes the bounded inline projection; raw/live payload fields do not cross the boundary                                                             |
-| `TranscriptPublicationBatch`                                         | frozen semantic nodes, folds, groups, sub-agent headers and monotonic publication phase; retention does not imply main-transcript visibility              |
-| `TranscriptRunSink.complete`                                         | host signal that stored reconciliation finished or definitively degraded                                                                                  |
-| `TranscriptStore.publicationBatches`                                 | resident semantic batches; independent from renderer residency                                                                                            |
-| `TranscriptStore.frontierNodes`                                      | mutable semantic nodes whose keys are not committed                                                                                                       |
-| `TranscriptPhysicalMarker`                                           | measured `{ batchId, layoutEpoch, columns, foldRevision, rows }` fact                                                                                     |
-| `TranscriptPhysicalWindow`                                           | contiguous measured batch range plus exact before/after spacers and unknown boundaries                                                                    |
-| `createPhysicalWindowController`                                     | observes viewport rows/scroll position, serializes measurement and preserves anchors                                                                      |
-| `CommittedHistoryPublicationStore`                                   | narrow history port exposing frozen batches only                                                                                                          |
-| `CommittedHistory`                                                   | direct-child OpenTUI `ScrollBox` owner and physical-window adapter                                                                                        |
-| `SyntaxPublicationBoundary`                                          | waits for descendant syntax work and confirming renderer frames; recovery can retain the same semantic renderers while no longer waiting for highlighting |
-| `TRANSCRIPT_MEASUREMENT_LEASE_MS` / `TRANSCRIPT_MEASUREMENT_RETRIES` | bound one candidate to a 2-second lease and one fresh syntax subtree                                                                                      |
-| `TRANSCRIPT_SCROLLBAR_COLUMNS`                                       | reserves one vertical-scrollbar column in every history layout                                                                                            |
-| `transcript.syntax.*` / `transcript.measurement.*` diagnostics       | explain registration, frame, dimension, lease, fallback and marker-acceptance timing in debug sessions                                                    |
-| `LiveTranscriptTail`                                                 | content-height mutable tail and view-local live-to-committed handoff rendered as the final child of the history ScrollBox                                 |
-| `transcriptReadingRunwayRows`                                        | chooses the fixed three-row normal or one-row compact physical runway from terminal height only                                                           |
-| `LeadActivityLine`                                                   | persistent one-row `thinking`/`working`/`ready` owner immediately above the composer and outside history                                                  |
-| `TranscriptScrollBoxRenderable`                                      | native OpenTUI ScrollBox extension that preserves ordinary wheel/trackpad scrolling and reports edge intent for lazy admission                            |
+| `TRANSCRIPT_EVENT_POLICY` | compile-time-exhaustive disposition of every `RunEvent["type"]` |
+| `TranscriptPublisher` | turns terminal semantic candidates into ordered immutable publication batches |
+| `snapshotTranscriptNode` | deep-freezes the bounded inline projection; raw/live payload fields do not cross the boundary |
+| `TranscriptPublicationBatch` | frozen semantic nodes, folds, groups, sub-agent headers and monotonic publication phase; retention does not imply main-transcript visibility |
+| `TranscriptRunSink.complete` | host signal that stored reconciliation finished or definitively degraded |
+| `TranscriptStore.publicationBatches` | resident semantic batches; independent from renderer residency |
+| `TranscriptStore.frontierNodes` | mutable semantic nodes whose keys are not committed |
+| `TranscriptPhysicalMarker` | measured `{ batchId, layoutEpoch, columns, foldRevision, rows }` fact |
+| `TranscriptPhysicalWindow` | contiguous measured batch range plus exact before/after spacers and unknown boundaries |
+| `createPhysicalWindowController` | observes viewport rows/scroll position, serializes measurement and preserves anchors |
+| `CommittedHistoryPublicationStore` | narrow history port exposing frozen batches only |
+| `CommittedHistory` | direct-child OpenTUI `ScrollBox` owner and physical-window adapter |
+| `SyntaxPublicationBoundary` | waits for descendant syntax work and confirming renderer frames; recovery can retain the same semantic renderers while no longer waiting for highlighting |
+| `TRANSCRIPT_MEASUREMENT_LEASE_MS` / `TRANSCRIPT_MEASUREMENT_RETRIES` | bound one candidate to a 2-second lease and one fresh syntax subtree |
+| `TRANSCRIPT_SCROLLBAR_COLUMNS` | reserves one vertical-scrollbar column in every history layout |
+| `transcript.syntax.*` / `transcript.measurement.*` diagnostics | explain registration, frame, dimension, lease, fallback and marker-acceptance timing in debug sessions |
+| `LiveTranscriptTail` | content-height mutable tail and view-local live-to-committed handoff rendered as the final child of the history ScrollBox |
+| `transcriptReadingRunwayRows` | chooses the fixed three-row normal or one-row compact physical runway from terminal height only |
+| `LeadActivityLine` | persistent one-row `thinking`/`working`/`ready` owner immediately above the composer and outside history |
+| `TranscriptScrollBoxRenderable` | native OpenTUI ScrollBox extension that preserves ordinary wheel/trackpad scrolling and reports edge intent for lazy admission |
 
 `App` builds view state from committed semantic nodes with `preserveOrder: true`, then chooses the
 Lead-only main projection or one selected child's projection before physical residency is decided by
@@ -210,16 +210,16 @@ plan/workflow progress never enter a publication batch. There is no semantic tra
 
 ### 3.5 Physical bounds
 
-| Bound                        |                             Current value | Production symbol                                                                   |
+| Bound | Current value | Production symbol |
 | ---------------------------- | ----------------------------------------: | ----------------------------------------------------------------------------------- |
-| same-tool staging latency    |                                     80 ms | `TRANSCRIPT_TOOL_GROUP_LATENCY_MS`                                                  |
-| same-tool staging pressure   |                          8 terminal calls | `TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES`                                                 |
-| directional prepared runway  |   two current viewports ahead, one behind | `TRANSCRIPT_PREFETCH_AHEAD_VIEWPORTS = 2`, `TRANSCRIPT_RETAIN_BEHIND_VIEWPORTS = 1` |
-| measurement concurrency      |                           one batch owner | `TRANSCRIPT_MEASURE_CONCURRENCY = 1`                                                |
-| syntax measurement lease     |                                 2 seconds | `TRANSCRIPT_MEASUREMENT_LEASE_MS = 2_000`                                           |
-| syntax subtree retries       | one, then syntax-frozen semantic renderer | `TRANSCRIPT_MEASUREMENT_RETRIES = 1`                                                |
-| reserved vertical-bar gutter |                                one column | `TRANSCRIPT_SCROLLBAR_COLUMNS = 1`                                                  |
-| semantic resident history    |    20 turns plus one folded-prefix notice | `RESIDENT_TRANSCRIPT_TURN_LIMIT`                                                    |
+| same-tool staging latency | 80 ms | `TRANSCRIPT_TOOL_GROUP_LATENCY_MS` |
+| same-tool staging pressure | 8 terminal calls | `TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES` |
+| directional prepared runway | two current viewports ahead, one behind | `TRANSCRIPT_PREFETCH_AHEAD_VIEWPORTS = 2`, `TRANSCRIPT_RETAIN_BEHIND_VIEWPORTS = 1` |
+| measurement concurrency | one batch owner | `TRANSCRIPT_MEASURE_CONCURRENCY = 1` |
+| syntax measurement lease | 2 seconds | `TRANSCRIPT_MEASUREMENT_LEASE_MS = 2_000` |
+| syntax subtree retries | one, then syntax-frozen semantic renderer | `TRANSCRIPT_MEASUREMENT_RETRIES = 1` |
+| reserved vertical-bar gutter | one column | `TRANSCRIPT_SCROLLBAR_COLUMNS = 1` |
+| semantic resident history | 20 turns plus one folded-prefix notice | `RESIDENT_TRANSCRIPT_TURN_LIMIT` |
 
 With viewport height `V = max(1, scrollbox.viewport.height)`, an ordinary mounted target covers the
 visible interval plus `2V` measured rows in the last scroll direction and `V` behind it. Whole-batch
@@ -259,33 +259,33 @@ The full-screen implementation follows the supported components instead:
 
 ### 4.1 Exhaustive event disposition
 
-| Event type(s)                                                                                                              | Mutable/status behavior                                                                                                    | Publication trigger                                                                                                              |
+| Event type(s) | Mutable/status behavior | Publication trigger |
 | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `run_started`                                                                                                              | initialize live run identity                                                                                               | none                                                                                                                             |
-| `iteration_started`                                                                                                        | fixed Lead activity line becomes `thinking`; proves preceding unphased answer was commentary                               | preceding answer becomes an iteration batch                                                                                      |
-| `text_delta`                                                                                                               | patch assistant frontier candidate                                                                                         | never directly                                                                                                                   |
-| `reasoning`                                                                                                                | patch settled iteration reasoning candidate                                                                                | with `iteration_completed`                                                                                                       |
-| `iteration_completed`                                                                                                      | replace streamed text with authoritative `response`                                                                        | commentary now; final/unphased answer follows §4.2                                                                               |
-| `model_retry`                                                                                                              | remove composing placeholders from the failed attempt, then show retry status/countdown in the frontier                  | never                                                                                                                            |
-| `model_error`                                                                                                              | terminal iteration error candidate                                                                                         | with iteration or final sweep                                                                                                    |
-| `tool_input_delta`, `tool_call_started`, `tool_output_delta` for an admitted ordinary tool                                 | one mutable tool candidate/tail; cumulative input stays composing until explicit `complete: true`, then pending until actual start | never directly                                                                                                                   |
-| `tool_call` for an admitted ordinary tool                                                                                  | reserve bounded terminal snapshot immediately                                                                              | after group closure                                                                                                              |
-| any composing/started/output/terminal tool event for a Lead-owned supervision or workflow-orchestration identity           | suppress before frontier creation/staging                                                                                  | none; no transient or terminal Lead row                                                                                          |
-| `delegation_created`                                                                                                       | register child semantics and Sidebar/footer state; the first delegation may open/reveal Agents once for this execution     | append one friendly frozen Lead-owned `spawned` marker                                                                           |
-| `delegation_started`                                                                                                       | update child/Sidebar/footer running state                                                                                  | none; it cannot create or mutate a Lead marker                                                                                   |
-| `delegation_completed`, `delegation_failed`                                                                                | close child activity and retain its terminal semantics                                                                     | append one separate friendly frozen Lead-owned `completed`/`failed` marker; freeze the child section for its isolated transcript |
-| `workflow_run_started`, `workflow_title_updated`, `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed` | Sidebar or compact footer activity strip; the first projected state/leader may open/reveal Parallel work once for this execution | no history row                                                                                                                   |
-| `plan_created`, `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved`                            | Sidebar, `Ctrl+P` and pending review; the first live Plan may open/reveal Plan once for this execution; no footer summary   | no mutable plan singleton in either transcript flow                                                                              |
-| `soft_limit_check`                                                                                                         | terminal annotation candidate                                                                                              | append once                                                                                                                      |
-| `compaction_started`                                                                                                       | status/frontier progress                                                                                                   | none                                                                                                                             |
-| `compaction`, `compaction_skipped`, `vision_analysis`                                                                      | terminal annotation candidate                                                                                              | append once                                                                                                                      |
-| `elicitation_requested`                                                                                                    | pending interaction in `LiveTranscriptTail`                                                                                | none                                                                                                                             |
-| `elicitation_resolved`                                                                                                     | terminal question/outcome fact                                                                                             | append once when projected                                                                                                       |
-| `steering_applied`                                                                                                         | settle pending steer                                                                                                       | append delivered outcome once                                                                                                    |
-| `memory_ingest`                                                                                                            | status/footer only                                                                                                         | none                                                                                                                             |
-| `capability_event`, `events_dropped`                                                                                       | bounded immutable point/warning, except generic delegation/workflow capability mirrors, which are suppressed               | append once when eligible; no publication for either orchestration mirror                                                        |
-| `mcp_degraded`                                                                                                             | one transient live TUI warning per newly observed `{ server, reason }`; replay is silent                                    | none; persisted telemetry never becomes conversation history                                                                     |
-| `run_ended`                                                                                                                | close frontier and start reconciliation holdback                                                                           | terminal batch only after `TranscriptRunSink.complete`                                                                           |
+| `run_started` | initialize live run identity | none |
+| `iteration_started` | fixed Lead activity line becomes `thinking`; proves preceding unphased answer was commentary | preceding answer becomes an iteration batch |
+| `text_delta` | patch assistant frontier candidate | never directly |
+| `reasoning` | patch settled iteration reasoning candidate | with `iteration_completed` |
+| `iteration_completed` | replace streamed text with authoritative `response` | commentary now; final/unphased answer follows §4.2 |
+| `model_retry` | remove composing placeholders from the failed attempt, then show retry status/countdown in the frontier | never |
+| `model_error` | terminal iteration error candidate | with iteration or final sweep |
+| `tool_input_delta`, `tool_call_started`, `tool_output_delta` for an admitted ordinary tool | one mutable tool candidate/tail; cumulative input stays composing until explicit `complete: true`, then pending until actual start | never directly |
+| `tool_call` for an admitted ordinary tool | reserve bounded terminal snapshot immediately | after group closure |
+| any composing/started/output/terminal tool event for a Lead-owned supervision or workflow-orchestration identity | suppress before frontier creation/staging | none; no transient or terminal Lead row |
+| `delegation_created` | register child semantics and Sidebar/footer state; the first delegation may open/reveal Agents once for this execution | append one friendly frozen Lead-owned `spawned` marker |
+| `delegation_started` | update child/Sidebar/footer running state | none; it cannot create or mutate a Lead marker |
+| `delegation_completed`, `delegation_failed` | close child activity and retain its terminal semantics | append one separate friendly frozen Lead-owned `completed`/`failed` marker; freeze the child section for its isolated transcript |
+| `workflow_run_started`, `workflow_title_updated`, `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed` | Sidebar or compact footer activity strip; the first projected state/leader may open/reveal Parallel work once for this execution | no history row |
+| `plan_created`, `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved` | Sidebar, `Ctrl+P` and pending review; the first live Plan may open/reveal Plan once for this execution; no footer summary | no mutable plan singleton in either transcript flow |
+| `soft_limit_check` | terminal annotation candidate | append once |
+| `compaction_started` | status/frontier progress | none |
+| `compaction`, `compaction_skipped`, `vision_analysis` | terminal annotation candidate | append once |
+| `elicitation_requested` | pending interaction in `LiveTranscriptTail` | none |
+| `elicitation_resolved` | terminal question/outcome fact | append once when projected |
+| `steering_applied` | settle pending steer | append delivered outcome once |
+| `memory_ingest` | status/footer only | none |
+| `capability_event`, `events_dropped` | bounded immutable point/warning, except generic delegation/workflow capability mirrors, which are suppressed | append once when eligible; no publication for either orchestration mirror |
+| `mcp_degraded` | one transient live TUI warning per newly observed `{ server, reason }`; replay is silent | none; persisted telemetry never becomes conversation history |
+| `run_ended` | close frontier and start reconciliation holdback | terminal batch only after `TranscriptRunSink.complete` |
 
 This policy does not redefine durability. `RUN_EVENT_POLICY` in the kernel still decides whether an
 event is streamed, persisted or both.
@@ -551,6 +551,27 @@ When one frontier artifact in the active projection commits, `LiveTranscriptTail
 handoff snapshot until the measured committed owner is visible at the same flow offset; the swap
 cannot create an empty frame, duplicate row or vertical jump. Later mutable content in that same
 projection remains after the handoff throughout the swap.
+For streaming Markdown, the mutable tree's row-height high-water mark remains active only until the
+final syntax tree is ready. Its atomic publication swap releases that floor with the tree change, so
+a shorter final rendering cannot leave the old streaming height as blank transcript rows before the
+run outcome or a later message. Production: `StableMarkdown` in
+`packages/code/src/ui/patterns/stable-syntax.tsx`. Test:
+`packages/code/tests/integration/markdown-render-contract.test.tsx` (`settlement releases a streaming
+height floor after the final tree is ready`).
+
+History ownership extends through the last resident publication, including older virtualized
+batches. If several stages seal while a full-region view is active, initial history admission may
+start at the newest outcome. Older handoff snapshots then belong to history navigation; retaining
+them after that outcome in the live tail would reverse chronology. Ownership does not transfer
+before any committed owner is resident. Revealing an earlier checkpoint or scrolling back loads its
+original publication without changing the semantic ledger.
+Production: `historyOwnedKeys` in
+[`CommittedHistory`](../../packages/code/src/views/history/CommittedHistory.tsx), propagated by
+[`TranscriptRegion`](../../packages/code/src/views/app/TranscriptRegion.tsx) to
+[`LiveTranscriptTail`](../../packages/code/src/views/live/LiveTranscriptTail.tsx).
+Test: `keeps fast checkpoint stages in chronological flow after an inactive goal view` in
+[`transcript-publication-render.test.tsx`](../../packages/code/tests/integration/transcript-publication-render.test.tsx)
+covers short and virtualized stages, retained checkpoint navigation and return to the final tail.
 
 The same handoff remains bounded while the reader is away. A just-committed frontier owner that
 intersects the viewport stays painted, because replacing visible content with blank geometry would
@@ -621,6 +642,18 @@ then calls `TranscriptRunSink.complete`. A read/settlement failure adds one expl
 annotation. Session resume brackets stored events with `beginReconcile`/`endReconcile` and calls
 `complete`. Physical markers are never persisted or replayed; they are remeasured for the current
 terminal.
+
+Conversation `/loop` occurrences use the same immutable run publication path and additionally wait
+for physical closure before the next automatic turn. Live scheduling notices append only to the
+matching conversation generation; job status updates belong to the separate loop view. They never
+patch an older prompt/publication or invoke the explicit human-submit scroll-to-tail action.
+Production: `submitScheduledTurn` in [run-host.ts](../../packages/code/src/run-host.ts), the loop
+notice callback in [runtime.tsx](../../packages/code/src/runtime.tsx), and `LoopView` in
+[view.tsx](../../packages/code/src/features/loop/view.tsx).
+Test: scheduled closure/reconciliation and stale-conversation cases in
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), and in-place loop controls
+in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
+Registration lifetime is owned by [loop-scheduling.md](loop-scheduling.md).
 
 ### 4.8 Retention and detail hydration
 
@@ -988,41 +1021,55 @@ in `packages/code/src/adapters/transcript-publication.ts`, plus `openRun` in
 
 **INV-TP34.** A pending elicitation cannot be hidden below an older physical-history reader. When
 the request becomes live, `App` explicitly asks the active `CommittedHistoryHandle` to return to its
-tail before the composer is hidden, then re-clamps the ScrollBox after the question has entered
-layout. When the request clears, it re-clamps once more after the card leaves layout, so the restored
-composer does not expose a blank or stale overscroll frame. Ordinary background events still retain
-an older reader anchor; this forced navigation belongs only to the user interaction that has blocked
-the run. Production: `packages/code/src/views/App.tsx` (`revealHistoryTail`, elicitation effect) and
-`packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistoryHandle.returnToTail`). Test:
+tail before the composer is hidden. The old composer stays painted but keyboard-inert until the
+`active-elicitation` block owns a visible transcript row; `App` then requests the tail again before
+hiding that bridge.
+If a dirty full-page editor covers the transcript, `App` pauses the transition and restarts it only
+when overlay state changes rather than polling renderer frames. `CommittedHistory` retains an
+explicit clamp until the virtual tail is physically resident, applies that clamp once, then releases
+the latch so scrollbar dragging and selection autoscroll can leave the tail. `App` issues the next
+bounded request after each elicitation geometry transition instead of treating the first
+`scrollHeight` as final. When the request clears, the composer returns and a new clamp absorbs the
+card's removal, so no frame loses both interaction surfaces or exposes blank/stale overscroll.
+Ordinary background events still retain an older reader anchor; this forced navigation belongs only
+to the user interaction that has blocked the run. Production: `packages/code/src/views/App.tsx`
+(`elicitComposerHidden`, `revealHistoryTail`, elicitation effect),
+`packages/code/src/views/ElicitBlock.tsx` (`active-elicitation`) and
+`packages/code/src/views/history/CommittedHistory.tsx` (`tailClampRequested`,
+`CommittedHistoryHandle.returnToTail`). Test:
 `packages/code/tests/integration/app-shell-render.test.tsx` ("an elicitation returns an old reader to
-the live tail before hiding the composer").
+the live tail before hiding the composer" and "a pending elicitation does not discard an in-progress
+config edit"), which records the transition, proves a covered dirty view stays idle, and requires
+each transition frame to contain either the bridge composer or the pending question; plus
+`packages/code/tests/integration/transcript-window-render.test.tsx` ("native scrollbar movement is
+free after an explicit tail clamp settles").
 
 ## 6. Failure modes and degradation
 
-| Failure or pressure                                                               | Required behavior                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Failure or pressure | Required behavior |
 | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| stored-run read throws                                                            | settle available semantics, append one degraded annotation, then publish terminal batch                                                                                                                                                                                                                                                                                                                                                                         |
-| incremental events drop                                                           | publish `events_dropped`; admitted terminal tool/iteration events remain authoritative, while classified supervision/orchestration tools remain suppressed                                                                                                                                                                                                                                                                                                      |
-| syntax highlighting rejects or does not settle within two leases                  | remount a never-published candidate once; then disable parser work through the same semantic renderers while bypassing only unfinished highlighting and retain that `plain-semantic` policy across eviction/remount. If an owner already painted, retain its identities, wait on public syntax completion and then require two equal positive dimensions; while pending, leave it visible and unchanged rather than replacing its body with a warning/text dump |
-| owner dimensions differ on confirming frame                                       | keep candidate hidden and observe again; never record the unstable height                                                                                                                                                                                                                                                                                                                                                                                       |
-| viewport culling would skip candidate render hooks                                | suspend culling for the one transparent candidate; restore it as soon as the physical marker commits                                                                                                                                                                                                                                                                                                                                                            |
-| layout epoch changes during measurement                                           | discard candidate marker and restart once in the new epoch                                                                                                                                                                                                                                                                                                                                                                                                      |
-| one batch exceeds physical row target                                             | admit that batch alone; existing semantic display ceilings still apply                                                                                                                                                                                                                                                                                                                                                                                          |
-| user reaches unmeasured history faster than preparation                           | keep current frame and passive boundary; coalesce input and continue loading without requiring a click                                                                                                                                                                                                                                                                                                                                                          |
-| user reads older history while events append                                      | retain exact anchor; show any newer count only in the top overlay and admit it through downward scroll                                                                                                                                                                                                                                                                                                                                                          |
-| user submits while reading older history or a child                               | select Lead and synchronously request its newest edge before dispatch; retain the current frame until a virtualized tail candidate settles, then swap atomically rather than waiting for a later model event to move the viewport                                                                                                                                                                                                                                |
-| elicitation arrives while the user reads older history                            | explicitly return the active physical reader to the live tail, reveal the pending controls after layout, and re-clamp after resolution; never hide the composer while leaving the blocking question outside the mounted tail                                                                                                                                                                                                                                     |
-| current-epoch measured range is evicted                                           | replace it with exact summed spacer rows and dispose native owners                                                                                                                                                                                                                                                                                                                                                                                              |
-| range has no current-epoch markers                                                | show one passive earlier-history boundary above content; never synthesize spacer height                                                                                                                                                                                                                                                                                                                                                                         |
-| terminal width/sidebar/ASCII changes                                              | create new epoch, prepare current target hidden, then replace; old markers are dropped                                                                                                                                                                                                                                                                                                                                                                          |
-| terminal height alone changes                                                     | retain markers and recompute the visible/directional-runway interval from new viewport rows                                                                                                                                                                                                                                                                                                                                                                     |
-| vertical scrollbar gains or loses overflow                                        | retain the permanently reserved column and markers; change indicator opacity only                                                                                                                                                                                                                                                                                                                                                                               |
-| 20-turn semantic limit is crossed                                                 | evict complete batches and their markers, install one frozen export notice                                                                                                                                                                                                                                                                                                                                                                                      |
-| child activity changes while Lead is selected                                     | retain child content for isolated selection and update footer/Sidebar; append only the delegation's frozen spawned/settled Lead markers, never child content, a live marker or provider supervision/orchestration tool plumbing                                                                                                                                                                                                                                 |
-| child or full-region page is opened and closed                                    | pause the hidden projection and reveal the same retained Lead ScrollBox/controller on return; retain at most one child and destroy the previous child when another is selected                                                                                                                                                                                                                                                                                  |
-| workflow activity changes                                                         | update the footer strip/Sidebar only; mount no workflow row in either transcript projection                                                                                                                                                                                                                                                                                                                                                                     |
-| a provider emits only a composing or started supervision/orchestration tool phase | suppress it immediately; typed delegation events or Sidebar/footer workflow state remain authoritative                                                                                                                                                                                                                                                                                                                                                          |
-| future loader/progress feature is added                                           | keep transcript content before the fixed runway, place operational state in Sidebar/footer, or reuse the fixed Lead activity line; it cannot reserve a second transcript panel or move committed rows                                                                                                                                                                                                                                                           |
+| stored-run read throws | settle available semantics, append one degraded annotation, then publish terminal batch |
+| incremental events drop | publish `events_dropped`; admitted terminal tool/iteration events remain authoritative, while classified supervision/orchestration tools remain suppressed |
+| syntax highlighting rejects or does not settle within two leases | remount a never-published candidate once; then disable parser work through the same semantic renderers while bypassing only unfinished highlighting and retain that `plain-semantic` policy across eviction/remount. If an owner already painted, retain its identities, wait on public syntax completion and then require two equal positive dimensions; while pending, leave it visible and unchanged rather than replacing its body with a warning/text dump |
+| owner dimensions differ on confirming frame | keep candidate hidden and observe again; never record the unstable height |
+| viewport culling would skip candidate render hooks | suspend culling for the one transparent candidate; restore it as soon as the physical marker commits |
+| layout epoch changes during measurement | discard candidate marker and restart once in the new epoch |
+| one batch exceeds physical row target | admit that batch alone; existing semantic display ceilings still apply |
+| user reaches unmeasured history faster than preparation | keep current frame and passive boundary; coalesce input and continue loading without requiring a click |
+| user reads older history while events append | retain exact anchor; show any newer count only in the top overlay and admit it through downward scroll |
+| user submits while reading older history or a child | select Lead and synchronously request its newest edge before dispatch; retain the current frame until a virtualized tail candidate settles, then swap atomically rather than waiting for a later model event to move the viewport |
+| elicitation arrives while the user reads older history | explicitly return the active physical reader to the live tail, reveal the pending controls after layout, and re-clamp after resolution; never hide the composer while leaving the blocking question outside the mounted tail |
+| current-epoch measured range is evicted | replace it with exact summed spacer rows and dispose native owners |
+| range has no current-epoch markers | show one passive earlier-history boundary above content; never synthesize spacer height |
+| terminal width/sidebar/ASCII changes | create new epoch, prepare current target hidden, then replace; old markers are dropped |
+| terminal height alone changes | retain markers and recompute the visible/directional-runway interval from new viewport rows |
+| vertical scrollbar gains or loses overflow | retain the permanently reserved column and markers; change indicator opacity only |
+| 20-turn semantic limit is crossed | evict complete batches and their markers, install one frozen export notice |
+| child activity changes while Lead is selected | retain child content for isolated selection and update footer/Sidebar; append only the delegation's frozen spawned/settled Lead markers, never child content, a live marker or provider supervision/orchestration tool plumbing |
+| child or full-region page is opened and closed | pause the hidden projection and reveal the same retained Lead ScrollBox/controller on return; retain at most one child and destroy the previous child when another is selected |
+| workflow activity changes | update the footer strip/Sidebar only; mount no workflow row in either transcript projection |
+| a provider emits only a composing or started supervision/orchestration tool phase | suppress it immediately; typed delegation events or Sidebar/footer workflow state remain authoritative |
+| future loader/progress feature is added | keep transcript content before the fixed runway, place operational state in Sidebar/footer, or reuse the fixed Lead activity line; it cannot reserve a second transcript panel or move committed rows |
 
 The stable fallback priority is readable content without repeated visual transition. A parser failure
 may lose highlighting for one artifact; it cannot make a published artifact alternate between parsed,
@@ -1030,15 +1077,15 @@ raw and transparent frames.
 
 ## 7. Coupling
 
-| Concern                                        | Owner                                             | Constraint here                                                                                                  |
+| Concern | Owner | Constraint here |
 | ---------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `RunEvent` vocabulary and durability           | [kernel-runs.md](kernel-runs.md)                  | publication classifies the closed union but cannot change persistence policy                                     |
-| live handle, stored read and session ownership | [code-run-host.md](code-run-host.md)              | host calls `complete` only after reconciliation or definitive degradation                                        |
-| node presentation and display caps             | [code-transcript.md](code-transcript.md)          | publisher freezes existing bounded projections; physical window does not estimate them                           |
-| session reconstruction                         | [sessions.md](sessions.md)                        | restored trace order rebuilds semantic batches; terminal markers are remeasured                                  |
-| elicitation                                    | [elicitation.md](../cross-cutting/elicitation.md) | pending controls stay live; only terminal outcomes may publish                                                   |
-| plan/workflow capabilities                     | capability specs, footer strip and Sidebar        | workflow state never enters either transcript; mutable plan singleton/progress state never enters frozen history |
-| renderer version and memory                    | [code-performance.md](code-performance.md)        | OpenTUI packages move in lockstep; row/owner soak validates the physical window                                  |
+| `RunEvent` vocabulary and durability | [kernel-runs.md](kernel-runs.md) | publication classifies the closed union but cannot change persistence policy |
+| live handle, stored read and session ownership | [code-run-host.md](code-run-host.md) | host calls `complete` only after reconciliation or definitive degradation |
+| node presentation and display caps | [code-transcript.md](code-transcript.md) | publisher freezes existing bounded projections; physical window does not estimate them |
+| session reconstruction | [sessions.md](sessions.md) | restored trace order rebuilds semantic batches; terminal markers are remeasured |
+| elicitation | [elicitation.md](../cross-cutting/elicitation.md) | pending controls stay live; only terminal outcomes may publish |
+| plan/workflow capabilities | capability specs, footer strip and Sidebar | workflow state never enters either transcript; mutable plan singleton/progress state never enters frozen history |
+| renderer version and memory | [code-performance.md](code-performance.md) | OpenTUI packages move in lockstep; row/owner soak validates the physical window |
 
 Code's protocol-isolation rule remains unchanged: the publisher consumes `@clarvis/protocol` events
 through the run host and does not import loop or kernel implementation. Adapters do not import views;

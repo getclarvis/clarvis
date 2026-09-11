@@ -19,6 +19,7 @@ export type {
   ElicitRequest,
   Verdict,
 } from "@clarvis/tools/guard";
+export type { HostVcsDispatcher } from "@clarvis/tools";
 export type { ShellDialect, Token, PathCandidate } from "@clarvis/tools/guard";
 export {
   analyzeShell,

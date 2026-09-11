@@ -60,9 +60,46 @@ git config --local --get core.hooksPath
 
 It must print `.githooks`.
 
+## Branch workflow
+
+The default branch, `develop`, integrates completed work for the next release. Outside an
+authorized release in progress, `main` points to the exact source commit of the latest published
+release tag. Immutable signed tags preserve every published version. Documentation and CI changes
+follow the same task-branch flow as code changes. Both branches require pull requests, passing CI, an up-to-date base, and resolved
+review conversations. Direct pushes, force pushes, and deletion are blocked without bypass actors.
+The single-maintainer workflow does not require another person's approving review.
+
+Start each ordinary task from an updated `develop` in a short-lived branch:
+
+```bash
+git fetch origin
+git switch develop
+git pull --ff-only origin develop
+git switch -c feat/short-description
+```
+
+Check `git status --short` before switching branches and preserve any existing work. When pushing
+a task branch, explicitly name that branch and set its upstream to the same remote branch; do not
+reuse an inherited `origin/develop` upstream.
+
+For an existing clone without a local `develop`, first use `git switch --track origin/develop`.
+Use `fix/`, `refactor/`, `docs/`, or `chore/` for the corresponding task, and open its PR against
+`develop`. Squash merging is suitable for one bounded task; a merge commit is also allowed.
+
+Promotions into `main` and synchronization back into `develop` use merge commits to retain shared
+ancestry. Do not squash or rebase those PRs. A `release/<major.minor.patch>` branch stabilizes each version while `develop` advances.
+Prepare and commit its final product version before the first push. Open its PR into `main` to start candidates. Every new commit while that PR is open gets
+the next signed source-candidate tag (`v0.2.0-rc.1`, `v0.2.0-rc.2`, and so on); retries reuse the
+same commit tag. Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Use `hotfix/<version>` from the latest published tag for an urgent
+patch, target `main`, and include only the patch and its release preparation. Hotfixes must also reach
+`develop` and any active release branch. Follow [RELEASING.md](RELEASING.md) for version preparation,
+qualification, and explicitly authorized publication. Merging a release-branch PR into `main`
+starts final publication automatically after CI passes on that exact merge commit. Stage hotfixes
+on `release/<patch-version>` before promotion; ordinary task PRs never start publication.
+
 ## Make a focused change
 
-1. Start from a current branch and check `git status --short` before editing.
+1. Start a task branch from current `develop` and check `git status --short` before editing.
 2. Keep the change bounded. Do not reformat or repair unrelated code in the same pull request.
 3. Add or update tests at the appropriate level: unit, component, contract, integration,
    architecture, or end-to-end.

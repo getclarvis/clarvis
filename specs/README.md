@@ -1,10 +1,10 @@
 # The Clarvis spec corpus
 
-Sixty-eight documents specifying what the Clarvis monorepo does, plus a register of what has been
-measured, ruled out, or tried and reverted.
+This corpus specifies what the Clarvis monorepo does and records what has been measured, ruled out,
+or tried and reverted.
 
 The findings register that used to sit beside them — `gaps.md`, the cross-cutting list of what the
-corpus had left open — is **gone as of 2026-08-22, because every item in it was closed.** Nothing
+corpus had left open — is **gone because every item in it was closed.** Nothing
 was dropped in the closing. What was a code defect was fixed with a test; what was an unpinned
 rule got the test; what genuinely depends on something outside this repository moved into
 [`known-issues.md`](known-issues.md), which is where evidence the source cannot supply belongs;
@@ -14,66 +14,39 @@ rather than deleted, so the reasoning outlives the finding.
 
 ## What this is
 
-These sixty-eight documents are the specification of the Clarvis monorepo: what each subsystem is for, what
-it publishes, how it behaves, and the rules that must hold. They are the contract; the code under
+These documents specify what each Clarvis subsystem is for, what it publishes, how it behaves, and
+the rules that must hold. They are the contract; the code under
 `packages/` is what realizes it. One document covers one subsystem, and each names production and
 test evidence either in an opening ownership block or beside the claims it supports, so the boundary
 travels with the document rather than in a separate plan.
 
+Proposals under `specs/proposals/` are ignored local working documents, not part of the versioned
+corpus. Do not commit them or link to them from tracked documentation. Promote durable contracts
+into the owning spec without making the local proposal a repository dependency.
+
+The [prompt-cache contract](cross-cutting/prompt-cache.md) owns the kernel's real-SDK composition
+tests and their development-only LLM dependency; the generated coupling graph describes runtime
+dependencies.
+
 The corpus's one hard rule is that **every non-trivial statement carries checkable source or test
-evidence.** Prefer a stable symbol in its repository path; an explicit `:LINE` or `:START-END`
-snapshot is useful when it identifies the exact branch, but line numbers alone are not identity and
-move whenever code is inserted above them. That evidence is what makes a specification checkable
-rather than aspirational: a statement without it is one you should not trust, and a citation is an
-invitation — open the source and see whether the implementation still honours it.
+evidence.** Cite a stable repository file and name the relevant symbol, test, or section in prose.
+Never encode a source line number or range: unrelated edits make that locator stale without changing
+the contract. Evidence is what makes a specification checkable rather than aspirational; a citation
+is an invitation to open the current source and verify that the implementation still honours it.
 
 [`known-issues.md`](known-issues.md) sits beside the corpus rather than inside it, because what it
 records — CI history, memory soaks, upstream bug numbers, and designs that were tried and reverted —
-cannot be written as a requirement or checked against a line of source. That is exactly why it is a
+cannot be written as a requirement or checked against current source alone. That is exactly why it is a
 separate document.
-
-**The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-09-02). If they no longer match, the tree has
-moved since the corpus was last checked against it, and the further it has drifted the more of the
-corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
-
-```sh
-find packages/<pkg>/src -type f \( -name '*.ts' -o -name '*.tsx' \) -print0 | xargs -0 wc -l | tail -n 1
-find packages/<pkg>/src -type f \( -name '*.ts' -o -name '*.tsx' \) | wc -l
-find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
-```
-
-| Package | `src` lines | `src` files | test files |
-|---|---|---|---|
-| `code` | 59,652 | 249 | 237 |
-| `kernel` | 32,247 | 114 | 85 |
-| `loop` | 21,669 | 139 | 235 |
-| `memory` | 13,654 | 65 | 59 |
-| `tools` | 12,750 | 66 | 71 |
-| `capability` | 8,038 | 51 | 34 |
-| `plan` | 7,013 | 26 | 24 |
-| `workflows` | 7,181 | 28 | 24 |
-| `server` | 6,460 | 37 | 38 |
-| `mcp-client` | 5,309 | 16 | 28 |
-| `skills` | 4,363 | 20 | 25 |
-| `trace` | 4,205 | 15 | 16 |
-| `llm` | 4,020 | 18 | 19 |
-| `tasks` | 3,797 | 13 | 6 |
-| `protocol` | 3,307 | 19 | 0 |
-| `paths` | 3,282 | 14 | 14 |
-| `hooks` | 2,750 | 9 | 11 |
-| `supervision` | 1,566 | 10 | 9 |
 
 ## How to read a spec
 
 Every document opens with an H1 naming its subject and carries implementation evidence near the
 claim it supports. Most use an opening ownership blockquote; the shorter domain contracts instead
-put `Production:` / `Test:` evidence directly in their sections. Sixty-four documents have eight
-numbered top-level sections, three have nine, and [`storage.md`](hosts/storage.md) uses six
-unnumbered sections. The recurring section roles are:
+put `Production:` / `Test:` evidence directly in their sections. The recurring section roles are:
 
 | § | Section | What it holds |
-|---|---|---|
+| --- | --- | --- |
 | 1 | **Purpose** | What the subsystem is for, what problem it solves, and what is deliberately delegated to a sibling document |
 | 2 | **Surface** | The exports, ports, tools, settings blocks and wire names it publishes |
 | 3 | **Data and formats** | The shapes it persists or exchanges — on-disk documents, schemas, envelopes |
@@ -106,18 +79,18 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ### `foundations/` — the leaves everything else is written against
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`capability.md`](foundations/capability.md) | The four-level capability contract (`Capability` → `RunCapability` → `AgentCapability` → `AgentLoopContribution`), the settings/services/port registries, and the shared run vocabulary of open unions every layer names | `capability` |
 | [`paths.md`](foundations/paths.md) | The single owner of `.clarvis`/`.agents` and every path built from them, plus atomic write-then-rename, directory `fsync` and the crash-recoverable local lease | `paths` (+ one `kernel` architecture test) |
 | [`supervision.md`](foundations/supervision.md) | The run-scoped child registry two independent spawners share: agent ids, activity buffers, the trace→activity projection, the steer queue and the effective limits | `supervision`, `capability` |
 | [`trace.md`](foundations/trace.md) | The split between trace *vocabulary* (which events exist) and trace *implementation* (recording handle, JSON store, crash journal, recovery, retention sweeper) | `trace`, `capability` |
 | [`llm.md`](foundations/llm.md) | The provider layer: the AI-SDK adapter behind the `LLMProvider` port, the decorator stack (cache/logging/retry/admission), the error classifier, bounded transport and the two-entry lazy split | `llm`, `capability` |
-| [`mcp-client.md`](foundations/mcp-client.md) | How Clarvis *speaks* MCP: three transports, the self-healing session with reconnect and circuit breaker, the refcounted pool, and the namespaced tool registry | `mcp-client`, `capability` |
+| [`mcp-client.md`](foundations/mcp-client.md) | How Clarvis *speaks* MCP: three transports, the self-healing session with reconnect and circuit breaker, the refcounted pool, and the namespaced tool registry | `mcp-client`, `capability`, `kernel` |
 
 ### `execution/` — what an agent can actually do to a machine
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`tools-contract.md`](execution/tools-contract.md) | The one dispatcher every tool sits behind: argument validation, the approval gate, output bounding, the immutable `RuntimeConfig`, and the single registry both surfaces derive from | `tools` |
 | [`tools-read-and-search.md`](execution/tools-read-and-search.md) | The nine observing tools (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`, `diff`, `file_stat`, `tree`) and the ripgrep-parity contract between grep's two engines | `tools` |
 | [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
@@ -130,12 +103,12 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ### `engine/` — the loop itself
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`loop-run-lifecycle.md`](engine/loop-run-lifecycle.md) | One validated request to one persisted record: the run / orchestration / agent layers, the unbounded iteration loop and every stop condition delegated to an injected probe | `loop` |
 | [`request-and-settings-schema.md`](engine/request-and-settings-schema.md) | The engine's input boundary on both untrusted documents — a run request and `settings.json` — plus agent frontmatter and the profile-readiness advisory | `loop`, `kernel` |
 | [`capability-composition.md`](engine/capability-composition.md) | How a host extends the engine without editing it: registration, folding, the five public entrypoints, and the eager-path rule that keeps optional packages genuinely optional | `loop`, `capability` |
 | [`tool-dispatch.md`](engine/tool-dispatch.md) | Wire names and reservations, the MCP registry and its two dispatchers, the fail-open argument validator, and the `submit_result` finalize contract with its schema budget | `loop`, `mcp-client` |
-| [`context-compaction.md`](engine/context-compaction.md) | The mutable message window an iteration appends to, volatile entries, and the selection/rewrite policy that sheds tokens without breaking call/result pairing or the cached prefix | `loop`, `kernel` |
+| [`context-compaction.md`](engine/context-compaction.md) | The message window an iteration appends to, preserved historical entries, and the selection/rewrite policy that sheds tokens without breaking call/result pairing or the cached prefix | `loop`, `kernel` |
 | [`budgets-and-guards.md`](engine/budgets-and-guards.md) | Five self-defence mechanisms: the shared token ledger and iteration counter, the pausable compute clock, the concurrency-safe output-token reservation, admission control and convergence guards | `loop`, `capability` |
 | [`delegation-and-subagents.md`](engine/delegation-and-subagents.md) | How one run produces children: independent `spawn_subagent`, tracked `delegate_task`, inline/background execution, and the five `agent_*` supervision tools | `loop`, `supervision`, `capability` |
 | [`vision-routing.md`](engine/vision-routing.md) | The two ways an image enters a run, and the tool-less vision pre-pass spliced in when the entry agent's own model cannot see it | `loop`, `code`, `tools` |
@@ -143,9 +116,10 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ### `capabilities/` — features that compose onto the engine
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`plan-store.md`](capabilities/plan-store.md) | The plan as one Markdown file whose bytes *are* the plan: the parse/render inverse pair, the `(revision, digest, spec_digest)` compare-and-swap triple, and the file-backed repository | `plan` |
 | [`plan-capability.md`](capabilities/plan-capability.md) | Planning packaged as a registrable capability: sessions, the five plan tools, the review blocker, two finalize gates, retention policy and the kernel's plans service | `plan`, `kernel`, `capability` |
+| [`goals.md`](capabilities/goals.md) | Persistent objectives, host-owned session transactions, user control, checkpoint policy, scoped completion evidence and per-goal reconciliation | `goal`, `kernel`, `protocol` |
 | [`memory-store.md`](capabilities/memory-store.md) | The Markdown wiki (`PROFILE.md` → `TOPIC.md` → `MEMORY.md`): the store port and its adapters, the atomic batch engine and journal, revisions, deterministic reindex, and BM25F search | `memory`, `paths` |
 | [`memory-capability.md`](capabilities/memory-capability.md) | The seam from wiki to run: the `<memory>` seed block, the seven tools, the entry-agent-only write policy, the settings block and the kernel control plane | `memory`, `kernel` |
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
@@ -159,11 +133,14 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ### `hosts/` — the kernel, the terminal UI and the HTTP facade
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`protocol.md`](hosts/protocol.md) | The transport-agnostic contract: wire DTOs plus the `KernelClient` service interfaces, a pure leaf with no dependency of any kind | `protocol` |
 | [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, file backing, and the project host fanning one Git project out into ref-counted workspace kernels — plus owner scoping | `kernel` |
+| [`isolated-agent-runtime.md`](hosts/isolated-agent-runtime.md) | Host-owned admission and model/remote-MCP brokers, direct selected-workspace mounts, private execution, immutable OCI distribution, and Docker/Podman adapters for disposable agent workers | `kernel`, `protocol`, `code`, `paths`, `loop`, `mcp-client`, `tools`, `tooling/` |
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
+| [`self-configuration.md`](hosts/self-configuration.md) | Shipped TypeScript configuration skill, explicit native execution, live-session consent and credential-excluding file operations | `kernel`, `paths`, `protocol`, `code`, `skills` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
+| [`hosted-runs.md`](hosts/hosted-runs.md) | Independent workspace host, bounded observation and recovery, conversation authority, and TUI background/attach commands | `kernel`, `protocol`, `paths`, `code` |
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |
 | [`extension-profiles.md`](hosts/extension-profiles.md) | Deterministic activation snapshots over already-installed plugins and standalone skills: exact scopes, selection precedence, trust, deltas, fingerprints, and session/trace identity | `kernel`, `protocol`, `paths`, `skills`, `loop`, `trace`, `code` |
 | [`storage.md`](hosts/storage.md) | Metadata-only inventory of Clarvis-owned local state, confirmed cleanup of disposable artifacts, spill/run-scratch housekeeping and session-safe trace retention | `kernel`, `protocol`, `paths`, `trace`, `loop`, `code` |
@@ -174,8 +151,9 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`server-auth.md`](hosts/server-auth.md) | Everything in front of the MCP surface: bind-time refusals, the environment posture schema, the four owner modes, OAuth `client_credentials`, and the per-request principal pipeline | `server` |
 | [`server-mcp.md`](hosts/server-mcp.md) | The four-tool facade: `clarvis_run` as a blocking call that *is* the run, the steer/cancel/respond triad, session-scoped run bookkeeping and the bounded notification sink | `server` |
 | [`code-bootstrap.md`](hosts/code-bootstrap.md) | From the `clarvis` bin to a painted frame: the flag table, the two flags answered before the graph loads, bundle-versus-source entry, headless modes and the Solid/OpenTUI shell | `code` |
-| [`code-performance.md`](hosts/code-performance.md) | Startup latency, resident-memory budgets, measurement discipline, the dated 2026-08-24 audit and the prioritized reduction plan | `code`, `kernel` |
+| [`code-performance.md`](hosts/code-performance.md) | Startup latency, resident-memory budgets, measurement discipline, measured evidence, and the prioritized reduction plan | `code`, `kernel` |
 | [`code-run-host.md`](hosts/code-run-host.md) | The stateful bridge to the kernel run stream: the in-flight handle, the session, the kernel run client and workspace client manager, and the transcript/activity/session projection stores | `code` |
+| [`loop-scheduling.md`](hosts/loop-scheduling.md) | Memory-only conversation prompt recurrence: interval/cron parsing, bounded fair admission, live-session configuration bindings and TUI controls | `code` |
 | [`code-transcript.md`](hosts/code-transcript.md) | How the Lead-only main transcript or one selected child transcript is filtered, grouped, folded and rendered, including tool-call identity and hard display ceilings | `code` |
 | [`code-transcript-stability.md`](hosts/code-transcript-stability.md) | Immutable publication batches, exhaustive event disposition, syntax-ready physical row markers, native-scroll lazy residency, the continuous mutable tail and replay equivalence | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
@@ -189,15 +167,16 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ### `cross-cutting/` — properties no single package owns
 
 | Document | Covers | Implemented in |
-|---|---|---|
+| --- | --- | --- |
 | [`package-architecture.md`](cross-cutting/package-architecture.md) | Package roles, dependency directions, the single product-version model, package-versus-subpath criteria, and the application/Protocol/Kernel boundary | root manifest, workspace manifests, graph tooling, all workspaces |
 | [`grants.md`](cross-cutting/grants.md) | The one string vocabulary a profile asks with, how capabilities contribute grants at boot, and how a profile's model/tools/grants resolve into the tools an agent actually sees | `loop`, `capability`, `kernel`, and the grant-contributing capability packages |
 | [`prompt-cache.md`](cross-cutting/prompt-cache.md) | What a provider's prefix cache charges for, the append-only rule that keeps it, the measured cost of breaking it, and the session-affinity and breakpoint mechanics | `loop`, `llm` |
+| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, `tasks`, `server`, instruction-contributing packages |
 | [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, guard prompts, budget escalation, MCP elicitation — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `server`, `code`, `workflows` |
 | [`security.md`](cross-cutting/security.md) | Path confinement, the single redaction module and its two rule sets, environment filtering for subprocesses, workspace trust, and what is explicitly *not* a sandbox | `tools`, `kernel`, `capability`, `hooks` |
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |
 | [`agent-interop.md`](cross-cutting/agent-interop.md) | Component-scoped ownership of the shared `.agents` seam, plus the single-owner correspondence tables that make a foreign-dialect hook document degrade instead of silently failing open | `kernel`, `skills`, `capability`, `paths` |
-| [`test-architecture.md`](cross-cutting/test-architecture.md) | Test placement in six named directories, runner isolation and the banned `mock.module()`, the pre-commit gate's ordered phases, and LCOV-summed coverage floors | `tooling/`, root config, all workspaces |
+| [`test-architecture.md`](cross-cutting/test-architecture.md) | Test placement, runner isolation, the pre-commit gate, LCOV-summed coverage floors, and the static TUI scenario inventory | `tooling/`, root config, all workspaces |
 | [`build-and-ci.md`](cross-cutting/build-and-ci.md) | One Bun workspace and lockfile, the two-layer TypeScript configuration, shared lint/format, the `tsc -b` graph, the three CI jobs, the TUI bundle and platform support | root config, `code`, all workspaces |
 | [`distribution-and-updates.md`](cross-cutting/distribution-and-updates.md) | Portable native archives, installers, release trust and publication, explicit self-update, staging and atomic activation | root release config, `code` |
 
@@ -206,7 +185,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 ## Beside the corpus
 
 | Document | Holds | Reach for it when |
-|---|---|---|
+| --- | --- | --- |
 | [`known-issues.md`](known-issues.md) | What was measured, ruled out, or tried and reverted: the ten behaviours that turn on something outside this repository, the Bun crash forensics and its retry, the memory leaks and their soaks, the Windows gaps and their suppression predicates, the extractions that were abandoned, and the four confirmed defects and how each was closed | Something is failing and you want to know whether it has already been diagnosed — or you are about to re-run an experiment someone else has run |
 | [`package-coupling-analysis.md`](package-coupling-analysis.md) | The generated package-graph report | You want the dependency edges as the checker sees them — this one is generated and gated, so it is the only file here that cannot drift |
 
@@ -227,15 +206,16 @@ If an implementation-only change leaves the documented contract intact, the hand
 assumption. [`AGENTS.md`](../AGENTS.md#the-iteration-contract) owns the complete working rule.
 
 One check runs over these files: `bun run check:specs` (inside `lint:intent`, and so inside the
-pre-commit gate). It refuses dangerous literal characters, resolves documentation links, and checks
-that every explicit source citation whose repository target exists stays within that file's line
-bounds. It deliberately ignores nonexistent illustrative targets and does not independently resolve
-bare ambient `:LINE` continuations. Most importantly, an in-bounds citation can still point at the
-wrong symbol: semantic support remains a source-and-test review, not a property this structural check
-can prove.
+pre-commit gate). It refuses dangerous literal characters, resolves documentation links, rejects
+line-qualified repository references, calendar dates, and source-code line-count inventories in
+tracked specs, and verifies that every explicit repository file reference resolves. Change
+chronology belongs in `CHANGELOG.md`; date-shaped data examples use semantic placeholders such as
+`YYYY-MM-DD`. Illustrative paths must use visibly non-literal placeholders such as
+`packages/<name>/src/<file>.ts`. Most importantly, an existing file can still be the wrong evidence:
+semantic support remains a source-and-test review, not a property this structural check can prove.
 
 **Statements carry citations, so any statement can be checked from one named place.** A sentence
-anchored to a source symbol or `packages/x/src/y.ts:123` snapshot is falsifiable by opening that
+anchored to a source symbol or `packages/<name>/src/<file>.ts` is falsifiable by opening that
 place. A disagreement between a document and the code is a defect on one side or the other — either
 the implementation has drifted from what was specified, or the specification moved and the code has
 not followed — and it has to be resolved, not assumed away in either direction. The citation is
@@ -249,32 +229,18 @@ because breaking it turns a suite red; a rule marked `unpinned` can stop being h
 anything turning red. The document must state that distinction beside the rule and surface the
 remaining gap in its open questions rather than letting prose imply a test exists.
 
-### What the corpus was measured to be worth
+### Verification scope
 
-"The specs and the code agree" is itself a claim that needs dated, reproducible evidence. The
-current 2026-09-02 snapshot contains 68 subsystem documents (71 Markdown files including this index,
-the known-issues register and the generated coupling report). `extractLineCitations` currently finds
-15,126 distinct explicit citation groups carrying 17,614 cited ranges, and
-`extractDocumentLinks` finds 611 document links. `bun run check:specs` is the maintained gate over
-their bounds, targets, links and characters; it does not turn those counts into semantic proof.
+"The specs and the code agree" is itself a claim that requires current source review. `bun run
+check:specs` proves structural properties: links resolve, explicit repository files exist, dangerous
+characters are absent, references do not embed source line locators, and specs do not carry calendar
+dates or source-size inventories. It does not prove that a file or symbol semantically supports the
+surrounding prose.
 
-A prior corpus audit recorded a 142-citation manual stride sample and an adversarial pass over the
-then-current findings register. Those experiments were not repeated as part of the 2026-09-02
-refresh, so their old zero-finding result is historical evidence, not a guarantee about this
-snapshot. This snapshot therefore makes no corpus-wide semantic-verification claim: a changed or
-relied-on citation still has to be traced to its current production symbol and applicable tests
-instead of inheriting the old sample or an in-bounds line number as fact.
-
-**One method note, because it cost real damage to learn.** When source edits move line numbers, do
-not repair `path:LINE` citations with a line delta derived from `git diff`. It is not idempotent —
-running it twice shifts twice and cannot tell that it already ran — and it collides with any citation
-already re-anchored by hand, moving it a second time. A per-citation content check is *not* a
-sufficient guard either: it once reported 429 of 429 "confirmed" while silently breaking the ones that
-were already right, because matching text only proves the text moved, not that the citation was
-written against the old numbering. Repair by **symbol**: read the prose to learn what the citation
-points at, find that symbol in the current file, write that line. A mechanised map is usable only
-when it is cross-validated against content first — every unchanged line must land where the map says,
-with zero disagreements — and applied exactly once.
+Review citations by meaning: read the claim, inspect the named symbol and applicable tests, and
+update either the implementation or the contract when they disagree. File sizes, corpus counts and
+historical sampling totals are deliberately omitted because they drift without adding behavioral
+authority.
 
 So: if you are relying on something here, look at whether it names a test. If it does, that test is what
 holds the implementation to this document. If it does not, open the citation.

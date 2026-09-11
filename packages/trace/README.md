@@ -2,6 +2,10 @@
 
 Records and persists a Clarvis run's trace.
 
+Successful `run_ended` events preserve the accepted `final` or `checkpoint` disposition. A missing
+disposition retains ordinary final semantics. The mapper does not attach it to failed or cancelled
+events; a saved stage must remain distinguishable when clients rebuild their transcript from disk.
+
 ## Contract
 
 Trace vocabulary, recording, persistence, journal recovery, mapping, and retention are specified in
@@ -166,6 +170,11 @@ remains durable and carries `fallback_reason` when a failed or ineffective summa
 mechanical eviction.
 
 ## The on-disk format is a contract
+
+The stored response retains an accepted checkpoint's `disposition` and bounded handoff independently
+of execution status. Its metadata is separate from the final result value. Reopening the store must
+preserve that distinction; orphan recovery still reports `interrupted` and does not invent an accepted
+checkpoint from an unfinished journal.
 
 `JsonTraceStore` writes what `@clarvis/kernel` reads back to restore a session.
 Changing what it writes changes what every already-recorded run means, so a

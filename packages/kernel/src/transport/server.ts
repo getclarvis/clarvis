@@ -19,8 +19,10 @@ import {
   decodeOperationParams,
   type KernelOperationMetadata,
   type KernelServices,
+  requireHosting,
 } from "./operations.ts";
 import { createUnavailableProviderAuthService } from "../subscriptions/unavailable.ts";
+import { createHostingDispatcher } from "./hosting-server.ts";
 
 /**
  * The sink a connection pushes server→client notifications through — one per
@@ -194,7 +196,8 @@ export interface KernelConnection {
   handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
   /**
    * Tear the session down: unsubscribe every config subscription and cancel every
-   * live run started on this connection.
+   * ordinary live run started on this connection. Hosted observations are released;
+   * their host context applies the explicit execution disconnect policy.
    */
   close(): void;
 }
@@ -218,23 +221,10 @@ export interface KernelServerOptions {
   /**
    * Host authorization policy evaluated before every operation except `hello`.
    *
-   * @remarks **No production host supplies one.** The single production wiring,
-   * `serveFileKernelOverStdio`, passes `capabilities` and nothing else, so every
-   * operation this wire carries — `secrets.set` included, whose value crosses
-   * the framing in cleartext and which
-   * {@link KernelOperationMetadata.sensitivity} marks as sensitive precisely so
-   * a policy could see it — is available to any connection that completed
-   * `hello`. Only the transport suite exercises the hook.
-   *
-   * That is inert rather than an exposure, and the reason is structural: the
-   * tree builds no hosted case for this wire. `bin.ts` serves it over the
-   * process's own `stdin`/`stdout` to a child of the same user, `@clarvis/kernel`
-   * opens no socket or listener, and `@clarvis/code` holds in-process clients
-   * that never frame a message at all. What is unbuilt is the readiness of the
-   * seam, not a live hole — and the pairing matters: this decides *what a
-   * connection may do*, {@link KernelServerOptions.resolveConnection} decides
-   * *who it is*, and a host wiring one without the other has authenticated
-   * callers it cannot restrain, or restraints on a caller it never identified.
+   * @remarks Absence permits every operation after hello, for the process-owned stdio embedder.
+   * `createFileRunHost` supplies both hooks: authentication resolves a live connection role and this
+   * hook checks catalog access/sensitivity on every call. A socket host must supply both policies;
+   * authentication by itself does not authorize the complete kernel service surface.
    */
   authorize?: (context: KernelAuthorizationContext) => boolean | Promise<boolean>;
   /**
@@ -242,14 +232,11 @@ export interface KernelServerOptions {
    *
    * @remarks Owner selection belongs here, never in an ordinary operation parameter.
    *
-   * **No production host supplies one either**, and it is the only place
-   * authentication can live on this wire. With it absent a `hello` `auth` token
-   * is allowlisted and type-checked and then dropped on the floor, and the
-   * connection is answered success carrying no `principal` — so a client may
-   * present a credential, be told the handshake succeeded, and hold a connection
-   * that proved nothing. The current single-workspace hosts build file kernels
-   * directly; only transport tests supply this resolver. See
-   * {@link KernelServerOptions.authorize} for why that is inert today.
+   * With this hook absent, the generic stdio embedding validates but does not authenticate `auth`;
+   * hello returns no principal and remote subscription controls remain unavailable. The file run
+   * host requires a token verifier, binds its own workspace/owner and advertises hosting only after
+   * resolving an operator or observer. See {@link KernelServerOptions.authorize} for the paired
+   * per-operation policy. Neither hook is an agent capability.
    */
   resolveConnection?: (
     params: HelloParams,
@@ -300,8 +287,10 @@ export interface KernelConnectionContext {
  *   map and removed when it finishes; steer/cancel/respond target that map (a
  *   missing run raises a `not_found` kernel error), while plans and config
  *   calls resolve straight through the kernel services. Closing
- *   the connection unsubscribes its config subscriptions and cancels every run it
- *   still holds, so a dropped client never leaves work running. A workflow is
+ *   the connection unsubscribes its config subscriptions and cancels every ordinary run it
+ *   still holds. Hosted admissions instead subscribe through the injected hosting service:
+ *   their root pump belongs to the shared registry, which applies explicit disconnect policy.
+ *   A workflow is
  *   started through `runs.start` (the kernel routes it by the entry profile's
  *   `workflow` grant) and lands in the same `live` map, so its steer/cancel/respond
  *   dispatch through the ordinary run cases; only `workflows.get/list/delete`
@@ -321,6 +310,7 @@ export function createKernelServer(
     workspace: kernel.workspace,
     services: {
       ...kernel.operatorServices,
+      goals: kernel.goals,
       providerAuth: createUnavailableProviderAuthService(),
       ...kernel.defaultOwnerServices,
     },
@@ -339,7 +329,7 @@ export function createKernelServer(
         string,
         { handle: RunHandle; resultSettled: boolean; streamSettled: boolean }
       >();
-      const subs = new Map<string, { kind: "config"; off: () => void }>();
+      const subs = new Map<string, { kind: "config" | "goals"; off: () => void }>();
       let releaseLifecycle: (() => void) | undefined;
       let connectionClosed = false;
       let helloStarted = false;
@@ -355,6 +345,10 @@ export function createKernelServer(
         }
         return context.services;
       };
+      const hosted = createHostingDispatcher({
+        service: () => requireHosting(services()),
+        notify: (method, params) => notifications.notify(method, params),
+      });
 
       const specialParams = (method: string, value: unknown): Record<string, unknown> => {
         const params = value === undefined ? {} : value;
@@ -363,6 +357,12 @@ export function createKernelServer(
         }
         const allowed: Readonly<Record<string, readonly string[]>> = {
           [M.hello]: ["wire_version", "clientInfo", "workspace", "auth"],
+          [M.hostingStart]: ["input", "subscription_id"],
+          [M.hostingAttach]: ["input", "subscription_id"],
+          [M.hostingSteer]: ["subscription_id", "message"],
+          [M.hostingCompact]: ["subscription_id", "request"],
+          [M.hostingCancel]: ["subscription_id"],
+          [M.hostingRespond]: ["subscription_id", "response"],
           [M.runsStart]: ["params"],
           [M.runsSteer]: ["execution_id", "message"],
           [M.runsCompact]: ["execution_id", "request", "options"],
@@ -370,6 +370,8 @@ export function createKernelServer(
           [M.runsRespond]: ["execution_id", "response"],
           [M.configSubscribe]: ["kinds", "subscription_id"],
           [M.configUnsubscribe]: ["subscription_id"],
+          [M.goalsSubscribe]: ["session_id", "subscription_id"],
+          [M.goalsUnsubscribe]: ["subscription_id"],
         };
         const keys = new Set(allowed[method] ?? []);
         if (!Object.keys(params).every((key) => keys.has(key))) {
@@ -500,6 +502,13 @@ export function createKernelServer(
           }
 
           switch (method) {
+            case M.hostingStart:
+            case M.hostingAttach:
+            case M.hostingSteer:
+            case M.hostingCompact:
+            case M.hostingCancel:
+            case M.hostingRespond:
+              return hosted.handle(method, p);
             case M.hello: {
               if (helloStarted) {
                 throw kernelError(
@@ -594,6 +603,53 @@ export function createKernelServer(
                 p.response as ElicitationResponse,
               );
               return {};
+            case M.goalsSubscribe: {
+              const id = p.subscription_id;
+              if (typeof id !== "string" || !/^[a-zA-Z0-9._:-]{1,256}$/u.test(id))
+                throw kernelError("invalid_request", "Invalid goal subscription identity");
+              if (subs.has(id)) throw kernelError("conflict", "Subscription is already active");
+              if ([...subs.values()].filter((sub) => sub.kind === "goals").length >= 8)
+                throw kernelError("resource_exhausted", "Goal subscription limit reached");
+              let disposed = false;
+              let unsubscribe: (() => void) | undefined;
+              const off = (): void => {
+                disposed = true;
+                const release = unsubscribe;
+                unsubscribe = undefined;
+                release?.();
+              };
+              const subscription = { kind: "goals" as const, off };
+              subs.set(id, subscription);
+              try {
+                unsubscribe = await services().goals.subscribe(p.session_id as string, (change) => {
+                  if (!disposed)
+                    suppressSecondaryRejection(
+                      notifications.notify(N.goalChange, { subscription_id: id, change }),
+                      "the kernel transport close channel",
+                    );
+                });
+                if (disposed || connectionClosed) {
+                  off();
+                  assertConnectionOpen();
+                }
+                return {};
+              } catch (error) {
+                off();
+                if (subs.get(id) === subscription) subs.delete(id);
+                throw error;
+              }
+            }
+            case M.goalsUnsubscribe: {
+              const id = p.subscription_id;
+              if (typeof id !== "string" || !/^[a-zA-Z0-9._:-]{1,256}$/u.test(id))
+                throw kernelError("invalid_request", "Invalid goal subscription identity");
+              const sub = subs.get(id);
+              if (sub !== undefined && sub.kind !== "goals")
+                throw kernelError("invalid_request", "Subscription is not a goal subscription");
+              sub?.off();
+              subs.delete(id);
+              return {};
+            }
             case M.configSubscribe: {
               const id = p.subscription_id as string;
               if (subs.has(id)) {
@@ -629,6 +685,7 @@ export function createKernelServer(
           if (connectionClosed) return;
           connectionClosed = true;
           notifications.close();
+          hosted.close();
           for (const { off } of subs.values()) off();
           subs.clear();
           for (const { handle } of live.values())

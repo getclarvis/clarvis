@@ -60,9 +60,14 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
   },
+  "devDependencies": {
+    "@clarvis/llm": "workspace:*"
+  },
   "dependencies": {
     "@clarvis/capability": "workspace:*",
+    "@clarvis/goal": "workspace:*",
     "@clarvis/loop": "workspace:*",
+    "@clarvis/mcp-client": "workspace:*",
     "@clarvis/memory": "workspace:*",
     "@clarvis/paths": "workspace:*",
     "@clarvis/plan": "workspace:*",
@@ -74,8 +79,5 @@
     "@clarvis/workflows": "workspace:*",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
-  },
-  "devDependencies": {
-    "@clarvis/mcp-client": "workspace:*"
   }
 }

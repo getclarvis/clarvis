@@ -1,4 +1,10 @@
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
+import { withBuiltinSkills } from "./skills/builtin-skills.ts";
+import { configurationRoots, workspaceScopeKey } from "@clarvis/paths";
+import {
+  createNativeConfigurationRuns,
+  type NativeConfigurationRuns,
+} from "./configuration/native-configuration.ts";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -12,6 +18,7 @@ import {
 } from "@clarvis/memory/capability";
 import { createMemoryServerPort } from "./memory/memory-server-port.ts";
 import { composeIndexPassDeps } from "./memory/pass-deps.ts";
+import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
 import { componentFloor, createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
 import { createTaskServerPort } from "./tasks/task-server-port.ts";
@@ -25,7 +32,7 @@ import {
   type PlanStore,
 } from "@clarvis/plan";
 import { createPlanningRuntime } from "./plans/planning-runtime.ts";
-import type { ExtensionProfilePluginRef, RunEvent } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import {
   buildExecuteRunDeps,
   hooksEffective,
@@ -69,7 +76,12 @@ export type WorkspaceHooksTrust =
   | { state: "trusted"; fingerprint: string }
   | { state: "unapproved"; fingerprint: string }
   | { state: "changed"; fingerprint: string; approved: string };
-import { createGuardResolver, type GuardSettings } from "./guard/resolver.ts";
+import {
+  createGuardResolver,
+  type GuardResolverDeps,
+  type GuardSettings,
+} from "./guard/resolver.ts";
+import { createGuardSessionAllowlist } from "./guard/guard-elicit.ts";
 import { createInProcessKernel, type InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
@@ -99,6 +111,17 @@ import {
   type ExtensionProfileSkillDriftNotice,
 } from "./extension-profiles/extension-profile-manager.ts";
 import { withRunLease } from "./runs/run-lease.ts";
+import type { RunExecutor } from "./runs/run-service.ts";
+import { settingsDocumentRevision } from "./config/config-store.ts";
+import { runtimeSettingsSchema } from "./runtime/settings.ts";
+import {
+  createLazyRuntimeCoordinator,
+  type FileKernelRuntimeFactory,
+  type RuntimePlacementNotice,
+} from "./runtime/lazy-runtime.ts";
+import { RuntimeLaunchError } from "./runtime/types.ts";
+
+export type { FileKernelRuntimeFactory, RuntimePlacementNotice } from "./runtime/lazy-runtime.ts";
 
 /**
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
@@ -112,6 +135,8 @@ export interface CreateFileKernelOptions {
   environment?: KernelEnvironment;
   /** Logger to use; defaults to one built from `CLARVIS_LOG_LEVEL`. */
   logger?: Logger;
+  /** Persistent hosts bind shell session approval to current interactive control, not kernel lifetime. */
+  sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
   /** Project-host-owned physical model-call gate shared across workspace kernels. */
   modelCallAdmission?: HostModelCallAdmission;
   /** Project-host-owned physical capability/lifecycle gate shared across kernels. */
@@ -175,6 +200,12 @@ export interface CreateFileKernelOptions {
   };
   /** Reports an extension contribution withdrawn by asynchronous drift monitoring. */
   onExtensionProfileDrift?: (notice: ExtensionProfileDriftNotice) => void;
+  /** Explicit host-selected execution placement; absence is lazy native execution. */
+  executeRun?: RunExecutor;
+  /** Constructs container execution only when trusted effective settings select an engine. */
+  runtimeFactory?: FileKernelRuntimeFactory;
+  /** Receives lazy placement changes and an optional user-facing fallback notice. */
+  onRuntimePlacement?: (notice: RuntimePlacementNotice) => void;
 }
 
 /** Informational drift projected to hosts without changing run availability. */
@@ -192,6 +223,8 @@ export type ExtensionProfileDriftNotice =
  * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
+  /** Host-only routing and revocation; native execution itself is not exposed through this surface. */
+  readonly nativeConfiguration: Pick<NativeConfigurationRuns, "requested" | "retireSession">;
   readonly workspaceHooks: {
     /** The current verdict for this workspace's declared hooks. */
     trust(): WorkspaceHooksTrust;
@@ -200,6 +233,12 @@ export interface FileKernel extends InProcessKernel {
     /** Drop every approval, so the workspace's hooks stop running again. */
     revoke(): void;
   };
+  /** Effective execution placement for this kernel instance. */
+  readonly runtime: RuntimeStatus;
+  /** Physical execution leases, including background memory work; independent of UI connections. */
+  activeExecutionLeases(): number;
+  /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
+  retryRuntime(): void;
 }
 
 /**
@@ -729,17 +768,22 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           store: createFileSubscriptionStore({ dir: globalDir }),
           logger: componentLogger("subscriptions"),
         });
+  const defaultGuardAllowlist =
+    opts.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
+  const sessionAllowlistFor = opts.sessionAllowlistFor ?? (() => defaultGuardAllowlist);
   const built = await buildExecuteRunDeps({
     env,
     environment: environment.values,
     logger,
     workspaceRoot: opts.workspaceRoot,
     skillRoots: pluginSkillRoots,
+    composeSkills: withBuiltinSkills,
     skillBootstraps: pluginSkillBootstraps,
     resolveGuard: createGuardResolver({
       loadSettings: loadGuardSettings,
       logger: componentLogger("guard"),
       audit: auditLogger,
+      sessionAllowlistFor,
     }),
     resolveSandbox: () => sandboxPolicy.resolve(),
     resolveSecretNames: loadSecretNames,
@@ -869,6 +913,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
   const deps: ExecuteRunDeps = {
     ...built.deps,
+    capabilityRegistry: composeKernelCapabilityRegistry(built.deps.capabilityRegistry),
     hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
     capabilities: [
       ...(built.deps.capabilities ?? []),
@@ -905,8 +950,85 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   });
 
   let kernel: InProcessKernel;
+  const runtimeSelection = () => {
+    const configured = runtimeSettingsSchema.parse(
+      configStore.readSettings().merged.runtime ?? { backend: "native" },
+    );
+    return {
+      settings: configured,
+      configurationRevision: settingsDocumentRevision(JSON.stringify(configured)),
+      extensionRevision: extensionProfileManager.runRef().fingerprint,
+    };
+  };
+  const nativeIsolation = (): "host" | "sandbox" => {
+    const sandbox = configStore.readSettings().merged.sandbox;
+    return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
+  };
+  const nativeExecuteRun: RunExecutor =
+    opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  let activeConfigurations = 0;
+  const configurationRuntime: RuntimeStatus = {
+    kind: "native",
+    host_platform: process.platform,
+    isolation: "host",
+    lifecycle: "ready",
+  };
+  const currentRuntime = (): RuntimeStatus =>
+    activeConfigurations > 0 ? configurationRuntime : runtimeCoordinator.current();
+  const nativeConfiguration = createNativeConfigurationRuns({
+    ...(built.skills === undefined ? {} : { skills: built.skills }),
+    roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+    store: configStore,
+    ...(defaultModel === undefined ? {} : { defaultModel }),
+    nativeExecuteRun,
+    onActivity: (active) => {
+      activeConfigurations += active ? 1 : -1;
+      const status = currentRuntime();
+      kernel.capabilities.runtime = status;
+      opts.onRuntimePlacement?.({ status });
+    },
+  });
+  const runtimeCoordinator = createLazyRuntimeCoordinator({
+    selection: runtimeSelection,
+    nativeIsolation,
+    nativeExecuteRun,
+    ...(opts.runtimeFactory === undefined ? {} : { runtimeFactory: opts.runtimeFactory }),
+    ownerId: kernelDefaultOwner,
+    project: gitWorkspace.project,
+    workspace: gitWorkspace.workspace,
+    workspaceRoot: gitWorkspace.worktreeRoot,
+    ...(gitWorkspace.workspace.kind === "external_worktree" && gitWorkspace.commonDir !== undefined
+      ? { gitCommonDir: gitWorkspace.commonDir }
+      : {}),
+    deps,
+    planFactory: planning.planFactory,
+    ...(tasksEnabled ? { taskResolver: taskProviderFactory } : {}),
+    ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
+    ...(built.skills === undefined ? {} : { skillBootstraps: pluginSkillBootstraps }),
+    ...(memoryFactory === undefined ? {} : { memoryFactory }),
+    loadGuardSettings,
+    guardAudit: auditLogger,
+    sessionAllowlistFor,
+    loadSecretNames,
+    logger: componentLogger("runtime"),
+    assertFallbackSandbox: async () => {
+      const inspection = await sandboxPolicy.inspect({ refresh: true });
+      if (!inspection.backend.available) {
+        throw new RuntimeLaunchError(
+          "operational_failure",
+          `Docker failed and the required native sandbox is unavailable (${inspection.backend.reason})`,
+        );
+      }
+    },
+    onPlacement: (notice) => {
+      if (activeConfigurations > 0) return;
+      if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
+      opts.onRuntimePlacement?.(notice);
+    },
+  });
   try {
     kernel = createInProcessKernel({
+      nativeConfiguration,
       deps,
       logger: componentLogger("kernel"),
       workspaceRoot: opts.workspaceRoot,
@@ -947,28 +1069,39 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       taskProviderFactory,
       tasksEnabled,
       acquireRunLease: acquireExtensionProfileRunLease,
+      executeRun: runtimeCoordinator.executeRun,
+      capabilities: {
+        runtime: runtimeCoordinator.current(),
+      },
       dispose: async (): Promise<void> => {
+        nativeConfiguration.close();
         cleanup.stop();
         await housekeeping.stop();
-        extensionProfileManager.close();
-        pluginContributions.close();
         try {
-          await capabilityExecutables.close();
+          await runtimeCoordinator.close();
         } finally {
+          extensionProfileManager.close();
+          pluginContributions.close();
           try {
-            await built.dispose();
+            await capabilityExecutables.close();
           } finally {
-            await subscriptionManager?.close();
+            try {
+              await built.dispose();
+            } finally {
+              await subscriptionManager?.close();
+            }
           }
         }
       },
     });
   } catch (error) {
+    nativeConfiguration.close();
     cleanup.stop();
     await housekeeping.stop();
     extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([
+      runtimeCoordinator.close(),
       capabilityExecutables.close(),
       subscriptionManager?.close() ?? Promise.resolve(),
       built.dispose(),
@@ -985,5 +1118,23 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     "the kernel is ready and now serves requests",
   );
-  return Object.assign(kernel, { workspaceHooks });
+  return Object.defineProperties(
+    Object.assign(kernel, {
+      workspaceHooks,
+      nativeConfiguration: {
+        requested: (params: Parameters<NativeConfigurationRuns["requested"]>[0]) =>
+          nativeConfiguration.requested(params),
+        retireSession: (owner: string, session: string) =>
+          nativeConfiguration.retireSession(
+            workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
+            session,
+          ),
+      },
+      retryRuntime: () => runtimeCoordinator.retry(),
+      activeExecutionLeases: () => extensionProfileRunRefs,
+    }),
+    {
+      runtime: { enumerable: true, get: currentRuntime },
+    },
+  ) as FileKernel;
 }

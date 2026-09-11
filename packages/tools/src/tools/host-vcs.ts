@@ -158,22 +158,22 @@ function runHostCommand(
 }
 
 /**
- * Guard-reviewed direct execution through the host's executable environment.
+ * Direct execution through the host's executable environment.
  *
  * @remarks This is deliberately narrower than a host shell: it accepts one
  * executable and argv, never command text. It strips Clarvis-managed secret
- * environment variables, disables interactive prompts, and remains unavailable
- * unless the configured guard policy, judge, or human approves the exact
- * displayed invocation.
+ * environment variables and disables interactive prompts. When command review
+ * is enabled, the configured guard policy, judge, or human reviews the exact
+ * displayed invocation; mode `off` proceeds without that review.
  */
 export const hostVcs: ToolDef = {
   name: "host_vcs",
   description:
-    "Run one executable directly on the host after guard review. Use only when the sandboxed " +
+    "Run one executable directly on the host under the selected command-review mode. Use only when the sandboxed " +
     "shell cannot perform the operation because it lacks host environment, credentials, runtime, " +
-    "or service access. The configured policy, automatic judge, or human may approve it. Arguments " +
-    "are passed as argv without a shell. Secret-token output and known direct Git helper options " +
-    "remain unavailable.",
+    "or service access. Review mode off proceeds without a reviewer; otherwise the configured " +
+    "policy, automatic judge, or human decides. Arguments are passed as argv without a shell. " +
+    "Secret-token output and known direct Git helper options remain unavailable.",
   inputSchema: {
     type: "object",
     properties: {

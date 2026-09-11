@@ -165,7 +165,7 @@ function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
         measurementRecovery={props.region.historyMeasurementRecovery}
         handoffKeys={handoffKeys}
         tailEntries={tailEntries}
-        tail={(visibleCommittedKeys, followingTail, isOwnerVisible) => (
+        tail={(historyOwnedKeys, followingTail, isOwnerVisible) => (
           <LiveTranscriptTail
             store={props.region.store}
             activity={props.region.activity}
@@ -174,7 +174,7 @@ function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
             elicit={() => (props.active() ? props.region.run.elicit() : null)}
             resolveElicit={props.region.run.resolveElicit}
             selectedSubagent={() => props.projectionId}
-            visibleCommittedKeys={visibleCommittedKeys}
+            historyOwnedKeys={historyOwnedKeys}
             followingTail={followingTail}
             isOwnerVisible={isOwnerVisible}
             onHandoffKeysChange={setHandoffKeys}

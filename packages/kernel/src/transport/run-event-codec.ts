@@ -98,8 +98,10 @@ const RUN_EVENT_SCHEMAS = {
       status: runStatus,
       reason: text.optional(),
       code: text.optional(),
+      disposition: z.enum(["final", "checkpoint"]).optional(),
     })
-    .strict(),
+    .strict()
+    .refine((event) => event.disposition === undefined || event.status === "completed"),
   iteration_started: z
     .object({
       type: z.literal("iteration_started"),
@@ -473,7 +475,7 @@ export function decodeRunEvent(value: unknown): RunEvent | null {
  *
  * @remarks
  * Not `Extract<RunEvent, { type: K }>`. One member declares a *union* discriminator —
- * `delegation_completed | delegation_failed` (`packages/protocol/src/runs.ts:433`) — and a union is
+ * `delegation_completed | delegation_failed` (`RunEvent` in `packages/protocol/src/runs.ts`) — and a union is
  * not assignable to one of its own literals, so `Extract` answers `never` for it and `keyof never`
  * widens to `string | number | symbol`, reporting drift on a variant that has none. Asking whether
  * `K` is one of the member's own types is the question that survives a shared member, and it stays

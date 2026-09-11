@@ -1,8 +1,7 @@
-import { NOOP_LOGGER } from "@clarvis/capability";
+import { NOOP_LOGGER, type RunCapabilityContext } from "@clarvis/capability";
 import type {
   Guard,
   GuardElicit,
-  GuardElicitAnswer,
   GuardMode,
   GuardResolution,
   GuardResolver,
@@ -11,12 +10,9 @@ import type {
 } from "@clarvis/loop";
 import { defaultGuardMode, type GuardConfig } from "@clarvis/loop/host";
 import { createShellGuard, type ShellGuardDecision } from "./shell-guard.ts";
-import {
-  createGuardElicit,
-  createGuardSessionAllowlist,
-  type GuardSessionAllowlist,
-} from "./guard-elicit.ts";
+import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "./guard-elicit.ts";
 import { createJudgeElicit } from "./judge.ts";
+import { createGuardHumanApproval, type GuardHumanApproval } from "./human-approval.ts";
 
 /** Snapshot of settings fields needed to resolve a run-time tool guard. */
 export interface GuardSettings {
@@ -47,7 +43,34 @@ export interface GuardResolverDeps {
    * own logger, sharing its destination — see `createAuditLogger`.
    */
   audit?: Logger;
+  /**
+   * Resolve volatile consent on each command by the host's current controller. Returning undefined
+   * disables session approval; omitting the port preserves the ordinary resolver-local lifetime.
+   */
+  sessionAllowlistFor?: (run: {
+    executionId: string;
+    owner: string;
+  }) => GuardSessionAllowlist | undefined;
+  /** Remote human authority for guests; a missing authority never creates a local consent cache. */
+  humanApprovalFor?: (run: {
+    executionId: string;
+    owner: string;
+  }) => GuardHumanApproval | undefined;
 }
+
+/** Run fields required to resolve command review outside the loop capability lifecycle. */
+export type GuardRuntimeContext = Pick<
+  RunCapabilityContext,
+  | "request"
+  | "owner"
+  | "env"
+  | "workspaceRoot"
+  | "llm"
+  | "elicit"
+  | "logger"
+  | "signal"
+  | "executionId"
+>;
 
 /**
  * Picks effective guard mode: explicit request param, else settings default.
@@ -164,33 +187,6 @@ function recordAnswer(
 }
 
 /**
- * Answer one `ask` and record who answered it.
- *
- * @param audit - the run-bound audit logger.
- * @param answerer - the channel about to be consulted.
- * @param allowlist - the session allow list, read before and after so an
- *   `allow_session` is distinguishable from a plain `allow` without the elicit
- *   bridge having to report it.
- * @param shell - the command's parsed facts, when it has any.
- * @param answer - the channel's own answer.
- * @returns whatever `answer` resolved to.
- */
-async function answered(
-  audit: Logger,
-  answerer: "human" | "judge",
-  allowlist: GuardSessionAllowlist,
-  shell: Parameters<GuardSessionAllowlist["covers"]>[0] | undefined,
-  answer: Promise<boolean | GuardElicitAnswer> | boolean | GuardElicitAnswer,
-): Promise<{ allowed: boolean; answerer: "human" | "judge" }> {
-  const before = shell !== undefined && allowlist.covers(shell);
-  const resolved = await answer;
-  const allowed = resolved === true || (typeof resolved === "object" && resolved.allowed === true);
-  const after = shell !== undefined && allowlist.covers(shell);
-  recordAnswer(audit, answerer, allowed, allowed && after && !before);
-  return { allowed, answerer };
-}
-
-/**
  * Refuse an escalated ask that has nowhere to go, and say so.
  *
  * @param audit - the run-bound audit logger.
@@ -210,7 +206,7 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
 }
 
 /**
- * Builds a {@link GuardResolver}: bash allow/deny lists, human elicit for `on`, optional LLM judge for `auto`.
+ * Builds the shared guard runtime resolver: bash allow/deny lists, human elicit for `on`, optional LLM judge for `auto`.
  *
  * @param deps - the settings loader and optional logger; see
  *   {@link GuardResolverDeps}.
@@ -220,13 +216,19 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   `guard_judge` request param is present and a model resolves, else falls back
  *   to the human prompt. The chosen elicit is wrapped so a command already
  *   covered by the session allowlist passes without prompting.
- * @remarks One session-scoped {@link GuardSessionAllowlist} is shared across all
- *   runs of this resolver, so an `allow_session` approval carries forward. The
+ * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
+ *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
+ *   Each human question captures its current list, so late responses cannot authorize a new scope. The
  *   judge's default model falls back to `CLARVIS_DEFAULT_MODEL` from the run
  *   env when settings name none.
  */
-export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
-  const sessionAllowlist = createGuardSessionAllowlist();
+export function createGuardRuntimeResolver(
+  deps: GuardResolverDeps,
+): (ctx: GuardRuntimeContext) => GuardResolution | undefined {
+  const defaultAllowlist =
+    deps.sessionAllowlistFor === undefined && deps.humanApprovalFor === undefined
+      ? createGuardSessionAllowlist()
+      : undefined;
   const auditRoot = deps.audit ?? NOOP_LOGGER;
   return (ctx): GuardResolution | undefined => {
     const settings = deps.loadSettings();
@@ -236,14 +238,27 @@ export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
       recordDecision(audit, guardMode, decision),
     );
     if (guard === undefined) return undefined;
-    const humanElicit =
-      ctx.elicit !== undefined
-        ? createGuardElicit(ctx.elicit, {
-            allowlist: sessionAllowlist,
-            workspaceRoot: ctx.workspaceRoot,
-            ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-          })
-        : undefined;
+    const sessionAllowlist = (): GuardSessionAllowlist | undefined =>
+      deps.sessionAllowlistFor === undefined ? defaultAllowlist : deps.sessionAllowlistFor(ctx);
+    const approval =
+      deps.humanApprovalFor !== undefined
+        ? deps.humanApprovalFor(ctx)
+        : ctx.elicit === undefined
+          ? undefined
+          : createGuardHumanApproval({
+              elicit: ctx.elicit,
+              allowlist: sessionAllowlist,
+              workspaceRoot: ctx.workspaceRoot,
+              signal: ctx.signal,
+            });
+    const humanElicit: GuardElicit | undefined =
+      approval === undefined
+        ? undefined
+        : async (req) => {
+            const answer = await approval.ask(req);
+            recordAnswer(audit, "human", answer.allowed, answer.persisted);
+            return { allowed: answer.allowed, answerer: "human" };
+          };
     const judgeElicit =
       guardMode === "auto" && ctx.request.guard_judge !== undefined
         ? createJudgeElicit(
@@ -289,29 +304,34 @@ export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
         ? (req) => {
             if (req.escalate === "human") {
               if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
-              return answered(audit, "human", sessionAllowlist, req.shell, humanElicit(req));
+              return humanElicit(req);
             }
-            if (req.shell !== undefined && sessionAllowlist.covers(req.shell)) {
-              recordAnswer(audit, "session_allowlist", true, false);
-              return { allowed: true, answerer: "session_allowlist" };
-            }
-            if (judgeElicit !== undefined) {
-              const before = req.shell !== undefined && sessionAllowlist.covers(req.shell);
-              return judgeElicit(req).then((answer) => {
-                const after = req.shell !== undefined && sessionAllowlist.covers(req.shell);
-                recordAnswer(
-                  audit,
-                  answer.answerer,
-                  answer.allowed,
-                  answer.allowed && after && !before,
-                );
-                return answer;
-              });
-            }
-            if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
-            return answered(audit, "human", sessionAllowlist, req.shell, chosenHuman(req));
+            const afterCoverage = (covered: boolean): ReturnType<GuardElicit> => {
+              if (covered) {
+                recordAnswer(audit, "session_allowlist", true, false);
+                return { allowed: true, answerer: "session_allowlist" };
+              }
+              if (judgeElicit !== undefined) {
+                return judgeElicit(req).then((answer) => {
+                  if (answer.answerer === "judge")
+                    recordAnswer(audit, "judge", answer.allowed, false);
+                  return answer;
+                });
+              }
+              if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
+              return chosenHuman(req);
+            };
+            const covered = approval?.covers(req) ?? false;
+            return typeof covered === "boolean"
+              ? afterCoverage(covered)
+              : covered.then(afterCoverage);
           }
         : undefined;
     return { guard, ...(elicit !== undefined ? { elicit } : {}) };
   };
+}
+
+/** Build the loop capability resolver over the shared host guard implementation. */
+export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
+  return createGuardRuntimeResolver(deps);
 }

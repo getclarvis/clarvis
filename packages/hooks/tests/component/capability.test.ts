@@ -512,6 +512,21 @@ describe("the payload a hook receives", () => {
     });
   });
 
+  it("a checkpoint finalize carries its stage handoff separately from the final value", async () => {
+    const checkpoint = { summary: "Stage prepared", next_step: "Verify" };
+    const data = await payloadFor("pre_finalize", async (h) =>
+      h.preFinalize?.({ agent: "lead", mode: "checkpoint", checkpoint }),
+    );
+    expect(data).toEqual({
+      agent: "lead",
+      subagent_instance_id: undefined,
+      mode: "checkpoint",
+      checkpoint,
+      text: undefined,
+      value: undefined,
+    });
+  });
+
   it("drops image data and sends a count instead", async () => {
     const data = await payloadFor("post_tool_use", async (h) =>
       h.afterToolUse?.({

@@ -36,6 +36,7 @@ import {
   type Guard,
   type Elicit as GuardElicit,
   type GuardElicitAnswer,
+  type HostVcsDispatcher,
 } from "../tools/builtin/index.ts";
 
 export { agentToolsActive };
@@ -76,6 +77,10 @@ export type SandboxResolver = (ctx: RunCapabilityContext) => ResolvedSandboxSett
 export type SecretNamesResolver = (ctx: RunCapabilityContext) => readonly string[];
 /** Host port returning package roots required by the run's selected skills. */
 export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonly string[];
+/** Host port resolving the isolated-runtime dispatcher for `host_vcs`. */
+export type HostVcsDispatcherResolver = (
+  ctx: RunCapabilityContext,
+) => HostVcsDispatcher | undefined;
 
 /** Host-supplied ports for the tools capability: how it resolves the run's
  * guard, sandbox and credential names. All optional; omitting one runs
@@ -85,6 +90,7 @@ export interface AgentToolsCapabilityOptions {
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
+  resolveHostVcsDispatcher?: HostVcsDispatcherResolver;
 }
 
 /**
@@ -136,12 +142,14 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       const temporaryRoot = statePaths.runTempDir(ctx.executionId);
       mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
+      const hostVcsDispatcher = opts?.resolveHostVcsDispatcher?.(ctx);
       return createAgentToolsRunCapability(
         ctx,
         resolution,
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
+        hostVcsDispatcher,
         temporaryRoot,
         () => {
           for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
@@ -169,6 +177,7 @@ function createAgentToolsRunCapability(
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
+  hostVcsDispatcher: HostVcsDispatcher | undefined,
   temporaryRoot: string,
   removeEmptyRunDirs: () => void,
 ): RunCapability {
@@ -222,6 +231,7 @@ function createAgentToolsRunCapability(
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
         ...(guardElicit !== undefined ? { elicit: guardElicit } : {}),
+        ...(hostVcsDispatcher !== undefined ? { hostVcsDispatcher } : {}),
         ...(sandbox !== undefined
           ? {
               sandbox: {

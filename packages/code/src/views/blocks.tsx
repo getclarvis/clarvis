@@ -4,6 +4,7 @@ import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import { tone, type ToneStyle } from "../theme/tone.ts";
 import { focusBg, userBandBg } from "../theme/surfaces.ts";
+import { terminalPlainText } from "../core/terminal-text.ts";
 import type {
   NodeStatus,
   TranscriptAnnotationNode,
@@ -161,7 +162,7 @@ export function composingLabel(chars: number, complete = false, streamChars?: nu
 
 function liveTailLines(node: TranscriptToolNode): string[] {
   if (node.status !== "running" || !node.liveOutput) return [];
-  const lines = node.liveOutput.split("\n");
+  const lines = terminalPlainText(node.liveOutput).split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines.slice(-LIVE_TAIL_LINES);
 }
@@ -324,7 +325,7 @@ function ToolLine(props: {
           <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
           <Show when={!props.indent}>
             <span style={{ fg: tokens.accent }}>
-              {toolDisplayLabel(props.node.mcpName, props.node.toolName)}
+              {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
             </span>
           </Show>
           <Show
@@ -378,7 +379,7 @@ function ToolLine(props: {
         </text>
       </box>
       <Show when={tail().length > 0}>
-        <box flexDirection="column" paddingLeft={props.indent ? 5 : 3} overflow="hidden">
+        <box flexDirection="column" paddingLeft={props.indent ? 6 : 4} overflow="hidden">
           <For each={tail()}>
             {(line) => (
               <text fg={tokens.muted} wrapMode="none" truncate>
@@ -659,7 +660,10 @@ export function BlockView(props: {
    * after a failure pointed at two things the user could not do.
    */
   const runOutcome = (): { label: string; next?: string } => {
-    if (props.node.status === "ok") return { label: "Completed" };
+    if (props.node.status === "ok")
+      return {
+        label: runNode().disposition === "checkpoint" ? "Checkpoint saved" : "Completed",
+      };
     const restart = "send a follow-up to try again, or /clear to start fresh";
     if (/cancel/i.test(runNode().reason ?? ""))
       return { label: "Canceled", next: `Next: ${restart}` };
@@ -813,7 +817,11 @@ export function BlockView(props: {
                                 {statusTone(agg()).glyph + " "}
                               </span>
                               <span style={{ fg: tokens.accent }}>
-                                {toolDisplayLabel(toolNode().mcpName, toolNode().toolName)}
+                                {toolDisplayLabel(
+                                  toolNode().mcpName,
+                                  toolNode().toolName,
+                                  rawToolArguments(toolNode()),
+                                )}
                               </span>
                               <span style={{ fg: tokens.muted }}>
                                 {` ${glyph("multiply")}${members().length}`}

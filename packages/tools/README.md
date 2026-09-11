@@ -19,6 +19,13 @@ host sandbox boundary are specified in
 [`execution/command-guard.md`](../../specs/execution/command-guard.md) and
 [`execution/sandbox.md`](../../specs/execution/sandbox.md).
 
+The compact model-facing surface follows
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md): local argument rules and
+recovery details live beside each tool. Shell commands block; persistent work uses `monitor_start`.
+Descriptions retain truncation direction and continuation guidance, distinguish grep's regex engines,
+and provide an executable multiline `apply_patch` example. The complete 24-tool descriptor JSON has
+a 21,000-character regression ceiling; that is not a provider token count.
+
 ## What it provides
 
 - File operations: read, batch read, image read, write, edit, multi-edit, patch,
@@ -58,6 +65,11 @@ read at most `MAX_FILE_BYTES + 1`. The extra byte detects a file that grows afte
 the same bound feeds `read_file`, batch reads and the in-process grep path. FIFOs/devices therefore
 cannot park the event loop and a concurrent path replacement cannot turn a validated small file into
 an unbounded allocation.
+
+The root library exports `readRawFile`, `ReadFileOptions` and `ReadConfinement` for trusted host
+consumers that need the same bounded descriptor read. Callers supply their byte ceiling and explicit
+confinement policy. The kernel uses it to hash declared goal artifacts inside the selected workspace;
+this library operation does not add a model tool or grant access to host state roots.
 
 The same descriptor-first rule covers ignore sources, `file_stat`, monitor logs and monitor control
 records. Ignore files cap at 1 MiB, monitor metadata at 256 KiB and exit sentinels at 64 bytes;
@@ -129,12 +141,18 @@ latency while preserving the real npm/Homebrew/runtime path.
 host environment variable, credential channel, runtime, or service. The historical name remains for
 compatibility, but `program` may name any host executable. This is not a host shell: arguments are an
 argv array, cwd remains inside the workspace, output and time are bounded, prompts are disabled, and
-Clarvis-managed secret variables are withheld. It fails closed without guard review. In guard mode
-`on`, a human answers; in `auto`, the configured judge answers and may fall back to the human under
-its normal unsure policy. Git additionally loses inherited repository-routing state, hooks, external
-protocol helpers, known direct executable options, and custom transport-helper URLs. Direct
-Git/GitHub token output remains unavailable. The ordinary sandbox remains the default; the model
-should use this fallback only after the sandboxed command cannot complete the operation.
+Clarvis-managed secret variables are withheld. Guard mode `off` executes it without command review,
+honoring the operator's explicit choice. In mode `on`, a human answers; in `auto`, the configured
+judge answers and may fall back to the human under its normal unsure policy. Git additionally loses
+inherited repository-routing state, hooks, external protocol helpers, known direct executable
+options, and custom transport-helper URLs. Direct Git/GitHub token output remains unavailable. The
+ordinary sandbox remains the default; the model should use this fallback only after the sandboxed
+command cannot complete the operation.
+
+When tools run in an isolated guest, the optional `hostVcsDispatcher` port replaces the local
+handler for this tool. The host endpoint must validate the schema and restricted Git/GitHub forms
+again, apply the selected command-review policy, scrub credentials, and execute the argv. Other
+tools and native in-process `host_vcs` calls keep the ordinary dispatcher path.
 
 For a linked worktree, Clarvis validates the `.git` pointer, its `<common>/worktrees/<name>` target,
 and the reciprocal backlink once while creating the toolset. The resulting canonical common Git
@@ -154,6 +172,14 @@ are mounted read-only. Without one, commands are ordinary secret-scrubbed host p
 still reviews them, but this option is not a filesystem-immutability boundary and a command can
 modify files its operating-system identity may write. Nothing here executes a helper merely because
 its skill was selected.
+
+Native file-mutation tools also protect the workspace-authored Clarvis roots resolved by
+`configurationRoots`. Reads remain available, including copying a configuration file to an
+ordinary workspace destination. Writes targeting those roots fail before guard review and direct
+the operator to `/clarvis-configure <change>`, whose kernel-owned route asks for consent.
+Project-wide `replace` excludes both roots while continuing over ordinary workspace files. Command
+tools retain the separate shell and sandbox posture above; the builtin configuration guide forbids
+using them as an alternate writer.
 
 A host may additionally pass existing `temporaryRoots`. Every native tool,
 guarded path analysis, and native sandbox admits every listed root; `shell` and

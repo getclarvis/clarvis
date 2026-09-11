@@ -70,6 +70,10 @@ export type PlansMode = "off" | "on" | "review";
 export interface StartRunParams {
   /** Client-chosen id for idempotency + continuation; the kernel echoes it. */
   execution_id?: string;
+  /** Ephemeral owner-scoped identity for configuration consent in the currently open session.
+   * Generate a fresh value when opening or resuming a session. Never persist or derive it from
+   * a stored session id, continuation or provider cache hint. Omission requires consent per run. */
+  configuration_session_id?: string;
   messages: Message[];
   /**
    * Agent to run as (the entry agent).
@@ -80,8 +84,10 @@ export interface StartRunParams {
   agent?: string;
   /** Continue a prior run (resume / steer-after-end). */
   continue_from?: string;
-  /** Provider prompt-cache hint. */
-  prompt_cache_key?: string;
+  /** Persisted conversation identity used for provider affinity. */
+  session_id?: string;
+  /** Persisted entry-agent instance; hosted turns obtain it from the session. */
+  agent_instance_id?: string;
   /**
    * How long a written prompt-cache prefix survives.
    *
@@ -158,8 +164,17 @@ export interface RunUsage {
   warnings?: string[];
 }
 
+/** A stage handoff is independent of execution status and final output. */
+export type RunFinalization =
+  | { disposition?: "final"; checkpoint?: never }
+  | {
+      disposition: "checkpoint";
+      /** Bounded stage handoff; separate from a validated final result and continuation authority. */
+      checkpoint: { summary: string; next_step: string };
+    };
+
 /** Final outcome of a finished run. */
-export interface RunResult {
+export type RunResult = RunFinalization & {
   execution_id: string;
   status: RunStatus;
   /** Final text or structured value. */
@@ -169,7 +184,7 @@ export interface RunResult {
   usage?: RunUsage;
   /** Present only on a `failed` run: a stable code plus a message. */
   error?: { code: string; message: string };
-}
+};
 
 /** Result of requesting compaction through the runs service. */
 export type RunCompactionResult =
@@ -332,6 +347,8 @@ export type RunEvent =
       at: Timestamp;
       status: RunStatus;
       reason?: string;
+      /** Successful stage disposition, preserved by live and restored transcripts. */
+      disposition?: "final" | "checkpoint";
       /**
        * The failure's code, when the run ended on one.
        *
@@ -687,7 +704,7 @@ export interface ElicitationRequest {
   /**
    * Why the run is asking: `ask_user` (a free question), `guard_confirm` (a
    * command awaiting approval), `plan_review` (a proposed plan awaiting
-   * approval) or `workflow_review` (an installed workflow preflight).
+   * approval), or `workflow_review` (an installed workflow preflight).
    * Open-ended (`string & {}`) so a kernel may add kinds without a
    * protocol bump.
    */
@@ -756,7 +773,10 @@ export interface RunHandle {
    *
    * @param handler - Called when the kernel asks the user a question.
    */
-  onElicit(handler: (req: ElicitationRequest) => void): void;
+  onElicit(handler: (req: ElicitationRequest) => void): void | (() => void);
+
+  /** Observe a question's response or expiry without retaining stale prompts on reconnect. */
+  onElicitSettled?(handler: (id: string) => void): () => void;
 
   /** Resolves when execution ends; it does not imply that `events` has closed. */
   readonly done: Promise<RunResult>;

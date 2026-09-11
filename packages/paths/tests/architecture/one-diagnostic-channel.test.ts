@@ -56,6 +56,8 @@ const SANCTIONED_SINKS = new Set([
  */
 const STREAM_PLUMBING = new Set([
   "packages/kernel/src/serve.ts",
+  "packages/kernel/src/hosting/serve-remote-stdio.ts",
+  "packages/kernel/src/runtime/guest-main.ts",
   "packages/hooks/src/subprocess.ts",
   "packages/mcp-client/src/bun-stdio-client.ts",
 ]);

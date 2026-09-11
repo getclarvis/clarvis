@@ -15,6 +15,7 @@ import type {
   RunEvent,
   RunHandle,
   RunService,
+  RuntimeConfig,
   SecretService,
   SessionService,
   SessionTotals,
@@ -50,6 +51,15 @@ const workspace = {
   kind: "primary",
   path: "/workspace",
 } satisfies WorkspaceRef;
+
+const runtimeRecipe = {
+  backend: "docker",
+  recipe: {
+    name: "team-tools",
+    script: "/Users/alice/.clarvis/runtime-recipes/team-tools.sh",
+    network: "outbound",
+  },
+} satisfies RuntimeConfig;
 
 const startParams = {
   execution_id: "run-1",
@@ -228,6 +238,7 @@ declare const skills: SkillsService;
 declare const sessions: SessionService;
 declare const tasks: TasksService;
 declare const storage: StorageService;
+declare const goals: KernelClient["goals"];
 
 const client = {
   capabilities,
@@ -248,6 +259,7 @@ const client = {
   sessions,
   tasks,
   storage,
+  goals,
   async close() {},
 } satisfies KernelClient;
 
@@ -257,3 +269,4 @@ void createTask;
 void transport;
 void unknownCacheSessionTotals;
 void workflowDetail;
+void runtimeRecipe;

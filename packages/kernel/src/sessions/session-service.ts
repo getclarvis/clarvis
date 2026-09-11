@@ -9,9 +9,15 @@ import type {
   SessionService,
   SessionSummary,
 } from "@clarvis/protocol";
-import { globalPaths, ownerSegment, writeFileAtomicSync } from "@clarvis/paths";
+import {
+  globalPaths,
+  ownerSegment,
+  writeFileAtomicSync,
+  writeFileDurableSync,
+} from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { goalStateFromSession, validateSessionGoalState } from "../goals/session-state.ts";
 
 /** Narrow an arbitrary parsed value to a {@link Session} by shape, guarding against corrupt or foreign JSON on disk. */
 function isSession(v: unknown): v is Session {
@@ -22,11 +28,23 @@ function isSession(v: unknown): v is Session {
     typeof s.project_id === "string" &&
     typeof s.workspace === "string" &&
     typeof s.created_at === "number" &&
+    (s.revision === undefined || (Number.isSafeInteger(s.revision) && s.revision >= 0)) &&
     Array.isArray(s.turns) &&
     s.turns.every((turn) => turn?.kind === "conversation" || turn?.kind === "transcript") &&
     s.totals !== null &&
-    typeof s.totals === "object"
+    typeof s.totals === "object" &&
+    validGoalState(s)
   );
+}
+
+/** Corrupt or foreign objective state cannot restore a usable conversation. */
+function validGoalState(session: Session): boolean {
+  try {
+    goalStateFromSession(session);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const SESSION_MAX_BYTES = 8 * 1024 * 1024;
@@ -391,11 +409,18 @@ interface SessionPageScanOptions {
   signal?: AbortSignal;
 }
 
-interface FileSessionService extends SessionService {
+/** File host catalog with cancellation that stays outside serialized pagination DTOs. */
+export interface FileSessionService extends SessionService {
   listPage(
     page?: CursorPagination,
     scan?: SessionPageScanOptions,
   ): Promise<CursorPage<SessionSummary>>;
+}
+
+/** Trusted persistence port; public session saves cannot mutate host-owned goal state. */
+export interface HostSessionStore extends FileSessionService {
+  /** Commit under the owning host coordinator's session transaction, never through RPC. */
+  saveHost(session: Session): Promise<void>;
 }
 
 interface SummaryRead {
@@ -463,7 +488,7 @@ export function createSessionService(opts: {
   workspaceId: string;
   /** Where a session restore is reported. */
   logger?: Logger;
-}): FileSessionService {
+}): HostSessionStore {
   const logger = opts.logger ?? NOOP_LOGGER;
   const ownerDir = join(globalPaths(opts.dir).sessionsDir, ownerSegment(opts.owner));
 
@@ -566,7 +591,33 @@ export function createSessionService(opts: {
     };
   }
 
+  const saveHost = async (session: Session): Promise<void> => {
+    if (
+      session.revision !== undefined &&
+      (!Number.isSafeInteger(session.revision) || session.revision < 0)
+    )
+      throw kernelError("invalid_request", "session revision must be a nonnegative safe integer");
+    if (session.project_id !== opts.projectId || session.workspace !== opts.workspaceId)
+      throw kernelError(
+        "invalid_request",
+        "session project/workspace does not match the connected kernel",
+      );
+    const serialized = serializeBounded(
+      session,
+      SESSION_MAX_BYTES,
+      "session document exceeds 8 MiB",
+    );
+    validateSessionGoalState(session);
+    const serializedSummary = serializeSummary(toSummary(session));
+    try {
+      unlinkSync(summaryFor(session.id));
+    } catch {}
+    writeFileDurableSync(fileFor(session.id), serialized);
+    writeFileAtomicSync(summaryFor(session.id), serializedSummary);
+  };
+
   return {
+    saveHost,
     async listPage(
       page: CursorPagination = {},
       scan: SessionPageScanOptions = {},
@@ -674,32 +725,16 @@ export function createSessionService(opts: {
      * Persist a session, creating the owner dir as needed.
      *
      * @param session - the session to write; keyed by its `id`.
-     * @remarks The write is atomic (tmp + `rename`), so a concurrent reader sees
-     *   the old file or the complete new one, never a partial.
+     * @remarks The canonical document is synced before replacement, so a hosted turn intent can
+     *   commit before model work. The disposable summary remains an atomic, rebuildable sidecar.
      */
     async save(session: Session): Promise<void> {
-      if (session.project_id !== opts.projectId || session.workspace !== opts.workspaceId) {
-        throw kernelError(
-          "invalid_request",
-          "session project/workspace does not match the connected kernel",
-        );
-      }
-      const serialized = serializeBounded(
-        session,
-        SESSION_MAX_BYTES,
-        "session document exceeds 8 MiB",
-      );
-      const summary = toSummary(session);
-      const serializedSummary = serializeSummary(summary);
-      // Invalidate the old sidecar before publishing a replacement document.
-      // A crash anywhere after this point can only leave a missing sidecar,
-      // which listPage rebuilds from the authoritative full record, never a
-      // valid-looking but permanently stale summary.
-      try {
-        unlinkSync(summaryFor(session.id));
-      } catch {}
-      writeFileAtomicSync(fileFor(session.id), serialized);
-      writeFileAtomicSync(summaryFor(session.id), serializedSummary);
+      if (!jsonFits(session, SESSION_MAX_BYTES))
+        throw kernelError("resource_exhausted", "session document exceeds 8 MiB");
+      const current = readOne(fileFor(session.id));
+      if (JSON.stringify(current?.goal_state) !== JSON.stringify(session.goal_state))
+        throw kernelError("conflict", "goal state is owned by the host");
+      await saveHost(session);
     },
 
     /**

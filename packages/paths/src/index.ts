@@ -29,6 +29,7 @@ export {
   CONTEXT_FILENAMES,
   DIR_MODE,
   FILE_MODE,
+  GIT_DIR,
   INTERNAL_IGNORE_PATTERNS,
   INTERNAL_SKIP_DIRS,
   LOG_SUFFIX,
@@ -47,6 +48,10 @@ export { NOOP_PATHS_LOGGER, setPathsLogger, type PathsLogger } from "./diag.ts";
 export { globalRoot, workspaceRoot, HOME_ENV, WORKSPACE_ENV, type RootOptions } from "./roots.ts";
 
 export { globalPaths, type GlobalPaths } from "./global.ts";
+
+export { localHostPaths, type LocalHostPaths, type LocalHostPathOptions } from "./local-host.ts";
+
+export { configurationRoots, type ConfigurationRoot } from "./configuration.ts";
 
 export {
   agentsMarketplaceFile,

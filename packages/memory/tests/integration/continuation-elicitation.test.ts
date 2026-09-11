@@ -22,7 +22,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Capability } from "@clarvis/capability";
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import { executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import { createTestTraceStore } from "@clarvis/loop/testing";
 import { DEFAULT_BUDGETS } from "../../src/config.ts";
 import { indexRun } from "../../src/indexer/run.ts";
@@ -93,6 +93,49 @@ async function pass(indexer: IndexerRuntime) {
 }
 
 describe("continuing a run whose profile carries an ask_user grant", () => {
+  it("recovers the last persisted history across an empty reservation without changing instance", async () => {
+    const indexer = await runtimeWithGrants([]);
+    const subject = indexer.deps.traceStore.getById(OWNER, SUBJECT)!;
+    const prior = {
+      ...subject,
+      id: "run_prior_index",
+      request: { ...subject.request, session_id: "session", agent_instance_id: "memory-instance" },
+      final_context: [
+        ...subject.final_context!,
+        {
+          message: { role: "user" as const, content: "Persisted indexing cursor" },
+          evictable: false,
+          canonical: false,
+          summary: false,
+        },
+      ],
+    };
+    await indexer.deps.traceStore.insert(prior);
+    let observed = false;
+    indexer.executeRun = (args) => {
+      const request = args.rawBody as typeof subject.request;
+      expect(request.continue_from).toBe(prior.id);
+      expect(request.agent_instance_id).toBe("memory-instance");
+      expect(request.session_id).toBe("session");
+      observed = true;
+      return executeRun(args);
+    };
+    await indexRun({
+      run: runSnapshot({ run_id: SUBJECT }),
+      store: createInMemoryMemoryStore(),
+      budgets: DEFAULT_BUDGETS,
+      indexer,
+      agentInstanceId: "memory-instance",
+      executionId: "run_resumed_index",
+      priorExecutions: ["run_empty_claim", prior.id],
+    });
+    expect(observed).toBe(true);
+    const resumed = indexer.deps.traceStore.getById(OWNER, "run_resumed_index")!;
+    expect(resumed.final_context?.slice(0, prior.final_context.length)).toEqual(
+      prior.final_context,
+    );
+  });
+
   it("does not fail the pre-flight elicitation check", async () => {
     const report = await pass(await runtimeWithGrants(["ask_user"]));
     expect(report.continuation_blocker).toBeNull();

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { agentFrontmatterSchema, WORKFLOW_RESULT_SCHEMAS } from "../../src/config.ts";
+import { agentFrontmatterSchema } from "../../src/config.ts";
 import {
   BUILTIN_AGENTS,
   BUILTIN_AGENT_NAMES,
@@ -11,32 +11,18 @@ import { compareAgentDisplayOrder } from "../../src/config/agent-resolution.ts";
 
 const ADMIRAL = readBuiltinAgent("admiral")!;
 const MARSHALL = readBuiltinAgent("marshall")!;
+const PROMPT_TOKEN_BUDGETS = {
+  marshall: 280,
+  admiral: 410,
+  coder: 160,
+  explorer: 160,
+  planner: 180,
+} as const;
+const FLEET_PROMPT_TOKEN_BUDGET = 1150;
 
-/** Every fenced ```json block in the prompt body, parsed. */
-function jsonBlocks(markdown: string): unknown[] {
-  const blocks: unknown[] = [];
-  const fence = /```json\r?\n([\s\S]*?)```/g;
-  let match: RegExpExecArray | null;
-  while ((match = fence.exec(markdown)) !== null) {
-    blocks.push(JSON.parse(match[1] ?? ""));
-  }
-  return blocks;
-}
-
-/**
- * Drop every `description` so the comparison covers what a leader is actually
- * held to — field names, types, enums, `required`, `additionalProperties`. The
- * prompt keeps its blocks compact and explains the fields in prose beside them;
- * the exported constants carry per-field descriptions for a programmatic caller.
- */
-function structure(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(structure);
-  if (value === null || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => key !== "description")
-      .map(([key, inner]) => [key, structure(inner)]),
-  );
+/** Match the engine's text-only estimate: one token per four characters. */
+function estimatedTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
 
 describe("the agent fleet Clarvis ships", () => {
@@ -51,6 +37,29 @@ describe("the agent fleet Clarvis ships", () => {
       const parsed = agentFrontmatterSchema.safeParse(agent.frontmatter);
       expect(`${agent.name}: ${parsed.error?.message ?? "ok"}`).toBe(`${agent.name}: ok`);
       expect(agent.frontmatter.description).toBeTypeOf("string");
+    }
+  });
+
+  test("keeps the complete builtin prompt payload within its token budget", () => {
+    let total = 0;
+    for (const agent of BUILTIN_AGENTS) {
+      const tokens = estimatedTokens(agent.body);
+      total += tokens;
+      expect(tokens).toBeLessThanOrEqual(
+        PROMPT_TOKEN_BUDGETS[agent.name as keyof typeof PROMPT_TOKEN_BUDGETS],
+      );
+    }
+    expect(total).toBeLessThanOrEqual(FLEET_PROMPT_TOKEN_BUDGET);
+  });
+
+  test("retains the harness handoff contract in every profile", () => {
+    for (const agent of BUILTIN_AGENTS) {
+      const prompt = agent.body.replace(/\s+/g, " ");
+      expect(prompt).toContain("Use only tools exposed in this run");
+      expect(prompt).toMatch(/not (?:your|the Lead's) conversation/);
+      expect(prompt).toContain("share the workspace");
+      expect(prompt).toContain("`submit_result` when exposed");
+      expect(prompt).toContain("otherwise return final text");
     }
   });
 
@@ -109,37 +118,28 @@ describe("the shipped admiral agent", () => {
     expect(ADMIRAL.frontmatter.grants).toContain("run_commands");
   });
 
-  test("may spawn a narrow Sub-agent while preferring workflows for substantive fan-out", () => {
+  test("exposes manager-local children alongside the workflow harness", () => {
     const prompt = ADMIRAL.body.replace(/\s+/g, " ");
+    expect(prompt).toContain("agent harness");
     expect(prompt).toContain("`spawn_subagent`");
     expect(prompt).toContain("`delegate_task`");
-    expect(prompt).toContain("It always requires that task's exact `task_id`");
-    expect(prompt).toContain("Prefer workflows and `run_leader`");
+    expect(prompt).toContain("manager-local children");
+    expect(prompt).toContain("delegate only when it adds value");
   });
 
-  test("an explicitly requested installed workflow is never replaced with ad-hoc orchestration", () => {
-    expect(ADMIRAL.body).toContain("Honor an explicit installed-workflow request");
-    expect(ADMIRAL.body).toContain("call `run_workflow`");
-    expect(ADMIRAL.body).toContain("mandatory human");
-    expect(ADMIRAL.body).toContain("preflight before any leader starts");
+  test("names the installed-workflow and human-preflight capability", () => {
+    expect(ADMIRAL.body).toContain("`run_workflow`");
+    expect(ADMIRAL.body).toContain("installed sequence with human preflight");
   });
 
-  test("owns every next-round decision and keeps generic demonstrations one-round", () => {
-    expect(ADMIRAL.body).toContain("`workflow_status`");
-    expect(ADMIRAL.body).toContain("`workflow_decide`");
-    expect(ADMIRAL.body).toContain("never crosses into the next authored round");
-    expect(ADMIRAL.body).toContain("convergence rule says another pass is eligible");
-    expect(ADMIRAL.body).toContain("A generic demonstration is not a research request");
-    expect(ADMIRAL.body).toContain("max_total_leaders");
-  });
-
-  test("the prompt's schemas are the product's schemas, so the two cannot drift apart", () => {
-    const shipped = Object.values(WORKFLOW_RESULT_SCHEMAS);
-    const blocks = jsonBlocks(ADMIRAL.body).map(structure);
-    expect(blocks).toHaveLength(shipped.length);
-    for (const schema of shipped) {
-      expect(blocks).toContainEqual(structure(schema));
-    }
+  test("names the round checkpoint and supervision capabilities", () => {
+    const prompt = ADMIRAL.body.replace(/\s+/g, " ");
+    expect(prompt).toContain("`workflow_status`");
+    expect(prompt).toContain("`workflow_decide`");
+    expect(prompt).toContain("pauses at each round boundary");
+    expect(prompt).toContain("Finalization is blocked while a child is live");
+    expect(prompt).toContain("A paused sequence is not a completed workflow");
+    expect(prompt).toContain("partial edits");
   });
 });
 
@@ -148,19 +148,28 @@ describe("the shipped marshall agent", () => {
     expect(MARSHALL.frontmatter.iteration_limit).toBe(200);
   });
 
-  test("keeps the user informed during multi-step tool work without pausing before the tool", () => {
-    expect(MARSHALL.body).toContain("begin with a one- or two-sentence visible update");
-    expect(MARSHALL.body).toContain("call it immediately after the update");
-    expect(MARSHALL.body).toContain("about a minute of uninterrupted tool work");
-    expect(MARSHALL.body).toContain("Never invent progress or expose hidden reasoning");
-  });
-
   test("uses separate tools for independent spawning and tracked delegation", () => {
     const prompt = MARSHALL.body.replace(/\s+/g, " ");
-    expect(prompt).toContain("A plan is not a prerequisite for spawning a Sub-agent");
-    expect(prompt).toContain("Use `spawn_subagent` for independent bounded work");
-    expect(prompt).toContain("it has no `task_id` parameter");
-    expect(prompt).toContain("Use `delegate_task` only when the Sub-agent genuinely implements");
-    expect(prompt).toContain("switch to `spawn_subagent`");
+    expect(prompt).toContain("agent harness adds clear value");
+    expect(prompt).toContain("`spawn_subagent` for independent work");
+    expect(prompt).toContain("`delegate_task` for an existing plan task");
+    expect(prompt).toContain("exact `task_id`");
+    expect(prompt).toContain("when planning is enabled");
+    expect(prompt).toContain("A background handle is not a result");
+    expect(prompt).toContain("Review returned work before closing a plan task");
+  });
+});
+
+describe("the shipped Sub-agent leaves", () => {
+  test("state their role, limitations and blocker handoff", () => {
+    for (const name of ["coder", "explorer", "planner"] as const) {
+      const agent = readBuiltinAgent(name)!;
+      const prompt = agent.body.replace(/\s+/g, " ");
+      expect(agent.frontmatter.can_spawn).toBeUndefined();
+      expect(prompt).toContain(`You are \`${name}\``);
+      expect(prompt).toContain("When delegated");
+      expect(prompt).toContain("You are a leaf");
+      expect(prompt).toContain("blocker");
+    }
   });
 });

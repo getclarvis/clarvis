@@ -43,7 +43,7 @@ import { kernelError } from "../core/errors.ts";
 import { capabilityEventToProto, engineEventToProto } from "../runs/map-events.ts";
 import { DEFAULT_INGEST_CLOSE_GRACE_MS } from "../runs/memory-ingest-phase.ts";
 import { engineResultToProto } from "../runs/map-result.ts";
-import type { RunRequestAssembler } from "../runs/run-service.ts";
+import type { RunExecutor, RunExecutorArgs, RunRequestAssembler } from "../runs/run-service.ts";
 import { createManagedRun } from "../runs/managed-run.ts";
 import {
   WORKFLOW_MAX_EDGES,
@@ -85,6 +85,8 @@ export interface WorkflowsRuntimeSettings {
 export interface WorkflowsServiceConfig {
   /** Engine deps `executeRun` drives (shared with the run service). */
   deps: ExecuteRunDeps;
+  /** Placement-neutral loop executor used by manager and leader runs. */
+  executeRun?: RunExecutor;
   /** Owner scope every run and record is keyed under. */
   owner: string;
   /** Workspace label stamped on each {@link WorkflowRecord}. */
@@ -132,7 +134,16 @@ export interface KernelWorkflowsService extends WorkflowsService {
   list(page?: Pagination, scan?: WorkflowPageScanOptions): Promise<Page<WorkflowSummary>>;
   /** Run one manager turn as a workflow: execute the manager with the `workflows`
    * capability injected, persist its tree record, and return the run handle. */
-  runManagerWorkflow(params: StartRunParams): RunHandle;
+  runManagerWorkflow(params: StartRunParams, prepared?: PreparedWorkflowExecution): RunHandle;
+}
+
+/** Admission-time configuration for a hosted manager and all its subsequently admitted leaders. */
+export interface PreparedWorkflowExecution {
+  managerBody: unknown;
+  assembleRunRequest: RunRequestAssembler;
+  settings: WorkflowsRuntimeSettings;
+  leaderProfiles: readonly LeaderProfileInfo[];
+  defaultLeader?: string;
 }
 
 /** The loose shape of an engine run request body this service post-processes. */
@@ -174,6 +185,10 @@ function auxiliaryWorkflowRunDeps(deps: ExecuteRunDeps): ExecuteRunDeps {
  *   grant stripped + planning forced off, which fixes the three-level topology.
  */
 export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkflowsService {
+  const runDeps: WorkflowRunDeps = {
+    executeRun: cfg.executeRun ?? WORKFLOW_RUN_DEPS.executeRun,
+    generateExecutionId,
+  };
   const { deps, owner, assembleRunRequest, store } = cfg;
   const ingestGraceMs = cfg.ingestGraceMs ?? DEFAULT_INGEST_CLOSE_GRACE_MS;
 
@@ -243,8 +258,12 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     return resolveWorkflowDefinitions(registry.workflows);
   };
 
-  function runManagerWorkflow(params: StartRunParams): RunHandle {
-    const settings = cfg.readSettings();
+  function runManagerWorkflow(
+    params: StartRunParams,
+    prepared?: PreparedWorkflowExecution,
+  ): RunHandle {
+    const settings = prepared?.settings ?? cfg.readSettings();
+    const assemble = prepared?.assembleRunRequest ?? assembleRunRequest;
 
     const managerRunId = params.execution_id ?? generateExecutionId();
 
@@ -365,10 +384,16 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       }
     };
 
-    const assembleLeader: LeaderRequestAssembler = (spec) => {
-      const leaderAgent = spec.profile ?? cfg.resolveLeaderDefault?.(params.agent) ?? params.agent;
+    const assembleLeader: LeaderRequestAssembler = (spec, { runId }) => {
+      if (runId === undefined) throw new Error("Workflow leader requires a reserved run ID");
+      const leaderAgent =
+        spec.profile ??
+        (prepared === undefined
+          ? cfg.resolveLeaderDefault?.(params.agent)
+          : prepared.defaultLeader) ??
+        params.agent;
       const leaderParams: StartRunParams & { execution_id: string } = {
-        execution_id: "",
+        execution_id: runId,
         messages: [{ role: "user", content: spec.prompt }],
         plans: "off",
         memory: "off",
@@ -377,14 +402,13 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
         ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
         ...(params.task !== undefined ? { task: params.task } : {}),
-        ...(params.prompt_cache_key !== undefined
-          ? { prompt_cache_key: params.prompt_cache_key }
-          : {}),
+        session_id: params.session_id ?? managerRunId,
+        agent_instance_id: runId,
         ...(params.prompt_cache_ttl !== undefined
           ? { prompt_cache_ttl: params.prompt_cache_ttl }
           : {}),
       };
-      const body = assembleRunRequest(leaderParams) as RunRequestBody;
+      const body = assemble(leaderParams) as RunRequestBody;
       stripWorkflowGrant(body);
       return body as unknown as RunRequest;
     };
@@ -474,26 +498,28 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             output_tokens: acc.output,
           });
         };
-        const managerBody = assembleRunRequest({
-          execution_id: managerRunId,
-          messages: params.messages,
-          ...(params.agent !== undefined ? { agent: params.agent } : {}),
-          ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
-          ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
-          ...(params.memory !== undefined ? { memory: params.memory } : {}),
-          ...(params.task !== undefined ? { task: params.task } : {}),
-          ...(params.plans !== undefined ? { plans: params.plans } : {}),
-          ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
-          ...(params.prompt_cache_key !== undefined
-            ? { prompt_cache_key: params.prompt_cache_key }
-            : {}),
-          ...(params.prompt_cache_ttl !== undefined
-            ? { prompt_cache_ttl: params.prompt_cache_ttl }
-            : {}),
-        }) as RunRequestBody;
+        const managerBody = (prepared?.managerBody ??
+          assemble({
+            execution_id: managerRunId,
+            messages: params.messages,
+            ...(params.agent !== undefined ? { agent: params.agent } : {}),
+            ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
+            ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
+            ...(params.memory !== undefined ? { memory: params.memory } : {}),
+            ...(params.task !== undefined ? { task: params.task } : {}),
+            ...(params.plans !== undefined ? { plans: params.plans } : {}),
+            ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
+            ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
+            ...(params.agent_instance_id !== undefined
+              ? { agent_instance_id: params.agent_instance_id }
+              : {}),
+            ...(params.prompt_cache_ttl !== undefined
+              ? { prompt_cache_ttl: params.prompt_cache_ttl }
+              : {}),
+          })) as RunRequestBody;
         const workflowContext: WorkflowCtx = {
           deps: workflowDeps,
-          runDeps: WORKFLOW_RUN_DEPS,
+          runDeps,
           owner,
           semaphore,
           ledger,
@@ -532,7 +558,11 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
               ...sequence,
             });
           },
-          ...(cfg.leaderProfiles !== undefined ? { leaderProfiles: cfg.leaderProfiles() } : {}),
+          ...(prepared !== undefined
+            ? { leaderProfiles: prepared.leaderProfiles }
+            : cfg.leaderProfiles !== undefined
+              ? { leaderProfiles: cfg.leaderProfiles() }
+              : {}),
           workflowDefs: readWorkflowDefs(),
         };
         const workflowsCap = createWorkflowsCapability(workflowContext);
@@ -551,7 +581,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             title: generated,
           });
         });
-        const runTask = WORKFLOW_RUN_DEPS.executeRun({
+        const managerArgs: RunExecutorArgs = {
           rawBody: managerBody,
           owner,
           deps,
@@ -568,7 +598,8 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: mux.manager,
-        });
+        };
+        const runTask = runDeps.executeRun(managerArgs);
         const [run] = await Promise.allSettled([runTask, titleTask]);
         if (run.status === "rejected") throw run.reason;
         const outcome = run.value;

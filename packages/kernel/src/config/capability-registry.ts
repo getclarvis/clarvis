@@ -1,9 +1,11 @@
 import { createCapabilityRegistry, type CapabilityRegistry } from "@clarvis/capability";
 import { settingsSchemaFor, type SettingsFile as LoopSettingsFile } from "@clarvis/loop/host";
 import { memorySettingsSpec, type MemorySettingsBlock } from "@clarvis/memory/settings";
+import { goalsSettingsSpec, type GoalsSettingsBlock } from "@clarvis/goal/settings";
 import { plansSettingsSpec, type PlansSettingsBlock } from "@clarvis/plan/settings";
 import { workflowsSettingsSpec, type WorkflowsSettingsBlock } from "@clarvis/workflows";
 import { tasksSettingsSpec, type TasksSettingsBlock } from "@clarvis/tasks/settings";
+import { runtimeSettingsSpec, type RuntimeSettingsBlock } from "../runtime/settings.ts";
 
 /**
  * The capabilities this kernel hosts that declare their own `settings.json`
@@ -14,14 +16,35 @@ import { tasksSettingsSpec, type TasksSettingsBlock } from "@clarvis/tasks/setti
  *   parsed is not in the schema, so its key reads as an unrecognized one and the
  *   file is rejected. The engine's own blocks are not here — those are spread
  *   statically into `settingsSchema`, which is what keeps zod's inference exact.
- *   This registry is only for capabilities that live in their own package, of
- *   `@clarvis/memory`, `@clarvis/plan` and `@clarvis/workflows` today.
+ *   Product capabilities own their blocks; the host additionally owns runtime
+ *   placement settings.
  */
 export const kernelCapabilityRegistry: CapabilityRegistry = createCapabilityRegistry();
 kernelCapabilityRegistry.register(memorySettingsSpec);
 kernelCapabilityRegistry.register(plansSettingsSpec);
+kernelCapabilityRegistry.register(goalsSettingsSpec);
 kernelCapabilityRegistry.register(workflowsSettingsSpec);
 kernelCapabilityRegistry.register(tasksSettingsSpec);
+kernelCapabilityRegistry.register(runtimeSettingsSpec);
+
+/**
+ * Compose the kernel's schema authority with host extensions for every owned
+ * execution, including auxiliary passes. Kernel specs win key collisions;
+ * conflicting grant declarations fail through the shared registry contract.
+ */
+export function composeKernelCapabilityRegistry(base?: CapabilityRegistry): CapabilityRegistry {
+  const registry = createCapabilityRegistry();
+  const keys = new Set<string>();
+  for (const spec of [...kernelCapabilityRegistry.specs(), ...(base?.specs() ?? [])]) {
+    if (keys.has(spec.key)) continue;
+    keys.add(spec.key);
+    registry.register(spec);
+  }
+  for (const grant of [...kernelCapabilityRegistry.grants(), ...(base?.grants() ?? [])]) {
+    registry.registerGrant(grant);
+  }
+  return registry;
+}
 
 /**
  * The schema every `settings.json` this kernel reads or writes is validated
@@ -44,6 +67,8 @@ export const kernelSettingsSchema = settingsSchemaFor(kernelCapabilityRegistry);
 export type KernelSettingsFile = LoopSettingsFile & {
   memory?: MemorySettingsBlock;
   plans?: PlansSettingsBlock;
+  goals?: GoalsSettingsBlock;
   workflows?: WorkflowsSettingsBlock;
   tasks?: TasksSettingsBlock;
+  runtime?: RuntimeSettingsBlock;
 };

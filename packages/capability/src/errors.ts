@@ -41,6 +41,17 @@ export class ValidationError extends CodedError {
   }
 }
 
+/** A mandatory host capability failed setup; continuing without its controls is forbidden. */
+export class CapabilityUnavailableError extends CodedError {
+  readonly code = "required_capability_unavailable" as const;
+  constructor(capability: string, phase: "activation" | "seed" | "entry") {
+    super(`Required capability '${capability}' is unavailable during ${phase}`, {
+      capability,
+      phase,
+    });
+  }
+}
+
 /**
  * Raised when an execution id already exists for a given key; `code` is fixed to
  * `"execution_id_conflict"`. See {@link executionIdConflict} for the standard

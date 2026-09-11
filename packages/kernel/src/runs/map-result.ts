@@ -11,13 +11,14 @@ import type {
   RunDetail,
   RunEvent,
   RunResult,
+  RunFinalization,
   RunStatus,
   RunSummary,
   RunUsage,
 } from "@clarvis/protocol";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { engineMessagesToProto } from "./map-message.ts";
-import { engineEventToProto } from "./map-events.ts";
+import { engineEventToProto, nativeConfigurationEventToProto } from "./map-events.ts";
 import { RUN_EVENT_POLICY } from "./event-policy.ts";
 import { planRefFromCapabilityState } from "./plan-ref.ts";
 import { taskBindingFromCapabilityState } from "./task-binding.ts";
@@ -86,11 +87,22 @@ function liveUsage(usage: Usage): RunUsage {
  */
 export function engineResultToProto(executionId: string, response: RunResponse): RunResult {
   const usage = liveUsage(response.usage);
+  const finalization: RunFinalization =
+    response.disposition === "checkpoint"
+      ? {
+          disposition: "checkpoint" as const,
+          checkpoint: {
+            summary: response.checkpoint.summary,
+            next_step: response.checkpoint.next_step,
+          },
+        }
+      : {};
   if (response.status === "error") {
     const e = response.error as { code?: unknown; message?: unknown };
     return {
       execution_id: executionId,
       status: "failed",
+      ...finalization,
       error: {
         code: typeof e.code === "string" ? e.code : "error",
         message: typeof e.message === "string" ? e.message : "run failed",
@@ -107,9 +119,28 @@ export function engineResultToProto(executionId: string, response: RunResponse):
   return {
     execution_id: executionId,
     status,
+    ...finalization,
     result: response.result,
     ...(response.status !== "completed" ? { ended_reason: response.status } : {}),
     usage,
+  };
+}
+
+/** Present the native configuration leaf's usage as the standalone entry agent. */
+export function nativeConfigurationResultToProto(
+  executionId: string,
+  response: RunResponse,
+): RunResult {
+  const result = engineResultToProto(executionId, response);
+  if (result.usage === undefined) return result;
+  return {
+    ...result,
+    usage: {
+      ...result.usage,
+      by_agent: result.usage.by_agent?.map((agent) =>
+        agent.role === "subagent" ? { ...agent, role: "lead" as const } : agent,
+      ),
+    },
   };
 }
 
@@ -152,7 +183,10 @@ export function summaryToProto(s: StoredSummary): RunSummary {
  *   it would render a partially recovered run as an ordinary interrupted one.
  */
 export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER): RunDetail {
-  const result = engineResultToProto(s.id, s.response);
+  const nativeConfiguration = s.host_metadata?.execution_mode === "native_configuration";
+  const result = nativeConfiguration
+    ? nativeConfigurationResultToProto(s.id, s.response)
+    : engineResultToProto(s.id, s.response);
   const baseUsage = result.usage ?? liveUsage(s.response.usage);
   result.usage = {
     ...baseUsage,
@@ -174,7 +208,7 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
     ...(extensionProfile !== undefined ? { extension_profile: extensionProfile } : {}),
     ...(s.recovery !== undefined ? { recovery: s.recovery } : {}),
     messages: engineMessagesToProto(s.request.messages),
-    events: rehydrateEvents(s, logger),
+    events: rehydrateEvents(s, logger, nativeConfiguration),
     result,
   };
 }
@@ -190,9 +224,14 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
  *   lines without having to read which, and raises `CLARVIS_LOG=runs=debug` to
  *   get the kinds.
  */
-function rehydrateEvents(s: StoredExecution, logger: Logger): RunEvent[] {
+function rehydrateEvents(
+  s: StoredExecution,
+  logger: Logger,
+  nativeConfiguration: boolean,
+): RunEvent[] {
+  const project = nativeConfiguration ? nativeConfigurationEventToProto : engineEventToProto;
   const mapped = s.trace.events
-    .map((event) => engineEventToProto(event, logger))
+    .map((event) => project(event, logger))
     .filter(
       (event): event is NonNullable<typeof event> =>
         event !== null && RUN_EVENT_POLICY[event.type].durability === "persisted",

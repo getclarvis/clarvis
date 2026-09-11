@@ -1,3 +1,4 @@
+import { candidateVersion } from "../src/adapters/runtime-candidate.ts";
 import { spawnSync } from "node:child_process";
 import {
   lstat,
@@ -23,14 +24,26 @@ const DEVELOPMENT_TEMP_MARKER_CONTENT = "clarvis-develop temporary workspaces v1
 export interface DevelopmentInstallRequest {
   mode: "help" | "install" | "clear-only" | "create-empty-workspace" | "uninstall";
   clear: boolean;
+  candidate?: string;
 }
 
 /** Parse the deliberately small maintenance surface shared by the shell entry and launcher. */
 export function parseDevelopmentInstallArgs(args: readonly string[]): DevelopmentInstallRequest {
   let clear = false;
   let mode: DevelopmentInstallRequest["mode"] = "install";
-  for (const argument of args) {
-    if (argument === "--clear") {
+  let candidate: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--candidate") {
+      if (candidate !== undefined) throw new Error("--candidate cannot be repeated");
+      candidate = "latest";
+      const next = args[index + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        candidate = next;
+        index += 1;
+        candidateVersion(candidate);
+      }
+    } else if (argument === "--clear") {
       clear = true;
     } else if (argument === "--clear-only") {
       if (mode !== "install") throw new Error("--clear-only cannot be combined with another mode");
@@ -51,16 +64,20 @@ export function parseDevelopmentInstallArgs(args: readonly string[]): Developmen
     }
   }
   if (mode !== "install" && clear) throw new Error("--clear is available only during installation");
-  return { mode, clear };
+  if (candidate !== undefined && (mode !== "install" || clear)) {
+    throw new Error("--candidate cannot be combined with maintenance or clearing modes");
+  }
+  return { mode, clear, ...(candidate === undefined ? {} : { candidate }) };
 }
 
 /** Render help without loading the application or altering the checkout. */
 export function developmentInstallHelp(): string {
   return [
-    "Usage: ./dev-install.sh [--clear | --uninstall | --help]",
+    "Usage: ./dev-install.sh [--candidate [tag] | --clear | --uninstall | --help]",
     "",
-    `Install ${launcherName} from this checkout without building or downloading a release.`,
+    `Default: install ${launcherName} from this checkout without building or downloading a release.`,
     "",
+    "  --candidate [tag]  install a published RC and prefetch its container image when possible",
     "  --clear      delete global state and managed temporary workspaces before installing",
     `  --uninstall  remove only the managed ${launcherName} launcher`,
     "  --help       print this help and exit",
@@ -81,7 +98,11 @@ function shellQuote(value: string): string {
  * @remarks Ordinary runs keep the caller's current directory as the Clarvis workspace. Only the
  * explicit empty-workspace mode changes directory, after allocating its authenticated temp path.
  */
-export function developmentLauncherSource(input: { repository: string; bun: string }): string {
+export function developmentLauncherSource(input: {
+  repository: string;
+  bun: string;
+  candidate?: { tag: string; revision: string };
+}): string {
   const repository = shellQuote(resolve(input.repository));
   const bun = shellQuote(resolve(input.bun));
   return [
@@ -118,6 +139,12 @@ export function developmentLauncherSource(input: { repository: string; bun: stri
     '  cd -- "$workspace"',
     "fi",
     "export CLARVIS_CODE_SOURCE=1",
+    ...(input.candidate === undefined
+      ? ["unset CLARVIS_RUNTIME_CANDIDATE CLARVIS_RUNTIME_CANDIDATE_REVISION"]
+      : [
+          `export CLARVIS_RUNTIME_CANDIDATE=${shellQuote(input.candidate.tag)}`,
+          `export CLARVIS_RUNTIME_CANDIDATE_REVISION=${shellQuote(input.candidate.revision)}`,
+        ]),
     'exec "$bun" "$repository/packages/code/src/cli.ts" "$@"',
     "",
   ].join("\n");
@@ -145,6 +172,7 @@ export async function installDevelopmentLauncher(input: {
   repository: string;
   bun: string;
   binDirectory: string;
+  candidate?: { tag: string; revision: string };
 }): Promise<string> {
   const binDirectory = resolve(input.binDirectory);
   const launcher = join(binDirectory, launcherName);
@@ -379,6 +407,30 @@ async function main(): Promise<void> {
       removed
         ? `Removed managed ${launcherName} launcher from ${binDirectory}.`
         : `No managed ${launcherName} launcher found in ${binDirectory}.`,
+    );
+    return;
+  }
+
+  if (request.candidate !== undefined) {
+    const { installCandidate } = await import("./candidate-install.ts");
+    const result = await installCandidate({
+      tag: request.candidate === "latest" ? undefined : request.candidate,
+      installRoot: join(
+        process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
+        "clarvis-candidates",
+      ),
+      binDirectory,
+      bun: process.execPath,
+      bunVersion: Bun.version,
+    });
+    console.log(`Installed ${result.manifest.tag} at ${result.checkout}.`);
+    console.log(
+      result.imageEngine === undefined
+        ? "Container image was not prefetched because Docker and Podman are unavailable; native mode remains usable."
+        : `Container image (${result.imageEngine}): ${result.manifest.runtime_image}`,
+    );
+    console.log(
+      `Run ${result.launcher}; rerun --candidate to update. Previous checkouts are retained.`,
     );
     return;
   }

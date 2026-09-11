@@ -10,6 +10,10 @@ import {
   containsInlineSourceMap,
   isReleaseSourceMapPath,
 } from "../../packages/code/src/update/release-manifest.ts";
+import {
+  parseRuntimeReleaseManifest,
+  RUNTIME_RELEASE_MANIFEST_ASSET,
+} from "../runtime/release-manifest.ts";
 
 export const RELEASE_TARGETS = [
   "linux-x64",
@@ -29,6 +33,7 @@ const STATIC_RELEASE_ASSETS = [
   "VERCEL-AI-SDK-LICENSE",
   "install.ps1",
   "install.sh",
+  RUNTIME_RELEASE_MANIFEST_ASSET,
 ] as const;
 
 const RELEASE_TAG =
@@ -143,6 +148,18 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
       .join("");
     if ((await readFile(join(directory, "SHA256SUMS"), "utf8")) !== aggregate) {
       failures.push("SHA256SUMS does not match the six verified archives");
+    }
+  }
+  if (actual.has(RUNTIME_RELEASE_MANIFEST_ASSET)) {
+    try {
+      parseRuntimeReleaseManifest(
+        await readFile(join(directory, RUNTIME_RELEASE_MANIFEST_ASSET), "utf8"),
+        version,
+      );
+    } catch (error) {
+      failures.push(
+        `${RUNTIME_RELEASE_MANIFEST_ASSET} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   for (const name of STATIC_RELEASE_ASSETS) {

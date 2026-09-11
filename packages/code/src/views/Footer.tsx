@@ -58,7 +58,7 @@ export function HintToast(props: { hint: () => { text: string; tone: HintTone } 
 /** Keeps transient Lead activity out of the scrollable transcript. */
 export function LeadActivityLine(props: {
   phase: () => LeadActivityPhase;
-  /** Run-owned detail that shares the live activity row instead of the session footer. */
+  /** Conversation or run detail, retained while idle, beside the physical activity state. */
   detail?: () => string;
 }): JSX.Element {
   const running = createMemo(() => tone("running", spinnerChar()));
@@ -75,7 +75,7 @@ export function LeadActivityLine(props: {
       <Show
         when={props.phase() !== "ready"}
         fallback={
-          <text fg={tokens.muted} wrapMode="none" truncate selectable={false}>
+          <text fg={tokens.muted} wrapMode="none" flexShrink={0} selectable={false}>
             {`${glyph("bullet")} ready`}
           </text>
         }
@@ -86,18 +86,18 @@ export function LeadActivityLine(props: {
         <text fg={tokens.muted} flexShrink={0} wrapMode="none" selectable={false}>
           {props.phase()}
         </text>
-        <Show when={(props.detail?.() ?? "").length > 0}>
-          <text
-            fg={tokens.muted}
-            flexShrink={1}
-            minWidth={0}
-            wrapMode="none"
-            truncate
-            selectable={false}
-          >
-            {` ${glyph("separator")} ${props.detail?.() ?? ""}`}
-          </text>
-        </Show>
+      </Show>
+      <Show when={(props.detail?.() ?? "").length > 0}>
+        <text
+          fg={tokens.muted}
+          flexShrink={1}
+          minWidth={0}
+          wrapMode="none"
+          truncate
+          selectable={false}
+        >
+          {` ${glyph("separator")} ${props.detail?.() ?? ""}`}
+        </text>
       </Show>
     </box>
   );

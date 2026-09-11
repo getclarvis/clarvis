@@ -23,8 +23,9 @@ repository in front of you.
   does not imply provider endorsement of Clarvis.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
-- **Controlled tool use:** path-based workspace confinement, command review, optional native
-  sandboxing on Linux and macOS, and explicit workspace trust are separate safeguards.
+- **Controlled tool use:** path-based workspace confinement, independent command review, native
+  sandboxing on Linux and macOS, lazy Docker isolation, and explicit workspace trust are separate
+  safeguards.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -97,9 +98,26 @@ Essential controls:
 | `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
 | `/model`  | Choose the default model                                                 |
 | `/effort` | Choose the default reasoning effort supported by that model              |
+| `/goal`   | Create, inspect and control a persistent bounded objective                |
+| `Ctrl+S`  | Choose Host, native Sandbox, or Docker isolation                         |
+| `Ctrl+G`  | Choose Off, Approval, or automatic LLM command review                    |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
+
+Isolation and command review are independent. Docker starts only when the first run needs it; the
+simple TUI choice uses product-owned limits, ordinary outbound networking, and automatic fallback
+to a required native Sandbox when Docker cannot start operationally. Image-integrity, policy,
+recipe, and guest-handshake failures remain fail-closed. Docker Desktop and Colima satisfy the same
+Docker Engine contract on macOS; advanced `settings.json` configuration may instead select Podman.
+
+An isolated container mounts the already-selected workspace read-write at `/workspace`, so guest
+changes appear on the host immediately. Start Clarvis in a Git worktree when you want that mount to
+be a separate checkout; Clarvis does not commit, merge, or remove it. The guest has no engine socket,
+and Clarvis-owned workspace control paths are overlaid read-only, but ordinary project files remain
+writable. Agents with command access can install missing toolchains through `mise`; Docker retains
+that tool cache for the same workspace and image across sessions. Guest services are not broadly
+published: the `expose_port` tool creates a bounded loopback-only host URL when requested.
 
 ## Common commands
 
@@ -111,6 +129,7 @@ clarvis -p "explain this repository"     # headless text response
 clarvis -p "review this change" --format md
 clarvis --worktree                       # create a generated dedicated Git worktree
 clarvis --worktree focused-fix           # create or reopen a named worktree
+clarvis --remote clarvis-vps --remote-workspace /srv/project
 clarvis --ascii                          # use ASCII glyphs
 clarvis --update                         # update a managed portable installation
 clarvis --help                           # complete CLI reference
@@ -130,18 +149,27 @@ remote terminals, and current accessibility limits.
 
 ## Security model
 
-Clarvis is local-first, but it is not an offline application and it is **not itself a security
-sandbox**:
+Clarvis is local-first, but it is not an offline application and neither its native nor container
+isolation is a complete security boundary:
 
 - prompts and selected context are sent to the model provider you configure;
 - enabled MCP servers, plugins, hooks, task providers, and commands have their own trust boundaries;
 - file tools reject paths outside the workspace by default, but this path-based check is not a strong
   write sandbox against a concurrent symlink or junction swap; host execution and user-approved
   operations can also reach beyond a sandboxed process;
+- Docker isolation leaves the selected workspace writable and enables ordinary outbound networking
+  by default. A guest can therefore modify that checkout and transmit readable workspace content or
+  reach host/LAN services; use `network: "none"` when the run must be offline;
+- Docker keeps model credentials, host skill paths, Plans, and Memory stores behind narrow host
+  bridges, but anything deliberately committed or copied into the mounted workspace is guest-readable;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
   never place a secret there;
+- `--remote` carries the complete kernel protocol through OpenSSH stdio. OpenSSH supplies transport
+  encryption, integrity, server host-key verification and user authentication; Clarvis opens no
+  public listener and disables port, agent and X11 forwarding. The remote installation and account
+  can read data after decryption, so its host and storage remain part of the trust boundary;
 - the model catalog, marketplace, subscription login, and updater may make explicit network
   requests.
 
@@ -196,35 +224,43 @@ from any project to test the current checkout without building or downloading a 
 all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
 root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
 
+To install a published source RC together with its Docker image, use `./dev-install.sh --candidate`
+or `./dev-install.sh --candidate <rc-tag>`. This selects an isolated checkout and requires Git,
+the RC's pinned Bun version, and Docker. See the
+[Code candidate installation guide](packages/code/README.md) for prerequisites and lifecycle.
+
 ## Packages
 
 Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
-| Package                                        | Role                | Path                   | Description                                                  |
-| ---------------------------------------------- | ------------------- | ---------------------- | ------------------------------------------------------------ |
-| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                 |
-| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary. |
-| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                    |
-| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                |
-| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                    |
-| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.             |
-| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.       |
-| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                |
-| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                  |
-| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                |
-| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                |
-| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                  |
-| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                     |
-| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                 |
-| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                 |
-| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | In-process implementation and composition root.              |
-| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The terminal UI distributed as `clarvis`.                    |
-| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.   |
+| Package                                        | Role                | Path                   | Description                                                          |
+| ---------------------------------------------- | ------------------- | ---------------------- | -------------------------------------------------------------------- |
+| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                         |
+| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary.         |
+| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                            |
+| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                        |
+| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                            |
+| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                     |
+| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.               |
+| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                        |
+| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                          |
+| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                        |
+| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                        |
+| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                          |
+| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                             |
+| [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Persistent objectives, checkpoints and bounded continuation policy.  |
+| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                         |
+| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                         |
+| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.           |
+| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling. |
+| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.           |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product
 model. The generated
 [package coupling report](specs/package-coupling-analysis.md) is the exact graph authority.
+The kernel's [prompt-cache composition tests](specs/cross-cutting/prompt-cache.md) additionally
+use `@clarvis/llm` as a development dependency; this does not change the runtime graph.
 
 ## License
 

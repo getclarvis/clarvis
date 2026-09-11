@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "!v*-rc.*"]
   workflow_dispatch:
 
 permissions:
@@ -10,9 +10,29 @@ permissions:
 
 env:
   RELEASE_REPOSITORY: getclarvis/clarvis-releases
+  RUNTIME_ARTIFACT_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-artifact
+  RUNTIME_IMAGE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime
+
+concurrency:
+  group: stable-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: admit only stable tags for public distribution
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+
   package:
+    needs: identity
     name: package ${{ matrix.target }}
     strategy:
       fail-fast: false
@@ -59,10 +79,175 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  runtime-image:
+    needs: identity
+    name: runtime image ${{ matrix.target }}
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            architecture: amd64
+            runner: ubuntu-26.04
+          - target: linux-arm64
+            architecture: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - run: bun install --frozen-lockfile
+      - name: verify runtime release identity before publication
+        run: bun run check:release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - run: bun run build
+      - name: verify native container engines
+        run: docker version && podman version
+      - name: log in to the source repository container registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: build and push one native runtime platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_tag="$RUNTIME_ARTIFACT_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.architecture }}"
+          runtime_tag="$RUNTIME_IMAGE_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.architecture }}"
+
+          bun run runtime:build -- --artifact-only "$artifact_tag"
+          docker push "$artifact_tag"
+          artifact_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$artifact_tag")"
+          [[ "$artifact_ref" == "$RUNTIME_ARTIFACT_REPOSITORY@sha256:"* ]]
+
+          bun run runtime:build -- "$artifact_ref" "$runtime_tag"
+          bash tooling/ci/qualify-runtime.sh "$runtime_tag" docker
+          docker save "$runtime_tag" | podman load
+          bash tooling/ci/qualify-runtime.sh "$runtime_tag" podman
+          docker push "$runtime_tag"
+          runtime_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$runtime_tag")"
+          [[ "$runtime_ref" == "$RUNTIME_IMAGE_REPOSITORY@sha256:"* ]]
+
+          mkdir -p build/runtime
+          printf 'ARTIFACT_REF=%s\nRUNTIME_REF=%s\n' "$artifact_ref" "$runtime_ref" \
+            > "build/runtime/${{ matrix.target }}.refs"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: runtime-image-${{ matrix.target }}
+          path: build/runtime/${{ matrix.target }}.refs
+          if-no-files-found: error
+          retention-days: 7
+
+  runtime-manifest:
+    name: publish immutable multi-platform runtime identity
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: runtime-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - run: bun install --frozen-lockfile
+      - name: verify runner-provided Buildx
+        run: docker buildx version
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: runtime-image-*
+          path: build/runtime
+          merge-multiple: true
+      - name: log in to the source repository container registry
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: publish and resolve multi-platform OCI indexes
+        id: images
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t artifact_refs < <(sed -n 's/^ARTIFACT_REF=//p' build/runtime/*.refs | LC_ALL=C sort)
+          mapfile -t runtime_refs < <(sed -n 's/^RUNTIME_REF=//p' build/runtime/*.refs | LC_ALL=C sort)
+          test "${#artifact_refs[@]}" -eq 2
+          test "${#runtime_refs[@]}" -eq 2
+
+          artifact_tag="$RUNTIME_ARTIFACT_REPOSITORY:$GITHUB_REF_NAME"
+          runtime_tag="$RUNTIME_IMAGE_REPOSITORY:$GITHUB_REF_NAME"
+          for repository in "$RUNTIME_ARTIFACT_REPOSITORY" "$RUNTIME_IMAGE_REPOSITORY"; do
+            if docker buildx imagetools inspect "$repository:$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              echo 'Official version index already exists; refusing overwrite.' >&2
+              exit 1
+            fi
+          done
+          docker buildx imagetools create \
+            --tag "$artifact_tag" --tag "$RUNTIME_ARTIFACT_REPOSITORY:$GITHUB_SHA" \
+            "${artifact_refs[@]}"
+          docker buildx imagetools create \
+            --tag "$runtime_tag" --tag "$RUNTIME_IMAGE_REPOSITORY:$GITHUB_SHA" \
+            "${runtime_refs[@]}"
+
+          artifact_digest="sha256:$(docker buildx imagetools inspect --raw "$artifact_tag" | sha256sum | cut -d' ' -f1)"
+          runtime_digest="sha256:$(docker buildx imagetools inspect --raw "$runtime_tag" | sha256sum | cut -d' ' -f1)"
+          [[ "$artifact_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          [[ "$runtime_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          printf 'artifact=%s\nruntime=%s\n' "$artifact_digest" "$runtime_digest" >> "$GITHUB_OUTPUT"
+      - name: create the release-to-runtime identity manifest
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ steps.images.outputs.artifact }}
+          RUNTIME_DIGEST: ${{ steps.images.outputs.runtime }}
+        run: |
+          bun run tooling/runtime/release-manifest.ts \
+            "$GITHUB_REF_NAME" "$GITHUB_SHA" \
+            "$RUNTIME_ARTIFACT_REPOSITORY@$ARTIFACT_DIGEST" \
+            "$RUNTIME_IMAGE_REPOSITORY@$RUNTIME_DIGEST" \
+            build/runtime/runtime-release.json
+      - name: attest the runtime artifact carrier
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.RUNTIME_ARTIFACT_REPOSITORY }}
+          subject-digest: ${{ steps.images.outputs.artifact }}
+          push-to-registry: true
+      - name: attest the runnable runtime image
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ${{ env.RUNTIME_IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.images.outputs.runtime }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-runtime
+          path: build/runtime/runtime-release.json
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: publish verified release to the public distribution repository
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: package
+    needs: [package, runtime-manifest]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -95,6 +280,16 @@ jobs:
           cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
       - name: reject source maps and any non-allowlisted release asset
         run: bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"
+      - name: verify public runtime image availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous_config="$(mktemp -d)"
+          trap 'rm -rf "$anonymous_config"' EXIT
+          runtime_ref="$(bun -e 'process.stdout.write(JSON.parse(await Bun.file("build/release/runtime-release.json").text()).runtime_image)')"
+          artifact_ref="$(bun -e 'process.stdout.write(JSON.parse(await Bun.file("build/release/runtime-release.json").text()).artifact_image)')"
+          docker --config "$anonymous_config" pull "$runtime_ref"
+          docker --config "$anonymous_config" pull "$artifact_ref"
       - name: mint a token scoped to the public distribution repository
         id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
@@ -113,7 +308,7 @@ jobs:
           prerelease=()
           if [[ "${GITHUB_REF_NAME#v}" == *-* ]]; then prerelease+=(--prerelease); fi
           notes="$RUNNER_TEMP/clarvis-release-notes.md"
-          printf 'Portable Clarvis release built from source commit `%s`.\n\nVerify downloads with `SHA256SUMS`. These beta binaries are not yet code-signed or notarized.\n' \
+          printf 'Portable Clarvis release built from source commit `%s`.\n\nVerify downloads with `SHA256SUMS`; `runtime-release.json` identifies the attested isolated-runtime OCI images. These beta binaries are not yet code-signed or notarized.\n' \
             "$GITHUB_SHA" > "$notes"
           gh release create "$GITHUB_REF_NAME" \
             build/release/clarvis-*.tar.gz \
@@ -126,6 +321,7 @@ jobs:
             build/release/BUN-LICENSE.md \
             build/release/MODELS-DEV-LICENSE \
             build/release/VERCEL-AI-SDK-LICENSE \
+            build/release/runtime-release.json \
             --repo "$RELEASE_REPOSITORY" --target main --draft \
             --title "Clarvis $GITHUB_REF_NAME" --notes-file "$notes" "${prerelease[@]}"
       - name: activate only after every verified upload succeeds

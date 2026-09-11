@@ -34,7 +34,12 @@ import type { Logger } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type { GuardResolver, SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
+import type {
+  GuardResolver,
+  HostVcsDispatcherResolver,
+  SandboxResolver,
+  SecretNamesResolver,
+} from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 
@@ -138,6 +143,9 @@ export interface BuildRunDepsOptions {
   skillRoots?: SkillRootInput[] | (() => SkillRootInput[]) | SkillRootSnapshotProvider;
   /** Additional roots appended ahead of the four standard Clarvis roots. */
   extraSkillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
+  /** Compose host-owned in-memory skills with the discovered provider, once at construction.
+   * Not called when skills are disabled. The returned provider backs both runs and host listings. */
+  composeSkills?: (discovered: SkillsProvider | undefined) => SkillsProvider;
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
    * (unlike `extraSkillRoots`, which also accepts an array) because the set must
    * be re-read per run: an array form would pin the answer at deps-construction
@@ -162,6 +170,8 @@ export interface BuildRunDepsOptions {
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
+  /** Host-owned `host_vcs` dispatcher used by isolated runtime guests. */
+  resolveHostVcsDispatcher?: HostVcsDispatcherResolver;
   /** Opt out of built-in capabilities to run leaner (and to allow the
    * corresponding optional package to be absent). Omitted = all on. */
   builtins?: BuiltinCapabilityToggles;
@@ -499,10 +509,12 @@ export async function buildExecuteRunDeps({
   traceDir,
   skillRoots,
   extraSkillRoots,
+  composeSkills,
   skillBootstraps,
   resolveGuard,
   resolveSandbox,
   resolveSecretNames,
+  resolveHostVcsDispatcher,
   resolveHooks,
   hookCredentialNames,
   builtins,
@@ -668,6 +680,10 @@ export async function buildExecuteRunDeps({
     }
   }
 
+  if (useSkills && env.CLARVIS_SKILLS_ENABLED && composeSkills !== undefined) {
+    skills = composeSkills(skills);
+  }
+
   const capabilities: Capability[] = [];
   const capabilityRegistry = createCapabilityRegistry();
   if (!useHooks) reportBuiltinDisabled(logger, "@clarvis/hooks", "hooks");
@@ -722,6 +738,7 @@ export async function buildExecuteRunDeps({
         ...(resolveGuard !== undefined ? { resolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
+        ...(resolveHostVcsDispatcher !== undefined ? { resolveHostVcsDispatcher } : {}),
         ...(selectedSkills === undefined
           ? {}
           : {

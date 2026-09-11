@@ -87,13 +87,20 @@ export function deriveRunStartedDetail(
  *   error response, `"timeout"`, `"guard_trip"` (when the code is in
  *   {@link GUARD_TRIP_CODES}), or `"error"` otherwise, each carrying the
  *   originating error `code`.
+ * @remarks Only a completed run carries its accepted finalization disposition;
+ *   cancellation, budget termination and failures never advertise a saved checkpoint.
  */
 export function deriveRunEndedDetail(
   response: RunResponse,
   capabilityGuardTripCodes?: ReadonlySet<string>,
 ): RunEndedDetail {
   if (response.status !== "error") {
-    return { reason: response.status };
+    return {
+      reason: response.status,
+      ...(response.status === "completed" && response.disposition !== undefined
+        ? { disposition: response.disposition }
+        : {}),
+    };
   }
   const code = response.error.code;
   if (code === "timeout") return { reason: "timeout", code };

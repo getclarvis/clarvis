@@ -31,7 +31,9 @@ export const TASK_TOOL_NAMES = Object.freeze({
   reopen: "reopen_task",
 });
 
-const id = taskIdentifierSchema;
+const id = taskIdentifierSchema.describe(
+  "Stable id from the external task provider, not a plan task_id.",
+);
 const reason = z.string().trim().min(1).max(TASK_LIMITS.reason);
 const optionalRef = { id: id.optional() };
 
@@ -81,8 +83,16 @@ export const taskToolInputSchemas = {
         .max(TASK_LIMITS.evidence)
         .optional(),
       artifacts: z.array(taskArtifactSchema).max(TASK_LIMITS.artifacts).optional(),
-      no_evidence_reason: reason.optional(),
-      allow_without_artifacts: z.boolean().optional(),
+      no_evidence_reason: reason
+        .optional()
+        .describe("Why no evidence or artifacts can be supplied."),
+      allow_without_artifacts: z
+        .boolean()
+        .optional()
+        .describe(
+          "If evidence publication fails definitively, request human approval to proceed without it. " +
+            "Does not bypass conflicts, unknown write outcomes or approval.",
+        ),
     })
     .strict()
     .refine(
@@ -98,16 +108,18 @@ export const taskToolInputSchemas = {
 
 const descriptions: Record<(typeof TASK_TOOL_NAMES)[keyof typeof TASK_TOOL_NAMES], string> = {
   list_tasks:
-    "Search the selected external task provider with normalized filters and opaque pagination.",
+    "Search the selected external task provider. Continue pages using the returned cursor unchanged.",
   read_task: "Read one task from the selected provider by its native stable id.",
   create_task: "Create a task in an explicit or configured default container.",
-  assign_task: "Assign or unassign an explicit task, or the active task when id is omitted.",
+  assign_task: "Assign a task; assignee_id:null unassigns it. Omit id to target the active task.",
   comment_task: "Add a comment to an explicit task, or the active task when id is omitted.",
   start_task:
     "Explicitly start work on the active task and claim it when the provider enforces claims.",
   block_task: "Mark the active task blocked with a reason.",
   submit_task_for_review:
-    "Publish a summary and evidence, then transition the active task to review.",
+    "Publish a summary, then move the active task to review. Supply at least one evidence item " +
+    "or artifact, or no_evidence_reason. Review is not completion; uncertain writes require " +
+    "reconciliation, not a fresh submission.",
   complete_task:
     "Explicitly complete the active task. Run completion never calls this automatically.",
   reopen_task: "Explicitly reopen the active task.",

@@ -1,5 +1,12 @@
-import type { Logger, SteerSource } from "@clarvis/capability";
-import { bind, contentToText, levelEnabled, NOOP_LOGGER } from "@clarvis/capability";
+import type { ContextPort, Logger, SteerSource } from "@clarvis/capability";
+import {
+  bind,
+  checkpointMetadataSchema,
+  contentToText,
+  levelEnabled,
+  NOOP_LOGGER,
+} from "@clarvis/capability";
+import type { FinalizeAttempt } from "@clarvis/capability";
 import type { NamespacedRegistry, NamespacedTool } from "@clarvis/capability";
 import { VISION_AGENT_TOOL_WIRE_NAMES } from "../tools/wire-names.ts";
 import type { CompactionAnchor } from "../context/llm-compaction.ts";
@@ -100,6 +107,8 @@ export interface RunAgentInput extends LoopCore {
   emptyResponseAgent: "LLM" | "Lead";
   /** Notified of the created {@link LiveContext} before the loop starts. */
   onContext?: (ctx: LiveContext) => void;
+  /** Prepare appended context after capability attachment/folding and initial budget admission, before inference. */
+  prepareContext?: (ctx: ContextPort) => Promise<void>;
   /** Mutable sink for run-level warnings, forwarded to {@link AgentBuildContext.warnings}. */
   warnings?: string[];
 }
@@ -336,13 +345,30 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     availableWireNames,
   });
 
-  const preCheck = checkLimits(budget.counter, budget.ledger);
-  if (preCheck.terminal || (folded.outputBudget?.remaining() ?? 1) < 1) {
-    trace.record("budget_check", {
-      tokens_used: budget.ledger.consumed(),
-      tokens_remaining: Math.max(0, budget.ledger.remaining()),
-    });
-    return budgetStop("exhausted");
+  const checkStartBudget = (): Promise<AgentResult> | undefined => {
+    if (
+      checkLimits(budget.counter, budget.ledger).terminal ||
+      (folded.outputBudget?.remaining() ?? 1) < 1
+    ) {
+      trace.record("budget_check", {
+        tokens_used: budget.ledger.consumed(),
+        tokens_remaining: Math.max(0, budget.ledger.remaining()),
+      });
+      return budgetStop("exhausted");
+    }
+    return undefined;
+  };
+  const initialStop = checkStartBudget();
+  if (initialStop !== undefined) return initialStop;
+
+  if (input.prepareContext !== undefined) {
+    const cancelled = maybeCancelled();
+    if (cancelled !== null) return cancelled;
+    await input.prepareContext(ctx);
+    const cancelledAfterPreparation = maybeCancelled();
+    if (cancelledAfterPreparation !== null) return cancelledAfterPreparation;
+    const preparedStop = checkStartBudget();
+    if (preparedStop !== undefined) return preparedStop;
   }
 
   const noProgressResult = (): AgentResult => {
@@ -355,14 +381,25 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
     };
   };
 
-  const completed = (opts: { text?: string; structured?: { value: unknown } }): AgentResult => {
-    folded.hooks.onFinalizeAccepted?.();
-    trace.record("terminate", { reason: "completed" });
+  const completed = (attempt: FinalizeAttempt): AgentResult => {
+    folded.hooks.onFinalizeAccepted?.(attempt);
+    trace.record("terminate", {
+      reason: "completed",
+      ...(attempt.mode === "checkpoint" ? { disposition: "checkpoint" } : {}),
+    });
+    if (attempt.mode === "checkpoint") {
+      return {
+        status: "completed",
+        disposition: "checkpoint",
+        checkpoint: attempt.checkpoint,
+        partialText: state.lastAssistantText,
+      };
+    }
     return {
       status: "completed",
-      ...(opts.text !== undefined ? { text: opts.text } : {}),
-      partialText: opts.text ?? state.lastAssistantText,
-      ...(opts.structured ? { structuredResult: opts.structured } : {}),
+      ...(attempt.text !== undefined ? { text: attempt.text } : {}),
+      partialText: attempt.text ?? state.lastAssistantText,
+      ...(attempt.mode === "submit" ? { structuredResult: { value: attempt.value } } : {}),
     };
   };
 
@@ -406,7 +443,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
       const accepted = envelope.ok("accepted");
       return {
         kind: "terminal",
-        result: completed({ structured: { value: verdict.value } }),
+        result: completed({ mode: "submit", value: verdict.value }),
         text: accepted,
       };
     },
@@ -434,7 +471,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
    */
   let forceToolNextIteration = false;
   let nudgeCount = 0;
-  const noteGateNudged = (gate: number, mode: "submit" | "text"): void => {
+  const noteGateNudged = (gate: number, mode: FinalizeAttempt["mode"]): void => {
     const forceToolNext = input.forceToolOnNudge === true;
     if (forceToolNext) forceToolNextIteration = true;
     nudgeCount += 1;
@@ -561,6 +598,32 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
       }),
     },
     finalize: {
+      onRequested: async (request): Promise<FinalizeStep> => {
+        const cancelled = maybeCancelled();
+        if (cancelled) return { kind: "return", result: cancelled };
+        const parsed = checkpointMetadataSchema.safeParse(request.checkpoint);
+        if (!parsed.success) {
+          ctx.appendNote(
+            "[runtime: checkpoint requires a nonempty summary and next_step, at most 4096 characters each]",
+          );
+          return { kind: "continue" };
+        }
+        const attempt: FinalizeAttempt = {
+          mode: "checkpoint",
+          disposition: "checkpoint",
+          checkpoint: parsed.data,
+        };
+        const { outcome, gate } = await runGates(gates, attempt);
+        const stopped = maybeCancelled();
+        if (stopped) return { kind: "return", result: stopped };
+        if (outcome.kind === "terminal") return { kind: "return", result: outcome.result };
+        if (outcome.kind === "nudge") {
+          noteGateNudged(gate, "checkpoint");
+          ctx.appendNote(outcome.note);
+          return { kind: "continue" };
+        }
+        return { kind: "return", result: completed(attempt) };
+      },
       ...(contract
         ? {
             fastAcceptSubmit: (toolCalls, iteration): AgentResult | null => {
@@ -576,7 +639,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
               const accepted = envelope.ok("accepted");
               state.lastSubmitAttempt = { value: call.arguments };
               ctx.appendToolMessage(call.id, accepted);
-              return completed({ structured: { value: verdict.value } });
+              return completed({ mode: "submit", value: verdict.value });
             },
           }
         : {}),
@@ -621,7 +684,7 @@ export async function runAgent(input: RunAgentInput): Promise<AgentResult> {
           if (cp) return { kind: "return", result: cp };
           return { kind: "continue" };
         }
-        return { kind: "return", result: completed({ text }) };
+        return { kind: "return", result: completed({ mode: "text", text }) };
       },
     },
   });

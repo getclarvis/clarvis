@@ -29,6 +29,11 @@ separate [`getclarvis/docs`](https://github.com/getclarvis/docs) repository. Do 
 site tree, VitePress dependency, or Pages workflow to this monorepo. When a product change affects
 the public guides, record the external documentation disposition in the handoff.
 
+Proposals are local working documents, not versioned specifications. Keep them under
+`specs/proposals/`, which Git ignores; do not stage, force-add, or publish them in commits or pull
+requests. Preserve local proposal files when removing them from version control. Durable contracts
+belong in the owning tracked spec, and tracked documentation must not link to local proposal files.
+
 If these disagree, stop and resolve the disagreement in the same iteration. The specs are the stated
 contract; the code is the current implementation. Neither silently overrides the other.
 
@@ -40,13 +45,18 @@ documentation disposition is complete.
 - Before coding, name the owning package README and specs.
 - During the same iteration, update every affected spec and package README when code changes behavior,
   public API, configuration, wire or persisted data, failure handling, ownership, dependencies, or an
-  invariant. Update source and test citations by symbol, never by a blind line-number offset.
+  invariant. Cite the stable repository file and name the owning symbol or test in prose; never encode
+  source line numbers or ranges in documentation references.
 - If the implementation changes without changing a documented contract, re-read the owning README and
   specs anyway. In the handoff, explicitly report `Docs reviewed; no change needed` and why.
 - Never leave a knowingly stale spec or README for a later iteration, TODO, follow-up, or reviewer.
 - New behavior needs an owning spec. New or changed invariants need both `Production:` and `Test:`
   citations in that spec. If the behavior crosses package boundaries, update every affected package
   README and the coupling section of the owning specs.
+- Keep specs timeless: change dates and chronology belong in `CHANGELOG.md`, not under `specs/`.
+  Date-shaped data examples use semantic placeholders such as `YYYY-MM-DD`.
+- Do not record source line counts or LOC inventories in specs. Behavioral line limits and coverage
+  ratios remain valid when they are part of the contract.
 - If a package is added, removed, renamed, or changes dependency edges, update the root package table,
   the package README set, `specs/README.md`, and the generated coupling report. Run
   `bun run check:graph` rather than editing generated graph facts by hand.
@@ -55,6 +65,41 @@ documentation disposition is complete.
 
 Pure typo or formatting edits do not require inventing a contract change, but they still must not make
 the README, spec, implementation, and tests disagree.
+
+## Branch workflow
+
+`develop` is the default integration branch for the next release. Outside an explicitly authorized
+release in progress, `main` must point to the exact source commit of the latest published release
+tag. Ordinary code, documentation, and CI changes go through `develop`, never directly into `main`.
+Start ordinary
+work in a short-lived `feat/`, `fix/`, `refactor/`, `docs/`, or `chore/` branch from current
+`develop`, and target its pull request at `develop`. Keep both permanent branches green; neither
+accepts direct pushes, force pushes, or deletion. Both require the Linux, Windows, and macOS CI
+contexts, an up-to-date base, and resolved review conversations, with no ruleset bypass actors.
+
+Use a merge commit when promoting a release into `main` or synchronizing permanent branches.
+Squash is available for bounded task PRs into `develop`; never squash a promotion or back-merge.
+Rebase merging and required linear history are disabled so these synchronization merges retain
+their ancestry. External approving reviews are not required for the single-maintainer workflow;
+this does not replace the owner's review of the change.
+
+Prepare the final root version on `release/<major.minor.patch>` before its first push. Open a PR from that branch to `main`; only its open PR head receives the next signed `v<version>-rc.<number>` source-candidate tag.
+Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
+CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
+real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
+the latest published tag; stage its qualified patch on `release/<patch-version>` for the same
+promotion flow and propagate it to `develop` and any active release branch. If `main` already
+contains unreleased work, do not publish that work accidentally as a hotfix: resolve the intended release lineage explicitly.
+
+Before starting, inspect the worktree, current branch, upstream, and PR base. Preserve existing
+work; do not reset or switch a dirty worktree merely to follow the branch convention. A task branch
+must publish to its own remote branch, not to `develop` through an inherited upstream.
+
+Version preparation, tagging, and publication follow [RELEASING.md](RELEASING.md). A merge does not
+publish immediately: a release-branch merge starts the automated CI, tag, and publication sequence.
+An authorized signed `v<version>` tag identifies the exact approved source.
+See [CONTRIBUTING.md](CONTRIBUTING.md#branch-workflow) for the contributor sequence. Branch and PR
+operations remain subject to the publication authorization below.
 
 ## Publication authorization
 
@@ -72,9 +117,21 @@ the current bounded change; do not ask for another confirmation between those st
 - Fixes and retries that remain within the authorized change, including hook fixes, push retries,
   pull-request metadata corrections, and CI reruns, do not require renewed authorization.
 
+Before opening or updating any pull request, including a draft, always read the target repository's
+current PR template. In this repository it is
+[`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Use its required sections
+and checklists, fill them with evidence from the actual change, and follow its instructions for
+optional sections. If multiple templates exist, select the applicable one. Do not substitute a
+remembered template or a generic PR body.
+
 Before starting an authorized publication workflow, state once what will be published, the target
 repository and branch, and the intended outcome. The authorization ends when that outcome is reached
 or when the scope or destination changes materially.
+
+Under the configured Gitflow automation, explicitly opening a prepared `release/*` PR into `main`, or pushing to
+that branch while its PR is open, includes its candidate tag; an explicitly requested release promotion merge into `main`
+includes the final tag and public release. State these effects before either action. Ordinary task
+branch pushes and merges do not authorize releases.
 
 Separate explicit authorization is still required to force-push or otherwise rewrite remote
 history, delete branches, tags, releases, or data, publish a tag or release, bypass a required check,
@@ -86,7 +143,7 @@ Editing files and running builds, tests, typechecks, lint, and read-only Git com
 
 ## Repository map
 
-Clarvis is a pre-release Bun/TypeScript monorepo of 18 packages. The current package list and concise
+Clarvis is a pre-release Bun/TypeScript monorepo of 19 packages. The current package list and concise
 descriptions live in [`README.md`](README.md); the authoritative dependency graph is generated in
 [`specs/package-coupling-analysis.md`](specs/package-coupling-analysis.md).
 
@@ -97,7 +154,7 @@ foundation             capability · paths
 host contract          protocol
 execution service      llm · mcp-client · supervision · trace · tools · hooks · skills
 engine                 loop
-product capability     memory · plan · tasks · workflows
+product capability     memory · plan · goal · tasks · workflows
 host implementation    kernel
 application            code (terminal UI) · server (MCP over HTTP)
 ```
@@ -181,6 +238,33 @@ Do not run `bun run check:pre-commit` as a handoff ritual. The hook owns the ful
 an authorized commit. Running it early pays for the same work twice. Never claim the gate passes
 unless it genuinely ran to completion.
 
+## Repository skills and evidence reuse
+
+Choose the skill that owns the requested outcome. Additional modes share the same work record;
+they do not restart discovery, builds, or verification.
+
+| Outcome                                                                 | Skill                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Documentation audit or synchronization                                  | [clarvis-doc-health](.agents/skills/clarvis-doc-health/SKILL.md)         |
+| Focused TUI journey, complete product E2E, or performance investigation | [clarvis-tui-validation](.agents/skills/clarvis-tui-validation/SKILL.md) |
+| Release readiness and distributable qualification                       | [clarvis-release-health](.agents/skills/clarvis-release-health/SKILL.md) |
+
+- Keep one record of scope, authorization, source and artifact identities, fixtures, commands,
+  outcomes, and evidence paths. Reuse already-read contracts while their contents remain current.
+- Reuse a completed check only when its relevant source/dependency inputs, artifact, configuration,
+  fixture, and environment still match. A commit alone does not identify a dirty build. Record the
+  earlier evidence and why it still applies; missing output or an interrupted check is not a pass.
+- Expand root and package scripts before planning gates. Run each required check once; a parent
+  script may already include it. The publication hook still runs its own complete gate.
+- Build once after the last relevant change and share that artifact across applicable checks.
+  Rebuild when its inputs or requested artifact flavor change. Resume from a failed stage and rerun
+  invalidated dependents; retain successful independent evidence and both attempts of any retry.
+- Read only the selected skill mode's references. A documentation edit or focused regression does
+  not automatically require a full product audit, release preflight, or performance soak.
+- Keep proof method separate from verdict: source review, static inventory, deterministic tests,
+  PTY interaction, real provider, and native hardware establish different claims. Listed scenarios
+  and passing lower-level tests do not establish that an E2E journey was executed.
+
 ## Tests and checks
 
 Use Bun only, from the repository root unless a package command explicitly changes scope.
@@ -227,7 +311,7 @@ The full architecture, gate order, coverage policy, and CI/platform scope are in
 ## TUI validation
 
 Interactive `@clarvis/code` defects must be reproduced and verified in a real PTY. Use the
-[`clarvis-tui-e2e-validation`](.agents/skills/clarvis-tui-e2e-validation/SKILL.md) skill for the
+[`clarvis-tui-validation`](.agents/skills/clarvis-tui-validation/SKILL.md) skill for the
 end-to-end evidence contract, the `tui-driver` skill for its PTY interaction mechanics, and
 `bun run smoke` for the automated artifact boot contract.
 

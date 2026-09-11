@@ -1,5 +1,4 @@
-import { createRequire } from "node:module";
-import type { ValidateFunction } from "ajv";
+import { Ajv, type ValidateFunction } from "ajv";
 import { ToolError, serializeError } from "./errors.ts";
 import { bound } from "./lib/output.ts";
 import { tools, getTool, selectSurface } from "./tools/registry.ts";
@@ -7,8 +6,9 @@ import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts"
 import type { ToolCallHooks } from "./tools/types.ts";
 import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
-import type { RuntimeConfig } from "./config.ts";
+import type { HostVcsDispatchResult, RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
+import { configurationRoots } from "@clarvis/paths";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -31,20 +31,30 @@ function protectSkillPackages(
   if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
   const context = buildGuardContext(name, args, config);
   for (const fact of context.paths) {
-    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
+    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, {
+      rejectAncestors: name === "replace",
+    });
   }
 }
 
-interface AjvInstance {
-  compile(schema: unknown): ValidateFunction;
-  errorsText(errors?: unknown, opts?: { separator?: string }): string;
+/** Require the operator-authorized configuration route for authored workspace configuration. */
+function protectWorkspaceConfiguration(
+  name: string,
+  args: Record<string, unknown>,
+  config: RuntimeConfig,
+): void {
+  if (!NATIVE_MUTATION_TOOLS.has(name)) return;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const context = buildGuardContext(name, args, config);
+  const targets = name === "copy" ? context.paths.slice(1) : context.paths;
+  for (const fact of targets) {
+    assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
+      code: "denied",
+      message: `Workspace Clarvis configuration can only be changed through /clarvis-configure <change>, which requests operator approval: ${fact.raw}.`,
+    });
+  }
 }
-
-interface AjvModule {
-  default: new (opts?: Record<string, unknown>) => AjvInstance;
-}
-
-const Ajv = (createRequire(import.meta.url)("ajv") as AjvModule).default;
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -57,16 +67,7 @@ for (const tool of tools) {
  * return, and any tool-supplied metadata. An error is reported in-band (as
  * `isError: true` with a serialized error text part), not by throwing.
  */
-export interface DispatchResult {
-  /** True when the call failed; `content` then holds the serialized error. */
-  isError: boolean;
-  /** The tool's output as text/image content parts. */
-  content: ContentPart[];
-  /** Optional structured metadata a tool attaches to a successful result. */
-  meta?: Record<string, unknown>;
-  /** Final command-review outcome, when the host guard exposes its mode. */
-  guard?: GuardReview;
-}
+export type DispatchResult = HostVcsDispatchResult;
 
 function normalizeOutput(out: string | ToolResult): ToolResult {
   return typeof out === "string" ? { content: out } : out;
@@ -158,11 +159,7 @@ async function applyGuard(
   args: Record<string, unknown>,
   config: RuntimeConfig,
 ): Promise<GuardGate> {
-  if (!config.guard) {
-    return name === "host_vcs"
-      ? { denied: errorResult(new ToolError("denied", "host_vcs requires command review")) }
-      : {};
-  }
+  if (!config.guard) return {};
   try {
     const ctx = buildGuardContext(name, args, config);
     const decision = await config.guard(ctx);
@@ -243,9 +240,18 @@ export async function dispatch(
   }
 
   try {
+    protectWorkspaceConfiguration(name, filled, config);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
+  }
+
+  if (name === "host_vcs" && config.hostVcsDispatcher !== undefined) {
+    try {
+      return await config.hostVcsDispatcher(filled, signal);
+    } catch (error) {
+      return errorResult(error);
+    }
   }
 
   const gate = await applyGuard(name, filled, config);

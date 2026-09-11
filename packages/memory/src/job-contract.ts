@@ -23,6 +23,14 @@ export interface MemoryJobFailure {
 /** One durable intent to fold a finished run into the wiki. */
 export interface MemoryIndexJob {
   run_id: string;
+  /** Persisted conversation instance, shared by every claim and physical retry. */
+  agent_instance_id?: string;
+  /** Execution reserved by the current claim before its first provider call. */
+  indexer_execution_id?: string;
+  /** Previous claim's execution, replayed when recovering the same conversation. */
+  indexer_continue_from?: string;
+  /** Reserved predecessors, newest first, including claims that died before creating a trace. */
+  indexer_prior_executions?: string[];
   state: MemoryJobState;
   enqueued_at: number;
   updated_at: number;

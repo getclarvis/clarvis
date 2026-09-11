@@ -57,10 +57,18 @@ export interface WorkspaceStatePaths {
   extensionProfileSelectionFile: string;
   /** Parent directory containing every run-owned scratch directory. */
   runsDir: string;
+  /** Host-owned isolated-runtime checkpoints that survive guest replacement. */
+  runtimesDir: string;
   /** One run's scratch container, removed after its final temporary root. */
   runDir(executionId: string): string;
   /** Run-owned scratch root shared by shell and native coding tools. */
   runTempDir(executionId: string): string;
+  /** Resolve one generation's host-owned checkpoint root. */
+  runtimeDir(runtimeId: string): string;
+  /** Resolve the directory containing host-accepted run checkpoints. */
+  runtimeCheckpointsDir(runtimeId: string): string;
+  /** Resolve one run's latest durable checkpoint. */
+  runtimeCheckpointFile(runtimeId: string, executionId: string): string;
   /**
    * Resolve an owner's memory machinery root.
    *
@@ -183,8 +191,10 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
   const base = join(globalPaths(undefined, opts).state, "workspaces", segmentFor(ws));
   const localDir = join(base, "local");
   const runsDir = join(localDir, "runs");
+  const runtimesDir = join(base, "runtimes");
   const ownerBase = (owner: string) => join(base, "owners", ownerSegment(owner));
   const runDir = (executionId: string): string => join(runsDir, ownerSegment(executionId));
+  const runtimeDir = (runtimeId: string): string => join(runtimesDir, ownerSegment(runtimeId));
   return {
     root: base,
     workspaceRoot: ws,
@@ -197,8 +207,13 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     codeConfigFile: join(localDir, "code.json"),
     extensionProfileSelectionFile: join(localDir, "extension-profile.json"),
     runsDir,
+    runtimesDir,
     runDir,
     runTempDir: (executionId: string) => join(runDir(executionId), "tmp"),
+    runtimeDir,
+    runtimeCheckpointsDir: (runtimeId: string) => join(runtimeDir(runtimeId), "checkpoints"),
+    runtimeCheckpointFile: (runtimeId: string, executionId: string) =>
+      join(runtimeDir(runtimeId), "checkpoints", `${ownerSegment(executionId)}.json`),
     memoryMachineryRootForOwner: (owner: string) => join(ownerBase(owner), "memory"),
     plansLockDirForOwner: (owner: string) => join(ownerBase(owner), "plans"),
     monitorSidecar: (id: string) =>

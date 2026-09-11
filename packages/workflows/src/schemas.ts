@@ -195,7 +195,11 @@ export const VERDICT_SCHEMA: WorkflowResultSchema = {
       maxLength: WORKFLOW_LIMITS.identifierChars,
       description: "The id of the finding under test.",
     },
-    verdict: { enum: ["confirmed", "refuted", "inconclusive"] },
+    verdict: {
+      enum: ["confirmed", "refuted", "inconclusive"],
+      description:
+        "confirmed: evidence supports the claim; refuted: evidence contradicts it; inconclusive: insufficient evidence. Lack of refutation is not confirmation.",
+    },
     evidence: {
       type: "array",
       maxItems: WORKFLOW_LIMITS.resultItems,

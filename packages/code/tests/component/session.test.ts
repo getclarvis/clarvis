@@ -69,6 +69,43 @@ function fakeStore(): SessionStore & { snapshots: SessionMeta[] } {
   };
 }
 
+test("hosted session persists only its empty identity and adopts canonical turn accounting", () => {
+  const store = fakeStore();
+  const session = createSession({
+    store,
+    owner: "clarvis",
+    project: "project",
+    workspace: "workspace",
+    hosted: true,
+  });
+  const identity = session.ensureIdentity("Hosted conversation");
+  expect(store.snapshots).toHaveLength(1);
+  expect(store.snapshots[0]!.turns).toEqual([]);
+  session.acceptHosted({ ...identity, revision: 1 });
+  session.beginTurn("Prompt", "execution");
+  session.endTurn(wire("execution", "completed", "Answer", usage(5, 3, 0)));
+  session.flush();
+  session.ensureIdentity("Still the same identity");
+  expect(store.snapshots).toHaveLength(1);
+  expect(session.meta()!.totals).toEqual({ input: 0, output: 0, cached: 0 });
+  const canonical: SessionMeta = {
+    ...identity,
+    revision: 3,
+    turns: [
+      { kind: "conversation", executionId: "execution", userPreview: "Prompt", status: "done" },
+    ],
+    totals: { input: 5, output: 3, cached: 0 },
+    pending: [{ role: "assistant", content: "Host-owned observation" }],
+  };
+  session.acceptHosted(canonical);
+  session.reconcile(stored("execution", "completed", [5, 3, 0], { result: "Answer" }));
+  expect(session.meta()!.totals).toEqual({ input: 5, output: 3, cached: 0 });
+  expect(session.takePending()).toEqual([{ role: "assistant", content: "Host-owned observation" }]);
+  session.flush();
+  expect(store.snapshots).toHaveLength(1);
+  expect(() => session.acceptHosted({ ...canonical, id: "another" })).toThrow("does not belong");
+});
+
 function usage(i: number, o: number, c: number): RunUsage {
   return {
     iterations: 1,
@@ -153,6 +190,25 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   });
   return { promise, resolve };
 }
+
+test("ensureIdentity persists an empty conversation without inventing history or a continuation", () => {
+  const store = fakeStore();
+  const session = createSession({
+    store,
+    workspace: "ws",
+    project: "project",
+    owner: "user",
+    priceFor: () => undefined,
+  });
+  const identity = session.ensureIdentity("Scheduled conversation");
+  expect(identity.turns).toEqual([]);
+  expect(store.get(identity.id)?.id).toBe(identity.id);
+  expect(session.ensureIdentity("another title")).toBe(identity);
+  expect(session.messages()).toEqual([]);
+  expect(session.beginTurn("first real prompt", "exec_first")).toBeUndefined();
+  expect(session.meta()?.id).toBe(identity.id);
+  expect(session.meta()?.turns).toHaveLength(1);
+});
 
 test("a turn snapshots its Extension Profile and reconciliation trusts the persisted run", () => {
   const store = fakeStore();

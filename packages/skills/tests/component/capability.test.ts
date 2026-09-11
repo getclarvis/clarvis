@@ -4,6 +4,7 @@ import { loadEnv } from "@clarvis/capability";
 import {
   createSkillsCapability,
   LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
   SKILLS_CAPABILITY_NAME,
   USE_SKILLS_GRANT,
   type SkillsProvider,
@@ -96,8 +97,14 @@ describe("skills capability composition", () => {
     const capability = createSkillsCapability();
     expect(capability.name).toBe(SKILLS_CAPABILITY_NAME);
     expect(capability.grants).toEqual([{ name: USE_SKILLS_GRANT }]);
-    expect(capability.reservedWireNames).toEqual([LOAD_SKILL_TOOL_NAME]);
-    expect(capability.toolEffects).toEqual({ [LOAD_SKILL_TOOL_NAME]: "control" });
+    expect(capability.reservedWireNames).toEqual([
+      LOAD_SKILL_TOOL_NAME,
+      READ_SKILL_RESOURCE_TOOL_NAME,
+    ]);
+    expect(capability.toolEffects).toEqual({
+      [LOAD_SKILL_TOOL_NAME]: "control",
+      [READ_SKILL_RESOURCE_TOOL_NAME]: "control",
+    });
 
     expect(
       await capability.forRun(
@@ -228,17 +235,23 @@ describe("skills capability composition", () => {
     expect(section).not.toContain("**missing**");
   });
 
-  it("wires the unadvertised load_skill handler and preserves trace context", async () => {
+  it("wires the unadvertised strict skill handlers and preserves trace context", async () => {
     const run = await runCapability({ skills: provider() });
     const agent = await run.forAgent!(fakeAgentScope({ grants: [USE_SKILLS_GRANT] }));
     const build = fakeAgentBuildContext({ subagentInstanceId: "w7" });
     const contribution = await agent!.attach(build);
     const handler = contribution.handlers![0]!;
 
-    expect(contribution.tools?.map((tool) => tool.wireName)).toEqual([LOAD_SKILL_TOOL_NAME]);
+    expect(contribution.tools?.map((tool) => tool.wireName)).toEqual([
+      LOAD_SKILL_TOOL_NAME,
+      READ_SKILL_RESOURCE_TOOL_NAME,
+    ]);
     expect(contribution.advertised).toBe(false);
     expect(handler.matches({ id: "c1", name: "read_file", arguments: {} })).toBe(false);
     expect(handler.matches({ id: "c1", name: LOAD_SKILL_TOOL_NAME, arguments: {} })).toBe(true);
+    expect(handler.matches({ id: "c1", name: READ_SKILL_RESOURCE_TOOL_NAME, arguments: {} })).toBe(
+      true,
+    );
 
     const verdict = await handler.handle(
       { id: "c1", name: LOAD_SKILL_TOOL_NAME, arguments: { name: "alpha" } },

@@ -1,4 +1,6 @@
 import { promises as fs } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
+import { configurationRoots } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
 import { listFiles, readFileOptions } from "../lib/files.ts";
@@ -88,8 +90,16 @@ async function scopeFiles(
       { limit: config.maxTraversalEntries },
     );
   }
-  listing.files.sort();
-  return listing.files;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const files = listing.files.filter((file) =>
+    protectedRoots.every((protectedRoot) => {
+      const rel = relative(protectedRoot, file);
+      return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+    }),
+  );
+  files.sort();
+  return files;
 }
 
 /**
@@ -121,13 +131,9 @@ async function scopeFiles(
 export const replace: ToolDef = {
   name: "replace",
   description:
-    "Find-and-replace across the workspace with a preview-first, atomic apply. `pattern` is a regular " +
-    "expression (like grep); `replacement` may reference capture groups with `$1`..`$9` and the whole " +
-    "match with `$&` — use `$$` for a literal `$`. Scope with `path` (a file or directory) and/or " +
-    "`glob`; at least one is required. Ignored files (.gitignore) are skipped, as are binary and " +
-    "oversized files. `dry_run` defaults to true: it reports the match counts and a unified-diff " +
-    "preview WITHOUT writing. Re-run with `dry_run: false` to apply all edits atomically (all files " +
-    "succeed or none do), preserving each file's line endings.",
+    "Regex replacement scoped by path and/or glob (at least one required). Preview counts and " +
+    "diffs first with dry_run:true, the default; false applies all edits atomically, preserving " +
+    "line endings. Directory scans respect ignore rules; binary and oversized files are skipped.",
   inputSchema: {
     type: "object",
     properties: {
@@ -151,7 +157,7 @@ export const replace: ToolDef = {
         type: "string",
         description:
           "Glob filtering which files under the scope are edited (e.g. `**/*.ts`). A bare pattern " +
-          "without `/` matches in any directory. Required if `path` is omitted or a directory.",
+          "without `/` matches in any directory. Required only when path is omitted; optional for a directory.",
       },
       ignore_case: { type: "boolean", description: "Case-insensitive matching (regex `i` flag)." },
       multiline: {

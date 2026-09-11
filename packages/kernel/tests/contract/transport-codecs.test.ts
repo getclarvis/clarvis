@@ -1,5 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import type { KernelRequestOptions, KernelTransport, RunEvent } from "@clarvis/protocol";
+import type {
+  GoalChange,
+  KernelRequestOptions,
+  KernelTransport,
+  RunEvent,
+} from "@clarvis/protocol";
+import { applyGoalControl } from "@clarvis/goal";
+import { decodeGoalView } from "../../src/transport/goal-codec.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
 import { decodeRunEvent } from "../../src/transport/run-event-codec.ts";
 import {
@@ -8,14 +15,14 @@ import {
   ORDINARY_OPERATIONS,
   SPECIAL_OPERATIONS,
 } from "../../src/transport/operations.ts";
-import type { HelloResult } from "../../src/transport/wire.ts";
+import { CLARVIS_WIRE_VERSION, M, N, type HelloResult } from "../../src/transport/wire.ts";
 import {
   createRecordingKernelServices,
   RECORDED_OPERATION,
 } from "../helpers/recording-kernel-services.ts";
 
 const HELLO = {
-  wire_version: 3,
+  wire_version: CLARVIS_WIRE_VERSION,
   capabilities: {
     memory: false,
     skills: false,
@@ -94,6 +101,148 @@ class FakeTransport implements KernelTransport {
   }
 }
 
+describe("goal wire state and subscriptions", () => {
+  const empty = { version: 1 as const, revision: 0, archive: [], receipts: [] };
+  const transportForGoals = () => {
+    const transport = new FakeTransport();
+    transport.helloResult = {
+      ...HELLO,
+      capabilities: { ...HELLO.capabilities, hosting: { host_generation: "fixture" }, goals: true },
+    };
+    transport.onRequest = () => ({});
+    return transport;
+  };
+
+  it("validates goal audit scope, physical state and the response envelope", () => {
+    const created = applyGoalControl(
+      undefined,
+      {
+        operation_id: "create",
+        expected_revision: 0,
+        action: { kind: "create", objective: "Check fixture", limits: { max_net_tokens: 1000 } },
+      },
+      { now: 1, session_id: "conversation", new_goal_id: "goal", physically_busy: false },
+    );
+    expect(decodeGoalView({ state: empty }, "conversation", "ws_test")).toEqual({ state: empty });
+    expect(
+      decodeGoalView({ state: created.state }, "conversation", "ws_test")?.state.current?.objective,
+    ).toBe("Check fixture");
+    for (const invalid of [
+      { state: created.state },
+      { state: { ...empty, archive: [created.state.current] } },
+    ])
+      expect(decodeGoalView(invalid, "foreign", "ws_test")).toBeNull();
+    for (const invalid of [
+      null,
+      {},
+      { state: empty, controller: true },
+      { state: { ...empty, version: 2 } },
+      { state: empty, physical_run: { execution_id: "forged" } },
+      { state: empty, attention: "x".repeat(4097) },
+    ])
+      expect(decodeGoalView(invalid, "conversation", "ws_test")).toBeNull();
+  });
+
+  it("rejects malformed replies and receipts for another operation", async () => {
+    for (const method of ["availability", "get", "control", "receipt"] as const) {
+      const transport = transportForGoals();
+      const client = await connectKernelClient(transport);
+      transport.onRequest = () =>
+        method === "availability" ? { available: "yes" } : { operation_id: "another" };
+      const request = {
+        session_id: "conversation",
+        expected_revision: 0,
+        operation_id: "expected",
+        action: { kind: "pause" as const },
+      };
+      const pending =
+        method === "availability"
+          ? client.goals.availability()
+          : method === "get"
+            ? client.goals.get("conversation")
+            : method === "control"
+              ? client.goals.control(request)
+              : client.goals.receipt("conversation", "expected");
+      await expect(pending).rejects.toMatchObject({ code: "unavailable" });
+      expect(transport.closeCount).toBe(1);
+      await client.close();
+    }
+  });
+
+  it("installs before acknowledgement, scopes invalidations and releases exactly once", async () => {
+    const transport = transportForGoals();
+    const client = await connectKernelClient(transport);
+    const changes: GoalChange[] = [];
+    transport.onRequest = (method, params) => {
+      if (method === M.goalsSubscribe)
+        transport.emit(N.goalChange, {
+          subscription_id: (params as { subscription_id: string }).subscription_id,
+          change: { session_id: "conversation" },
+        });
+      return {};
+    };
+    const off = await client.goals.subscribe("conversation", (change) => changes.push(change));
+    expect(changes).toEqual([{ session_id: "conversation" }]);
+    const subscription = transport.requests.find((request) => request.method === M.goalsSubscribe)!
+      .params as { subscription_id: string };
+    off();
+    off();
+    transport.emit(N.goalChange, { ...subscription, change: { session_id: "conversation" } });
+    expect(changes).toHaveLength(1);
+    expect(
+      transport.requests.filter((request) => request.method === M.goalsUnsubscribe),
+    ).toHaveLength(1);
+    await client.close();
+    expect(transport.notifications.get(N.goalChange)).toHaveLength(0);
+  });
+
+  it("bounds pending subscriptions and discards their completion after disconnection", async () => {
+    const transport = transportForGoals();
+    const client = await connectKernelClient(transport);
+    const gate = Promise.withResolvers<object>();
+    transport.onRequest = () => gate.promise;
+    const pending = Array.from({ length: 8 }, () =>
+      client.goals.subscribe("conversation", () => {}),
+    );
+    const settled = Promise.allSettled(pending);
+    await expect(client.goals.subscribe("conversation", () => {})).rejects.toMatchObject({
+      code: "resource_exhausted",
+    });
+    await client.close();
+    gate.resolve({});
+    expect((await settled).every((result) => result.status === "rejected")).toBe(true);
+    expect(transport.notifications.get(N.goalChange)).toHaveLength(0);
+  });
+
+  it("closes on forged change metadata or subscription acknowledgements", async () => {
+    for (const change of [
+      { session_id: "foreign" },
+      { session_id: "conversation", state: empty },
+      null,
+    ]) {
+      const transport = transportForGoals();
+      const client = await connectKernelClient(transport);
+      let delivered = 0;
+      await client.goals.subscribe("conversation", () => {
+        delivered++;
+      });
+      const subscription = transport.requests.at(-1)!.params as { subscription_id: string };
+      transport.emit(N.goalChange, { subscription_id: subscription.subscription_id, change });
+      expect(delivered).toBe(0);
+      expect(transport.closeCount).toBe(1);
+      await client.close();
+    }
+    const transport = transportForGoals();
+    const client = await connectKernelClient(transport);
+    transport.onRequest = () => ({ accepted: false });
+    await expect(client.goals.subscribe("conversation", () => {})).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    expect(transport.closeCount).toBe(1);
+    await client.close();
+  });
+});
+
 describe("wire handshake", () => {
   it("rejects mismatched or structurally invalid hello responses and closes the transport", async () => {
     for (const helloResult of [
@@ -101,6 +250,13 @@ describe("wire handshake", () => {
       { ...HELLO, wire_version: 1 },
       { ...HELLO, unexpected: true },
       { ...HELLO, workspace: { ...HELLO.workspace, kind: "unknown" } },
+      {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: { kind: "container", engine: "podman", generation: "forged" },
+        },
+      },
     ]) {
       const transport = new FakeTransport();
       transport.helloResult = helloResult;
@@ -108,6 +264,37 @@ describe("wire handshake", () => {
         "invalid or unsupported Clarvis wire contract",
       );
       expect(transport.closeCount).toBe(1);
+    }
+  });
+
+  it("preserves a complete effective runtime status", async () => {
+    for (const engine of ["podman", "docker"] as const) {
+      const transport = new FakeTransport();
+      transport.helloResult = {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: {
+            kind: "container",
+            generation: "generation-1",
+            engine,
+            engine_version: "5.4.0",
+            host_platform: "linux",
+            guest_platform: "linux",
+            image_digest: `sha256:${"a".repeat(64)}`,
+            runtime_protocol_revision: "1",
+            network: "none",
+            lifecycle: "ready",
+          },
+        },
+      };
+      const client = await connectKernelClient(transport);
+      expect(client.capabilities.runtime).toMatchObject({
+        kind: "container",
+        engine,
+        guest_platform: "linux",
+      });
+      await client.close();
     }
   });
 
@@ -468,6 +655,39 @@ describe("remote run codec", () => {
       status: "failed",
       error: { code: "unavailable", message: "pipe vanished" },
     });
+    await client.close();
+  });
+
+  it("carries checkpoint disposition over the live wire and rejects contradictory terminal status", async () => {
+    const ended: RunEvent = {
+      type: "run_ended",
+      at: 11,
+      status: "completed",
+      reason: "completed",
+      disposition: "checkpoint",
+    };
+    expect(decodeRunEvent(ended)).toEqual(ended);
+    for (const status of ["failed", "cancelled", "running"] as const) {
+      expect(decodeRunEvent({ ...ended, status })).toBeNull();
+    }
+    expect(decodeRunEvent({ ...ended, disposition: "goal_complete" })).toBeNull();
+    const transport = new FakeTransport();
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({ execution_id: "exec-checkpoint-event", messages: [] });
+    transport.emit("run.event", { execution_id: handle.execution_id, event: ended });
+    transport.emit("run.stream_end", { execution_id: handle.execution_id });
+    transport.emit("run.result", {
+      execution_id: handle.execution_id,
+      result: {
+        execution_id: handle.execution_id,
+        status: "completed",
+        disposition: "checkpoint",
+        checkpoint: { summary: "Stage saved", next_step: "Continue" },
+      },
+    });
+    expect(await Array.fromAsync(handle.events)).toEqual([ended]);
+    expect((await handle.done).disposition).toBe("checkpoint");
+    expect(transport.closeCount).toBe(0);
     await client.close();
   });
 

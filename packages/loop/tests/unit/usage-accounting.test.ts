@@ -44,6 +44,28 @@ describe("createUsageAccounting — finalize warnings", () => {
     expect(usage.warnings).toBeUndefined();
   });
 
+  it("folds non-lead child aggregates into per-agent usage and iteration totals", () => {
+    const accounting = createUsageAccounting({
+      shape: fakeShape({ isLead: false }),
+      deps: { env: {} as EnvConfig },
+      entryMax: 10,
+      startedAt: performance.now(),
+    });
+    accounting.subagentAggByModel.set("anthropic/child", {
+      input: 4,
+      output: 2,
+      cached: 1,
+      cache_write: 0,
+      iterations: 3,
+      instances: 1,
+    });
+    const usage = accounting.finalize();
+    expect(usage.iterations_used).toBe(3);
+    expect(usage.by_agent).toContainEqual(
+      expect.objectContaining({ model: "anthropic/child", iterations: 3 }),
+    );
+  });
+
   it("also attaches warnings accumulated after construction to a lead run's usage", () => {
     const accounting = createUsageAccounting({
       shape: fakeShape({ isLead: true }),

@@ -1,6 +1,12 @@
 import type { Readable, Writable } from "node:stream";
 import { NOOP_LOGGER, sanitizeDeep, sanitizeErrorMessage, type Logger } from "@clarvis/capability";
 import type { KernelError, KernelErrorCode, KernelTransport } from "@clarvis/protocol";
+import {
+  createJsonMessageWriter,
+  JsonMessageDecoder,
+  MAX_JSON_QUEUE_BYTES,
+  MessageAdmissionError,
+} from "../core/json-message.ts";
 import { boundJsonValue } from "../core/bounded-json.ts";
 import type { KernelServer } from "./server.ts";
 
@@ -38,11 +44,11 @@ interface CancelFrame {
 /** The frame shapes carried over the newline-delimited JSON wire. */
 type Frame = ReqFrame | ResFrame | NoteFrame | CancelFrame;
 
-/** Maximum bytes in one newline-delimited frame (large enough for inline images). */
+/** Maximum bytes in one physical line; larger logical messages use bounded fragments. */
 export const MAX_WIRE_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_WRITER_QUEUE_FRAMES = 1_024;
-const MAX_WRITER_QUEUE_BYTES = 16 * 1024 * 1024;
-const WRITER_TIMEOUT_MS = 30_000;
+const MAX_INBOUND_REQUESTS = 128;
+const MAX_INBOUND_REQUEST_BYTES = MAX_JSON_QUEUE_BYTES;
 const MAX_ERROR_MESSAGE_CHARS = 16_384;
 const MAX_ERROR_DETAILS_BYTES = 64 * 1024;
 const MAX_CLASSIFICATION_VALUE_CHARS = 1_024;
@@ -172,7 +178,8 @@ function readFrames(
   onFrame: (frame: Frame) => void,
   onInvalid: (error: Error) => void,
   logger: Logger,
-): void {
+): () => void {
+  const messages = new JsonMessageDecoder(onInvalid);
   let buffer = "";
   let bufferBytes = 0;
   let invalid = false;
@@ -208,7 +215,17 @@ function readFrames(
         onInvalid(new Error("wire frame is not valid JSON"));
         return;
       }
-      const frame = decodeFrame(decoded);
+      let message: ReturnType<JsonMessageDecoder["accept"]>;
+      try {
+        message = messages.accept(decoded, lineBytes + 1);
+      } catch (error) {
+        invalid = true;
+        messages.close();
+        onInvalid(error instanceof Error ? error : new Error("invalid wire message"));
+        return;
+      }
+      if (message === undefined) continue;
+      const frame = decodeFrame(message.value);
       if (frame === null) {
         invalid = true;
         reportFrameDropped(logger, "inbound", "invalid_shape", lineBytes);
@@ -216,8 +233,19 @@ function readFrames(
         return;
       }
       onFrame(frame);
+      if (invalid) return;
+    }
+    if (bufferBytes > MAX_WIRE_FRAME_BYTES) {
+      invalid = true;
+      onInvalid(new Error("wire frame exceeds size bound"));
     }
   });
+  return () => {
+    invalid = true;
+    buffer = "";
+    bufferBytes = 0;
+    messages.close();
+  };
 }
 
 /**
@@ -228,10 +256,8 @@ function readFrames(
  *   `outbound` for one it refused to write.
  * @param reason - the specific bound that was hit.
  * @param bytes - the frame's size, or the buffered size for an unterminated one.
- * @remarks Every one of these also terminates the connection, so the peer sees
- *   *something*. What it never sees is which of five bounds was hit, and on the
- *   outbound side neither does the caller — a saturated writer rejects one
- *   `send` with a sentence nobody reads.
+ * @remarks Malformed inbound data terminates the connection. Local admission failures
+ * reject only the unsent message; physical write failures terminate the connection.
  */
 function reportFrameDropped(
   logger: Logger,
@@ -241,12 +267,13 @@ function reportFrameDropped(
 ): void {
   logger.warn(
     { event: "transport.frame_dropped", direction, reason, bytes },
-    "a wire frame was refused and the connection is terminating; in-flight requests settle as unavailable",
+    "a wire frame was refused",
   );
 }
 
 interface FrameWriter {
   send(frame: Frame): Promise<void>;
+  drain(): Promise<void>;
   close(): void;
 }
 
@@ -261,87 +288,35 @@ function createFrameWriter(
   onFailure: (error: Error) => void,
   logger: Logger,
 ): FrameWriter {
-  let tail = Promise.resolve();
-  let queuedFrames = 0;
-  let queuedBytes = 0;
-  let closed = false;
-  let failure: Error | undefined;
-  const closedError = new Error("wire writer is closed");
-
-  const fail = (error: Error): void => {
-    if (failure !== undefined) return;
-    failure = error;
-    onFailure(error);
-  };
-
+  const writer = createJsonMessageWriter({
+    output,
+    frameBytes: MAX_WIRE_FRAME_BYTES,
+    queueMessages: MAX_WRITER_QUEUE_FRAMES,
+    onFailure,
+  });
   return {
-    send(frame): Promise<void> {
-      if (closed) return Promise.reject(closedError);
-      if (failure !== undefined) return Promise.reject(failure);
-      let line: string;
+    ...writer,
+    send(frame) {
       try {
-        line = `${JSON.stringify(frame)}\n`;
+        return writer.send(frame);
       } catch (error) {
-        const serializationError =
-          error instanceof Error ? error : new Error("wire frame serialization failed");
-        reportFrameDropped(logger, "outbound", "serialization", 0);
-        fail(serializationError);
-        return Promise.reject(serializationError);
+        if (error instanceof MessageAdmissionError)
+          reportFrameDropped(logger, "outbound", error.code, 0);
+        throw error;
       }
-      const bytes = Buffer.byteLength(line, "utf8");
-      if (bytes > MAX_WIRE_FRAME_BYTES) {
-        const error = new Error(`wire frame exceeds ${MAX_WIRE_FRAME_BYTES} bytes`);
-        reportFrameDropped(logger, "outbound", "oversize", bytes);
-        fail(error);
-        return Promise.reject(error);
-      }
-      if (queuedFrames >= MAX_WRITER_QUEUE_FRAMES || queuedBytes + bytes > MAX_WRITER_QUEUE_BYTES) {
-        const error = new Error("wire writer backpressure queue is full");
-        reportFrameDropped(logger, "outbound", "queue_full", bytes);
-        fail(error);
-        return Promise.reject(error);
-      }
-      queuedFrames += 1;
-      queuedBytes += bytes;
-      const write = tail.then(
-        () =>
-          new Promise<void>((resolve, reject) => {
-            if (closed) {
-              reject(closedError);
-              return;
-            }
-            if (failure !== undefined) {
-              reject(failure);
-              return;
-            }
-            const timer = setTimeout(() => {
-              const error = new Error(`wire writer stalled for ${WRITER_TIMEOUT_MS}ms`);
-              fail(error);
-              reject(error);
-            }, WRITER_TIMEOUT_MS);
-            timer.unref?.();
-            output.write(line, (error?: Error | null) => {
-              clearTimeout(timer);
-              if (error !== undefined && error !== null) {
-                fail(error);
-                reject(error);
-              } else resolve();
-            });
-          }),
-      );
-      tail = write.then(
-        () => undefined,
-        () => undefined,
-      );
-      return write.finally(() => {
-        queuedFrames -= 1;
-        queuedBytes -= bytes;
-      });
-    },
-    close(): void {
-      closed = true;
     },
   };
+}
+
+/** Send a small control response after draining an otherwise saturated writer. */
+async function sendControl(writer: FrameWriter, frame: Frame): Promise<void> {
+  try {
+    await writer.send(frame);
+  } catch (error) {
+    if (!(error instanceof MessageAdmissionError)) throw error;
+    await writer.drain();
+    await writer.send(frame);
+  }
 }
 
 /** Convert arbitrary details to a bounded, redacted JSON value or omit them. */
@@ -414,6 +389,7 @@ export function createStdioTransport(
   >();
   const handlers = new Map<string, ((params: unknown) => void)[]>();
   const closeHandlers = new Set<(reason?: unknown) => void>();
+  let readCleanup = (): void => {};
   const terminate = (reason?: unknown): void => {
     if (closed) return;
     closed = true;
@@ -426,13 +402,14 @@ export function createStdioTransport(
       p.reject(error);
     }
     pending.clear();
+    readCleanup();
     writer.close();
     for (const handler of closeHandlers) handler(reason);
     closeHandlers.clear();
   };
 
   const writer = createFrameWriter(io.output, terminate, logger);
-  readFrames(
+  readCleanup = readFrames(
     io.input,
     (frame) => {
       if (closed) return;
@@ -469,13 +446,14 @@ export function createStdioTransport(
       }
       const id = ++seq;
       return new Promise<T>((resolve, reject) => {
+        const write = writer.send({ t: "req", id, method, params });
         const signal = options?.signal;
         const onAbort = (): void => {
           const request = pending.get(id);
           if (request === undefined) return;
           pending.delete(id);
           request.offAbort();
-          void writer.send({ t: "cancel", id }).catch(terminate);
+          void sendControl(writer, { t: "cancel", id }).catch(terminate);
           reject(fromEnvelope({ code: "cancelled", message: "request cancelled" }));
         };
         const offAbort = (): void => signal?.removeEventListener("abort", onAbort);
@@ -485,12 +463,16 @@ export function createStdioTransport(
           reject,
           offAbort,
         });
-        void writer.send({ t: "req", id, method, params }).catch(terminate);
+        void write.catch(terminate);
       });
     },
     notify(method: string, params?: unknown): void {
       if (closed) return;
-      void writer.send({ t: "note", method, params }).catch(terminate);
+      try {
+        void writer.send({ t: "note", method, params }).catch(terminate);
+      } catch (error) {
+        if (!(error instanceof MessageAdmissionError)) terminate(error);
+      }
     },
     onNotification(method: string, handler: (params: unknown) => void): () => void {
       const list = handlers.get(method) ?? [];
@@ -532,11 +514,14 @@ export function serveKernelOverStdio(
 ): { close(): void } {
   let closed = false;
   const controllers = new Map<number, AbortController>();
+  let inboundBytes = 0;
+  let readCleanup = (): void => {};
   const close = (): void => {
     if (closed) return;
     closed = true;
     for (const controller of controllers.values()) controller.abort(new Error("transport closed"));
     controllers.clear();
+    readCleanup();
     writer.close();
     conn.close();
   };
@@ -549,10 +534,10 @@ export function serveKernelOverStdio(
   };
   const writer = createFrameWriter(io.output, disconnect, logger);
   const conn = server.connect(
-    (method, params) => writer.send({ t: "note", method, params }),
+    async (method, params) => writer.send({ t: "note", method, params }),
     disconnect,
   );
-  readFrames(
+  readCleanup = readFrames(
     io.input,
     (frame) => {
       if (closed) return;
@@ -562,24 +547,41 @@ export function serveKernelOverStdio(
       }
       if (frame.t !== "req") return;
       if (controllers.has(frame.id)) {
-        close();
+        disconnect();
+        return;
+      }
+      const bytes = Buffer.byteLength(JSON.stringify(frame), "utf8");
+      if (
+        controllers.size >= MAX_INBOUND_REQUESTS ||
+        inboundBytes + bytes > MAX_INBOUND_REQUEST_BYTES
+      ) {
+        void sendControl(writer, {
+          t: "res",
+          id: frame.id,
+          error: { code: "resource_exhausted", message: "wire inbound request bound exceeded" },
+        }).catch(disconnect);
         return;
       }
       const controller = new AbortController();
       controllers.set(frame.id, controller);
+      inboundBytes += bytes;
       void conn
         .handle(frame.method, frame.params, controller.signal)
-        .then(
-          (result) => writer.send({ t: "res", id: frame.id, result }),
-          (err) => writer.send({ t: "res", id: frame.id, error: toEnvelope(err) }),
+        .then((result) => writer.send({ t: "res", id: frame.id, result }))
+        .catch((err: unknown) =>
+          sendControl(writer, { t: "res", id: frame.id, error: toEnvelope(err) }),
         )
         .catch(close)
-        .finally(() => controllers.delete(frame.id));
+        .finally(() => {
+          controllers.delete(frame.id);
+          inboundBytes -= bytes;
+        });
     },
     disconnect,
     logger,
   );
   io.input.once("end", disconnect);
   io.input.once("error", disconnect);
+  io.input.once("close", disconnect);
   return { close };
 }

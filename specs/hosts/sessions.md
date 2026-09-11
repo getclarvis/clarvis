@@ -7,10 +7,10 @@
 
 ## 1. Purpose
 
-A `Session` (`packages/protocol/src/sessions.ts:68`) is a conversation index: an ordered list of
+A `Session` (`packages/protocol/src/sessions.ts`) is a conversation index: an ordered list of
 turns, each optionally pointing at a run (`execution_id`) whose full transcript lives in the runs
 service, plus running token/cost totals and any not-yet-delivered "pending" observations
-(`packages/protocol/src/sessions.ts:84-88`). The session document itself never carries the
+(`packages/protocol/src/sessions.ts`). The session document itself never carries the
 transcript — only enough to look up and re-render it. Each turn may also carry the id and fingerprint
 of the resolved [Extension Profile](extension-profiles.md) under which it began; this is historical
 identity, not a request to reactivate that Extension Profile during resume.
@@ -53,7 +53,7 @@ does not define a renderer commit boundary.
 ### `SessionService` (kernel-side, `packages/protocol/src/sessions.ts`, symbol `SessionService`)
 
 | Method | Signature | Declaration |
-|---|---|---|
+| --- | --- | --- |
 | `listPage` | `(page?: CursorPagination) => Promise<CursorPage<SessionSummary>>` | `SessionService.listPage` |
 | `list` | `() => Promise<Session[]>` | `SessionService.list` |
 | `get` | `(id: string) => Promise<Session \| null>` | `SessionService.get` |
@@ -77,33 +77,34 @@ the wire-level `CursorPagination` DTO never grows a `signal` field.
 ### Wire methods (`OPERATIONS.sessions` in `packages/kernel/src/transport/operations.ts`)
 
 | Method | Access | Encode | Cite |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `sessions.listPage` | read | `{ page }` | `OPERATIONS.sessions.listPage` |
 | `sessions.list` | read | `{}` | `OPERATIONS.sessions.list` |
 | `sessions.get` | read | `{ id }` | `OPERATIONS.sessions.get` |
 | `sessions.save` | write | `{ session }` | `OPERATIONS.sessions.save` |
 | `sessions.delete` | write | `{ id }` | `OPERATIONS.sessions.delete` |
 
-`packages/code/src/adapters/kernel-run-client.ts:504-510` is a bare passthrough of these five
+`packages/code/src/adapters/kernel-run-client.ts` is a bare passthrough of these five
 methods onto `requireKernel().sessions`, exposed on the client at `sessions`
-(`packages/code/src/adapters/kernel-run-client.ts:112,581`).
+(`packages/code/src/adapters/kernel-run-client.ts`).
 
 ### `Session` / `SessionSummary` DTOs (`packages/protocol/src/sessions.ts`)
 
 ```ts
-interface Session {                       // packages/protocol/src/sessions.ts:68
+interface Session {                       // packages/protocol/src/sessions.ts
   id: string; title: string; project_id: string; workspace: string;
+  revision?: number;
   created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turns: SessionTurn[]; totals: SessionTotals; pending?: Message[];
 }
-interface SessionTurn {                   // packages/protocol/src/sessions.ts:44
+interface SessionTurn {                   // packages/protocol/src/sessions.ts
   kind: "conversation"|"transcript";
   user_preview: string; execution_id?: string;
   extension_profile?: ExtensionProfileRunRef;
   status: "pending"|"running"|"done"|"error"|"cancelled"|"interrupted";
   started_at?: Timestamp; ended_at?: Timestamp;
 }
-interface SessionSummary {                // packages/protocol/src/sessions.ts:92 — never carries turns/pending
+interface SessionSummary {                // packages/protocol/src/sessions.ts — never carries turns/pending
   id: string; title: string; project_id: string; workspace: string;
   created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turn_count: number; last_status?: SessionTurnStatus;
@@ -124,24 +125,24 @@ total; absence means at least one positive-input contribution omitted the split.
 ```ts
 createSessionService(opts: {
   dir: string; owner: string; projectId: string; workspaceId: string; logger?: Logger;
-}): FileSessionService
+}): HostSessionStore
 ```
 
 ### Code-side session functions covered by this document
 
 | Symbol | Signature | Cite |
-|---|---|---|
+| --- | --- | --- |
 | `resumeSession` | `(meta, deps: ResumeDeps, opts?: ResumeOptions) => Promise<ResumedSession>` | `packages/code/src/adapters/session.ts` (`resumeSession`) |
 | `deleteSession` | `(meta, store: SessionStore, deleteRun: (id) => Promise<boolean>) => Promise<{session, traces}>` | `packages/code/src/adapters/session.ts` (`deleteSession`) |
 | `buildRecoveredContext` | `(events, planRef?, selectedPlanProviderKey?) => string \| null` | `packages/code/src/adapters/session.ts` (`buildRecoveredContext`) |
 | `createSession` | `(deps: SessionDeps, init?: SessionInit) => Session` (the code-side turn tracker, distinct name from the protocol DTO) | `packages/code/src/adapters/session.ts` (`createSession`) |
 | `isContinuationUnavailable` | `(envelope: RunResult \| undefined) => boolean` | `packages/code/src/adapters/session.ts` (`isContinuationUnavailable`) |
 
-### CLI surface touching sessions (declared at `packages/code/src/cli-args.ts:85-88`)
+### CLI surface touching sessions (declared at `packages/code/src/cli-args.ts`)
 
 | Flag | Value | Cite (behavior) |
-|---|---|---|
-| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1418-1433`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
+| --- | --- | --- |
+| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
 | `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight; interactive resume resolves the same metadata in `runApp` (`packages/code/src/runtime.tsx`) |
 | `--list` | — | `runListMode`, `packages/code/src/runtime.tsx` |
 | `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/runtime.tsx` |
@@ -162,25 +163,25 @@ For an owner-scoped `SessionService` built with `dir`/`owner`, files live under:
 
 `ownerDir = join(globalPaths(opts.dir).sessionsDir, ownerSegment(opts.owner))`
 (`createSessionService` in `packages/kernel/src/sessions/session-service.ts`); `globalPaths(...).sessionsDir` is `join(base, "state", "sessions")`
-(`packages/paths/src/global.ts:130`, with `state = join(base, "state")` at `packages/paths/src/global.ts:109`).
+(`packages/paths/src/global.ts`, with `state = join(base, "state")` at `packages/paths/src/global.ts`).
 `fileFor`/`summaryFor` append `${ownerSegment(id)}.json` / `.summary.json`
 (`fileFor` and `summaryFor` in `packages/kernel/src/sessions/session-service.ts`). `ownerSegment` percent-encodes an arbitrary string into one safe
 path segment, or falls back to `h_<sha256hex>` past a 200-byte encoded length
-(`packages/paths/src/roots.ts:130,139-144,163-168`) — so an owner or session id of unbounded length
+(`packages/paths/src/roots.ts`) — so an owner or session id of unbounded length
 or containing `/`/`.`/`..` cannot escape the owner directory or collide with a sibling segment.
 
-Both files are written with `writeFileAtomicSync` — tmp file + `rename`, **no `fsync`**
-(`writeFileAtomicSync` and `writeStagedSync` in `packages/paths/src/atomic.ts`, with
-`durable = false`) — so a concurrent reader observes either the old file or the complete new one,
-never a partial write, but a power loss can still lose the write entirely (`save` in
-`packages/kernel/src/sessions/session-service.ts`). The `fsync`-of-payload-plus-directory-`fsync` variant is a **separate** function,
-`writeFileDurableSync` (`packages/paths/src/atomic.ts:513-519`), whose doc remark (`packages/paths/src/atomic.ts:481-497`) states this
-durability guarantee is why it is "a separate function rather than a flag" on `writeFileAtomic`.
-`session-service.ts` imports and calls only `writeFileAtomicSync` (the import and `save` in
-`packages/kernel/src/sessions/session-service.ts`)
-and never calls `writeFileDurableSync`.
+The canonical session uses `writeFileDurableSync`: staged payload synchronization, atomic rename
+and directory synchronization. The rebuildable summary uses `writeFileAtomicSync`. The old sidecar
+is removed before canonical replacement, so a failed summary write leaves a missing summary that
+can be reconstructed, rather than a valid-looking stale row. `HostSessionStore.saveHost` is the
+trusted persistence port used under the host coordinator's mutation lock; it is not an RPC method.
+Production: `saveHost` in [session-service.ts](../../packages/kernel/src/sessions/session-service.ts)
+and the atomic helpers in [atomic.ts](../../packages/paths/src/atomic.ts).
+Test: canonical write failures in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts) and
+[goal-repository.test.ts](../../packages/kernel/tests/integration/goal-repository.test.ts).
 
-### Example `Session` document (from the test fixture, `packages/kernel/tests/integration/session-service.test.ts:11-22`)
+### Example `Session` document (from the test fixture, `packages/kernel/tests/integration/session-service.test.ts`)
 
 ```json
 {
@@ -208,7 +209,7 @@ two representations at the storage boundary:
   `started_at`, `ended_at`, `cost_usd`) field by field, each optional field present only when its
   source has it (spread-guarded, e.g. `...(t.executionId !== undefined ? { executionId: ... } : {})`).
   Pinned round-trip: "metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)"
-  (`packages/code/tests/component/session-store.test.ts:80-107`).
+  (`packages/code/tests/component/session-store.test.ts`).
 - **Cache-detail absence survives both conversion directions.** `metaToSession`, `sessionToMeta` and
   `sessionSummaryToMeta` include `cached` only when their source includes it; no boundary replaces
   missing detail with zero. Production: `packages/code/src/adapters/session-store.ts`
@@ -273,7 +274,7 @@ empty id string are all rejected).
 ### Bounds and defaults
 
 | Constant | Value | Cite |
-|---|---|---|
+| --- | --- | --- |
 | `SESSION_MAX_BYTES` | 8 MiB (full document) | symbol in `packages/kernel/src/sessions/session-service.ts` |
 | `SESSION_SUMMARY_MAX_BYTES` | 8 KiB (summary sidecar) | symbol in `packages/kernel/src/sessions/session-service.ts` |
 | `SESSION_PAGE_DEFAULT` | 50 | symbol in `packages/kernel/src/sessions/session-service.ts` |
@@ -405,13 +406,14 @@ or belongs to another workspace"). Pinned by "reports how much of a restored ses
 and "distinguishes a session that could not be read from one with no turns" in
 `packages/kernel/tests/integration/session-service.test.ts`.
 
-### 4.6 `save(session)` — validate, then two atomic writes
+### 4.6 `save(session)` — validate, then publish the canonical record durably
 
 `save` in `packages/kernel/src/sessions/session-service.ts`:
 
 1. Reject (`invalid_request`) if `session.project_id`/`session.workspace` do not match the service's
    own scope, **before any write** (pinned by "rejects sessions for another workspace before writing
    either document" in `packages/kernel/tests/integration/session-service.test.ts`).
+   A present `revision` must also be a nonnegative safe integer; it is checked on read and write.
 2. Serialize the full document bounded to `SESSION_MAX_BYTES` (throws `resource_exhausted` if it
    does not fit — see §4.8 for the preflight mechanism) and the derived summary bounded to
    `SESSION_SUMMARY_MAX_BYTES`.
@@ -419,7 +421,146 @@ and "distinguishes a session that could not be read from one with no turns" in
    doc comment states the reasoning: a crash after this point can only leave a *missing* sidecar
    (which `readSummary` rebuilds from the authoritative full document), never a valid-looking but
    stale one.
-4. Write the full document, then the new summary, both via `writeFileAtomicSync`.
+4. Write the full document via `writeFileDurableSync`, syncing payload and parent directory under
+   the platform contract of [paths](../foundations/paths.md), then atomically replace the rebuildable
+   summary via `writeFileAtomicSync`. Hosted model work waits on the canonical intent commit.
+
+Production: `save` and `isSession` in
+[session-service.ts](../../packages/kernel/src/sessions/session-service.ts).
+Test: the commit-before-model and invalid-revision cases in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts), plus
+the existing round-trip and preflight cases in
+[session-service.test.ts](../../packages/kernel/tests/integration/session-service.test.ts).
+
+### Host-owned conversation transactions
+
+`createHostedSessionCoordinator` wraps the existing file service for a hosted connection. It
+materializes revision zero for conversations that have not yet been written by the host. Each
+accepted save, intent or reconciliation increments the persisted `Session.revision`. A caller must
+read the new document after a save before issuing another mutation; `save` keeps its void return
+contract. Summaries remain bounded catalog rows; turn admission uses the full document's revision.
+This optional ownership metadata does not introduce a separate session store or restoration parser.
+
+The coordinator reserves one mutation per conversation before any await, with at most four concurrent
+conversation mutations and no queued UI documents. Interactive delete is refused while the registry
+reports physical work. Save is also refused except for the authenticated connection holding a local
+activity lease in that conversation. That exception permits its shell observation to become durable
+before admission is released; it cannot alter existing turn history or totals. The host derives this
+authority from the connection's activity map, never a caller-supplied claim, and rechecks it after
+reading the document. New conversations must have empty history. Metadata and pending observations
+otherwise require an idle conversation and the currently observed revision. Pagination still forwards its transport-only
+cancellation signal to the underlying cooperative scan.
+
+Preparation validates workspace, expected revision, duplicate execution and conversation continuation.
+The private preparation context also carries the registry's optional conversation-controller proof;
+it is never copied from public start parameters or persisted as session authority. Bound goal
+preparation requires that live proof before the ordinary immutable execution is constructed.
+Production: `HostedPreparationContext` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts) and `createFileRunHost` in
+[file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: goal creation, checkpoint continuation and paused ordinary-input refusal in
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+Only the latest conversational execution may be an explicit continuation; transcript-only turns
+cannot supply that continuation. The host replaces caller configuration consent with its live scope,
+captures an immutable execution binding without starting inference, and rechecks the full conversation
+after that asynchronous preparation. `commitIntent` rechecks again, then writes the running turn and
+increments the revision before `start` can run. Conversational turns consume pending observations
+into their messages; transcript-only turns leave those pending observations intact. Preview/title
+redaction applies before persistence or discovery, and live consent never enters session metadata.
+`HostedPreparationContext` also supplies an immutable session snapshot and host-only continuation
+provenance to execution preparation. A binding's synchronous `commitSessionIntent` may add its
+capability-owned intent to the same document as the new turn. The coordinator uses `saveHost` for
+that publication; failure before or after canonical replacement retains the existing reconciliation
+rules. Model arguments cannot install this callback or write the private goal field.
+
+The asynchronous execution preparation does not hold the short session mutation lock. A separate
+bounded preparation reservation refuses duplicate preparation while allowing a control transaction
+to persist pause/cancel. Any resulting document change invalidates the prepared snapshot before
+intent commit. Internal `transact` callbacks are synchronous, cannot change conversation identity
+or its revision, and publish a single revision increment only when the document changes. They may
+atomically settle goal state alongside turn history and totals in the same document.
+
+`Session.goal_state` retains the current objective, bounded archive and deduplication receipts.
+Ordinary file-store and hosted saves both refuse insertion, deletion and rewrites of this field,
+including its archived audit; metadata-only saves preserve it exactly. Goal state must satisfy the
+domain schema and 1 MiB allocation, and every current/archived goal must name this conversation.
+Malformed persisted goal state cannot restore a usable conversation. The existing complete-session
+8 MiB limit still applies; validation failure occurs before replacing the canonical document or its
+summary. `createGoalRepository` composes the explicit protocol/domain mapping with `transact`,
+without adding a file, database or cache of authoritative state.
+
+Production: `HostedSessionTransactions` and `createHostedSessionCoordinator` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `HostSessionStore` in
+[session-service.ts](../../packages/kernel/src/sessions/session-service.ts), and
+[repository.ts](../../packages/kernel/src/goals/repository.ts).
+Test: [goal-repository.test.ts](../../packages/kernel/tests/integration/goal-repository.test.ts)
+covers owner/workspace/conversation scoping, archived-state forgery, concurrent CAS, durable replay,
+failure before/after publication, unchanged documents on rejection, and pause during delayed
+preparation without a stale start.
+
+The registry retains the prepared transaction before invoking `commitIntent`. Reconciliation can
+therefore distinguish an unchanged document after a failed write from an intent actually published
+before that write reported failure. A missing or conflicting intent cannot silently free ownership.
+Result identity must match, and only a terminal result may settle the turn. The turn's persisted
+`ended_at` makes repeated ordinary reconciliation idempotent for status, revision and usage. A
+host-injected `settleSession` callback may reconcile goal state and charge its normalized usage in
+the same write. It runs again for an already-ended turn only to resolve late unknown usage; an
+unchanged result does not write another revision. The goal retains unknown measurements explicitly,
+and its closed run binding prevents duplicate accounting after callback or publication retries.
+An execution binding may additionally provide `prepareSettlement`: slow evidence validation runs
+after physical closure and outside the session lock. Its returned synchronous decision runs inside
+the terminal transaction and must recheck its revisions. Pause/cancel can therefore persist while
+validation waits, and a stale completion decision cannot overwrite those controls. A binding that
+owns charging takes precedence over the optional host-wide settlement callback, avoiding duplicate
+usage. The coordinator validates terminal status and execution identity before calling either port.
+Production: `reconcile` and `HostedSessionOptions.settleSession` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), and `settleGoalSession` in
+[settlement.ts](../../packages/kernel/src/goals/settlement.ts).
+Test: the atomic settlement and archived late-usage cases in
+[goal-repository.test.ts](../../packages/kernel/tests/integration/goal-repository.test.ts), and
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+for atomic admission/terminal writes and pause/cancel during real goal evidence validation.
+Per-agent/model
+usage supplies known prices; unknown models contribute tokens without an invented cost. Flat usage
+without a cache split removes the previously numeric cache total when input is positive.
+
+`createFileRunHost` composes the coordinator with the registry and immutable execution preparation.
+Code uses a presentation shadow of run history and adopts canonical revisions after reconciliation.
+
+An operator's old-generation recovery adds a `HostedRecoveryResolution` to the affected turn and
+archives that conversation. Unfinished turns become `interrupted` without an invented result,
+end time or usage. Existing terminal data remains intact. The audit survives discovery acknowledgement
+and the Code `metaToSession` / `sessionToMeta` round trip. Later inference must use a new conversation;
+the hosted coordinator rejects both continuation and fresh execution in an archived conversation.
+The two-write recovery ordering is owned by [hosted runs](hosted-runs.md#explicit-operator-recovery).
+Production: `archiveRecovery` and `prepare` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), `SessionTurn` in
+[sessions.ts](../../packages/protocol/src/sessions.ts), and the Code session converters in
+[session-store.ts](../../packages/code/src/adapters/session-store.ts). Test:
+`durably archives unknown turns with %s intent without inventing outcomes or replay` in
+[hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts) and
+`operator recovery audits survive session projection and metadata saves` in
+[session-store.test.ts](../../packages/code/tests/component/session-store.test.ts).
+
+`RunHost.runBangCommand` flushes its pending observation while holding the connection's shell lease.
+The physical shell belongs to the TUI; an unconfirmed disconnect does not prove that it ended.
+
+Production: `saveDuringActivity` in `createHostedSessionCoordinator`, `HostedRegistry.ownsActivity`,
+and `servicesFor` in [file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: `only the local activity owner can persist observations before releasing conversation admission`
+in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+Production: `createHostedSessionCoordinator` and `HostedSessionOptions` in
+[sessions.ts](../../packages/kernel/src/hosting/sessions.ts), shared `addRunUsage` in
+[usage.ts](../../packages/kernel/src/sessions/usage.ts), `PreparedHostedTurn` and the intent
+commit/reconciliation order in [registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: [hosted-sessions.test.ts](../../packages/kernel/tests/integration/hosted-sessions.test.ts)
+covers real file persistence, stale/foreign admission, protected history, pending context, revocation,
+unknown pricing/cache details, idempotent totals, pagination cancellation and failures before/after
+canonical publication. `retains failed intent ownership until its known preparation is reconciled`
+in [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) verifies
+that a failed intent cannot release its registry reservation before reconciliation.
 
 ### 4.7 `delete(id)` — best-effort sidecar, authoritative document
 
@@ -572,40 +713,40 @@ currently-selected plan provider differs from `plan_ref.provider_key`.
 ### 4.12 What is live-only and therefore absent from a rehydrated session
 
 The engine trace (read on rehydration, mapped by `engineEventToProto`,
-`packages/kernel/src/runs/map-events.ts:389`) and the loop's capability channel (live-only, mapped
-by `capabilityEventToProto`, `packages/kernel/src/runs/map-events.ts:335`) are two distinct sources a client receives events
+`packages/kernel/src/runs/map-events.ts`) and the loop's capability channel (live-only, mapped
+by `capabilityEventToProto`, `packages/kernel/src/runs/map-events.ts`) are two distinct sources a client receives events
 from; **rehydration reads only the persisted trace and then applies `RUN_EVENT_POLICY`
 durability**, per `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`. This second filter
 matters because the loop may retain one first `tool_input_delta` announcement per provider attempt
 as a bounded raw diagnostic breadcrumb; it must not return to the TUI as an eternally composing tool
 after restart. The doc remark on `engineEventToProto`
 ("any event a rehydrated session must show has to be mapped here, since rehydration reads only the
-persisted trace", `packages/kernel/src/runs/map-events.ts:378-379`). Concretely, in this repository's `code` client:
+persisted trace", `packages/kernel/src/runs/map-events.ts`). Concretely, in this repository's `code` client:
 
-- **The plan overlay/sidebar/inline block is live-only.** `packages/code/src/adapters/store.ts:1683-1685`:
+- **The plan overlay/sidebar/inline block is live-only.** `packages/code/src/adapters/store.ts`:
   "Plan capability events are intentionally live-only, so the stored trace replay cannot regenerate
   this node." The transcript-reconciliation code explicitly retains the *prior* live plan node at
-  its old position across a trace replay rather than trying to rebuild it (`packages/code/src/adapters/store.ts:1673-1705`).
-  `packages/code/src/adapters/activity-store.ts:320-322` states the same for the activity-store's
+  its old position across a trace replay rather than trying to rebuild it (`packages/code/src/adapters/store.ts`).
+  `packages/code/src/adapters/activity-store.ts` states the same for the activity-store's
   plan projection: "Capability events are live-only and therefore absent from the stored trace used
   for the end-of-run replay," and the code keeps whatever plan state the live stream already
-  delivered rather than clearing it on replay (`packages/code/src/adapters/activity-store.ts:324-325`).
+  delivered rather than clearing it on replay (`packages/code/src/adapters/activity-store.ts`).
 - **`appendRunFailure` (the live path's inline error node) never reaches a rehydrated run** — a
   restored run instead gets whatever the persisted `run_ended` event's `code` field carries, via
-  `engineEventToProto`'s mapping of `run_ended` (`packages/kernel/src/runs/map-events.ts:403-410`); `packages/code/src/adapters/store.ts:1615-1619`
+  `engineEventToProto`'s mapping of `run_ended` (`packages/kernel/src/runs/map-events.ts`); `packages/code/src/adapters/store.ts`
   states this directly ("`appendRunFailure` ... is a runtime append that never reaches
   [rehydration]. The trace does carry the failure's code, so a restored run says why it ended
   rather than only that it did.").
 - Any event a mapper does not recognize is dropped with a rate-limited `debug` log
-  (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts:50-69`) rather than surfaced to the client at all — the doc
+  (`reportUnmapped`, `packages/kernel/src/runs/map-events.ts`) rather than surfaced to the client at all — the doc
   comment on `reportUnmapped` names this "the documented rehydration hazard made visible": a format skew
   between the writer and the reader silently deletes events from a restored session with no signal
   at either end (log-only, sampled). The sampling is a **module-level** `createSampler()` instance
-  (`sampleUnmapped`, `packages/kernel/src/runs/map-events.ts:32`), keyed by `` `${path}\0${capability ?? ""}\0${kind}` `` — one
+  (`sampleUnmapped`, `packages/kernel/src/runs/map-events.ts`), keyed by `` `${path}\0${capability ?? ""}\0${kind}` `` — one
   budget per distinct `(path, capability, kind)` triple, shared across every rehydration in the
   process, not reset per run or per session. It is not a first-few-then-silence cutoff: `createSampler`
   admits the first 8 occurrences of a key and then only every power of two thereafter
-  (`packages/capability/src/log.ts:250-260`), so a long-lived format skew keeps producing
+  (`packages/capability/src/log.ts`), so a long-lived format skew keeps producing
   exponentially rarer log lines rather than none at all — but on any single short rehydration pass,
   a key with more than 8 dropped events past the first 8 still produces no further signal until the
   16th, 32nd, ... occurrence.
@@ -624,6 +765,13 @@ split, demonstrated directly in the `code` client's own reconciliation code.
 are not a passive DTO: they are the mechanism that produces the persisted record
 `session-service.ts` stores and the counterpart (`restoreHistory`) that re-arms a resumed session.
 
+- **`ensureIdentity(title)`** materializes and saves empty conversation metadata without a user
+  message, turn, continuation id or model call. This lets the live host bind a `/loop` registration
+  before its first real turn; the scheduler definition itself is never persisted. Production:
+  `createSession` in [session.ts](../../packages/code/src/adapters/session.ts). Test:
+  `ensureIdentity persists an empty conversation without inventing history or a continuation` in
+  [session.test.ts](../../packages/code/tests/component/session.test.ts). See
+  [loop-scheduling.md](loop-scheduling.md).
 - **`beginTurn(content, executionId)`** seeds `meta` on the first turn or appends a running
   `kind: "conversation"` turn, pushes the user message onto `history`, advances
   `continuationBase`, and returns the previous **conversation** execution id. Initialization likewise
@@ -690,8 +838,9 @@ belong here rather than only in §3:
   and the stored in-memory value is the same bounded value later serialized to disk. Test:
   `packages/code/tests/component/session-store.test.ts` (`redactTurnError` masking, newline, bound,
   and opt-out cases) and `packages/code/tests/component/session.test.ts` (producer persistence).
-- **`addUsageToTotals(totals, usage, priceFor?)`** is the sole path that mutates a session's
-  `totals`: per-agent detail adds raw input/output/cached counts, while a flat-only compatibility
+- **`addRunUsage(totals, usage, priceFor?)`** in Kernel owns the shared accumulation rule.
+  Code's `addUsageToTotals` only converts `costUsd` to/from the canonical `cost_usd` DTO; it does not
+  reimplement pricing. The host session coordinator uses the same helper: per-agent detail adds raw input/output/cached counts, while a flat-only compatibility
   result adds its input/output and permanently removes `cached` when positive input omitted the
   split. Once unknown, later known runs cannot turn the partial cached subset back into a complete
   total. Only when `priceFor` resolves a `CatalogCost` for a detailed agent does it
@@ -700,8 +849,10 @@ belong here rather than only in §3:
   cache-write tokens at its `cache_write` rate (falling back to `input`) — so a cached token is never
   billed at both the input and cache-read rate. `uncachedInput(totals)` is the display-side
   counterpart: it subtracts only a complete numeric cached total; otherwise it returns gross input.
-  Production: `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
+  Production: [usage.ts](../../packages/kernel/src/sessions/usage.ts) (`addRunUsage`),
+  `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
   `packages/code/src/adapters/session.ts` (`finishTurn`, `reconcile`). Tests:
+  [session-usage.test.ts](../../packages/kernel/tests/unit/session-usage.test.ts) and
   `packages/code/tests/component/session-store.test.ts` (per-agent sums, flat unknown split, net/gross
   display and cost cases) and `packages/code/tests/component/session.test.ts` (missing split at live
   settlement and stored reconciliation).
@@ -932,7 +1083,7 @@ continuation base.
 ## 6. Failure modes and degradation
 
 | Condition | Handling | Cite |
-|---|---|---|
+| --- | --- | --- |
 | Owner directory missing | `listPage`/`list` return empty, not an error | `sessionEntries` in `packages/kernel/src/sessions/session-service.ts` (`opendirSync` catch) |
 | Directory entry unreadable mid-scan (`readSync` throws) | Scan stops (returns) rather than throwing | `sessionEntries` in `packages/kernel/src/sessions/session-service.ts` |
 | A `.json` file over `SESSION_MAX_BYTES` | `readOne` returns `null` (skipped) | `readOne` in `packages/kernel/src/sessions/session-service.ts` |
@@ -953,12 +1104,12 @@ continuation base.
 | An individual trace-delete resolves `false` (e.g. `not_found`) during `deleteSession` | Recorded as `{ executionId, deleted: false }`; the cascade continues and the session record is still deleted | `deleteSession` in `packages/code/src/adapters/session.ts`; `packages/code/tests/component/session.test.ts` ("records a missing trace") |
 | An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/runtime.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |
 | An individual trace-delete rejects, but the caller's `deleteRun` catches every error into `false` | Cascade continues as if the delete had simply failed; session record is still deleted | CLI `runDeleteMode` in `packages/code/src/runtime.tsx` |
-| An event reaches a mapper with no recognized projection (rehydration or live) | Dropped; a rate-limited `debug` log names the path/kind/capability/reason, but nothing is sent to the client | `packages/kernel/src/runs/map-events.ts:50-69,397-402,676-679` |
+| An event reaches a mapper with no recognized projection (rehydration or live) | Dropped; a rate-limited `debug` log names the path/kind/capability/reason, but nothing is sent to the client | `packages/kernel/src/runs/map-events.ts` |
 
 ## 7. Coupling
 
 - **`createSessionService` depends on `@clarvis/paths`** (`globalPaths`, `ownerSegment`,
-  `writeFileAtomicSync`) for every path it computes and every write it performs (the static import in
+  `writeFileAtomicSync`, `writeFileDurableSync`) for every path it computes and every write it performs (the static import in
   `packages/kernel/src/sessions/session-service.ts`); changing `@clarvis/paths`' segment-encoding or atomic
   write semantics changes this subsystem's on-disk safety without this file changing.
 - **`createSessionService` depends on `@clarvis/capability` only for `Logger`/`NOOP_LOGGER`** (the
@@ -966,17 +1117,17 @@ continuation base.
   a behavioral one.
 - **The kernel constructs one `SessionService` per owner**, via
   `createSessionService({ dir: globalDir, owner: scope.owner, projectId: scope.projectId,
-  workspaceId: scope.workspaceId, logger: runLogger })` in `packages/kernel/src/kernel.ts:515-520` —
+  workspaceId: scope.workspaceId, logger: runLogger })` in `packages/kernel/src/kernel.ts` —
   this is the registration point that forces the project/workspace scope check in §5's invariant 1:
   the service is *handed* the scope it will enforce, it does not discover it.
   `packages/kernel/src/file-kernel.ts` does not build this per-owner service itself; it reaches
   `kernel.ts`'s builder only indirectly, through `createInProcessKernel` (imported at
-  `packages/kernel/src/file-kernel.ts:72`, called at `packages/kernel/src/file-kernel.ts:877`).
+  `packages/kernel/src/file-kernel.ts`, called at `packages/kernel/src/file-kernel.ts`).
 - **The transport layer (`packages/kernel/src/transport/operations.ts`) depends on the file-backed
   service's *widened* `listPage` shape**, not just the protocol `SessionService` interface, via the
   locally-cast `SignalAwareSessionListPage` type in `packages/kernel/src/transport/operations.ts` — a structural,
   compile-time-only coupling (a duck-typed cast, not an imported type) that a test
-  (`packages/kernel/tests/contract/transport-codecs.test.ts:185-198`) is the only thing verifying still holds against the real
+  (`packages/kernel/tests/contract/transport-codecs.test.ts`) is the only thing verifying still holds against the real
   service.
 - **`packages/code/src/adapters/session.ts`'s `resumeSession`/`deleteSession` depend only on the
   small `ResumeDeps`/`deleteRun` function-shaped parameters they are given** — not on
@@ -995,7 +1146,7 @@ continuation base.
   behavior is `loadSessions(sessions, owner)` in `packages/code/src/adapters/session-store.ts`, which seeds a
   `createSessionStore` cache with exactly one `sessions.listPage({ limit: 200 })` call — pinned by
   "loadSessions seeds bounded summaries and fetches a full document only on demand"
-  (`packages/code/tests/component/session-store.test.ts:382-390`) and "loadSessions requests at most
+  (`packages/code/tests/component/session-store.test.ts`) and "loadSessions requests at most
   one 200-row catalog page" in that test file. `listSessionsForWorkspace(store, workspace)` in
   `packages/code/src/adapters/session-store.ts` is the workspace-scoping filter applied on top of
   that cache, pinned by "listSessionsForWorkspace filters by exact workspace" in

@@ -27,6 +27,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const PACKAGE_THRESHOLDS = {
   capability: { functions: 1, lines: 1 },
   code: { functions: 0.93, lines: 0.96 },
+  goal: { functions: 0.95, lines: 0.98 },
   hooks: { functions: 1, lines: 1 },
   kernel: { functions: 0.94, lines: 0.97 },
   llm: { functions: 1, lines: 1 },
@@ -99,9 +100,17 @@ const NO_COUNTER_ALLOWLIST = {
     // cover is the PTY-driven artifact smoke. Splitting the entry keeps heavy
     // code out of first paint but does not make either module safe to import into
     // the in-process coverage runner.
+    // `src/local-host.ts` boots the companion process. Kernel measures its shared
+    // composition; installed-artifact and PTY checks exercise this entry itself.
     "src/cli.ts",
     "src/index.tsx",
+    "src/local-host.ts",
+    "src/remote-host.ts",
     "src/runtime.tsx",
+  ],
+  goal: [
+    // Type-only: host repository and runtime authority contracts.
+    "src/ports.ts",
   ],
   hooks: [],
   kernel: [

@@ -174,7 +174,11 @@ export function renderSkillsSection(
     `instructions before using it. That tool accepts only \`name\`. To read a bundled file listed ` +
     `by its result, call \`${READ_SKILL_RESOURCE_TOOL_NAME}\` with the exact \`name\`, ` +
     `\`resource\`, and \`offset: 0\`, then copy any returned continuation offset. ` +
-    `Load a skill only when the task actually calls for it.`;
+    `Load a skill only when the task actually calls for it. If the user names a skill, load it ` +
+    `before acting on that work. If they did not name one, use judgement: apply a skill only when ` +
+    `it would materially improve the outcome, not because of keywords or mere availability. The ` +
+    `user's current instructions take precedence over the skill. If a skill is why you must pause, ` +
+    `identify the relevant SKILL.md rule.`;
   if (head.length === 0) return tail;
   return `${head}\n\n${tail}`;
 }

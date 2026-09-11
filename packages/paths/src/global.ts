@@ -56,6 +56,13 @@ export interface GlobalPaths {
    * that is what it is.
    */
   workflowsDir: string;
+  /**
+   * Operator-authored shared-agent prompt override.
+   *
+   * @remarks Distinct from {@link GlobalPaths.agentsDir}: this document applies to
+   * every agent rather than overlaying one profile.
+   */
+  sharedAgentPromptFile: string;
   /** Operator-authored guard-judge prompt override. */
   guardJudgeFile: string;
   /**
@@ -135,6 +142,7 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     workspaceTrustFile: join(base, "workspace-trust.json"),
     skillsDir: join(base, "skills"),
     workflowsDir: join(base, "workflows"),
+    sharedAgentPromptFile: join(base, "shared-agent.md"),
     guardJudgeFile: join(base, "guard-judge.md"),
     memoryPolicyFile: join(base, "memory-policy.md"),
     authFile: join(base, "auth.json"),

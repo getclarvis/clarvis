@@ -47,6 +47,19 @@ function fakeAgentsStore(initial: AgentFile[]): AgentsStore & { written: AgentFi
       );
     },
     reload: async () => {},
+    sharedPrompt: async () => ({
+      source: "builtin",
+      diagnostics: [],
+      paths: { global: "/fake/shared-agent.md" },
+      layers: { global: { exists: false, status: "inherited" } },
+    }),
+    writeSharedPrompt: async () => ({
+      source: "builtin",
+      diagnostics: [],
+      paths: { global: "/fake/shared-agent.md" },
+      layers: { global: { exists: false, status: "inherited" } },
+    }),
+    deleteSharedPrompt: async () => {},
     written,
   };
 }

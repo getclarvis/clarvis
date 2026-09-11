@@ -48,13 +48,20 @@ message. This is bounded observability: no argument content and no per-delta jou
 
 ## Contract
 
-The loop contract is divided across the eight focused specs under the
+The loop contract is divided across the focused specs under the
 [`engine` map](../../specs/README.md#engine--the-loop-itself): lifecycle, request/settings,
-capability composition, tool dispatch, compaction, budgets/guards, delegation, and vision routing.
+capability composition, tool dispatch, compaction, budgets/guards, delegation, vision routing,
+and the [agent system prompt](../../specs/engine/agent-system-prompt.md).
 Changes may also implicate the cross-cutting contracts for
 [`grants`](../../specs/cross-cutting/grants.md),
 [`prompt caching`](../../specs/cross-cutting/prompt-cache.md), and
 [`elicitation`](../../specs/cross-cutting/elicitation.md).
+
+The system head is Environment, then the fleet shared prompt, then the profile prompt, then
+capability sections. `buildSystemSections` owns that order. `RunRequest.shared_prompt` is the
+run-start snapshot: omitted uses the built-in default, an empty string disables the layer, and
+children reuse the stamped value. See
+[`agent-system-prompt.md`](../../specs/engine/agent-system-prompt.md).
 
 Model-facing contracts are collected in
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Spawn guidance requires

@@ -23,6 +23,7 @@ const MAX_BYTES = 256 * 1024;
 const MAX_ENTRIES = 200;
 const CLARVIS_FILES = new Set([
   "settings.json",
+  "shared-agent.md",
   "guard-judge.md",
   "memory-policy.md",
   "CLARVIS.md",

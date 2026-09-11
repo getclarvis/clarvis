@@ -4,7 +4,7 @@ import { kernelError } from "../core/errors.ts";
 /** Read-only inputs shared by the root assembler and every later workflow leader. */
 export type RunConfigurationSource = Pick<
   ConfigStore,
-  "readSettings" | "readContext" | "readEffectiveAgent" | "listAgents"
+  "readSettings" | "readContext" | "readEffectiveAgent" | "readSharedPrompt" | "listAgents"
 >;
 
 /**
@@ -26,14 +26,19 @@ export function snapshotRunConfiguration(source: RunConfigurationSource): RunCon
     global: source.readContext("global"),
     workspace: source.readContext("workspace"),
   };
-  const encoded = JSON.stringify({ settings, records, contexts });
+  const sharedPrompts = {
+    global: source.readSharedPrompt("global"),
+    workspace: source.readSharedPrompt("workspace"),
+  };
+  const encoded = JSON.stringify({ settings, records, contexts, sharedPrompts });
   if (Buffer.byteLength(encoded) > 16 * 1024 * 1024)
     throw kernelError("resource_exhausted", "run configuration exceeds 16 MiB");
-  const captured = structuredClone({ settings, records, contexts });
+  const captured = structuredClone({ settings, records, contexts, sharedPrompts });
   const byName = new Map(captured.records.map((record) => [record.name, record]));
   return {
     readSettings: () => structuredClone(captured.settings),
     readContext: (scope) => structuredClone(captured.contexts[scope]),
+    readSharedPrompt: (scope) => structuredClone(captured.sharedPrompts[scope]),
     listAgents: () => structuredClone(captured.records),
     readEffectiveAgent: (name) => structuredClone(byName.get(name) ?? null),
   };

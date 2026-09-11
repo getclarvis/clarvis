@@ -8,6 +8,7 @@ import {
 import { type AgentProfile, type McpServerConfig, type SkillsProvider } from "@clarvis/loop";
 import { kernelError } from "../core/errors.ts";
 import type { AgentRecord, ConfigStore, ContextRecord } from "../config/config-store.ts";
+import { resolveStoreSharedPrompt, stampedSharedPrompt } from "../config/shared-prompt.ts";
 import { renderSkillPrompt, skillEntryAgent } from "../skills/render-skill-prompt.ts";
 import { protoMessagesToEngine } from "./map-message.ts";
 import { guardParksOnHuman } from "../guard/resolver.ts";
@@ -361,7 +362,10 @@ function buildProfile(
  * request.
  */
 export function createSettingsRunAssembler(
-  store: Pick<ConfigStore, "readSettings" | "readContext" | "readEffectiveAgent">,
+  store: Pick<
+    ConfigStore,
+    "readSettings" | "readContext" | "readEffectiveAgent" | "readSharedPrompt"
+  >,
   options: SettingsAssemblerOptions = {},
 ): RunRequestAssembler {
   const fallbackBudget = {
@@ -446,6 +450,7 @@ export function createSettingsRunAssembler(
       return entry === undefined ? [] : [toEngineServer(name, entry, pluginServerRefs.has(name))];
     });
 
+    const sharedPrompt = stampedSharedPrompt(resolveStoreSharedPrompt(store));
     const entryBudget = entryRecord.frontmatter.budget;
     const agentBudget =
       typeof entryBudget === "object" && entryBudget !== null ? entryBudget : undefined;
@@ -459,6 +464,7 @@ export function createSettingsRunAssembler(
       servers,
       profiles,
       entry: agentName,
+      shared_prompt: sharedPrompt,
       budget: completeBudget(
         (agentBudget ?? merged.budget) as Record<string, unknown> | undefined,
         fallbackBudget,

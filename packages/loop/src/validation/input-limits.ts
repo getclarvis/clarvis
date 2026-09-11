@@ -1,8 +1,12 @@
 /** Hard structural ceilings shared by settings files and direct run requests. */
+const SYSTEM_PROMPT_CHARS = 256 * 1024;
+
 export const INPUT_LIMITS = {
   profileNameChars: 128,
   profileDescriptionChars: 4_096,
-  profileBasePromptChars: 256 * 1024,
+  /** Character ceiling for a profile `base_prompt` or other system-prompt document. */
+  systemPromptChars: SYSTEM_PROMPT_CHARS,
+  profileBasePromptChars: SYSTEM_PROMPT_CHARS,
   profileAggregateChars: 8 * 1024 * 1024,
   profileTools: 512,
   profileGrants: 64,

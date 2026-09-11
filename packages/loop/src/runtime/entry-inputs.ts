@@ -200,6 +200,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
           ...(deps.capabilityReserved === undefined
             ? {}
             : { capabilityReserved: deps.capabilityReserved }),
+          ...(shape.sharedPrompt !== undefined ? { sharedPrompt: shape.sharedPrompt } : {}),
         }),
         ...(deps.runCapabilities ?? []),
       ]

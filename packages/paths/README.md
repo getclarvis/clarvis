@@ -104,7 +104,7 @@ and the credential-excluding file policy described in
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `extension-profiles/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
+`plugins/`, `extension-profiles/`, `workflows/`, `shared-agent.md` and `guard-judge.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
@@ -124,7 +124,7 @@ state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
-records, Docker runtime recipes, `guard-judge.md`, `auth.json` — and nests only what a user never
+records, Docker runtime recipes, `shared-agent.md`, `guard-judge.md`, `auth.json` — and nests only what a user never
 edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, content-addressed
 runtime-recipe build leases, the per-workspace machinery above), `cache/` (including the models.dev
 snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:

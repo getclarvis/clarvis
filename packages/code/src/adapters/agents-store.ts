@@ -1,5 +1,11 @@
 import { createSignal, type Accessor } from "solid-js";
-import type { AgentSummary, ConfigService, Scope } from "@clarvis/protocol";
+import type {
+  AgentSummary,
+  ConfigService,
+  Scope,
+  SharedPromptView,
+  SharedPromptWrite,
+} from "@clarvis/protocol";
 import { compareAgentDisplayOrder, resolveAgentsByName } from "@clarvis/kernel/config";
 import {
   docToAgentFile,
@@ -27,6 +33,10 @@ export interface AgentsStore {
   /** Rename an agent within its scope; rejects if the new name collides in either scope. */
   rename(oldName: string, newName: string, scope: Scope): Promise<void>;
   reload(): Promise<void>;
+  /** Effective shared prompt and the two editable layers. */
+  sharedPrompt(): Promise<SharedPromptView>;
+  writeSharedPrompt(scope: Scope, doc: SharedPromptWrite): Promise<SharedPromptView>;
+  deleteSharedPrompt(scope: Scope): Promise<void>;
 }
 
 /**
@@ -148,5 +158,8 @@ export function createAgentsStore(
       await reload();
     },
     reload,
+    sharedPrompt: () => config.getSharedPrompt(),
+    writeSharedPrompt: (scope, doc) => config.writeSharedPrompt(scope, doc),
+    deleteSharedPrompt: (scope) => config.deleteSharedPrompt(scope),
   };
 }

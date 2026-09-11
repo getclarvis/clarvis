@@ -159,6 +159,18 @@ export interface ConfigStore {
   deleteAgent(scope: Scope, name: string): void;
 
   /**
+   * Read one scope's shared-agent prompt document.
+   *
+   * @returns the path and contents, or `null` when the scope is not configured.
+   *   A missing file is `{ path }` with no `raw`.
+   */
+  readSharedPrompt(scope: Scope): SharedPromptFile | null;
+  /** Create or overwrite the shared-agent prompt document. */
+  writeSharedPrompt(scope: Scope, content: string): SharedPromptFile;
+  /** Remove the shared-agent prompt document; a no-op when it does not exist. */
+  deleteSharedPrompt(scope: Scope): void;
+
+  /**
    * Read the context preamble for a scope.
    *
    * @returns the {@link ContextRecord}, or `null` when the scope has none.
@@ -293,6 +305,19 @@ export interface AgentRecord {
    *   See {@link AgentOverlay}.
    */
   overlay?: AgentOverlay;
+}
+
+/**
+ * One scope's shared-agent prompt file as the store found it.
+ *
+ * @remarks `raw` is omitted when the file is absent. `unreadable` / `oversized`
+ * are how a present file that cannot be applied is reported without throwing.
+ */
+export interface SharedPromptFile {
+  path: string;
+  raw?: string;
+  unreadable?: boolean;
+  oversized?: boolean;
 }
 
 /** Payload for creating or updating an agent document. */

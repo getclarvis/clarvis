@@ -199,6 +199,8 @@ export interface DelegationDeps {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * every sub-agent registry this contribution's spawns mint. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
 }
 
 /**
@@ -249,6 +251,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
     ...(deps.logger ? { logger: deps.logger } : {}),
     ...(deps.emitCapabilityEvent ? { emitCapabilityEvent: deps.emitCapabilityEvent } : {}),
     ...(deps.capabilityReserved ? { capabilityReserved: deps.capabilityReserved } : {}),
+    ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
   };
 
   const spawnHandler: ToolHandler = {

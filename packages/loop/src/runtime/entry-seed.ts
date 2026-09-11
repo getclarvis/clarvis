@@ -60,9 +60,10 @@ function entrySeedMarker(
 }
 
 /**
- * Compose the entry agent's opening messages: a system head (base prompt plus
- * active capability sections), the preserved continuation history, any capability
- * seed block the continuation did not already carry, and this turn's messages.
+ * Compose the entry agent's opening messages: a system head (shared prompt,
+ * profile prompt, then active capability sections), the preserved continuation
+ * history, any capability seed block the continuation did not already carry,
+ * and this turn's messages.
  *
  * @returns the {@link EntrySeed} — messages, this turn's images, and whether the
  *   agent strips images.
@@ -110,7 +111,10 @@ export function buildEntrySeed(a: {
     role: "system",
     content: buildSystemSections({
       workspaceRoot: deps.workspaceRoot,
-      ...(entryResolved.basePrompt !== undefined ? { basePrompt: entryResolved.basePrompt } : {}),
+      ...(shape.sharedPrompt !== undefined ? { sharedPrompt: shape.sharedPrompt } : {}),
+      ...(entryResolved.basePrompt !== undefined
+        ? { profilePrompt: entryResolved.basePrompt }
+        : {}),
       ...(capabilitySections.length > 0 ? { capabilitySections } : {}),
     }).join("\n\n"),
   };

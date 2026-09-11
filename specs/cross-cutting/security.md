@@ -303,9 +303,10 @@ sorts object keys recursively and drops `undefined`. The surface is
 | --- | --- |
 | `settings` | only the declared risk fields, keyed by their `WORKSPACE_RISK_FIELDS` name |
 | `agents` | `{ name, digest: "sha256:<hex>" }` per `.clarvis/agents/*.md`, sorted by name |
+| `sharedPrompt` | `{ digest: "sha256:<hex>" }` of `.clarvis/shared-agent.md` when that file exists |
 | `extensions` | every installed `scope: "workspace"` plugin as an exact qualified ref plus atomic contribution digest, sorted canonically, when non-empty |
 
-A workspace with none of the three yields `undefined` — it is **inert** and never prompted about
+A workspace with none of those keys yields `undefined` — it is **inert** and never prompted about
 (`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Extension Profile
 Extension Profile definitions and global plugin selections do not enter this executable surface. The
 workspace plugin inventory does so before selection. Code resolves it after the lightweight startup

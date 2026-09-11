@@ -89,6 +89,19 @@ test("createAgentsStore without initial conflicts starts empty until reload() (d
   expect(store.conflicts()).toEqual(["coder"]);
 });
 
+test("AgentsStore delegates shared prompt reads and mutations to config", async () => {
+  const config = createConfigService(createMemoryConfigStore());
+  const store = createAgentsStore(config, []);
+
+  expect((await store.sharedPrompt()).source).toBe("builtin");
+  expect(
+    (await store.writeSharedPrompt("global", { mode: "replace", body: "Team rules" })).source,
+  ).toBe("global");
+  expect((await store.sharedPrompt()).prompt).toBe("Team rules");
+  await store.deleteSharedPrompt("global");
+  expect((await store.sharedPrompt()).source).toBe("builtin");
+});
+
 test("AgentsStore.rename rejects across scopes", async () => {
   const config = createConfigService(
     createMemoryConfigStore({

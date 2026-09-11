@@ -34,7 +34,9 @@ kernel also owns host-side composition described by
 [`extension-profiles.md`](../../specs/hosts/extension-profiles.md),
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
 [`sessions.md`](../../specs/hosts/sessions.md), plus the kernel halves of capability specs named in
-their package READMEs.
+their package READMEs. Shared-prompt resolution, workspace trust for `shared-agent.md`, and
+independence from agent overlays are specified in
+[`agent-system-prompt.md`](../../specs/engine/agent-system-prompt.md).
 
 ## Hosted observation infrastructure
 

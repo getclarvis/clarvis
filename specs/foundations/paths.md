@@ -141,6 +141,7 @@ chose it — is the first thing every other path in this package is derived from
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts` |
+| `sharedAgentPromptFile` | `<global>/shared-agent.md` | `packages/paths/src/global.ts` |
 | `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts` |
 | `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts` |
 | `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts` |
@@ -205,6 +206,7 @@ specified by [hosted runs](../hosts/hosted-runs.md); builder tests do not qualif
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts` |
 | `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts` |
 | `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts` |
+| `sharedAgentPromptFile` | `<ws>/.clarvis/shared-agent.md` | `packages/paths/src/workspace.ts` |
 | `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts` |
 | `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts` |

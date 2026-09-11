@@ -75,6 +75,8 @@ export interface DelegationCapabilityDeps {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * every sub-agent registry a spawn from this capability mints. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
 }
 
 /**
@@ -135,6 +137,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               ...(deps.emitCapabilityEvent === undefined
                 ? {}
                 : { emitCapabilityEvent: deps.emitCapabilityEvent }),
+              ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
             }),
           };
         },

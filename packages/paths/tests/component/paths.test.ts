@@ -55,6 +55,7 @@ describe("globalPaths", () => {
     expect(p.runtimeRecipesDir).toBe(join(GLOBAL, "runtime-recipes"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
+    expect(p.sharedAgentPromptFile).toBe(join(GLOBAL, "shared-agent.md"));
     expect(p.guardJudgeFile).toBe(join(GLOBAL, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(GLOBAL, "memory-policy.md"));
     expect(p.authFile).toBe(join(GLOBAL, "auth.json"));
@@ -119,6 +120,7 @@ describe("workspacePaths", () => {
     expect(p.skillsDir).toBe(join(p.clarvisDir, "skills"));
     expect(p.pluginsDir).toBe(join(p.clarvisDir, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(p.clarvisDir, "extension-profiles"));
+    expect(p.sharedAgentPromptFile).toBe(join(p.clarvisDir, "shared-agent.md"));
     expect(p.guardJudgeFile).toBe(join(p.clarvisDir, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(p.clarvisDir, "memory-policy.md"));
     expect(p.plansRoot).toBe(join(p.clarvisDir, "plans"));
@@ -158,6 +160,7 @@ describe("workspacePaths", () => {
       p.workflowsDir,
       p.pluginsDir,
       p.extensionProfilesDir,
+      p.sharedAgentPromptFile,
       p.guardJudgeFile,
       p.memoryPolicyFile,
       p.plansRoot,

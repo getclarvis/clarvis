@@ -459,6 +459,14 @@ export interface RunRequest {
   profiles: AgentProfile[];
   entry: string;
   /**
+   * Fleet-wide shared prompt injected ahead of every profile prompt.
+   *
+   * @remarks Omitted ⇒ the engine's built-in default. An empty string disables
+   * the shared layer. A host that resolved an override stamps the winning text
+   * here once so children and continuations of this run do not re-read files.
+   */
+  shared_prompt?: string;
+  /**
    * Model used to read the turn's images when the entry agent's own model
    * cannot see them.
    *

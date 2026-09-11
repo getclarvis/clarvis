@@ -218,10 +218,13 @@ describe("prepared kernel execution", () => {
 
   test("bounds the per-tree snapshot and isolates readers from mutations", () => {
     const store = createMemoryConfigStore();
+    store.writeSharedPrompt("global", "---\nmode: replace\n---\n\nOriginal shared prompt.\n");
     const source = snapshotRunConfiguration(store);
     const first = source.listAgents();
     first[0]!.body = "Mutated reader";
     expect(source.listAgents()[0]!.body).not.toBe("Mutated reader");
+    store.writeSharedPrompt("global", "---\nmode: replace\n---\n\nChanged shared prompt.\n");
+    expect(source.readSharedPrompt("global")?.raw).toContain("Original shared prompt.");
     expect(() =>
       snapshotRunConfiguration({
         ...store,

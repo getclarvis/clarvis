@@ -30,17 +30,43 @@ describe("the environment system-prompt section", () => {
     expect(darwin).toContain("darwin");
   });
 
-  it("keeps the environment section first, ahead of the profile's base prompt", () => {
+  it("keeps the environment section first, ahead of the shared prompt and profile prompt", () => {
     const sections = buildSystemSections({
       workspaceRoot: "/ws",
-      basePrompt: "PERSONA",
+      sharedPrompt: "SHARED",
+      profilePrompt: "PERSONA",
       platform: "linux",
     });
     expect(sections[0]).toContain("# Environment");
-    expect(sections[1]).toBe("PERSONA");
+    expect(sections[1]).toBe("SHARED");
+    expect(sections[2]).toBe("PERSONA");
+  });
+
+  it("keeps capability sections last", () => {
+    const sections = buildSystemSections({
+      workspaceRoot: "/ws",
+      sharedPrompt: "SHARED",
+      profilePrompt: "PERSONA",
+      capabilitySections: ["# Skills"],
+      platform: "linux",
+    });
+    expect(sections[3]).toBe("# Skills");
+  });
+
+  it("still accepts basePrompt as an alias of the profile prompt", () => {
+    const sections = buildSystemSections({
+      workspaceRoot: "/ws",
+      sharedPrompt: "SHARED",
+      basePrompt: "PERSONA",
+      platform: "linux",
+    });
+    expect(sections[1]).toBe("SHARED");
+    expect(sections[2]).toBe("PERSONA");
   });
 
   it("contributes nothing when the run has no workspace root", () => {
-    expect(buildSystemSections({ basePrompt: "PERSONA", platform: "linux" })).toEqual(["PERSONA"]);
+    expect(buildSystemSections({ profilePrompt: "PERSONA", platform: "linux" })).toEqual([
+      "PERSONA",
+    ]);
   });
 });

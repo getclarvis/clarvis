@@ -16,8 +16,8 @@ import { ownerSegment, workspaceRoot, type RootOptions } from "./roots.ts";
  * @remarks
  * **Everything reachable from here is content a human authors or reads.** The
  * workspace's own configuration — `settings.json`, `agents/`, `skills/`,
- * `workflows/`, `plugins/`, `extension-profiles/`, `guard-judge.md`, `memory-policy.md` —
- * belongs in its history, and the
+ * `workflows/`, `plugins/`, `extension-profiles/`, `shared-agent.md`,
+ * `guard-judge.md`, `memory-policy.md` — belongs in its history, and the
  * two generated trees, {@link WorkspacePaths.plansRoot} and
  * {@link WorkspacePaths.memoryRoot}, hold Markdown the user is expected to open
  * mid-run.
@@ -50,6 +50,13 @@ export interface WorkspacePaths {
   pluginsDir: string;
   /** Shared Extension Profile definitions authored for this workspace. */
   extensionProfilesDir: string;
+  /**
+   * Workspace-authored shared-agent prompt override.
+   *
+   * @remarks Distinct from {@link WorkspacePaths.agentsDir}: this document
+   * applies to every agent rather than overlaying one profile.
+   */
+  sharedAgentPromptFile: string;
   /** Workspace-authored guard-judge prompt override. */
   guardJudgeFile: string;
   /**
@@ -114,6 +121,7 @@ export function workspacePaths(root?: string, opts?: RootOptions): WorkspacePath
     workflowsDir: join(clarvisDir, "workflows"),
     pluginsDir: join(clarvisDir, "plugins"),
     extensionProfilesDir: join(clarvisDir, "extension-profiles"),
+    sharedAgentPromptFile: join(clarvisDir, "shared-agent.md"),
     guardJudgeFile: join(clarvisDir, "guard-judge.md"),
     memoryPolicyFile: join(clarvisDir, "memory-policy.md"),
     plansRoot: join(clarvisDir, "plans"),

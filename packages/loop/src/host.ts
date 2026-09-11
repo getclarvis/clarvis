@@ -13,6 +13,22 @@ export {
   type AgentFrontmatter,
 } from "./settings/agent-frontmatter.ts";
 export {
+  DEFAULT_SHARED_AGENT_PROMPT,
+  sharedPromptForRun,
+} from "./runtime/prompts/shared-agent-prompt.ts";
+export {
+  parseSharedPromptDocument,
+  renderSharedPromptDocument,
+  resolveSharedPrompt,
+  type ParsedSharedPrompt,
+  type ResolveSharedPromptInput,
+  type ResolvedSharedPrompt,
+  type SharedPromptDiagnostic,
+  type SharedPromptLayer,
+  type SharedPromptParseFailure,
+  type SharedPromptSource,
+} from "./runtime/prompts/resolve-shared-prompt.ts";
+export {
   marketplaceSchema,
   pluginGitSelectorIssue,
   pluginGitUrlIssue,

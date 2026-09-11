@@ -72,6 +72,9 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       deleteAgent: record("config.deleteAgent"),
       renameAgent: record("config.renameAgent"),
       getContext: record("config.getContext"),
+      getSharedPrompt: record("config.getSharedPrompt"),
+      writeSharedPrompt: record("config.writeSharedPrompt"),
+      deleteSharedPrompt: record("config.deleteSharedPrompt"),
       subscribe(_kinds: ConfigChangeKind[], _listener: (change: ConfigChange) => void): () => void {
         invoked.push("config.subscribe");
         return () => {};

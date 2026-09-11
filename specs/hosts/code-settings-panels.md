@@ -147,6 +147,13 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `updates` | Updates | `updates.open` |
 | `controls` | Run controls | `controls.open` |
 
+The Agents panel lists Shared prompt ahead of agent rows: effective source, inherited/active/rejected
+status, preview, global or workspace edit, disable, and reset that deletes the scoped file. Opening a
+scope with no override starts from the current effective prompt with `mode: replace`; cancel does not
+write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Production:
+`packages/code/src/views/config/AgentsPanel.tsx`. Test:
+`packages/code/tests/integration/agents-panel-render.test.tsx`.
+
 `IsolationConfigPanel` is the dedicated global placement screen for Host, Sandbox, Docker or Podman.
 It writes through shared `applyIsolation` and drills to `sandbox.config` for native Sandbox fields
 rather than cloning them. Workspace settings cannot contribute a runtime. Docker copy states the

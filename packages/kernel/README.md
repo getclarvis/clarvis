@@ -297,7 +297,7 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 11 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 12 and a rebuilt compatible worker image. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
 directories. Helper guidance requires preparing read resources in the writable workspace before
 guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
@@ -344,6 +344,12 @@ bearer tokens and the OAuth coordinator/store remain on the host. Typed pending/
 failures retain native run behavior, and remote elicitation returns through `runtime.mcp_elicit` to
 the live guest's serialized input port. Run teardown releases the leases. Stdio remains guest-local,
 and HTTP/SSE still has remote effects even with container network `none`.
+
+The exec-gated `host_vcs` fallback uses the non-idempotent `runtime.host_vcs` grant. The guest never
+spawns this argv: the host revalidates its arguments and restricted credential/helper forms,
+resolves command review from the run snapshot, withholds current secret names, and executes it in the
+host workspace under the same time, output, cwd and prompt bounds as native placement. The grant and
+dispatcher exist only for a run that admits tools with an exec ceiling and `run_commands`.
 
 Before each admitted provider/model pair reaches the adapter, the host uses the shared
 `resolveProvider` on its captured registry, including model overrides, and reconstructs the model's
@@ -836,7 +842,10 @@ restarting the session.
 
 The argv-only `host_vcs` fallback is an ordinary `ask`, not a forced human escalation. Mode `on`
 therefore sends it to the human, while a configured mode `auto` judge may allow or deny it under the
-same audited answerer rules. The tool remains unavailable when no guard reviewer exists.
+same audited answerer rules. Mode `off` supplies no guard and executes the bounded fallback without
+command review, honoring the operator's explicit choice. Container placement resolves and enforces
+that decision on the host side of `runtime.host_vcs`; the guest cannot bypass it by calling the
+bridge directly.
 
 The resolver returns the final answer together with its answerer, and the kernel
 projects the resulting `tool_call.guard` unchanged to `RunEvent`. This makes the

@@ -1,4 +1,4 @@
-import { NOOP_LOGGER } from "@clarvis/capability";
+import { NOOP_LOGGER, type RunCapabilityContext } from "@clarvis/capability";
 import type {
   Guard,
   GuardElicit,
@@ -57,6 +57,20 @@ export interface GuardResolverDeps {
     owner: string;
   }) => GuardHumanApproval | undefined;
 }
+
+/** Run fields required to resolve command review outside the loop capability lifecycle. */
+export type GuardRuntimeContext = Pick<
+  RunCapabilityContext,
+  | "request"
+  | "owner"
+  | "env"
+  | "workspaceRoot"
+  | "llm"
+  | "elicit"
+  | "logger"
+  | "signal"
+  | "executionId"
+>;
 
 /**
  * Picks effective guard mode: explicit request param, else settings default.
@@ -192,7 +206,7 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
 }
 
 /**
- * Builds a {@link GuardResolver}: bash allow/deny lists, human elicit for `on`, optional LLM judge for `auto`.
+ * Builds the shared guard runtime resolver: bash allow/deny lists, human elicit for `on`, optional LLM judge for `auto`.
  *
  * @param deps - the settings loader and optional logger; see
  *   {@link GuardResolverDeps}.
@@ -208,7 +222,9 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   judge's default model falls back to `CLARVIS_DEFAULT_MODEL` from the run
  *   env when settings name none.
  */
-export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
+export function createGuardRuntimeResolver(
+  deps: GuardResolverDeps,
+): (ctx: GuardRuntimeContext) => GuardResolution | undefined {
   const defaultAllowlist =
     deps.sessionAllowlistFor === undefined && deps.humanApprovalFor === undefined
       ? createGuardSessionAllowlist()
@@ -313,4 +329,9 @@ export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
         : undefined;
     return { guard, ...(elicit !== undefined ? { elicit } : {}) };
   };
+}
+
+/** Build the loop capability resolver over the shared host guard implementation. */
+export function createGuardResolver(deps: GuardResolverDeps): GuardResolver {
+  return createGuardRuntimeResolver(deps);
 }

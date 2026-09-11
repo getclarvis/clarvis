@@ -165,6 +165,13 @@ export function safetyDescription(state: RunControlsState): string[] {
         ? "Container network access is disabled."
         : "Outbound network access is enabled; guest services can be exposed to the host.",
     );
+    lines.push(
+      state.guardMode === "off"
+        ? "Commands run without command review."
+        : state.guardMode === "auto"
+          ? "Commands use model review; uncertain actions ask you."
+          : "Risky commands ask before running.",
+    );
     return lines;
   }
   if (state.sandboxEnabled) {

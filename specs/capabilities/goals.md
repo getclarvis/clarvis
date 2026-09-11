@@ -588,7 +588,7 @@ run admission or token limits through this bridge. Only the bounded current goal
 catalog cross; archives and operation receipts remain in the private host session. A goal run admits
 at most 1152 KiB per capability request/result, retaining the broker's call-count, aggregate replay
 and RPC bounds. The guest validates response schemas and refuses an absent, stale, contradictory or
-foreign descriptor before inference. Compatible images use private protocol revision 11.
+foreign descriptor before inference. Compatible images use private protocol revision 12.
 
 Production: `goalRuntimePortOf` in [capability.ts](../../packages/goal/src/capability.ts),
 [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts),

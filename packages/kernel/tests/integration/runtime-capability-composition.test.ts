@@ -570,6 +570,12 @@ describe("runtime capability composition", () => {
         maxGrant: toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT,
       },
     });
+    const hostCapabilities = (f.guestEnvelopes[0] as { hostCapabilities: string[] })
+      .hostCapabilities;
+    expect(hostCapabilities.includes("host_vcs")).toBe(
+      toolEnvironment.CLARVIS_AGENT_TOOLS_ENABLED === "1" &&
+        toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT === "exec",
+    );
   });
 
   it("preserves the operator's elicitation deadline in the native and guest loops", async () => {

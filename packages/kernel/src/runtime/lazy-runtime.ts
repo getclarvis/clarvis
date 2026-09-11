@@ -44,6 +44,8 @@ export interface RuntimeHostInput {
   readonly guardAudit?: Logger;
   /** Dynamic consent shared with the native resolver and revoked by interactive ownership. */
   readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
+  /** Fresh names of host credentials withheld from host-owned command fallbacks. */
+  readonly loadSecretNames?: () => readonly string[];
 }
 
 /** One ready host runtime and its placement-neutral run executor. */
@@ -196,6 +198,7 @@ export function createLazyRuntimeCoordinator(options: {
   readonly loadGuardSettings?: () => GuardSettings;
   readonly guardAudit?: Logger;
   readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
+  readonly loadSecretNames?: () => readonly string[];
   readonly assertFallbackSandbox?: () => Promise<void>;
   readonly onPlacement?: (notice: RuntimePlacementNotice) => void;
   readonly logger?: Logger;
@@ -284,6 +287,9 @@ export function createLazyRuntimeCoordinator(options: {
       ...(options.sessionAllowlistFor === undefined
         ? {}
         : { sessionAllowlistFor: options.sessionAllowlistFor }),
+      ...(options.loadSecretNames === undefined
+        ? {}
+        : { loadSecretNames: options.loadSecretNames }),
     });
     const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0, retire: false };
     ownedSlots.add(slot);

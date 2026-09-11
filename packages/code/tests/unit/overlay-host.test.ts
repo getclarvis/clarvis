@@ -170,8 +170,6 @@ test("a child calling host.close returns to its mounted parent", () => {
 
 test("a deep-linked child seeds a real parent route and Escape returns without rerunning commands", () => {
   const h = harness();
-  const rechecks: number[] = [];
-  h.host.setRecheck(() => rechecks.push(1));
   h.host.ui.openView("providers.open", view, {
     parent: { name: "doctor.open", factory: view, scope: "workspace" },
     scope: "workspace",
@@ -179,7 +177,6 @@ test("a deep-linked child seeds a real parent route and Escape returns without r
   expect(h.host.views().map((frame) => frame.name)).toEqual(["doctor.open", "providers.open"]);
   expect(h.host.views()[0]!.host.scope()).toBe("workspace");
   h.escape();
-  expect(rechecks).toHaveLength(1);
   expect(h.commands).toEqual([]);
   expect(h.host.view()?.name).toBe("doctor.open");
 });

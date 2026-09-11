@@ -135,6 +135,7 @@ interface SettingsKnobs {
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
   withheldWorkspaceFields?: readonly string[];
   setWorkspaceTrust?: (approve: boolean) => Promise<void>;
+  inspectSandbox?: SettingsAdapter["inspectSandbox"];
 }
 
 const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
@@ -182,7 +183,8 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: () => Promise.resolve(null as never),
+    inspectSandbox: (options?: { refresh?: boolean }) =>
+      knobs().inspectSandbox?.(options) ?? Promise.resolve(null as never),
   } as unknown as SettingsAdapter;
 }
 
@@ -987,7 +989,17 @@ test("Enter runs an exact hierarchical hub while Tab still owns child completion
 });
 
 test("Tab opens a child and rapid Escape steps back through its hub to the transcript", async () => {
-  const t = await mountApp(defaultProps({}));
+  let inspections = 0;
+  const t = await mountApp(
+    defaultProps({
+      settingsKnobs: () => ({
+        inspectSandbox: async () => {
+          inspections += 1;
+          return null as never;
+        },
+      }),
+    }),
+  );
   await captureUntil(t, "New task");
   await t.mockInput.typeText("/settings");
   await t.renderOnce();
@@ -1007,8 +1019,11 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   press(t, "escape");
   await t.renderOnce();
   await t.renderOnce();
+  await Promise.resolve();
+  await Promise.resolve();
   const transcript = t.captureCharFrame();
   expect(transcript).not.toContain("Settings");
+  expect(inspections).toBe(0);
   t.renderer.destroy();
 });
 

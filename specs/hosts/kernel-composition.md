@@ -152,7 +152,10 @@ opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile 
 The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
 environment names. It creates the run-owned scratch and appends host system temporary access inside
 the optional tools capability. The kernel guard makes `host_vcs` an ordinary ask:
-mode `on` uses the human channel, while a configured mode `auto` judge may answer it.
+mode `on` uses the human channel, while a configured mode `auto` judge may answer it. Mode `off`
+returns no guard, so the bounded host fallback executes without command review. In isolated
+placement, `runtime.host_vcs` keeps the process, secret filtering and final guard enforcement on the
+host; the loop receives only the dispatcher result and review metadata.
 
 `CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
 interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The

@@ -22,16 +22,46 @@ describe("host_vcs", () => {
   });
   afterEach(() => cleanup(root));
 
-  it("fails closed when no approval guard is installed", async () => {
+  it("honors disabled command review when no guard is installed", async () => {
     const result = await callTool(
       "host_vcs",
-      { program: "git", args: ["ls-remote", "."] },
+      {
+        program: process.execPath,
+        args: ["-e", "process.stdout.write('review off')"],
+      },
       makeConfig(root),
     );
-    expect(result.isError).toBe(true);
-    expect(result.json).toMatchObject({
-      error: "denied",
-      message: "host_vcs requires command review",
+    expect(result.isError).toBe(false);
+    expect(result.json).toMatchObject({ exit_code: 0, stdout: "review off" });
+  });
+
+  it("delegates isolated execution to the host port without running the guest guard", async () => {
+    let received: Record<string, unknown> | undefined;
+    let guestGuardCalled = false;
+    const result = await callTool(
+      "host_vcs",
+      { program: "/host-only/fixture", args: ["proof"] },
+      makeConfig(root, {
+        guard: () => {
+          guestGuardCalled = true;
+          return { verdict: "deny" };
+        },
+        hostVcsDispatcher: async (args) => {
+          received = args;
+          return {
+            isError: false,
+            content: [{ type: "text", text: "host bridge proof" }],
+            guard: { mode: "on", outcome: "allowed", answerer: "policy" },
+          };
+        },
+      }),
+    );
+    expect(received).toEqual({ program: "/host-only/fixture", args: ["proof"] });
+    expect(guestGuardCalled).toBe(false);
+    expect(result).toMatchObject({
+      isError: false,
+      text: "host bridge proof",
+      guard: { mode: "on", outcome: "allowed", answerer: "policy" },
     });
   });
 
@@ -102,33 +132,25 @@ describe("host_vcs", () => {
     }
   });
 
-  it("refuses direct credential output even after approval", async () => {
+  it("refuses direct credential output even when command review is disabled", async () => {
     for (const [program, args] of [
       ["gh", ["auth", "token"]],
       ["git", ["credential", "fill"]],
     ] as const) {
-      const result = await callTool(
-        "host_vcs",
-        { program, args },
-        makeConfig(root, { guard: () => ({ verdict: "allow" }) }),
-      );
+      const result = await callTool("host_vcs", { program, args }, makeConfig(root));
       expect(result.isError).toBe(true);
       expect(result.json.error).toBe("denied");
     }
   });
 
-  it("refuses Git arguments and remote helpers that can execute host programs", async () => {
+  it("refuses executable Git helpers even when command review is disabled", async () => {
     for (const args of [
       ["ls-remote", "--upload-pack=printf SHOULD_NOT_RUN", "."],
       ["ls-remote", "--upload-p=printf SHOULD_NOT_RUN", "."],
       ["push", "--exec=printf SHOULD_NOT_RUN", "."],
       ["fetch", "ext::printf SHOULD_NOT_RUN"],
     ]) {
-      const result = await callTool(
-        "host_vcs",
-        { program: "git", args },
-        makeConfig(root, { guard: () => ({ verdict: "allow" }) }),
-      );
+      const result = await callTool("host_vcs", { program: "git", args }, makeConfig(root));
       expect(result.isError).toBe(true);
       expect(result.json.error).toBe("denied");
     }

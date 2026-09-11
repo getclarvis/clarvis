@@ -1003,7 +1003,8 @@ block; without a container runtime it returns Sandbox when that block is enabled
 `safetyDescription` branches first on container isolation. Docker and Podman describe the directly
 mounted selected workspace plus either disabled networking or outbound access with explicit service
 exposure. It states that guest changes appear on the host immediately rather than promising a hidden
-copy or apply phase.
+copy or apply phase, then states whether commands run without review, use model review, or ask before
+running. Container placement does not hide the independently selected Review mode.
 Native Sandbox describes required versus optional confinement, filesystem and network policy; Host
 describes direct execution. Review changes the consequence text inside either native placement but
 never changes which placement was selected.
@@ -1398,9 +1399,10 @@ The following are derived directly from this document's own source and its tests
     itself is unpinned.
 
 56. **Isolation and command review are independently derived: an explicit Docker or Podman runtime
-    wins over the native Sandbox block, while `guardMode` remains an orthogonal field.** Production:
-    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts`.
+    wins over the native Sandbox block, while `guardMode` remains an orthogonal field; every
+    container safety description includes that guard consequence.** Production:
+    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`,
+    `safetyDescription`). Pinned: `packages/code/tests/unit/execution-safety.test.ts`.
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**

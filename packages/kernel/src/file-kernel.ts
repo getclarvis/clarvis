@@ -1009,6 +1009,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     loadGuardSettings,
     guardAudit: auditLogger,
     sessionAllowlistFor,
+    loadSecretNames,
     logger: componentLogger("runtime"),
     assertFallbackSandbox: async () => {
       const inspection = await sandboxPolicy.inspect({ refresh: true });

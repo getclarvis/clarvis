@@ -383,10 +383,13 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    contains a protected root. This applies even when that package is nested beneath the otherwise
    writable workspace (`packages/tools/src/core.ts`; pinned by
    `packages/tools/tests/integration/api.test.ts`).
-4. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
+4. **Isolated host dispatch.** When `name === "host_vcs"` and `hostVcsDispatcher` is present,
+   return that port's result. The host endpoint revalidates the schema and owns command review and
+   execution; the guest does not run either step locally.
+5. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
    its `denied` member short-circuits dispatch and its `review` member is retained
    on the eventual result.
-5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
+6. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
    value, split `content` into parts if it was a bare string, and return
    `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
    (`packages/tools/src/core.ts`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
@@ -396,7 +399,7 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 
 | Input state | Outcome |
 | --- | --- |
-| `config.guard` unset | empty gate (proceed), except `host_vcs`, which denies because host execution always requires review |
+| `config.guard` unset | empty gate (proceed), including for the bounded `host_vcs` fallback |
 | guard throws | caught, `errorResult(err)` — `packages/tools/src/core.ts` |
 | `decision.verdict === "allow"` | proceed; when mode is known, review is `allowed/policy` |
 | `decision.verdict === "deny"` | `errorResult(new ToolError("denied", reason))` — `packages/tools/src/core.ts` |
@@ -409,6 +412,12 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 args, config)` (`packages/tools/src/core.ts`), which is owned by the sibling [command-guard-and-approval](command-guard.md) document;
 `core.ts` only calls it and interprets the three-way `Verdict` (`"allow" | "deny" | "ask"`) it
 produces.
+
+`HostVcsDispatcher` is an optional resolved-config port for isolated runtimes. Its result uses the
+same content, metadata and review shape as `DispatchResult`. Native callers omit it and retain the
+local handler. Production: `HostVcsDispatcher` in `packages/tools/src/config.ts` and `dispatch` in
+`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/host-vcs.test.ts` (`delegates
+isolated execution to the host port without running the guest guard`).
 
 ### Output bounding
 

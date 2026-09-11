@@ -675,7 +675,10 @@ Denied signatures are prioritized ahead of ordinary signatures when the six-row 
 Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
 workspace choice inherits the global policy. Changing Isolation leaves Review and its command
 policy untouched. Selecting Host requires an explicit danger confirmation because it removes the
-containment boundary; turning Review off does not itself change isolation.
+containment boundary; turning Review off does not itself change isolation. With Review off, the
+bounded `host_vcs` fallback also executes without a reviewer when a sandboxed run needs host-side
+environment or credentials. The safety explanation always states the selected Review consequence
+for Host, native Sandbox, Docker and Podman placements.
 
 A **deny** is enforced before any of this, in every mode; `denied_commands` wins
 over `allowed_commands`. An entry without `*` is a space-boundary prefix over the

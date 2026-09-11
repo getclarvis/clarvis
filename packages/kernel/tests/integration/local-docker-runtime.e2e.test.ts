@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expect, test } from "bun:test";
@@ -97,6 +97,9 @@ test.skipIf(!enabled)(
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, "docker-"));
+    const hostOnlyProgram = join(root, "host-vcs-fixture");
+    await writeFile(hostOnlyProgram, '#!/bin/sh\nprintf "HOST_VCS_EXECUTED_ON_HOST:%s\\n" "$1"\n');
+    await chmod(hostOnlyProgram, 0o700);
     const repositoryRoot = join(root, "repository");
     const workspaceRoot = join(root, "workspace");
     await mkdir(repositoryRoot);
@@ -183,6 +186,7 @@ test.skipIf(!enabled)(
     ]);
     const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
     const prepareHelper = [
+      `test ! -e ${shellQuote(hostOnlyProgram)}`,
       "mkdir -p /workspace/prepared-skill/scripts/lib",
       ...[...helperResources].map(
         ([resource, content]) =>
@@ -323,6 +327,11 @@ test.skipIf(!enabled)(
           expect(transcript).toContain("DOCKER_RUNTIME_MEMORY_DOCUMENT");
           return {
             toolCalls: [
+              {
+                id: "host-vcs-review-off",
+                name: "host_vcs",
+                arguments: { program: hostOnlyProgram, args: ["deterministic-fixture"] },
+              },
               { id: "prepare-skill-helpers", name: "shell", arguments: { command: prepareHelper } },
               {
                 id: "npm-install",
@@ -338,6 +347,8 @@ test.skipIf(!enabled)(
           };
         }
         if (workloadModelCall === 4) {
+          expect(transcript).toContain("HOST_VCS_EXECUTED_ON_HOST:deterministic-fixture");
+          expect(transcript).not.toContain("host_vcs requires command review");
           expect(await readFile(join(workspaceRoot, "skill-helper.txt"), "utf8")).toBe(
             "SKILL_HELPER_PREPARED\n",
           );

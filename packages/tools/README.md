@@ -141,12 +141,18 @@ latency while preserving the real npm/Homebrew/runtime path.
 host environment variable, credential channel, runtime, or service. The historical name remains for
 compatibility, but `program` may name any host executable. This is not a host shell: arguments are an
 argv array, cwd remains inside the workspace, output and time are bounded, prompts are disabled, and
-Clarvis-managed secret variables are withheld. It fails closed without guard review. In guard mode
-`on`, a human answers; in `auto`, the configured judge answers and may fall back to the human under
-its normal unsure policy. Git additionally loses inherited repository-routing state, hooks, external
-protocol helpers, known direct executable options, and custom transport-helper URLs. Direct
-Git/GitHub token output remains unavailable. The ordinary sandbox remains the default; the model
-should use this fallback only after the sandboxed command cannot complete the operation.
+Clarvis-managed secret variables are withheld. Guard mode `off` executes it without command review,
+honoring the operator's explicit choice. In mode `on`, a human answers; in `auto`, the configured
+judge answers and may fall back to the human under its normal unsure policy. Git additionally loses
+inherited repository-routing state, hooks, external protocol helpers, known direct executable
+options, and custom transport-helper URLs. Direct Git/GitHub token output remains unavailable. The
+ordinary sandbox remains the default; the model should use this fallback only after the sandboxed
+command cannot complete the operation.
+
+When tools run in an isolated guest, the optional `hostVcsDispatcher` port replaces the local
+handler for this tool. The host endpoint must validate the schema and restricted Git/GitHub forms
+again, apply the selected command-review policy, scrub credentials, and execute the argv. Other
+tools and native in-process `host_vcs` calls keep the ordinary dispatcher path.
 
 For a linked worktree, Clarvis validates the `.git` pointer, its `<common>/worktrees/<name>` target,
 and the reciprocal backlink once while creating the toolset. The resulting canonical common Git

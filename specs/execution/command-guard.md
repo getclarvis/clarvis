@@ -110,7 +110,7 @@ only by `packages/kernel/src/runs/settings-assembler.ts`.
 | --- | --- |
 | `GuardResolution` | `{ guard?: Guard; elicit?: GuardElicit }` |
 | `GuardResolver` | `(ctx: RunCapabilityContext) => Promise<GuardResolution\|undefined> \| GuardResolution \| undefined` |
-| `AgentToolsCapabilityOptions.resolveGuard` | optional; omitting it passes no policy guard, while core still hard-denies `host_vcs` (`packages/tools/src/core.ts`) |
+| `AgentToolsCapabilityOptions.resolveGuard` | optional; omitting it passes no policy guard, so dispatch proceeds without command review, including for `host_vcs` (`packages/tools/src/core.ts`) |
 | `withGuardElicitWaitBound` | `(elicit, waitMs, signal) => GuardElicit` |
 | `AGENT_TOOLS_CAPABILITY_NAME` | `"tools"` |
 
@@ -366,7 +366,7 @@ never entered when the gate returns a result.
 
 | Condition | Result |
 | --- | --- |
-| `config.guard` absent | proceed with `{}`, except `host_vcs`, which is denied because it requires command review |
+| `config.guard` absent | proceed with `{}` for every tool, including `host_vcs` |
 | `verdict === "allow"` | proceed, carrying review metadata when the policy named a mode |
 | `verdict === "deny"` | `ToolError("denied", reason)` plus review metadata |
 | `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` with answerer `unavailable` |
@@ -1007,9 +1007,12 @@ broken.
     `packages/loop/tests/architecture/optional-package-loading.test.ts` (derived from the engine
     manifest).
 
-39. **`guard_mode: "off"` yields no guard object at all**, not a permissive one.
-    `packages/kernel/src/guard/resolver.ts`. Pinned:
-    `packages/kernel/tests/unit/guard.test.ts`.
+39. **`guard_mode: "off"` yields no guard object at all**, not a permissive one; tool dispatch then
+    proceeds without command review, including for `host_vcs`.
+    Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `applyGuard` in
+    `packages/tools/src/core.ts`. Test: `packages/kernel/tests/unit/guard.test.ts` and
+    `packages/tools/tests/integration/host-vcs.test.ts` (`honors disabled command review when no
+    guard is installed`).
 
 40. **Mode `auto` builds the judge only when `guard_judge` is present *and* a model resolves;
     otherwise it falls back to the human prompt.** `packages/kernel/src/guard/resolver.ts`. Pinned: `packages/kernel/tests/unit/guard.test.ts`.
@@ -1169,16 +1172,20 @@ broken.
     `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
     complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
 
-61. **Container placement preserves command-guard decisions without trusting guest audit
-    identity.** The host sends only the guard/default-model settings needed to reconstruct
+61. **Container placement preserves command-guard decisions without trusting guest execution or
+    audit identity.** The host sends only the guard/default-model settings needed to reconstruct
     `createGuardResolver`; provider secrets remain behind the model broker. The guest caps its
-    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. The host
+    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. For
+    `host_vcs`, the guest forwards arguments through `runtime.host_vcs`; the host repeats schema and
+    restricted-form validation, resolves the guard from its run snapshot and performs the process
+    spawn. The host
     rejects malformed audit events and overwrites guest-claimed `run_id`/`owner` with the
     authenticated route before writing. The OCI policy is the guest containment boundary; no missing
     nested native sandbox is treated as a guard bypass. Production: `guestGuardSettings` and
     `createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`;
     `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
     `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/isolated-run-executor.ts`. Test:
+    `packages/kernel/tests/integration/runtime-host-vcs-bridge.test.ts`;
     `runtime guard audit bridge` in
     `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`; `runtime guest loop` in
     `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
@@ -1204,7 +1211,7 @@ broken.
 | Analyzer cannot parse the command | `undecidable` → rule 2a/2b (deny with a deny list, human-escalated ask without) | `packages/kernel/src/guard/shell-guard.ts` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts`, `packages/kernel/src/guard/shell-guard.ts` |
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
-| Host supplies no `resolveGuard` | ordinary calls receive no policy guard; `host_vcs` remains hard-denied by core | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
+| Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `host_vcs` | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
 | Guest sends a malformed or open-ended guard-audit event | the host throws `invalid_request`; no record is written with guest-controlled fields | `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`; `runtime guard audit bridge` in `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts` |
 | `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |

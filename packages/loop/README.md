@@ -177,7 +177,9 @@ Built-ins cover:
 
 - coding tools and command guards;
 - `host_vcs` as an exec-gated host-boundary command: `edit_workspace` alone never advertises or
-  dispatches it, while `run_commands` still subjects every invocation to command review;
+  dispatches it, while `run_commands` subjects it to the run's selected command-review mode. An
+  isolated host supplies `resolveHostVcsDispatcher`; the loop forwards the call and its review
+  metadata without owning host process execution;
 - one owner-only temporary root per run, advertised as `TMPDIR`, `TEMP`, and `TMP`, plus the host's
   existing system temporary roots pre-authorized across command and native tools. The system roots
   are compatibility access only and are never removed by Clarvis. A verified directory created

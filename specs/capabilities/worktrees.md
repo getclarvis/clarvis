@@ -94,7 +94,7 @@ Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
 `packages/code/tests/unit/workspace-runtime.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
-## 5. Sandbox and guarded host fallback
+## 5. Sandbox and host fallback
 
 A linked checkout's `.git` is a pointer into the primary repository. The command sandbox therefore
 validates its worktree target and reciprocal backlink once while configuring the toolset, then pins
@@ -105,13 +105,13 @@ It does not mount the operator's home directory, credential files, or keyring.
 When the sandbox lacks a required host environment variable, credential channel, runtime, or
 service, the model may request `host_vcs`. The historical name remains compatible while `program`
 may name any executable. It is a direct argv tool, not a host shell; it is absent from read-only runs
-and fails closed without guard review. The kernel emits an ordinary `ask`, so guard mode `on` routes
-to the human and a configured mode `auto` routes to the judge under its normal unsure/fallback
-policy. Its cwd stays within the selected workspace, time and output are bounded, prompts are
-disabled, and Clarvis-managed secret environment variables remain withheld. Git additionally loses
-inherited repository-local variables, hooks, and external protocol helpers. Executable Git options
-(`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs, `git credential`, and
-`gh auth token` remain denied independently of reviewer approval.
+and follows the selected command-review mode. Mode `off` proceeds without a reviewer; the kernel's
+ordinary `ask` routes mode `on` to the human and a configured mode `auto` to the judge under its
+normal unsure/fallback policy. Its cwd stays within the selected workspace, time and output are
+bounded, prompts are disabled, and Clarvis-managed secret environment variables remain withheld.
+Git additionally loses inherited repository-local variables, hooks, and external protocol helpers.
+Executable Git options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper
+URLs, `git credential`, and `gh auth token` remain denied independently of command review.
 
 Production: `packages/tools/src/config.ts` (`resolveConfig`);
 `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`, `sandboxCommand`);
@@ -147,10 +147,13 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`).
    Test: `packages/tools/tests/integration/sandbox.test.ts`.
 
-5. **Host fallback is exact-argv, guard-reviewed, and never silently unguarded.**
-   Production: `packages/tools/src/tools/host-vcs.ts`; `packages/kernel/src/guard/shell-guard.ts`.
+5. **Host fallback is exact-argv and follows the operator-selected command-review mode.** Mode
+   `off` proceeds without review; enabled modes route through their configured reviewer.
+   Production: `packages/tools/src/tools/host-vcs.ts`;
+   `packages/kernel/src/runtime/host-vcs-bridge.ts`; `packages/kernel/src/guard/shell-guard.ts`.
    Test: `packages/tools/tests/integration/host-vcs.test.ts`;
-   `packages/kernel/tests/unit/guard-audit.test.ts`.
+   `packages/kernel/tests/unit/guard-audit.test.ts`;
+   `packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
 
 6. **Every newly created checkout is nested under the primary worktree's ignored
    `.clarvis/worktrees/` root.**
@@ -172,7 +175,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 | `origin` fetch fails | bootstrap still uses an existing readable `origin/HEAD`; otherwise it bases the new branch on local `HEAD` |
 | Sandbox cannot validate linked Git metadata | no extra metadata mount is added |
 | Linked Git metadata changes after toolset configuration | commands retain the originally validated pinned mount |
-| `host_vcs` has no guard/approval | call fails closed |
+| `host_vcs` has no guard because command review is `off` | bounded exact-argv execution proceeds |
 | `host_vcs` requests direct token output or hidden Git helper execution | call is denied without execution |
 | Exit cleanup observes pending changes or Git refuses removal | checkout and branch remain; a diagnostic records failure |
 

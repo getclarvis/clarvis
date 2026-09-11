@@ -141,7 +141,18 @@ describe("execution safety", () => {
       "Agent tools run inside a Linux Docker container.",
       "The selected workspace is mounted directly; changes appear on the host immediately.",
       "Outbound network access is enabled; guest services can be exposed to the host.",
+      "Commands run without command review.",
     ]);
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "podman", network: "none" } }), "on", "off"),
+      ),
+    ).toContain("Risky commands ask before running.");
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "auto", "off"),
+      ),
+    ).toContain("Commands use model review; uncertain actions ask you.");
   });
 });
 

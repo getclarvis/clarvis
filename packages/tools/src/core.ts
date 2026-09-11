@@ -6,7 +6,7 @@ import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts"
 import type { ToolCallHooks } from "./tools/types.ts";
 import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
-import type { RuntimeConfig } from "./config.ts";
+import type { HostVcsDispatchResult, RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
 import { configurationRoots } from "@clarvis/paths";
 
@@ -67,16 +67,7 @@ for (const tool of tools) {
  * return, and any tool-supplied metadata. An error is reported in-band (as
  * `isError: true` with a serialized error text part), not by throwing.
  */
-export interface DispatchResult {
-  /** True when the call failed; `content` then holds the serialized error. */
-  isError: boolean;
-  /** The tool's output as text/image content parts. */
-  content: ContentPart[];
-  /** Optional structured metadata a tool attaches to a successful result. */
-  meta?: Record<string, unknown>;
-  /** Final command-review outcome, when the host guard exposes its mode. */
-  guard?: GuardReview;
-}
+export type DispatchResult = HostVcsDispatchResult;
 
 function normalizeOutput(out: string | ToolResult): ToolResult {
   return typeof out === "string" ? { content: out } : out;
@@ -168,11 +159,7 @@ async function applyGuard(
   args: Record<string, unknown>,
   config: RuntimeConfig,
 ): Promise<GuardGate> {
-  if (!config.guard) {
-    return name === "host_vcs"
-      ? { denied: errorResult(new ToolError("denied", "host_vcs requires command review")) }
-      : {};
-  }
+  if (!config.guard) return {};
   try {
     const ctx = buildGuardContext(name, args, config);
     const decision = await config.guard(ctx);
@@ -257,6 +244,14 @@ export async function dispatch(
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
+  }
+
+  if (name === "host_vcs" && config.hostVcsDispatcher !== undefined) {
+    try {
+      return await config.hostVcsDispatcher(filled, signal);
+    } catch (error) {
+      return errorResult(error);
+    }
   }
 
   const gate = await applyGuard(name, filled, config);

@@ -9,6 +9,7 @@ import {
   type Elicit,
   type SandboxConfig,
   type ToolsLogger,
+  type HostVcsDispatcher,
 } from "@clarvis/tools";
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
@@ -30,6 +31,8 @@ export interface AgentToolsetOptions {
   guard?: Guard;
   elicit?: Elicit;
   sandbox?: SandboxConfig;
+  /** Host-owned `host_vcs` execution port for isolated runtimes. */
+  hostVcsDispatcher?: HostVcsDispatcher;
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -136,6 +139,9 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
       ...(opts.guard !== undefined ? { guard: opts.guard } : {}),
       ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
       ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
+      ...(opts.hostVcsDispatcher !== undefined
+        ? { hostVcsDispatcher: opts.hostVcsDispatcher }
+        : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });

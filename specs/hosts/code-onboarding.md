@@ -445,9 +445,11 @@ gate's result.
   (`packages/code/src/onboarding/doctor.ts`). Cold command composition deliberately leaves
   this inspection deferred; an explicit Doctor recheck or the Sandbox settings surface performs the
   host probe (`packages/code/src/app/commands.tsx`, `inspectReadiness`;
-  `packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`; pinned by
+  `packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`;
+  `packages/code/src/views/overlay-host.ts`, `popView`, which is not an inspection route; pinned by
   `packages/code/tests/integration/app-commands.test.tsx`, "sandbox inspection is deferred until an
-  explicit Doctor recheck"). Only a completed inspection reporting unavailability warns, distinguishing
+  explicit Doctor recheck", and `packages/code/tests/integration/app-shell-render.test.tsx`,
+  "Tab opens a child and rapid Escape steps back through its hub to the transcript"). Only a completed inspection reporting unavailability warns, distinguishing
   `availability:"required"` (blocks runs) from optional (falls back to host).
 - **`workspace_trust`** is keyed on the trust verdict (`inert`/`trusted`/other), never solely on
   `withheldWorkspaceFields()`, because an untrusted workspace whose only executable surface is agent

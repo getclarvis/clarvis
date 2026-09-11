@@ -867,7 +867,6 @@ Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 | warn  | `elicit.handler.failed`                                                                                             | `error`                                                        |
 | warn  | `transcript.rehydrate.failed`                                                                                       | `error`                                                        |
 | debug | `transcript.syntax.pending`, `transcript.syntax.started`, `transcript.syntax.painted`, `transcript.syntax.measured` | `batch_id`, registration counts, dimensions, `duration_ms`     |
-| debug | `transcript.measurement.started`, `transcript.measurement.observed`, `transcript.measurement.lease_expired`         | `batch_id`, fold/dimensions, acceptance, retry/fallback        |
 | warn  | `mcp.list.failed`                                                                                                   | `surface` (`tools` \| `prompts`), `error`                      |
 | debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested`                              | sampled counters                                               |
 
@@ -1025,7 +1024,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   band while it is open. Transient activity therefore never enters history or changes transcript
   height, and run-local timing never competes with Context or cumulative Session usage in the
   footer.
-- Physically windowed transcript history with incremental Markdown; live tails use OpenTUI's
+- Index-windowed transcript history with incremental Markdown; live tails use OpenTUI's
   streaming mode and preserve an identity-stable committed prefix. Within one response geometry
   epoch, a streaming Markdown tail retains a row-height high-water mark: syntax concealment may
   reduce the native tail's intrinsic height, but cannot give rows back while the tree remains
@@ -1033,63 +1032,26 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   leave blank rows after a compact final rendering; a new epoch also clears it. This does not
   disable Markdown parsing or concealment; formatted output such as bold text remains native
   OpenTUI Markdown. Terminal nodes
-  commit immediately as frozen semantic batches. A serial hidden owner parked just below the clipped
-  viewport then waits for every Markdown/diff/code descendant and two equal physical observations
-  before the same owner becomes visible at its exact measured row. The parked owner remains outside
-  the hit grid; a handoff prepaint is likewise input-inert until admission. Resident batches are
-  direct ScrollBox children pinned to physical markers. The last vertical-scroll direction receives two prepared viewports
-  ahead while one is retained behind; owners outside that directional runway are disposed while
-  exact spacers preserve scroll geometry. Runway trim/admission uses matching half-open edges, so an
-  unchanged viewport cannot remount and trim the same measured owner in a frame loop. Every vertical
-  wheel or trackpad intent reverses the runway immediately, before the reader reaches its edge. Before the
-  first marker, an append-only session-resume burst coalesces its pending initial target to the
-  newest batch and opens on the reconstructed tail. Viewport culling stays enabled after settlement but is suspended
-  for the sole transparent candidate, because OpenTUI skips the native render hooks that candidate
-  syntax settlement requires. A syntax owner receives one two-second retry lease. If highlighting
-  still does not settle, a never-published candidate keeps the same Markdown/diff/code presentation,
-  disables parser work through the native renderers' public `filetype` setters and bypasses only
-  unfinished syntax work; an already-painted owner keeps its exact tree, waits for public syntax
-  completion and commits only after two equal positive dimensions. If that completion remains
-  pending, the owner stays visible and unchanged. Tool argument bodies
-  are never replaced by a text fallback or syntax warning. Consecutive confirming frames are
-  self-scheduled after OpenTUI releases its one-shot renderer latch; they do not wait for input,
-  animation or the recovery timer to invalidate the screen. Measurement revisions re-arm across an
-  inactive `number -> undefined -> number` candidate cycle. The chosen `rich` or `plain-semantic`
-  policy persists by batch id across physical eviction/remount and is purged when that publication
-  leaves the store. The one-column vertical scrollbar gutter is always reserved and only its opacity
-  changes, so adding a measured runway owner cannot create a width/epoch feedback loop. The
-  controller, resident owners and absolute measurement candidates all use the same inner transcript
-  width after the left padding and table gutter; expanding a tall tool therefore cannot strand a
-  remeasurement on an outer-width marker that its owner can never reproduce. Unknown earlier
-  history uses one passive boundary above the content and is never
-  assigned an estimated height; ordinary upward scroll or trackpad input admits it serially without
-  a click. The exact anchor correction is queued before changed children publish and is consumed by
-  the ScrollBox update plus its public content-size callback, so even a delta larger than the old
-  scroll range is complete before the first new frame. Frozen owners and the content-height mutable
-  tail are one chronological ScrollBox flow for the current projection: Lead-only in the main view,
-  or child-only after explicit selection. The tail remains that final flow child after upward scroll;
-  OpenTUI's sticky-bottom state pauses natively while the reader is away, so removing the tail would
-  shrink `scrollHeight` and clamp the reader backward. A frontier owner that commits while still
-  intersecting the viewport remains painted until its physical batch takes ownership. A committed
-  owner already below the viewport is disposed and contributes only its measured rows to one
-  aggregate handoff spacer at the released suffix's chronological boundary. An earlier live owner
-  therefore keeps its flow offset even when a later tool completes first. Repeated offscreen tool
-  completion cannot accumulate native tool, Markdown or syntax owners.
-  Clarvis keeps the Lead projection mounted plus at most one selected-child projection; each owns a
-  separate ScrollBox, physical-history controller, markers and scroll position. Selecting another
-  child disposes the previously retained child, while returning to Lead reveals its exact reader
-  state. An accepted explicit submit or steer from older history or a child first selects Lead and
-  returns its reader to the current tail; background transcript, Plan, Workflow and delegation
-  events never move that reader.
+  commit immediately as frozen semantic batches. Sessions with at most 80 committed batches mount
+  every owner; longer sessions mount a sliding 40-batch index slice. Hidden history contributes one
+  passive boundary row on each side rather than estimated or measured spacer geometry. Frozen
+  batches remain direct children of one native OpenTUI ScrollBox with viewport culling enabled.
+  Native sticky-bottom behavior is the sole follow-the-tail authority: upward input pauses it, and
+  downward input or explicit return-to-tail resumes it at the real bottom. The mutable tail remains
+  the final ScrollBox child even while the reader is away, so appends cannot remove the flow owner or
+  impose a one-shot clamp. Lead and explicitly selected child content swap inside that same
+  ScrollBox; selection does not create another transcript surface. Focus navigation slides the index
+  slice to include its frozen batch, while ordinary background Plan, Workflow and delegation events
+  never move the reader.
   Its final child is a fixed three-row physical reading runway, reduced to one row only in the compact
   height band, so new content never starts against the composer and streaming cannot grow or shrink
   that gap. The `thinking`/`working`/`ready` activity row is a sibling immediately above the composer,
   outside the ScrollBox; there is no second transcript scroll area. While the reader is away from
-  the tail, a non-interactive newer-entry count includes both unmeasured committed batches and the
+  the tail, a non-interactive newer-entry count includes both hidden committed batches and the
   current mutable frontier; repeated deltas for the same frontier artifact do not grow that count.
   Downward wheel, Page Down and `Alt+Down` admit those entries and return to the real content bottom,
   including the mounted live tail, before re-enabling tail-following. The event, replay,
-  ordering, physical-anchor and retention rules are in
+  ordering, native-scroll and retention rules are in
   [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
   still fall back to plain text with an explicit formatting-simplified notice instead of starting
   unbounded highlighting. Process-owned plain output is projected through one terminal-safe text
@@ -1106,12 +1068,10 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   their evicted semantic keys. `/export` reloads folded turns one trace at a time, so complete
   persisted history remains available without a second resident copy.
 - Semantic grouping, folding, focus and detail lookup retain the complete resident projection for
-  the current Lead or selected-child view; only
-  native owners are lazy. OpenTUI keeps ordinary vertical wheel and trackpad scrolling native, while
-  its supported component-catalogue extension reports edge intent so adjacent batches can be
-  measured and admitted serially. Page Up/Down and focused navigation use the same ledger. Rapid
-  input coalesces one pending direction and never mounts a guessed or partially prepared target.
-  Recomputing an unchanged publication intersection preserves its projected owner identity.
+  the current Lead or selected-child view; only native owners are lazy. OpenTUI keeps vertical wheel
+  and trackpad scrolling native. Reaching an edge slides the bounded batch slice; Page Up/Down and
+  focused navigation use the same controller. Recomputing an unchanged publication intersection
+  preserves its projected owner identity.
   Immutable tool grouping compares the exact `(mcpName, toolName)` pair in live staging, terminal
   sweep and sub-agent batch metadata; equal leaf names from different MCP servers remain separate.
 - One prose node carries at most 512 Ki semantic text characters into OpenTUI, and each immutable

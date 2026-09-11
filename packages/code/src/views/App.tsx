@@ -1384,15 +1384,13 @@ export function App(props: AppProps): JSX.Element {
     }
     const element = scrollEl;
     if (element === undefined) return;
-    const clamp = (): void => {
-      element.stickyScroll = false;
+    const follow = (): void => {
       element.scrollTo({ x: 0, y: Math.max(0, element.scrollHeight - element.viewport.height) });
-      element.stickyScroll = true;
     };
-    clamp();
+    follow();
     props.shell.renderer.once("frame", () => {
       if (props.shell.renderer.isDestroyed) return;
-      clamp();
+      follow();
       afterLayout?.();
     });
     if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();

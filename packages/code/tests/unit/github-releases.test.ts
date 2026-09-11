@@ -89,6 +89,41 @@ test("release index returns only bounded response ETags", async () => {
   expect(rejected).toEqual({ kind: "records", records: [] });
 });
 
+test("release decoding drops malformed records and assets", async () => {
+  const result = await fetchReleaseRecords(
+    () =>
+      Promise.resolve(
+        jsonResponse([
+          null,
+          { tag_name: "v0", draft: false },
+          {
+            tag_name: "v0.0.2-beta",
+            draft: false,
+            prerelease: true,
+            published_at: "2026-08-25T00:00:00Z",
+            assets: [null, { name: "incomplete" }],
+          },
+        ]),
+      ),
+    "clarvis/test",
+  );
+  expect(result).toEqual([
+    {
+      tagName: "v0.0.2-beta",
+      draft: false,
+      prerelease: true,
+      publishedAt: "2026-08-25T00:00:00Z",
+      assets: [],
+    },
+  ]);
+});
+
+test("an unconditional release-record request rejects a 304 response", async () => {
+  await expect(
+    fetchReleaseRecords(() => Promise.resolve(new Response(null, { status: 304 })), "clarvis/test"),
+  ).rejects.toThrow("not modified without a conditional request");
+});
+
 test("asset download verifies exact bytes, size and SHA-256", async () => {
   const root = await mkdtemp(join(tmpdir(), "clarvis-release-download-"));
   const destination = join(root, "asset.tar.gz");
@@ -145,6 +180,58 @@ test("asset download rejects truncation and digest mismatch", async () => {
         "clarvis/test",
       ),
     ).rejects.toThrow("checksum");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("asset download rejects invalid metadata, redirects, lengths, and oversized bodies", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-download-policy-"));
+  const base = {
+    name: "asset.tar.gz",
+    size: 4,
+    digest: `sha256:${"a".repeat(64)}`,
+    state: "uploaded" as const,
+    browserDownloadUrl: "https://github.com/getclarvis/clarvis/releases/download/v0/asset.tar.gz",
+  };
+  try {
+    await expect(
+      downloadReleaseAsset(
+        () => Promise.resolve(new Response("")),
+        { ...base, size: 0 },
+        join(root, "size"),
+        "clarvis/test",
+      ),
+    ).rejects.toThrow("outside the accepted bound");
+
+    const redirected = new Response("abcd");
+    Object.defineProperty(redirected, "url", { value: "https://example.com/asset.tar.gz" });
+    await expect(
+      downloadReleaseAsset(
+        () => Promise.resolve(redirected),
+        base,
+        join(root, "redirect"),
+        "clarvis/test",
+      ),
+    ).rejects.toThrow("redirected outside GitHub");
+
+    await expect(
+      downloadReleaseAsset(
+        () => Promise.resolve(new Response("abcd", { headers: { "content-length": "3" } })),
+        base,
+        join(root, "length"),
+        "clarvis/test",
+      ),
+    ).rejects.toThrow("content length differs");
+
+    await expect(
+      downloadReleaseAsset(
+        () => Promise.resolve(new Response("abcde")),
+        base,
+        join(root, "oversized"),
+        "clarvis/test",
+      ),
+    ).rejects.toThrow("exceeded its declared size");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

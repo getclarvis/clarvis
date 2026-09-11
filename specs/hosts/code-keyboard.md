@@ -339,17 +339,13 @@ composer with a sidebar open and never selects an agent" and "the split sidebar 
 textual agent roster, including after expand all").
 
 The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
-to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle clamps page input
-to the currently prepared physical interval and coalesces one adjacent measurement; it does not let
-rapid Page Up/Down enter an exact virtual spacer. Vertical wheel and trackpad packets remain on
-OpenTUI's native ScrollBox path: `TranscriptScrollBoxRenderable.onMouseEvent` calls
-`super.onMouseEvent(event)` first, then reports only the direction. `CommittedHistory` consumes that
-callback as edge-prefetch intent; it never converts the native gesture into `scrollBy` or a page
-command. Production: `packages/code/src/views/App.tsx`,
-`packages/code/src/views/history/CommittedHistory.tsx` (`scrollBy`, `onVerticalScrollIntent`) and
-`packages/code/src/views/history/TranscriptScrollBox.ts` (`TranscriptScrollBoxRenderable`). Test:
-`packages/code/tests/integration/transcript-window-render.test.tsx` ("rapid page and wheel navigation
-keep the prepared page visible until admission").
+to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle scrolls the native
+ScrollBox and reveals older or newer index slices at the edges. Vertical wheel and trackpad packets
+remain on OpenTUI's native ScrollBox path; leaving the bottom pauses follow-the-tail.
+Production: `packages/code/src/views/App.tsx` and
+`packages/code/src/views/history/CommittedHistory.tsx` (`scrollBy`). Test:
+`packages/code/tests/integration/transcript-window-render.test.tsx` ("wheel-up over a long stream
+does not clamp back to the tail").
 
 ### 3.4 Vital-command bindings example — `resolvedVitalBindings` output
 

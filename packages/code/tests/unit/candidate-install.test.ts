@@ -107,6 +107,7 @@ test("candidate installer pins source and image before activation and preserves 
     if (argv[0] === "docker" && argv[1] === "pull" && failPull)
       throw new Error("registry unavailable");
     if (argv[0] === "docker" && argv[1] === "image") return `sha256:${"d".repeat(64)}`;
+    if (argv[0] === "podman" && argv[1] === "image") return "d".repeat(64);
     if (argv.includes("--version")) return "clarvis 1.2.3";
     return "";
   };
@@ -128,10 +129,27 @@ test("candidate installer pins source and image before activation and preserves 
       bunVersion: "1.4.0",
       fetcher,
       run: fixtureRun,
+      containerEngines: ["docker"] as const,
     };
     await expect(installCandidate(input)).rejects.toThrow("registry unavailable");
     expect(await readFile(launcher, "utf8")).toBe(old);
     expect(await readdir(installs)).toEqual([]);
+
+    const fallback = await installCandidate({
+      ...input,
+      containerEngines: ["docker", "podman"],
+    });
+    expect(fallback.imageEngine).toBe("podman");
+    expect(calls).toContainEqual(["podman", "pull", manifest().runtime_image]);
+    expect(calls).toContainEqual([
+      "podman",
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}}",
+      manifest().runtime_image,
+    ]);
+
     failPull = false;
     const installed = await installCandidate(input);
     expect(installed.checkout).toBe(checkout);
@@ -141,6 +159,13 @@ test("candidate installer pins source and image before activation and preserves 
     expect(calls).toContainEqual(["docker", "pull", manifest().runtime_image]);
     expect(calls).toContainEqual(["git", "fetch", "--depth=1", "origin", `refs/tags/${tag}`]);
     expect(calls.some((argv) => argv.includes("--frozen-lockfile"))).toBe(true);
+
+    const beforeNative = calls.length;
+    const native = await installCandidate({ ...input, containerEngines: [] });
+    expect(native.imageEngine).toBeUndefined();
+    expect(
+      calls.slice(beforeNative).some((argv) => argv[0] === "docker" || argv[0] === "podman"),
+    ).toBe(false);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -203,6 +228,7 @@ test("candidate installation checks out the published commit with real Git and l
         if (argv[1] === "remote") return execute(["git", "remote", "add", "origin", source], cwd);
         return execute(argv, cwd);
       },
+      containerEngines: ["docker"],
     });
     expect(execute(["git", "rev-parse", "HEAD"], result.checkout)).toBe(revision);
     expect(execute([result.launcher, "--version"], root)).toBe("clarvis 1.2.3");

@@ -35,7 +35,7 @@ interface Subscriber {
 /** Host-owned run pump; observation, semantic result and physical closure have separate lifetimes. */
 export interface HostedExecution {
   readonly executionId: string;
-  /** Settles only after the source closes and host reconciliation finishes or reports failure. */
+  /** Settles after physical closure, reconciliation and the owning host's terminal transaction. */
   readonly settled: Promise<void>;
   observe(controls: Controls): Promise<Observation>;
   releaseObservation(id: string): void;
@@ -45,6 +45,7 @@ export interface HostedExecution {
     attention: "none" | "waiting_user";
     physicalClosed: boolean;
     reconciled: boolean;
+    terminalCommitted: boolean;
     result?: RunResult;
     recoveryError?: Error;
     subscribers: number;
@@ -57,6 +58,8 @@ export interface HostedExecutionOptions {
   projection: HostedProjection;
   /** Persist the owning conversation after physical closure, exactly once per execution. */
   reconcile(result: RunResult): Promise<void>;
+  /** Commit the terminal registry state and release admission before observers become ready. */
+  commitTerminal?: () => Promise<void>;
   changed?: () => void;
   logger?: Logger;
   maxSubscribers?: number;
@@ -94,6 +97,7 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
   let streamEnded = false;
   let physicalClosed = false;
   let reconciled = false;
+  let settlementComplete = false;
   let disposed = false;
   let result: RunResult | undefined;
   let recoveryError: Error | undefined;
@@ -206,7 +210,13 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
       try {
         await options.reconcile(result);
         reconciled = true;
+        if (recoveryError === undefined) {
+          await options.commitTerminal?.();
+          settlementComplete = true;
+        }
       } catch (error) {
+        for (const subscriber of subscribers.values())
+          subscriber.closed.reject(toKernelError(error));
         failRecovery(error);
       }
     }
@@ -267,6 +277,10 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
         subscriber.result.promise,
         "the attachment's done promise or failed observation stream",
       );
+      suppressSecondaryRejection(
+        subscriber.closed.promise,
+        "the attachment's terminal transaction or failed observation stream",
+      );
       subscribers.set(subscriber.id, subscriber);
       try {
         const snapshot = await projection.snapshot();
@@ -278,7 +292,7 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
         subscriber.cut = snapshot.cursor.sequence;
         if (result !== undefined) subscriber.result.resolve(result);
         if (streamEnded) stream.close();
-        if (physicalClosed && reconciled) subscriber.closed.resolve();
+        if (settlementComplete) subscriber.closed.resolve();
         const assertObserver = (): void => {
           if (subscriber.retired) throw kernelError("not_found", "run observation is closed");
         };
@@ -360,6 +374,7 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
       attention: questions.size === 0 ? "none" : "waiting_user",
       physicalClosed,
       reconciled,
+      terminalCommitted: settlementComplete,
       result,
       recoveryError,
       subscribers: subscribers.size,

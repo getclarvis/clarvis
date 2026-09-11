@@ -1,9 +1,35 @@
 import { describe, it, expect } from "../bun-test.ts";
-import { mapErrorToResponse } from "../../src/runtime/run-response-mapping.ts";
+import {
+  loopResultToResponse,
+  mapErrorToResponse,
+} from "../../src/runtime/run-response-mapping.ts";
 import { CodedError, ProviderError } from "@clarvis/capability";
 import type { Usage } from "@clarvis/capability";
 
 const usage: Usage = { iterations_used: 1, elapsed_ms: 5, by_agent: [] };
+
+describe("checkpoint response mapping", () => {
+  it.each(["completed", "error", "cancelled", "budget_exhausted", "soft_limit_declined"] as const)(
+    "preserves %s independently of the stage disposition",
+    (status) => {
+      const checkpoint = { summary: "stage summary", next_step: "verify" };
+      const response = loopResultToResponse(
+        {
+          status,
+          disposition: "checkpoint",
+          checkpoint,
+          partialText: "partial",
+          structuredResult: { value: { invalid_final: true } },
+        },
+        usage,
+        () => "stopped",
+      );
+      expect(response).toMatchObject({ status, disposition: "checkpoint", checkpoint, usage });
+      if (response.status === "completed") expect(response.result).toBeUndefined();
+      if (response.status === "error") expect(response.error.code).toBe("empty_response");
+    },
+  );
+});
 
 describe("mapErrorToResponse — provider failure codes", () => {
   it("gives quota and content policy their own error codes", () => {

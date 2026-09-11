@@ -23,14 +23,16 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 18; internal edges: 48; optional edges: 3.
+
+Packages: 19; internal edges: 50; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
-| `capability` | foundation | — | 13 |
+| `capability` | foundation | — | 14 |
 | `code` | application | `kernel`, `paths`, `protocol` | 0 |
+| `goal` | product-capability | `capability` | 1 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
+| `kernel` | host-implementation | `capability`, `goal`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
 | `llm` | execution-service | `capability` | 1 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 3 |
 | `mcp-client` | execution-service | `capability`, `paths` | 2 |
@@ -72,6 +74,7 @@ flowchart LR
     loop["@clarvis/loop"]
   end
   subgraph role_product_capability["product capabilities"]
+    goal["@clarvis/goal"]
     memory["@clarvis/memory"]
     plan["@clarvis/plan"]
     tasks["@clarvis/tasks"]
@@ -87,9 +90,11 @@ flowchart LR
   code --> kernel
   code --> paths
   code --> protocol
+  goal --> capability
   hooks --> capability
   hooks --> tools
   kernel --> capability
+  kernel --> goal
   kernel --> loop
   kernel --> mcp_client
   kernel --> memory
@@ -133,6 +138,7 @@ flowchart LR
   workflows --> loop
   workflows --> supervision
 ```
+
 <!-- package-graph:end -->
 <!-- prettier-ignore-end -->
 

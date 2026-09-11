@@ -2,6 +2,29 @@ import { describe, expect, it } from "bun:test";
 import { DEFAULT_RUNTIME_LIMITS, runtimeSettingsSchema } from "../../src/runtime/settings.ts";
 
 describe("runtime settings", () => {
+  it.each(["docker", "podman"])(
+    "requires positive safe integer %s limits at save time",
+    (backend) => {
+      const value = {
+        backend,
+        image_digest: `sha256:${"a".repeat(64)}`,
+        executable: "/injected/engine",
+        connection: "local",
+        limits: { ...DEFAULT_RUNTIME_LIMITS },
+      };
+      for (const name of Object.keys(DEFAULT_RUNTIME_LIMITS)) {
+        for (const invalid of [0.5, 0, -1, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN]) {
+          expect(
+            runtimeSettingsSchema.safeParse({
+              ...value,
+              limits: { ...value.limits, [name]: invalid },
+            }).success,
+          ).toBe(false);
+        }
+      }
+    },
+  );
+
   it("keeps native selection minimal", () => {
     expect(runtimeSettingsSchema.parse({ backend: "native" })).toEqual({ backend: "native" });
     expect(() =>

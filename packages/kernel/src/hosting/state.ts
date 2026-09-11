@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { HostedRunRef, RuntimeStatus } from "@clarvis/protocol";
+import type { HostedRunRef } from "@clarvis/protocol";
+import { runtimeStatusSchema } from "../runtime/status-schema.ts";
 import { kernelError } from "../core/errors.ts";
 import type { HostedRegistryState } from "./registry.ts";
 
@@ -17,37 +18,7 @@ const natural = z
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER - 1);
 const text = z.string().max(MAX_HOST_INDEX_BYTES);
-const runtime: z.ZodType<RuntimeStatus> = z.discriminatedUnion("kind", [
-  z.strictObject({
-    kind: z.literal("native"),
-    host_platform: identifier,
-    isolation: z.enum(["host", "sandbox"]),
-    lifecycle: z.enum(["ready", "fallback"]),
-    fallback_from: z.enum(["docker", "podman"]).optional(),
-  }),
-  z.strictObject({
-    kind: z.literal("container"),
-    engine: z.enum(["docker", "podman"]),
-    host_platform: identifier,
-    guest_platform: z.literal("linux"),
-    network: z.enum(["none", "internet", "outbound"]),
-    generation: identifier.optional(),
-    engine_version: text.optional(),
-    image_digest: text.optional(),
-    runtime_protocol_revision: text.optional(),
-    lifecycle: z.enum([
-      "cold",
-      "inspecting",
-      "preparing",
-      "starting",
-      "ready",
-      "stopping",
-      "stopped",
-      "disconnected",
-      "failed",
-    ]),
-  }),
-]);
+const runtime = runtimeStatusSchema({ identifier, text });
 const run: z.ZodType<HostedRunRef> = z.strictObject({
   execution_id: identifier,
   session_id: identifier,
@@ -70,6 +41,15 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
   execution_state: z.enum(["starting", "running", "finishing", "closed", "unknown"]),
   attention: z.enum(["none", "waiting_user"]),
   recovery_error: text.optional(),
+  recovery_resolution: z
+    .strictObject({
+      kind: z.literal("operator_verified_physical_closure"),
+      previous_host_generation: identifier,
+      resolving_host_generation: identifier,
+      operator_connection_id: identifier,
+      resolved_at: natural,
+    })
+    .optional(),
   outcome: z
     .strictObject({
       status: z.enum(["running", "completed", "failed", "cancelled"]),
@@ -102,6 +82,12 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
     })
     .optional(),
 });
+
+/** Validate the same closed discovery projection at response boundaries without restoring authority. */
+export function decodeHostedRunRef(value: unknown): HostedRunRef | null {
+  const parsed = run.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
 /** Validate untrusted disk state before it can enter the bounded registry; never expose parse data. */
 export function decodeHostedRegistryState(

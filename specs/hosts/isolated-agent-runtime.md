@@ -31,6 +31,8 @@ scope can display a requested `runtime` block but can never
 contribute it to the effective merge, including after workspace approval. `createFileKernel` reads
 the current global selection at run admission, performs no engine work on native or application
 startup, and injects the same placement-neutral lazy executor into ordinary and workflow-owned runs.
+The settings schema enforces the launch contract's positive safe integers for every resource limit,
+including CPU count; fractional CPU allocations are refused before persistence.
 
 Production: `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
 `stripWorkspaceSubscriptionProviders` in `packages/kernel/src/config/workspace-trust.ts`;
@@ -56,7 +58,8 @@ generation, engine backend and placement adapter. Each run receives a random opa
 lease, exact profile, vision and resolved automatic-judge models from its immutable run snapshot,
 host-side provider execution, a bounded
 elicitation grant, a loopback-only preview grant when a selected profile carries `run_commands`, and
-an optional prior trace record for continuation. When present, the canonical host `PlanFactory`,
+an optional prior trace record for continuation. Preview also requires enabled host tools and an
+`exec` ceiling. When present, the canonical host `PlanFactory`,
 admitted host skills snapshot, active plugin bootstrap declarations and `MemoryFactory` are
 projected through exact per-run grants. Plans stay host-owned; Skills disclose only admitted
 content; Memory discloses a bounded seed and the four canonical read operations while provider
@@ -70,20 +73,23 @@ only that tag's bounded `runtime-candidate.json` from the source repository and 
 `source-v1` contract only when product version, source revision, protocol and candidate image namespace
 match. Candidate identity failures carry `runtime_image_integrity`, preventing silent sandbox fallback.
 The installer pulls the candidate image before launcher activation; runtime initialization resolves
-and pulls the immutable reference through the existing Docker control. Podman configuration remains
+and pulls the immutable reference through the existing Docker control. Image acquisition uses a
+bounded 15-minute operation-specific timeout; inspection keeps the short control-command timeout.
+Podman configuration remains
 explicit. Production: `packages/code/src/adapters/runtime-candidate.ts` (`parseRuntimeCandidate`)
 and `packages/code/src/adapters/runtime-image.ts` (`resolveClarvisRuntimeImage`).
 Test: `packages/code/tests/unit/runtime-image.test.ts` (same-RC selection and identity drift).
 
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts` and `main` in
-`packages/code/src/local-host.ts`; `createLocalPodmanRuntime` and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+`packages/code/src/local-host.ts`; `createLocalPodmanRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts` and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`;
 `createLocalDockerRuntime` in `packages/kernel/src/runtime/local-docker-runtime.ts`;
 `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
 `resolveClarvisRuntimeImage` in `packages/code/src/adapters/runtime-image.ts`.
 
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`;
+`packages/kernel/tests/unit/local-docker-runtime.test.ts` (image acquisition timeout propagation);
 `packages/code/tests/unit/runtime-image.test.ts`;
 `packages/kernel/tests/unit/runtime-recipe.test.ts`;
 `packages/kernel/tests/integration/runtime-recipe.e2e.test.ts` (explicitly gated live Docker/Colima
@@ -178,7 +184,7 @@ storage are admitted. `storage_bytes` does not limit writes through the host wor
 
 Production: `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`;
 `createFileKernel` in `packages/kernel/src/file-kernel.ts`; `readOnlyWorkspacePaths` and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`;
 `prepareRuntimeCapabilityRoot` in
 `packages/kernel/src/runtime/runtime-workspace-control.ts`; `createArgs` and effective mount
 inspection in `packages/kernel/src/runtime/docker-backend.ts` and
@@ -227,7 +233,7 @@ Test: `packages/paths/tests/component/workspace-state.test.ts` (`workspaceStateP
 
 `createExecutionPeer` owns a separate attached-stdio protocol with closed directional vocabularies.
 Every request, result, incremental model event and cancellation is generation-bound and, where applicable, run- and
-call-bound. Unknown methods, malformed or oversized frames, saturation, mismatched results and
+call-bound. Unknown methods, malformed or oversized physical frames, mismatched results and
 transport loss close the channel without replay. A request cancelled through its own transport
 signal leaves a bounded identity tombstone, so its one matching late terminal result is consumed
 without poisoning the reusable channel; any unmatched or identity-mismatched late result still
@@ -235,6 +241,57 @@ closes it. An active run is cancelled through the separate `runtime.cancel` oper
 `runtime.start` is sent, while the host keeps that start request pending until the guest settles.
 `serveExecutionWorker` gives guest execution only the narrow model, capability, event and checkpoint
 bridge.
+
+Inbound request IDs increase strictly within each direction. Admission checks both the 256-request
+limit and 128 MiB aggregate serialized-message budget before allocating a controller or invoking a
+handler. A request retains admission until its handler and response write settle, even when a
+cancelled handler ignores abort. Saturation refuses only the excess request with `resource_exhausted`;
+admitted handlers retain their ownership and cancellation state. Local outgoing calls have a separate 256-pending
+limit. Receivers retain the last 256 completed request identities, so a matching cancellation that
+races with a written response is harmless; unknown or mismatched late cancellation remains an
+error. Completion tombstones contain only identity, never payload or result.
+
+Both public stdio and private RPC use the shared 64 MiB logical JSON bound. A message exceeding its
+physical frame cap is encoded as contiguous 256 KiB binary fragments with canonical base64,
+zero-based byte offsets and an exact declared total. Only one partial message exists per direction;
+interleaving, changed totals, malformed fragments, invalid complete JSON or a 30-second absolute
+transfer deadline close the peer. Teardown releases partial content. Outgoing queue reservation is
+synchronous and bounded at 128 MiB of serialized JSON. Serialization, logical-size and local queue
+refusals occur before any bytes or cancellation identity are published. They reject only that call;
+an excessive handler result is replaced by a bounded error. Physical write failure still closes
+the shared channel. Production: `createJsonMessageWriter` and `JsonMessageDecoder` in
+[json-message.ts](../../packages/kernel/src/core/json-message.ts), `createExecutionPeer` in
+[execution-rpc.ts](../../packages/kernel/src/runtime/execution-rpc.ts). Test:
+[json-message.test.ts](../../packages/kernel/tests/contract/json-message.test.ts),
+[runtime-execution-rpc.test.ts](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts)
+(`fragments large model messages and isolates a local refusal from another run`), and
+[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+(`preserves admitted images, accumulated context and final trace through the real guest loop`).
+
+Model leases use the same 64 MiB input ceiling; `limits.output_bytes` bounds generated output,
+not admitted model context or image input. Transport envelopes count against the logical limit.
+Production: `brokerFor` in
+[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts).
+Test: `preserves admitted images, accumulated context and final trace through the real guest loop`
+in [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+using a 1 MiB output budget and the full 10 MiB composer image input budget.
+
+Each capability broker retains at most 16,384 distinct attempted call IDs and 8 MiB of idempotent
+response payloads plus pending response reservations per run. Non-idempotent calls keep only
+method, argument fingerprint and completion metadata and cannot be replayed. An idempotent replay
+requires identical method, revision and arguments; conflicting or unfinished identities report
+`outcome_unknown`. Count and replay-byte capacity is reserved before invocation; saturation reports
+`resource_exhausted` before effects. Revocation clears replay history and all grant-owned transfers,
+and a late completion cannot repopulate it.
+
+Production: `createExecutionPeer` in
+[`execution-rpc.ts`](../../packages/kernel/src/runtime/execution-rpc.ts) and
+`createCapabilityBroker` in
+[`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts).
+Test: count/byte floods, real unanswered elicitations and response/cancel races in
+[`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts),
+and call-history, replay-byte reservations and argument identity in
+[`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts).
 
 `createGuestLoopExecutor` is the headless guest payload. It builds the real loop and local tool
 surface against `/workspace`, gives it only a declared scratch environment, replaces model traffic
@@ -245,6 +302,40 @@ source-internal Ajv composition seam, and starts `guest-main` without a TUI or p
 transport. Ordinary Loop hosts keep the existing lazy `createRequire` fallback, so merely reaching
 validation on the native TUI boot path still does not load Ajv.
 
+Docker and Podman use `connectContainerSession` for attachment, stderr bounds, bootstrap identity,
+RPC operations, preview ownership and shutdown. Their adapters retain image/effective-policy
+inspection, user mapping, SELinux options and engine-specific creation arguments.
+Bootstrap observes a generation signal and a 30-second response deadline (the injectable host seam
+permits at most 120 seconds), independently of frame-write timeouts. Early attachment exit, excessive
+stderr, timeout and cancellation close the peer and kill attachment before backend cleanup.
+A cancelled create probes its generation label before deleting the immutable container ID; a
+failed inspection or removal reports unconfirmed cleanup, and a different generation is preserved.
+Production: `connectContainerSession` and `cleanupInterruptedContainerCreate` in
+[container-session.ts](../../packages/kernel/src/runtime/container-session.ts), composed by
+`createDockerRuntimeBackend` and `createPodmanRuntimeBackend`.
+Test: silent-worker deadline/cancellation and existing policy/session regressions in
+[runtime-docker-backend.test.ts](../../packages/kernel/tests/unit/runtime-docker-backend.test.ts)
+and [runtime-podman-backend.test.ts](../../packages/kernel/tests/unit/runtime-podman-backend.test.ts);
+generation-fenced cleanup in
+[runtime-initialization.test.ts](../../packages/kernel/tests/unit/runtime-initialization.test.ts).
+
+Each run's initialization wait observes its own abort signal without aborting the shared factory.
+Coordinator shutdown aborts generation acquisition and awaits the factory's physical cleanup before
+closing ready slots. A late ready host is closed without executing a run or advertising readiness.
+Runtime factories must honor the generation signal and clean partial resources before rejecting.
+Cancellation never selects Docker's native fallback. The concrete compositions propagate the signal
+through context/image resolution, pull, recipe engine commands, contended recipe leases and bootstrap;
+the original engine control remains available for cleanup after cancellation.
+Production: `waitForInitialization` and `createLazyRuntimeCoordinator` in
+[lazy-runtime.ts](../../packages/kernel/src/runtime/lazy-runtime.ts),
+`initializationControl` in [initialization-control.ts](../../packages/kernel/src/runtime/initialization-control.ts),
+`resolveDockerRuntimeRecipe` in [runtime-recipe.ts](../../packages/kernel/src/runtime/runtime-recipe.ts),
+and `resolveClarvisRuntimeImage` in [runtime-image.ts](../../packages/code/src/adapters/runtime-image.ts).
+Test: shared waiter cancellation and shutdown cleanup in
+[lazy-runtime.test.ts](../../packages/kernel/tests/unit/lazy-runtime.test.ts), acquisition cancellation in
+[local-docker-runtime.test.ts](../../packages/kernel/tests/unit/local-docker-runtime.test.ts), and
+lease cancellation in [local-lease.test.ts](../../packages/paths/tests/contract/local-lease.test.ts).
+
 The worker also routes the closed `runtime.steer` control operation to the active guest executor.
 The payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
 fields, malformed message content and inactive run IDs are refused. `createGuestLoopExecutor`
@@ -254,8 +345,9 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 7 requires guest MCP hook execution, host-owned remote MCP
-with reverse elicitation, and typed provider failures as well as incremental host model events;
+successful run result. Protocol revision 9 requires resolved host loop and tool-policy snapshots, host-owned human
+command consent, canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution, host-owned remote MCP with reverse elicitation,
+typed provider failures and incremental host model events;
 older worker images fail admission and must be rebuilt.
 
 Model progress frames are exclusive to `host.model`, monotonically sequenced, correlated to the
@@ -272,6 +364,28 @@ For each admitted pair, `hostModelBroker` resolves the captured host registry th
 reconstructs `capabilities` from that model's captured entry, including an explicit empty set; the
 guest cannot substitute provider configuration or claim vision support. Unsupported images are
 stripped only by adapter serialization, without rewriting the loop's retained message prefix.
+Before invoking any host adapter, `assertInlineModelMedia` rejects URL-backed images in user
+content and tool results. Only raw base64 or `data:image/...;base64,...` payloads are admitted,
+unchanged and within the broker's existing complete-request byte bound. This check also applies
+to non-vision models: SDK downloads must never create a guest-controlled host destination,
+regardless of container network mode or provider URL support. Refusal diagnostics contain no
+guest URL or payload.
+
+Production: `hostModelBroker` in
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+`assertInlineModelMedia` in [model-media.ts](../../packages/kernel/src/runtime/model-media.ts).
+Test: `rejects guest media URLs before the real SDK can download on the host` and the admitted
+10 MiB image/continuation cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts);
+inline preservation, malformed media and URL refusals in
+[`runtime-model-media.test.ts`](../../packages/kernel/tests/unit/runtime-model-media.test.ts).
+
+The closed provider-error codec preserves `usage_unknown` and `cache_unknown` beside partial
+numeric counters. These flags do not carry credentials or widen the error envelope; zero
+placeholders cannot establish complete goal accounting. Production: `runtimeProviderErrorSchema`
+in [provider-error.ts](../../packages/kernel/src/runtime/provider-error.ts). Test:
+[runtime-provider-error.test.ts](../../packages/kernel/tests/unit/runtime-provider-error.test.ts).
+
 `modelBody` forwards `maxRetries` and `maxRetryAfterMs` unchanged when present, including zero
 retries, so profile policy and output-token reservations remain effective.
 
@@ -289,7 +403,7 @@ execute, expiry is checked after admission, and revocation aborts both waiting a
 The existing host model-admission decorator still governs physical provider requests.
 
 Production: `hostModelBroker` in
-[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts), `modelBody`
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), `modelBody`
 in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts),
 `encodeRuntimeProviderError` and `decodeRuntimeProviderError` in
 [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), `createExecutionPeer`
@@ -379,6 +493,27 @@ The host pins provider and run identity, binding/continuation mode, write settin
 validates canonical provider inputs, and preserves typed provider failures and retry metadata.
 
 Workflows uses the same guest-native scheduler, child registry and shared subtree output budget.
+The trusted `goalRuntimePortOf` projection admits exactly one ordinary entry goal capability.
+`runtime.goal` carries the host-pinned session, entry instance, execution and objective revision;
+closed codecs admit only reads, progress, checkpoint, candidate, validation and blocking. The guest
+uses the canonical goal capability and awaits earlier trace publications before reading evidence.
+Host operations revalidate persisted state and cancellation inside the mutation. User controls,
+ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
+descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
+Private protocol revision 11 prevents older guests from silently ignoring the required capability.
+The bounded current record and evidence catalog may cross; private session archives and receipts do
+not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
+aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
+
+Production: [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts),
+`goalRuntimePortOf` in [capability.ts](../../packages/goal/src/capability.ts),
+[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+Test: [runtime-goal-bridge.test.ts](../../packages/kernel/tests/integration/runtime-goal-bridge.test.ts)
+and `preserves goal authority, plan checkpoint and SDK prefix across guest continuation` in
+[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+Goal controls, persistence and continuation are specified in [goals](../capabilities/goals.md).
+
 The trusted `workflowContextOf` and `workflowOutputBudgetOf` factory-identity projections let the
 kernel retain host composition without serializing executable closures. `runtime.workflows` prepares
 each bounded leader request through the host assembler once, then admits that child to the same
@@ -391,7 +526,7 @@ Production: `createHostHooksBridge` and `createGuestHooksCapabilities` in
 in `packages/kernel/src/runtime/tasks-bridge.ts`; `createHostWorkflowBridge`,
 `createGuestWorkflowCapabilities` and `consumeGuestWorkflowEvent` in
 `packages/kernel/src/runtime/workflows-bridge.ts`; `runtimeModelPairs` in
-`packages/kernel/src/runtime/local-podman-runtime.ts`; `streamHostModelCall` in
+`packages/kernel/src/runtime/local-container-runtime.ts`; `streamHostModelCall` in
 `packages/kernel/src/runtime/model-stream.ts`; `createIsolatedRunExecutor` in
 `packages/kernel/src/runtime/isolated-run-executor.ts`; `createSteerQueue` in
 `packages/kernel/src/runs/steer-queue.ts`.
@@ -404,19 +539,115 @@ Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
 
 Guest command execution retains the host-selected guard contract without exposing host policy
 authority. The host strips provider secrets before sending the bounded guard settings; the guest
-reconstructs `createGuardResolver`, caps built-in tools at `exec`, and emits only the closed
+reconstructs `createGuardResolver`, preserves the host's `CLARVIS_AGENT_TOOLS_ENABLED`,
+`CLARVIS_AGENT_TOOLS_CONFINE` and `CLARVIS_AGENT_TOOLS_MAX_GRANT`, and emits only the closed
 guard-audit vocabulary. `forwardGuestGuardAudit` validates that event again and replaces its
 claimed run and owner identities with the authenticated host values before logging. The outer OCI
 policy is the containment boundary; this profile does not pretend to run a second Bubblewrap or
 Seatbelt sandbox inside the container.
 
+The required non-secret `toolPolicy` envelope also captures whether the host composed the `tools`
+capability at all. Missing or invalid policy is refused. Guest tools use the shared per-agent grant
+checks; preview is projected only with enabled tools and an `exec` ceiling and still requires
+`run_commands`. Production: `validRuntimeToolPolicy` in
+[`tool-policy.ts`](../../packages/kernel/src/runtime/tool-policy.ts), `createLocalContainerRuntime`
+in [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), and
+`createGuestLoopExecutor` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+Test: native/guest policy parity and host opt-out in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+and malformed policy refusal in
+[`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
+
+The required `loopPolicy` snapshot preserves resolved operator defaults and ceilings for validation,
+elicitation, budgets, retries, compaction, delegation, capability lifecycle and MCP. Every canonical
+environment key has an explicit compile-time ownership classification. The guest projection excludes
+host identity, diagnostics and retention; tool authority remains in its capability-aware snapshot.
+The canonical `envSchema` validates cross-field constraints again on receipt. Missing resolved
+defaults, coercible wire values and unadmitted fields are refused instead of restoring broader
+defaults. Optional unset fields retain their absence.
+Production: `runtimeLoopPolicy`, `validRuntimeLoopPolicy` and `guestLoopEnvironment` in
+[loop-policy.ts](../../packages/kernel/src/runtime/loop-policy.ts), composed by
+`createLocalContainerRuntime` and consumed by `createGuestLoopExecutor`.
+Test: [runtime-loop-policy.test.ts](../../packages/kernel/tests/unit/runtime-loop-policy.test.ts)
+and the native/guest elicitation-deadline and retry-ceiling cases in
+[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+
 Plans use a separate exact-method bridge rather than moving the store. The host binds
 `runtime.plans` to the authenticated run owner and admits only resolve/create/read/list/replace,
 reconcile/revise/delete payloads with closed schemas; the guest `PlanFactory` proxies those
-operations and cannot choose another owner or a host path. Skills use a read-only companion bridge.
+operations and cannot choose another owner or a host path. A mutation addresses only the plan
+created by this run or bound through its host-selected continuation ref; read/list never rebind.
+Delete additionally requires the durable current run record to be completed and name the same
+provider, plan, final revisions and completed/discard policy as the canonical document. The host
+supplies the current CAS even if the guest omits one; concurrent changes prevent deletion.
+
+`runtime.plans` revision `v2` preserves the canonical 8 MiB document and 32 MiB list-page limits
+through opaque run-local transfers. The closed `transfer_start`, `transfer_append`, `transfer_commit`,
+`transfer_read` and `transfer_release` operations carry exact offsets and base64 chunks of at most
+128 KiB decoded bytes. Uploads require full chunks except the final remainder, complete byte counts
+and valid UTF-8/JSON before the original operation schema is checked; transfer operations cannot be
+nested. The JSON allowance is six times the canonical source limit plus 1 MiB of metadata: 49 MiB
+for document requests/results and 193 MiB for list results. Extension frontmatter travels as bounded
+YAML inside that JSON so aliases retain their canonical graph representation rather than expanding
+shared metadata into larger JSON trees. The decoded document is schema-validated on both sides.
+The run admits at most four transfer or
+provider-response reservations and 242 MiB of aggregate payload reservations, including active
+uploads, pending provider calls and retained downloads. Serialization has bounded temporary copies;
+this is a payload budget, not a process RSS ceiling. Response capacity is reserved before provider
+effects, so capacity refusal cannot occur after a valid mutation commits. Final reads, explicit
+release and run revocation free transfer state; guest cleanup releases partial transfers on failure.
+The shared capability message bound is 256 KiB. An admitted goal run uses 1152 KiB to transport its
+bounded current record and evidence catalog; plan transfers retain their own chunk and reservation
+bounds. The RPC frame bound stays 4 MiB.
+
+Production: `createHostPlansGrant` and `createGuestPlanFactory` in
+[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts), and `createPlanTransferGrant`
+and `callPlanTransfer` in [`plan-transfer.ts`](../../packages/kernel/src/runtime/plan-transfer.ts),
+and `encodePlanWireDocument` / `decodePlanWireDocument` in
+[`plan-wire.ts`](../../packages/kernel/src/runtime/plan-wire.ts).
+Test: host binding, terminal retention and CAS races in
+[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts),
+large canonical documents, aliased metadata, list pages, transfer saturation, cancellation and revocation in
+[`runtime-plan-transfer.test.ts`](../../packages/kernel/tests/contract/runtime-plan-transfer.test.ts),
+and real guest keep/discard teardown in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+
+Human command consent uses the non-replayable `runtime.guard_approval` bridge. Its closed operations
+are `covers` and `ask`, scoped to the current host run. The host derives shell facts from the displayed
+command, resolves the current interactive allowlist on every call and rejects answers from a retired
+scope. The guest stores no human consent or allowlist; `runtime.elicit` remains the general question
+channel. The judge retains only its own clean final verdicts, never a human fallback response.
+Detach, takeover, disconnect and conversation close revoke native and guest consent equally.
+Production: `createGuardHumanApproval` in
+[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts), `createHostGuardApprovalGrant`
+and `createGuestGuardApproval` in
+[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts), and
+`createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
+Test: [runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
+and [runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts).
+
+Skills use a read-only companion bridge.
 At generation admission the host projects name, description, scope, safe provenance and MCP
-dependency names only, replaces every manifest location with `/runtime/skills/<name>`, and withholds
-dependency URLs and host filesystem metadata. `runtime.skills` then discloses only bodies and
+dependency names only, replaces filesystem locations with opaque `runtime-skill:<name>` locators, and withholds
+dependency URLs and host filesystem metadata. Builtins preserve their `builtin` source and `builtin:`
+locators, precede external catalog entries and advertise no file or execution directory.
+External entries carry `resourceAccess: "remote"` in the guest's skill metadata. Their catalog
+advertises loading by name and `read_skill_resource`, with no filesystem path. Body disclosure
+states that no skill directory is mounted, suppresses package-root execution hints, and directs
+helper use through complete resource reads and preparation in a writable workspace directory before
+the ordinary guarded shell. Relative resource names are never advertised as guest filesystem paths.
+Production: `skillInfo` and `createHostSkillsGrant` in
+[skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts), and `formatSkillBody` in
+[disclosure.ts](../../packages/skills/src/disclosure.ts).
+Test: remote catalog/body access and builtin parity in
+[runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts).
+The real-container journey in
+[local-docker-runtime.e2e.test.ts](../../packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts)
+reads a helper and its relative dependency through the skill bridge, prepares their directory tree
+inside the writable workspace, and verifies the helper's output through the guarded shell.
+`runtime.skills` revision `v2` returns canonical model-facing text, formatted on the host through
+`@clarvis/skills/capability` after safe metadata projection. It discloses only bodies and
 bounded text resources for names present in that admitted catalog, rejecting traversal, unknown
 names and additional fields. Active plugins' bootstrap declarations are resolved against that same
 admitted provider snapshot and only their bounded bodies are added to the guest prompt; inactive or
@@ -425,7 +656,13 @@ request is exactly `{operation: "load", name}`. A resource request is the separa
 `{operation: "resource", name, resource, offset}` shape with an explicit byte cursor and a safe
 relative path. The model-facing contracts mirror that separation as `load_skill({name})` and
 `read_skill_resource({name, resource, offset})`; aliases, omitted fields and additional fields are
-rejected before host provider access.
+rejected before host provider access. `formatSkillResourceChunk` applies the same byte size, character
+and exact continuation checks as the native handler. `formatSkillResourceLegacy` bounds an
+offset-zero whole-resource read without advertising an unsupported next cursor.
+Production: [disclosure.ts](../../packages/skills/src/disclosure.ts) and
+[skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts). Test:
+[runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts) compares
+native/guest builtin disclosure, catalog priority, invalid pages and whole-resource fallback.
 
 Memory uses the exact `runtime.memory` companion bridge. The host resolves the selected provider,
 keeps its configuration, credentials, store and policy private, and serializes only a
@@ -579,7 +816,16 @@ Both backends receive the same host-admitted mount specification: one read-write
 at `/workspace`, zero or more workspace-relative read-only overlays, and the optional read-write Git
 common directory for a linked worktree. They create the container first, inspect the effective
 mount sources, destinations, types and write modes, and refuse attach if the engine widened or
-changed that set.
+changed that set. `container-policy.ts` owns the common effective-policy validator; engine adapters
+normalize only identity, capability and cache-subpath facts. Both require the admitted generation,
+network, read-only root, unprivileged mode, exact CPU/memory/process limits and mount set, empty added
+capabilities, an explicitly enabled `no-new-privileges`, and exactly one bounded non-executable `/tmp`.
+Missing fields, disabled or conflicting privilege options, widened scratch mounts and limits refuse
+attachment and trigger cleanup. Production: `readContainerInspection` and `validContainerPolicy` in
+[container-policy.ts](../../packages/kernel/src/runtime/container-policy.ts). Test: the shared
+[container-policy-cases.ts](../../packages/kernel/tests/helpers/container-policy-cases.ts) matrix is
+executed by both [runtime-docker-backend.test.ts](../../packages/kernel/tests/unit/runtime-docker-backend.test.ts)
+and [runtime-podman-backend.test.ts](../../packages/kernel/tests/unit/runtime-podman-backend.test.ts).
 
 The Podman backend verifies rootless mode and the engine-resolved local image `Id` (not its distinct
 manifest `Digest`). It canonicalizes a complete lowercase hexadecimal ID to `sha256:` and rejects
@@ -606,7 +852,7 @@ verifies that the initialization marker cannot be observed through `/mise`.
 The Docker backend accepts only a Linux engine. It resolves the configured `sha256` image ID before
 creation, selects `none` or the explicit `bridge` outbound network, makes the image root filesystem
 read-only, provides bounded non-executable `/tmp`, drops every capability, applies
-`no-new-privileges` and verifies the effective memory/process policy before attach. In addition to
+`no-new-privileges` and verifies the shared effective CPU/memory/process and scratch policy before attach. In addition to
 the admitted binds, it mounts one Docker `local` volume at `/mise`. The host derives that volume's
 opaque name from schema, owner, project, workspace, effective UID/GID and exact image ID; it creates and re-inspects
 exact identity labels before container admission. A different workspace, image or user cannot reuse it.
@@ -627,6 +873,18 @@ portable hard byte quota, so `storage_bytes` bounds `/tmp` and does not claim to
 selected workspace bind. On normal shutdown each backend attempts a graceful stop and then requires
 force-removal of the exact generated container name without `--volumes`; removal failure is returned
 and a later close retries that removal.
+
+Both concrete CLI adapters delegate bounded process ownership to `createNodeContainerControl`;
+engine context/connection and argv prefixes stay in their adapters. Cancellation sends `SIGTERM`,
+retains the command deadline and escalates after a 500 ms grace. A deadline or output overflow kills
+immediately. Capture never grows beyond its per-stream bound, including while termination is pending.
+The command promise settles after physical exit and stream closure; inherited pipes have a bounded
+post-exit drain and cannot turn truncated output into success. The shared process helpers own POSIX
+group termination and Windows tree termination; detached creation is platform-gated.
+Production: [node-container-control.ts](../../packages/kernel/src/adapters/process/node-container-control.ts)
+and the engine ports in [types.ts](../../packages/kernel/src/runtime/types.ts).
+Test: [node-container-control.test.ts](../../packages/kernel/tests/integration/node-container-control.test.ts)
+checks routing, bounds, spawn errors, streams and real POSIX children that ignore `SIGTERM`.
 
 Neither backend uses host networking or publishes a container port. `createRuntimePortPreview`
 accepts only a numeric guest port and display scheme, probes the already-running guest through the

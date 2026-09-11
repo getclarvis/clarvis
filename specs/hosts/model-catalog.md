@@ -823,7 +823,7 @@ catalog case).
 - Container model calls also use the same resolver on the host's captured provider registry, after
   exact provider/model admission, so raw snake-case settings never masquerade as the adapter's
   resolved configuration. Production: `hostModelBroker` in
-  [`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts).
+  [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
   Test: model override and real OpenAI-compatible SDK endpoint/authentication cases in
   [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
   The wire boundary is owned by [isolated-agent-runtime](isolated-agent-runtime.md).

@@ -53,6 +53,78 @@ function control(
 }
 
 describe("local Docker runtime composition", () => {
+  it("propagates generation cancellation through the image resolver and pull", async () => {
+    const controller = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    let resolverSignal: AbortSignal | undefined;
+    const calls: string[] = [];
+    const preparing = createLocalDockerRuntime(
+      { ...input(), signal: controller.signal },
+      {
+        resolveImage: async (signal) => {
+          resolverSignal = signal;
+          return { reference: `registry.example/runtime@${digest}`, pull: true };
+        },
+        control: {
+          async run(args, signal) {
+            calls.push(args[0]!);
+            const result = new Promise<never>((_resolve, reject) => {
+              signal!.addEventListener("abort", () => reject(signal!.reason as Error), {
+                once: true,
+              });
+            });
+            entered.resolve();
+            return result;
+          },
+          attach: () => {
+            throw new Error("must not attach");
+          },
+        },
+      },
+    ).catch((error: unknown) => error);
+    await entered.promise;
+    controller.abort(new Error("cancelled image preparation"));
+    expect(await preparing).toMatchObject({ message: "cancelled image preparation" });
+    expect(resolverSignal).toBe(controller.signal);
+    expect(calls).toEqual(["pull"]);
+  });
+
+  it("gives image acquisition a bounded download deadline without extending inspection", async () => {
+    const calls: Array<{ args: readonly string[]; timeoutMs?: number }> = [];
+    const injected: DockerControl = {
+      ...control(() => ({ exitCode: 0, stdout: "", stderr: "" })),
+      async run(args, _signal, options) {
+        calls.push({
+          args,
+          ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        });
+        if (args[0] === "pull") {
+          if ((options?.timeoutMs ?? 30_000) < 45_000)
+            throw new Error("healthy download timed out");
+          return { exitCode: 0, stdout: "downloaded", stderr: "" };
+        }
+        return {
+          exitCode: 0,
+          stdout: args[0] === "image" ? JSON.stringify([{ Id: digest }]) : "",
+          stderr: "",
+        };
+      },
+    };
+    await expect(
+      createLocalDockerRuntime(input(), {
+        control: injected,
+        resolveImage: async () => ({
+          reference: `registry.example/clarvis/runtime@${digest}`,
+          pull: true,
+        }),
+      }),
+    ).rejects.toThrow("docker info returned invalid JSON");
+    expect(calls.map(({ args }) => args[0])).toEqual(["pull", "image", "info"]);
+    expect(calls[0]!.timeoutMs).toBeGreaterThan(30_000);
+    expect(calls[0]!.timeoutMs).toBeLessThanOrEqual(30 * 60_000);
+    expect(calls[1]!.timeoutMs).toBeUndefined();
+  });
+
   it("requires the Docker backend", async () => {
     const podman = runtimeSettingsSchema.parse({
       backend: "podman",

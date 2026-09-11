@@ -1241,3 +1241,20 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
    sequential (`package.json`, `scripts.check:pre-commit`) and `build` precedes `typecheck`, which the `paths`-to-`dist`
    arrangement (§4.2) makes necessary. Whether the rest of the order (format before build, knip before
    coverage) is load-bearing is not stated in any file in scope.
+
+## Prompt-cache gates
+
+Every pull request runs the credential-free `test:cache` SDK serialization and independent metric
+evaluation gate, without credentials or provider calls. Live cache qualification is an
+operator-run local command using the existing Clarvis subscription OAuth; no API key or GitHub
+secret is required.
+A reduced local C01/C02/C06 series retains bounded JSON evidence and does not establish full
+artifact qualification. Full cache qualification and the installed PTY evidence follow
+[prompt-cache](prompt-cache.md).
+
+Production: [CI](../../.github/workflows/ci.yml),
+[local live runner](../../tooling/cache/live.ts), and
+[deterministic runner](../../tooling/cache/deterministic.ts).
+Test: [metric evaluation](../../tooling/tests/unit/prompt-cache-evaluation.test.ts),
+[HTTP capture](../../tooling/tests/unit/prompt-cache-recorder.test.ts), and
+[loaded artifact observation](../../tooling/tests/unit/prompt-cache-artifact.test.ts).

@@ -1,4 +1,10 @@
 import type { Readable, Writable } from "node:stream";
+import {
+  createJsonMessageWriter,
+  JsonMessageDecoder,
+  MAX_JSON_QUEUE_BYTES,
+  MessageAdmissionError,
+} from "../core/json-message.ts";
 import { NOOP_LOGGER, ProviderError, type Logger } from "@clarvis/capability";
 import {
   encodeRuntimeProviderError,
@@ -101,8 +107,7 @@ type ExecutionFrame = RequestFrame | ResultFrame | CancelFrame | EventFrame;
 
 export const MAX_EXECUTION_FRAME_BYTES = 4 * 1024 * 1024;
 export const MAX_EXECUTION_QUEUE_FRAMES = 256;
-export const MAX_EXECUTION_QUEUE_BYTES = 8 * 1024 * 1024;
-const WRITER_TIMEOUT_MS = 30_000;
+export const MAX_EXECUTION_QUEUE_BYTES = MAX_JSON_QUEUE_BYTES;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 const HOST_METHOD_SET = new Set<string>(HOST_EXECUTION_METHODS);
 const GUEST_METHOD_SET = new Set<string>(GUEST_EXECUTION_METHODS);
@@ -226,9 +231,8 @@ export function createExecutionPeer(options: {
   let ended = false;
   let buffer = "";
   let bufferedBytes = 0;
-  let writeTail = Promise.resolve();
-  let queuedFrames = 0;
-  let queuedBytes = 0;
+  let inboundBytes = 0;
+  let lastInboundId = 0;
   const pending = new Map<
     number,
     ExecutionIdentity & {
@@ -241,10 +245,27 @@ export function createExecutionPeer(options: {
     }
   >();
   const cancelled = new Map<number, ExecutionIdentity>();
+  const completed = new Map<number, ExecutionIdentity>();
   const controllers = new Map<
     number,
-    { readonly identity: ExecutionIdentity; readonly value: AbortController }
+    {
+      readonly identity: ExecutionIdentity;
+      readonly value: AbortController;
+      readonly bytes: number;
+    }
   >();
+
+  const rememberCompletion = (frame: ExecutionIdentity & { readonly id: number }): void => {
+    if (ended) return;
+    completed.set(frame.id, {
+      generation: frame.generation,
+      ...(frame.runId === undefined ? {} : { runId: frame.runId }),
+      ...(frame.callId === undefined ? {} : { callId: frame.callId }),
+    });
+    if (completed.size > MAX_EXECUTION_QUEUE_FRAMES) {
+      completed.delete(completed.keys().next().value!);
+    }
+  };
 
   const close = (reason = new Error("execution channel closed")): void => {
     if (ended) return;
@@ -255,69 +276,38 @@ export function createExecutionPeer(options: {
     }
     pending.clear();
     cancelled.clear();
+    completed.clear();
     for (const controller of controllers.values()) controller.value.abort(reason);
     controllers.clear();
+    inboundBytes = 0;
+    buffer = "";
+    bufferedBytes = 0;
+    messages.close();
+    writer.close();
     options.input.destroy();
     options.output.destroy();
   };
 
-  const send = (frame: ExecutionFrame): Promise<void> => {
-    if (ended) return Promise.reject(executionError("unavailable", "execution channel closed"));
-    let line: string;
+  const messages = new JsonMessageDecoder(close);
+  const writer = createJsonMessageWriter({
+    output: options.output,
+    frameBytes: MAX_EXECUTION_FRAME_BYTES,
+    queueMessages: MAX_EXECUTION_QUEUE_FRAMES,
+    onFailure: close,
+  });
+  const send = (frame: ExecutionFrame): Promise<void> => writer.send(frame);
+  const sendControl = async (frame: ExecutionFrame): Promise<void> => {
     try {
-      line = `${JSON.stringify(frame)}\n`;
-    } catch {
-      close(new Error("execution frame serialization failed"));
-      return Promise.reject(executionError("invalid_request", "frame is not serializable"));
+      await send(frame);
+    } catch (error) {
+      if (!(error instanceof MessageAdmissionError)) throw error;
+      await writer.drain();
+      await send(frame);
     }
-    const bytes = Buffer.byteLength(line, "utf8");
-    if (
-      bytes > MAX_EXECUTION_FRAME_BYTES ||
-      queuedFrames >= MAX_EXECUTION_QUEUE_FRAMES ||
-      queuedBytes + bytes > MAX_EXECUTION_QUEUE_BYTES
-    ) {
-      logger.warn(
-        { event: "runtime.execution_frame_refused", bytes },
-        "private execution channel exceeded a transport bound",
-      );
-      close(new Error("execution channel bound exceeded"));
-      return Promise.reject(
-        executionError("resource_exhausted", "execution channel bound exceeded"),
-      );
-    }
-    queuedFrames += 1;
-    queuedBytes += bytes;
-    const write = writeTail.then(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          if (ended) {
-            reject(executionError("unavailable", "execution channel closed"));
-            return;
-          }
-          const timer = setTimeout(
-            () => reject(new Error("execution writer stalled")),
-            WRITER_TIMEOUT_MS,
-          );
-          timer.unref?.();
-          options.output.write(line, (error?: Error | null) => {
-            clearTimeout(timer);
-            if (error !== undefined && error !== null) reject(error);
-            else resolve();
-          });
-        }),
-    );
-    writeTail = write.then(
-      () => undefined,
-      (error: unknown) =>
-        close(error instanceof Error ? error : new Error("execution write failed")),
-    );
-    return write.finally(() => {
-      queuedFrames -= 1;
-      queuedBytes -= bytes;
-    });
   };
 
-  const receive = (frame: ExecutionFrame): void => {
+  const receive = (frame: ExecutionFrame, bytes: number): void => {
+    if (ended) return;
     if (frame.generation !== options.generation) {
       close(new Error("execution generation mismatch"));
       return;
@@ -365,20 +355,52 @@ export function createExecutionPeer(options: {
     }
     if (frame.type === "cancel") {
       const active = controllers.get(frame.id);
-      if (active === undefined || !sameIdentity(active.identity, frame)) {
+      if (active === undefined) {
+        const prior = completed.get(frame.id);
+        if (prior !== undefined && sameIdentity(prior, frame)) return;
+        close(new Error("unexpected execution cancellation"));
+        return;
+      }
+      if (!sameIdentity(active.identity, frame)) {
         close(new Error("unexpected execution cancellation"));
         return;
       }
       active.value.abort(new Error("execution request cancelled"));
       return;
     }
-    if (!inboundMethods.has(frame.method) || controllers.has(frame.id)) {
+    if (!inboundMethods.has(frame.method) || frame.id <= lastInboundId) {
       close(new Error("execution method or request identity refused"));
       return;
     }
+    if (
+      controllers.size >= MAX_EXECUTION_QUEUE_FRAMES ||
+      inboundBytes + bytes > MAX_EXECUTION_QUEUE_BYTES
+    ) {
+      logger.warn(
+        {
+          event: "runtime.execution_inbound_refused",
+          in_flight: controllers.size,
+          bytes: inboundBytes + bytes,
+        },
+        "private execution channel exceeded an inbound bound",
+      );
+      lastInboundId = frame.id;
+      rememberCompletion(frame);
+      void sendControl({
+        type: "result",
+        id: frame.id,
+        generation: frame.generation,
+        ...(frame.runId === undefined ? {} : { runId: frame.runId }),
+        ...(frame.callId === undefined ? {} : { callId: frame.callId }),
+        error: { code: "resource_exhausted", message: "execution inbound request bound exceeded" },
+      }).catch(close);
+      return;
+    }
+    lastInboundId = frame.id;
     const handler = options.handlers[frame.method];
     if (handler === undefined) {
-      void send({
+      rememberCompletion(frame);
+      void sendControl({
         type: "result",
         id: frame.id,
         generation: frame.generation,
@@ -390,67 +412,83 @@ export function createExecutionPeer(options: {
     }
     const controller = new AbortController();
     let eventSequence = 0;
-    controllers.set(frame.id, { identity: frame, value: controller });
-    void handler({
-      method: frame.method,
+    const identity: ExecutionIdentity = {
       generation: frame.generation,
       ...(frame.runId === undefined ? {} : { runId: frame.runId }),
       ...(frame.callId === undefined ? {} : { callId: frame.callId }),
-      ...(Object.prototype.hasOwnProperty.call(frame, "payload") ? { payload: frame.payload } : {}),
-      signal: controller.signal,
-      ...(frame.method !== "host.model"
-        ? {}
-        : {
-            emit: (event: unknown) => {
-              controller.signal.throwIfAborted();
-              return send({
-                type: "event",
-                id: frame.id,
-                generation: frame.generation,
-                runId: frame.runId!,
-                callId: frame.callId!,
-                sequence: ++eventSequence,
-                event,
-              });
-            },
-          }),
-    })
-      .then(
-        (result) =>
-          send({
-            type: "result",
-            id: frame.id,
-            generation: frame.generation,
-            ...(frame.runId === undefined ? {} : { runId: frame.runId }),
-            ...(frame.callId === undefined ? {} : { callId: frame.callId }),
-            result: result ?? null,
-          }),
-        (error: unknown) =>
-          send({
-            type: "result",
-            id: frame.id,
-            generation: frame.generation,
-            ...(frame.runId === undefined ? {} : { runId: frame.runId }),
-            ...(frame.callId === undefined ? {} : { callId: frame.callId }),
-            error:
-              options.role === "host" &&
-              frame.method === "host.model" &&
-              error instanceof ProviderError
-                ? encodeRuntimeProviderError(error)
-                : {
-                    code:
-                      typeof (error as { code?: unknown })?.code === "string"
-                        ? String((error as { code: string }).code).slice(0, 256)
-                        : "internal",
-                    message:
-                      error instanceof Error
-                        ? error.message.slice(0, 16_384)
-                        : "execution request failed",
-                  },
-          }),
+    };
+    inboundBytes += bytes;
+    controllers.set(frame.id, { identity, value: controller, bytes });
+    const invoke = async () =>
+      handler({
+        method: frame.method,
+        generation: frame.generation,
+        ...(frame.runId === undefined ? {} : { runId: frame.runId }),
+        ...(frame.callId === undefined ? {} : { callId: frame.callId }),
+        ...(Object.prototype.hasOwnProperty.call(frame, "payload")
+          ? { payload: frame.payload }
+          : {}),
+        signal: controller.signal,
+        ...(frame.method !== "host.model"
+          ? {}
+          : {
+              emit: (event: unknown) => {
+                controller.signal.throwIfAborted();
+                return send({
+                  type: "event",
+                  id: frame.id,
+                  generation: frame.generation,
+                  runId: frame.runId!,
+                  callId: frame.callId!,
+                  sequence: ++eventSequence,
+                  event,
+                });
+              },
+            }),
+      });
+    void invoke()
+      .then((result) =>
+        send({
+          type: "result",
+          id: frame.id,
+          generation: frame.generation,
+          ...(frame.runId === undefined ? {} : { runId: frame.runId }),
+          ...(frame.callId === undefined ? {} : { callId: frame.callId }),
+          result: result ?? null,
+        }),
+      )
+      .catch((error: unknown) =>
+        sendControl({
+          type: "result",
+          id: frame.id,
+          generation: frame.generation,
+          ...(frame.runId === undefined ? {} : { runId: frame.runId }),
+          ...(frame.callId === undefined ? {} : { callId: frame.callId }),
+          error:
+            options.role === "host" &&
+            frame.method === "host.model" &&
+            error instanceof ProviderError
+              ? encodeRuntimeProviderError(error)
+              : {
+                  code:
+                    typeof (error as { code?: unknown })?.code === "string"
+                      ? String((error as { code: string }).code).slice(0, 256)
+                      : "internal",
+                  message:
+                    error instanceof Error
+                      ? error.message.slice(0, 16_384)
+                      : "execution request failed",
+                },
+        }),
       )
       .catch(close)
-      .finally(() => controllers.delete(frame.id));
+      .finally(() => {
+        const active = controllers.get(frame.id);
+        if (active?.value !== controller) return;
+        controllers.delete(frame.id);
+        inboundBytes -= active.bytes;
+        rememberCompletion(frame);
+      });
   };
 
   options.input.setEncoding("utf8");
@@ -478,12 +516,24 @@ export function createExecutionPeer(options: {
         close(new Error("execution frame is not valid JSON"));
         return;
       }
-      const frame = decodeExecutionFrame(parsed);
+      let message: ReturnType<JsonMessageDecoder["accept"]>;
+      try {
+        message = messages.accept(parsed, Buffer.byteLength(line, "utf8") + 1);
+      } catch (error) {
+        close(error instanceof Error ? error : new Error("invalid execution message"));
+        return;
+      }
+      if (message === undefined) continue;
+      const frame = decodeExecutionFrame(message.value);
       if (frame === null) {
         close(new Error("execution frame has an invalid shape"));
         return;
       }
-      receive(frame);
+      receive(frame, message.bytes);
+      if (ended) return;
+    }
+    if (bufferedBytes > MAX_EXECUTION_FRAME_BYTES) {
+      close(new Error("execution frame exceeds size bound"));
     }
   });
   options.input.once("end", () => close(new Error("execution input ended")));
@@ -511,11 +561,17 @@ export function createExecutionPeer(options: {
         return Promise.reject(executionError("invalid_request", "invalid execution identity"));
       }
       if (ended) return Promise.reject(executionError("unavailable", "execution channel closed"));
+      if (pending.size >= MAX_EXECUTION_QUEUE_FRAMES) {
+        return Promise.reject(
+          executionError("resource_exhausted", "execution pending request bound exceeded"),
+        );
+      }
       if (requestOptions?.signal?.aborted === true) {
         return Promise.reject(executionError("cancelled", "execution request cancelled"));
       }
       const id = ++sequence;
       return new Promise<T>((resolve, reject) => {
+        const write = send({ type: "request", id, method, ...identity, payload });
         const onAbort = (): void => {
           const current = pending.get(id);
           if (current === undefined) return;
@@ -527,7 +583,7 @@ export function createExecutionPeer(options: {
             return;
           }
           cancelled.set(id, identity);
-          void send({ type: "cancel", id, ...identity }).catch(close);
+          void sendControl({ type: "cancel", id, ...identity }).catch(close);
           reject(executionError("cancelled", "execution request cancelled"));
         };
         const detach = (): void => requestOptions?.signal?.removeEventListener("abort", onAbort);
@@ -541,7 +597,7 @@ export function createExecutionPeer(options: {
           eventSequence: 0,
           ...(requestOptions?.onEvent === undefined ? {} : { onEvent: requestOptions.onEvent }),
         });
-        void send({ type: "request", id, method, ...identity, payload }).catch(close);
+        void write.catch(close);
       });
     },
     close,

@@ -159,6 +159,7 @@ async function fixture(kind: "loopback" | "local") {
         principal: { id: params.auth === "operator-token" ? "operator" : "observer" },
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           hosting: peer.service,
         },
@@ -243,6 +244,37 @@ async function readSnapshot(
   await service.releaseSnapshot(attachment.snapshot.snapshot_id);
   return texts.join("");
 }
+
+test.each(["loopback", "local"] as const)(
+  "takes over one existing observation over %s RPC",
+  async (kind) => {
+    const f = await fixture(kind);
+    const first = await f.connect();
+    const original = await first.hosting!.start(input());
+    const second = await f.connect();
+    const observed = await second.hosting!.attach({
+      execution_id: "run-1",
+      host_generation: "generation",
+      control: "observe",
+    });
+    const tail = Array.fromAsync(observed.handle.events);
+    const before = observed.snapshot;
+    const controlled = await second.hosting!.controlObservation(
+      observed.observation_id,
+      "takeover",
+    );
+    expect(controlled.control).toBe("self");
+    expect(observed.snapshot).toBe(before);
+    expect((await first.hosting!.list())[0]?.control).toBe("other");
+    await expect(original.handle.cancel()).rejects.toMatchObject({ code: "conflict" });
+    f.contexts.get("run-1")!.emit(delta("after takeover"));
+    await observed.handle.cancel();
+    expect((await observed.handle.done).status).toBe("cancelled");
+    expect((await tail).map((frame) => frame.event)).toContainEqual(delta("after takeover"));
+    await observed.handle.closed;
+    expect(f.starts()).toBe(1);
+  },
+);
 
 describe("hosted runs on the existing kernel RPC", () => {
   test("buffers sequenced tail events that arrive before the attachment reply", async () => {

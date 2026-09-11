@@ -5,9 +5,20 @@
 Clarvis ships `clarvis-configure` as TypeScript data embedded in the kernel and application bundle.
 It needs no generated `SKILL.md`, source checkout or separately installed extension. Its guide covers
 settings precedence, providers, Agent Profiles, subagents, grants, optional capabilities, Extension
-Profiles, plugins, skills, MCP, hooks, memory, plans, tasks, workflows, trust, runtime settings,
-TUI loop scheduling, background runs and configuration reload.
+Profiles, plugins, skills, MCP, hooks, memory, plans, goals, tasks, workflows, trust, runtime settings,
+remote SSH connections, TUI loop scheduling, background runs and configuration reload.
 The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
+Container disclosure retains builtin provenance and priority, and uses the same canonical embedded
+instruction text without inventing a `SKILL.md` path or execution directory. The background guidance
+states that detach, takeover, connection loss and leaving the live conversation revoke command
+`allow_session` approvals in native and container execution.
+Production: [skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts),
+[disclosure.ts](../../packages/skills/src/disclosure.ts) and
+[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
+Test: native/guest builtin conformance in
+[runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts) and
+controller revocation in
+[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts).
 
 The file kernel reserves this skill's name and composes it after extension discovery. Disabling
 skills at the host or environment level removes it too. A custom empty Extension Profile excludes
@@ -151,6 +162,8 @@ remains below the 32,768-character regression ceiling and is disclosed on demand
 | --- | --- | --- |
 | Models, budgets, MCP, hooks, capabilities and runtime | Settings fragments pass `kernelSettingsSchema` and the real file store | Existing runs retain their resolved settings; host-pinned configuration requires `/reconnect reload` with an idle host; authentication and dependency installation are separate |
 | Agent Profiles and subagents | Reviewer plus Marshall overlay assemble into the reachable profile graph | Next ordinary run, with workspace trust for workspace declarations |
+| Goal defaults | The capability fragment validates `goals` with a finite total and bounded continuation/progress counts | Only creation/replacement reads these defaults; changing an existing goal requires its explicit user control |
+| Remote VPS connection | The guide names paired `--remote`/`--remote-workspace`, remote ownership, SSH authentication sources, forwarding policy and the interactive-login limit | OpenSSH configuration and host-key/login preparation remain operator-owned; configuration mode neither opens SSH nor stores a password |
 | Workflows | Complete `WORKFLOW.md`, relative brief, args, round type/profile, selectors and synthesis | Reloaded each manager run; Admiral or another `workflow` entry invokes the normal preview/preflight and checkpoints |
 | Workflow slash launcher | A separate `SKILL.md` declares `agent: admiral` | Normal skill discovery; custom Extension Profiles must select the standalone launcher |
 | Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection or trust state |
@@ -174,6 +187,16 @@ cannot detach. Plain `/reconnect` recovers the same host connection; `/reconnect
 idle host to apply pinned configuration. These are operator actions after the configuration turn,
 not tools exposed by loading this guide. The command behavior and its executable evidence remain
 owned by those contracts; the builtin distribution checks do not execute TUI journeys.
+
+Its remote guidance follows [Code bootstrap](code-bootstrap.md) and the
+[security contract](../cross-cutting/security.md): it teaches the paired flags and operator actions
+without claiming that configuration mode establishes SSH or stores authentication. Production:
+`CLARVIS_CONFIGURE_SKILL` in
+[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts) and
+`connectRemoteKernelOverSsh` in
+[connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts). Test:
+[remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) pins the hardened
+argv/wire boundary; builtin distribution and body bounds remain covered by the tests cited above.
 
 Production: `CLARVIS_CONFIGURE_SKILL` in
 [clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts), `CONFIGURATION_EXAMPLES`,

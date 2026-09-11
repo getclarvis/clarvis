@@ -189,13 +189,15 @@ export interface SkillInfo {
   defaulted?: SkillDefaultedField[];
   scope: SkillScope;
   source: SkillSource;
-  /** Absolute discovery root, or a `builtin:` locator for host-embedded instructions. */
+  /** Remote resources are disclosed through tools, with no skill directory in the caller's filesystem. */
+  resourceAccess?: "remote";
+  /** Absolute discovery root, or an opaque locator for embedded/remote instructions. */
   root: string;
-  /** Absolute skill directory, or a `builtin:` locator when no filesystem directory exists. */
+  /** Absolute skill directory, or an opaque locator when no filesystem directory exists. */
   dir: string;
   /** Host-approved skill directory for bundled helper execution. */
   executionRoot?: string;
-  /** Absolute manifest path, or a `builtin:` locator for a skill with `source: "builtin"`. */
+  /** Absolute manifest path, or an opaque locator for embedded/remote instructions. */
   path: string;
   /**
    * Same-named skills from lower-precedence roots that this one shadowed during

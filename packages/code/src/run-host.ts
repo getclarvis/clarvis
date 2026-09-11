@@ -8,10 +8,12 @@ import {
   type ScheduledTurnRequest,
 } from "./core/loop-schedule.ts";
 import type {
+  HostedHandoffFailureDetails,
   ActiveTaskRequestDto,
   HostedActivityLease,
   HostedRunReceipt,
   HostedRunRef,
+  GoalView,
   Message,
   MessageContent,
   PlansMode,
@@ -24,6 +26,7 @@ import { createImageLoader } from "./adapters/workspace-files.ts";
 import { errorText } from "./adapters/errors.ts";
 import { detachObserved } from "./core/tasks.ts";
 import { diagnosticBind } from "./core/diagnostic-events.ts";
+import type { GoalBinding } from "./features/goal/controller.ts";
 import type { KernelRunClient } from "./adapters/kernel-run-client.ts";
 import type { CompactResult, MemoryIngestNotice, RunHandle } from "./adapters/run-types.ts";
 import {
@@ -189,6 +192,12 @@ export interface RunHost {
   backgroundCurrentRun(): Promise<HostedRunReceipt>;
   /** Open a hosted execution's conversation and observe the same execution without a start. */
   attachHostedRun(ref: HostedRunRef, control?: "observe" | "acquire" | "takeover"): Promise<void>;
+  /** Current conversation presentation generation; grants no host controller authority. */
+  goalBinding(): GoalBinding | null;
+  /** Persist an idle conversation identity before a goal control can start inference. */
+  prepareGoalConversation(): Promise<GoalBinding>;
+  /** Append missing goal stages and observe existing work without retiring the conversation. */
+  synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void>;
   submitTurn(content: MessageContent, display?: string): Promise<void>;
   /** Current live conversation binding; materialization creates no run or transcript message. */
   scheduledBinding(materialize?: boolean): LoopBinding | null;
@@ -344,6 +353,8 @@ function replayRunEvents(sink: RunSink, stored: RunDetail | null): void {
 }
 
 function runOutcomeStatus(envelope: RunResult | undefined): StatusLine {
+  if (envelope?.status === "completed" && envelope.disposition === "checkpoint")
+    return ["checkpoint saved"];
   if (envelope?.status === "failed" && envelope.error) {
     return ["failed ", { mark: "emDash" }, ` ${envelope.error.message}`];
   }
@@ -470,6 +481,38 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       configLabel:
         configuration?.label ?? `review ${deps.guardMode()} · memory ${deps.memoryMode()}`,
     };
+  }
+
+  function goalBinding(): GoalBinding | null {
+    const generation = sessionGeneration();
+    runActive();
+    if (sessionLoading()) return null;
+    const id = session?.meta()?.id;
+    return id === undefined ? null : { sessionId: id, generation };
+  }
+
+  async function prepareGoalConversation(): Promise<GoalBinding> {
+    if (client.hosting === undefined)
+      throw new Error("This host does not support conversation goals.");
+    if (scheduledBusy())
+      throw new Error(
+        "Wait for this conversation's physical work to finish before creating a goal.",
+      );
+    if (deps.isManagerProfile?.()) throw new Error("Goals cannot run a workflow profile.");
+    const profile = deps.activeProfile();
+    if (!profile) throw new Error("Select an Agent Profile before creating a goal.");
+    if (!session) {
+      loadEpoch++;
+      session = createSession(boundSessionDeps, { agentProfile: profile });
+    }
+    const sess = session;
+    const hadIdentity = sess.meta() !== null;
+    await prepareHostedSession(sess, "Goal conversation");
+    if (session !== sess) throw new Error("Conversation changed during goal preparation.");
+    if (!hadIdentity) setSessionGeneration((generation) => generation + 1);
+    const binding = goalBinding();
+    if (binding === null) throw new Error("Goal conversation is unavailable.");
+    return binding;
   }
 
   const scheduledBusy = (): boolean =>
@@ -896,6 +939,17 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             revision: ref.revision,
           });
         } catch (error) {
+          const details =
+            typeof error === "object" && error !== null && "details" in error
+              ? (error.details as Partial<HostedHandoffFailureDetails> | undefined)
+              : undefined;
+          if (
+            details?.handoff?.operation_id === operationId &&
+            details.handoff.admission === "refused"
+          ) {
+            pendingHandoff = undefined;
+            throw error;
+          }
           const recovered = await hosting.receipt(operationId).catch(() => null);
           if (recovered === null) throw error;
           receipt = recovered;
@@ -1184,7 +1238,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       );
     const continueFrom = sess.beginTurn(msg, executionId);
     rememberResidentTurn({ userKey });
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
     const guardArgs = {
@@ -1260,7 +1314,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               },
             }
           : {}),
-        ...(promptCacheKey ? { promptCacheKey } : {}),
+        ...(sessionId ? { sessionId } : {}),
         configurationSessionId: configurationSessionId(sess),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...guardArgs,
@@ -1302,7 +1356,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                       },
                     }
                   : {}),
-                ...(promptCacheKey ? { promptCacheKey } : {}),
+                ...(sessionId ? { sessionId } : {}),
                 configurationSessionId: configurationSessionId(sess),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...guardArgs,
@@ -1400,7 +1454,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const hostedSession = await prepareHostedSession(sess, label);
     if (session !== sess) return;
     const userKey = store.appendUserMessage(label, label, executionId);
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     sess.beginTranscriptTurn(label, executionId);
     rememberResidentTurn({ userKey });
     const skillGuardMode = deps.guardMode();
@@ -1417,7 +1471,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           skill: { name, task },
           executionId,
           profile,
-          ...(promptCacheKey ? { promptCacheKey } : {}),
+          ...(sessionId ? { sessionId } : {}),
           configurationSessionId: configurationSessionId(sess),
           guardMode: skillGuardMode,
           ...deps.judgePayload(skillGuardMode),
@@ -1473,7 +1527,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const userKey = store.appendUserMessage(message, display, executionId);
     sess.beginTurn(message, executionId);
     rememberResidentTurn({ userKey });
-    const promptCacheKey = sess.meta()?.id;
+    const sessionId = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
     workflowRunId = executionId;
@@ -1491,7 +1545,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           profile,
           executionId,
           task: sessionTask,
-          ...(promptCacheKey ? { promptCacheKey } : {}),
+          ...(sessionId ? { sessionId } : {}),
           configurationSessionId: configurationSessionId(sess),
           guardMode,
           ...deps.judgePayload(guardMode),
@@ -1611,6 +1665,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   /** Complete turns still represented by semantic nodes in the live store. */
   let residentTurns: ResidentTurnRef[] = [];
+  /** Canonical turn cursor stays independent of transcript folding and later metadata refreshes. */
+  let paintedTurnCount = 0;
 
   /**
    * How many nodes at the head of the transcript form the folded-prefix notice,
@@ -1629,6 +1685,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
    * canonical persisted session turn index supplies `/export` metadata lazily.
    */
   function rememberResidentTurn(turn: ResidentTurnRef): void {
+    paintedTurnCount++;
     residentTurns.push(turn);
     if (residentTurns.length <= RESIDENT_TRANSCRIPT_TURN_LIMIT) return;
 
@@ -1663,6 +1720,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     activity.clear();
     foldedTurnCount = 0;
     residentTurns = [];
+    paintedTurnCount = 0;
     foldedPrefix = 0;
     setStatus(["idle"]);
   }
@@ -1864,6 +1922,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     activity.clear();
     foldedTurnCount = 0;
     residentTurns = [];
+    paintedTurnCount = 0;
     foldedPrefix = 0;
     const windowStart = Math.max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT);
     if (windowStart > 0) {
@@ -1923,6 +1982,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (epoch !== loadEpoch) return;
     sessionTask = resumed.activeTask;
+    paintedTurnCount = meta.turns.length;
     session = createSession(boundSessionDeps, {
       meta,
       messages: resumed.messages,
@@ -1991,6 +2051,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         }
       }
       meta = await sessionStore.load(id, { refresh: client.hosting !== undefined });
+      if (meta?.turns.some((turn) => turn.recoveryResolution !== undefined))
+        throw new Error(
+          "this conversation was archived after recovery; start a new conversation for new work",
+        );
     } catch (error) {
       if (requestEpoch === loadEpoch) {
         setSessionLoading(false);
@@ -2007,21 +2071,138 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     await loadSessionMeta(meta).catch((e) => setStatus([`resume failed: ${errorText(e)}`]));
   }
 
+  async function synchronizeGoal(binding: GoalBinding, view: GoalView): Promise<void> {
+    const sess = session;
+    const valid = (): boolean =>
+      session === sess &&
+      sess !== undefined &&
+      binding.sessionId === sess.meta()?.id &&
+      binding.generation === sessionGeneration() &&
+      !sessionLoading();
+    if (!valid() || client.hosting === undefined) return;
+    if (
+      currentHandle !== undefined &&
+      currentHandle.executionId === view.physical_run?.execution_id
+    )
+      return;
+    if (currentSettlement !== undefined) await currentSettlement.promise;
+    if (!valid() || scheduledBusy()) return;
+    const meta = await sessionStore.load(binding.sessionId, { refresh: true });
+    if (!valid() || meta === null || scheduledBusy()) return;
+    if (meta.turns.length < paintedTurnCount)
+      throw new Error("Canonical goal history is shorter than the displayed conversation.");
+    const runIds = new Set(
+      [
+        ...view.state.archive,
+        ...(view.state.current === undefined ? [] : [view.state.current]),
+      ].flatMap((goal) => goal.runs.map((run) => run.execution_id)),
+    );
+    while (paintedTurnCount < meta.turns.length && valid()) {
+      const turn = meta.turns[paintedTurnCount]!;
+      const ref = (await client.hosting.list()).find(
+        (run) => run.execution_id === turn.executionId,
+      );
+      if (!valid() || scheduledBusy()) return;
+      if (ref !== undefined && ref.execution_state !== "closed") {
+        if (
+          ref.session_id !== binding.sessionId ||
+          ref.workspace_id !== workspaceId ||
+          !runIds.has(ref.execution_id)
+        )
+          return;
+        if (
+          ref.execution_state === "starting" ||
+          ref.execution_state === "unknown" ||
+          client.attachRun === undefined
+        )
+          return;
+        sess!.acceptHosted(meta);
+        const userKey = store.appendUserMessage(turn.userPreview, undefined, ref.execution_id);
+        rememberResidentTurn({ userKey });
+        workflowRunId = ref.execution_id;
+        await runManaged({
+          sess: sess!,
+          executionId: ref.execution_id,
+          initialStatus: ["observing goal stage"],
+          disconnectPolicy: ref.disconnect_policy,
+          run: (setHandle) => {
+            const handle = client.attachRun!({
+              execution_id: ref.execution_id,
+              host_generation: ref.host_generation,
+              control: ref.control === "other" ? "observe" : "acquire",
+            });
+            setHandle(handle);
+            return handle.done;
+          },
+          onStored: (_result, stored, sink) => {
+            replayRunEvents(sink, stored);
+            sess!.releaseHistory();
+          },
+          onError: (error) => setStatus([`goal observation interrupted: ${errorText(error)}`]),
+        });
+      } else {
+        await resumeSession(
+          { ...meta, turns: [turn] },
+          {
+            getRun: (id) => client.getRun(id),
+            currentPlanProviderKey: deps.planProviderKey,
+            renderTurn: ({ executionId, userContent, events, recovery }) => {
+              if (!valid()) return;
+              const userKey = store.appendUserMessage(userContent, undefined, executionId);
+              rememberResidentTurn({ userKey });
+              if (executionId !== undefined && events !== undefined) {
+                const transcript = store.openRun(executionId);
+                const sink = teeSink(transcript, activity.openRun());
+                sink.beginReconcile();
+                for (const event of events) applyEvent(sink, event, "replay");
+                sink.endReconcile();
+                transcript.complete();
+              }
+              if (recovery) store.appendNotice(recoveryNotice(recovery), "warn");
+            },
+          },
+          { renderWindow: 1 },
+        );
+      }
+    }
+    if (valid()) {
+      const canonical = await sessionStore.load(binding.sessionId, { refresh: true });
+      if (valid() && canonical !== null) {
+        sess!.acceptHosted(canonical);
+        sess!.releaseHistory();
+      }
+    }
+  }
+
   async function attachHostedRun(
     ref: HostedRunRef,
     control: "observe" | "acquire" | "takeover" = "acquire",
   ): Promise<void> {
     if (client.hosting === undefined || client.attachRun === undefined)
       throw new Error("backend does not support hosted observation");
-    if (currentHandle?.executionId === ref.execution_id) {
-      setStatus(["already attached to this execution"]);
-      return;
-    }
     if (ref.workspace_id !== workspaceId)
       throw new Error("hosted run belongs to another workspace");
+    if (currentHandle?.executionId === ref.execution_id) {
+      if (control === "observe") {
+        setStatus(["already attached to this execution"]);
+        return;
+      }
+      const handle = currentHandle;
+      const ownership = runOwnershipEpoch;
+      if (handle.acquireControl === undefined)
+        throw new Error("backend does not support control of an existing observation");
+      await handle.acquireControl(control);
+      if (currentHandle === handle && runOwnershipEpoch === ownership)
+        setStatus(["controlling hosted run"]);
+      return;
+    }
     if (ref.execution_state === "unknown")
       throw new Error(
         "this execution has an unknown outcome; inspect its history before starting another conversation",
+      );
+    if (ref.recovery_resolution !== undefined)
+      throw new Error(
+        "this conversation was archived after recovery; start a new conversation for new work",
       );
     const requestEpoch = ++loadEpoch;
     const previousHandle = currentHandle;
@@ -2122,6 +2303,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     stopLocalWork,
     backgroundCurrentRun,
     attachHostedRun,
+    goalBinding,
+    prepareGoalConversation,
+    synchronizeGoal,
     submitTurn,
     scheduledBinding,
     submitScheduledTurn,

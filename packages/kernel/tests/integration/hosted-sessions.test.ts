@@ -2,11 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RunResult, Session, StartHostedTurnParams, StartRunParams } from "@clarvis/protocol";
-import {
-  createSessionService,
-  type FileSessionService,
-} from "../../src/sessions/session-service.ts";
+import type {
+  RunResult,
+  Session,
+  StartHostedTurnParams,
+  StartRunParams,
+  HostedRunRef,
+  HostedRecoveryResolution,
+} from "@clarvis/protocol";
+import { createSessionService, type HostSessionStore } from "../../src/sessions/session-service.ts";
 import {
   createHostedSessionCoordinator,
   type HostedSessionOptions,
@@ -97,6 +101,70 @@ async function fixture(overrides: Partial<HostedSessionOptions> = {}) {
 }
 
 describe("host-owned conversation transactions", () => {
+  test.each(["persisted", "missing"])(
+    "durably archives unknown turns with %s intent without inventing outcomes or replay",
+    async (intent) => {
+      const f = await fixture();
+      if (intent === "persisted") {
+        const prepared = await f.prepareTurn();
+        await prepared.commitIntent();
+      }
+      const row: HostedRunRef = {
+        execution_id: "run-1",
+        session_id: "conversation",
+        workspace_id: "workspace",
+        host_generation: "old",
+        title: "Unknown turn",
+        config: { agent: "solo" },
+        created_at: 1,
+        updated_at: 10,
+        revision: 1,
+        control_epoch: 0,
+        control: "available",
+        execution_state: "unknown",
+        attention: "none",
+        disconnect_policy: "continue",
+      };
+      const resolution: HostedRecoveryResolution = {
+        kind: "operator_verified_physical_closure",
+        previous_host_generation: "old",
+        resolving_host_generation: "new",
+        operator_connection_id: "operator",
+        resolved_at: 20,
+      };
+      expect(await f.archiveRecovery(row, resolution)).toEqual(resolution);
+      const stored = (await f.base.get("conversation"))!;
+      expect(stored.turns[0]).toMatchObject({
+        status: "interrupted",
+        recovery_resolution: resolution,
+      });
+      expect(stored.turns[0]!.ended_at).toBeUndefined();
+      if (intent === "missing") {
+        expect(stored.turns[0]).toEqual({
+          kind: "transcript",
+          execution_id: row.execution_id,
+          user_preview: row.title,
+          status: "interrupted",
+          recovery_resolution: resolution,
+        });
+      }
+      expect(stored.totals).toEqual({ input: 0, output: 0, cached: 0 });
+      expect(await f.sessions.list()).toMatchObject([
+        { id: "conversation", revision: stored.revision },
+      ]);
+      expect(await f.archiveRecovery(row, { ...resolution, resolved_at: 30 })).toEqual(resolution);
+      expect((await f.base.get("conversation"))!.revision).toBe(stored.revision);
+      await expect(
+        f.archiveRecovery({ ...row, host_generation: "unrelated" }, resolution),
+      ).rejects.toThrow("different host generation");
+      await expect(f.prepareTurn(input(stored.revision!, "later"))).rejects.toThrow("archived");
+      expect(f.starts()).toBe(0);
+      const metadata = { ...stored, title: "Archived evidence" };
+      await f.sessions.save(metadata);
+      expect((await f.base.get("conversation"))!.turns[0]!.recovery_resolution).toEqual(resolution);
+    },
+  );
+
   test("inserts pending observations after historical context and before the fresh prompt", async () => {
     const f = await fixture();
     const request = input();
@@ -294,15 +362,15 @@ describe("host-owned conversation transactions", () => {
     test(`reconciles an intent write failure ${afterCommit ? "after" : "before"} canonical publication`, async () => {
       const f = await fixture();
       let fail = true;
-      const service: FileSessionService = {
+      const service: HostSessionStore = {
         ...f.base,
-        async save(value) {
+        async saveHost(value) {
           if (fail && value.turns.length > 0) {
             fail = false;
-            if (afterCommit) await f.base.save(value);
+            if (afterCommit) await f.base.saveHost(value);
             throw new Error("injected disk failure");
           }
-          await f.base.save(value);
+          await f.base.saveHost(value);
         },
       };
       const coordinator = createHostedSessionCoordinator({

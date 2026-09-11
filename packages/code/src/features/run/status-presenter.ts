@@ -46,7 +46,7 @@ export interface RunStripInput {
  *
  * @param status - the status line as presented, which may carry a trailing
  *   post-run notice after a separator.
- * @returns `"Failed"`, `"Canceled"`, `"Completed"`, or `undefined` when the line
+ * @returns `"Failed"`, `"Canceled"`, `"Completed"`, `"Checkpoint saved"`, or `undefined` when the line
  *   names no outcome.
  * @remarks Only the segment **before the first separator** is classified. The
  *   run's outcome and what happened afterwards are composed onto one line, and
@@ -59,6 +59,7 @@ export function runOutcomeLabel(status: string): string | undefined {
   const own = status.split(glyph("separator"))[0] ?? status;
   if (/fail|error/i.test(own)) return "Failed";
   if (/cancel/i.test(own)) return "Canceled";
+  if (/checkpoint saved/i.test(own)) return "Checkpoint saved";
   if (/done|completed/i.test(own)) return "Completed";
   return undefined;
 }

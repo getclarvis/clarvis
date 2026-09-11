@@ -63,6 +63,21 @@ self-contained briefs; supervision distinguishes handles, first-child wakeups an
 authorization and unfinished work without treating transcript content as new instructions; bounded
 MCP instruction sections explicitly mark truncation.
 
+A host-bound capability can return `HandlerVerdict.finalize` to request a stage checkpoint. Dispatch
+joins earlier deferred work, pairs every tool call with a result, then runs the same capability and
+workspace-hook gates. Later calls in that batch are recorded as unexecuted. Cancellation or a gate
+failure cannot become a successful checkpoint. Its bounded summary/next-step metadata remains
+separate from `output_schema`, and the accepted disposition reaches the persisted response.
+The successful `run_ended` event retains that disposition for live and restored transcripts;
+unsuccessful termination keeps its existing reason and does not claim a saved checkpoint.
+Capability finalizers receive `preserveState` for checkpoints and for interruptions when a
+registered capability sets `preserveStateOnInterruption`. Scheduling the next run belongs to the host.
+
+Iteration preparation awaits `OrchestrationHooks.beforeIteration` in contribution order before
+compaction or inference, under a five-second wall bound and run cancellation. An interruption result
+ends the stage; successful completion or checkpoint is refused outside the finalization gates; a failed or timed-out sweep cannot proceed to the model. Its signal is retired on
+every exit, and asynchronous publishers must honor it to prevent late context changes.
+
 ## Core flow
 
 ```ts
@@ -297,7 +312,14 @@ generation run concurrently under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by 
 tool/observer hooks use a 5 s per-hook wall budget, rare policy gates use 30 s, and
 `finalizeRun`/`onRunEnd` use
 `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` (2 s by default). A timed-out extension loses only its own
-contribution, while the rest of the run can settle and release its resources. The logical timeout
+contribution when it is optional, while the rest of the run can settle and release its resources.
+Registrations marked `required: true` fail before inference if activation, a declared seed or entry
+attachment is unavailable. Physical extension saturation cannot silently remove their controls;
+`required_capability_unavailable` identifies that failure. Child permissions are unchanged and an
+already-cancelled run keeps cancellation semantics. Entry attachment and contribution folding finish
+before auxiliary vision inference. The reading is then appended to the same live context, after
+preserved history and current reminders; the shared budget is checked before and after preparation.
+The logical timeout
 does not release the host's physical extension permit: non-cooperative promises retain one of 32
 ordinary slots (at most four per stable capability/phase) until they really settle, so repeated runs
 stop invoking the offender instead of accumulating detached work. Finalizers and both run-end
@@ -449,22 +471,14 @@ Plus the degradation warnings the engine already emitted, now named:
 `run.teardown_detached`, `steer.drain_failed`, `tool.spill_failed`, `tool.handler_failed`,
 `tool.deferred_handler_failed`, and the one `error`: `run.persist_failed`.
 
-`context.prefix_break` is the reason this section exists. `specs/cross-cutting/prompt-cache.md` prices a single
-in-place mid-transcript rewrite at **2,929,430 tokens — 35.7% of one session's uncached input**, and
-until now that invariant was enforced only by a build-time test. Every mutation of the live
-transcript funnels through `LiveEntryStore`, which reports one when the mutation lands **before** the
-trailing volatile run; `cause: "compaction"` and `cause: "summary_anchor"` drop to `debug`, because
-eviction and summarization rebuild the transcript knowingly — `replaceSpanWithSummary` is reachable
-only from `attemptCompaction`, so warning on its anchor rewrite reported every rolling
-summarization as a defect and drowned the causes that are one. The character prefix-sum is computed
-only inside the break branch, and `appendDurable` — the path every tool result takes — reports
-nothing at all, by construction.
+`context.prefix_break` identifies an in-place change or removal in retained history. Ordinary
+messages, repeated runtime notes and capability reminders append after all previous entries.
+Compaction and summary-anchor changes are expected breaks recorded at debug level. New oversized
+results are bounded before their first request; earlier images remain untouched.
 
-Two of these warnings are decided from provider-reported evidence rather than from a threshold, and
-the distinction is the whole point. `iteration.cache` escalates when `cached_tokens` falls below
-what the provider served **last** iteration — never on the cache-read _ratio_, which one large
-`read_file` moves by 0.63 with the prefix perfectly intact — and it re-arms as soon as an iteration
-stops losing ground, so no single trip can hide a later break. `compaction.unreachable` fires only
+`iteration.cache` detects both a cached-token drop and stagnation during measured input growth,
+with warmup/compaction context and the first serialized divergence when available. Missing usage
+is unknown. Prefix preservation alone does not prove a backend hit. `compaction.unreachable` fires only
 when the provider **refuses** a prompt that is still below compaction's high-water mark: that
 rejection is the one observation proving a declared `context_window_tokens` is wider than the
 model's real window. The engine holds no independent knowledge of a model's window, so comparing the
@@ -489,3 +503,10 @@ bun --filter @clarvis/loop format:check
 ```
 
 The package requires Bun 1.4.0 or newer, matching `engines.bun`.
+
+## Prompt-cache continuity
+
+Direct runs persist missing session/agent identities before inference; continuation inherits them and each child uses its persisted instance ID. Canonical state and runtime notes append at their existing publication frequency. Historical messages, including capability blocks and images, retain their order across continuation until deliberate compaction.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

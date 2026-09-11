@@ -9,6 +9,7 @@ import {
 } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { convertCompatibleUsage } from "./ai-sdk/compatible-usage.ts";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type {
@@ -16,6 +17,7 @@ import type {
   LLMCallParams,
   LLMCallResult,
   LLMProvider,
+  LiveMessage,
   Logger,
   ResolvedProviderConfig,
 } from "@clarvis/capability";
@@ -37,6 +39,8 @@ import {
   type ModelCallTimeoutBridge,
 } from "./model-call-timeout-bridge.ts";
 import { streamMetrics } from "./stream-metrics.ts";
+import { withResponsesReplayIds } from "./ai-sdk/responses-replay.ts";
+import { SerializedPrefixWatch } from "./ai-sdk/request-prefix.ts";
 
 /**
  * Test and host seams for {@link AiSdkAdapter}: override how API keys are looked
@@ -175,6 +179,7 @@ function timeoutAbort(
  *   abort signal.
  */
 export class AiSdkAdapter implements LLMProvider {
+  private readonly prefixWatch = new SerializedPrefixWatch();
   private readonly config: AiSdkProviderConfig;
   private readonly defaultTimeoutMs?: number;
   private readonly boundedFetch: typeof globalThis.fetch;
@@ -206,7 +211,7 @@ export class AiSdkAdapter implements LLMProvider {
     this.maxResponseBytes = guardrails.maxResponseBytes ?? DEFAULT_PROVIDER_MAX_RESPONSE_BYTES;
     this.maxSseEventBytes = guardrails.maxSseEventBytes ?? DEFAULT_PROVIDER_MAX_SSE_EVENT_BYTES;
     this.boundedFetch = createBoundedFetch({
-      fetch: config.fetch,
+      fetch: this.prefixWatch.wrap(config.fetch ?? globalThis.fetch),
       maxResponseBytes: this.maxResponseBytes,
       maxSseEventBytes: this.maxSseEventBytes,
       logger: this.logger,
@@ -218,8 +223,9 @@ export class AiSdkAdapter implements LLMProvider {
     modelId: string,
     provider: string,
     conversationKey?: string,
+    messages: readonly LiveMessage[] = [],
   ): LanguageModel {
-    const built = this.buildRegistryFactory(cfg, conversationKey);
+    const built = this.buildRegistryFactory(cfg, conversationKey, messages);
     const model = built.factory(modelId);
     this.describeResolvedModel(cfg, modelId, provider, built.apiKeyPresent);
     return model;
@@ -291,6 +297,7 @@ export class AiSdkAdapter implements LLMProvider {
   private buildRegistryFactory(
     cfg: ResolvedProviderConfig,
     conversationKey?: string,
+    messages: readonly LiveMessage[] = [],
   ): {
     factory: ModelFactory;
     apiKeyPresent: boolean;
@@ -335,11 +342,19 @@ export class AiSdkAdapter implements LLMProvider {
     }
     switch (cfg.kind) {
       case "openai":
-        return { factory: createOpenAI({ apiKey: requireKey(), ...common }), apiKeyPresent };
+        return {
+          factory: createOpenAI({
+            apiKey: requireKey(),
+            ...common,
+            fetch: withResponsesReplayIds(this.boundedFetch, messages),
+          }),
+          apiKeyPresent,
+        };
       case "openai-compatible":
         return {
           factory: createOpenAICompatible({
             ...openAICompatibleSettings(cfg, headers, apiKey),
+            convertUsage: convertCompatibleUsage,
             fetch: this.boundedFetch,
           }),
           apiKeyPresent,
@@ -371,7 +386,7 @@ export class AiSdkAdapter implements LLMProvider {
           return auth.apply(input, init);
         }) as typeof globalThis.fetch;
         const fetch = createBoundedFetch({
-          fetch: subscriptionFetch,
+          fetch: withResponsesReplayIds(this.prefixWatch.wrap(subscriptionFetch), messages),
           maxResponseBytes: this.maxResponseBytes,
           maxSseEventBytes: this.maxSseEventBytes,
           logger: this.logger,
@@ -464,6 +479,7 @@ export class AiSdkAdapter implements LLMProvider {
       params.model,
       params.provider,
       params.promptCacheKey,
+      params.messages,
     );
     const timeoutMs = params.timeoutMs ?? this.defaultTimeoutMs;
     const { signal, timedOut, markActivity, cleanup } = timeoutAbort(
@@ -492,6 +508,7 @@ export class AiSdkAdapter implements LLMProvider {
       if (!params.onStreamDelta && !providerRequiresStream) {
         const result = await (this.config.generateText ?? generateText)(callArgs);
         const normalized = buildCallResult(result);
+        normalized.requestPrefix = this.prefixWatch.evidence(params.promptCacheKey);
         return params.providerConfig?.kind === "openai-codex" ||
           params.providerConfig?.kind === "xai-grok"
           ? { ...normalized, billing_source: "subscription" }
@@ -656,6 +673,7 @@ export class AiSdkAdapter implements LLMProvider {
         });
       }
       const normalized = buildCallResult(aggregate);
+      normalized.requestPrefix = this.prefixWatch.evidence(params.promptCacheKey);
       const retainedStreamTextParts: AssistantTextPart[] = streamedTextOrder.flatMap((id) => {
         const part = streamedTextParts.get(id);
         if (

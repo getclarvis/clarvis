@@ -1,3 +1,4 @@
+import { invalidContainerHostPolicies } from "../helpers/container-policy-cases.ts";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "bun:test";
 import {
@@ -53,6 +54,8 @@ function fixture(
     user?: string;
     rootless?: boolean;
     userns?: boolean;
+    effective?: (inspection: Record<string, unknown>) => void;
+    bootstrap?: () => Promise<unknown>;
   } = {},
   runtimeSpec: RuntimeLaunchSpec = spec,
 ) {
@@ -137,52 +140,61 @@ function fixture(
         return {
           exitCode: 0,
           stdout: JSON.stringify([
-            {
-              HostConfig: {
-                Privileged: overrides.privileged ?? false,
-                ReadonlyRootfs: true,
-                NetworkMode: overrides.network ?? "none",
-                SecurityOpt: ["no-new-privileges=true"],
-                CapDrop: ["ALL"],
-                PidsLimit: runtimeSpec.limits.processCount,
-                Memory: runtimeSpec.limits.memoryBytes,
-                Mounts: [{ Target: "/mise", VolumeOptions: { Subpath: "data", NoCopy: true } }],
-              },
-              Config: {
-                User: overrides.user ?? user,
-                Labels: { "io.clarvis.generation": runtimeSpec.generation },
-              },
-              Mounts: [
-                {
-                  Type: "bind",
-                  Source: runtimeSpec.workspaceRoot,
-                  Destination: "/workspace",
-                  RW: true,
+            (() => {
+              const inspection = {
+                HostConfig: {
+                  Privileged: overrides.privileged ?? false,
+                  ReadonlyRootfs: true,
+                  NetworkMode: overrides.network ?? "none",
+                  SecurityOpt: ["no-new-privileges=true"],
+                  CapDrop: ["ALL"],
+                  CapAdd: null,
+                  NanoCpus: runtimeSpec.limits.cpuCount * 1_000_000_000,
+                  Tmpfs: {
+                    "/tmp": `rw,nosuid,nodev,noexec,size=${runtimeSpec.limits.storageBytes}`,
+                  },
+                  PidsLimit: runtimeSpec.limits.processCount,
+                  Memory: runtimeSpec.limits.memoryBytes,
+                  Mounts: [{ Target: "/mise", VolumeOptions: { Subpath: "data", NoCopy: true } }],
                 },
-                ...runtimeSpec.readOnlyWorkspacePaths.map((path) => ({
-                  Type: "bind",
-                  Source: path,
-                  Destination: path.replace(runtimeSpec.workspaceRoot, "/workspace"),
-                  RW: false,
-                })),
-                ...(runtimeSpec.gitCommonDir === undefined
-                  ? []
-                  : [
-                      {
-                        Type: "bind",
-                        Source: runtimeSpec.gitCommonDir,
-                        Destination: runtimeSpec.gitCommonDir,
-                        RW: true,
-                      },
-                    ]),
-                {
-                  Type: "volume",
-                  Name: miseCacheName,
-                  Destination: "/mise",
-                  RW: true,
+                Config: {
+                  User: overrides.user ?? user,
+                  Labels: { "io.clarvis.generation": runtimeSpec.generation },
                 },
-              ],
-            },
+                Mounts: [
+                  {
+                    Type: "bind",
+                    Source: runtimeSpec.workspaceRoot,
+                    Destination: "/workspace",
+                    RW: true,
+                  },
+                  ...runtimeSpec.readOnlyWorkspacePaths.map((path) => ({
+                    Type: "bind",
+                    Source: path,
+                    Destination: path.replace(runtimeSpec.workspaceRoot, "/workspace"),
+                    RW: false,
+                  })),
+                  ...(runtimeSpec.gitCommonDir === undefined
+                    ? []
+                    : [
+                        {
+                          Type: "bind",
+                          Source: runtimeSpec.gitCommonDir,
+                          Destination: runtimeSpec.gitCommonDir,
+                          RW: true,
+                        },
+                      ]),
+                  {
+                    Type: "volume",
+                    Name: miseCacheName,
+                    Destination: "/mise",
+                    RW: true,
+                  },
+                ],
+              };
+              overrides.effective?.(inspection);
+              return inspection;
+            })(),
           ]),
           stderr: "",
         };
@@ -203,14 +215,16 @@ function fixture(
         input: hostToGuest,
         output: guestToHost,
         handlers: {
-          "runtime.bootstrap": async () => ({
-            generation: overrides.guestGeneration ?? runtimeSpec.generation,
-            imageDigest: runtimeSpec.imageDigest,
-            runtimeProtocolRevision:
-              overrides.guestProtocolRevision ??
-              overrides.protocolRevision ??
-              RUNTIME_PROTOCOL_REVISION,
-          }),
+          "runtime.bootstrap":
+            overrides.bootstrap ??
+            (async () => ({
+              generation: overrides.guestGeneration ?? runtimeSpec.generation,
+              imageDigest: runtimeSpec.imageDigest,
+              runtimeProtocolRevision:
+                overrides.guestProtocolRevision ??
+                overrides.protocolRevision ??
+                RUNTIME_PROTOCOL_REVISION,
+            })),
           "runtime.start": async ({ runId }) => ({ runId }),
           "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
@@ -242,6 +256,86 @@ function fixture(
 }
 
 describe("Docker runtime backend", () => {
+  it("reconciles cancellation during create through the generation label and immutable ID", async () => {
+    const fake = fixture();
+    const entered = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const immutableId = "f".repeat(64);
+    let probes = 0;
+    let attached = false;
+    const control: DockerControl = {
+      async run(args, signal, options) {
+        if (args[0] === "create") {
+          entered.resolve();
+          return new Promise((_resolve, reject) => {
+            const abort = () => reject(signal?.reason as Error);
+            if (signal?.aborted) abort();
+            else signal?.addEventListener("abort", abort, { once: true });
+          });
+        }
+        if (args[0] === "container" && args[1] === "inspect") {
+          probes++;
+          expect(signal?.aborted).not.toBe(true);
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              { Id: immutableId, Config: { Labels: { "io.clarvis.generation": spec.generation } } },
+            ]),
+            stderr: "",
+          };
+        }
+        if (args[0] === "rm") expect(signal?.aborted).not.toBe(true);
+        return fake.control.run(args, signal, options);
+      },
+      attach() {
+        attached = true;
+        throw new Error("cancelled initialization must not attach");
+      },
+    };
+    const backend = createDockerRuntimeBackend({ control, signal: controller.signal });
+    try {
+      await backend.inspect();
+      const refused = backend.start(spec).catch((error: unknown) => error);
+      await entered.promise;
+      controller.abort(new Error("generation closed during create"));
+      expect(await refused).toMatchObject({ message: "generation closed during create" });
+      expect(probes).toBe(1);
+      expect(fake.calls.at(-1)).toEqual(["rm", "--force", immutableId]);
+      expect(attached).toBe(false);
+    } finally {
+      fake.close();
+    }
+  });
+
+  it.each(["deadline", "cancel"] as const)("cleans a silent bootstrap after %s", async (mode) => {
+    const entered = Promise.withResolvers<void>();
+    const pending = Promise.withResolvers<unknown>();
+    const fake = fixture({
+      bootstrap: () => {
+        entered.resolve();
+        return pending.promise;
+      },
+    });
+    const controller = new AbortController();
+    const backend = createDockerRuntimeBackend({
+      control: fake.control,
+      signal: controller.signal,
+      bootstrapTimeoutMs: mode === "deadline" ? 50 : 5000,
+    });
+    await backend.inspect();
+    const refusal = backend.start(spec).catch((error: unknown) => error);
+    await entered.promise;
+    if (mode === "cancel") controller.abort(new Error("cancelled generation"));
+    expect(await refusal).toMatchObject({
+      message: expect.stringContaining(
+        mode === "deadline" ? "bootstrap response timed out" : "cancelled generation",
+      ),
+    });
+    expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    pending.resolve({});
+    fake.close();
+  });
+
   it("selects the operator identity on rootful Linux and partitions its prepared cache by user", async () => {
     const caches: string[] = [];
     for (const uid of [1001, 1002]) {
@@ -340,6 +434,22 @@ describe("Docker runtime backend", () => {
     expect(fake.calls.some((call) => call[0] === "volume" && call[1] === "rm")).toBe(false);
     fake.close();
   });
+
+  it.each(invalidContainerHostPolicies(spec))(
+    "refuses effective HostConfig.%s drift before attachment",
+    async (field, value) => {
+      const fake = fixture({
+        effective: (inspection) => {
+          (inspection.HostConfig as Record<string, unknown>)[field] = value;
+        },
+      });
+      const backend = createDockerRuntimeBackend({ control: fake.control });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+      expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    },
+  );
 
   it("fails closed on image, effective policy, internet mode and non-Linux engines", async () => {
     const wrongImage = fixture({ image: `sha256:${"e".repeat(64)}` });

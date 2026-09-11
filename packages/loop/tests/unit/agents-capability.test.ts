@@ -349,12 +349,12 @@ describe("agents capability — await_agents", () => {
 });
 
 describe("agents capability — notices and progress", () => {
-  it("a settled child's result reaches the model at the next iteration, without a poll", () => {
+  it("a settled child's result reaches the model at the next iteration, without a poll", async () => {
     const { registry, bc, contribution } = attach();
     const handle = registry.register(registration("n1"))!;
-    handle.settled({ status: "completed", result: "the auth paths are clean" });
+    await handle.settled({ status: "completed", result: "the auth paths are clean" });
 
-    contribution.hooks!.beforeIteration!();
+    await contribution.hooks!.beforeIteration!();
     const notes = bc.ctx.messages
       .map((m) => (typeof m.content === "string" ? m.content : ""))
       .join("\n");
@@ -363,17 +363,17 @@ describe("agents capability — notices and progress", () => {
     expect(contribution.hooks!.contributesProgress!()).toBe(true);
   });
 
-  it("a failed child's notice does not count as progress", () => {
+  it("a failed child's notice does not count as progress", async () => {
     const { registry, contribution } = attach();
     const handle = registry.register(registration("n1"))!;
-    handle.settled({ status: "failed", result: "boom" });
-    contribution.hooks!.beforeIteration!();
+    await handle.settled({ status: "failed", result: "boom" });
+    await contribution.hooks!.beforeIteration!();
     expect(contribution.hooks!.contributesProgress!()).toBe(false);
   });
 
-  it("an iteration with no notices claims no progress", () => {
+  it("an iteration with no notices claims no progress", async () => {
     const { contribution } = attach();
-    contribution.hooks!.beforeIteration!();
+    await contribution.hooks!.beforeIteration!();
     expect(contribution.hooks!.contributesProgress!()).toBe(false);
   });
 });

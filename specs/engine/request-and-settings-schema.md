@@ -104,7 +104,7 @@ exposed for tests via `packages/loop/src/testing/index.ts` (`validateBody`).
 ### 3.1 Run request shape (wire)
 
 `runRequestSchema` (`packages/loop/src/validation/request/request-schema.ts`) is a strict object
-with these top-level fields: `execution_id?`, `continue_from?`, `prompt_cache_key?`,
+with these top-level fields: `execution_id?`, `continue_from?`, `session_id?`, `agent_instance_id?`,
 `prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`, `vision_model?`,
 `budget`, `elicit_wait_ms?`, `guard_escalation?`, `output_schema?`, plus
 `...capabilityRequestParamFields` (`packages/loop/src/validation/request/request-schema.ts`) — a
@@ -365,7 +365,7 @@ Purely cosmetic; nothing here changes behavior.
 (`pickFirstIssue`, `packages/loop/src/validation/request/parsing.ts`) and maps it to an `ErrorCode`
 via `classifyIssue` (`packages/loop/src/validation/request/parsing.ts`), which switches on the
 issue's top-level path segment (`execution_id`/`continue_from` → `invalid_execution_id`;
-`prompt_cache_key` → `invalid_prompt_cache_key`; `prompt_cache_ttl` → `invalid_prompt_cache_ttl`
+`session_id` or `agent_instance_id` → `invalid_prompt_cache_key`; `prompt_cache_ttl` → `invalid_prompt_cache_ttl`
 (`packages/loop/src/validation/request/parsing.ts`); `messages` → `messages_empty` for an
 empty/wrong-type array, else `invalid_message_format`; `profiles` → `invalid_model_format` for a
 `.model` path, `invalid_iteration_limit` for `.iteration_limit`, else `invalid_profile`; `entry` →

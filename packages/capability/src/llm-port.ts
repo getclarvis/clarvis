@@ -17,6 +17,8 @@ export interface LLMToolCall {
   id: string;
   name: string;
   arguments: unknown;
+  /** Provider-owned replay metadata, including an item id when supplied. */
+  providerOptions?: Record<string, Record<string, unknown>>;
   /**
    * A bounded preview of the payload the provider sent when it did not decode
    * to an argument object, set by the provider layer and absent otherwise.
@@ -54,6 +56,10 @@ export interface LLMUsage {
   output_tokens: number;
   cached_tokens: number;
   cache_write_tokens: number;
+  /** At least one physical attempt lacks complete input/output counters; numeric fields are partial. */
+  usage_unknown?: true;
+  /** Cache-read counters were absent on at least one attributed attempt. */
+  cache_unknown?: true;
 }
 
 /**
@@ -66,6 +72,14 @@ export interface LLMCallResult {
   text?: string;
   toolCalls?: LLMToolCall[];
   usage: LLMUsage;
+  /** False when the SDK did not supply complete input/output/cache-read counters. */
+  cacheUsageKnown?: boolean;
+  /** Safe comparison of consecutive SDK-serialized requests; no prompt or opaque metadata. */
+  requestPrefix?: {
+    previousItems: number;
+    currentItems: number;
+    divergence?: { surface: "instructions" | "tools" | "history"; item?: number };
+  };
   reasoning?: string;
   /** Explicit billing authority when the host used renewable subscription credentials. */
   billing_source?: "subscription";
@@ -99,8 +113,9 @@ export interface LLMCallResult {
    *   attempt alone; a caller charging a budget must add this, or the ledger
    *   under-counts by exactly the amount an unhealthy provider cost — making
    *   the hard token cap least accurate precisely when a run is burning money
-   *   for nothing. Absent when nothing was retried, or when no failed attempt's
-   *   usage could be read.
+   *   for nothing. Absent when no attempt failed. Unreported attempts retain
+   *   `usage_unknown` rather than
+   *   claiming that their zero placeholders are measured consumption.
    */
   retriedUsage?: LLMUsage;
 }
@@ -192,6 +207,8 @@ export interface RetryInfo {
  *   wrapper's defaults per call.
  */
 export interface LLMCallParams {
+  /** Semantic accounting purpose; operational metadata, never part of the provider prompt. */
+  callPurpose?: "generation" | "memory" | "compaction";
   model: string;
   messages: LiveMessage[];
   tools: NamespacedTool[];
@@ -205,6 +222,10 @@ export interface LLMCallParams {
   reasoningSummary?: ReasoningSummary;
   reasoningEffort?: ReasoningEffort;
   promptCacheKey?: string;
+  /** Persisted conversation identity, independent of this physical attempt. */
+  sessionId?: string;
+  /** Persisted agent instance; two children of one profile have different ids. */
+  agentInstanceId?: string;
   /** How long a written prompt-cache prefix should survive; Anthropic only. */
   promptCacheTtl?: PromptCacheTtl;
   /**

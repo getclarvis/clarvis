@@ -3,6 +3,7 @@ import type { GateVerdict, LifecycleHook, Logger, PreFinalizeContext } from "@cl
 import {
   buildPreFinalizeGate,
   fireObservers,
+  runBeforeIteration,
   runVerdictHooks,
   type VerdictSweep,
 } from "../../src/runtime/loop/lifecycle-hooks.ts";
@@ -40,6 +41,67 @@ function sweep(
     },
   );
 }
+
+describe("iteration preparation boundary", () => {
+  it.each(["final", "checkpoint"] as const)(
+    "refuses %s completion outside the finalization gates",
+    async (disposition) => {
+      await expect(
+        runBeforeIteration(() =>
+          disposition === "checkpoint"
+            ? {
+                status: "completed",
+                partialText: "",
+                disposition: "checkpoint",
+                checkpoint: { summary: "Unreviewed", next_step: "Continue" },
+              }
+            : { status: "completed", partialText: "", disposition: "final" },
+        ),
+      ).rejects.toThrow("Iteration preparation cannot finalize an agent");
+    },
+  );
+
+  it("bounds an unresponsive preparation and retires its signal before late publication", async () => {
+    const release = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    let signal: AbortSignal | undefined;
+    let published = false;
+    const pending = runBeforeIteration(
+      async (current) => {
+        signal = current;
+        await release.promise;
+        if (!current!.aborted) published = true;
+        finished.resolve();
+      },
+      { timeoutMs: 5 },
+    );
+    await expect(pending).rejects.toThrow("hook timed out after 5ms");
+    expect(signal?.aborted).toBe(true);
+    release.resolve();
+    await finished.promise;
+    expect(published).toBe(false);
+  });
+
+  it("retains the cancellation reason and retires the preparation signal", async () => {
+    const controller = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    let signal: AbortSignal | undefined;
+    const pending = runBeforeIteration(
+      async (current) => {
+        signal = current;
+        entered.resolve();
+        await new Promise<void>((resolve) =>
+          current!.addEventListener("abort", () => resolve(), { once: true }),
+        );
+      },
+      { signal: controller.signal },
+    );
+    await entered.promise;
+    controller.abort(new Error("cancel fixture"));
+    await expect(pending).rejects.toThrow("cancel fixture");
+    expect(signal?.aborted).toBe(true);
+  });
+});
 
 describe("runVerdictHooks", () => {
   it("aborts a pending hook with the signal reason", async () => {

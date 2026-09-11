@@ -1,5 +1,6 @@
 import type {
   ExtensionProfileRunRef,
+  HostedRecoveryResolution,
   Message,
   RunStatus,
   RunUsage,
@@ -7,7 +8,7 @@ import type {
   SessionService,
   SessionSummary,
 } from "@clarvis/protocol";
-import { sanitizeErrorMessage, sanitizeText } from "@clarvis/kernel/policy";
+import { addRunUsage, sanitizeErrorMessage, sanitizeText } from "@clarvis/kernel/policy";
 import { glyph } from "../core/marks.ts";
 import type { CatalogCost } from "./models-catalog.ts";
 
@@ -33,6 +34,8 @@ interface TurnRefBase {
   status: NodeStatus;
   startedAt?: number;
   endedAt?: number;
+  /** Durable recovery audit; this conversation is archived and cannot submit another run. */
+  recoveryResolution?: HostedRecoveryResolution;
   /**
    * Why the run failed, when it did: the `{code, message}` the kernel preserves
    * on a failed run's envelope, masked and bounded by {@link redactTurnError}.
@@ -69,6 +72,7 @@ export type TurnRef = ConversationTurnRef | TranscriptTurnRef;
 /** A session's persisted metadata: its turns, totals, and any unflushed pending messages. */
 export interface SessionMeta {
   id: SessionId;
+  agentInstanceId?: string;
   /** Last canonical hosted revision observed by this cache; never a control or consent token. */
   revision?: number;
   title: string;
@@ -219,35 +223,15 @@ export function addUsageToTotals(
   usage: RunUsage | undefined,
   priceFor?: (model: string) => CatalogCost | undefined,
 ): void {
-  if (!usage) return;
-  if (usage.by_agent === undefined) {
-    const input = usage.input_tokens ?? 0;
-    totals.input += input;
-    totals.output += usage.output_tokens ?? 0;
-    if (totals.cached !== undefined) {
-      if (usage.cached_tokens !== undefined) totals.cached += usage.cached_tokens;
-      else if (input > 0) delete totals.cached;
-    }
-    return;
-  }
-  for (const a of usage.by_agent) {
-    totals.input += a.input_tokens;
-    totals.output += a.output_tokens;
-    if (totals.cached !== undefined) totals.cached += a.cached_tokens;
-    const cost = priceFor?.(a.model);
-    if (!cost) continue;
-    const cacheRead = cost.cache_read ?? cost.input;
-    const cacheWrite = cost.cache_write ?? cost.input;
-    const cached = a.cached_tokens ?? 0;
-    const cacheWriteTokens = a.cache_write_tokens ?? 0;
-    const freshInput = Math.max(0, a.input_tokens - cached);
-    const delta =
-      (freshInput / 1e6) * cost.input +
-      (a.output_tokens / 1e6) * cost.output +
-      (cached / 1e6) * cacheRead +
-      (cacheWriteTokens / 1e6) * cacheWrite;
-    totals.costUsd = (totals.costUsd ?? 0) + delta;
-  }
+  const { costUsd, ...tokens } = totals;
+  const canonical = { ...tokens, ...(costUsd === undefined ? {} : { cost_usd: costUsd }) };
+  addRunUsage(canonical, usage, priceFor);
+  totals.input = canonical.input;
+  totals.output = canonical.output;
+  if (canonical.cached === undefined) delete totals.cached;
+  else totals.cached = canonical.cached;
+  if (canonical.cost_usd === undefined) delete totals.costUsd;
+  else totals.costUsd = canonical.cost_usd;
 }
 
 /**
@@ -363,6 +347,7 @@ export function metaToSession(m: SessionMeta): Session {
   if (m.projectId === undefined) throw new Error("session project identity is required");
   return {
     id: m.id,
+    ...(m.agentInstanceId === undefined ? {} : { agent_instance_id: m.agentInstanceId }),
     ...(m.revision === undefined ? {} : { revision: m.revision }),
     title: m.title,
     project_id: m.projectId,
@@ -376,6 +361,7 @@ export function metaToSession(m: SessionMeta): Session {
       ...(t.executionId !== undefined ? { execution_id: t.executionId } : {}),
       ...(t.extensionProfile !== undefined ? { extension_profile: t.extensionProfile } : {}),
       status: t.status,
+      ...(t.recoveryResolution === undefined ? {} : { recovery_resolution: t.recoveryResolution }),
       ...(t.startedAt !== undefined ? { started_at: t.startedAt } : {}),
       ...(t.endedAt !== undefined ? { ended_at: t.endedAt } : {}),
       ...(t.error !== undefined ? { error: { code: t.error.code, message: t.error.message } } : {}),
@@ -395,6 +381,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
   const lastExtensionProfile = persistedExtensionProfile(s.turns.at(-1)?.extension_profile);
   return {
     id: s.id,
+    ...(s.agent_instance_id === undefined ? {} : { agentInstanceId: s.agent_instance_id }),
     ...(s.revision === undefined ? {} : { revision: s.revision }),
     title: s.title,
     projectId: s.project_id,
@@ -412,6 +399,9 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
         ...(t.execution_id !== undefined ? { executionId: t.execution_id } : {}),
         ...(extensionProfile !== undefined ? { extensionProfile } : {}),
         status: t.status,
+        ...(t.recovery_resolution === undefined
+          ? {}
+          : { recoveryResolution: t.recovery_resolution }),
         ...(t.started_at !== undefined ? { startedAt: t.started_at } : {}),
         ...(t.ended_at !== undefined ? { endedAt: t.ended_at } : {}),
         ...(error !== undefined ? { error } : {}),

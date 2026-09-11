@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import {
-  loadEnv,
   NOOP_LOGGER,
   type CompactionRequest,
   type ExecutionRecord,
@@ -17,6 +16,7 @@ import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
 import { createGuardResolver, type GuardSettings } from "../guard/resolver.ts";
 import { createGuestGuardAuditLogger } from "./guard-audit-bridge.ts";
+import { createGuestGuardApproval } from "./guard-approval-bridge.ts";
 import { createRuntimePreviewCapability } from "./preview-capability.ts";
 import { createGuestPlanFactory } from "./plan-bridge.ts";
 import { createPlansCapability } from "@clarvis/plan/capability";
@@ -42,11 +42,24 @@ import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
 import { createGuestHookMcpCaller } from "./hook-mcp.ts";
 import { createGuestMcpConnections } from "./remote-mcp.ts";
+import { validRuntimeToolPolicy, type RuntimeToolPolicy } from "./tool-policy.ts";
+import {
+  createGuestGoalCapability,
+  validRuntimeGoalDescriptor,
+  type RuntimeGoalDescriptor,
+} from "./goal-bridge.ts";
+import {
+  guestLoopEnvironment,
+  validRuntimeLoopPolicy,
+  type RuntimeLoopPolicy,
+} from "./loop-policy.ts";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
   readonly owner: string;
   readonly modelLeaseId: string;
+  readonly toolPolicy: RuntimeToolPolicy;
+  readonly loopPolicy: RuntimeLoopPolicy;
   readonly priorExecution?: StoredExecution;
   readonly guardSettings?: Omit<GuardSettings, "providers">;
   readonly hostCapabilities?: readonly string[];
@@ -55,6 +68,7 @@ interface GuestRunEnvelope {
   readonly memory?: MemoryRuntimeDescriptor;
   readonly hooks?: RuntimeHooksDescriptor;
   readonly workflow?: RuntimeWorkflowDescriptor;
+  readonly goal?: RuntimeGoalDescriptor;
   readonly parentRunId?: string;
   readonly outputBudgets?: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
 }
@@ -180,12 +194,23 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
     value === null ||
     typeof (value as GuestRunEnvelope).owner !== "string" ||
     typeof (value as GuestRunEnvelope).modelLeaseId !== "string" ||
+    !validRuntimeToolPolicy((value as GuestRunEnvelope).toolPolicy) ||
+    !validRuntimeLoopPolicy((value as GuestRunEnvelope).loopPolicy) ||
     !Object.prototype.hasOwnProperty.call(value, "rawBody")
   ) {
     return false;
   }
   const envelope = value as GuestRunEnvelope;
   return (
+    (envelope.hostCapabilities === undefined ||
+      (Array.isArray(envelope.hostCapabilities) &&
+        envelope.hostCapabilities.every((name) => typeof name === "string"))) &&
+    (envelope.goal === undefined
+      ? envelope.hostCapabilities?.includes("goal") !== true
+      : envelope.hostCapabilities?.includes("goal") === true &&
+        validRuntimeGoalDescriptor(envelope.goal, envelope.rawBody) &&
+        envelope.workflow === undefined &&
+        envelope.parentRunId === undefined) &&
     (envelope.memory === undefined || validRuntimeMemoryDescriptor(envelope.memory)) &&
     (envelope.memory === undefined || envelope.hostCapabilities?.includes("memory") === true)
   );
@@ -205,6 +230,9 @@ function modelBody(params: LLMCallParams): unknown {
     ...(params.reasoningSummary === undefined ? {} : { reasoningSummary: params.reasoningSummary }),
     ...(params.reasoningEffort === undefined ? {} : { reasoningEffort: params.reasoningEffort }),
     ...(params.promptCacheKey === undefined ? {} : { promptCacheKey: params.promptCacheKey }),
+    ...(params.callPurpose === undefined ? {} : { callPurpose: params.callPurpose }),
+    ...(params.sessionId === undefined ? {} : { sessionId: params.sessionId }),
+    ...(params.agentInstanceId === undefined ? {} : { agentInstanceId: params.agentInstanceId }),
     ...(params.promptCacheTtl === undefined ? {} : { promptCacheTtl: params.promptCacheTtl }),
     ...(params.cacheBreakpoints === undefined ? {} : { cacheBreakpoints: params.cacheBreakpoints }),
   };
@@ -283,6 +311,8 @@ export function createGuestLoopExecutor(
   return {
     async execute(runId, envelope, bridge, signal) {
       if (!validEnvelope(envelope)) throw new Error("guest run envelope is invalid");
+      if (envelope.goal !== undefined && envelope.goal.binding.execution_id !== runId)
+        throw guestControlError("unauthorized", "guest goal execution identity mismatches");
       const child = children.get(runId);
       if (
         envelope.parentRunId !== undefined &&
@@ -307,10 +337,7 @@ export function createGuestLoopExecutor(
         const enqueueEvent = (event: unknown): void => {
           eventTail = eventTail.then(() => bridge.event(event));
         };
-        const env = loadEnv({
-          CLARVIS_LOG_LEVEL: "silent",
-          CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
-        });
+        const env = guestLoopEnvironment(envelope.loopPolicy, envelope.toolPolicy);
         const plans = envelope.hostCapabilities?.includes("plans")
           ? createPlansCapability({
               factory: createGuestPlanFactory(bridge, signal),
@@ -340,15 +367,18 @@ export function createGuestLoopExecutor(
           logger: NOOP_LOGGER,
           workspaceRoot,
           traceDir,
-          builtins: { tools: true, skills: false, hooks: false },
+          builtins: { tools: envelope.toolPolicy.enabled, skills: false, hooks: false },
           resolveGuard: createGuardResolver({
+            humanApprovalFor: () => createGuestGuardApproval(bridge, signal),
             loadSettings: () => guestGuardSettings(envelope),
             logger: NOOP_LOGGER,
             audit: createGuestGuardAuditLogger(enqueueEvent),
           }),
           resolveSecretNames: () => [],
           capabilities: [
-            createRuntimePreviewCapability(bridge),
+            ...(envelope.toolPolicy.enabled && envelope.toolPolicy.maxGrant === "exec"
+              ? [createRuntimePreviewCapability(bridge)]
+              : []),
             ...(plans === undefined ? [] : [plans]),
             ...(skills === undefined ? [] : [skills]),
             memory,
@@ -375,6 +405,21 @@ export function createGuestLoopExecutor(
         control.elicitMcp = (input, signal) => connections.elicit(input, signal);
         built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
         const extraCapabilities = [
+          ...(envelope.goal === undefined
+            ? []
+            : [
+                createGuestGoalCapability(
+                  envelope.goal,
+                  {
+                    ...bridge,
+                    async capability(...args) {
+                      await eventTail;
+                      return bridge.capability(...args);
+                    },
+                  },
+                  signal,
+                ),
+              ]),
           ...(child?.args.capabilities ?? []),
           ...(envelope.outputBudgets ?? []).map((budget) =>
             createLeaderOutputBudgetCapability(

@@ -238,6 +238,7 @@ declare const skills: SkillsService;
 declare const sessions: SessionService;
 declare const tasks: TasksService;
 declare const storage: StorageService;
+declare const goals: KernelClient["goals"];
 
 const client = {
   capabilities,
@@ -258,6 +259,7 @@ const client = {
   sessions,
   tasks,
   storage,
+  goals,
   async close() {},
 } satisfies KernelClient;
 

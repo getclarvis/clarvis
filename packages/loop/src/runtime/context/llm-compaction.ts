@@ -240,6 +240,7 @@ export async function summarizeContext(
   args: SummarizeContextArgs,
 ): Promise<SummarizeContextResult> {
   const result = await args.llm.call({
+    callPurpose: "compaction",
     model: args.model,
     provider: args.provider,
     ...(args.providerConfig ? { providerConfig: args.providerConfig } : {}),

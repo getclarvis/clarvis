@@ -24,6 +24,26 @@ import {
 } from "./limits.ts";
 import { planRevisionOperationSchema } from "./revisions.ts";
 
+/** An explicit null means an omitted read filter, without admitting empty or invalid values. */
+function optionalQueryField<T extends z.ZodType>(schema: T) {
+  return schema.nullish().transform((value) => value ?? undefined);
+}
+
+/** Read the current plan when the model omits its id or supplies the advertised null alternative. */
+export const readPlanInputSchema = z.object({
+  id: optionalQueryField(z.string().min(1).max(MAX_PLAN_LOCATOR_CHARS)),
+});
+
+/** Normalize explicit absent paging/filter options before crossing the provider's typed list port. */
+export const listPlansInputSchema = z.object({
+  cursor: optionalQueryField(z.string().min(1).max(MAX_PLAN_LOCATOR_CHARS)),
+  limit: optionalQueryField(z.number().int().min(1).max(100)),
+  status: optionalQueryField(
+    z.enum(["awaiting_approval", "active", "completed", "cancelled", "failed"]),
+  ),
+  retention: optionalQueryField(z.enum(["discard", "keep"])),
+});
+
 /**
  * Validation schema for {@link REVISE_PLAN_TOOL_NAME} arguments: the
  * compare-and-swap triple (`expected_revision`/`expected_digest`/
@@ -63,13 +83,10 @@ export const revisePlanInputSchema = z
  * advertised to the model; a host's runtime validates the actual arguments
  * separately.
  *
- * @remarks {@link revisePlanInputSchema} above is this package's only exported
- *   Zod schema, and it is the one `capability/runtime-tools.ts` imports to
- *   validate `revise_plan` arguments with. The other four tools' argument
- *   validation is a separate set of Zod schemas local to that same file. Both
- *   halves live inside this package: the wire contract advertised here and the
- *   validation applied there travel together, so a schema change cannot reach a
- *   model without its validator.
+ * @remarks Read/list catalogs are generated from their shared input schemas;
+ *   the runtime normalizes their null alternatives before invoking the provider.
+ *   Revision validation also lives here. Create and transition validation remain
+ *   in `capability/runtime-tools.ts`; edits must keep their advertised bounds aligned.
  */
 export const planToolDefinitions = [
   {
@@ -111,26 +128,14 @@ export const planToolDefinitions = [
   {
     name: READ_PLAN_TOOL_NAME,
     description:
-      "Read the active plan (omit id) or a historical plan by stable id, including its current revision and digests.",
-    inputSchema: {
-      type: "object",
-      properties: { id: { type: "string", maxLength: MAX_PLAN_LOCATOR_CHARS } },
-    },
+      "Read the active plan (omit id or pass null) or a historical plan by stable id, including its current revision and digests. Never pass an empty id.",
+    inputSchema: z.toJSONSchema(readPlanInputSchema, { target: "draft-7", io: "input" }),
   },
   {
     name: LIST_PLANS_TOOL_NAME,
-    description: "List workspace plan history.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        cursor: { type: "string", maxLength: MAX_PLAN_LOCATOR_CHARS },
-        limit: { type: "integer", minimum: 1, maximum: 100 },
-        status: {
-          enum: ["awaiting_approval", "active", "completed", "cancelled", "failed"],
-        },
-        retention: { enum: ["discard", "keep"] },
-      },
-    },
+    description:
+      "List workspace plan history. Omit cursor or pass null for the first page; use only a returned cursor for another page. Omit or pass null for the default limit and unfiltered status/retention.",
+    inputSchema: z.toJSONSchema(listPlansInputSchema, { target: "draft-7", io: "input" }),
   },
   {
     name: REVISE_PLAN_TOOL_NAME,

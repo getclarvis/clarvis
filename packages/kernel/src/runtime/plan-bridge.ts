@@ -2,18 +2,26 @@ import { randomUUID } from "node:crypto";
 
 import type { HostCapabilityGrant } from "./authority-brokers.ts";
 import type { GuestExecutionBridge } from "./execution-worker.ts";
+import type { ExecutionRecord } from "@clarvis/capability";
+import { planRefFromCapabilityState } from "../runs/plan-ref.ts";
+import { callPlanTransfer, createPlanTransferGrant } from "./plan-transfer.ts";
+import {
+  decodePlanWireDocument,
+  encodePlanWireDocument,
+  validPlanWireDocument,
+} from "./plan-wire.ts";
 import {
   InvalidPlanError,
   PlanConflictError,
   PlanNotFoundError,
   PlanProviderUnavailableError,
   PlanSealedError,
-  planDocumentSchema,
   planRevisionOperationSchema,
   type CreatePlanInput,
   type PlanCas,
   type PlanDocument,
   type PlanFactory,
+  type PlanRef,
   type PlanListInput,
   type PlanListResult,
   type PlanRevisionOperation,
@@ -22,7 +30,7 @@ import {
 
 /** Exact private method used by a guest plan capability to reach its host-owned store. */
 export const RUNTIME_PLANS_METHOD = "runtime.plans";
-export const RUNTIME_PLANS_REVISION = "v1";
+export const RUNTIME_PLANS_REVISION = "v2";
 
 type PlanBridgeOperation =
   "resolve" | "create" | "read" | "list" | "replace" | "reconcile" | "revise" | "delete";
@@ -131,7 +139,7 @@ function validPlanBridgeRequest(value: unknown): value is PlanBridgeRequest {
     case "resolve":
       return request.input === undefined;
     case "create":
-      return createInput(input?.value);
+      return input !== undefined && only(input, ["value"]) && createInput(input.value);
     case "read":
       return input !== undefined && only(input, ["id"]) && string(input.id);
     case "list":
@@ -142,7 +150,7 @@ function validPlanBridgeRequest(value: unknown): value is PlanBridgeRequest {
         only(input, ["id", "expected", "document", "structural", "now"]) &&
         string(input.id) &&
         cas(input.expected) &&
-        planDocumentSchema.safeParse(input.document).success &&
+        validPlanWireDocument(input.document) &&
         (input.structural === undefined || typeof input.structural === "boolean") &&
         optionalIsoDate(input.now)
       );
@@ -193,10 +201,33 @@ function toCas(value: PlanCas | PlanDocument): PlanCas {
 }
 
 /** Bind one run's exact owner to the canonical host plan provider. */
-export function createHostPlansGrant(factory: PlanFactory, owner: string): HostCapabilityGrant {
+export function createHostPlansGrant(
+  factory: PlanFactory,
+  owner: string,
+  context: {
+    readonly runId: string;
+    readonly priorRef?: PlanRef;
+    readonly readTerminalRecord: () => Pick<
+      ExecutionRecord,
+      "id" | "owner_key_name" | "status" | "capability_state"
+    > | null;
+  },
+): HostCapabilityGrant {
   let resolved: Awaited<ReturnType<PlanFactory["storeFor"]>> | undefined;
   const provider = async () => (resolved ??= await factory.storeFor(owner));
-  return {
+  let binding =
+    context.priorRef === undefined
+      ? undefined
+      : {
+          id: context.priorRef.id,
+          providerKey: context.priorRef.provider_key,
+        };
+  const deny = (): never => {
+    throw Object.assign(new Error("runtime plan operation is not authorized for this run"), {
+      code: "unauthorized",
+    });
+  };
+  return createPlanTransferGrant({
     method: RUNTIME_PLANS_METHOD,
     revision: RUNTIME_PLANS_REVISION,
     idempotent: false,
@@ -209,51 +240,103 @@ export function createHostPlansGrant(factory: PlanFactory, owner: string): HostC
       }
       const selected = await provider();
       const input = value.input ?? {};
+      if (
+        ["replace", "reconcile", "revise", "delete"].includes(value.operation) &&
+        (binding?.id !== input.id || binding?.providerKey !== selected.key)
+      )
+        deny();
       switch (value.operation) {
         case "resolve":
           return { key: selected.key, providerKind: selected.providerKind };
         case "create": {
           const raw = input.value as WireCreatePlanInput;
+          if (raw.createdByRun !== context.runId) deny();
           const { now, ...create } = raw;
-          return selected.store.create({
+          const created = await selected.store.create({
             ...create,
             ...(now === undefined ? {} : { now: new Date(now) }),
           });
+          binding = { id: created.id, providerKey: selected.key };
+          return encodePlanWireDocument(created);
         }
         case "read":
-          return selected.store.read(input.id as string);
-        case "list":
-          return selected.store.list(input.value as PlanListInput);
+          return encodePlanWireDocument(await selected.store.read(input.id as string));
+        case "list": {
+          const page = await selected.store.list(input.value as PlanListInput);
+          return { ...page, plans: page.plans.map(encodePlanWireDocument) };
+        }
         case "replace":
-          return selected.store.update(
-            input.id as string,
-            input.expected as PlanCas,
-            () => structuredClone(input.document as PlanDocument),
-            {
-              ...(input.structural === undefined
-                ? {}
-                : { structural: input.structural as boolean }),
-              ...(date(input.now) === undefined ? {} : { now: date(input.now) }),
-            },
+          return encodePlanWireDocument(
+            await selected.store.update(
+              input.id as string,
+              input.expected as PlanCas,
+              () => decodePlanWireDocument(input.document),
+              {
+                ...(input.structural === undefined
+                  ? {}
+                  : { structural: input.structural as boolean }),
+                ...(date(input.now) === undefined ? {} : { now: date(input.now) }),
+              },
+            ),
           );
         case "reconcile":
-          return selected.store.reconcile(
-            input.id as string,
-            input.known as PlanCas,
-            date(input.now),
+          return encodePlanWireDocument(
+            await selected.store.reconcile(
+              input.id as string,
+              input.known as PlanCas,
+              date(input.now),
+            ),
           );
         case "revise":
-          return selected.store.revise(
-            input.id as string,
-            input.expected as PlanCas,
-            input.operation as PlanRevisionOperation | readonly PlanRevisionOperation[],
-            date(input.now),
+          return encodePlanWireDocument(
+            await selected.store.revise(
+              input.id as string,
+              input.expected as PlanCas,
+              input.operation as PlanRevisionOperation | readonly PlanRevisionOperation[],
+              date(input.now),
+            ),
           );
-        case "delete":
-          return selected.store.delete(input.id as string, input.expected as PlanCas | undefined);
+        case "delete": {
+          const terminal = context.readTerminalRecord();
+          const ref = planRefFromCapabilityState(terminal?.capability_state);
+          if (
+            terminal?.id !== context.runId ||
+            terminal.owner_key_name !== owner ||
+            terminal.status !== "completed" ||
+            ref?.id !== binding?.id ||
+            ref?.provider_key !== selected.key ||
+            ref.status !== "completed" ||
+            ref.retention !== "discard"
+          )
+            deny();
+          let current: PlanDocument;
+          try {
+            current = await selected.store.read(input.id as string);
+          } catch (error) {
+            if (error instanceof PlanNotFoundError) return false;
+            throw error;
+          }
+          if (
+            current.status !== "completed" ||
+            current.retention !== "discard" ||
+            current.revision !== ref!.final_revision ||
+            current.spec_revision !== ref!.final_spec_revision
+          )
+            deny();
+          const expected = input.expected as PlanCas | undefined;
+          if (
+            expected !== undefined &&
+            (expected.revision !== current.revision ||
+              expected.digest !== current.digest ||
+              expected.specDigest !== current.spec_digest)
+          ) {
+            throw new PlanConflictError("runtime retention compare-and-swap mismatches");
+          }
+          return selected.store.delete(current.id, toCas(current));
+        }
       }
     },
-  };
+  });
 }
 
 function mapPlanBridgeError(error: unknown, id?: string): never {
@@ -269,12 +352,7 @@ function mapPlanBridgeError(error: unknown, id?: string): never {
   throw error;
 }
 
-function planDocument(value: unknown): PlanDocument {
-  const parsed = planDocumentSchema.safeParse(value);
-  if (!parsed.success)
-    throw new InvalidPlanError(`host returned an invalid plan: ${parsed.error.message}`);
-  return parsed.data;
-}
+const planDocument = decodePlanWireDocument;
 
 /** Create the guest-side PlanFactory whose every data operation remains host-authoritative. */
 export function createGuestPlanFactory(
@@ -283,13 +361,18 @@ export function createGuestPlanFactory(
 ): PlanFactory {
   const call = async (operation: PlanBridgeOperation, input?: Record<string, unknown>) => {
     try {
-      return await bridge.capability(
-        randomUUID(),
-        {
-          method: RUNTIME_PLANS_METHOD,
-          revision: RUNTIME_PLANS_REVISION,
-          arguments: { operation, ...(input === undefined ? {} : { input }) },
-        },
+      return await callPlanTransfer(
+        { operation, ...(input === undefined ? {} : { input }) },
+        (request, requestSignal) =>
+          bridge.capability(
+            randomUUID(),
+            {
+              method: RUNTIME_PLANS_METHOD,
+              revision: RUNTIME_PLANS_REVISION,
+              arguments: request,
+            },
+            requestSignal,
+          ),
         signal,
       );
     } catch (error) {
@@ -324,13 +407,14 @@ export function createGuestPlanFactory(
           },
           async list(input = {}) {
             const value = record(await call("list", { value: input }));
-            const plans = planDocumentSchema.array().safeParse(value?.plans);
-            if (!plans.success) throw new InvalidPlanError("host returned an invalid plan list");
+            if (!Array.isArray(value?.plans))
+              throw new InvalidPlanError("host returned an invalid plan list");
+            const plans = value.plans.map(planDocument);
             if (value?.next_cursor !== undefined && typeof value.next_cursor !== "string") {
               throw new InvalidPlanError("host returned an invalid plan cursor");
             }
             return {
-              plans: plans.data,
+              plans,
               ...(typeof value?.next_cursor === "string" ? { next_cursor: value.next_cursor } : {}),
             } satisfies PlanListResult;
           },
@@ -342,7 +426,7 @@ export function createGuestPlanFactory(
               await call("replace", {
                 id,
                 expected: toCas(expected),
-                document: changed,
+                document: encodePlanWireDocument(changed),
                 ...(options.structural === undefined ? {} : { structural: options.structural }),
                 ...(options.now === undefined ? {} : { now: options.now.toISOString() }),
               }),

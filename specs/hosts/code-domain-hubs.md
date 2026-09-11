@@ -69,6 +69,15 @@ declared at `packages/code/src/keys/commands.ts` and supplies `scope()`/`toggleS
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx`).
 
+Background discovery follows the same split: `createBackgroundListController` owns coalesced polling,
+loading/errors, serialized actions and disposal fences; `BackgroundView` keeps keyed reconciliation,
+selection, keyboard routes and visual takeover confirmation. A disposed view cannot publish a late
+list or trigger an action after an outstanding confirmation. Production:
+[controller.ts](../../packages/code/src/features/background/controller.ts) and
+[view.tsx](../../packages/code/src/features/background/view.tsx). Test:
+[background-list-controller.test.ts](../../packages/code/tests/unit/background-list-controller.test.ts)
+and [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
+
 ### 2.3 Feature controllers
 
 | Export | Signature / shape | Source |

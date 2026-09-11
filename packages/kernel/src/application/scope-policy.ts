@@ -78,6 +78,7 @@ export interface KernelScopePolicy {
   readonly sessions: "owner";
   readonly workflows: "owner";
   readonly tasks: readonly ["owner", "workspace", "connection"];
+  readonly goals: readonly ["owner", "workspace", "connection"];
   readonly config: readonly ["operator", "workspace"];
   readonly secrets: "operator";
   readonly models: "operator";
@@ -98,6 +99,7 @@ export function createKernelScopePolicy(mode: KernelOwnershipMode): KernelScopeP
     sessions: "owner",
     workflows: "owner",
     tasks: ["owner", "workspace", "connection"] as const,
+    goals: ["owner", "workspace", "connection"] as const,
     config: ["operator", "workspace"] as const,
     secrets: "operator",
     models: "operator",

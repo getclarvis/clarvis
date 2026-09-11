@@ -610,6 +610,8 @@ describe("createJudgeElicit", () => {
     expect(seen[0]?.reason).toContain("pre-existing reason");
     expect(seen[0]?.reason).toContain("was unsure and escalated this to you");
     expect(seen[0]?.reason).toContain("looks risky");
+    expect(await judge(req)).toEqual({ allowed: true, answerer: "human" });
+    expect(seen).toHaveLength(2);
   });
 
   it("escalates an unsure verdict with no prior reason and no judge reason", async () => {
@@ -764,23 +766,26 @@ describe("createGuardResolver", () => {
     expect(prompts()).toBe(3);
   });
 
-  it("cannot seed a new controller's consent with an older pending answer", async () => {
-    const old = createGuardSessionAllowlist();
-    let current = old;
-    const pending = Promise.withResolvers<Awaited<ReturnType<Elicit>>>();
-    const resolver = createGuardResolver({
-      loadSettings: () => ({}),
-      sessionAllowlistFor: () => current,
-    });
-    const resolution = await resolver(ctx({ elicit: () => pending.promise }));
-    const answer = resolution!.elicit!(bashReq("bun test"));
-    old.revoke();
-    current = createGuardSessionAllowlist();
-    pending.resolve({ action: "accept", content: { decision: "allow_session" } });
-    expect(await answer).toEqual({ allowed: true, answerer: "human" });
-    expect(old.covers(shellFacts("bun test"))).toBe(false);
-    expect(current.covers(shellFacts("bun test"))).toBe(false);
-  });
+  it.each(["allow", "allow_session"])(
+    "refuses a retired controller's pending %s answer",
+    async (decision) => {
+      const old = createGuardSessionAllowlist();
+      let current = old;
+      const pending = Promise.withResolvers<Awaited<ReturnType<Elicit>>>();
+      const resolver = createGuardResolver({
+        loadSettings: () => ({}),
+        sessionAllowlistFor: () => current,
+      });
+      const resolution = await resolver(ctx({ elicit: () => pending.promise }));
+      const answer = resolution!.elicit!(bashReq("bun test"));
+      old.revoke();
+      current = createGuardSessionAllowlist();
+      pending.resolve({ action: "accept", content: { decision } });
+      expect(await answer).toEqual({ allowed: false, answerer: "human" });
+      expect(old.covers(shellFacts("bun test"))).toBe(false);
+      expect(current.covers(shellFacts("bun test"))).toBe(false);
+    },
+  );
 
   it("bounds retained command approvals and never revives a revoked list", () => {
     const list = createGuardSessionAllowlist();

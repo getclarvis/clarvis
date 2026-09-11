@@ -10,6 +10,7 @@ const input = parseLocalHostArguments(process.argv.slice(2))!;
 const host = await serveLocalFileKernel({
   kernel: {
     ...input,
+    memory: true,
     subscriptions: false,
     logger: NOOP_LOGGER,
     builtins: { tools: false, hooks: false, tasks: false },

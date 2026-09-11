@@ -16,10 +16,16 @@ import {
 } from "@clarvis/capability";
 import { buildExecuteRunDeps, type BuildRunDepsOptions } from "@clarvis/loop/host";
 import { executeRun } from "@clarvis/loop";
+import { AiSdkAdapter } from "@clarvis/llm/adapter";
+import { createGoalCapability, settleGoalRun } from "@clarvis/goal";
+import { goalHostFixture } from "../helpers/goal-host.ts";
 import { HOME_ENV } from "@clarvis/paths";
 import { createMCPAuthorizationCoordinator } from "@clarvis/mcp-client";
 import { remoteServer } from "../helpers/runtime-remote-server.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
+import { createPlansCapability } from "@clarvis/plan/capability";
+import { createPlanStore, type PlanFactory } from "@clarvis/plan";
+import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import type { TaskDocument, TaskProviderResolver } from "@clarvis/tasks";
 import {
   createWorkflowsCapability,
@@ -28,7 +34,7 @@ import {
   createWorkflowSemaphore,
   type WorkflowCtx,
 } from "@clarvis/workflows";
-import { createLocalContainerRuntime } from "../../src/runtime/local-podman-runtime.ts";
+import { createLocalContainerRuntime } from "../../src/runtime/local-container-runtime.ts";
 import { createRuntimeAuthorityRouter } from "../../src/runtime/isolated-run-executor.ts";
 import { createExecutionPeer } from "../../src/runtime/execution-rpc.ts";
 import { serveExecutionWorker } from "../../src/runtime/execution-worker.ts";
@@ -62,8 +68,11 @@ async function fixture(
   options: {
     hooks?: readonly HookConfig[];
     tasks?: TaskProviderResolver;
+    plans?: PlanFactory;
     environment?: BuildRunDepsOptions["environment"];
     mcpAuthorization?: BuildRunDepsOptions["mcpAuthorization"];
+    toolEnvironment?: Record<string, string>;
+    tools?: boolean;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-composition-"));
@@ -73,16 +82,26 @@ async function fixture(
   const built = await buildExecuteRunDeps({
     workspaceRoot,
     traceDir: join(root, "traces"),
-    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...options.toolEnvironment }),
     logger: NOOP_LOGGER,
     environment: { PATH: process.env.PATH, ...options.environment },
     ...(options.mcpAuthorization === undefined
       ? {}
       : { mcpAuthorization: options.mcpAuthorization }),
-    builtins: { tools: true, skills: false, hooks: options.hooks !== undefined },
+    builtins: { tools: options.tools ?? true, skills: false, hooks: options.hooks !== undefined },
     ...(options.hooks === undefined ? {} : { resolveHooks: () => options.hooks }),
-    capabilities:
-      options.tasks === undefined ? [] : [createTasksCapability({ resolver: options.tasks })],
+    capabilities: [
+      ...(options.tasks === undefined ? [] : [createTasksCapability({ resolver: options.tasks })]),
+      ...(options.plans === undefined
+        ? []
+        : [
+            createPlansCapability({
+              factory: options.plans,
+              defaultPendingTaskNudges: 3,
+              defaultElicitWaitMs: 60_000,
+            }),
+          ]),
+    ],
   });
   cleanup.push(() => built.dispose());
   if (llm !== undefined) built.deps.llm = llm;
@@ -170,6 +189,7 @@ async function fixture(
       extensionRevision: "extensions",
       deps: built.deps,
       ...(options.tasks === undefined ? {} : { taskResolver: options.tasks }),
+      ...(options.plans === undefined ? {} : { planFactory: options.plans }),
       settings: {
         backend: "docker",
         image_digest: `sha256:${"d".repeat(64)}`,
@@ -195,6 +215,461 @@ async function fixture(
 }
 
 describe("runtime capability composition", () => {
+  it("preserves goal authority, plan checkpoint and SDK prefix across guest continuation", async () => {
+    const host = await goalHostFixture();
+    cleanup.push(host.close);
+    const planStore = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const plans: PlanFactory = {
+      storeFor: async () => ({ key: "markdown:host", providerKind: "markdown", store: planStore }),
+    };
+    const wire: Array<{ messages: unknown[]; tools: unknown[]; prompt_cache_key: string }> = [];
+    const adapter = new AiSdkAdapter({
+      fetch: Object.assign(
+        async (_url: string | URL | Request, init?: RequestInit) => {
+          if (typeof init?.body !== "string") throw new Error("Expected serialized SDK body");
+          wire.push(JSON.parse(init.body) as (typeof wire)[number]);
+          const step = wire.length;
+          let call: { name: string; arguments: unknown } | undefined;
+          if (step === 1)
+            call = {
+              name: "create_plan",
+              arguments: {
+                title: "Guest goal stage",
+                objective: "Verify the fixture",
+                tasks: [{ title: "Verify" }],
+                validation: [],
+              },
+            };
+          else if (step === 2)
+            call = {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "checkpoint",
+                  summary: "Plan prepared",
+                  next_step: "Verify the fixture",
+                },
+              },
+            };
+          else if (step === 3) {
+            const plan = (await planStore.list()).plans[0]!;
+            call = {
+              name: "transition_plan_task",
+              arguments: {
+                expected_revision: plan.revision,
+                expected_digest: plan.digest,
+                expected_spec_digest: plan.spec_digest,
+                task_id: plan.tasks[0]!.id,
+                status: "done",
+                result: "Synthetic fixture verified",
+              },
+            };
+          } else if (step === 4)
+            call = {
+              name: "update_goal",
+              arguments: {
+                update: {
+                  action: "candidate",
+                  summary: "Result verified",
+                  assessments: [
+                    {
+                      criterion_id: "objective",
+                      kind: "qualitative",
+                      justification: "The fixture was verified",
+                    },
+                  ],
+                },
+              },
+            };
+          else if (step !== 5) throw new Error("Unexpected extra inference");
+          const chunk = {
+            id: `goal-${step}`,
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "model",
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  role: "assistant",
+                  ...(call === undefined
+                    ? { content: "Fixture complete" }
+                    : {
+                        tool_calls: [
+                          {
+                            index: 0,
+                            id: `goal-call-${step}`,
+                            type: "function",
+                            function: {
+                              name: call.name,
+                              arguments: JSON.stringify(call.arguments),
+                            },
+                          },
+                        ],
+                      }),
+                },
+                finish_reason: call === undefined ? "stop" : "tool_calls",
+              },
+            ],
+            usage: {
+              prompt_tokens: 1000 + step * 10,
+              completion_tokens: 10,
+              prompt_tokens_details: { cached_tokens: 0 },
+            },
+          };
+          return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+            headers: { "content-type": "text/event-stream" },
+          });
+        },
+        { preconnect: globalThis.fetch.preconnect },
+      ),
+    });
+    const f = await fixture(adapter, { plans });
+    const request = {
+      ...body("first", ["edit_workspace"]),
+      session_id: "session",
+      agent_instance_id: "entry",
+      providers: [
+        { name: "test", kind: "openai-compatible" as const, base_url: "https://goal.invalid/v1" },
+      ],
+      plans: { mode: "on", retention: "keep" },
+    };
+    await host.admit();
+    const first = await host.runtime();
+    const checkpoint = await f.runtime.executeRun({
+      rawBody: request,
+      owner: "owner",
+      deps: f.deps,
+      capabilities: [createGoalCapability(first.port)],
+      onEvent: (event) => first.evidence.observe(event),
+    });
+    expect(checkpoint.response).toMatchObject({ status: "completed", disposition: "checkpoint" });
+    expect((await planStore.list()).plans[0]!.tasks[0]!.status).toBe("pending");
+    const firstState = (await host.repository.read("session"))!.current!;
+    expect(firstState.status).toBe("active");
+    expect(firstState.runs[0]!.checkpoint!.summary).toBe("Plan prepared");
+    expect(f.deps.traceStore.getById("owner", "first")).toMatchObject({
+      response: { disposition: "checkpoint" },
+    });
+    await host.repository.transact("session", (state) => ({
+      state: settleGoalRun(state!, {
+        goal_id: firstState.goal_id,
+        execution_id: "first",
+        physical_closed: true,
+        outcome: "completed",
+        disposition: "checkpoint",
+        completion_validated: false,
+        usage: { kind: "measured", input: 2030, output: 20, cached: 0 },
+        now: 200,
+      }),
+      result: undefined,
+    }));
+    await host.admit("second");
+    const second = await host.runtime("second");
+    const final = await f.runtime.executeRun({
+      rawBody: {
+        ...request,
+        execution_id: "second",
+        continue_from: "first",
+        messages: [{ role: "user", content: "Continue the checkpoint" }],
+      },
+      owner: "owner",
+      deps: f.deps,
+      capabilities: [createGoalCapability(second.port)],
+      onEvent: (event) => second.evidence.observe(event),
+    });
+    expect(final.response).toMatchObject({ status: "completed" });
+    expect(final.response.disposition).not.toBe("checkpoint");
+    expect((await planStore.list()).plans[0]!.tasks[0]!.status).toBe("done");
+    expect(await second.port.validateCompletion()).toMatchObject({ valid: true });
+    expect((await host.repository.read("session"))!.current!.status).toBe("active");
+    expect(wire).toHaveLength(5);
+    expect(new Set(wire.map((request) => request.prompt_cache_key))).toEqual(
+      new Set(["session_entry"]),
+    );
+    for (let index = 1; index < wire.length; index++) {
+      const previous = wire[index - 1]!;
+      expect(wire[index]!.messages.slice(0, previous.messages.length)).toEqual(previous.messages);
+      expect(wire[index]!.tools).toEqual(previous.tools);
+    }
+    const serialized = JSON.stringify(f.guestEnvelopes);
+    expect(serialized).toContain('"goal"');
+    expect(serialized).not.toContain('"goal_state"');
+    expect(serialized).not.toContain('"receipts"');
+  });
+  it("preserves admitted images, accumulated context and final trace through the real guest loop", async () => {
+    let calls = 0;
+    const f = await fixture({
+      call: async () => {
+        calls++;
+        return { text: "done", usage };
+      },
+    });
+    const image = `data:image/png;base64,${Buffer.alloc(5 * 1024 * 1024, 65).toString("base64")}`;
+    const request = {
+      ...body("images-native"),
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", image, mediaType: "image/png" },
+            { type: "image", image, mediaType: "image/png" },
+          ],
+        },
+      ],
+    };
+    const native = await executeRun({ rawBody: request, owner: "owner", deps: f.deps });
+    expect(native.response.status).toBe("completed");
+    const first = await f.runtime.executeRun({
+      rawBody: { ...request, execution_id: "images-guest" },
+      owner: "owner",
+      deps: f.deps,
+    });
+    expect(first.response).toMatchObject({ status: "completed" });
+    const trace = f.deps.traceStore.getById("owner", "images-guest");
+    expect(Buffer.byteLength(JSON.stringify(trace))).toBeGreaterThan(8 * 1024 * 1024);
+    const continued = await f.runtime.executeRun({
+      rawBody: { ...body("images-continued"), continue_from: "images-guest" },
+      owner: "owner",
+      deps: f.deps,
+    });
+    expect(continued.response.status).toBe("completed");
+    expect(calls).toBe(3);
+    expect(f.runtime.closed).toBe(false);
+  });
+
+  it.each(["keep", "discard"] as const)(
+    "preserves %s retention after a real guest plan lifecycle and durable host trace",
+    async (retention) => {
+      const canonical = createPlanStore({ repository: createInMemoryPlanRepository() });
+      let readTrace: () => unknown = () => undefined;
+      let deleted = 0;
+      const plans: PlanFactory = {
+        storeFor: async () => ({
+          key: "markdown:host",
+          providerKind: "markdown",
+          store: {
+            ...canonical,
+            async delete(id, expected) {
+              expect(readTrace()).toMatchObject({
+                status: "completed",
+                capability_state: { plans: { id, retention: "discard", status: "completed" } },
+              });
+              expect(expected).toBeDefined();
+              deleted++;
+              return canonical.delete(id, expected);
+            },
+          },
+        }),
+      };
+      let step = 0;
+      const f = await fixture(
+        {
+          call: async () => {
+            if (step++ === 0)
+              return {
+                usage,
+                toolCalls: [
+                  {
+                    id: "create",
+                    name: "create_plan",
+                    arguments: {
+                      title: "Lifecycle",
+                      objective: "Check retained authority",
+                      tasks: [{ title: "Verify" }],
+                      validation: [],
+                      retention,
+                    },
+                  },
+                ],
+              };
+            if (step === 2) {
+              const plan = (await canonical.list()).plans[0]!;
+              return {
+                usage,
+                toolCalls: [
+                  {
+                    id: "complete",
+                    name: "transition_plan_task",
+                    arguments: {
+                      expected_revision: plan.revision,
+                      expected_digest: plan.digest,
+                      expected_spec_digest: plan.spec_digest,
+                      task_id: plan.tasks[0]!.id,
+                      status: "done",
+                      result: "verified",
+                    },
+                  },
+                ],
+              };
+            }
+            return { text: "done", usage };
+          },
+        },
+        { plans },
+      );
+      readTrace = () => f.deps.traceStore.getById("owner", "plan-lifecycle");
+      const outcome = await f.runtime.executeRun({
+        rawBody: {
+          ...body("plan-lifecycle", ["edit_workspace"]),
+          plans: { mode: "on", retention },
+        },
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(outcome.response.status).toBe("completed");
+      expect(deleted).toBe(retention === "discard" ? 1 : 0);
+      expect((await canonical.list()).plans).toHaveLength(retention === "discard" ? 0 : 1);
+      expect(readTrace()).toMatchObject({
+        status: "completed",
+        capability_state: { plans: { retention, status: "completed" } },
+      });
+    },
+  );
+
+  it.each([
+    { CLARVIS_AGENT_TOOLS_ENABLED: "0", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "none" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "read" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "edit" },
+    { CLARVIS_AGENT_TOOLS_ENABLED: "1", CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+  ])("preserves host tool policy %j in the real guest loop", async (toolEnvironment) => {
+    const advertised: string[][] = [];
+    const f = await fixture(
+      {
+        call: async (params) => {
+          advertised.push(params.tools?.map((tool) => tool.toolName).sort() ?? []);
+          return { text: "done", usage };
+        },
+      },
+      { toolEnvironment },
+    );
+    for (const [execution_id, run] of [
+      ["native-policy", executeRun],
+      ["guest-policy", f.runtime.executeRun],
+    ] as const) {
+      const result = await run({
+        rawBody: body(execution_id, ["run_commands"]),
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(result.response.status).toBe("completed");
+    }
+    expect(advertised).toHaveLength(2);
+    expect(advertised[1]!.filter((name) => name !== "expose_port")).toEqual(advertised[0]);
+    if (
+      toolEnvironment.CLARVIS_AGENT_TOOLS_ENABLED === "0" ||
+      toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "exec"
+    ) {
+      expect(advertised[1]).not.toContain("expose_port");
+      expect(advertised[1]).not.toContain("bash");
+    }
+    expect(f.guestEnvelopes[0]).toMatchObject({
+      toolPolicy: {
+        enabled: toolEnvironment.CLARVIS_AGENT_TOOLS_ENABLED === "1",
+        maxGrant: toolEnvironment.CLARVIS_AGENT_TOOLS_MAX_GRANT,
+      },
+    });
+  });
+
+  it("preserves the operator's elicitation deadline in the native and guest loops", async () => {
+    const deadlines: Array<number | undefined> = [];
+    let calls = 0;
+    const f = await fixture(
+      {
+        call: async () =>
+          ++calls % 2 === 1
+            ? {
+                usage,
+                toolCalls: [{ id: "ask", name: "ask_user", arguments: { question: "Continue?" } }],
+              }
+            : { usage, text: "done" },
+      },
+      { toolEnvironment: { CLARVIS_DEFAULT_ELICIT_WAIT_MS: "1234" } },
+    );
+    for (const [id, run] of [
+      ["native-deadline", executeRun],
+      ["guest-deadline", f.runtime.executeRun],
+    ] as const) {
+      const outcome = await run({
+        rawBody: body(id, ["ask_user"]),
+        owner: "owner",
+        deps: f.deps,
+        elicit: async (_params, options) => {
+          deadlines.push(options.timeoutMs);
+          return { action: "accept", content: { answer: "continue" } };
+        },
+      });
+      expect(outcome.response.status).toBe("completed");
+    }
+    expect(deadlines).toEqual([1234, 1234]);
+  });
+
+  it("enforces the operator's retry ceiling before either loop calls the model", async () => {
+    let calls = 0;
+    const f = await fixture(
+      {
+        call: async () => {
+          calls++;
+          return { text: "done", usage };
+        },
+      },
+      { toolEnvironment: { CLARVIS_RETRY_CEILING: "0", CLARVIS_DEFAULT_MAX_RETRIES: "0" } },
+    );
+    for (const [id, run] of [
+      ["native-retry", executeRun],
+      ["guest-retry", f.runtime.executeRun],
+    ] as const) {
+      const request = body(id);
+      request.profiles[0]!.retry = { max_retries: 1 };
+      await expect(run({ rawBody: request, owner: "owner", deps: f.deps })).rejects.toThrow(
+        "exceeds CLARVIS_RETRY_CEILING (0)",
+      );
+    }
+    expect(calls).toBe(0);
+    expect(f.runtime.closed).toBe(false);
+    expect(
+      (
+        await f.runtime.executeRun({
+          rawBody: body("valid-after-refusal"),
+          owner: "owner",
+          deps: f.deps,
+        })
+      ).response.status,
+    ).toBe("completed");
+  });
+
+  it("preserves the host builtin-tools opt-out even when environment tools are enabled", async () => {
+    let names: string[] = [];
+    const f = await fixture(
+      {
+        call: async (params) => {
+          names = params.tools?.map((tool) => tool.toolName) ?? [];
+          return { text: "done", usage };
+        },
+      },
+      {
+        tools: false,
+        toolEnvironment: {
+          CLARVIS_AGENT_TOOLS_ENABLED: "1",
+          CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
+        },
+      },
+    );
+    expect(
+      (
+        await f.runtime.executeRun({
+          rawBody: body("guest-without-tools", ["run_commands"]),
+          owner: "owner",
+          deps: f.deps,
+        })
+      ).response.status,
+    ).toBe("completed");
+    expect(names).not.toContain("write_file");
+    expect(names).not.toContain("expose_port");
+    expect(f.guestEnvelopes[0]).toMatchObject({ toolPolicy: { enabled: false } });
+  });
+
   it.each(["http", "sse"] as const)(
     "keeps %s bearer, header and saved OAuth authentication on the host",
     async (transport) => {
@@ -406,6 +881,81 @@ describe("runtime capability composition", () => {
     expect(request.messages).toEqual(original);
     expect(JSON.stringify(f.guestEnvelopes)).not.toContain("synthetic-provider-key");
     expect(JSON.stringify(f.guestEnvelopes)).not.toContain("synthetic-model-header");
+  });
+
+  it("rejects guest media URLs before the real SDK can download on the host", async () => {
+    let downloads = 0;
+    let providerCalls = 0;
+    const assetServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        downloads++;
+        return new Response(
+          Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j65kAAAAASUVORK5CYII=",
+            "base64",
+          ),
+          { headers: { "content-type": "image/png" } },
+        );
+      },
+    });
+    cleanup.push(() => Promise.resolve(assetServer.stop(true)));
+    const providerServer = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch() {
+        providerCalls++;
+        return Response.json({ error: { message: "unexpected provider call" } }, { status: 400 });
+      },
+    });
+    cleanup.push(() => Promise.resolve(providerServer.stop(true)));
+    const f = await fixture(undefined);
+    const request = body("guest-media-url");
+    request.providers = [
+      {
+        name: "test",
+        kind: "openai-compatible",
+        base_url: `http://127.0.0.1:${String(providerServer.port)}/v1`,
+        models: { model: { context_window_tokens: 10000, capabilities: ["vision"] } },
+      },
+    ];
+    request.profiles[0]!.retry = { max_retries: 0 };
+    request.messages = [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            image: `http://guest-media.invalid:${String(assetServer.port)}/private.png`,
+          },
+        ],
+      },
+    ];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : input);
+        if (url.hostname === "guest-media.invalid") {
+          url.hostname = "127.0.0.1";
+          return originalFetch(url, init);
+        }
+        return originalFetch(input, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const outcome = await f.runtime.executeRun({
+        rawBody: request,
+        owner: "owner",
+        deps: f.deps,
+      });
+      expect(downloads).toBe(0);
+      expect(providerCalls).toBe(0);
+      expect(outcome.response).toMatchObject({ status: "error" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it.each(["disabled", "retry-after-cap"])(
@@ -1053,20 +1603,55 @@ describe("runtime capability composition", () => {
     expect(JSON.stringify(record)).toContain("workflow_run_completed");
   });
 
-  it("refuses a host capability it cannot project instead of dropping it", async () => {
-    const f = await fixture({
-      async call() {
-        throw new Error("no model call may start");
-      },
-    });
-    const capability: Capability = { name: "operator-policy", forRun: () => null };
-    await expect(
-      f.runtime.executeRun({
-        rawBody: body("unprojected"),
-        owner: "owner",
-        deps: f.deps,
-        capabilities: [capability],
-      }),
-    ).rejects.toMatchObject({ code: "unsupported_policy" });
-  });
+  it.each(["operator-policy", "goal"])(
+    "refuses an unprojectable or forged %s capability",
+    async (name) => {
+      const f = await fixture({
+        async call() {
+          throw new Error("no model call may start");
+        },
+      });
+      const capability: Capability = { name, forRun: () => null };
+      await expect(
+        f.runtime.executeRun({
+          rawBody: body("unprojected"),
+          owner: "owner",
+          deps: f.deps,
+          capabilities: [capability],
+        }),
+      ).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(f.guestEnvelopes).toEqual([]);
+    },
+  );
+
+  it.each(["duplicate", "workflow", "child"])(
+    "refuses %s goal admission before guest execution",
+    async (mode) => {
+      const host = await goalHostFixture();
+      cleanup.push(host.close);
+      await host.admit();
+      const { port } = await host.runtime();
+      const f = await fixture({
+        call: async () => {
+          throw new Error("No model call may start");
+        },
+      });
+      const capability = createGoalCapability(port);
+      await expect(
+        f.runtime.executeRun({
+          rawBody: {
+            ...body("first", mode === "workflow" ? ["workflow"] : []),
+            session_id: "session",
+            agent_instance_id: "entry",
+          },
+          owner: "owner",
+          deps: f.deps,
+          capabilities:
+            mode === "duplicate" ? [capability, createGoalCapability(port)] : [capability],
+          ...(mode === "child" ? { runtimeParentRunId: "parent" } : {}),
+        }),
+      ).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(f.guestEnvelopes).toEqual([]);
+    },
+  );
 });

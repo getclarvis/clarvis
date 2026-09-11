@@ -407,6 +407,9 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         status: endedReasonToStatus(ev.reason),
         reason: ev.reason,
         ...(ev.code === undefined ? {} : { code: ev.code }),
+        ...(ev.reason === "completed" && ev.disposition !== undefined
+          ? { disposition: ev.disposition }
+          : {}),
       };
 
     case "lead_iteration_started":

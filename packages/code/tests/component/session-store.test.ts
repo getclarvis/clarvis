@@ -87,6 +87,27 @@ test("hosted session revisions survive the DTO round trip", () => {
   expect(sessionToMeta(wire, original.owner).revision).toBe(17);
 });
 
+test("operator recovery audits survive session projection and metadata saves", () => {
+  const wire = metaToSession(meta());
+  wire.turns = [
+    {
+      kind: "conversation",
+      execution_id: "old-run",
+      user_preview: "Unconfirmed outcome",
+      status: "interrupted",
+      recovery_resolution: {
+        kind: "operator_verified_physical_closure",
+        previous_host_generation: "old",
+        resolving_host_generation: "new",
+        operator_connection_id: "operator",
+        resolved_at: 20,
+      },
+    },
+  ];
+  const restored = sessionToMeta(wire, "owner");
+  expect(metaToSession(restored).turns).toEqual(wire.turns);
+});
+
 test("versioned writes advance queued local revisions only after their own confirmed save", async () => {
   const service = fakeSessions();
   const gate = Promise.withResolvers<void>();

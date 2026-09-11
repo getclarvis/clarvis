@@ -115,7 +115,7 @@ describe("buildEntrySeed capability seed block", () => {
     expect(texts(seed)).not.toContain(SEED);
   });
 
-  it("still drops a block whose capability is no longer active", () => {
+  it("retains historical blocks when their capability is no longer active", () => {
     const { request, shape } = makeFixtures();
     const seed = buildEntrySeed({
       messages: request.messages,
@@ -131,7 +131,7 @@ describe("buildEntrySeed capability seed block", () => {
       },
       shape,
     });
-    expect(texts(seed).some((t) => t.includes("old stale block"))).toBe(false);
+    expect(texts(seed).some((t) => t.includes("old stale block"))).toBe(true);
     expect(texts(seed)).toContain("a normal earlier message");
   });
 
@@ -150,7 +150,7 @@ describe("buildEntrySeed capability seed block", () => {
     expect(texts(seed).slice(1)).toEqual(["a normal earlier message", SEED, "do the thing"]);
   });
 
-  it("drops restored volatile entries, which their owners republish anyway", () => {
+  it("restores prior notes and reminders in their persisted order", () => {
     const { request, shape } = makeFixtures();
     const seed = buildEntrySeed({
       messages: request.messages,
@@ -167,7 +167,12 @@ describe("buildEntrySeed capability seed block", () => {
       },
       shape,
     });
-    expect(texts(seed).slice(1)).toEqual(["a normal earlier message", "do the thing"]);
+    expect(texts(seed).slice(1)).toEqual([
+      "a normal earlier message",
+      "[runtime: the same tool call returned…]",
+      "State file: … expected_revision: 7",
+      "do the thing",
+    ]);
   });
 
   /**

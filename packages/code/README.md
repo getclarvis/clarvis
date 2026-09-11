@@ -8,17 +8,37 @@ shell uses the same typed kernel RPC over a private local socket or Windows name
 
 The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
 revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it
-again. Hosted completion waits for observation delivery and host reconciliation; a lost connection
+again. Hosted completion waits for observation delivery, host reconciliation, terminal index commit and
+released admission. After consuming a controlled result, the adapter acknowledges it and releases
+its observation before reporting readiness, allowing long conversations to reclaim retained entries.
+Observers and abandoned or failed observations do not acknowledge an unseen result. Print and TUI
+consumers share that retention lifecycle through `createHostedObservationLease`. A lost connection
 rejects observation without inventing an execution result. The session cache supports explicit
-canonical refresh and confirmed revision sequencing. The workspace manager launches or discovers
+canonical refresh and confirmed revision sequencing. Its usage adapter converts presentation fields
+and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
 `/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
-uncertain handoff leaves the interface open. Reopening the same workspace offers the previous work
-or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
+uncertain handoff leaves the interface open.
+An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
+after its cause is resolved. Uncertain or unclassified failures retain their operation identity
+and use receipt lookup without repeating the mutation. Reopening the same workspace offers the
+previous work or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
 the same execution, and `/background cancel <execution-id>` requests cancellation without treating
 its acknowledgement as physical completion. Another TUI's controller is observed by default;
-taking control requires an explicit action in the list. Saved results remain in Sessions.
+taking control requires an explicit action in the list. Saved results remain in Sessions. The
+background list controller owns polling, loading/errors and serialized attach/cancel operations;
+the view owns selection, keyboard navigation, confirmation and painting.
+Taking control while already observing preserves the existing session, transcript and event stream.
+After confirmation, that observation gains interactive questions and normal foreground result
+acknowledgement; it does not replay the snapshot or retire the conversation.
+
+For an old run whose physical state is unknown, `/background list` offers `archive recovery`.
+First verify that every process and container from that host has stopped, then explicitly confirm
+the displayed host/run identity. The host records this operator verification in the saved session
+before releasing its physical-work block. The conversation is archived and new work requires a new
+conversation; existing history and any known result remain. Failed confirmation or persistence keeps
+the recovery pending. The application does not infer physical closure from a missing host process.
 After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
 that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
 exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
@@ -28,6 +48,9 @@ exit policy. Unsaved settings still require confirmation, and Ctrl+C still reque
 while physical work is active. A refused reload leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
+For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
+workspace lease is retired before the replacement starts. That expected closure is not presented as
+a connection failure.
 
 User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
 conversation in the host before spawning, persist their observation under that reservation, and
@@ -38,6 +61,35 @@ closing the host connection. Offline compaction uses the host's separate mainten
 also uses hosted turn admission and waits for physical closure. The host must remain alive for
 execution to continue; restarting an interrupted host does not replay tools or restore a live run.
 See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
+
+`/goal` shows the conversation's objective, criteria, limits, consumption and physical execution.
+`/goal <objective>` creates and starts it under finite host limits; `/goal -- <objective>` protects
+literal text beginning with a control word. Existing goals open replacement review. `/goal edit`
+opens a deterministic form for objective, criteria and limits; editing a terminal goal requires
+confirmed replacement. Pause, resume, cancel and clear use explicit host controls. Pause alone
+stops future stages; `pause --running` also requests cancellation of the bound run. Editing waits
+for physical closure, including unknown work that requires recovery.
+An edit submits only fields changed from the reviewed snapshot; a no-op closes locally, and a
+limit-only edit does not revise the objective or clear its candidate and human approvals. Once a
+mutation receipt is confirmed, a failed follow-up read leaves the view stale with an error but does
+not report the committed mutation as failed.
+Human criteria show pending or accepted status for the current objective revision. The acceptance
+picker offers only pending criteria; an approval from an earlier revision does not satisfy a new review.
+Completed and cancelled goals retain their approval display without offering new acceptance.
+
+The presentation controller subscribes before reading canonical state, pins each review to its
+conversation and revision, and recovers uncertain mutations by receipt without resubmission.
+The runtime observes host-started stages in the same conversation, retains the painted prefix and
+hydrates stages that finished before observation. It never schedules goal continuation in the TUI.
+The transcript renders accepted stage endings as `Checkpoint saved`, retaining that label during
+reconciliation and session restoration. Ordinary successful runs remain `Completed`; the goal view
+is the authority projection for whether the full objective has completed.
+When stages settle behind a full-region view, returning to the transcript transfers older sealed
+blocks to history navigation even if they are not yet resident. They cannot remain in the live tail
+after a newer completion; scrolling or revealing an earlier checkpoint loads its retained history.
+Hosts without goal authority report explicit unavailability. The
+[goal contract](../../specs/capabilities/goals.md) owns these boundaries; complete local/remote,
+container, real-provider and installed-artifact qualification requires separate journey evidence.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -679,6 +731,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
                     [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
+                    [--remote <user@host>] [--remote-workspace <path>]
                     [--debug[=<error|warn|info|debug>]]
 
   -h, --help                  print this help and exit
@@ -695,6 +748,8 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
   --update                    install the newest eligible Clarvis release and exit
   --ascii                     render glyphs as plain ascii
   --worktree [name]           open a dedicated Git worktree; omit name to generate one
+  --remote <user@host>         connect to a Clarvis installation over SSH
+  --remote-workspace <path>   absolute workspace path on the remote host
   --debug[=<error|warn|info|debug>]  write bounded application diagnostics; --debug=<level>
 ```
 
@@ -704,6 +759,37 @@ The process then stays pinned to that canonical checkout. Git's registered workt
 source of truth; Clarvis keeps no parallel registry. Before creation, Code ensures the primary
 worktree's `.clarvis/.gitignore` excludes `worktrees/` so the nested checkout cannot be staged by
 accident.
+
+`--remote <user@host> --remote-workspace <path>` starts the installed `clarvis` command through
+OpenSSH and carries the ordinary kernel protocol over that process's stdio. Both flags are required
+and cannot be combined with `--worktree`. SSH owns host/user authentication and encryption; Clarvis
+does not copy the client's provider credentials, global configuration or local-host discovery token
+to the remote process. The remote installation resolves its own global state and OAuth session. The
+workspace and optional Extension Profile selector are encoded into one bounded base64url argument;
+the remote host canonicalizes them and returns its server-owned session namespace. It supports
+hosted runs and goals but exposes no browser, inspection, restart or runtime-retry controls belonging
+to the remote machine. `/reconnect` starts a fresh SSH process; configuration reload is unavailable
+for that connection. Client-only diagnostics and prompt history remain under the local invocation's
+state, while workspace files and durable sessions remain remote.
+
+The destination may be a normal `user@host` or an alias from the operator's OpenSSH configuration.
+OpenSSH chooses default identity files, `IdentityFile` entries, certificates and identities already
+loaded in `ssh-agent`; Clarvis has no separate identity-file or password store. A local agent may
+authenticate the connection, but `-a`, `-x` and `ClearAllForwardings=yes` prevent agent, X11 and port
+forwarding to the VPS. Host-key verification, jump hosts and authentication order retain the user's
+SSH configuration. Clarvis does not force `StrictHostKeyChecking` or `BatchMode`.
+The SSH child receives only home/path, platform process-discovery, local agent and askpass/display
+variables from the client environment. Provider keys, Clarvis OAuth values and unrelated variables
+are absent, so OpenSSH `SendEnv` cannot forward them. The already-pinned remote process supplies the
+canonical workspace identity during hello; the client does not resend the operator's raw path.
+
+Before opening the TUI, establish the host key and verify login with the same alias using ordinary
+`ssh`. Password and key-passphrase prompts are not a Clarvis UI contract: SSH may try its controlling
+terminal or askpass helper while Clarvis has reserved stdin/stdout for its protocol, which can make
+interactive startup fail or disturb the display. Prefer a verified host key plus a key, certificate
+or hardware-backed identity already available to `ssh-agent`. The wire receives no second Clarvis
+encryption layer; prompts, events and results are confidential and integrity-protected in transit by
+SSH, while the authenticated remote account can read them after decryption.
 
 Normal interactive launches use the full Unicode glyph theme. Plain ASCII is
 an explicit compatibility choice through `--ascii` or the saved Theme setting.
@@ -789,6 +875,8 @@ resolution as the TUI and fails clearly when no interactive entry agent exists. 
 the interactive and other headless paths, is opened through `WorkspaceClientManager`; a selected
 Docker or Podman runtime therefore receives the same lazy local factory instead of failing before
 the run starts.
+Runtime release-manifest acquisition observes the host generation's initialization cancellation
+as well as its bounded download deadline, allowing shutdown to interrupt image preparation.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever
@@ -1400,3 +1488,14 @@ rather than cached.
 Because OpenTUI requires a PTY, use `bun run smoke` for the repeatable bundle boot assertion and the
 `tui-driver` skill for interactive reproduction. Do not launch the app through plain redirected
 stdin and treat that as a renderer test.
+
+## Prompt-cache continuity
+
+Session metadata round-trips the persisted leader instance through the kernel. Starting another turn sends the session identity and lets hosted preparation retain its agent identity, keeping provider affinity stable after restart.
+
+Hosted admission bounds and redacts its display preview independently of the full prompt. Long
+messages remain intact in the model request and do not exceed the host's 4096-character preview
+limit.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

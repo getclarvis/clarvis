@@ -29,6 +29,7 @@
     "packages/skills",
     "packages/memory",
     "packages/plan",
+    "packages/goal",
     "packages/tasks",
     "packages/protocol",
     "packages/loop",
@@ -43,7 +44,7 @@
     "build:watch": "tsc -b --watch",
     "dev:install": "./dev-install.sh",
     "clean": "tsc -b --clean && bun --workspaces clean",
-    "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/tasks test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/server test && bun --filter @clarvis/code test",
+    "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/goal test && bun --filter @clarvis/tasks test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/server test && bun --filter @clarvis/code test",
     "test:tooling": "bun test tooling/tests/unit tooling/tests/architecture --timeout 60000",
     "test:coverage": "bun --workspaces --sequential --if-present test:coverage && bun run coverage:check",
     "coverage:check": "bun run tooling/checks/coverage.ts",
@@ -93,7 +94,10 @@
     "check:bun-version": "bun run tooling/checks/bun-version.ts",
     "check:bun-sources": "bun run tooling/checks/bun-sources.ts",
     "check:imports": "bun run tooling/checks/import-extensions.ts",
-    "check:release": "bun run tooling/checks/release-readiness.ts"
+    "check:release": "bun run tooling/checks/release-readiness.ts",
+    "test:cache": "bun run tooling/cache/deterministic.ts",
+    "test:cache:live": "bun run tooling/cache/live.ts",
+    "test:cache:artifact": "bun run tooling/cache/artifact.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

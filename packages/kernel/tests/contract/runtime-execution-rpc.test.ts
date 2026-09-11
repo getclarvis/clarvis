@@ -1,8 +1,16 @@
-import { PassThrough } from "node:stream";
+import { MAX_JSON_MESSAGE_BYTES } from "../../src/core/json-message.ts";
+import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it } from "bun:test";
 import { ProviderError, type FailureKind } from "@clarvis/capability";
 import {
+  createCapabilityBroker,
+  type GuestCapabilityRequest,
+} from "../../src/runtime/authority-brokers.ts";
+import { createElicitBridge } from "../../src/runs/elicit-bridge.ts";
+import {
   MAX_EXECUTION_FRAME_BYTES,
+  MAX_EXECUTION_QUEUE_FRAMES,
+  MAX_EXECUTION_QUEUE_BYTES,
   createExecutionPeer,
   decodeExecutionFrame,
 } from "../../src/runtime/execution-rpc.ts";
@@ -19,6 +27,371 @@ function pair() {
 }
 
 describe("private runtime execution RPC", () => {
+  it("fragments large model messages and isolates a local refusal from another run", async () => {
+    const io = pair();
+    const gate = Promise.withResolvers<void>();
+    const entered = Promise.withResolvers<void>();
+    const host = createExecutionPeer({
+      role: "host",
+      generation: "large",
+      input: io.hostInput,
+      output: io.hostOutput,
+      handlers: {
+        "host.model": async ({ payload, emit }) => {
+          await emit?.(payload);
+          return payload;
+        },
+      },
+    });
+    const guest = createExecutionPeer({
+      role: "guest",
+      generation: "large",
+      input: io.guestInput,
+      output: io.guestOutput,
+      handlers: {
+        "runtime.start": async () => {
+          entered.resolve();
+          await gate.promise;
+          return "completed";
+        },
+      },
+    });
+    try {
+      const running = host.request("runtime.start", { generation: "large", runId: "other" });
+      await entered.promise;
+      const cancellation = new AbortController();
+      const refused = host.request(
+        "runtime.start",
+        { generation: "large", runId: "oversize" },
+        "x".repeat(MAX_JSON_MESSAGE_BYTES),
+        { signal: cancellation.signal },
+      );
+      cancellation.abort();
+      await expect(refused).rejects.toMatchObject({ code: "resource_exhausted" });
+      expect(host.closed).toBe(false);
+      expect(guest.closed).toBe(false);
+      const body = "context".repeat(1024 * 1024);
+      const events: unknown[] = [];
+      const result = await guest.request(
+        "host.model",
+        { generation: "large", runId: "model", callId: "call" },
+        { body },
+        { onEvent: (value) => events.push(value) },
+      );
+      expect(result).toEqual({ body });
+      expect(events).toEqual([{ body }]);
+      gate.resolve();
+      expect(await running).toBe("completed");
+    } finally {
+      gate.resolve();
+      host.close();
+      guest.close();
+    }
+  });
+
+  it("returns a bounded error for an excessive handler result and remains reusable", async () => {
+    const io = pair();
+    const host = createExecutionPeer({
+      role: "host",
+      generation: "large",
+      input: io.hostInput,
+      output: io.hostOutput,
+      handlers: {},
+    });
+    const guest = createExecutionPeer({
+      role: "guest",
+      generation: "large",
+      input: io.guestInput,
+      output: io.guestOutput,
+      handlers: {
+        "runtime.bootstrap": async ({ payload }) =>
+          payload === "large" ? "x".repeat(MAX_JSON_MESSAGE_BYTES) : "ok",
+      },
+    });
+    try {
+      await expect(
+        host.request("runtime.bootstrap", { generation: "large" }, "large"),
+      ).rejects.toMatchObject({ code: "resource_exhausted" });
+      expect(await host.request<string>("runtime.bootstrap", { generation: "large" })).toBe("ok");
+    } finally {
+      host.close();
+      guest.close();
+    }
+  });
+
+  it("bounds unanswered real host elicitations without aborting admitted requests on saturation", async () => {
+    const elicit = createElicitBridge("run");
+    let questions = 0;
+    elicit.onElicit(() => {
+      questions++;
+    });
+    const broker = createCapabilityBroker({
+      generation: "gen",
+      runId: "run",
+      maxArgumentsBytes: 256 * 1024,
+      maxResultBytes: 256 * 1024,
+      grants: [
+        {
+          method: "runtime.elicit",
+          revision: "v1",
+          idempotent: false,
+          validateArguments: () => true,
+          invoke: (_input, signal) =>
+            elicit.elicit(
+              {
+                message: "fixture",
+                requestedSchema: { type: "object", properties: {}, required: [] },
+              },
+              { signal, timeoutMs: 60_000 },
+            ),
+        },
+      ],
+    });
+    const input = new PassThrough();
+    const peer = createExecutionPeer({
+      role: "host",
+      generation: "gen",
+      input,
+      output: new PassThrough(),
+      handlers: {
+        "host.capability": (request) =>
+          broker.invoke(
+            { generation: request.generation, runId: request.runId!, callId: request.callId! },
+            request.payload as GuestCapabilityRequest,
+            request.signal,
+          ),
+      },
+    });
+    try {
+      for (let id = 1; id <= MAX_EXECUTION_QUEUE_FRAMES + 10; id++) {
+        if (peer.closed) break;
+        input.write(
+          `${JSON.stringify({
+            type: "request",
+            id,
+            generation: "gen",
+            runId: "run",
+            callId: `call-${id}`,
+            method: "host.capability",
+            payload: { method: "runtime.elicit", revision: "v1", arguments: {} },
+          })}\n`,
+        );
+      }
+      expect(peer.closed).toBe(false);
+      expect(questions).toBe(64);
+      let pending = 0;
+      elicit.onElicit(() => {
+        pending++;
+      });
+      expect(pending).toBe(64);
+      await Bun.sleep(0);
+    } finally {
+      peer.close();
+      broker.revoke();
+    }
+  });
+
+  it.each(["count", "bytes"])(
+    "refuses excess inbound %s before dispatch while preserving admitted handlers",
+    async (limit) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      const gate = Promise.withResolvers<void>();
+      const signals: AbortSignal[] = [];
+      const peer = createExecutionPeer({
+        role: "host",
+        generation: "gen",
+        input,
+        output,
+        handlers: {
+          "host.capability": async ({ signal }) => {
+            signals.push(signal);
+            await gate.promise;
+            return null;
+          },
+        },
+      });
+      const payload = limit === "bytes" ? "🙂".repeat(512 * 1024) : "";
+      const line = (id: number) =>
+        `${JSON.stringify({
+          type: "request",
+          id,
+          generation: "gen",
+          runId: "run",
+          callId: `call-${id}`,
+          method: "host.capability",
+          payload,
+        })}\n`;
+      const count = limit === "count" ? MAX_EXECUTION_QUEUE_FRAMES + 10 : 65;
+      try {
+        output.resume();
+        for (let i = 1; i <= count; i++) input.write(line(i));
+        await Bun.sleep(0);
+        expect(peer.closed).toBe(false);
+        expect(signals.length).toBeGreaterThan(0);
+        expect(signals.length).toBeLessThan(count);
+        if (limit === "count") expect(signals).toHaveLength(MAX_EXECUTION_QUEUE_FRAMES);
+        else
+          expect(signals.length * Buffer.byteLength(line(1))).toBeLessThanOrEqual(
+            MAX_EXECUTION_QUEUE_BYTES,
+          );
+        expect(signals.every((signal) => !signal.aborted)).toBe(true);
+      } finally {
+        gate.resolve();
+        peer.close();
+        await Bun.sleep(0);
+      }
+    },
+  );
+
+  it("releases inbound admission after settlement but retains cancelled handlers that ignore abort", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    let waiting = false;
+    let entered = 0;
+    const gate = Promise.withResolvers<void>();
+    const peer = createExecutionPeer({
+      role: "host",
+      generation: "gen",
+      input,
+      output,
+      handlers: {
+        "host.capability": async () => {
+          entered++;
+          if (waiting) await gate.promise;
+          return null;
+        },
+      },
+    });
+    const request = (id: number) =>
+      input.write(
+        `${JSON.stringify({ type: "request", id, generation: "gen", runId: "run", callId: `call-${id}`, method: "host.capability" })}\n`,
+      );
+    try {
+      for (let id = 1; id <= 300; id++) {
+        request(id);
+        await Bun.sleep(0);
+      }
+      expect(peer.closed).toBe(false);
+      waiting = true;
+      for (let id = 301; id <= 300 + MAX_EXECUTION_QUEUE_FRAMES; id++) {
+        request(id);
+        input.write(
+          `${JSON.stringify({ type: "cancel", id, generation: "gen", runId: "run", callId: `call-${id}` })}\n`,
+        );
+      }
+      expect(peer.closed).toBe(false);
+      request(301 + MAX_EXECUTION_QUEUE_FRAMES);
+      expect(peer.closed).toBe(false);
+      expect(entered).toBe(300 + MAX_EXECUTION_QUEUE_FRAMES);
+    } finally {
+      gate.resolve();
+      peer.close();
+      await Bun.sleep(0);
+    }
+  });
+
+  it.each(["evicted", "mismatched"])(
+    "rejects %s completion cancellations after bounded history",
+    async (mode) => {
+      const input = new PassThrough();
+      const output = new PassThrough();
+      output.resume();
+      const peer = createExecutionPeer({
+        role: "host",
+        generation: "gen",
+        input,
+        output,
+        handlers: {},
+      });
+      try {
+        for (let id = 1; id <= MAX_EXECUTION_QUEUE_FRAMES + 1; id++) {
+          input.write(
+            `${JSON.stringify({ type: "request", id, generation: "gen", runId: "run", callId: `call-${id}`, method: "host.capability" })}\n`,
+          );
+          await Bun.sleep(0);
+        }
+        expect(peer.closed).toBe(false);
+        const id = mode === "evicted" ? 1 : MAX_EXECUTION_QUEUE_FRAMES + 1;
+        input.write(
+          `${JSON.stringify({ type: "cancel", id, generation: "gen", runId: "run", callId: mode === "evicted" ? "call-1" : "forged" })}\n`,
+        );
+        expect(peer.closed).toBe(true);
+      } finally {
+        peer.close();
+      }
+    },
+  );
+
+  it.each(["success", "error", "unavailable"])(
+    "tolerates cancellation racing with a written %s response",
+    async (mode) => {
+      const io = pair();
+      const held: string[] = [];
+      const second = Promise.withResolvers<void>();
+      const host = createExecutionPeer({
+        role: "host",
+        generation: "gen",
+        input: io.hostInput,
+        output: new Writable({
+          write(chunk, _encoding, done) {
+            held.push(chunk.toString());
+            done();
+          },
+        }),
+        handlers: {
+          ...(mode === "unavailable"
+            ? {}
+            : {
+                "host.capability": async () => {
+                  if (mode === "error") throw new Error("completed failure");
+                  return { completed: true };
+                },
+              }),
+          "host.event": async () => {
+            await second.promise;
+            return "unrelated";
+          },
+        },
+      });
+      const guest = createExecutionPeer({
+        role: "guest",
+        generation: "gen",
+        input: io.guestInput,
+        output: io.guestOutput,
+        handlers: {},
+      });
+      const controller = new AbortController();
+      const first = guest.request(
+        "host.capability",
+        { generation: "gen", runId: "run", callId: "first" },
+        {},
+        { signal: controller.signal },
+      );
+      void first.catch(() => undefined);
+      const unrelated = guest.request("host.event", { generation: "gen", runId: "run" });
+      void unrelated.catch(() => undefined);
+      try {
+        await Bun.sleep(0);
+        expect(held).toHaveLength(1);
+        controller.abort();
+        await expect(first).rejects.toMatchObject({ code: "cancelled" });
+        await Bun.sleep(0);
+        expect(host.closed).toBe(false);
+        second.resolve();
+        await Bun.sleep(0);
+        for (const line of held) io.guestInput.write(line);
+        await expect(unrelated).resolves.toBe("unrelated");
+        expect(guest.closed).toBe(false);
+      } finally {
+        second.resolve();
+        host.close();
+        guest.close();
+      }
+    },
+  );
+
   it.each<FailureKind>([
     "context_overflow",
     "client",
@@ -389,7 +762,7 @@ describe("private runtime execution RPC", () => {
     guest.close();
   });
 
-  it("closes on oversized outbound and newline-terminated inbound frames", async () => {
+  it("refuses excessive local messages without closing and closes on oversized physical inbound frames", async () => {
     const input = new PassThrough();
     const output = new PassThrough();
     const peer = createExecutionPeer({
@@ -403,10 +776,11 @@ describe("private runtime execution RPC", () => {
       peer.request(
         "runtime.bootstrap",
         { generation: "generation-1" },
-        { text: "x".repeat(MAX_EXECUTION_FRAME_BYTES) },
+        { text: "x".repeat(MAX_JSON_MESSAGE_BYTES) },
       ),
-    ).rejects.toThrow("execution channel bound exceeded");
-    expect(peer.closed).toBe(true);
+    ).rejects.toThrow("JSON message exceeds");
+    expect(peer.closed).toBe(false);
+    peer.close();
 
     const inbound = new PassThrough();
     const inboundPeer = createExecutionPeer({
@@ -433,7 +807,8 @@ describe("private runtime execution RPC", () => {
     await expect(
       cyclicPeer.request("runtime.bootstrap", { generation: "generation-1" }, cyclic),
     ).rejects.toThrow();
-    expect(cyclicPeer.closed).toBe(true);
+    expect(cyclicPeer.closed).toBe(false);
+    cyclicPeer.close();
 
     const shapeInput = new PassThrough();
     const shapePeer = createExecutionPeer({

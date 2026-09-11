@@ -17,14 +17,15 @@ incomplete; partial proof does not count as a pass.
 
 ## Provenance and reusable checks
 
-| Field                                                                        | Value |
-| ---------------------------------------------------------------------------- | ----- |
-| Full commit and relevant worktree changes                                    |       |
-| Source command and identity                                                  |       |
-| Bundle build command, flavor, identity, and launch                           |       |
-| Bun/OpenTUI, OS/architecture, terminal/profile, sizes                        |       |
-| Isolated home, workspaces, fixture revisions/configuration                   |       |
-| For Docker: engine/context, image ID, generation, effective placement/policy |       |
+| Field                                                                                     | Value |
+| ----------------------------------------------------------------------------------------- | ----- |
+| Full commit and relevant worktree changes                                                 |       |
+| Source command and identity                                                               |       |
+| Bundle build command, flavor, identity, and launch                                        |       |
+| Bun/OpenTUI, OS/architecture, terminal/profile, sizes                                     |       |
+| Isolated home, workspaces, fixture revisions/configuration                                |       |
+| For Docker: engine/context, image ID, generation, effective placement/policy              |       |
+| For remote: local/remote artifact, SSH executable/auth posture, host-key proof, workspace |       |
 
 | Check | Command / named test | Input/artifact identity | Exit / outcome | Evidence | Reused evidence and why still valid |
 | ----- | -------------------- | ----------------------- | -------------- | -------- | ----------------------------------- |

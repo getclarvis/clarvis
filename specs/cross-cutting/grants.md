@@ -100,6 +100,17 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
+Container execution captures that host policy rather than introducing another default. The guest
+receives only enabled/confinement/ceiling fields and keeps the same shared per-agent grant checks;
+a host composition without the `tools` capability also disables guest tools. Preview additionally
+requires enabled tools, an `exec` ceiling and `run_commands` on the requesting profile.
+Production: `createLocalContainerRuntime` in
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), and
+`createGuestLoopExecutor` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+Test: host/native/guest policy parity and tools opt-out in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 
 | Agent | `grants` | `can_spawn` | `default_spawn` | Production |

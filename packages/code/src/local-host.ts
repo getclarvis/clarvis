@@ -4,10 +4,7 @@ import {
   type LocalFileKernelHost,
 } from "@clarvis/kernel/bootstrap";
 import { createLogger } from "@clarvis/kernel/logger";
-import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
-import { readStartupKeySources } from "./adapters/startup-key-sources.ts";
-import { resolveClarvisRuntimeImage } from "./adapters/runtime-image.ts";
-import { productVersion } from "./cli-args.ts";
+import { createCodeHostKernelOptions } from "./adapters/host-kernel-options.ts";
 
 /** Headless application composition; this entry never imports Solid, OpenTUI or the TUI runtime. */
 async function main(): Promise<void> {
@@ -17,33 +14,18 @@ async function main(): Promise<void> {
   process.env.CLARVIS_WORKSPACE_ROOT = input.workspaceRoot;
   const logger = createLogger("silent");
   const selector = process.env.CLARVIS_HOST_EXTENSION_PROFILE;
-  const dirs = {
-    global: globalPaths(input.globalDir),
-    workspace: workspacePaths(input.workspaceRoot),
-    state: workspaceStatePaths(input.workspaceRoot),
-  };
   const host: LocalFileKernelHost | null = await serveLocalFileKernel({
     artifactId: input.artifactId,
-    kernel: {
-      ...input,
-      memory: true,
-      subscriptions: true,
-      logger,
-      keySources: readStartupKeySources(dirs),
+    kernel: createCodeHostKernelOptions({
+      workspaceRoot: input.workspaceRoot,
+      globalDir: input.globalDir,
+      defaultOwner: input.defaultOwner,
       ...(selector === undefined ? {} : { extensionProfileSelector: selector }),
-      runtimeFactory: {
-        async create(value) {
-          const local = await import("@clarvis/kernel/local");
-          if (value.settings.backend !== "docker") return local.createLocalPodmanRuntime(value);
-          return local.createLocalDockerRuntime(value, {
-            resolveImage: () => resolveClarvisRuntimeImage({ currentVersion: productVersion() }),
-            onRecipePreparation(name) {
-              host?.host.runtimeNotice(`Preparing Docker environment: ${name}`);
-            },
-          });
-        },
+      logger,
+      runtimeNotice(message) {
+        host?.host.runtimeNotice(message);
       },
-    },
+    }),
   });
   if (host === null) return;
   const running = host;

@@ -1,5 +1,10 @@
 import { expect, test } from "bun:test";
-import { resolveEntry } from "../../src/cli-entry.ts";
+import { privateEntry, resolveEntry } from "../../src/cli-entry.ts";
+
+test("privateEntry: routes only the process-owned remote kernel bootstrap", () => {
+  expect(privateEntry(["--remote-kernel", "payload"])).toBe("remote-kernel");
+  expect(privateEntry(["--version"])).toBeUndefined();
+});
 
 const distPath = "/repo/packages/code/dist/index.js";
 

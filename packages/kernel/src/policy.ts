@@ -50,3 +50,5 @@ export {
   errorText,
   type GuardConfig,
 } from "@clarvis/loop/host";
+
+export { addRunUsage } from "./sessions/usage.ts";

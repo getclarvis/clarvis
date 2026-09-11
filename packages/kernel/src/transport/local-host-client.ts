@@ -5,46 +5,13 @@ import type {
   LocalHostStatus,
   LocalHostBrowserRequest,
 } from "@clarvis/protocol";
+import { runtimeStatusSchema } from "../runtime/status-schema.ts";
 import { kernelError } from "../core/errors.ts";
 import { createServiceProxy, OPERATIONS } from "./operations.ts";
 
 const text = z.string().max(4096);
 const sequence = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
-const runtime = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("native"),
-      host_platform: text,
-      isolation: z.enum(["host", "sandbox"]),
-      lifecycle: z.enum(["ready", "fallback"]),
-      fallback_from: z.enum(["docker", "podman"]).optional(),
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("container"),
-      engine: z.enum(["docker", "podman"]),
-      host_platform: text,
-      guest_platform: z.literal("linux"),
-      network: z.enum(["none", "internet", "outbound"]),
-      generation: text.optional(),
-      engine_version: text.optional(),
-      image_digest: text.optional(),
-      runtime_protocol_revision: text.optional(),
-      lifecycle: z.enum([
-        "cold",
-        "inspecting",
-        "preparing",
-        "starting",
-        "ready",
-        "stopping",
-        "stopped",
-        "disconnected",
-        "failed",
-      ]),
-    })
-    .strict(),
-]);
+const runtime = runtimeStatusSchema({ identifier: text, text });
 const status = z
   .object({
     host_generation: z.string().min(1).max(256),

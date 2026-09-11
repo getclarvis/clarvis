@@ -15,6 +15,12 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   bridges, persistent workspace-scoped `mise` tool caches, and bounded loopback service exposure.
 - Advanced global runtime recipes can build a reusable operator-customized Docker image on first use
   without exposing the recipe as a guest tool or modifying the canonical release image.
+- Persistent per-conversation goals provide CAS-controlled edits, bounded automatic continuation,
+  checkpoints, human and host evidence criteria, and durable settlement across restart and compaction.
+- Remote TUI hosting can run Clarvis on an operator-selected machine over OpenSSH stdio while the
+  remote installation retains workspace, state, provider credentials and runtime ownership.
+- Prompt-cache qualification tooling captures serialized SDK requests and physical usage per agent,
+  including deterministic checks and bounded local real-provider and installed-artifact journeys.
 - `/clarvis-configure` ships configuration guidance as TypeScript and starts an explicitly approved
   native run for editing authored global/workspace configuration, agents, skills, workflows and
   Extension Profiles. Credential stores and private state remain excluded from its file tools.
@@ -32,6 +38,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - Runtime startup is demand-driven. An operational Docker startup failure falls back to required
   native sandboxing by default and reports the effective placement; integrity and policy failures
   still fail closed.
+- Prompt history is append-only across plan changes, retries, resumes and restarts, while persisted
+  session and agent-instance identities keep leaders, children and memory indexing on separate cache
+  affinities.
+- Remote reconnect retires the previous SSH host and workspace lease before starting its replacement;
+  goal edits preserve unchanged objective state and confirmed receipts survive a failed view refresh.
 - `/reconnect` restores the connection to the existing workspace host. `/reconnect reload` explicitly
   restarts an idle host to activate pinned configuration and refuses while physical work is active.
 - Builtin configuration guidance covers scheduling, background runs and reload. Documentation
@@ -43,6 +54,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   Clarvis workspace control paths are mounted read-only, while the selected project remains
   intentionally writable and default outbound networking can reach host/LAN peers and transmit
   readable workspace data.
+- Host model execution rejects guest-controlled URL media, and independently assembled workflow
+  leaders receive distinct persistent identities instead of sharing the manager's cache affinity.
+- Remote OpenSSH processes receive an allowlisted client environment that excludes local Clarvis and
+  provider credentials; OpenSSH continues to own host verification, authentication and encryption.
 - Stdio MCP connections and MCP hooks execute inside Docker/Podman guests. Authenticated HTTP/SSE
   connections stay host-owned behind scoped operations, retaining host tool policy, bounded RPC
   handling and human elicitation without exposing credentials to the guest.

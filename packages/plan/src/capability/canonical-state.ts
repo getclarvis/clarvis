@@ -34,7 +34,7 @@ export function missingPlanCanonicalState(missing: MissingPlanState): string {
   return [missingPlanHeader(missing), "", missingPlanSpecBlock(missing)].join("\n");
 }
 
-/** The volatile instruction that replaces a removed plan's stale CAS header. */
+/** Appended tombstone; prior plan publications remain historical context. */
 export function missingPlanHeader(missing: MissingPlanState): string {
   const locator = missing.path ?? missing.id;
   return [
@@ -58,17 +58,16 @@ export function missingPlanSpecBlock(missing: MissingPlanState): string {
 }
 
 /**
- * The small, volatile half of the canonical state: the plan's location, the
+ * The recurring reminder: the plan's location, the
  * compare-and-swap triple, the approval posture, and every task's current
  * status.
  *
  * @param document - the plan being published as canonical state.
  * @param reviewRequired - whether *this run* carries the review gate.
  * @returns the header, a few hundred bytes even for a large plan.
- * @remarks This is the only part re-pinned at the end of the transcript each
- *   iteration, so it is also the only part re-sent uncached every iteration.
- *   Everything here genuinely changes as work advances; the plan's substance
- *   lives in {@link planSpecBlock}, which sits behind the cache breakpoint.
+ * @remarks Each publication is appended after the existing transcript, including
+ *   unchanged reminders. Earlier publications retain their content and position.
+ *   The provider store remains authoritative; a reminder cannot bypass CAS or review.
  *   Statuses are listed for **all** tasks so the spec block never has to carry
  *   them — carrying them there would make its bytes change on every
  *   `transition_plan_task` and invalidate the cached prefix behind it.
@@ -79,6 +78,7 @@ export function planCasHeader(document: PlanDocument, reviewRequired: boolean): 
   );
   return [
     `Plan file: ${document.path}`,
+    "Plan reminder: the latest publication describes current state; earlier headers are history.",
     `Pass these unchanged as the expected_* arguments of the next plan mutation:`,
     `  expected_revision: ${document.revision}`,
     `  expected_digest: ${document.digest}`,
@@ -125,8 +125,8 @@ export function planSpecBlock(document: PlanDocument): string {
     "The plan's substance, unchanged until it is revised. A revision appends a fresh copy of",
     "this block rather than editing this one, so if more than one appears in this conversation",
     "the LAST one is the plan and every earlier copy is superseded history. Current task",
-    "statuses and the expected_* arguments are pinned separately at the end of this",
-    "conversation; anything omitted here (notes, task results) is available through read_plan.",
+    "statuses and expected_* arguments are in the latest appended plan reminder; the store",
+    "validates every mutation. Anything omitted here (notes, task results) is available through read_plan.",
     "",
     "## Objective",
     "",

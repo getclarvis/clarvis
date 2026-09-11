@@ -1,4 +1,5 @@
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
+import { goalsSettingsSchema } from "@clarvis/goal/settings";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import type {
   HostingService,
@@ -18,6 +19,12 @@ import {
 import { createHostedSessionCoordinator } from "./sessions.ts";
 import type { HostingPeer } from "./admission.ts";
 import { createLocalHostOperator } from "./operator.ts";
+import { createGoalRepository } from "../goals/repository.ts";
+import { createGoalEvidenceSource } from "../goals/evidence.ts";
+import { prepareHostedGoalTurn, type GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import { createGoalService } from "../goals/service.ts";
+import { unavailableGoalService } from "../goals/unavailable.ts";
+import { createGoalChanges } from "../goals/changes.ts";
 
 /** Operator-owned process resources; storage and authentication are never selected by an RPC peer. */
 export interface FileRunHostOptions {
@@ -33,6 +40,10 @@ export interface FileRunHostOptions {
   ): HostingPeer["role"] | undefined | Promise<HostingPeer["role"] | undefined>;
   /** Fence each operation against the owning process lease, including after asynchronous approval. */
   assertAuthority?(): Promise<void>;
+  /** Advertise controls that act on this machine's application host. Defaults to true. */
+  exposeLocalControls?: boolean;
+  /** Reveal the server-owned session namespace to a remote application client. */
+  exposeDefaultOwner?: boolean;
 }
 
 /** A process-owned FileKernel and authenticated RPC server, independent of any transport connection. */
@@ -60,6 +71,7 @@ export interface FileRunHost {
  */
 export async function createFileRunHost(options: FileRunHostOptions): Promise<FileRunHost> {
   const logger = options.kernel.logger ?? NOOP_LOGGER;
+  const goalChanges = createGoalChanges(logger);
   const owner = options.kernel.defaultOwner ?? ownerFromWorkspace(options.kernel.workspaceRoot);
   let registry: HostedRegistry | undefined;
   let runtimeNotice: LocalHostStatus["runtime_notice"];
@@ -101,8 +113,16 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
   const roles = new Map<string, HostingPeer["role"]>();
   let maintenance = false;
   let closing: Promise<void> | undefined;
+  const goalServices = new Map<string, ReturnType<typeof createGoalService>>();
+  let goalControls = 0;
+  const assertWritable = (): void => {
+    if (closing !== undefined || maintenance || restartRequested)
+      throw kernelError("conflict", "host maintenance or shutdown is in progress");
+  };
   try {
     const sessions = createHostedSessionCoordinator({
+      logger,
+      goalChanged: (sessionId) => goalChanges.notify(sessionId),
       sessions: kernel.sessions,
       workspaceId: kernel.workspace.id,
       projectId: kernel.project.id,
@@ -117,34 +137,74 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           throw error;
         }
       },
-      async prepareExecution(params) {
+      async prepareExecution(params, context) {
+        await options.assertAuthority?.();
+        assertWritable();
         const catalog = await kernel.models.get();
         prices.clear();
         for (const provider of catalog.providers)
           for (const model of provider.models)
             if (model.cost !== undefined) prices.set(`${provider.id}/${model.id}`, model.cost);
         const extension = await kernel.extensionProfiles.current();
-        const prepared = kernel.prepareRun(params, owner);
-        return {
-          detachable: prepared.detachable,
-          config: {
-            agent: prepared.agent,
-            ...(prepared.model === undefined ? {} : { model: prepared.model }),
-            extension_profile: { id: extension.id, fingerprint: extension.fingerprint },
-            runtime: structuredClone(kernel.runtime),
-          },
-          start: () => prepared.start(),
+        const prepareExecution = async (policy?: GoalExecutionPolicy) => {
+          assertWritable();
+          context.signal.throwIfAborted();
+          const prepared = kernel.prepareRun(params, owner, policy);
+          return {
+            detachable: prepared.detachable,
+            config: {
+              agent: prepared.agent,
+              ...(prepared.model === undefined ? {} : { model: prepared.model }),
+              extension_profile: { id: extension.id, fingerprint: extension.fingerprint },
+              runtime: structuredClone(kernel.runtime),
+            },
+            async start() {
+              await options.assertAuthority?.();
+              assertWritable();
+              context.signal.throwIfAborted();
+              if (context.conversation !== undefined)
+                registry!.assertController(context.conversation);
+              return operator!.withSession(context.session.id, () => prepared.start());
+            },
+          };
         };
+        const goal = context.session.goal_state?.current;
+        if (goal === undefined || goal.status === "complete" || goal.status === "cancelled")
+          return prepareExecution();
+        if (context.conversation === undefined)
+          throw kernelError(
+            "conflict",
+            "Goal requires explicit resume by a live conversation controller",
+          );
+        registry!.assertController(context.conversation);
+        return prepareHostedGoalTurn({
+          params,
+          context,
+          repository,
+          sessions: sessions.sessions,
+          evidence: createGoalEvidenceSource({
+            executionId: params.execution_id!,
+            workspaceRoot: options.kernel.workspaceRoot,
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+          }),
+          prepareExecution,
+          logger,
+          priceFor: (model) => prices.get(model),
+        });
       },
     });
+    const repository = createGoalRepository(sessions.sessions, sessions);
     registry = createHostedRegistry({
       ...options.storage,
       hostGeneration: options.hostGeneration,
       workspaceId: kernel.workspace.id,
       owner: workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
       prepare: sessions.prepare,
+      archiveRecovery: sessions.archiveRecovery,
       retireConfigurationSession: (scope) => kernel.nativeConfiguration.retireSession(owner, scope),
       logger,
+      assertStartAllowed: assertWritable,
+      executionChanged: (sessionId) => goalChanges.notify(sessionId),
     });
     const owned = registry;
     const exclusive = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -155,6 +215,8 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         active.runs > 0 ||
         active.activities > 0 ||
         active.unresolved > 0 ||
+        owned.hasPendingContinuation() ||
+        goalControls > 0 ||
         kernel.activeExecutionLeases() > 0
       )
         throw kernelError("conflict", "host has active work; wait for physical closure");
@@ -188,6 +250,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
     ): KernelServices => ({
       ...kernel.operatorServices,
       ...kernel.defaultOwnerServices,
+      goals: goalServices.get(peerId)?.service ?? unavailableGoalService(),
       sessions: {
         ...sessions.sessions,
         save: (value) =>
@@ -250,6 +313,33 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           throw kernelError("resource_exhausted", "previous local connections are still closing");
         const connection = owned.connect(role);
         roles.set(connection.peer.id, role);
+        goalServices.set(
+          connection.peer.id,
+          createGoalService({
+            peerId: connection.peer.id,
+            repository,
+            sessions: sessions.sessions,
+            registry: owned,
+            assertAuthority: async () => {
+              await options.assertAuthority?.();
+            },
+            assertWritable,
+            beginControl() {
+              assertWritable();
+              if (goalControls >= 4)
+                throw kernelError("resource_exhausted", "Too many goal controls are pending");
+              goalControls++;
+              return () => {
+                goalControls--;
+              };
+            },
+            defaultLimits: async () =>
+              goalsSettingsSchema.parse((await kernel.config.getSettings()).merged.goals ?? {}),
+            entryTokenLimit: (params) => kernel.prepareRun(params, owner).tokenLimit,
+            logger,
+            subscribe: async (sessionId, listener) => goalChanges.subscribe(sessionId, listener),
+          }),
+        );
         return {
           principal: { id: connection.peer.id },
           workspace: kernel.workspace,
@@ -257,20 +347,35 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           services: servicesFor(
             connection.service,
             connection.peer.id,
-            role === "operator" ? ownedOperator.connect(connection.peer.id) : undefined,
+            role === "operator" && options.exposeLocalControls !== false
+              ? ownedOperator.connect(connection.peer.id)
+              : undefined,
           ),
           capabilities: {
             ...kernel.capabilities,
-            hosting: { host_generation: options.hostGeneration },
-            ...(role === "operator" ? { local_host: true as const } : {}),
+            hosting: {
+              host_generation: options.hostGeneration,
+              ...(options.exposeDefaultOwner === true ? { default_owner: owner } : {}),
+            },
+            goals: true,
+            ...(role === "operator" && options.exposeLocalControls !== false
+              ? { local_host: true as const }
+              : {}),
           },
           close() {
             roles.delete(connection.peer.id);
             ownedOperator.disconnect(connection.peer.id);
-            const pending = bestEffort(() => connection.close(), {
-              operation: "hosting.connection.close",
-              logger,
-            });
+            const pending = bestEffort(
+              async () => {
+                await connection.close();
+                await goalServices.get(connection.peer.id)?.close();
+                goalServices.delete(connection.peer.id);
+              },
+              {
+                operation: "hosting.connection.close",
+                logger,
+              },
+            );
             disconnections.add(pending);
             const release = (): void => {
               disconnections.delete(pending);
@@ -305,8 +410,12 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           roles.clear();
           ownedOperator.close();
           const settled = await Promise.allSettled([owned.close(), ...disconnections]);
+          const goalSettled = await Promise.allSettled(
+            [...goalServices.values()].map((service) => service.close()),
+          );
           await kernel.close();
-          const failure = settled.find((value) => value.status === "rejected");
+          goalChanges.close();
+          const failure = [...settled, ...goalSettled].find((value) => value.status === "rejected");
           if (failure?.status === "rejected") throw failure.reason;
         })();
         return closing;

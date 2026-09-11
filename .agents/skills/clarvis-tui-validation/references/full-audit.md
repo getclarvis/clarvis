@@ -13,6 +13,8 @@ Read [coverage-matrix.md](coverage-matrix.md) and reconcile the relevant surface
 - `packages/code/src/views/config/hub-items.ts` and its concrete settings/domain views;
 - `packages/code/src/cli-args.ts`, `packages/code/src/app/layout.ts`, keymaps, and input/transcript
   implementations;
+- `packages/code/src/adapters/workspace-client-manager.ts`, `remote-kernel-arguments.ts`,
+  `remote-host.ts`, and the kernel SSH/stdio compositions when remote mode is present;
 - the owning README/specs and tests for configuration, capabilities, failures, and recovery.
 
 Run the static check from the repository root:

@@ -146,6 +146,7 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | `textNoSubmitMessage?` | builds the error message when a contract run keeps producing text without submitting |
 | `emptyResponseAgent` | which persona (`"LLM"` or `"Lead"`) to name in the empty-response error |
 | `onContext?` | notified of the created `LiveContext` before the loop starts |
+| `prepareContext?` | asynchronous context preparation after actual capability attachment/folding and initial budget admission, before inference; receives the live `ContextPort` |
 | `warnings?` | mutable sink for run-level warnings, forwarded to `AgentBuildContext.warnings` |
 
 ### 2.7 Environment knobs this subsystem reads
@@ -201,6 +202,15 @@ Discriminated by `status` (`packages/capability/src/run.ts`):
 Every variant carries `usage: Usage` = `{ iterations_used, elapsed_ms, by_agent, warnings? }`
 (`packages/capability/src/run.ts`).
 
+An accepted stage carries `disposition: "checkpoint"` and separate bounded `checkpoint` metadata.
+It does not replace execution status or satisfy `output_schema`; a completed checkpoint has no
+final result value. Missing disposition is the ordinary final path. `loopResultToResponse` retains
+this distinction and `buildRecord` persists the response for continuation and protocol projection.
+Production: [run-response-mapping.ts](../../packages/loop/src/runtime/run-response-mapping.ts).
+Test: `checkpoint response mapping` in
+[run-response-mapping.test.ts](../../packages/loop/tests/unit/run-response-mapping.test.ts), and
+[checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
+
 ### 3.3 Provider-error → `ErrorCode` mapping
 
 `PROVIDER_ERROR_CODES` (`packages/loop/src/runtime/run-response-mapping.ts`):
@@ -252,6 +262,14 @@ from the agent profile in the orchestrator.
 `packages/loop/tests/unit/run-trace.test.ts`, including that a capability-contributed code maps
 to `guard_trip` **only** when the capability supplied it.
 
+For a completed response, `deriveRunEndedDetail` additionally carries its accepted `disposition`
+when present. Other statuses omit it, even if interrupted work had proposed a checkpoint. The
+persisted trace and client event therefore identify stage closure without inventing final success.
+Production: `deriveRunEndedDetail` in [run-trace.ts](../../packages/loop/src/runtime/run-trace.ts).
+Test: `records accepted checkpoint disposition without relabeling an unsuccessful run` in
+[run-trace.test.ts](../../packages/loop/tests/unit/run-trace.test.ts), with live/reopened kernel
+projection in [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
+
 ### 3.6 Per-iteration trace events
 
 `recordIterationMetrics` (`packages/loop/src/runtime/loop/iteration-metrics.ts`) records, once
@@ -301,14 +319,13 @@ can assert `run_started` is the *first* persisted event even though `init` was r
 
 1. one `system` message — `buildSystemSections({ workspaceRoot, basePrompt?, capabilitySections? })`
    joined with `"\n\n"`;
-2. the filtered continuation history, image-collapsed when the entry agent lacks `vision`;
+2. the persisted continuation history, retaining image payloads, notes and reminders;
 3. the pinned capability seed blocks the continuation did not already carry, as `user` entries;
 4. this turn's request `messages`.
 
-The filter drops (a) restored *volatile* entries — those with `canonical === true` or a `note_kind`
- — and (b) any restored entry whose leading marker belongs to a
-capability that contributed no fresh block this run. A marker still live is *kept*, and
-the freshly rendered block for that marker is *discarded*.
+Restored entries retain their contents and order, including inactive capability blocks. A carried
+seed marker suppresses another initial copy of that seed. Later changes publish appended entries;
+they do not erase earlier publications.
 
 Worked example, from `packages/loop/tests/unit/entry-seed-markers.test.ts`: with a carried
 block `<cap-block>\nwhat the session started with\n</cap-block>` and a fresh `SEED` for the same
@@ -352,7 +369,7 @@ contributed, so the record stays clean.
 | 10 | choose the execution id; **throw** `ConflictError` if `traceStore.existsForOwner` | `packages/loop/src/runtime/execute-run.ts` |
 | 11 | bind the run-scoped logger with `execution_id`, `owner_key_name`, `mode` | `packages/loop/src/runtime/execute-run.ts` |
 | 12 | reserve the id in the per-store in-flight set | `packages/loop/src/runtime/execute-run.ts` |
-| 13 | derive `promptCacheKey = prompt_cache_key ?? executionId`, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `packages/loop/src/runtime/execute-run.ts` |
+| 13 | persist missing `session_id` and `agent_instance_id`, validate their composed key, `promptCacheTtl = prompt_cache_ttl ?? (humanParkLikely ? "1h" : "5m")` | `packages/loop/src/runtime/execute-run.ts` |
 | 14 | load the continuation; **throw** `ContinuationUnavailableError` if absent/empty | `packages/loop/src/runtime/execute-run.ts` |
 | 15 | build the swallowing capability-event emitter | `packages/loop/src/runtime/execute-run.ts` |
 | 16 | create the run's `AbortController` and forward `externalSignal` (including an already-aborted one) | `packages/loop/src/runtime/execute-run.ts` |
@@ -421,7 +438,8 @@ the cancelled record."
 | sub-agent | `resolveIterationCap(entryResolved, CLARVIS_DEFAULT_ITERATION_LIMIT)` (`packages/loop/src/runtime/subagents/subagent-profiles.ts`) |
 
 - usage accounting, entry seed, and the per-attempt input builder;
-- `runWithClockAndTimeout` whose `buildLoop` runs the vision prepass *then* `runAgent`;
+- `runWithClockAndTimeout` whose `buildLoop` supplies auxiliary vision through `runAgent`'s
+  `prepareContext`, after capability attachment and initial budget admission;
 - `toResponse` maps the loop result with a role-aware empty-result fallback message: `"Lead returned
   an empty response."` for a lead; otherwise `"LLM returned an empty response."` for
   `empty_response` and `"Run terminated with no result."` for any other code.
@@ -497,6 +515,11 @@ settlement behavior for external cancellation.
     `budget_check` and return `budgetStop("exhausted")`, pinned by
     `packages/loop/tests/unit/run-agent.test.ts` (fires `onBudgetExhausted` and records
     `budget_check`, with zero model calls);
+    when `prepareContext` is present, recheck cancellation, await the preparation against this live
+    context, then check the same budget again before the entry's first call. Auxiliary charges can
+    therefore exhaust the shared ledger without admitting another call. Production: `runAgent` in
+    [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts). Test: `context preparation
+    admission` in [run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts).
 12. wrap the target's LLM in `withOutputTokenBudget` when a capability contributed one;
 13. call `runAgentLoop`, and close the steer source / compaction source in a `finally` when either
     exists.
@@ -512,7 +535,7 @@ fallback by construction.
 
 | # | Step | Source | Early exit |
 | --- | --- | --- | --- |
-| 1 | `beforeIteration?.()` | `packages/loop/src/runtime/loop/loop.ts` | — |
+| 1 | await `runBeforeIteration` before the preamble; bounded ordered preparation | `packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/loop/lifecycle-hooks.ts` | interruption result; successful completion/checkpoint refused; timeout/rejection fails the stage; cancellation remains cancelled |
 | 2 | `runIterationPreamble` — abort probe, `allToolsUnavailable` probe, compaction thunk, counter+`*_iteration_started` | `packages/loop/src/runtime/loop/loop.ts` (`runAgentLoop`, `runIterationPreamble` call); `packages/loop/src/runtime/loop/loop-iteration.ts` (`runIterationPreamble`) | `cancelled` → `maybeCancelled()!`; `all_tools_unavailable` → `results.allToolsUnavailable()` (`runAgentLoop`, non-proceed branch) |
 | 3 | `drainSteer?.(iteration)` | `packages/loop/src/runtime/loop/loop.ts` | — |
 | 4 | build the call: `buildModelCall`, `withStreaming`, `takeForcedChoice` | `packages/loop/src/runtime/loop/loop.ts` | — |
@@ -527,8 +550,19 @@ fallback by construction.
 | 11 | hard guard trip → `onGuardTrip?`; `"continue"` falls through, `undefined` records `terminate` and returns `results.guardTrip(trip)` | `packages/loop/src/runtime/loop/loop.ts` | — |
 | 12 | fold progress; `progress.bump(productive)` | `packages/loop/src/runtime/loop/loop.ts` | trip → `results.noProgress()` |
 | 13 | `beforeCheckpoint?.()` then `cancelOrCheckpoint` | `packages/loop/src/runtime/loop/loop.ts` | non-null → its result |
-| — | `catch`: `OutputBudgetExhaustedError` → `results.budgetExhausted()`, else rethrow | `packages/loop/src/runtime/loop/loop.ts` | — |
+| — | `catch`: cancelled signal → `maybeCancelled()`; `OutputBudgetExhaustedError` → `results.budgetExhausted()`, else rethrow | `packages/loop/src/runtime/loop/loop.ts` | — |
 | — | `finally`: `await d.onTeardown?.()` | `packages/loop/src/runtime/loop/loop.ts` | — |
+
+Step 1 awaits the entire contribution sweep under a five-second wall bound. Its signal is retired
+on completion, timeout or cancellation so delayed asynchronous preparation cannot publish after its
+iteration has ended. A state refresh completes before compaction chooses the retained base.
+Production: `runBeforeIteration` in
+[lifecycle-hooks.ts](../../packages/loop/src/runtime/loop/lifecycle-hooks.ts) and `runAgentLoop` in
+[loop.ts](../../packages/loop/src/runtime/loop/loop.ts).
+Test: `iteration preparation boundary` in
+[lifecycle-hooks.test.ts](../../packages/loop/tests/unit/lifecycle-hooks.test.ts), and
+`awaits iteration preparation and honors` in
+[run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts).
 
 Step 2's "compaction thunk" is not a lightweight check: `buildCompactionThunk`
 (`packages/loop/src/runtime/loop/loop.ts`) can itself call `runCompaction`/`attemptCompaction`,
@@ -685,7 +719,29 @@ The dispatch's tolerance for throwing and rejecting handlers, and the guarantee 
 
 ### 4.13 Finalization
 
-Two paths, chosen by whether `RunAgentInput.contract` is set
+**Capability-requested checkpoint:** `HandlerVerdict.finalize` stops further dispatch in the batch
+without cancelling earlier deferred work. The loop joins that work, pairs every call with a result
+(including an unexecuted marker for the tail), runs dispatch observers and convergence guards, then
+calls `FinalizePolicy.onRequested`. That method validates the bounded checkpoint schema and runs
+the same capability and workspace-hook gates. A nudge resumes normal progress/budget accounting;
+a terminal gate or cancellation preserves its actual status. Cancellation is checked again after
+the gate sweep. Only acceptance calls `onFinalizeAccepted(attempt)` and emits the checkpoint result.
+This path is available with or without an output schema, and never validates checkpoint metadata
+as a final result. It does not use `HandlerVerdict.terminal` to skip gates.
+
+`collectCapabilityState` passes status, disposition and a generic `preserveState` decision to all
+finalizers. Checkpoints always preserve state. Unsuccessful runs do so when a registered activation
+sets `preserveStateOnInterruption`; the extension-admission wrapper retains this policy.
+Production: `runDispatch` and `runAgentLoop` in [loop.ts](../../packages/loop/src/runtime/loop/loop.ts),
+`runAgent` in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts), and
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: `gated checkpoint finalization` in
+[run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts), the disposition/policy matrix
+in [capability-state.test.ts](../../packages/loop/tests/unit/capability-state.test.ts), and the
+persisted plan/SDK journey in
+[checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
+
+Ordinary final results have two paths, chosen by whether `RunAgentInput.contract` is set
 (`packages/loop/src/runtime/loop/run-agent.ts`).
 
 **With a contract** (`output_schema` present):
@@ -923,8 +979,7 @@ Every way a run reaches its terminal `RunResponse`:
 23. **Two consecutive empty-or-reasoning-only completions end the agent; one does not.** —
     `packages/loop/src/runtime/loop/loop.ts`. Tests:
     `packages/loop/tests/integration/empty-response.test.ts`.
-24. **The empty-response nudge is a *replaceable* runtime note: a second empty replaces the first
-    rather than accumulating.** — `ctx.appendRuntimeNote("empty_response", …)` at
+24. **An empty-response nudge appends after existing history and preserves earlier notes.** — `ctx.appendRuntimeNote("empty_response", …)` at
     `packages/loop/src/runtime/loop/loop.ts`. Test:
     `packages/loop/tests/unit/run-agent.test.ts`.
 25. **A reasoning-only completion's `reasoningParts` are appended to the context before the nudge, so
@@ -1033,14 +1088,14 @@ Every way a run reaches its terminal `RunResponse`:
 49. **`cacheReadRatio`'s denominator is `input_tokens` alone.** —
     `packages/loop/src/runtime/loop/iteration-metrics.ts`, reason stated. Tests:
     `packages/loop/tests/unit/iteration-metrics.test.ts`.
-50. **A restored volatile entry (canonical block or runtime note) is never carried into a
-    continuation's seed.** — `packages/loop/src/runtime/entry-seed.ts`. Test:
-    `packages/loop/tests/unit/entry-seed-markers.test.ts`.
+50. **Restored canonical reminders and runtime notes retain their content and order in a
+    continuation seed.** Production: [`buildEntrySeed`](../../packages/loop/src/runtime/entry-seed.ts).
+    Test: [`entry-seed-markers.test.ts`](../../packages/loop/tests/unit/entry-seed-markers.test.ts).
 51. **A seed block the continuation already carries is kept verbatim and the freshly rendered copy is
     dropped; a newly active capability's block is appended *after* the restored history.** —
     `packages/loop/src/runtime/entry-seed.ts`. Tests:
     `packages/loop/tests/unit/entry-seed-markers.test.ts`, and the prefix property.
-52. **A block whose capability is no longer active is dropped from the continuation.** —
+52. **A block whose capability is no longer active remains historical context in the continuation.** —
     `packages/loop/src/runtime/entry-seed.ts`. Test:
     `packages/loop/tests/unit/entry-seed-markers.test.ts`.
 53. **A continuation's restored transcript is reproduced byte-identically under a fresh system

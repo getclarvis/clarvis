@@ -2,12 +2,15 @@ import {
   detachObserved,
   bestEffort,
   NOOP_LOGGER,
+  loadEnv,
   suppressSecondaryRejection,
 } from "@clarvis/capability";
 import { kernelError } from "../core/errors.ts";
 import { globalPaths } from "@clarvis/paths";
 import { listenLocalKernel, type LocalKernelListener } from "../transport/local.ts";
 import { createFileRunHost, type FileRunHost, type FileRunHostOptions } from "./file-host.ts";
+import { memoryKeepsHostAlive } from "./memory-activity.ts";
+import { localKernelPolicyIdentity } from "./policy-identity.ts";
 import {
   acquireLocalHostState,
   resolveLocalHostIdentity,
@@ -56,7 +59,13 @@ export async function serveLocalFileKernel(
     globalDir: options.kernel.globalDir,
     owner: options.kernel.defaultOwner,
   });
-  const state = await acquireLocalHostState(identity, options.artifactId, logger);
+  const env = options.kernel.env ?? loadEnv(options.kernel.environment?.values ?? process.env);
+  const state = await acquireLocalHostState(
+    identity,
+    options.artifactId,
+    localKernelPolicyIdentity(env),
+    logger,
+  );
   if (state === null) return null;
   let host: FileRunHost | undefined;
   let listener: LocalKernelListener | undefined;
@@ -64,6 +73,7 @@ export async function serveLocalFileKernel(
     host = await createFileRunHost({
       kernel: {
         ...options.kernel,
+        env,
         workspaceRoot: identity.workspaceRoot,
         globalDir: identity.globalDir,
         defaultOwner: identity.owner,
@@ -120,12 +130,9 @@ export async function serveLocalFileKernel(
         }
         if (busy()) idleSince = performance.now();
         else if (performance.now() - idleSince >= idleTimeout) {
-          const memory = ownedHost.kernel.capabilities.memory
-            ? await ownedHost.kernel.memory.jobs({ limit: 1 })
-            : undefined;
-          const counts = memory?.counts;
-          const memoryBusy =
-            counts !== undefined && counts.pending + counts.running + counts.retry_wait > 0;
+          const memoryBusy = await memoryKeepsHostAlive(
+            ownedHost.kernel.capabilities.memory ? ownedHost.kernel.memory : undefined,
+          );
           if (busy() || memoryBusy) idleSince = performance.now();
           else {
             await close();

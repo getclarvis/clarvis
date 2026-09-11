@@ -17,6 +17,7 @@ COPY packages/hooks/package.json       packages/hooks/
 COPY packages/skills/package.json      packages/skills/
 COPY packages/memory/package.json      packages/memory/
 COPY packages/plan/package.json        packages/plan/
+COPY packages/goal/package.json        packages/goal/
 COPY packages/tasks/package.json       packages/tasks/
 COPY packages/protocol/package.json    packages/protocol/
 COPY packages/loop/package.json        packages/loop/
@@ -48,7 +49,7 @@ LABEL org.opencontainers.image.title="Clarvis isolated runtime artifact" \
       org.opencontainers.image.version="${RUNTIME_VERSION}" \
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       io.clarvis.runtime.artifact="true" \
-      io.clarvis.runtime.protocol="7"
+      io.clarvis.runtime.protocol="11"
 
 COPY --from=build --chmod=0555 /out/clarvis-runtime /clarvis-runtime
 COPY LICENSE /licenses/LICENSE

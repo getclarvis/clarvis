@@ -3,7 +3,8 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { ValidationError } from "@clarvis/capability";
+import { loadEnv, ValidationError } from "@clarvis/capability";
+import { runtimeLoopPolicy } from "../../src/runtime/loop-policy.ts";
 import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "@clarvis/memory/capability";
 import {
   createGuestLoopExecutor,
@@ -20,6 +21,40 @@ afterEach(async () => {
 });
 
 describe("runtime guest loop", () => {
+  it.each([
+    undefined,
+    null,
+    { enabled: true, maxGrant: "exec" },
+    { enabled: 1, confine: true, maxGrant: "exec" },
+    { enabled: true, confine: true, maxGrant: "root" },
+    { enabled: true, confine: true, maxGrant: "exec", extra: true },
+  ])("refuses a missing or widened host tool policy %j", async (toolPolicy) => {
+    const executor = createGuestLoopExecutor();
+    await expect(
+      executor.execute(
+        "invalid-policy",
+        {
+          owner: "owner",
+          modelLeaseId: "lease",
+          rawBody: {},
+          toolPolicy,
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
+        },
+        {
+          model: async () => {
+            throw new Error("must not call model");
+          },
+          capability: async () => {
+            throw new Error("must not invoke host authority");
+          },
+          event: async () => {},
+          checkpoint: async () => {},
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("guest run envelope is invalid");
+  });
+
   it.each([{ servers: {} }, { servers: [null] }])(
     "retains request validation and closes MCP hooks for malformed servers %j",
     async ({ servers }) => {
@@ -46,6 +81,8 @@ describe("runtime guest loop", () => {
           {
             owner: "owner",
             modelLeaseId: "lease",
+            toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+            loopPolicy: runtimeLoopPolicy(loadEnv({})),
             rawBody: {
               execution_id: "invalid-mcp",
               servers,
@@ -146,6 +183,8 @@ describe("runtime guest loop", () => {
         {
           owner: "owner",
           modelLeaseId: "lease-1",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
           rawBody: {
             execution_id: "exec_guest_1",
             messages: [{ role: "user", content: "hi" }],
@@ -221,6 +260,8 @@ describe("runtime guest loop", () => {
         {
           owner: "owner",
           modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
           hostCapabilities: ["plans"],
           rawBody: {
             execution_id: "exec_guest_plans",
@@ -243,7 +284,7 @@ describe("runtime guest loop", () => {
     expect(calls).toEqual([
       {
         method: "runtime.plans",
-        revision: "v1",
+        revision: "v2",
         arguments: { operation: "resolve" },
       },
     ]);
@@ -333,10 +374,7 @@ describe("runtime guest loop", () => {
         return {
           kind: "skill",
           name: "container-review",
-          description: "Review a container change",
-          body: "Inspect the proposed change.",
-          directory: "/runtime/skills/container-review",
-          resources: [],
+          text: "Skill 'container-review' — Review a container change\n\nInspect the proposed change.",
         };
       },
       async event(event) {
@@ -354,6 +392,8 @@ describe("runtime guest loop", () => {
       {
         owner: "owner",
         modelLeaseId: "lease",
+        toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+        loopPolicy: runtimeLoopPolicy(loadEnv({})),
         hostCapabilities: ["skills"],
         skillCatalog: [
           {
@@ -423,7 +463,10 @@ describe("runtime guest loop", () => {
         new AbortController().signal,
       ),
     ).rejects.toMatchObject({ code: "not_found" });
-    expect(JSON.stringify(modelBodies[0])).toContain("/runtime/skills/container-review/SKILL.md");
+    expect(JSON.stringify(modelBodies[0])).toContain(
+      "remote; load by name; resources via read_skill_resource",
+    );
+    expect(JSON.stringify(modelBodies[0])).not.toContain("/runtime/skills/");
     expect(JSON.stringify(modelBodies[1])).toContain("Also verify the strict contract.");
     expect(JSON.stringify(modelBodies[1])).toContain("InputValidationError");
     expect(JSON.stringify(guestEvents)).toContain("compaction_started");
@@ -448,7 +491,7 @@ describe("runtime guest loop", () => {
     expect(capabilityCalls).toEqual([
       {
         method: "runtime.skills",
-        revision: "v1",
+        revision: "v2",
         arguments: { operation: "load", name: "container-review" },
       },
     ]);
@@ -533,6 +576,8 @@ describe("runtime guest loop", () => {
         {
           owner: "owner",
           modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
           hostCapabilities: ["memory"],
           memory: {
             providerDigest: "a".repeat(64),
@@ -641,7 +686,13 @@ describe("runtime guest loop", () => {
     await expect(
       createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
         "exec_guest_elicit",
-        { owner: "owner", modelLeaseId: "lease", rawBody: body },
+        {
+          owner: "owner",
+          modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
+          rawBody: body,
+        },
         bridge,
         new AbortController().signal,
       ),
@@ -653,6 +704,8 @@ describe("runtime guest loop", () => {
         {
           owner: "owner",
           modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
           rawBody: { ...body, execution_id: "exec_guest_missing" },
         },
         missingResult,
@@ -741,6 +794,8 @@ describe("runtime guest loop", () => {
         {
           owner: "owner",
           modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
           guardSettings: {
             guard: { type: "shell", mode: "on", allowed_commands: ["printf"] },
           },

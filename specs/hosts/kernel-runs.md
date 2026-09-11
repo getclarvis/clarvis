@@ -5,6 +5,16 @@
 
 ## 1. Purpose
 
+Hosted goals reuse this same prepared-run path. A private `GoalExecutionPolicy` constrains the
+assembled request before launch and injects its mandatory entry capability into ordinary run deps.
+Its observer receives canonical trace events before public projection. Public run arguments cannot
+provide this policy. `PreparedKernelRun.tokenLimit` exposes the prepared finite budget without
+starting inference so goal creation can inherit it once.
+Production: `prepareKernelRun` in [prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts)
+and prepared ordinary execution in [run-service.ts](../../packages/kernel/src/runs/run-service.ts).
+Test: the real FileKernel goal journey in
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
 `packages/kernel/src/runs/` is the layer that turns the protocol's `RunService`
 (`RunService` in `packages/protocol/src/runs.ts`) into calls on the engine's `executeRun`
 (`packages/kernel/src/runs/run-service.ts`), and turns everything the engine and its capabilities
@@ -190,7 +200,7 @@ memory notices. Production and test ownership live in
 | `entry` | resolved agent name |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed |
 | `vision_model` | `merged.default_vision_model`, only when a string |
-| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
+| `execution_id`, `continue_from`, `session_id`, `agent_instance_id`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is |
 | `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent |
 | `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills |
 | `plans` | request value, else settings block with the skill-mode override, else settings block, else absent |

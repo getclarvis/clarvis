@@ -118,7 +118,15 @@ overwrite a human draft.
 
 The completion receipt waits for both semantic reconciliation and every physical handle owned by
 the occurrence, including a normal continuation-unavailable fallback. Cancellation acknowledgement
-alone cannot release this ownership. A scoped cancellation targets only that occurrence's last
+alone cannot release this ownership. On the hosted backend, this includes the terminal index commit,
+admission release and acknowledgement of the consumed controlled result; long recurring jobs can
+reclaim completed foreground entries. Production: `driveHandle` in
+[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts) and `commitTerminal` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts). Test:
+[kernel-run-client.test.ts](../../packages/code/tests/component/kernel-run-client.test.ts) and the
+forty-turn reclamation case in
+[hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts).
+A scoped cancellation targets only that occurrence's last
 handle, even when a later human turn owns interactive controls. Session and binding validity are
 rechecked after asynchronous preparation and history recovery, preventing stale launches. Late
 settlement or steering failure from an outgoing conversation cannot alter the new draft, status or

@@ -327,7 +327,7 @@ policy:
 
 `SkillInfo` (`packages/skills/src/types.ts`): `name`, `description`, `metadata`,
 `allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `dependencies?`, `defaulted?`, `scope`,
-`source`, `root`, `dir`, `executionRoot?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
+`source`, `root`, `dir`, `executionRoot?`, `resourceAccess?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
 and `resources`, plus optional `identityFiles`: absolute manifest, selected-sidecar, and resource
 paths whose bytes produced the effective content and allow-list. The sidecar path is identity-only
 and does not become a readable resource (`SkillContent` in `packages/skills/src/types.ts` and
@@ -656,6 +656,11 @@ instructions for `load_skill` and `read_skill_resource` (`renderSkillsSection`).
 `- **name** — description (path: /absolute/SKILL.md)` line per non-suppressed filesystem skill.
 Host-embedded `source: "builtin"` entries instead render `(builtin; load by name)` and precede
 external skills; each group is sorted by name. The complete catalog never exceeds 8,000 characters.
+Tool-only remote entries (`resourceAccess: "remote"`) instead identify loading by name and
+`read_skill_resource` in both full and compact catalog rows, without a filesystem path.
+Production: `catalogLine` in [catalog/index.ts](../../packages/skills/src/catalog/index.ts).
+Test: full/compact remote access in
+[catalog.test.ts](../../packages/skills/tests/component/catalog.test.ts).
 On overflow it first drops every description while retaining
 name and exact manifest path, then omits a deterministic tail with a bounded notice. It is the empty
 string when nothing is listable (`renderSkillCatalog` in
@@ -681,8 +686,9 @@ validator. An invalid call is reported as a failed `tool_call`; it never records
    non-progressing or out-of-range continuation, or a cursor that does not exactly equal the UTF-8
    byte length returned. A provider without chunk support may serve offset zero through
    `readResource`; every positive offset is refused rather than reinterpreted as a character index.
-   This operation never calls `loadSkill`. Production: `handleReadSkillResourceCall` and
-   `validateResourceChunk` in `packages/skills/src/call.ts`. Test:
+   This operation never calls `loadSkill`. Production: `handleReadSkillResourceCall` in
+   `packages/skills/src/call.ts` and `validateResourceChunk` in
+   `packages/skills/src/disclosure.ts`. Test:
    `packages/skills/tests/unit/call.test.ts` and
    `packages/skills/tests/integration/call-resource.test.ts`.
 3. A filesystem body result identifies `Skill directory: <dir>` as the base for bundled relative
@@ -694,6 +700,12 @@ validator. An invalid call is reported as a failed `tool_call`; it never records
    A host-embedded `source: "builtin"` result instead identifies instructions bundled in Clarvis,
    without advertising a filesystem directory. Test:
    `packages/kernel/tests/integration/builtin-skills.test.ts` (`the use_skills grant controls model access`).
+   A remote result (`resourceAccess: "remote"`) advertises no mounted skill directory and suppresses
+   execution-root hints. It requires complete resource-page reads and preparation of helpers with
+   their relative directory structure in a writable workspace directory before guarded shell use.
+   Production: `formatSkillBody` in [disclosure.ts](../../packages/skills/src/disclosure.ts).
+   Test: remote helper preparation and suppressed host execution roots in
+   [call.test.ts](../../packages/skills/tests/unit/call.test.ts).
 
 The capability wrapper turns the result into `{ kind: "result", text, progress: !error }`
 (`buildSkillsHandler` in `packages/skills/src/capability.ts`).
@@ -848,18 +860,27 @@ leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false`.
 
 Container placement reuses that same host-admitted provider snapshot rather than mounting any host
 skill root. `createRuntimeSkillCatalog` projects only safe catalog fields;
-`createHostSkillsGrant` serves admitted bodies and bounded resources through `runtime.skills`; and
+`createHostSkillsGrant` serves admitted bodies and bounded resources through `runtime.skills`
+revision `v2`; and
 `createRuntimeSkillBootstraps` resolves only the active plugins' declarations through
 `resolveBootstrapSkills`, then serializes `{ plugin, skill, body }` without roots. The guest
 `createGuestSkillsCapability` renders those bootstrap bodies before the sanitized catalog and
 proxies the same two closed operations. The host bridge accepts exactly `{operation: "load", name}`
 or `{operation: "resource", name, resource, offset}`; it rejects missing or additional fields before
-provider access, and a body call can never be reinterpreted from a path alias. Production:
+provider access, and a body call can never be reinterpreted from a path alias. Builtins preserve
+`source: builtin`, catalog priority and their non-filesystem locators. `formatSkillBody`,
+`formatSkillResourceChunk` and `formatSkillResourceLegacy` in
+[disclosure.ts](../../packages/skills/src/disclosure.ts) own the native and host-bridge rendering.
+The bridge strips host locations and marks non-builtin metadata with `resourceAccess: "remote"`
+before rendering and transports the resulting text; the guest
+validates the response identity without implementing a second formatter. Resource pages receive the
+same `validateResourceChunk` checks, and whole-resource fallback cannot promise byte continuation.
+Production:
 `createHostSkillsGrant` and `createGuestSkillsCapability` in
 `packages/kernel/src/runtime/skills-bridge.ts`, and `createLocalContainerRuntime` in
-`packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
-`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (path-free catalog, active bootstrap and
-exact request refusal) and
+`packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (native/guest builtin and resource
+conformance, path-free catalog, active bootstrap and exact request refusal) and
 `packages/kernel/tests/integration/local-podman-runtime.test.ts` (bootstrap reaches the guest
 prompt without a mount).
 
@@ -1134,7 +1155,7 @@ with the original errno in the message (`packages/skills/src/errors.ts`; pinned 
 | body over the char cap | `get()` throws `invalid_skill` at disclosure time, catalog entry survives (`packages/skills/tests/integration/bounds.test.ts`) | same |
 | oversized resource | `readResource` throws with `fields.dimension` = `bytes`/`characters` (`packages/skills/src/bounded-read.ts`) | same |
 | chunked resource exceeds 8 MiB, cursor is not a UTF-8 byte boundary, or file changes while read | `readResourceChunk` throws `invalid_input`; no partial page is returned (`readBoundedTextChunk` in `packages/skills/src/bounded-read.ts`) | same |
-| chunk provider reports an invalid size/offset/continuation | `read_skill_resource` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/call.ts`) | same |
+| chunk provider reports an invalid size/offset/continuation | `read_skill_resource` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/disclosure.ts`) | same |
 | legacy provider receives `offset > 0` | `read_skill_resource` refuses continuation; it never slices decoded text using the byte cursor (`handleReadSkillResourceCall` in `packages/skills/src/call.ts`) | same |
 | descriptor fails to close | `skill.handle_close_failed` debug, read result unaffected (`packages/skills/src/lib/log.ts`) | same |
 | `realpath` fails during containment | falls back to lexical compare and warns `skill.path_unresolved` at **warn** level, because a lexical check cannot see through a symlink (`packages/skills/src/paths.ts`) | same |

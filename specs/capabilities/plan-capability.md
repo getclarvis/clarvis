@@ -34,8 +34,20 @@ module load (`packages/kernel/src/config/capability-registry.ts`), so the engine
 `plans` key it has never heard of. `mode` (`off`/`on`/`review`) and `retention` (`keep`/`discard`)
 are settings a user authors; there is no agent grant that turns review off. The default retention is
 `keep` (`packages/plan/src/schemas.ts`, `packages/plan/src/settings.ts`) and a `discard` plan is
-deleted only in `onRunEnd`, only on a `completed` record
+deleted only in `onRunEnd`, only on a `completed` record with final disposition
 (`packages/plan/src/capability/index.ts`).
+
+An auxiliary continuation may retain the planning catalog without acquiring the source
+plan's lifecycle. The host selects `createPlansCatalogCapability`; no request mode enables
+this projection. It preserves plan tool order, descriptions, schemas and delegation
+augmentation under the source planning mode, including `off`. It opens no provider,
+reads no carried plan state, publishes no context and owns no review/task gates,
+reconciliation, finalization or retention. Plan calls and tracked spawning fail closed.
+Production: `createPlansCatalogCapability` in `packages/plan/src/capability/index.ts` and
+`createPlanCatalogRun` in `packages/plan/src/capability/catalog.ts`. Test:
+`packages/plan/tests/component/plan-catalog.test.ts` compares the ordinary and projected
+surfaces and refuses execution; `packages/kernel/tests/integration/goal-file-host-memory.test.ts`
+proves a paused goal's open discard plan remains unchanged after indexing.
 
 That claim is about grants, not about every path into `mode`: a trusted plugin can still declare
 `capabilityRunPolicies.plans.skills[skill]` (`packages/capability/src/capability-run-policies.ts`)
@@ -68,7 +80,7 @@ See [`model-instructions.md`](../cross-cutting/model-instructions.md).
 
 | Export path | File | Purpose |
 | --- | --- | --- |
-| `@clarvis/plan/capability` | `packages/plan/src/capability/index.ts` | `createPlansCapability`, `PLAN_PORT`, `PlanSession`, `planProjection`, `PLAN_TOOL_WIRE_NAMES` |
+| `@clarvis/plan/capability` | `packages/plan/src/capability/index.ts` | `createPlansCapability`, `createPlansCatalogCapability`, `PLAN_PORT`, `PlanSession`, `planProjection`, `PLAN_TOOL_WIRE_NAMES` |
 | `@clarvis/plan/settings` | `packages/plan/src/settings.ts` | `plansSettingsSpec`, `PLANS_DEFAULTS`, `plansParamSchema`, `PLANS_SETTINGS_FIELDS`, `PLANS_REQUEST_PARAMS`, `PlansSettingsBlock` |
 | `@clarvis/plan` (root) | `packages/plan/src/index.ts` | tool-name constants + `planToolDefinitions` + `revisePlanInputSchema`, `PlanService`, `PLANS_CAPABILITY_NAME`, `PlanRef` |
 
@@ -126,8 +138,8 @@ them to `NamespacedTool` with identity wire/mcp/tool names and an empty MCP name
 | Wire name | Effect | Advertised input (JSON-Schema) | Runtime validation (zod) |
 | --- | --- | --- | --- |
 | `create_plan` | `mutate` | `title`, `objective`, `context?`, `tasks[]{title,detail?,exit?}`, `validation[]`, `retention?` — required `title/objective/tasks/validation` (`packages/plan/src/tools.ts`) | `createInputSchema` (`packages/plan/src/capability/runtime-tools.ts`) |
-| `read_plan` | `read` | `{ id?: string }` (`packages/plan/src/tools.ts`) | `readInputSchema` (`packages/plan/src/capability/runtime-tools.ts`) |
-| `list_plans` | `read` | `cursor?`, `limit?` 1–100, `status?`, `retention?` (`packages/plan/src/tools.ts`) | `listInputSchema` (`packages/plan/src/capability/runtime-tools.ts`) |
+| `read_plan` | `read` | `{ id?: string \| null }` (`packages/plan/src/tools.ts`) | `readPlanInputSchema` (`packages/plan/src/tools.ts`) |
+| `list_plans` | `read` | nullable optional `cursor`, `limit` 1–100, `status`, `retention` (`packages/plan/src/tools.ts`) | `listPlansInputSchema` (`packages/plan/src/tools.ts`) |
 | `revise_plan` | `mutate` | CAS triple + `operations[]` (8-member `oneOf`) (`packages/plan/src/tools.ts`) | `revisePlanInputSchema` (`packages/plan/src/tools.ts`) |
 | `transition_plan_task` | `mutate` | CAS triple + `transitions[]{task_id,status,result?,error?,reason?,assignee?}` (`packages/plan/src/tools.ts`) | `transitionInputSchema` (`packages/plan/src/capability/runtime-tools.ts`) |
 
@@ -138,6 +150,19 @@ against the same prompt and profile: one model wrote three files before the fina
 plan was required, and the other planned first but, not knowing the runtime would present the plan,
 asked the human for approval itself with `ask_user` — so the human was asked twice, seconds apart,
 about the same plan" (`packages/plan/src/capability/runtime-tools.ts`).
+
+Read/list options use an explicit null alternative for absence, so structured model calls can
+represent the active plan, first page and unfiltered defaults. Empty strings remain invalid IDs or
+cursors. The shared input schemas generate their draft-7 catalogs and normalize null to undefined
+before invoking `PlanSession` and the provider. They do not change provider cursor formats, CAS,
+review policy or persisted plan data.
+Production: `readPlanInputSchema`, `listPlansInputSchema` and `planToolDefinitions` in
+[tools.ts](../../packages/plan/src/tools.ts), and `handlePlanRuntimeCall` in
+[runtime-tools.ts](../../packages/plan/src/capability/runtime-tools.ts).
+Test: `accepts explicit absent read/list options and still rejects empty locators` in
+[plan-runtime-tools.test.ts](../../packages/plan/tests/component/plan-runtime-tools.test.ts), and
+the actual HTTP/SDK query journey in
+[goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 
 The CAS triple is `expected_revision` (positive int), `expected_digest` (1–256 chars),
 `expected_spec_digest` (1–256 chars) (`packages/plan/src/capability/runtime-tools.ts`).
@@ -483,6 +508,19 @@ real revision.
 
 ### 4.6 The pending-task gate
 
+A checkpoint disposition passes the pending-task gate while retaining all open tasks. The preceding
+review gate still reconciles the plan and obtains or checks human approval; fresh approval can pass
+a checkpoint just as a structured submit, while rejection/missing human input cannot accept it.
+This changes no tool permission or task state. Production: `reviewGate` and `pendingGate` in
+[orchestration.ts](../../packages/plan/src/capability/orchestration.ts).
+Test: `keeps human review on a checkpoint` in
+[plan-orchestration.test.ts](../../packages/plan/tests/component/plan-orchestration.test.ts).
+The host composition in
+[goal-file-host-plan.test.ts](../../packages/kernel/tests/integration/goal-file-host-plan.test.ts)
+answers real IPC elicitations: approval survives delegation and automatic checkpoints; cancellation
+and requested changes retain unapproved pending tasks without workspace writes or a successor run,
+including when retention is `discard`.
+
 `pendingGate` (`packages/plan/src/capability/orchestration.ts`) delegates to `pendingTaskGate()`
 (`packages/plan/src/capability/orchestration.ts`):
 
@@ -521,7 +559,7 @@ Two halves, deliberately separated by cost:
 
 | Half | Function | Contents | Republished |
 | --- | --- | --- | --- |
-| volatile header | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, open tasks, **all** task statuses | end of transcript, every iteration |
+| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, open tasks, **all** task statuses | end of transcript, every iteration |
 | stable spec block | `planSpecBlock(document)` (`packages/plan/src/capability/canonical-state.ts`) | objective, context, per-task `id`/`title`/`detail`/`exit`, validation | appended only when the substance changes |
 
 The block's field set "deliberately mirrors `@clarvis/plan`'s `specDigest` … so these bytes change if
@@ -638,15 +676,29 @@ emit `plan_created`/`plan_updated` if `r.document`. The event kind is `plan_crea
 
 Two hooks, in this order (`packages/capability/src/contract.ts` explains why both exist):
 
-1. **`finalizeRun({ status })`** (`packages/plan/src/capability/index.ts`), *before* the record is built.
+1. **`finalizeRun({ status, disposition, preserveState })`** (`packages/plan/src/capability/index.ts`), *before* the record is built.
    Returns `undefined` when no agent ever attached (`liveSession === undefined`, pinned at
-   `packages/plan/tests/component/plan-capability-gating.test.ts`). Otherwise maps the run status →
+   `packages/plan/tests/component/plan-capability-gating.test.ts`). A checkpoint or `preserveState`
+   reconciles and returns the current reference without finalizing. Otherwise maps the run status →
    `completed` / `cancelled` / **`failed`** for everything else (pinned at
    `packages/plan/tests/component/plan-capability-gating.test.ts`), calls `liveSession.finalize(...)`, emits
    `plan_updated{change:"status"}`, and returns the `PlanRef`.
 2. **`onRunEnd(record)`** (`packages/plan/src/capability/index.ts`), *after* the record persists.
-   Returns immediately unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
+   Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
+
+In isolated execution, the host independently enforces this retention path. Mutation authority is
+bound to a plan created through that run's grant or its host-selected continuation ref. Read/list
+do not rebind it. Deletion requires the current owner's durable completed run record and matching
+provider/id/final revisions, plus canonical `completed`/`discard` state. The host supplies CAS from
+its own read, so a concurrent retention change prevents deletion even if the guest omitted CAS.
+Production: `createHostPlansGrant` in
+[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createLocalContainerRuntime`
+in [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
+Test: foreign-plan, retained/active-plan, trace identity and CAS refusals in
+[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts), and
+real guest keep/discard lifecycle in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits
@@ -910,12 +962,23 @@ Numbered; each carries production evidence and the pinning test.
     refinement site in this package is `packages/plan/src/tools.ts` — full statement
     owned by [capabilities/plan-store.md](plan-store.md) §5.
 
-36. **`retention: discard` deletes only after a `completed` terminal record.**
-    `onRunEnd` returns unless `record.status === "completed" && ref.retention === "discard"` —
+36. **`retention: discard` deletes only after a `completed` final record.**
+    `onRunEnd` returns for checkpoint disposition or unless
+    `record.status === "completed" && ref.retention === "discard"` —
     `packages/plan/src/capability/index.ts`.
     Pinned: `packages/plan/tests/component/plan-capability-gating.test.ts` (a non-completed end leaves it, and a later
     completed end still finds it) and the end-to-end file check at
     `packages/plan/tests/integration/planned-run-file.test.ts`.
+
+    A checkpoint or an interruption carrying the engine's `preserveState` policy reconciles and
+    returns the current reference without finalizing the plan. Tasks, revisions and discard
+    retention survive the stage; later final completion applies the ordinary rules.
+    Production: `finalizeRun` and `onRunEnd` in
+    [index.ts](../../packages/plan/src/capability/index.ts).
+    Test: `preserves the plan and discard retention on a non-final stage` in
+    [plan-capability-gating.test.ts](../../packages/plan/tests/component/plan-capability-gating.test.ts),
+    and the real plan/trace reopen journey in
+    [checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
 
 37. **The discard path is idempotent and emits `plan_removed` only on a real deletion.**
     `if (!deleted) return;` before the emit — `packages/plan/src/capability/index.ts`.
@@ -948,7 +1011,7 @@ Numbered; each carries production evidence and the pinning test.
     `planSpecBlock`'s field set mirrors `specDigest` — `packages/plan/src/capability/canonical-state.ts`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
-43. **The volatile header carries every task's status, so the spec block need not.**
+43. **The latest appended reminder carries every task's status; older reminders remain history.**
     `packages/plan/src/capability/canonical-state.ts`; the test also caps it: `header.length < 1000`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
@@ -1205,3 +1268,14 @@ the code or in any test message.
 `request_changes` (`packages/plan/src/capability/orchestration.ts`). So `presented` and `approved` on the first round both
 carry `0`. No test asserts the field's value, so whether that is the intended indexing is
 undetermined.
+
+## Historical publication invariant
+
+Plan publication retains its per-iteration frequency. Every header is appended; unchanged bodies
+remain at their original positions, and changed bodies append. The latest reminder describes
+current state. Historical CAS values cannot authorize stale writes, and human review remains bound
+to the current store revision. Compaction retains current state through the capability anchor.
+Production: [`buildPlansOrchestration`](../../packages/plan/src/capability/orchestration.ts) and
+[`planCasHeader`](../../packages/plan/src/capability/canonical-state.ts).
+Test: [`prompt-cache-composition.test.ts`](../../packages/kernel/tests/integration/prompt-cache-composition.test.ts)
+uses real kernel/loop/SDK composition, external mutation, stale CAS and persisted replay.

@@ -5,6 +5,8 @@ import type {
   GateVerdict,
   HookVerdict,
   LifecycleHook,
+  OrchestrationHooks,
+  AgentResult,
   PreCompactContext,
   PreFinalizeContext,
 } from "@clarvis/capability";
@@ -42,6 +44,25 @@ function boundedHookCall<T>(
         : new Error("hook cancelled");
     },
   });
+}
+
+/** Await iteration preparation before compaction/inference; retire delayed work on every exit. */
+export async function runBeforeIteration(
+  hook: OrchestrationHooks["beforeIteration"],
+  options?: HookTimeoutOptions,
+): Promise<void | AgentResult> {
+  if (hook === undefined) return;
+  const scope = new AbortController();
+  const signal =
+    options?.signal === undefined ? scope.signal : AbortSignal.any([scope.signal, options.signal]);
+  try {
+    const result = await boundedHookCall(() => hook(signal), { ...options, signal });
+    if (result?.status === "completed" || result?.disposition === "checkpoint")
+      throw new Error("Iteration preparation cannot finalize an agent");
+    return result;
+  } finally {
+    scope.abort();
+  }
 }
 
 /**
@@ -229,6 +250,7 @@ export function buildPreFinalizeGate(p: {
         mode: attempt.mode,
         ...(attempt.text !== undefined ? { text: attempt.text } : {}),
         ...(attempt.mode === "submit" ? { value: attempt.value } : {}),
+        ...(attempt.mode === "checkpoint" ? { checkpoint: attempt.checkpoint } : {}),
       };
       const sweep = await runVerdictHooks(
         p.hooks,

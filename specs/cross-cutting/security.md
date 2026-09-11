@@ -470,6 +470,15 @@ and `packages/paths/tests/integration/housekeeping.test.ts`.
 
 All bytes are then read from that descriptor with `position: null`, so a later path swap cannot redirect the read.
 
+Goal artifact evidence reuses the exported bounded descriptor reader with only the selected
+workspace admitted, capped at 16 MiB. Model references do not select paths; paths come from the
+user's declared criteria. Current digest validation is a snapshot, not a promise that a workspace
+file can never change afterward. Completion still requires the host's final revalidation and
+durable settlement. Production: `createGoalEvidenceSource` in
+[evidence.ts](../../packages/kernel/src/goals/evidence.ts).
+Test: artifact mutation and outside-workspace directory-link refusal in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
+
 Call sites of `readFileOptions`: `packages/tools/src/lib/rg.ts`, `packages/tools/src/lib/rg.ts`, `packages/tools/src/tools/diff.ts`,
 `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts`, `packages/tools/src/tools/read-image.ts`,
 `packages/tools/src/tools/apply-patch.ts`, `packages/tools/src/tools/edit-file.ts`, `packages/tools/src/tools/replace.ts`,
@@ -1086,6 +1095,38 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     only as a provider-opaque seed and the four
     canonical read tools. Mutating memory tools are absent from the guest descriptor, definitions
     and prompt, and the host rejects a forged mutation even when its provider is writable.
+    Host plan mutation authority is pinned to the current run's created or continued plan.
+    Retention deletion requires the same canonical completed/discard plan and revisions in the
+    owner's durable completed run trace, then uses host-selected CAS. Reading another plan never
+    grants mutation or deletion. Bounded multipart transfer preserves canonical plan sizes while
+    reserving response capacity before effects and revoking unfinished transfers on teardown.
+    Production: `createHostPlansGrant` in
+    [`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createPlanTransferGrant`
+    in [`plan-transfer.ts`](../../packages/kernel/src/runtime/plan-transfer.ts).
+    Test: retention and CAS cases in
+    [`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts),
+    and transfer count/byte, cancellation and revocation cases in
+    [`runtime-plan-transfer.test.ts`](../../packages/kernel/tests/contract/runtime-plan-transfer.test.ts).
+    Guest coding tools preserve the host's enablement, confinement and grant ceiling and the
+    host's choice to omit tools. Preview requires enabled tools, `exec` and `run_commands`.
+    Production: `createLocalContainerRuntime` in
+    [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+    `createGuestLoopExecutor` in
+    [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+    Test: native/guest policy parity in
+    [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+    Private RPC admits at most 256 pending requests per direction and 8 MiB of inbound frame bytes
+    before handler invocation; cancelled handlers retain admission until settlement. Capability
+    brokers bound attempted call identities and aggregate replay responses, retaining no response
+    body for non-idempotent calls. Matching late cancellations use bounded completion identities;
+    mismatches fail closed. Production: `createExecutionPeer` in
+    [`execution-rpc.ts`](../../packages/kernel/src/runtime/execution-rpc.ts) and
+    `createCapabilityBroker` in
+    [`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts).
+    Test: floods and late cancellation races in
+    [`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts),
+    and retained-result admission in
+    [`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts).
     Cancellation keeps `runtime.start` pending until the guest settles; a matching late result for
     another locally cancelled RPC is consumed through a bounded identity tombstone, while a dead
     process/channel retires the generation before the next run. Control-pump rejection cannot skip
@@ -1107,8 +1148,25 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     gates. Workflow children use host-assembled requests and one shared guest budget; unprojectable
     host capabilities refuse placement. Model leases admit exact profile, vision and effective judge
     pairs, with bounded, correlated progress frames and a separate terminal result.
+    The goal projection accepts only factory-owned entry authority and pins session, instance,
+    execution and objective revision. Its six closed operations cannot choose an owner, invoke user
+    controls, admit a run or alter limits. The host revalidates persisted binding and per-operation
+    cancellation inside each mutation; revocation prevents a queued write from publishing later.
+    The canonical guest capability restricts goal tools to the entry agent. Forged scopes, duplicate
+    capabilities, missing descriptors and workflow combinations are refused. Only the bounded current
+    goal and evidence catalog cross; session archives, operation receipts and credentials stay host-owned.
+    Production: `createHostGoalBridge` / `createGuestGoalCapability` in
+    [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts) and `createGoalRuntimePort` in
+    [runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts).
+    Test: [runtime-goal-bridge.test.ts](../../packages/kernel/tests/integration/runtime-goal-bridge.test.ts)
+    and goal continuation through the actual guest RPC in
+    [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
     The host resolves provider/model overrides from its captured registry and reconstructs model
-    capabilities, ignoring guest-supplied configuration. Per-call retry limits cross unchanged;
+    capabilities, ignoring guest-supplied configuration. Before any adapter call, user and tool
+    media must be inline base64 image data within the complete-request byte bound; URL-backed
+    media is rejected even for non-vision models. SDK asset downloads cannot extend an admitted
+    provider destination to arbitrary guest-controlled host-network destinations. Payloads and
+    URLs are excluded from refusal diagnostics. Per-call retry limits cross unchanged;
     bounded FIFO admission uses host model policy rather than container CPU allocation. Typed
     provider errors carry only sanitized bounded messages and closed recovery/usage fields, never
     stacks, causes, headers or response bodies. Ordinary HTTP/SSE MCP operations also remain on
@@ -1119,28 +1177,32 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     credentials there. Remote effects remain possible with container network `none`. Elicitation
     returns to the live guest relay, and run disposal aborts acquisitions and releases leases.
     Production: `hostModelBroker` in
-    [`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts),
+    [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts),
+    `assertInlineModelMedia` in
+    [`model-media.ts`](../../packages/kernel/src/runtime/model-media.ts),
     `encodeRuntimeProviderError` in
     [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), and
     `createHostRemoteMcpBridge` in
     [`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts).
     Test: authenticated HTTP/SSE and real SDK model cases in
     [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+    including the guest-media download refusal, and inline/malformed-media checks in
+    [`runtime-model-media.test.ts`](../../packages/kernel/tests/unit/runtime-model-media.test.ts),
     and closed snapshot/lease/catalog checks in
     [`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts).
     Production: `createHostHooksBridge` in `packages/kernel/src/runtime/hooks-bridge.ts`;
     `createHostTasksGrant` in `packages/kernel/src/runtime/tasks-bridge.ts`;
     `createHostWorkflowBridge` in `packages/kernel/src/runtime/workflows-bridge.ts`;
-    `runtimeModelPairs` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `runtimeModelPairs` in `packages/kernel/src/runtime/local-container-runtime.ts`;
     `streamHostModelCall` in `packages/kernel/src/runtime/model-stream.ts`; `.dockerignore`;
     `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`; `readOnlyWorkspacePaths` in
-    `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `packages/kernel/src/runtime/local-container-runtime.ts`;
     `prepareRuntimeCapabilityRoot` in
     `packages/kernel/src/runtime/runtime-workspace-control.ts`;
     `createArgs` in `packages/kernel/src/runtime/docker-backend.ts` and
     `packages/kernel/src/runtime/podman-backend.ts`; `prepareMiseCache` and `prepareCacheOwnership` in
     `packages/kernel/src/runtime/container-mise-cache.ts`; `createRuntimeAuthorityRouter` in
-    `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
+    `packages/kernel/src/runtime/local-container-runtime.ts`; `createRuntimePortPreview` and
     `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
     `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
     `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
@@ -1174,6 +1236,33 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/server/tests/architecture/docker-context.test.ts`
     (`allowlists the repository-root build context and re-excludes credentials`).
 
+61. **A remote Code connection delegates machine/user authentication, host-key verification,
+    transport integrity and encryption to OpenSSH
+    without widening Clarvis authority.** The client spawns SSH with argv and no local shell,
+    disables port, agent and X11 forwarding, validates its destination and restricts every remotely joined command
+    token to a conservative shell-safe alphabet. Workspace and optional Extension Profile selection
+    cross in one closed, bounded base64url payload. Local provider credentials, Clarvis discovery
+    credentials and global configuration do not enter argv or the kernel wire. A local `ssh-agent`
+    may authenticate without its socket being forwarded. OpenSSH selects identities, certificates,
+    jump hosts, authentication order and host-key policy from its ordinary configuration; Clarvis
+    does not force `StrictHostKeyChecking` or `BatchMode`, and offers no identity-file/password store.
+    Password or passphrase prompting through a controlling terminal/askpass helper is not a TUI
+    contract because kernel stdin/stdout already carry the wire. Operators establish the host key and
+    noninteractive authentication before launch. There is no second application encryption layer:
+    SSH protects prompts, tool traffic and events in transit, while both endpoints see plaintext.
+    The remote process resolves its own global state and subscription OAuth, fixes owner/workspace
+    server-side, advertises the resulting session namespace, exposes hosted runs/goals but no
+    machine-local controls, and closes on pipe loss. Production:
+    `connectRemoteKernelOverSsh` in
+    [connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts),
+    `serveRemoteFileKernelOverStdio` in
+    [serve-remote-stdio.ts](../../packages/kernel/src/hosting/serve-remote-stdio.ts), and Code's
+    [remote-kernel-arguments.ts](../../packages/code/src/adapters/remote-kernel-arguments.ts) and
+    [remote-host.ts](../../packages/code/src/remote-host.ts). Test:
+    [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts),
+    [remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts),
+    and [remote-kernel-arguments.test.ts](../../packages/code/tests/unit/remote-kernel-arguments.test.ts).
+
 ## 6. Failure modes and degradation
 
 The builtin [native self-configuration flow](../hosts/self-configuration.md) is explicitly admitted
@@ -1196,7 +1285,7 @@ the live-session/resume test in [run-host.test.ts](../../packages/code/tests/com
 | Path swapped between check and open | `packages/tools/src/lib/files.ts` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
-| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-podman-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
+| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-container-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
 | Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
 | Operational Docker startup failure with configured fallback | Required native Sandbox is probed and latched for the session; if unavailable, the run fails closed and never executes bare | `createLazyRuntimeCoordinator`; lazy-runtime and sandbox-policy tests |
 | Runtime image integrity, effective-policy or guest-handshake failure | No fallback; the launch fails closed | `createLazyRuntimeCoordinator`; lazy-runtime tests |

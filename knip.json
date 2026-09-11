@@ -10,7 +10,9 @@
         "tooling/checks/**/*.ts",
         "tooling/release/**/*.ts",
         "tooling/runtime/**/*.ts",
-        "tooling/test-runtime/**/*.ts"
+        "tooling/test-runtime/**/*.ts",
+        "tooling/cache/**/*.ts",
+        "tooling/goal/**/*.ts"
       ],
       "project": ["*.js", "tooling/**/*.{ts,js}"]
     },
@@ -22,6 +24,7 @@
       "entry": [
         "src/bin.ts",
         "tests/helpers/capability-executable-fixture.ts",
+        "tests/helpers/goal-live-worker.ts",
         "tests/fixtures/local-host-peer.ts",
         "tests/fixtures/local-host-process.ts"
       ]

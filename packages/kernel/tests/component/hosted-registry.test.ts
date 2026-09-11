@@ -1,23 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { HostedRunAttachment, RunResult, StartHostedTurnParams } from "@clarvis/protocol";
-import {
-  createHostedRegistry,
-  type HostedRegistryOptions,
-  type HostedRegistryState,
-} from "../../src/hosting/registry.ts";
-import { createHostedProjection, type ProjectionStorage } from "../../src/hosting/projection.ts";
-import { createManagedRun, type ManagedRunContext } from "../../src/runs/managed-run.ts";
+import type { StartHostedTurnParams } from "@clarvis/protocol";
 import { decodeHostedRegistryState } from "../../src/hosting/state.ts";
-
-function input(executionId = "run-1", sessionId = "session-1"): StartHostedTurnParams {
-  return {
-    session_id: sessionId,
-    session_revision: 0,
-    kind: "conversation",
-    user_preview: "A hosted turn",
-    params: { execution_id: executionId, messages: [{ role: "user", content: "A hosted turn" }] },
-  };
-}
+import { fixture, input, until } from "../helpers/hosted-registry.ts";
 
 it("persists a plain sanitized preparation error without poisoning later admissions", async () => {
   let attempts = 0;
@@ -48,122 +32,146 @@ it("persists a plain sanitized preparation error without poisoning later admissi
   }
 });
 
-async function until(condition: () => boolean): Promise<void> {
-  for (let step = 0; step < 300 && !condition(); step++) await Promise.resolve();
-  expect(condition()).toBe(true);
-}
-
-function fixture(
-  overrides: {
-    prepare?: () => Promise<void>;
-    commit?: HostedRegistryOptions["commit"];
-    commitIntent?: () => Promise<void>;
-    reconcile?: () => Promise<void>;
-    detachable?: boolean;
-    maxRetainedRuns?: number;
-    now?: () => number;
-  } = {},
-) {
-  const contexts = new Map<string, ManagedRunContext>();
-  const endings = new Map<string, (value: RunResult) => void>();
-  const scopes: string[] = [];
-  const retired: string[] = [];
-  const commits: HostedRegistryState[] = [];
-  const results: RunResult[] = [];
-  const removed: string[] = [];
-  let starts = 0;
-  const registry = createHostedRegistry({
-    workspaceId: "workspace",
-    hostGeneration: "host-generation",
-    owner: "owner",
-    now: overrides.now,
-    receiptLifetimeMs: 100,
-    maxRetainedRuns: overrides.maxRetainedRuns,
-    async prepare(value, authority) {
-      scopes.push(authority.scope);
-      await overrides.prepare?.();
-      authority.signal.throwIfAborted();
-      return {
-        title: "Prepared title",
-        config: { agent: "admiral", model: "test/model" },
-        detachable: overrides.detachable ?? true,
-        async commitIntent() {
-          await overrides.commitIntent?.();
-        },
-        async start() {
-          starts++;
-          return createManagedRun({
-            executionId: value.params.execution_id,
-            execute(context) {
-              contexts.set(context.executionId, context);
-              return new Promise<RunResult>((resolve) => {
-                endings.set(context.executionId, resolve);
-                context.signal.addEventListener(
-                  "abort",
-                  () => resolve({ execution_id: context.executionId, status: "cancelled" }),
-                  { once: true },
-                );
-              });
-            },
-          });
-        },
-        async reconcile(result) {
-          await overrides.reconcile?.();
-          results.push(result);
-        },
-      };
-    },
-    async projection(executionId) {
-      let data = Buffer.alloc(0);
-      const storage: ProjectionStorage = {
-        async write(bytes, offset) {
-          data = Buffer.concat([data.subarray(0, offset), bytes]);
-        },
-        async read(offset, count) {
-          return data.subarray(offset, offset + count);
-        },
-        async sync() {},
-        async close() {},
-      };
-      return createHostedProjection(storage, {
-        execution_id: executionId,
-        host_generation: "host-generation",
-      });
-    },
-    async commit(state) {
-      await overrides.commit?.(state);
-      commits.push(state);
-    },
-    async removeProjection(id) {
-      removed.push(id);
-    },
-    retireConfigurationSession: (scope) => retired.push(scope),
-  });
-  const handoff = (view: HostedRunAttachment, operationId = "detach-1") => ({
-    execution_id: view.run.execution_id,
-    host_generation: view.run.host_generation,
-    control_epoch: view.run.control_epoch,
-    revision: view.run.revision,
-    operation_id: operationId,
-  });
-  return {
-    registry,
-    contexts,
-    endings,
-    scopes,
-    retired,
-    commits,
-    results,
-    removed,
-    handoff,
-    starts: () => starts,
-    finish(id = "run-1") {
-      endings.get(id)!({ execution_id: id, status: "completed", result: "done" });
-    },
-  };
-}
-
 describe("hosted registry", () => {
+  it("takes over an existing observation without another snapshot and fences the old controller", async () => {
+    const f = fixture();
+    const first = f.registry.connect("operator");
+    const second = f.registry.connect("operator");
+    const observer = f.registry.connect("observer");
+    try {
+      const original = await first.service.start(input());
+      const attached = await second.service.attach({
+        execution_id: original.run.execution_id,
+        host_generation: original.run.host_generation,
+        control: "observe",
+      });
+      await expect(
+        second.service.controlObservation(attached.observation_id, "acquire"),
+      ).rejects.toThrow();
+      await expect(
+        observer.service.controlObservation(attached.observation_id, "takeover"),
+      ).rejects.toMatchObject({ code: "unauthorized" });
+      await expect(
+        first.service.controlObservation(attached.observation_id, "takeover"),
+      ).rejects.toMatchObject({ code: "not_found" });
+      const controlled = await second.service.controlObservation(
+        attached.observation_id,
+        "takeover",
+      );
+      expect(controlled.control).toBe("self");
+      expect(controlled.control_epoch).toBeGreaterThan(original.run.control_epoch);
+      expect((await first.service.list())[0]?.control).toBe("other");
+      await expect(original.handle.cancel()).rejects.toThrow();
+      await attached.handle.cancel();
+      expect(f.contexts.get("run-1")!.signal.aborted).toBe(true);
+      expect(f.starts()).toBe(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  it("classifies a pre-admission refusal without consuming its operation identity", async () => {
+    const f = fixture();
+    const peer = f.registry.connect("operator");
+    try {
+      const view = await peer.service.start(input());
+      const request = f.handoff(view);
+      await expect(
+        peer.service.detach({ ...request, revision: request.revision + 1 }),
+      ).rejects.toMatchObject({
+        code: "conflict",
+        details: { handoff: { operation_id: request.operation_id, admission: "refused" } },
+      });
+      expect(await peer.service.receipt(request.operation_id)).toBeNull();
+      expect((await peer.service.detach(request)).operation_id).toBe(request.operation_id);
+      expect(f.starts()).toBe(1);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
+  it.each(["complete", "fail"])(
+    "keeps closure behind a terminal index commit that may %s",
+    async (outcome) => {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const f = fixture({
+        commit: async (state) => {
+          if (
+            state.runs.some(
+              (item) => item.run.execution_id === "run-1" && item.run.execution_state === "closed",
+            )
+          ) {
+            entered.resolve();
+            await release.promise;
+            if (outcome === "fail") throw new Error("terminal storage unavailable");
+          }
+        },
+      });
+      const peer = f.registry.connect("operator");
+      try {
+        const view = await peer.service.start(input());
+        let closed = false;
+        const closure = view.handle.closed.then(
+          () => {
+            closed = true;
+            return "closed";
+          },
+          () => "failed",
+        );
+        f.finish();
+        await entered.promise;
+        expect((await view.handle.done).status).toBe("completed");
+        expect(closed).toBe(false);
+        expect((await peer.service.list())[0]!.execution_state).toBe("finishing");
+        await expect(peer.service.start(input("too-soon"))).rejects.toThrow("physical work");
+        release.resolve();
+        expect(await closure).toBe(outcome === "complete" ? "closed" : "failed");
+        expect(f.registry.occupied("session-1")).toBe(outcome === "fail");
+        if (outcome === "complete") {
+          const next = await peer.service.start(input("run-2"));
+          f.finish("run-2");
+          await next.handle.closed;
+        } else {
+          expect((await peer.service.list())[0]!.execution_state).toBe("unknown");
+          await expect(peer.service.start(input("run-2"))).rejects.toThrow("physical work");
+        }
+      } finally {
+        release.resolve();
+        await f.registry.close();
+      }
+    },
+  );
+
+  it("reclaims consumed foreground turns beyond the retention bound while retaining unseen background results", async () => {
+    const f = fixture();
+    const peer = f.registry.connect("operator");
+    try {
+      const background = await peer.service.start(input("background", "background-conversation"));
+      await peer.service.detach(f.handoff(background));
+      f.finish("background");
+      await background.handle.closed;
+      await peer.service.releaseObservation(background.observation_id);
+      for (let number = 0; number < 40; number++) {
+        const id = `foreground-${number}`;
+        const turn = await peer.service.start(input(id));
+        const drain = (async () => {
+          for await (const frame of turn.handle.events)
+            expect(frame.first_sequence).toBeGreaterThan(0);
+        })();
+        f.finish(id);
+        await Promise.all([turn.handle.done, turn.handle.closed, drain]);
+        await peer.service.acknowledge(id);
+        await peer.service.releaseObservation(turn.observation_id);
+      }
+      expect((await peer.service.list()).map((run) => run.execution_id)).toEqual(["background"]);
+      expect(f.removed).toHaveLength(40);
+      expect(f.results).toHaveLength(41);
+    } finally {
+      await f.registry.close();
+    }
+  });
+
   it("retains failed intent ownership until its known preparation is reconciled", async () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
@@ -212,8 +220,10 @@ describe("hosted registry", () => {
     release.resolve();
     const receipt = await moving;
     expect(receipt.run.outcome?.status).toBe("completed");
-    expect(receipt.run.execution_state).toBe("closed");
-    await until(() => !f.registry.occupied("session-1"));
+    expect(receipt.run.execution_state).toBe("finishing");
+    await view.handle.closed;
+    expect(f.registry.occupied("session-1")).toBe(false);
+    expect((await peer.service.list())[0]!.execution_state).toBe("closed");
     await peer.service.acknowledge("run-1");
     await peer.service.releaseObservation(view.observation_id);
     expect((await peer.service.receipt("detach-1"))!.run.outcome?.status).toBe("completed");
@@ -349,10 +359,16 @@ describe("hosted registry", () => {
     });
     const peer = f.registry.connect("operator");
     const view = await peer.service.start(input());
-    await expect(peer.service.detach(f.handoff(view))).rejects.toThrow("disk failure");
+    await expect(peer.service.detach(f.handoff(view))).rejects.toMatchObject({
+      message: "disk failure",
+      details: { handoff: { operation_id: "detach-1", admission: "uncertain" } },
+    });
     expect((await peer.service.list())[0]!.disconnect_policy).toBe("cancel");
     expect(await peer.service.receipt("detach-1")).toBeNull();
-    await expect(peer.service.detach(f.handoff(view))).rejects.toThrow("will not be replayed");
+    await expect(peer.service.detach(f.handoff(view))).rejects.toMatchObject({
+      message: expect.stringContaining("will not be replayed"),
+      details: { handoff: { operation_id: "detach-1", admission: "uncertain" } },
+    });
     await peer.close();
     await until(() => !f.registry.occupied("session-1"));
     expect(f.contexts.get("run-1")!.signal.aborted).toBe(true);

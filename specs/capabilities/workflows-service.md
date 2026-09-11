@@ -67,7 +67,7 @@ workflow store or bypass the host's completion barrier.
 
 Production: `createHostWorkflowBridge` and `consumeGuestWorkflowEvent` in
 `packages/kernel/src/runtime/workflows-bridge.ts`; `createLocalContainerRuntime` in
-`packages/kernel/src/runtime/local-podman-runtime.ts`.
+`packages/kernel/src/runtime/local-container-runtime.ts`.
 Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (manager/leader
 execution, host ledger and durable workflow edge).
 
@@ -500,9 +500,21 @@ manager as its leader profile.
    leader's agent as `spec.profile ?? resolveLeaderDefault(managerAgent) ?? managerAgent`
    (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
    and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
-   `prompt_cache_key`/`ttl` from the manager's own params when present, runs the result through the shared `assembleRunRequest`, then calls
+   `session_id` and cache TTL from the manager's own params when present. Without an explicit
+   session, the manager's execution ID supplies the shared session. Each leader uses the child
+   `runId` reserved by the scheduler for both `execution_id` and `agent_instance_id`; it never
+   inherits the manager's agent instance or generates a separate cache identity. Missing reserved
+   IDs are refused before assembly. Direct and prepared host assembly use the same rule, and the
+   resulting request persists these identities for continuation. The assembler runs the result
+   through the shared `assembleRunRequest`, then calls
    `stripWorkflowGrant` on every profile in the assembled body — defense-in-depth beyond simply not
    injecting the workflows capability into a leader.
+   Production: `assembleLeader` in
+   [`workflows-service.ts`](../../packages/kernel/src/workflows/workflows-service.ts).
+   Test: `separates workflow leader cache identities` in
+   [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts)
+   checks the manager and two leaders of one profile, composed keys in SDK-serialized requests,
+   persisted identities and two continuations per leader in direct and prepared assembly.
    The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also
    forwarded, byte-identical, into the manager's own assembled body — so an external task bound at
    workflow start reaches both the manager's own run and every leader it spawns, not only one or the

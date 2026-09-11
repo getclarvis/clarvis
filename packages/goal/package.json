@@ -1,0 +1,44 @@
+{
+  "name": "@clarvis/goal",
+  "private": true,
+  "description": "Persistent conversation objectives, bounded continuation policy and checkpoint capability.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./settings": {
+      "bun": "./src/settings.ts",
+      "types": "./dist/settings.d.ts",
+      "import": "./dist/settings.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:coverage": "bun test --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

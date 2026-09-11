@@ -1,3 +1,5 @@
+import { createHostedObservationLease } from "./hosted-observation.ts";
+import { redactPreview } from "./session-store.ts";
 import { resolveAgentsByName } from "@clarvis/kernel/config";
 import { readHostedSnapshot } from "@clarvis/kernel";
 import type {
@@ -11,6 +13,7 @@ import type {
   ExtensionProfileService,
   KernelClient,
   KernelCapabilities,
+  GoalService,
   Message as ProtoMessage,
   MessageContent,
   ModelCatalogService,
@@ -88,6 +91,8 @@ export interface KernelRunClient {
   attachRun(input: AttachHostedRunParams): RunHandle;
   /** Present only when the connected host advertises independent execution ownership. */
   readonly hosting?: HostingService;
+  /** Authenticated conversation goals, or the host's explicit unavailable facade. */
+  readonly goals: GoalService;
   /** The workflow tree control plane (kernel.workflows): get/list/delete. */
   readonly workflows: WorkflowsService;
   steer(input: {
@@ -145,8 +150,11 @@ interface ProtoRunHandle extends ProtocolRunHandle {
   replay?: AsyncIterable<RunEvent>;
   /** Observers do not receive interactive question prompts. */
   interactive?: boolean;
+  acquireControl?(control: "acquire" | "takeover"): Promise<void>;
   /** Release this attachment after its pump/closure settles, including projection failure. */
   release?(): Promise<void>;
+  /** Complete observation consumption, host settlement and foreground retention ownership. */
+  settleObservation?(consumed: Promise<unknown>): Promise<void>;
 }
 
 function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
@@ -158,7 +166,7 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
-    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
+    ...(input.sessionId ? { session_id: input.sessionId } : {}),
     ...(input.guardMode ? { guard_mode: input.guardMode } : {}),
     ...(input.guardJudge
       ? {
@@ -389,24 +397,23 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   ): RunHandle {
     live.set(executionId, handleP);
     let protocolHandle: ProtoRunHandle | undefined;
+    let elicitationWired = false;
 
     const started = handleP.then((handle) => {
       protocolHandle = handle;
-      if (handle.interactive !== false) wireElicit(handle);
+      if (handle.interactive !== false) {
+        wireElicit(handle);
+        elicitationWired = true;
+      }
       return { handle, pump: pumpEvents(executionId, handle) };
     });
-    const done: Promise<RunResult | undefined> = started.then(({ handle, pump }) =>
-      hosted
-        ? Promise.all([handle.done, handle.closed, pump]).then(([result]) => result)
-        : handle.done,
+    const done: Promise<RunResult | undefined> = started.then(({ handle }) =>
+      hosted ? Promise.all([handle.done, closed]).then(([result]) => result) : handle.done,
     );
     const closed = started
       .then(async ({ handle, pump }) => {
-        try {
-          await Promise.all([handle.closed, pump]);
-        } finally {
-          await handle.release?.();
-        }
+        if (handle.settleObservation !== undefined) await handle.settleObservation(pump);
+        else await Promise.all([handle.closed, pump]);
       })
       // A start failure is already reported through `done`; lifecycle closure
       // must remain safe for detached physical-lifecycle observers.
@@ -423,6 +430,20 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       executionId,
       cancel: () => handleP.then((handle) => handle.cancel()),
       ...(hosted ? { releaseObservation: () => handleP.then((handle) => handle.release?.()) } : {}),
+      ...(hosted
+        ? {
+            acquireControl: async (control: "acquire" | "takeover") => {
+              const handle = await handleP;
+              if (handle.acquireControl === undefined)
+                throw new Error("hosted control is unavailable");
+              await handle.acquireControl(control);
+              if (!elicitationWired) {
+                wireElicit(handle);
+                elicitationWired = true;
+              }
+            },
+          }
+        : {}),
       done,
       closed,
       buffered: () => protocolHandle?.buffered?.(),
@@ -439,7 +460,11 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
       input.session === undefined
         ? Promise.reject(new Error("hosted turn requires a persisted conversation revision"))
         : service
-            .start({ ...input.session, params: { ...params, execution_id: executionId } })
+            .start({
+              ...input.session,
+              user_preview: redactPreview(input.session.user_preview, { max: 4096 }),
+              params: { ...params, execution_id: executionId },
+            })
             .then((attachment) => hostedHandle(service, attachment, true));
     return driveHandle(executionId, handle, true);
   }
@@ -450,9 +475,22 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     interactive: boolean,
   ): ProtoRunHandle {
     const { handle } = attachment;
+    const lease = createHostedObservationLease(service, attachment, () => interactive);
     return {
       ...handle,
-      interactive,
+      get interactive() {
+        return interactive;
+      },
+      async acquireControl(control) {
+        const ref = await service.controlObservation(attachment.observation_id, control);
+        if (
+          ref.execution_id !== attachment.run.execution_id ||
+          ref.host_generation !== attachment.run.host_generation ||
+          ref.control !== "self"
+        )
+          throw new Error("hosted control acknowledgement does not match this observation");
+        interactive = true;
+      },
       replay: {
         async *[Symbol.asyncIterator]() {
           for await (const frame of readHostedSnapshot(service, attachment.snapshot))
@@ -464,7 +502,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
           for await (const frame of handle.events) yield frame.event;
         },
       },
-      release: () => service.releaseObservation(attachment.observation_id),
+      settleObservation: lease.settle,
+      release: lease.release,
     };
   }
 
@@ -665,6 +704,9 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     attachRun,
     get hosting() {
       return kernel?.hosting;
+    },
+    get goals() {
+      return requireKernel().goals;
     },
     steer,
     compact,

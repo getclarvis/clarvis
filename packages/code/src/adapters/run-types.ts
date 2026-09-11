@@ -45,7 +45,7 @@ export interface StartRunInput {
   /** Volatile authorization identity, replaced whenever a session is opened or resumed. */
   configurationSessionId?: string;
   continueFrom?: string;
-  promptCacheKey?: string;
+  sessionId?: string;
   guardMode?: GuardMode;
   guardJudge?: GuardJudgeInput;
   memory?: "on" | "off";
@@ -61,6 +61,8 @@ export interface RunHandle {
   cancel(): Promise<void>;
   /** Release this hosted observation; the host separately applies the conversation's exit policy. */
   releaseObservation?(): Promise<void>;
+  /** Explicitly acquire this existing observation's controller without replaying its transcript. */
+  acquireControl?(control: "acquire" | "takeover"): Promise<void>;
   done: Promise<RunResult | undefined>;
   /**
    * Resolves after stream delivery and closure. A hosted disconnect rejects: losing its

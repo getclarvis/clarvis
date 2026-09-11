@@ -15,6 +15,7 @@ function fixture() {
   const calls: string[] = [];
   const backgrounds: BackgroundController = {
     offerOnStartup: true,
+    resolveRecovery: async () => {},
     list: async () => [hostedRef()],
     background: async () => {
       calls.push("handoff");

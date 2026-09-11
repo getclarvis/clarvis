@@ -46,6 +46,30 @@ Test: controller disposal/binding cases in
 and interaction gates in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
 The owning contract is [loop-scheduling.md](loop-scheduling.md).
 
+Interactive composition also constructs the goal presentation controller against the current kernel
+connection. Conversation or connection changes retire its prior observation; canonical invalidations
+coalesce state reads and follow host-started stages through `RunHost.synchronizeGoal`. Shutdown
+disposes subscriptions and late presentation callbacks. Goal continuation has no client timer or
+run-start bypass. The activity line combines durable goal status with the independently tracked run
+status, and a checkpoint is displayed separately from final completion.
+Production: goal controller composition and `closeWorkspace` in
+[runtime.tsx](../../packages/code/src/runtime.tsx), `registerCodeCommands` in
+[command-composition.ts](../../packages/code/src/app/command-composition.ts), and `runOutcomeStatus`
+in [run-host.ts](../../packages/code/src/run-host.ts).
+Test: [goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts),
+[goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx) and
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+
+Goal status remains separate from the run's status string so the settled-outcome classifier cannot
+confuse a cancelled goal with a completed physical run. `LeadActivityLine` retains the current
+goal status beside its idle or working phase; `runOutcomeLabel` presents a saved checkpoint distinctly.
+Production: `leadActivityDetail` in [App.tsx](../../packages/code/src/views/App.tsx),
+`LeadActivityLine` in [Footer.tsx](../../packages/code/src/views/Footer.tsx) and `runOutcomeLabel` in
+[status-presenter.ts](../../packages/code/src/features/run/status-presenter.ts).
+Test: the idle/live goal-status case in
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx) and
+the checkpoint strip case in [run-status.test.ts](../../packages/code/tests/unit/run-status.test.ts).
+
 ### 2.1 The `clarvis` bin
 
 | Property | Value | Source |
@@ -135,6 +159,8 @@ line and the README synopsis all derive from this table" (`packages/code/src/cli
 | `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts` |
 | `--extension-profile` | — | `<selector>` (next token) | no | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 | `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts` |
+| `--remote` | — | `<user@host>` (next token) | no | `connect to a Clarvis installation over SSH` | `packages/code/src/cli-args.ts` |
+| `--remote-workspace` | — | `<path>` (next token) | no | `absolute workspace path on the remote host` | `packages/code/src/cli-args.ts` |
 | `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
 `FlagSpec.value` consumes the **next** token and is mandatory; `FlagSpec.inlineValue` is attached with
@@ -145,8 +171,12 @@ permits the bare flag (`packages/code/src/cli-args.ts`).
 
 ```ts
 export type WorktreeRequest = true | string;
+export interface RemoteWorkspaceRequest { destination: string; workspace: string }
 interface ExtensionProfileMode { extensionProfileSelector?: string }
-interface WorkspaceMode extends ExtensionProfileMode { worktree?: WorktreeRequest }
+interface WorkspaceMode extends ExtensionProfileMode {
+  worktree?: WorktreeRequest;
+  remote?: RemoteWorkspaceRequest;
+}
 
 export type Mode =
   | ({ kind: "run"; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
@@ -155,15 +185,16 @@ export type Mode =
   | ({ kind: "print"; prompt: string; agent?: string; format: PrintFormat; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | ({ kind: "refresh-models"; debug: DebugFlag } & ExtensionProfileMode)
+  | ({ kind: "refresh-models"; debug: DebugFlag } & WorkspaceMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
   | { kind: "usage-error"; message: string };
 ```
 
-`worktree` reaches run, resume, continue, print, list and delete, but not the repository-independent
-refresh/update/help/version/error modes. `extensionProfileSelector` reaches every mode that constructs a
+`worktree` reaches run, resume, continue, print, list and delete, but not update/help/version/error.
+`remote` reaches every mode that constructs a workspace kernel, including model refresh; both remote
+flags are required together and exclude `worktree`. `extensionProfileSelector` reaches every mode that constructs a
 kernel, including refresh, but not update/help/version/error. It is the process-local `--extension-profile`
 selector with highest Extension Profile precedence; it changes no persisted selection. Qualified
 `scope:name` and bare-name resolution are owned by
@@ -184,6 +215,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/cli-args.ts` | `DebugFlag` | `{ enabled: boolean; level?: DiagnosticLevel }` |
 | `packages/code/src/cli-args.ts` | `DebugRequest` | `{ enabled: boolean; level: DiagnosticLevel }` |
 | `packages/code/src/cli-args.ts` | `Mode` | union above |
+| `packages/code/src/cli-args.ts` | `RemoteWorkspaceRequest` | `{ destination: string; workspace: string }` |
 | `packages/code/src/cli-args.ts` | `FLAGS` | `readonly FlagSpec[]` |
 | `packages/code/src/cli-args.ts` | `DebugEnv` | index-signature env view naming `CLARVIS_CODE_DEBUG`, `CLARVIS_CODE_DEBUG_LEVEL` |
 | `packages/code/src/cli-args.ts` | `resolveDebugRequest` | `(mode: Mode, env: DebugEnv) => DebugRequest` |
@@ -195,6 +227,8 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `packages/code/src/cli-entry.ts` | `EntryInputs` | `{ distPath: string; distExists: boolean; forceSource: boolean }` |
 | `packages/code/src/cli-entry.ts` | `EntryChoice` | `{kind:"dist"} \| {kind:"source"} \| {kind:"error"; message:string}` |
 | `packages/code/src/cli-entry.ts` | `resolveEntry` | `(inputs: EntryInputs) => EntryChoice` |
+| `packages/code/src/cli-entry.ts` | `privateEntry` | `(argv: readonly string[]) => "remote-kernel" \| undefined` |
+| `packages/code/src/adapters/remote-kernel-arguments.ts` | `encodeRemoteKernelArguments` / `parseRemoteKernelArguments` | closed bounded base64url launch payload |
 | `packages/code/src/cli-mode.ts` | `resolveResumeMeta` | `(store, owner, workspace, mode) => SessionMeta \| null` |
 | `packages/code/src/cli-mode.ts` | `createPrintStream` | `(write: (chunk: string) => void) => (event: RunEvent) => void` |
 | `packages/code/src/cli-mode.ts` | `drainPrintEvents` | `(events, sink) => { transcriptDone: Promise<void>; drained: Promise<void> }` |
@@ -467,9 +501,10 @@ launcher only performs it" (`packages/code/src/cli-entry.ts`; the allowlist entr
 7. At most one `mode: true` flag; two or more →
    `` `${modes[0]} cannot be combined with ${rest.join(", ")}` ``.
 8. `--agent`/`--format` outside `--print` → `<flag> applies only with -p/--print`.
-9. `--update` rejects `--ascii`, `--worktree`, `--extension-profile`, or `--debug`; it never constructs a kernel.
+9. `--update` rejects `--ascii`, `--worktree`, both remote flags, `--extension-profile`, or `--debug`; it never constructs a kernel.
 10. `--debug=<x>` with an unrecognised `x` → `--debug must be one of error, warn, info, debug, got: x`. A **bare** `--debug` stores `""` and is exempt from that check.
-11. Fold `--worktree` and `--extension-profile` into the shared mode fragments, then switch on the mode flag.
+11. Require `--remote` and `--remote-workspace` together, reject remote plus `--worktree`, and fold
+    workspace, remote and Extension Profile selection into the shared mode fragments before switching on the mode flag.
     `--print` additionally rejects a whitespace-only prompt
      and a `--format` that is neither `text` nor `md`; `format` defaults to
     `"text"`. No mode flag → `{ kind: "run", ascii, debug }`.
@@ -530,8 +565,14 @@ to drain.
 
 Interactive worktree bootstrap, diagnostics and Extension Profile selection are continued by
 `runInteractiveMode`; headless equivalents are continued by `runHeadlessMode`. Both retain
-`mode.extensionProfileSelector`, apply worktree selection before constructing a kernel, and use the final
+`mode.extensionProfileSelector` and `mode.remote`, apply worktree selection before constructing a kernel, and use the final
 canonical workspace (`packages/code/src/runtime.tsx`, `runInteractiveMode`, `runHeadlessMode`).
+
+Before ordinary mode parsing, `privateEntry` recognizes only `--remote-kernel`. The thin launcher
+dynamically loads `remote-host.ts` from source or its separate bundled entry. That process decodes a
+closed base64url envelope, canonicalizes its absolute workspace on the remote machine and composes
+the same application FileKernel options as `local-host.ts`. This private entry is the fixed command
+started through SSH; it is not a user-facing mode in `FLAGS`.
 
 ### 4.5 The headless modes
 
@@ -1496,12 +1537,30 @@ elision removes optional run configuration rather than the product identity. Pro
 `packages/code/tests/integration/{splash-render,header-render,app-shell-render}.test.tsx`.
 
 **INV-CB-49.** Every complete Code kernel boot goes through `WorkspaceClientManager`, so interactive,
-`--print`, session-only and model-refresh modes all receive the selected local Docker/Podman runtime
+`--print`, session-only and model-refresh modes all receive either the selected local host or the
+operator-selected SSH host. Both application host entries share the same Docker/Podman runtime
 factory. No direct `createFileKernel` call remains in `runtime.tsx`. Production:
 `packages/code/src/runtime.tsx` (`bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`)
-and `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`).
+and `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`) plus
+`packages/code/src/adapters/host-kernel-options.ts` (`createCodeHostKernelOptions`).
 Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` ("routes every complete
 kernel boot through the runtime-aware workspace manager").
+
+**INV-CB-50.** A remote Code invocation requires paired SSH destination and absolute remote
+workspace selection, carries no local provider credential or discovery token, accepts the
+server-owned session namespace, and never exposes machine-local controls. Its reconnect creates a
+new SSH process without replaying an operation; reload is unavailable. Client diagnostics and
+prompt history use the local invocation's state while workspace files and sessions use the remote
+services. OpenSSH owns encryption, integrity, host-key verification and user authentication using
+its normal configuration, default identities and local agent. Clarvis disables port, agent and X11
+forwarding, but does not force `StrictHostKeyChecking`/`BatchMode` or implement password and
+identity-file UI; operators prepare a verified, usable SSH login before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/code/src/remote-host.ts`,
+`packages/code/src/adapters/remote-kernel-arguments.ts`, and
+`packages/code/src/adapters/workspace-client-manager.ts`. Test:
+`packages/code/tests/unit/cli-args.test.ts`,
+`packages/code/tests/unit/remote-kernel-arguments.test.ts`,
+`packages/code/tests/component/workspace-client-manager.test.ts`, and
+`packages/kernel/tests/integration/remote-ssh.test.ts`.
 
 ## 6. Failure modes and degradation
 
@@ -1535,6 +1594,9 @@ kernel boot through the runtime-aware workspace manager").
 | Session export fails | `export failed: <text>` returned as the status string | degrade | `packages/code/src/runtime.tsx` (`exportSession`) |
 | An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/runtime.tsx` (`writeExportChunk`) |
 | `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before a kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts`; `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`) |
+| Remote flags are unpaired, combined with `--worktree`, or contain an unsafe SSH destination/remote command | argument or transport admission rejects before a remote kernel handshake | usage error or top-level failure, no mutation replay | `packages/code/src/cli-args.ts`; `packages/kernel/src/hosting/connect-remote-ssh.ts` |
+| SSH needs interactive host-key, password or key-passphrase input | OpenSSH may use its controlling terminal or askpass, but Clarvis reserves process stdin/stdout for the kernel wire and supplies no login UI | startup can fail, time out or disturb the TUI; establish the host key and key/agent/certificate login first | `connectRemoteKernelOverSsh`; [security](../cross-cutting/security.md) |
+| SSH stdio closes | in-flight runs settle unavailable, connection state exposes `/reconnect`, and the remote host retires conversation authority | future goal continuation pauses; reconnect starts one new SSH process | `WorkspaceClientManager`; `serveRemoteFileKernelOverStdio`; goal-service authority retirement |
 | Worktree ignore protection cannot be created or verified | bootstrap rejects before `git worktree add` or any kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `ensureWorktreeIgnore` in `packages/code/src/bootstrap/worktree.ts`; `seedFile` in `packages/paths/src/ensure.ts` |
 | Exit cleanup sees new pending changes or `git worktree remove` fails | checkout and branch are kept; `worktree.remove.failed` records the error before normal exit continues | normal exit | `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`; pre-shutdown removal in `packages/code/src/runtime.tsx` |
 | Resume of a named session fails at boot | `resume failed: <text>` into the status line | degrade | `packages/code/src/runtime.tsx` (`runApp`) |

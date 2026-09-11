@@ -9,6 +9,8 @@
  */
 
 export { projected } from "./contract.ts";
+export { composePromptCacheKey, isPromptCacheIdentityComponent } from "./prompt-cache-identity.ts";
+export type { PromptCacheIdentity } from "./prompt-cache-identity.ts";
 export type {
   CapabilityEvent,
   CapabilityEventListener,
@@ -62,6 +64,7 @@ export type {
   HandlerVerdict,
   ToolHandler,
   FinalizeAttempt,
+  CheckpointAttempt,
   GateOutcome,
   FinalizeGate,
   OrchestrationHooks,
@@ -98,6 +101,12 @@ export { memoizeByOwner, sharedFallback } from "./per-owner.ts";
 export type { CompactionAnchor } from "./compaction-anchor.ts";
 export type { AgentResult, AgentErrorCode, BuiltinAgentErrorCode } from "./agent-result.ts";
 export { BUILTIN_AGENT_ERROR_CODES, partialStructOf } from "./agent-result.ts";
+export { checkpointMetadataSchema } from "./finalization.ts";
+export type {
+  CheckpointMetadata,
+  FinalizationDisposition,
+  RunFinalization,
+} from "./finalization.ts";
 export type { ConvergenceGuards, GuardTrip, GuardWarning } from "./convergence-guards.ts";
 export type { ContextPort, TracePort, Logger, LogFn } from "./ports.ts";
 export type { LogLevel, Sampler, RateLimiterOptions } from "./log.ts";
@@ -119,6 +128,7 @@ export {
 
 export {
   CodedError,
+  CapabilityUnavailableError,
   ValidationError,
   ConflictError,
   PersistenceError,

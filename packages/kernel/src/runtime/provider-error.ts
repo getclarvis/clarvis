@@ -8,6 +8,8 @@ const usageSchema = z
     output_tokens: counter,
     cached_tokens: counter,
     cache_write_tokens: counter,
+    usage_unknown: z.literal(true).optional(),
+    cache_unknown: z.literal(true).optional(),
   })
   .strict();
 

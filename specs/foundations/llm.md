@@ -75,7 +75,7 @@ the reason: re-exporting it "would statically pull `@ai-sdk/anthropic`, `@ai-sdk
 | `createModelCallAdmissionController` | fn | `packages/llm/src/model-call-admission.ts` | `(options?) => ModelCallAdmissionController` |
 | `withModelCallAdmission` | fn | `packages/llm/src/model-call-admission.ts` | `(inner, controller) => LLMProvider` |
 | `withPromptCacheDefaults` | fn | `packages/llm/src/prompt-cache-provider.ts` | `(inner, defaults: PromptCacheDefaults) => LLMProvider` |
-| `PromptCacheDefaults` | iface | `packages/llm/src/prompt-cache-provider.ts` | `{ promptCacheKey: string; promptCacheTtl: PromptCacheTtl }` |
+| `PromptCacheDefaults` | iface | `packages/llm/src/prompt-cache-provider.ts` | `{ identity: PromptCacheIdentity; promptCacheTtl: PromptCacheTtl }` |
 | `backoffDelayMs` | fn | `packages/llm/src/retry-llm-provider.ts` | `(n, retryAfterMs, baseDelayMs, maxDelayMs, maxRetryAfterMs?) => number` |
 | `withTransportRetry` | fn | `packages/llm/src/retry-llm-provider.ts` | `(inner, opts: TransportRetryOptions) => LLMProvider` |
 | `TransportRetryOptions` | iface | `packages/llm/src/retry-llm-provider.ts` | `{ maxRetries; baseDelayMs; maxDelayMs; maxRetryAfterMs?; logger? }` |
@@ -498,8 +498,18 @@ whole message list, so numbering is global and monotonic —
   `packages/llm/tests/unit/ai-sdk-modules.test.ts`, “replays phased assistant text” in
   `packages/llm/tests/unit/to-model-messages.test.ts`, and “retains native Responses commentary
   metadata” in `packages/llm/tests/integration/provider-request-shape.test.ts`.
-- `normalizeUsage` defaults all four counters to `0` and reads `inputTokenDetails`
-  defensively.
+- `normalizeUsage` retains numeric zero placeholders and reads `inputTokenDetails` defensively.
+  Missing or invalid input/output telemetry sets `usage_unknown`; missing cache-read telemetry
+  sets `cache_unknown`. A provider's explicit valid zero sets neither flag. Production:
+  `normalizeUsage` in [result.ts](../../packages/llm/src/ai-sdk/result.ts). Test: `separates missing
+  usage from measured zero and preserves known input without cache detail` in
+  [ai-sdk-modules.test.ts](../../packages/llm/tests/unit/ai-sdk-modules.test.ts).
+  The compatible SDK's usage-converter hook preserves missing raw counters before SDK defaults
+  can replace them with zero. It changes usage interpretation only, preserving request options
+  and transport. Production: `convertCompatibleUsage` in
+  [compatible-usage.ts](../../packages/llm/src/ai-sdk/compatible-usage.ts), installed by `AiSdkAdapter`.
+  Test: missing-total and cache-only controls through actual SDK HTTP in
+  [goal-file-host.test.ts](../../packages/kernel/tests/integration/goal-file-host.test.ts).
 - `raw.finishReason` passes through unmodified onto `LLMCallResult.finishReason` when present; absent, the field is simply omitted. Asserted end to end by
   `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`
   (`res.finishReason === "tool-calls"`) and by
@@ -729,7 +739,7 @@ createAiSdkProvider(...)                       :453
 ```
 
 and `packages/loop/src/runtime/execute-run.ts` wraps that again per run with
-`withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl })`. This places retry
+`withPromptCacheDefaults(deps.llm, { identity, promptCacheTtl })`. This places retry
 **outside** logging, which is exactly the arrangement `attemptsByParams` depends on
 (`packages/llm/src/logging-llm-provider.ts`), and admission **inside** logging, so each
 physical attempt takes one permit.
@@ -825,11 +835,13 @@ tool-input progress stopped").
 Test: `packages/llm/tests/unit/retry-llm-provider.test.ts`.
 
 **LLM-14.** Every failed `ProviderError` attempt's `partialUsage` is accumulated and surfaced —
-as `retriedUsage` on an eventual success, or as `accumulatedUsage` on the final error — and absent
-usage stays absent rather than becoming zero.
+as `retriedUsage` on an eventual success, or as `accumulatedUsage` on the final error. An unreported
+attempt keeps `usage_unknown` and `cache_unknown` beside the numeric partial totals; adding a
+later measured attempt never clears that uncertainty. With retries disabled, missing partial
+usage remains absent and is likewise unknown to host accounting.
 Production: `packages/llm/src/retry-llm-provider.ts`;
 also the `maxRetries <= 0` path.
-Test: `packages/llm/tests/unit/retry-llm-provider.test.ts` (accumulates onto success) ("leaves retriedUsage absent when no failed attempt reported usage")
+Test: `packages/llm/tests/unit/retry-llm-provider.test.ts` (accumulates onto success), `retains uncertainty when no failed attempt reported usage`, and `preserves known failed-attempt counters while retaining a separate unreported attempt`
 (`accumulatedUsage` on exhaustion) (promoted with no retry loop).
 
 **LLM-15.** Only `kind === "transient"` is retried. `client`, `auth`, `quota`, `content_policy` and
@@ -1171,7 +1183,7 @@ recovery/accounting fields over the private channel. Physical requests still pas
 package's admission and retry decorators. The wire schema and bounded queue belong to
 [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 Production: `hostModelBroker` in
-[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts), `modelBody`
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), `modelBody`
 in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
 `encodeRuntimeProviderError` in
 [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts).
@@ -1296,3 +1308,18 @@ takes one value import, `contentToText`).
     `inner.call` release path both have code (added to the section 4.13 state table
     above) but no test in `packages/llm/tests/unit/model-call-admission.test.ts` exercises either
     one.
+
+## Persisted replay and serialized-prefix diagnostics
+
+Tool-call provider metadata retains an existing Responses item ID separately from `call_id`.
+`withResponsesReplayIds` restores that item ID if the SDK omits it, without inventing IDs for
+optional user/tool-output items. `SerializedPrefixWatch` compares bounded content hashes at the
+actual JSON fetch boundary and reports the first changed instruction/catalog/history surface.
+`cacheUsageKnown: false` distinguishes absent cache counters from observed zero.
+Production: [`withResponsesReplayIds`](../../packages/llm/src/ai-sdk/responses-replay.ts),
+[`SerializedPrefixWatch`](../../packages/llm/src/ai-sdk/request-prefix.ts),
+[`buildCallResult`](../../packages/llm/src/ai-sdk/result.ts).
+Test: [`wire-cache-diff.test.ts`](../../packages/llm/tests/integration/wire-cache-diff.test.ts) and
+[`request-prefix.test.ts`](../../packages/llm/tests/unit/request-prefix.test.ts).
+See the [prompt-cache contract](../cross-cutting/prompt-cache.md) for per-instance composition,
+provider-specific fields and performance qualification.

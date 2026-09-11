@@ -22,6 +22,7 @@ import { runEvent } from "../helpers/run-events.ts";
 import { MAX_COMPOSER_IMAGE_BYTES } from "../../src/core/attachments.ts";
 import type { ScheduledTurnRequest, ScheduledTurnAdmission } from "../../src/core/loop-schedule.ts";
 import { hostingFixture } from "../helpers/hosted-run.ts";
+import { goalRun, goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
 
@@ -803,6 +804,8 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
     throw new Error("unexpected hosting call");
   };
   const hosting: HostingService = {
+    controlObservation: unexpected,
+    resolveRecovery: unexpected,
     list: async () => [ref],
     start: unexpected,
     attach: unexpected,
@@ -837,6 +840,8 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
         calls.attaches++;
         return {
           ...handle,
+          acquireControl: (control) =>
+            hosting.controlObservation("existing-observation", control).then(() => undefined),
           async releaseObservation() {
             calls.releases++;
             run.reject(new Error("observation released"));
@@ -848,6 +853,79 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
   return { ...mounted, calls, ref, meta, sessions, run, hosting };
 }
 
+test("observes an automatic goal stage without retiring the conversation or replaying painted history", async () => {
+  const f = mountHosted("cancel");
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  const binding = f.host.goalBinding()!;
+  f.store.appendNotice("Existing painted history");
+  const nodes = [...f.store.nodes];
+  const state = goalView({ runs: [goalRun(f.ref.execution_id)] }, f.ref);
+  const observing = f.host.synchronizeGoal(binding, state);
+  await flush();
+  expect(f.calls.attaches).toBe(1);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.host.goalBinding()).toEqual(binding);
+  expect(f.store.nodes[0]).toBe(nodes[0]);
+  expect(f.store.nodes[0]?.key).toBe(nodes[0]?.key);
+  expect(f.host.runActive()).toBe(true);
+  f.meta.turns[0]!.status = "done";
+  f.ref.execution_state = "closed";
+  f.run.resolve({
+    ...completed(f.ref.execution_id),
+    disposition: "checkpoint",
+    checkpoint: { summary: "First stage", next_step: "Continue" },
+  });
+  await observing;
+  expect(f.host.runStatus()).toBe("checkpoint saved");
+  expect(f.calls.retired).toEqual([]);
+  const count = f.store.nodes.length;
+  await f.host.synchronizeGoal(binding, state);
+  expect(f.store.nodes).toHaveLength(count);
+  expect(f.calls.attaches).toBe(1);
+});
+
+test("hydrates a goal stage that finished before attachment without replacing the painted prefix", async () => {
+  const f = mountHosted();
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  f.ref.execution_state = "closed";
+  f.meta.turns[0]!.status = "done";
+  f.store.appendNotice("Retained prefix");
+  const old = f.store.nodes[0];
+  await f.host.synchronizeGoal(
+    f.host.goalBinding()!,
+    goalView({ status: "complete", runs: [goalRun(f.ref.execution_id, "closed")] }),
+  );
+  expect(f.store.nodes[0]).toBe(old);
+  expect(f.store.nodes[0]?.key).toBe(old?.key);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.host.memory().transcript_resident_turns).toBe(1);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("does not follow a delayed goal read into another conversation", async () => {
+  const f = mountHosted();
+  await f.host.loadSessionMeta({ ...f.meta, turns: [] });
+  const entered = Promise.withResolvers<void>();
+  const gate = Promise.withResolvers<SessionMeta | null>();
+  f.sessions.load = async () => {
+    entered.resolve();
+    return gate.promise;
+  };
+  const pending = f.host.synchronizeGoal(
+    f.host.goalBinding()!,
+    goalView({ runs: [goalRun(f.ref.execution_id)] }, f.ref),
+  );
+  await entered.promise;
+  f.host.clearSession();
+  gate.resolve(f.meta);
+  await pending;
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.store.nodes).toHaveLength(0);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
 test("resume refuses an unknown hosted outcome without treating its trace as an ordinary continuation", async () => {
   const f = mountHosted();
   f.ref.execution_state = "unknown";
@@ -858,6 +936,47 @@ test("resume refuses an unknown hosted outcome without treating its trace as an 
   expect(f.host.runStatus()).toContain("/background list");
   expect(f.host.scheduledBusy()).toBe(false);
   f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("an acknowledged recovery archive cannot resume inference through its saved session", async () => {
+  const f = mountHosted();
+  f.hosting.list = async () => [];
+  f.meta.turns[0]!.recoveryResolution = {
+    kind: "operator_verified_physical_closure",
+    previous_host_generation: "old",
+    resolving_host_generation: "new",
+    operator_connection_id: "operator",
+    resolved_at: 20,
+  };
+  await f.host.resumeSessionById(f.meta.id);
+  expect(f.calls.attaches).toBe(0);
+  expect(f.host.sessionMeta()).toBeNull();
+  expect(f.host.runStatus()).toContain("archived after recovery");
+  expect(f.host.scheduledBusy()).toBe(false);
+  f.run.resolve(completed(f.ref.execution_id));
+});
+
+test("takes control of an already observed run while retaining its session and stream", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref, "observe");
+  await flush();
+  const session = f.host.sessionMeta()?.id;
+  const modes: string[] = [];
+  f.hosting.controlObservation = async (id, control) => {
+    expect(id).toBe("existing-observation");
+    modes.push(control);
+    return { ...f.ref, control: "self", control_epoch: 2 };
+  };
+  await f.host.attachHostedRun(f.ref, "takeover");
+  expect(modes).toEqual(["takeover"]);
+  expect(f.calls.attaches).toBe(1);
+  expect(f.calls.releases).toBe(0);
+  expect(f.calls.retired).toEqual([]);
+  expect(f.calls.writes).toBe(0);
+  expect(f.host.sessionMeta()?.id).toBe(session);
+  expect(f.host.runStatus()).toBe("controlling hosted run");
+  f.host.teardownRuns();
+  await observing;
 });
 
 test.each(["continue", "cancel"] as const)(
@@ -948,6 +1067,52 @@ test("a lost handoff reply is reconciled by operation id and never repeats the m
   expect(detachCalls).toBe(1);
   expect(f.calls.releases).toBe(1);
   expect(f.run.cancelled).toBe(false);
+});
+
+test("a definitive handoff refusal permits a fresh operation after the cause is resolved", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  const operations: string[] = [];
+  f.hosting.detach = async (request) => {
+    operations.push(request.operation_id);
+    if (operations.length === 1)
+      throw Object.assign(new Error("refresh before handoff"), {
+        code: "conflict",
+        details: { handoff: { operation_id: request.operation_id, admission: "refused" } },
+      });
+    return { operation_id: request.operation_id, run: f.ref, committed_at: 10 };
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("refresh before handoff");
+  expect(f.calls.releases).toBe(0);
+  const receipt = await f.host.backgroundCurrentRun();
+  expect(operations).toHaveLength(2);
+  expect(operations[0]).not.toBe(operations[1]);
+  expect(receipt.operation_id).toBe(operations[1]!);
+  await observing;
+  expect(f.calls.releases).toBe(1);
+  expect(f.run.cancelled).toBe(false);
+});
+
+test("a conflict with uncertain admission retains its identity and never repeats detach", async () => {
+  const f = mountHosted();
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let calls = 0;
+  f.hosting.detach = async (request) => {
+    calls++;
+    throw Object.assign(new Error("handoff outcome unknown"), {
+      code: "conflict",
+      details: { handoff: { operation_id: request.operation_id, admission: "uncertain" } },
+    });
+  };
+  f.hosting.receipt = async () => null;
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff outcome unknown");
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow("handoff is unconfirmed");
+  expect(calls).toBe(1);
+  f.host.teardownRuns();
+  await observing;
 });
 
 test("handoff reconciles an immediately readable receipt after its acknowledgement is lost", async () => {

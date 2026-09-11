@@ -98,8 +98,10 @@ const RUN_EVENT_SCHEMAS = {
       status: runStatus,
       reason: text.optional(),
       code: text.optional(),
+      disposition: z.enum(["final", "checkpoint"]).optional(),
     })
-    .strict(),
+    .strict()
+    .refine((event) => event.disposition === undefined || event.status === "completed"),
   iteration_started: z
     .object({
       type: z.literal("iteration_started"),

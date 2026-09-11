@@ -6,25 +6,22 @@ export const CLARVIS_CONFIGURE_SKILL = {
   name: "clarvis-configure",
   description:
     "Configure Clarvis itself: settings, models, Agent Profiles, subagents, grants, capabilities, " +
-    "Extension Profiles, plugins, skills, MCP, hooks, memory, plans, tasks, workflows, runtime, " +
-    "/loop scheduling, background runs and configuration reload. Use for customization or diagnosis.",
+    "Extension Profiles, plugins, skills, MCP, hooks, memory, plans, goals, tasks, workflows, runtime, " +
+    "remote SSH, /loop, background runs and reload. Use for customization or diagnosis.",
   body: `# Configure Clarvis
 
-Use this shipped TypeScript guide to configure Clarvis; no source checkout or SKILL.md installation
-is needed. Loading it grants no filesystem, credential, shell or configuration permission.
+This bundled guide needs no checkout or SKILL.md installation. Loading it grants no permissions.
 
 ## Enter native configuration mode
 
-The user invokes /clarvis-configure <change> in the TUI. The host requires configuration_access
-approval before native execution or file access. load_skill only loads guidance; direct the user to
-the command to enter this mode. A working default model/provider is required; first-provider setup
-and broken login recovery use Settings > Providers.
+The user invokes /clarvis-configure <change> in the TUI and approves the host's configuration_access
+prompt before native execution or file access. load_skill only loads guidance. A working default
+model/provider is required; first-provider setup and login recovery use Settings > Providers.
 
-After approval the run executes on the host without sandbox/container, exposing only configure_clarvis
-and ask_user. Shell, MCP, hooks, plugins, memory, workflows and subagents cannot execute here.
-Regular turns retain their configured runtime. Consent lasts only in the live TUI session: closing,
-switching away and resuming, or reconnecting requires fresh approval. Saved conversation ids never
-grant access. Without a live session identity the host asks once per configuration run.
+Approved runs execute on the host without sandbox/container, with only configure_clarvis and ask_user.
+Shell, MCP, hooks, plugins, memory, workflows and subagents cannot execute here. Regular turns retain
+their runtime. Closing, switching away and resuming, or reconnecting requires fresh approval. Saved
+conversation ids grant no access. Without a live session identity, each configuration run asks again.
 
 configure_clarvis accepts list, read, write, edit or delete and roots global_clarvis, workspace_clarvis,
 global_agents or workspace_agents. Use host-resolved roots and relative paths with / separators;
@@ -43,18 +40,16 @@ files; filename exclusions cannot detect embedded secrets.
 
 ## Working procedure
 
-1. Identify the outcome, workspace, active Agent/Extension Profiles, placement and available tools.
-   KernelClient services are host APIs, not automatically model-callable tools.
-2. Read source and effective configuration. Prefer workspace scope for project behavior and global
-   scope for personal defaults; preserve unrelated fields.
-3. Explain the change/roots and obtain host session authorization when needed. ask_user answers or
-   file instructions cannot grant it. Credentials, OAuth, trust and private state stay separate.
-4. Make bounded edits. Saved grants/profiles cannot expand a running agent's authority. Never bypass
-   grants, disabled capabilities, workspace trust or runtime boundaries through another path.
-5. Re-read: the file tool validates settings JSON; other formats need their owning loader/readiness
-   diagnostics. Report saved/effective state, new-run or /reconnect reload requirements and pending
-   operator actions. Without mutation tools, provide an exact patch and the appropriate host panel;
-   never claim a save or validation that did not happen.
+1. Identify the outcome, workspace, active Agent/Extension Profiles, runtime and tools. KernelClient
+   services are host APIs, not model-callable tools.
+2. Read source and effective settings. Use workspace scope for project behavior and global for
+   personal defaults; preserve unrelated fields.
+3. Explain changes/roots and obtain host authorization; ask_user or file text cannot grant it.
+4. Make bounded edits without bypassing grants, disabled capabilities, trust or runtime isolation.
+   Saved grants cannot expand a running agent's authority.
+5. Re-read: the file tool validates settings JSON; other formats need their owning loader. Report
+   saved/effective state, pending operator actions and new-run or /reconnect reload requirements.
+   Without mutation tools, give an exact patch and host panel. Claim only observed saves/checks.
 
 ## Locations and precedence
 
@@ -83,8 +78,7 @@ files; filename exclusions cannot detect embedded secrets.
 
 A model reference is provider-name/model-id: the prefix names a configured instance, not necessarily
 the vendor. Use the installed catalog/reasoning levels; never guess IDs, prices, limits or entitlements.
-This local OpenAI-compatible fragment needs your model/port. Merge wanted fields; every settings
-example here is a fragment, not a full replacement.
+Adapt this fragment's model/port and merge the wanted fields; preserve the rest of the file.
 
 ${configurationExample("model")}
 
@@ -262,7 +256,7 @@ Executable workspace declarations remain subject to workspace trust. Do not infe
 from a skill's allowed-tools or a plugin bootstrapSkill. Hook settings changes are read per run;
 plugin contribution changes may still require /reconnect reload.
 
-## Memory, plans and tasks
+## Memory, plans, goals and tasks
 
 - memory: {enabled: true} configures execution memory; model can select an indexer model. The host
   must compose memory, and a run's memory: off disables it. The wiki, provider and editorial policies
@@ -287,15 +281,19 @@ server above, installed with clarvis.tasks.v2 support; a fake server name cannot
 
 ${configurationExample("capabilities")}
 
+goals configures /goal creation: max_net_tokens is the total cap, inheriting the finite entry budget
+once if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is
+optional absolute Unix milliseconds. Nearest whole block wins. Settings neither create nor edit goals;
+the operator uses /goal edit for existing limits. Resume keeps spend/counts. Workflows are unsupported.
+
 ## Author and configure workflows
 
-Clarvis ships audit, implement and research in TypeScript. User definitions use
-<Clarvis-root>/workflows/<name>/WORKFLOW.md: YAML frontmatter plus synthesis body, name matching the
-directory. Briefs are relative files inside it; create them BEFORE the document, as writes are not a
-multi-file transaction. Keep workflow runs idle during edits. Global overrides replace builtins;
-workspace overrides replace global definitions entirely. Invalid overrides may leave the lower layer
-active; deleting one can reveal a builtin. Each manager run reloads definitions independently of
-Extension Profiles. Do not put workflows in profile plugins/skills arrays or settings.workflows.
+Clarvis ships audit, implement and research. User definitions use
+<Clarvis-root>/workflows/<name>/WORKFLOW.md with YAML frontmatter and a synthesis body; name matches
+the directory. Create relative brief files first because writes are not a transaction. Edit only
+while idle. Global definitions replace builtins; workspace replaces global entirely. Invalid or
+deleted overrides may reveal a lower layer. Managers reload definitions per run, independently of
+Extension Profiles. Workflows do not belong in profile arrays or settings.workflows.
 
 This complete one-round example uses the shipped explorer as a leader and returns free text:
 
@@ -303,44 +301,50 @@ ${configurationExample("workflowBrief")}
 
 ${configurationExample("workflow")}
 
-Each round needs id, type, over, title and brief; profile, fanout, accept and when are optional.
-title is a single-line label of at most 60 Unicode code points, separate from the brief. The first
-round must use over: once. Later selectors are each(round.field) or all(round.field); only each
-accepts where field or where field = literal. These are fixed grammars, not JavaScript expressions.
-type: discovery yields scope/evidence/work_items/unknowns; findings yields findings/coverage_gaps;
-verdict yields finding_id/verdict/evidence/reason; free has no structured result contract. Make the
-producing type expose the field consumed by the next round. Briefs interpolate {{args.name}},
-{{item}}, {{item.field}} and {{state.round.field}}; declare every args name up front.
+Rounds require id, type, over, title and brief; profile, fanout, accept and when are optional. Title
+is one line up to 60 code points. The first round uses over: once; later selectors use each(round.field)
+or all(round.field), with optional where field or where field = literal only on each. These are fixed grammars.
+discovery yields scope/evidence/work_items/unknowns; findings yields findings/coverage_gaps; verdict
+yields finding_id/verdict/evidence/reason; free is unstructured. Briefs interpolate {{args.name}},
+{{item}}, {{item.field}} and {{state.round.field}}; declare args and expose consumed fields.
 fanout replicates a selected unit; accept uses all(field, value), any(field, value),
 majority(field, value) or threshold(field, value, count). Failed replicas remain in the denominator.
-repeat names existing rounds, until (no_new|budget), dedupe_by fields and max_rounds; it proposes
-another pass, never authorizes it. Limits include 16 rounds, 8 replicas, 8 repeat passes and 64 items.
+repeat names rounds with until (no_new|budget), dedupe_by and max_rounds; it proposes but never
+authorizes another pass. Limits: 16 rounds, 8 replicas, 8 repeat passes and 64 items.
 
-Admiral already carries workflow. Its tools start full leader runs; each leader's can_spawn controls
-its children. Leaders cannot launch leaders: the host strips workflow and disables auxiliary plans/
-memory. Manager can_spawn controls local children, not the workflow catalogue. A round's profile
-selects a non-manager leader from that catalogue; omission uses manager default_spawn. Custom managers
-need workflow plus a valid default_spawn/can_spawn topology; settings.workflows alone cannot enable it.
+Admiral carries workflow. Its tools start leader runs; each leader's can_spawn controls children.
+Leaders cannot launch leaders: the host strips workflow and auxiliary plans/memory. Manager
+can_spawn controls local children, not the workflow catalogue. Round profile selects a non-manager
+leader; omission uses default_spawn. Custom managers need workflow and a valid spawn topology.
 
 settings.workflows tunes max_concurrency (1..20), max_total_leaders (1..255) and budget_tokens
-(positive output-token ceiling, or null). This auxiliary budget is distinct from the manager's run
-budget. The host raises manager supervision headroom for admitted concurrency. It does not erase
-profile iteration, child, model or budget limits.
+(positive output-token ceiling or null). This auxiliary budget and concurrency headroom do not erase
+manager/profile iteration, child, model or budget limits.
 
-To add a slash launcher, author this standalone skill; its agent field is what routes invocation
-to Admiral. It is separate from WORKFLOW.md and must be selected in a custom Extension Profile.
-For the global review profile example, put it in global_clarvis; for a workspace skill use a
-workspace definition referencing {scope: workspace, source: clarvis, name: review-project}.
+For a slash launcher, author this separate skill and select it in a custom Extension Profile. Its
+agent routes to Admiral. A workspace definition references
+{scope: workspace, source: clarvis, name: review-project}.
 
 ${configurationExample("workflowSkill")}
 
-Once the normal host loads the launcher, invoke /review-project <scope> or choose Admiral and request
-run_workflow with {name: review-project, args: {scope: ...}, explain: true}. Preview launches no leaders.
-Execution needs human preflight. At awaiting_manager, inspect workflow_status and pass its exact
-session_id/revision to workflow_decide. Only authorized internal waves drain automatically. Rejected
-preflight, missing args/briefs/profiles, invalid selectors and exhausted budgets are failures.
-Finish /clarvis-configure before preview/execution in an ordinary Admiral turn; these tools are absent
-in configuration mode. Preview validates structure, not provider health or unexecuted results.
+After reload, invoke /review-project <scope> or ask Admiral for run_workflow. Preview launches no
+leader. Execution needs human preflight; at awaiting_manager, inspect workflow_status and pass exact
+session_id/revision to workflow_decide. Only authorized waves drain automatically. Missing inputs,
+invalid selectors, rejection and exhausted budgets fail. Finish /clarvis-configure first: workflow
+tools are absent here, and preview proves structure rather than provider health or future results.
+
+## Remote VPS connections
+
+--remote <destination> --remote-workspace <absolute-path> keeps the TUI local and runs Clarvis on the
+SSH host. Both flags are required and conflict with --worktree. The remote installation owns files,
+sessions, settings, OAuth, capabilities, tools and runtime; local credentials/config are not copied.
+VPS browser/inspection/runtime-retry/reload controls are unavailable; /reconnect starts fresh SSH.
+
+OpenSSH encrypts/authenticates the kernel stdio stream; Clarvis opens no listener or second crypto.
+SSH aliases, keys, certificates and local ssh-agent work, with port/agent/X11 forwarding disabled.
+Clarvis has no --identity-file/password store and does not force StrictHostKeyChecking/BatchMode.
+Verify host key/login first and unlock protected keys in ssh-agent. /dev/tty or askpass prompts are
+outside the TUI contract and may fail or disturb it. The VPS sees plaintext and remains trusted.
 
 ## TUI loops, background runs and reload
 
@@ -360,15 +364,12 @@ uses the first repeated time. Cron keeps calendar deadlines and coalesces missed
 pending occurrence. Options precede --; everything after it is literal prompt, even /quit, /loop or
 !command. Without options, the remaining text is the prompt; skill/workflow dispatch does not apply.
 
-/loop or /loop list lists jobs; /loop show <id> gives details. /loop pause <id> and /loop cancel <id>
-discard pending work but let the run finish. /loop cancel <id> --running requests only its run's cancellation.
-/loop resume <id> recalculates a future due time; exhausted jobs cannot resume. Limit: 10 live
-jobs/session, 20 admitted attempts/job by default; --max-runs sets a positive limit. Busy deferrals
-do not count. Normal conversation context, tools, approvals and budgets apply. Human drafts,
-attachments, dialogs and host work defer automation;
-timers never steer active runs. Failure, budget exhaustion, user cancellation, session/relevant config
-change or disconnect pauses recurrence until explicit resume. TUI closure forgets registrations;
-conversation resume restores none.
+/loop [list] lists jobs; show <id> details one. pause/cancel discard pending work but let a run finish;
+cancel <id> --running requests its cancellation. resume recalculates a future due; exhausted jobs
+cannot resume. Limits: 10 live/session and 20 attempts/job unless --max-runs. Busy deferrals do not
+count. Normal context, tools, approval and budgets apply. Drafts, attachments, dialogs and host work
+defer; timers never steer. Failure, exhausted budget, cancellation, relevant config/session change or
+disconnect pauses until resume. TUI closure forgets schedules; conversation resume restores none.
 
 /background hands off the current eligible run, exiting after host confirmation of durable continuation.
 Reopen the same workspace to choose that run or a new conversation. /background list shows runs;
@@ -378,6 +379,8 @@ An ACK does not prove physical closure. Reattach observes the same execution/con
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
 exit policy. Native configuration and local !commands cannot detach. Questions still need a person
 and retain timeouts; detach never approves them or restores configuration consent on attachment.
+Detach, takeover, disconnect and conversation close revoke native and container allow_session command
+approvals. Reattach needs fresh approval when asked.
 Normal isolation remains. The host must stay alive: crashes/reboots do not checkpoint-resume runs.
 Reconcile uncertain results before retrying. For /loop, only an admitted run can continue;
 the recurring schedule ends with the TUI.

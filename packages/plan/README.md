@@ -24,6 +24,11 @@ is not closure: the lead must inspect its outcome before recording `done` or gen
 The finalization note does not ask for invented evidence or early completion; see
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
+`read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
+options for the first page, default limit and absent status/retention filters. Non-null IDs and
+cursors must be nonempty; later pages use only provider-issued cursors. Shared read/list schemas
+generate the advertised catalog and normalize null to absence before the typed provider call.
+
 ## Entry points
 
 | Entry                      | Contents                                                                    |
@@ -33,6 +38,14 @@ The finalization note does not ask for invented evidence or early completion; se
 | `@clarvis/plan/testing`    | repository and provider-facing `PlanStore` conformance suites               |
 | `@clarvis/plan/capability` | the provider-aware planning capability                                      |
 | `@clarvis/plan/settings`   | the light `plans:` settings contract                                        |
+
+`createPlansCatalogCapability`, exported by the capability entry, lets a host retain
+planning's tools and `delegate_task` schema in an auxiliary continuation without
+opening the source provider. It respects the source `off`/`on`/`review` mode, refuses
+plan calls and tracked spawning, and has no gates, context publication, recovery,
+finalization or retention effects. Memory indexing uses this projection so a paused
+goal's plan remains owned by its primary execution. It is a host API, not a request
+option available to the model.
 
 ## Format
 
@@ -172,7 +185,20 @@ was refused and the refusal named `revise_plan` as the way forward.
 what it did, so nothing is deleted without an explicit choice.
 
 `discard` removes the file only **after** the terminal record persists, and only on a `completed`
-run. A crash or cancellation always leaves it for recovery.
+run with final disposition. A crash or cancellation always leaves it for recovery.
+
+A checkpoint keeps the current plan, open tasks and reference, including `discard` retention.
+The pending-task gate permits that stage boundary; human review and other finalize gates still run.
+When the engine requests `preserveState` for an interrupted continuing activity, the finalizer also
+retains the current plan instead of changing its status. A later final result follows the ordinary
+task-closure and retention rules. This behavior does not grant review approval or continuation authority.
+
+In isolated execution the kernel enforces retention on the host: only the current run's created or
+continued plan may be mutated, and deletion requires the matching durable completed trace, canonical
+completed/discard state and host-selected CAS. Reading or listing another plan never binds it.
+The private plan bridge transfers large requests/results in bounded chunks, preserving the document
+and list-page limits above. Its resource and authority contract belongs to
+[`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in
@@ -256,3 +282,10 @@ bun --filter @clarvis/plan format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Prompt-cache continuity
+
+Plan headers remain per-iteration reminders and append after prior history, including identical reminders. Changed plan bodies append; unchanged bodies stay in place. The newest reminder describes current state, while the store continues to enforce CAS and human approval against historical references.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

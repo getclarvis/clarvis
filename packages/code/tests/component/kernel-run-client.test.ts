@@ -217,10 +217,13 @@ function hostedFixture() {
   const starts: Parameters<HostingService["start"]>[0][] = [];
   const attaches: Parameters<HostingService["attach"]>[0][] = [];
   const released: string[] = [];
+  const acknowledged: string[] = [];
   const unexpected = async (): Promise<never> => {
     throw new Error("unexpected hosted control");
   };
   const service: HostingService = {
+    controlObservation: unexpected,
+    resolveRecovery: unexpected,
     list: async () => [attachment.run],
     start: async (input) => {
       starts.push(input);
@@ -244,11 +247,13 @@ function hostedFixture() {
     detach: unexpected,
     receipt: unexpected,
     closeSession: unexpected,
-    acknowledge: unexpected,
+    acknowledge: async (id) => {
+      acknowledged.push(id);
+    },
     reserveActivity: unexpected,
     releaseActivity: unexpected,
   };
-  return { ctrl, physical, prefix, attachment, starts, attaches, released, service };
+  return { ctrl, physical, prefix, attachment, starts, attaches, released, acknowledged, service };
 }
 
 test("hosted admission uses the persisted session and waits for projection plus physical reconciliation", async () => {
@@ -289,6 +294,7 @@ test("hosted admission uses the persisted session and waits for projection plus 
   await flushMicrotasks();
   expect(finished).toBe(false);
   expect(f.released).not.toContain("observation");
+  expect(f.acknowledged).toEqual([]);
   f.physical.resolve();
   expect(await result).toMatchObject({ execution_id: "hosted-execution", result: "same run" });
   await handle.closed;
@@ -309,6 +315,33 @@ test("hosted admission uses the persisted session and waits for projection plus 
   ]);
   expect(progress.map((entry) => entry.iteration)).toEqual([2]);
   expect(f.released).toEqual(["snapshot", "observation"]);
+  expect(f.acknowledged).toEqual(["hosted-execution"]);
+  await c.dispose();
+});
+
+test("long hosted prompts bound only the preview and preserve the complete model message", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const prompt = "synthetic corpus ".repeat(5000);
+  const handle = c.startRun({
+    executionId: "hosted-execution",
+    profile: "coder",
+    session: {
+      session_id: "conversation",
+      session_revision: 1,
+      kind: "conversation",
+      user_preview: prompt,
+    },
+    messages: [{ role: "user", content: prompt }],
+  });
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed", result: "verified" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  await handle.closed;
+  expect(f.starts[0]!.user_preview.length).toBeLessThanOrEqual(4096);
+  expect(f.starts[0]!.params.messages).toEqual([{ role: "user", content: prompt }]);
   await c.dispose();
 });
 
@@ -347,6 +380,7 @@ test("attach observes the same execution, leaves observer questions untouched an
   await handle.closed;
   expect(f.starts).toEqual([]);
   expect(f.attaches).toEqual([input]);
+  expect(f.acknowledged).toEqual([]);
   await c.dispose();
 });
 
@@ -374,6 +408,48 @@ test("a lost hosted observation rejects completion instead of fabricating a fail
   expect(await closed).toMatchObject({ message: "connection lost" });
   expect(f.released).toContain("observation");
   expect(f.starts).toEqual([]);
+  await c.dispose();
+});
+
+test("abandoning a hosted observation does not acknowledge its unconsumed result", async () => {
+  const f = hostedFixture();
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.attachRun({
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "acquire",
+  });
+  await handle.releaseObservation?.();
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  expect(f.acknowledged).toEqual([]);
+  expect(f.released.filter((item) => item === "observation")).toHaveLength(1);
+  await c.dispose();
+});
+
+test("an acknowledgement failure rejects hosted readiness while releasing observation", async () => {
+  const f = hostedFixture();
+  f.service.acknowledge = async () => {
+    throw new Error("ack commit failed");
+  };
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.attachRun({
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "acquire",
+  });
+  const done = handle.done.catch((error: unknown) => error);
+  const closed = handle.closed.catch((error: unknown) => error);
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
+  f.ctrl.close();
+  f.physical.resolve();
+  expect(await done).toMatchObject({ message: "ack commit failed" });
+  expect(await closed).toMatchObject({ message: "ack commit failed" });
+  expect(f.released).toContain("observation");
   await c.dispose();
 });
 
@@ -414,6 +490,38 @@ test("hosted controls use the attached handle and preserve the live compaction c
   f.physical.resolve();
   await handle.done;
   await handle.closed;
+  await c.dispose();
+});
+
+test("upgrades the existing observer and acknowledges its fully consumed controlled result", async () => {
+  const f = hostedFixture();
+  const controls: string[] = [];
+  f.attachment.run.control = "other";
+  f.service.controlObservation = async (id, control) => {
+    controls.push(id, control);
+    return { ...f.attachment.run, control: "self", control_epoch: 2 };
+  };
+  const { c } = client({ hosting: f.service });
+  await c.connect();
+  const handle = c.attachRun({
+    execution_id: "hosted-execution",
+    host_generation: "generation",
+    control: "observe",
+  });
+  await handle.acquireControl!("takeover");
+  expect(controls).toEqual(["observation", "takeover"]);
+  expect(f.attaches).toHaveLength(1);
+  expect(f.released).not.toContain("observation");
+  expect(
+    await c.steer({ executionId: "hosted-execution", message: "continue here" }),
+  ).toMatchObject({ status: "steered" });
+  f.ctrl.settle({ execution_id: "hosted-execution", status: "completed" });
+  f.ctrl.close();
+  f.physical.resolve();
+  await handle.done;
+  await handle.closed;
+  expect(f.acknowledged).toEqual(["hosted-execution"]);
+  expect(f.released.filter((id) => id === "observation")).toHaveLength(1);
   await c.dispose();
 });
 

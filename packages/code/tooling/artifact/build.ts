@@ -143,7 +143,11 @@ async function main(): Promise<void> {
 
   const started = performance.now();
   const result = await Bun.build({
-    entrypoints: [join(packageRoot, "src/index.tsx"), join(packageRoot, "src/local-host.ts")],
+    entrypoints: [
+      join(packageRoot, "src/index.tsx"),
+      join(packageRoot, "src/local-host.ts"),
+      join(packageRoot, "src/remote-host.ts"),
+    ],
     target: "bun",
     outdir,
     plugins: [createSolidTransformPlugin()],

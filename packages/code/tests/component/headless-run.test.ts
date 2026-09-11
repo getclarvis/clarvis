@@ -5,6 +5,9 @@ import { hostedAttachment, hostedRef, hostingFixture } from "../helpers/hosted-r
 
 function fixture() {
   const f = hostingFixture();
+  f.service.acknowledge = async () => {
+    f.calls.push("acknowledge");
+  };
   const writes: Session[] = [];
   const starts: StartHostedTurnParams[] = [];
   let ordinary = 0;
@@ -121,7 +124,38 @@ test("headless events include the immutable prefix before the live tail and keep
     execution_id: hostedRef().execution_id,
     status: "completed",
   });
-  expect(handle.closed).toBe(physical.promise);
+  let settled = false;
+  void handle.closed.then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(settled).toBe(false);
   physical.resolve();
   await handle.closed;
+  expect(f.calls).toEqual(["snapshot.release", "acknowledge", "observation.release"]);
+});
+
+test("abandoned print consumption retains its result for later inspection", async () => {
+  const f = fixture();
+  f.attachment.handle = {
+    ...f.attachment.handle,
+    events: {
+      async *[Symbol.asyncIterator]() {
+        yield {
+          first_sequence: 1,
+          last_sequence: 1,
+          event: { type: "run_started", at: 1, lead_model: "test/model" },
+        };
+        throw new Error("observer failure");
+      },
+    },
+  };
+  const handle = await startHeadlessRun(f.kernel, params, "prompt");
+  const failure = handle.closed.catch((error: unknown) => error);
+  for await (const event of handle.events) {
+    expect(event.type).toBe("run_started");
+    break;
+  }
+  expect(await failure).toMatchObject({ message: "Headless observation was not fully consumed." });
+  expect(f.calls).toEqual(["snapshot.release", "observation.release"]);
 });

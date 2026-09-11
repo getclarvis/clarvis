@@ -343,7 +343,7 @@ The floating family is larger than the two historically measured entry points:
 | Surface | Mount path | Variable allocation risk | Current evidence |
 | ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker | remount +12.71; retained -0.23 MiB PSS/100 |
-| isolation and review pickers | `App` -> lazy retained `IsolationPicker` / `ReviewPicker` -> `ListPicker` -> `FloatFrame` | three fixed rows each; Isolation has an armed Host confirmation | Isolation +2.12/+1.23; Review +1.82/+1.34 MiB RSS/100 at 120x32/80x24; zero owner deltas |
+| isolation and review pickers | `App` -> lazy retained `IsolationPicker` / `ReviewPicker` -> `ListPicker` -> `FloatFrame` | Isolation has four fixed rows (Host/Sandbox/Docker/Podman) and an armed Host confirmation; Review has three | Isolation +2.12/+1.23; Review +1.82/+1.34 MiB RSS/100 at 120x32/80x24; zero owner deltas. Isolation numbers are historical three-row evidence |
 | provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement) |
 | activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
 | clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body | +0.44 MiB PSS/100 in the remount case; no confirmed slope |
@@ -1086,9 +1086,11 @@ The correction followed the attribution order and was widened beyond F1:
     every case returned live renderables, lifecycle passes and key layers to baseline. Negative
     endpoints mean warm-up memory was collected, not that closing a surface "saved" that amount.
 11. The retired combined `SafetyPresetPicker` passed its focused soak, but those numbers
-    are historical evidence only. The replacement three-row Isolation and Review
+    are historical evidence only. The replacement Isolation and Review
     pickers passed their own macOS native-render production-policy soaks under Bun 1.4.0 and OpenTUI
-    0.5.9. Across 100 measured cycles after ten warm-up cycles, Isolation measured +2.12 MiB RSS/100
+    0.5.9. Those Isolation samples used the then three-row Host/Sandbox/Docker picker; the current
+    picker also includes Podman. Across 100 measured cycles after ten warm-up cycles, Isolation
+    measured +2.12 MiB RSS/100
     at 120x32 and +1.23 at 80x24; Review measured +1.82 and +1.34, respectively. All four cases had
     zero renderable, lifecycle-pass, live-key-layer and cumulative-registration deltas. PSS and
     private-dirty are unavailable on macOS, so the harness enforced its RSS fallback ceiling.
@@ -1149,7 +1151,7 @@ Run every row below independently so one surface cannot inherit another's retain
 | controls | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle |
 | `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30 |
 | `AgentProfilePicker` | primary agent list; default-scope second step; empty and maximum practical lists |
-| `IsolationPicker` | three-row retained picker; direct-host armed-confirmation path |
+| `IsolationPicker` | four-row retained picker (Host/Sandbox/Docker/Podman); direct-host armed-confirmation path |
 | `ReviewPicker` | three-row retained picker; Off/Approval/Auto changes with Isolation held constant |
 | `CatalogPicker` | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window |
 | `ActivityDetail` | short plain text; long Markdown with code blocks and lists |

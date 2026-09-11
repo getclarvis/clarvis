@@ -61,7 +61,8 @@ test("the isolation picker selects minimal lazy Docker without changing review",
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Select isolation");
   expect(frame).toContain("Docker");
-  expect(frame).toContain("starts on first run");
+  expect(frame).toContain("Podman");
+  expect(frame).toContain("start on first run");
 
   press("down");
   press("return");
@@ -85,6 +86,67 @@ test("the isolation picker selects minimal lazy Docker without changing review",
   expect(retries).toEqual([true]);
   expect(notices).toEqual(["isolation: docker (global) — applies to the next run"]);
   expect(applied).toEqual([true]);
+  rendered.renderer.destroy();
+});
+
+test("the isolation picker selects minimal lazy Podman without Docker fallback", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const writes: Array<{ scope: string; patch: unknown }> = [];
+  const retries: true[] = [];
+  const effective = {
+    sandbox: {
+      type: "native" as const,
+      enabled: true,
+      availability: "required" as const,
+      filesystem: "workspace-write" as const,
+      network: "host" as const,
+      toolchains: { mode: "auto" as const },
+    },
+  };
+  const settings = {
+    effective: () => effective,
+    write: async (scope: string, patch: unknown) => {
+      writes.push({ scope, patch });
+      Object.assign(effective, patch as object);
+    },
+  } as unknown as SettingsAdapter;
+  const rendered = await openRender(
+    (() => (
+      <IsolationPicker
+        interaction={interactionWith(keymap)}
+        settings={settings}
+        runActive={() => false}
+        active={() => true}
+        retryRuntime={() => retries.push(true)}
+        notify={() => {}}
+        onClose={() => {}}
+        onApplied={() => {}}
+      />
+    )) as never,
+    { width: 110, height: 24 },
+  );
+  await rendered.renderOnce();
+  press("down");
+  press("down");
+  press("return");
+  await tick();
+  expect(writes).toEqual([
+    {
+      scope: "global",
+      patch: {
+        runtime: { backend: "podman" },
+        sandbox: {
+          type: "native",
+          enabled: true,
+          availability: "required",
+          filesystem: "workspace-write",
+          network: "host",
+          toolchains: { mode: "auto" },
+        },
+      },
+    },
+  ]);
+  expect(retries).toEqual([true]);
   rendered.renderer.destroy();
 });
 

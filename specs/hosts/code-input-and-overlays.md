@@ -195,7 +195,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
-| `IsolationPicker(props)` | Lazy retained `ListPicker` over Host, native Sandbox and lazy Docker, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
+| `IsolationPicker(props)` | Lazy retained `ListPicker` over Host, native Sandbox, lazy Docker and lazy Podman, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
 | `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto command review without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
@@ -635,10 +635,10 @@ order as the Agents window"`).
 ### `IsolationPicker` and `ReviewPicker`
 
 The two quick pickers reuse `ListPicker` but never combine their state. `IsolationPicker` marks the
-effective Host/Sandbox/Docker boundary, persists the global choice through `applyIsolation`, and
-arms `useArmedConfirm` before Host removes containment. Its Docker choice writes only
-`runtime.backend`, strengthens the native Sandbox fallback and asks the existing coordinator to
-retry on the next run; it does not start Docker from the picker. `ReviewPicker` marks
+effective Host/Sandbox/Docker/Podman boundary, persists the global choice through `applyIsolation`, and
+arms `useArmedConfirm` before Host removes containment. Its Docker or Podman choice writes only
+`runtime.backend`, keeps native Sandbox enabled, and asks the existing coordinator to
+retry on the next run; it does not start an engine from the picker. `ReviewPicker` marks
 Off/Approval/Auto, writes through `applyReviewMode` at the current scope, preserves command policy
 and leaves Isolation untouched. Both are lazy `retain-one` portal boundaries, so neither module
 enters first boot and each native tree is reused after first open. Production:
@@ -960,15 +960,16 @@ settled turn's persisted continuation; an empty session reports that there is no
     listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile,
     Isolation, Review and Catalog picker cases).
 44. **Isolation and Review are independent lazy retained overlays over the same write contracts as
-    Run Controls.** They mount only after `isolation.picker` or `review.picker` opens them, reuse
+    Settings > Isolation and Run Controls.** They mount only after `isolation.picker` or `review.picker` opens them, reuse
     `ListPicker`, cannot own keys while inactive, and cannot implement settings merges that differ
-    from Run Controls. Production: `packages/code/src/views/App.tsx`,
+    from those surfaces. Production: `packages/code/src/views/App.tsx`,
     `packages/code/src/views/overlays/IsolationPicker.tsx`,
     `packages/code/src/views/overlays/ReviewPicker.tsx`,
     `packages/code/src/features/run/isolation.ts` (`applyIsolation`), and
     `packages/code/src/features/run/review.ts` (`applyReviewMode`). Tests:
     `packages/code/tests/integration/app-shell-render.test.tsx`,
     `packages/code/tests/integration/isolation-review-picker-render.test.tsx`,
+    `packages/code/tests/integration/isolation-config-render.test.tsx`,
     `packages/code/tests/integration/run-controls-render.test.tsx`, and
     `packages/code/tests/integration/interaction.test.ts`.
 45. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero

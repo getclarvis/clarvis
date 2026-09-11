@@ -249,6 +249,7 @@ const VIEW_CONTRACT = [
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
   ["sandbox.config", "Sandbox", "internal", "settings"],
+  ["isolation.config", "Isolation", "internal", "settings"],
   ["theme.open", "Theme", "internal", "settings"],
   ["settings.open", "Settings", "slash", undefined],
   ["doctor.open", "Doctor", "slash", "inspect"],

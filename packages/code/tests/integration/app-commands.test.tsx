@@ -969,7 +969,12 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
 test("non-aliased hub children and folded toggles stay off the slash surface", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open", "capability-providers.open", "sandbox.config"]) {
+  for (const name of [
+    "controls.open",
+    "capability-providers.open",
+    "sandbox.config",
+    "isolation.config",
+  ]) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
     expect([name, byName.get(name)?.parent]).toEqual([
       name,
@@ -1006,6 +1011,8 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
   const { commands, calls, opened, dispose } = harness();
   expect(commands.route("settings.open", "sandbox")).toBe(true);
   expect(calls).toContain("view:sandbox.config");
+  expect(commands.route("settings.open", "isolation")).toBe(true);
+  expect(calls).toContain("view:isolation.config");
   expect(opened.at(-1)?.parent).toBe("settings.open");
   expect(commands.route("settings.open", "controls")).toBe(true);
   expect(calls).toContain("view:controls.open");
@@ -1053,6 +1060,7 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["marketplace.open", { surface: "internal", group: "navigate", parent: "extensions" }],
   ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["sandbox.config", { surface: "internal", group: "navigate", parent: "settings" }],
+  ["isolation.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["theme.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["updates.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["backend.reconnect", { surface: "slash", group: "actions", parent: "inspect" }],
@@ -1334,6 +1342,7 @@ const FACTORY_SMOKES = [
   "marketplace.open",
   "memory.config",
   "sandbox.config",
+  "isolation.config",
   "theme.open",
   "updates.open",
   "settings.open",

@@ -18,6 +18,7 @@ import {
 import { RUNTIME_PROTOCOL_LABEL, RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
 import { connectContainerSession, cleanupInterruptedContainerCreate } from "./container-session.ts";
 import { initializationControl } from "./initialization-control.ts";
+import { canonicalLocalImageId } from "./runtime-image.ts";
 import {
   miseCacheIdentity,
   prepareMiseCache,
@@ -181,9 +182,9 @@ function validImageInspect(value: unknown, imageDigest: string): boolean {
   const config = asRecord(root?.Config);
   const labels = asRecord(config?.Labels);
   const id = root?.Id;
-  const canonicalId = typeof id === "string" && /^[a-f0-9]{64}$/u.test(id) ? `sha256:${id}` : id;
   return (
-    canonicalId === imageDigest && labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION
+    canonicalLocalImageId(typeof id === "string" ? id : undefined) === imageDigest &&
+    labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION
   );
 }
 

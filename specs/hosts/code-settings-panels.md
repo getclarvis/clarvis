@@ -130,7 +130,8 @@ interface HubMenuItem { id: string; label: string; desc: string; cmd: string }  
 function HubMenu(host, deps: { title; items; openChild(cmd: string): void })      // packages/code/src/views/config/hub-menu.tsx
 ```
 
-`SettingsHub.ITEMS` (`packages/code/src/views/config/SettingsHub.tsx`) — ten entries, in order:
+`SETTINGS_ITEMS` (`packages/code/src/views/config/hub-items.ts`, re-exported as
+`SettingsHub.ITEMS`) — in order:
 
 | id | label | cmd |
 | --- | --- | --- |
@@ -140,10 +141,20 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `defaults` | Defaults | `defaults.open` |
 | `memory` | Memory | `memory.config` |
 | `sandbox` | Sandbox | `sandbox.config` |
+| `isolation` | Isolation | `isolation.config` |
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
 | `updates` | Updates | `updates.open` |
 | `controls` | Run controls | `controls.open` |
+
+`IsolationConfigPanel` is the dedicated global placement screen for Host, Sandbox, Docker or Podman.
+It writes through shared `applyIsolation` and drills to `sandbox.config` for native Sandbox fields
+rather than cloning them. Workspace settings cannot contribute a runtime. Docker copy states the
+required-Sandbox operational fallback; Podman copy states fail-closed startup. Production:
+`packages/code/src/views/config/IsolationConfigPanel.tsx` and
+`packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`). Test:
+`packages/code/tests/integration/isolation-config-render.test.tsx` and
+`packages/code/tests/unit/isolation.test.ts`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
@@ -1501,7 +1512,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts`).
 - `CapabilityProvidersPanel`, `AgentsPanel`, `RunControlsPanel`, `MemoryConfigPanel`,
-  `SandboxConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
+  `SandboxConfigPanel`, `IsolationConfigPanel`, `TasksHub`, `WorkflowsHub`, `SessionsHub`, `ThemeView`,
   `KeyboardView`, `DoctorView`, `ModelView`, `EffortView` all consume `view-host.tsx`'s toolkit; they
   belong to sibling documents ([hosts/code-domain-hubs.md](code-domain-hubs.md), [hosts/model-catalog.md](model-catalog.md),
   [execution/sandbox.md](../execution/sandbox.md), [capabilities/provider-executables.md](../capabilities/provider-executables.md)).
@@ -1565,9 +1576,9 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 3. ~~**The Settings hub test name disagrees with the item list.**~~ **Resolved:** the render test is
    driven directly from `SettingsHub.ITEMS`, asserts that every declared label is present, and is
-   titled "lists every settings destination ITEMS declares". It therefore follows the current nine
-   rows, including Keyboard, without maintaining a second list.
-   Production: `packages/code/src/views/config/SettingsHub.tsx` (`ITEMS`). Test:
+   titled "lists every settings destination ITEMS declares". It therefore follows `SETTINGS_ITEMS`,
+   including Isolation and Keyboard, without maintaining a second list.
+   Production: `packages/code/src/views/config/hub-items.ts` (`SETTINGS_ITEMS`). Test:
    `packages/code/tests/integration/settings-hub-render.test.tsx`.
 
 4. ~~**`ProvidersPanel.jumpToIssue` keeps a second, hand-written row table.**~~ **Resolved:** the

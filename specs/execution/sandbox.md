@@ -468,7 +468,9 @@ custom filesystem, network, environment and toolchain tuning but forces `enabled
 `availability: "required"`. The lazy runtime coordinator probes that policy after an operational
 Docker startup failure and before executing the run; an unavailable native backend fails closed
 instead of degrading to bare host execution. Image-integrity, policy and handshake failures do not
-enter this fallback, and a failure after guest execution starts is never replayed.
+enter this fallback, and a failure after guest execution starts is never replayed. Simple Podman
+selection has no `fallback` field and never enters this path; an operational Podman startup failure
+fails closed.
 
 Production: `packages/kernel/src/sandbox/policy.ts` (`effectiveSandboxSettings`),
 `packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`), and

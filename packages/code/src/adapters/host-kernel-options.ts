@@ -74,13 +74,16 @@ export function createCodeHostKernelOptions(
     runtimeFactory: {
       async create(value) {
         const local = await runtimeDependencies.loadLocalRuntime();
-        if (value.settings.backend !== "docker") return local.createLocalPodmanRuntime(value);
+        const resolveImage = (signal?: AbortSignal) =>
+          runtimeDependencies.resolveRuntimeImage({
+            currentVersion: runtimeDependencies.productVersion(),
+            ...(signal === undefined ? {} : { signal }),
+          });
+        if (value.settings.backend === "podman") {
+          return local.createLocalPodmanRuntime(value, { resolveImage });
+        }
         return local.createLocalDockerRuntime(value, {
-          resolveImage: (signal) =>
-            runtimeDependencies.resolveRuntimeImage({
-              currentVersion: runtimeDependencies.productVersion(),
-              ...(signal === undefined ? {} : { signal }),
-            }),
+          resolveImage,
           onRecipePreparation(name) {
             options.runtimeNotice(`Preparing Docker environment: ${name}`);
           },

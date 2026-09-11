@@ -324,8 +324,9 @@ function snapshot(
  *   Solid batch. At most two Markdown trees exist, and only during settlement. While content is
  *   streaming, a row high-water mark reserves any height an unstable trailing token already used;
  *   later syntax concealment cannot pull earlier transcript rows back down while that tree remains
- *   mutable. The atomic final-tree swap releases the reservation, and a response epoch also resets
- *   it while streaming continues.
+ *   mutable. After the atomic swap, the final tree's height is reset to `auto` so a short answer
+ *   cannot keep the streaming overlay's row count as blank space above the run outcome. A response
+ *   epoch also resets the reservation while streaming continues.
  */
 export function StableMarkdown(props: {
   conceal?: boolean;
@@ -375,6 +376,16 @@ export function StableMarkdown(props: {
         setActiveSlot(slot);
         if (previous !== slot) setters[previous](undefined);
       });
+      if (!value.streaming) {
+        queueMicrotask(() => {
+          const root = refs[slot]();
+          if (disposed || !root || slots[slot]()?.id !== value.id) return;
+          root.height = "auto";
+          const owner = root.parent;
+          if (owner !== undefined && owner !== null) owner.height = "auto";
+          renderer.requestRender();
+        });
+      }
       publicationRegistration?.ready();
     };
     const pending =

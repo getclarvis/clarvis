@@ -55,14 +55,17 @@ export type RuntimeConfig =
     }
   | {
       backend: "podman";
-      image_digest: string;
+      /** Advanced override. Omission selects the matching managed release image lazily. */
+      image_digest?: string;
+      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
       network?: "none" | "internet" | "outbound";
-      limits: RuntimeLimitsConfig;
-      executable: string;
-      connection: string;
+      limits?: Partial<RuntimeLimitsConfig>;
+      executable?: string;
+      /** Omission selects the local Podman connection at launch. */
+      connection?: string;
     };
 
-/** Advanced container ceilings; Docker fills omitted fields with product defaults. */
+/** Advanced container ceilings; omitted fields use product defaults. */
 export interface RuntimeLimitsConfig {
   cpu_count: number;
   memory_bytes: number;

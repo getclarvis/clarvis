@@ -11,16 +11,13 @@ import {
 } from "./local-container-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
 import { resolveDockerRuntimeRecipe } from "./runtime-recipe.ts";
+import { resolveContainerImageDigest, type RuntimeImageSelection } from "./runtime-image.ts";
 import { RuntimeLaunchError } from "./types.ts";
 import { initializationControl } from "./initialization-control.ts";
 
-type LocalRuntimeInput = RuntimeHostInput;
+export type { RuntimeImageSelection };
 
-/** A local development tag or release-manifest-pinned image reference. */
-export interface RuntimeImageSelection {
-  readonly reference: string;
-  readonly pull: boolean;
-}
+type LocalRuntimeInput = RuntimeHostInput;
 
 /** Deterministic host-effect seams for local Docker composition tests. */
 export interface LocalDockerRuntimeOptions extends LocalContainerRuntimeOptions {
@@ -32,9 +29,6 @@ export interface LocalDockerRuntimeOptions extends LocalContainerRuntimeOptions 
   /** Reports an uncached operator recipe before waiting for or performing its first build. */
   readonly onRecipePreparation?: (name: string) => void;
 }
-
-const LOCAL_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::[a-z0-9._-]+)?$/u;
-const PINNED_IMAGE = /^[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u;
 
 function dockerEnvironment(): Readonly<Record<string, string>> {
   return Object.fromEntries(
@@ -74,82 +68,6 @@ async function dockerConnection(
   return context;
 }
 
-function imageId(source: string): string | undefined {
-  try {
-    const parsed = JSON.parse(source) as unknown;
-    const item: unknown = Array.isArray(parsed) ? (parsed as unknown[])[0] : parsed;
-    if (typeof item !== "object" || item === null) return undefined;
-    const id = (item as { Id?: unknown }).Id;
-    return typeof id === "string" && /^sha256:[a-f0-9]{64}$/u.test(id) ? id : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveImageDigest(
-  configured: string | undefined,
-  control: DockerControl,
-  resolveImage: LocalDockerRuntimeOptions["resolveImage"],
-  signal?: AbortSignal,
-): Promise<string> {
-  if (configured !== undefined) return configured;
-  let selected: RuntimeImageSelection;
-  try {
-    selected =
-      (await resolveImage?.(signal)) ??
-      ({ reference: "clarvis-runtime:development", pull: false } as const);
-  } catch (cause) {
-    if (
-      typeof cause === "object" &&
-      cause !== null &&
-      "code" in cause &&
-      cause.code === "runtime_image_integrity"
-    ) {
-      throw new RuntimeLaunchError(
-        "invalid_launch_spec",
-        "Clarvis runtime image identity could not be verified",
-        { cause },
-      );
-    }
-    throw new RuntimeLaunchError(
-      "operational_failure",
-      "Clarvis runtime image could not be resolved",
-      {
-        cause,
-      },
-    );
-  }
-  if (
-    (selected.pull && !PINNED_IMAGE.test(selected.reference)) ||
-    (!selected.pull && !LOCAL_IMAGE.test(selected.reference))
-  ) {
-    throw new RuntimeLaunchError(
-      "operational_failure",
-      "Clarvis runtime image reference is invalid",
-    );
-  }
-  if (selected.pull) {
-    const pulled = await control.run(["pull", selected.reference], undefined, {
-      timeoutMs: 15 * 60_000,
-    });
-    if (pulled.exitCode !== 0) {
-      throw new RuntimeLaunchError("operational_failure", "Clarvis runtime image download failed");
-    }
-  }
-  const inspected = await control.run(["image", "inspect", selected.reference]);
-  if (inspected.exitCode !== 0) {
-    throw new RuntimeLaunchError("operational_failure", "Clarvis runtime image is not installed");
-  }
-  const digest = imageId(inspected.stdout);
-  if (digest === undefined) {
-    throw new RuntimeLaunchError(
-      "operational_failure",
-      "Docker returned an invalid runtime image id",
-    );
-  }
-  return digest;
-}
-
 /** Compose the concrete Docker backend only after the host selected it. */
 export async function createLocalDockerRuntime(
   input: LocalRuntimeInput,
@@ -184,12 +102,13 @@ export async function createLocalDockerRuntime(
       environment,
     });
   const preparing = initializationControl(control, input.signal);
-  const baseImageDigest = await resolveImageDigest(
-    input.settings.image_digest,
-    preparing,
-    options.resolveImage,
-    input.signal,
-  );
+  const baseImageDigest = await resolveContainerImageDigest({
+    configured: input.settings.image_digest,
+    control: preparing,
+    resolveImage: options.resolveImage,
+    engine: "Docker",
+    ...(input.signal === undefined ? {} : { signal: input.signal }),
+  });
   const imageDigest =
     input.settings.recipe === undefined
       ? baseImageDigest

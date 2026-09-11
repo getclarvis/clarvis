@@ -779,7 +779,7 @@ itself because guard mode is resolved from host settings it never sees"
   `code`, the judge therefore always falls back to `settings.defaultModel`/`CLARVIS_DEFAULT_MODEL`
   (§4.6) and `on_unsure`'s omitted-field behavior (§2.5, invariant 43); the wider fields are wired
   end-to-end but dead on this client's path.
-- **Isolation is separate.** Host/Sandbox/Docker selection writes no guard field, and a Review write
+- **Isolation is separate.** Host/Sandbox/Docker/Podman selection writes no guard field, and a Review write
   writes no runtime or Sandbox field. The header and Run Controls therefore report both axes rather
   than naming a combined posture (`packages/code/src/features/run/isolation.ts`,
   `packages/code/src/features/run/review.ts`,

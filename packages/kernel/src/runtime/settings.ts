@@ -12,7 +12,7 @@ const limits = z
   })
   .strict();
 
-/** Product-owned resource defaults used by the simple Docker selector. */
+/** Product-owned resource defaults used by the simple container selector. */
 export const DEFAULT_RUNTIME_LIMITS = {
   cpu_count: 2,
   memory_bytes: 4 * 1024 * 1024 * 1024,
@@ -62,11 +62,14 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
   z
     .object({
       backend: z.literal("podman"),
-      image_digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+      image_digest: z
+        .string()
+        .regex(/^sha256:[a-f0-9]{64}$/u)
+        .optional(),
       network: z.enum(["none", "internet", "outbound"]).default("outbound"),
-      limits,
-      executable: z.string().min(1),
-      connection: z.string().min(1),
+      limits: defaultedLimits,
+      executable: z.string().min(1).optional(),
+      connection: z.string().min(1).optional(),
     })
     .strict(),
 ]);
@@ -74,17 +77,18 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
 export type RuntimeSettingsInput = z.input<typeof runtimeSettingsSchema>;
 export type RuntimeSettingsBlock = z.output<typeof runtimeSettingsSchema>;
 
+type ResolvedEngineSettings<Backend extends "docker" | "podman"> = Omit<
+  Extract<RuntimeSettingsBlock, { backend: Backend }>,
+  "image_digest" | "executable" | "connection"
+> & {
+  image_digest: string;
+  executable: string;
+  connection: string;
+};
+
 /** A container block after host-local executable, context and image resolution. */
 export type ResolvedContainerRuntimeSettings =
-  | Extract<RuntimeSettingsBlock, { backend: "podman" }>
-  | (Omit<
-      Extract<RuntimeSettingsBlock, { backend: "docker" }>,
-      "image_digest" | "executable" | "connection"
-    > & {
-      image_digest: string;
-      executable: string;
-      connection: string;
-    });
+  ResolvedEngineSettings<"podman"> | ResolvedEngineSettings<"docker">;
 
 /** Kernel-owned last-wins runtime placement block; plugins cannot contribute it. */
 export const runtimeSettingsSpec: CapabilitySettingsSpec = {

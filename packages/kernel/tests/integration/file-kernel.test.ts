@@ -186,6 +186,8 @@ describe("createFileKernel", () => {
           creates += 1;
           expect(input.settings.backend).toBe("podman");
           if (input.settings.backend !== "podman") throw new Error("expected Podman settings");
+          const imageDigest = input.settings.image_digest;
+          if (imageDigest === undefined) throw new Error("expected Podman image digest");
           return {
             closed: false,
             executeRun: async () => {
@@ -198,7 +200,7 @@ describe("createFileKernel", () => {
               engineVersion: "5",
               hostPlatform: "linux",
               guestPlatform: "linux",
-              imageDigest: input.settings.image_digest,
+              imageDigest,
               runtimeProtocolRevision: "2",
               network: input.settings.network,
               limits: {

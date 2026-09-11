@@ -82,7 +82,7 @@ describe("code's internal architecture", () => {
     expect(host).toContain("serveLocalFileKernel(");
     expect(options).toContain("local.createLocalDockerRuntime(value, {");
     expect(options).toContain("onRecipePreparation(name)");
-    expect(options).toContain("local.createLocalPodmanRuntime(value)");
+    expect(options).toContain("local.createLocalPodmanRuntime(value, { resolveImage })");
   });
 
   it("does not tie process-owned memory recovery to TUI paint or connection recovery", () => {

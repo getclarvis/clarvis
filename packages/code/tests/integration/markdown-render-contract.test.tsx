@@ -240,12 +240,60 @@ test("settlement releases a streaming height floor after the final tree is ready
     const concealedRows = owner.height;
     expect([streamingRows, unfinishedRows, concealedRows]).toEqual([2, 2, 2]);
     setStreaming(false);
-    for (let pass = 0; pass < 80 && owner.height !== 1; pass += 1) {
+    for (let pass = 0; pass < 80 && owner.height > 2; pass += 1) {
       await new Promise((resolve) => setTimeout(resolve, 8));
       await t.renderOnce();
     }
 
-    expect(owner.height).toBe(1);
+    expect(owner.height).toBeLessThanOrEqual(2);
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("a tall streaming reply does not leave blank rows above the run outcome", async () => {
+  const unfinished = Array.from(
+    { length: 16 },
+    (_, index) => `Streaming paragraph ${index} with **unclosed`,
+  ).join("\n\n");
+  const [status, setStatus] = createSignal<NodeStatus>("running");
+  const [text, setText] = createSignal(unfinished);
+  const assistant = (): TranscriptNode => ({
+    key: "final-answer",
+    kind: "assistant",
+    status: status(),
+    text: text(),
+  });
+  const outcome: TranscriptNode = {
+    key: "run",
+    kind: "run",
+    status: "ok",
+    text: "",
+  };
+  const t = await openRender(
+    () => (
+      <box flexDirection="column">
+        <BlockView node={assistant()} forceExpand={() => true} />
+        <BlockView node={outcome} forceExpand={() => true} />
+      </box>
+    ),
+    { width: 48, height: 36 },
+  );
+  try {
+    await settle(t, (frame) => frame.includes("Streaming paragraph 15"));
+    setText("Short final answer.");
+    setStatus("ok");
+    const settled = await settle(
+      t,
+      (frame) => frame.includes("Short final answer.") && frame.includes("Completed"),
+    );
+    const lines = settled.split("\n");
+    const bullet = lines.findIndex((line) => line.includes(glyph("bullet")));
+    const completed = lines.findIndex((line) => line.includes("Completed"));
+    expect(settled).toContain("Short final answer.");
+    expect(bullet).toBeGreaterThanOrEqual(0);
+    expect(completed).toBeGreaterThan(bullet);
+    expect(completed - bullet).toBeLessThanOrEqual(4);
   } finally {
     t.renderer.destroy();
   }

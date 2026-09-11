@@ -172,7 +172,10 @@ neither is installed, candidate installation still succeeds for native use and r
 container image was not prefetched; selecting container isolation remains unavailable until an
 engine is installed. The launcher pins the RC and source revision; runtime
 resolution validates the matching image manifest and protocol. The ordinary `./dev-install.sh`
-continues to select the working checkout and locally built development image. Candidate installation
+selects the working checkout and builds the local `clarvis-runtime:development` image for each of
+Docker and Podman that is installed, independently, so a host with only one engine still completes.
+A missing engine is skipped; when every installed engine fails to build, installation fails closed.
+Candidate installation
 does not install a container engine, alter the working checkout, or replace the stable `clarvis`
 command.
 Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
@@ -508,7 +511,7 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-Isolation and command review are separate controls. `Ctrl+S` opens Host/Sandbox/Docker isolation
+Isolation and command review are separate controls. `Ctrl+S` opens Host/Sandbox/Docker/Podman isolation
 and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; `Alt+S` and `Alt+G` are their
 enhanced-path accelerators. On macOS those enhanced bindings render as Option when the terminal
 delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` expands or collapses
@@ -661,8 +664,8 @@ Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
 interpreters and task runners plus install, publish, deploy and migration
 commands remain reviewable. Existing lists — including an intentionally empty
 one — are never expanded or replaced. For a low-interruption posture with host containment, choose
-Isolation `Sandbox` or `Docker` and Review `Auto`; an allowlist is approval policy and does not make
-repository-controlled build or test code safe to run directly on the host.
+Isolation `Sandbox`, `Docker` or `Podman` and Review `Auto`; an allowlist is approval policy and does
+not make repository-controlled build or test code safe to run directly on the host.
 
 After a guarded shell call settles, its transcript header states the durable
 verdict and answerer, for example `auto-guard approved · judge` or
@@ -1314,9 +1317,11 @@ bun --filter @clarvis/code dev
 
 For testing this checkout from arbitrary project directories without rebuilding after source
 edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
-`bun install --frozen-lockfile`, installs the repository hook, and atomically writes a managed
+`bun install --frozen-lockfile`, installs the repository hook, builds `clarvis-runtime:development`
+for each of Docker and Podman that is on `PATH`, and atomically writes a managed
 `clarvis-develop` launcher to
-`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither engine still
+installs the launcher for native use. Re-running it updates that owned launcher;
 an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh
 --uninstall` removes only the launcher.
 
@@ -1413,8 +1418,9 @@ files drift receives the parallel `Plugin '<name>' changed executable files` war
 runtime MCP/hook/capability projections are withheld.
 
 The workspace header reports Review and effective Isolation as separate chips. A configured Docker
-choice begins as `Docker`, changes to the reported container engine after its lazy first-run launch,
-and reads `Sandbox` if an operational Docker startup failure activates the required native fallback.
+or Podman choice begins as that engine name and changes to the reported container engine after its
+lazy first-run launch. Docker reads `Sandbox` if an operational startup failure activates the
+required native fallback; Podman stays fail-closed instead of rewriting Isolation to Sandbox.
 `WorkspaceClientManager` supplies the selected local Podman or Docker composition through a dynamic
 `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
 Container isolation mounts the workspace already selected by Code directly at `/workspace`, so
@@ -1422,9 +1428,11 @@ changes appear on the host immediately and there is no Clarvis-owned copy/apply 
 Code inside a linked worktree uses that worktree as the separate checkout; Code does not create a
 second copy, commit, merge or remove it. A primary checkout or non-Git directory is edited directly.
 Run Controls states this direct-mount consequence explicitly.
-The simple Docker selection persists only `{ "backend": "docker" }`; advanced settings may override
-the executable, Docker context (`connection`), digest, network, fallback, resource ceilings and an
-operator-owned image recipe. Recipe scripts live under global `runtime-recipes/` and are referenced
+Settings > Isolation is the dedicated global placement screen for that same Host/Sandbox/Docker/Podman
+choice. Native Sandbox policy stays in Settings > Sandbox. The simple Docker or Podman selection
+persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced settings may override
+the executable, Docker context or Podman connection, digest, network, Docker fallback, resource
+ceilings and an operator-owned Docker image recipe. Recipe scripts live under global `runtime-recipes/` and are referenced
 by an absolute path from global `settings.json`; the TUI has no script editor and the guest has no
 mutation tool for either. For example:
 

@@ -35,6 +35,7 @@ import type { RunEvent } from "@clarvis/protocol";
 import { applyRunEvents, runEvent } from "../helpers/run-events.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
+import { SETTINGS_ITEMS } from "../../src/views/config/hub-items.ts";
 import { productVersion } from "../../src/cli-args.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
@@ -45,6 +46,12 @@ import { createGoalController } from "../../src/features/goal/controller.ts";
 import { goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
+
+function settingsHubIndex(id: (typeof SETTINGS_ITEMS)[number]["id"]): number {
+  const index = SETTINGS_ITEMS.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error(`missing settings item ${id}`);
+  return index;
+}
 
 function press(
   t: Awaited<ReturnType<typeof openRender>>,
@@ -1103,7 +1110,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   await t.renderOnce();
   t.mockInput.pressEnter();
   await captureUntil(t, "Run controls");
-  for (let index = 0; index < 7; index++) press(t, "down");
+  for (let index = 0; index < settingsHubIndex("keyboard"); index++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
   const keyboardView = await captureUntil(t, "Terminal: test-kitty");
@@ -3223,7 +3230,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   await t.renderOnce();
   t.mockInput.pressEnter();
   await captureUntil(t, "Run controls");
-  for (let i = 0; i < 6; i++) press(t, "down");
+  for (let i = 0; i < settingsHubIndex("theme"); i++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
   await captureUntil(t, "contrast checker");

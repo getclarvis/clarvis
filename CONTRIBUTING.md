@@ -30,9 +30,11 @@ mise install
 ./dev-install.sh
 ```
 
-The development installer performs the frozen dependency install, configures `.githooks`, and
+The development installer performs the frozen dependency install, configures `.githooks`, builds
+`clarvis-runtime:development` for each of Docker and Podman that is installed, and
 creates a managed `clarvis-develop` launcher in
-`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. It records this checkout and Bun binary,
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A missing engine is skipped, so a
+Docker-only or Podman-only host still completes. It records this checkout and Bun binary,
 so the command can be run from another project's directory while loading the current Clarvis
 TypeScript sources instead of a release or stale bundle:
 

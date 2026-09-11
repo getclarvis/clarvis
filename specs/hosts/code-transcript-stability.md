@@ -552,12 +552,14 @@ handoff snapshot until the measured committed owner is visible at the same flow 
 cannot create an empty frame, duplicate row or vertical jump. Later mutable content in that same
 projection remains after the handoff throughout the swap.
 For streaming Markdown, the mutable tree's row-height high-water mark remains active only until the
-final syntax tree is ready. Its atomic publication swap releases that floor with the tree change, so
-a shorter final rendering cannot leave the old streaming height as blank transcript rows before the
-run outcome or a later message. Production: `StableMarkdown` in
+final syntax tree is ready. The preparing final tree keeps its intrinsic height and must not inherit
+the streaming overlay's row count. Its atomic publication swap releases that floor with the tree
+change, so a shorter final rendering cannot leave the old streaming height as blank transcript rows
+before the run outcome or a later message. Production: `StableMarkdown` in
 `packages/code/src/ui/patterns/stable-syntax.tsx`. Test:
 `packages/code/tests/integration/markdown-render-contract.test.tsx` (`settlement releases a streaming
-height floor after the final tree is ready`).
+height floor after the final tree is ready` and `a tall streaming reply does not leave blank rows
+above the run outcome`).
 
 History ownership extends through the last resident publication, including older virtualized
 batches. If several stages seal while a full-region view is active, initial history admission may

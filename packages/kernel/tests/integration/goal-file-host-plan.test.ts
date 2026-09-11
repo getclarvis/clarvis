@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import type { ElicitationRequest } from "@clarvis/protocol";
+import type { ElicitationRequest, HostedRunAttachment } from "@clarvis/protocol";
 import { runGoalFileHostJourney } from "../helpers/goal-file-host-journey.ts";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
@@ -118,19 +118,34 @@ describe("goal plan review through the file host and IPC", () => {
       async () => (await f.client.goals.get("conversation")).physical_run !== undefined,
     );
     const view = await f.client.goals.get("conversation");
-    const attached = await f.client.hosting!.attach({
-      execution_id: view.physical_run!.execution_id,
-      host_generation: "generation",
-      control: "acquire",
+    let attached: HostedRunAttachment | undefined;
+    await f.until(async () => {
+      try {
+        attached = await f.client.hosting!.attach({
+          execution_id: view.physical_run!.execution_id,
+          host_generation: "generation",
+          control: "acquire",
+        });
+        return true;
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          "code" in error &&
+          error.code === "conflict" &&
+          error.message === "run is still preparing"
+        )
+          return false;
+        throw error;
+      }
     });
     const questions: ElicitationRequest[] = [];
-    attached.handle.onElicit((question) => questions.push(question));
+    attached!.handle.onElicit((question) => questions.push(question));
     await f.until(() => questions.length === 1);
     expect(questions[0]!.kind).toBe("plan_review");
     await expect(access(join(f.workspaceRoot, "result.txt"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    await attached.handle.respond({
+    await attached!.handle.respond({
       id: questions[0]!.id,
       action: "accept",
       content: { decision: "approve" },

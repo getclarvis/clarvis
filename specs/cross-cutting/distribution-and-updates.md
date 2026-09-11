@@ -179,6 +179,14 @@ must be regular non-linked files when present and are revalidated immediately be
 Archive creation, POSIX checksum parsing/calculation, and POSIX extraction all force the portable
 `C` locale, so an unsupported inherited locale cannot add a warning or alter archive/checksum
 interpretation.
+Stable installation and self-update are independent of container engines. The POSIX and PowerShell
+installers download, verify, smoke, and activate the target-native portable archive without probing
+or invoking Docker or Podman. Clarvis defaults to its native runtime; an engine becomes necessary
+only when the operator selects container isolation after installation. Production: `install.sh`,
+`install.ps1`, `packages/code/src/update/installation.ts` (`verifyStagedRelease`), and
+`packages/kernel/src/file-kernel.ts` (`FileKernel`). Test:
+`packages/code/tests/architecture/artifact-contract.test.ts` (`portable installers remain independent
+of container engines`) and `packages/code/tooling/release/installer-smoke.ts` (`main`).
 Only then does the installer store the ownership marker, activate the version, and atomically
 replace its own marked launcher. The stable launcher validates the `current` identifier before using
 it in a path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard
@@ -312,7 +320,10 @@ The distribution repository accepts new stable releases only. Candidate runtime 
 GHCR package names associated with the source repository and are recorded in `runtime-candidate.json`
 on source prereleases. Installable candidates add `installation: "source-v1"` to that schema-1
 manifest. `dev-install.sh --candidate [tag]` installs the published source snapshot with the
-candidate's pinned Bun version and pulls its Docker image before activation; candidates do not
+candidate's pinned Bun version. It prefetches and verifies the image through an available Docker or
+Podman engine; with no engine it activates the native-capable source candidate and reports that
+container isolation remains unavailable. Failure from every installed engine prevents activation;
+candidates do not
 carry portable stable installers. The shared reader requires the exact manifest key set, RC tag,
 base product version, source repository and revision, Linux platform pair, protocol revision, and
 candidate-only immutable image references. Existing image-only candidates are refused rather than

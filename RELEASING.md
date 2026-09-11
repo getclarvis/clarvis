@@ -62,10 +62,12 @@ a deterministic model provider; they do not establish a live subscription result
 prerelease attaches `runtime-candidate.json`, which is deliberately separate from the stable manifest.
 New installable candidates declare `installation: "source-v1"`. Use `./dev-install.sh --candidate`
 for the newest published RC among the latest 100 source releases, or supply an exact RC tag. This
-installs an isolated source checkout using the candidate's pinned Bun and pulls its Docker image
-before replacing `clarvis-develop`; Git and Docker must already be available. The existing image-only
+installs an isolated source checkout using the candidate's pinned Bun. An available Docker or Podman
+engine prefetches and verifies the image before `clarvis-develop` is replaced; without either engine,
+the native-capable candidate is installed and container isolation remains unavailable. Git must be
+available. The existing image-only
 RCs cannot be installed this way. The stable portable installer and updater remain separate.
-Candidate source/image matching is enforced again on Docker runtime initialization. Previous
+Candidate source/image matching is enforced again on container runtime initialization. Previous
 candidate checkouts and images are retained; reinstall selects a newer candidate explicitly.
 The root version remains the prepared final version; the RC tag and candidate channel identify
 these non-stable images. No stable installer is published from an RC.

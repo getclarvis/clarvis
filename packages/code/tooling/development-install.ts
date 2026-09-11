@@ -77,7 +77,7 @@ export function developmentInstallHelp(): string {
     "",
     `Default: install ${launcherName} from this checkout without building or downloading a release.`,
     "",
-    "  --candidate [tag]  install a published RC and its Docker image (latest by default)",
+    "  --candidate [tag]  install a published RC and prefetch its container image when possible",
     "  --clear      delete global state and managed temporary workspaces before installing",
     `  --uninstall  remove only the managed ${launcherName} launcher`,
     "  --help       print this help and exit",
@@ -424,7 +424,11 @@ async function main(): Promise<void> {
       bunVersion: Bun.version,
     });
     console.log(`Installed ${result.manifest.tag} at ${result.checkout}.`);
-    console.log(`Docker image: ${result.manifest.runtime_image}`);
+    console.log(
+      result.imageEngine === undefined
+        ? "Container image was not prefetched because Docker and Podman are unavailable; native mode remains usable."
+        : `Container image (${result.imageEngine}): ${result.manifest.runtime_image}`,
+    );
     console.log(
       `Run ${result.launcher}; rerun --candidate to update. Previous checkouts are retained.`,
     );

@@ -94,3 +94,25 @@ test("memory reads lead with what was asked for", () => {
     "(bun install, regex=true)",
   );
 });
+
+test("configuration calls show their authored scope and path without mutation payloads", () => {
+  expect(
+    sig("configure_clarvis", {
+      operation: "write",
+      root: "workspace_clarvis",
+      path: "agents/reviewer.md",
+      content: "secret body",
+      expected_revision: "revision",
+    }),
+  ).toBe("(.clarvis/agents/reviewer.md)");
+  expect(
+    sig("configure_clarvis", {
+      operation: "read",
+      root: "global_agents",
+      path: "skills/reviewer/SKILL.md",
+    }),
+  ).toBe("(global:.agents/skills/reviewer/SKILL.md)");
+  expect(sig("configure_clarvis", { operation: "list", root: "workspace_agents", path: "" })).toBe(
+    "(.agents)",
+  );
+});

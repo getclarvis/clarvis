@@ -133,6 +133,15 @@ describe("independent local kernel process", () => {
         record.host_generation,
       );
     }
+    await expect(
+      connectOrLaunchLocalKernel({ ...f.options, artifactId: "different-build" }),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      message: expect.stringContaining("work in progress"),
+    });
+    expect((await readLocalHostConnection(f.identity))!.host_generation).toBe(
+      record.host_generation,
+    );
     await writeFile(join(f.workspaceRoot, "continue.flag"), "continue");
     await until(() =>
       access(join(f.workspaceRoot, "after-exit.json")).then(
@@ -184,7 +193,7 @@ describe("independent local kernel process", () => {
     await next.client.close();
   });
 
-  test("concurrent launchers share one generation and refuse a live incompatible artifact", async () => {
+  test("concurrent launchers share one generation and replace an idle incompatible artifact", async () => {
     const f = await fixture();
     const clients = await Promise.all([
       connectOrLaunchLocalKernel(f.options),
@@ -195,12 +204,15 @@ describe("independent local kernel process", () => {
       clients[1]!.client.capabilities.hosting,
     );
     const first = await readLocalHostConnection(f.identity);
-    await expect(
-      connectOrLaunchLocalKernel({ ...f.options, artifactId: "different-build" }),
-    ).rejects.toMatchObject({ code: "unsupported" });
-    expect((await readLocalHostConnection(f.identity))!.host_generation).toBe(
+    const replacement = await connectOrLaunchLocalKernel({
+      ...f.options,
+      artifactId: "different-build",
+    });
+    cleanups.push(() => replacement.client.close());
+    expect(replacement.client.capabilities.hosting!.host_generation).not.toBe(
       first!.host_generation,
     );
+    expect((await readLocalHostConnection(f.identity))!.artifact_id).toBe("different-build");
     for (const { client } of clients) await client.close();
   });
 });

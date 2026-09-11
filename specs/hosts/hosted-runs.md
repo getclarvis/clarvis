@@ -663,11 +663,15 @@ reject; an absent record does not authorize replacing a live lease or replaying 
 environment snapshot. It preserves policy while binding `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`
 to the selected canonical roots. Child stdio is independent of the TUI. Linux/macOS and Windows have
 explicit detachment policies; `unref` releases the parent wait. Launch waits at most 30 seconds by
-default, configurable up to 120 seconds. It retries discovery/connection only, never a mutation.
-A live incompatible artifact/wire is refused without stopping or replacing the host. A timeout
-reports unconfirmed startup. `bin.ts` accepts the strict private `--local-host` bootstrap mode while
-preserving ordinary stdio serving. Selecting and retaining the installed artifact is the application
-composition's responsibility, not authority supplied over RPC.
+default, configurable up to 120 seconds. It retries discovery/connection without replaying ordinary
+mutations. A live host with the same wire and effective operator policy accepts an artifact transition only
+through its authenticated local control and only while idle. The new launcher requests restart,
+waits for the prior generation to retire, and then starts its selected artifact. Active physical work
+refuses the transition and remains owned by the prior process. A wire mismatch still requires the
+original compatible installation because the new client cannot assume control-protocol compatibility.
+A timeout reports unconfirmed startup. `bin.ts` accepts the strict private `--local-host` bootstrap
+mode while preserving ordinary stdio serving. Selecting and retaining the installed artifact is the
+application composition's responsibility, not authority supplied over RPC.
 
 Reuse also requires the same resolved operator execution policy. The identity covers the explicit
 non-secret loop projection and the enabled/confine/grant tool policy; raw environment values,

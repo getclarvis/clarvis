@@ -1,5 +1,6 @@
 import { toolIdentity } from "../../adapters/tool-identity.ts";
 import { truncateEnd, truncateStart } from "../truncate.ts";
+import { AGENTS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 
 const VALUE_MAX = 56;
 const SIGNATURE_MAX = 72;
@@ -55,6 +56,13 @@ const SIGNATURES: Record<string, SignatureSpec> = {
   transition_plan_task: { primary: ["task_id", "status"] },
 };
 
+const CONFIGURATION_ROOTS: Readonly<Record<string, string>> = {
+  global_clarvis: `global:${CLARVIS_DIR}`,
+  workspace_clarvis: CLARVIS_DIR,
+  global_agents: `global:${AGENTS_DIR}`,
+  workspace_agents: AGENTS_DIR,
+};
+
 function formatString(key: string, v: string): string {
   const s = v.replace(/\s+/g, " ").trim();
   return PATH_KEYS.has(key) ? truncateStart(s, VALUE_MAX) : truncateEnd(s, VALUE_MAX);
@@ -88,7 +96,14 @@ export function formatToolCall(
   toolName: string,
   args: Record<string, unknown>,
 ): string {
-  const spec = SIGNATURES[toolIdentity(mcpName, toolName)];
+  const identity = toolIdentity(mcpName, toolName);
+  if (identity === "configure_clarvis") {
+    const root = typeof args.root === "string" ? CONFIGURATION_ROOTS[args.root] : undefined;
+    const path = typeof args.path === "string" ? args.path : undefined;
+    const target = root === undefined ? "" : path ? `${root}/${path}` : root;
+    return `(${truncateStart(target, SIGNATURE_MAX)})`;
+  }
+  const spec = SIGNATURES[identity];
   const parts: string[] = [];
   if (spec) {
     for (const k of spec.primary) if (k in args) parts.push(formatValue(k, args[k]));

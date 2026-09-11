@@ -19,6 +19,9 @@ describe("shipped configuration skill", () => {
       { name: "clarvis-configure", provenance: { source: "builtin" } },
     ]);
     expect((await service.getPrompt("clarvis-configure"))[0]?.content).toContain("can_spawn");
+    expect((await service.getPrompt("clarvis-configure"))[0]?.content).toContain(
+      "/clarvis-configure <requested change>",
+    );
     expect(renderSkillCatalog(skills.listSkills())).not.toContain("## Working procedure");
     expect(skills.loadSkill("missing")).toBeUndefined();
     expect(() => skills.readResource("clarvis-configure", "keys.json")).toThrow();

@@ -146,7 +146,9 @@ discovered generation or launches the application-selected artifact without inhe
 Discovery retiring during a read is treated as absent; privacy and other I/O failures still reject.
 It compares a non-secret identity of resolved tool/loop policy before reusing a live host. Changed
 policy requires reconnecting with the original policy and explicitly requesting an idle restart;
-refusal preserves admitted work. A live incompatible artifact is also refused. The kernel binary accepts
+refusal preserves admitted work. A live host with the same wire and operator policy is replaced when
+its artifact differs and it accepts an idle restart; active work refuses the transition. A wire mismatch
+still requires the original compatible installation. The kernel binary accepts
 the private `--local-host` bootstrap mode; ordinary stdio hosting remains available. New generations
 retain terminal discovery metadata and mark previously live references unknown without restoring
 execution or consent. An operator can explicitly resolve an old unknown entry after verifying all
@@ -422,7 +424,9 @@ context; `executable` and `connection` override those choices. Its backend requi
 uses the resulting local image ID as `runtime.image_digest`, makes the image root read-only,
 bounds the non-executable `/tmp`, and admits the selected workspace bind, its exact read-only
 overlays, optional linked-worktree Git metadata, plus the labelled workspace/image-specific `/mise`
-volume. It deliberately uses a private bridge rather than host networking. The cache is partitioned
+volume. Bind source and target values are encoded as complete fields for the engines' `--mount` CSV
+parser, so commas in valid host or guest paths do not split the mount declaration. It deliberately
+uses a private bridge rather than host networking. The cache is partitioned
 by effective UID/GID as well as workspace and image. Rootful Docker runs as the invoking operator's
 numeric UID/GID; rootless Docker uses its operator-mapped root. Rootful `userns-remap` is refused
 because the bind identity cannot be preserved. A bounded, networkless initializer with only the cache
@@ -886,6 +890,14 @@ authored files in the four global/workspace Clarvis/shared-agent roots. `edit` r
 matching snippet against the last read revision. Keys, subscriptions, auth, trust and private state
 are excluded. The run executes on the host without sandbox/container or extension/shell execution.
 Consent lasts only in the currently open TUI session; resume or reconnect requires approval again.
+It is published as one standalone transcript agent: every `configure_clarvis` read or mutation is
+visible as a normal tool call, live and after replay, and no child agent is spawned. The transcript
+labels the concrete list/read/write/edit/delete action and its scoped authored path while keeping
+content, revisions and edit snippets out of trace storage. An approved
+workspace (including an initially inert workspace) retains trust across these operator-authorized
+workspace mutations only when the resulting revision matches the authorized target and every other
+executable input remains unchanged. Concurrent drift leaves the resulting surface withheld; an
+already unapproved or changed workspace is never approved by file consent.
 See [self-configuration.md](../../specs/hosts/self-configuration.md) for the path policy, volatile
 identity and explicit filesystem limits. Normal turns retain their configured runtime.
 
@@ -893,8 +905,10 @@ The file kernel includes `clarvis-configure`, a user-invocable skill with its bo
 [`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts). It ships in the executable,
 requires no `SKILL.md` or first-run scaffolding, and remains available with an empty custom
 Extension Profile. Agents carrying `use_skills` can load it through `load_skill`; clients can invoke
-it through the ordinary skills service. Disabling skills through the host or environment also
-disables this builtin.
+it through the ordinary skills service. Loading it during an ordinary turn grants no configuration
+authority: the guide directs changes to `/clarvis-configure`, and native file-mutation tools reject
+workspace `.clarvis` and `.agents` targets before guard review. Disabling skills through the host or
+environment also disables this builtin.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
 models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,

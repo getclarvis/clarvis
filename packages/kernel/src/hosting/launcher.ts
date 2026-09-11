@@ -131,11 +131,36 @@ export async function connectOrLaunchLocalKernel(
           "conflict",
           "active local host has different operator execution policy; reconnect using its original policy and request an idle host restart before applying changed policy",
         );
-      if (record.wire_version !== CLARVIS_WIRE_VERSION || record.artifact_id !== options.artifactId)
+      if (record.wire_version !== CLARVIS_WIRE_VERSION)
         throw kernelError(
           "unsupported",
           "active local host requires its original compatible installation",
         );
+      if (record.artifact_id !== options.artifactId) {
+        let previous: RemoteKernel | undefined;
+        try {
+          previous = await connect(record, identity, deadline, logger);
+          if (previous.localHost === undefined)
+            throw kernelError(
+              "unsupported",
+              "active local host does not support a safe installation transition",
+            );
+          await previous.localHost.requestRestart();
+        } catch (error) {
+          const code =
+            typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code === "conflict" && previous !== undefined)
+            throw kernelError(
+              "conflict",
+              "active local host from another installation has work in progress; wait for it to finish or reconnect using the original installation",
+            );
+          if (code !== "unavailable" && code !== "ECONNREFUSED" && code !== "ENOENT") throw error;
+        } finally {
+          await previous?.close();
+        }
+        await delay(Math.min(50, Math.max(1, deadline - performance.now())));
+        continue;
+      }
       try {
         return { identity, client: await connect(record, identity, deadline, logger) };
       } catch (error) {

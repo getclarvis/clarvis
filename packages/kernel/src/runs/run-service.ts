@@ -13,8 +13,17 @@ import type {
 } from "@clarvis/protocol";
 import type { EventStreamOptions } from "../core/event-stream.ts";
 import { DEFAULT_INGEST_CLOSE_GRACE_MS } from "./memory-ingest-phase.ts";
-import { capabilityEventToProto, engineEventToProto } from "./map-events.ts";
-import { engineResultToProto, storedToDetail, summaryToProto } from "./map-result.ts";
+import {
+  capabilityEventToProto,
+  engineEventToProto,
+  nativeConfigurationEventToProto,
+} from "./map-events.ts";
+import {
+  engineResultToProto,
+  nativeConfigurationResultToProto,
+  storedToDetail,
+  summaryToProto,
+} from "./map-result.ts";
 import { kernelError } from "../core/errors.ts";
 import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
@@ -164,7 +173,9 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
                 },
           onEvent: (ev) => {
             goal?.observe(ev);
-            const mapped = engineEventToProto(ev, logger);
+            const mapped = configuration
+              ? nativeConfigurationEventToProto(ev, logger)
+              : engineEventToProto(ev, logger);
             if (mapped !== null) context.emit(mapped);
           },
           onCapabilityEvent: (event) => {
@@ -183,7 +194,9 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
               rawBody:
                 prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
             });
-        return engineResultToProto(outcome.executionId, outcome.response);
+        return configuration
+          ? nativeConfigurationResultToProto(outcome.executionId, outcome.response)
+          : engineResultToProto(outcome.executionId, outcome.response);
       },
     });
   }

@@ -93,6 +93,25 @@ test("read_image with no path arg renders just the marker", async () => {
   expect(out).toContain("[image]");
 });
 
+test("native configuration renders its concrete action and scoped path without content", async () => {
+  const out = await frame(
+    toolNode({
+      mcpName: "configure_clarvis",
+      args: {
+        operation: "write",
+        root: "workspace_clarvis",
+        path: "agents/reviewer.md",
+        content: "private configuration body",
+      },
+      result: "Write completed.",
+    }),
+  );
+  expect(out).toContain("Write configuration");
+  expect(out).toContain(".clarvis/agents/reviewer.md");
+  expect(out).toContain("Write completed.");
+  expect(out).not.toContain("private configuration body");
+});
+
 test("grep content mode groups matches by path and clamps past the line budget", async () => {
   const rows = (n: number, path: string): string =>
     Array.from({ length: n }, (_, i) => `${path}:${i + 1}:line ${i + 1}`).join("\n");

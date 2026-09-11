@@ -234,7 +234,11 @@ After approving its elicitation, that agent can list, read, write, edit and dele
 `~/.clarvis`, `<workspace>/.clarvis`, `~/.agents` and `<workspace>/.agents`, with credentials and
 private state excluded. It executes on the host without sandbox or container, using only the
 configuration file tool and questions. Approval is reused while that session is live in the TUI;
-closing it and resuming requires a new approval. No authorization is saved in session history.
+closing it and resuming requires a new approval. No authorization is saved in session history. The
+turn remains a single standalone transcript: its file reads and mutations appear as ordinary tool
+calls both live and after reconciliation, with no synthetic subagent card. Each row names the
+concrete configuration action and scoped authored path; file contents, CAS revisions and edit
+snippets are not retained in the trace.
 See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 The app uses a file-backed kernel. Workspace configuration lives under
@@ -1304,6 +1308,10 @@ edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml
 `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
 an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh
 --uninstall` removes only the launcher.
+
+When the selected workspace still has a same-wire host from another installation, startup requests
+an authenticated idle restart and continues with the new artifact. Physical work keeps the prior
+host alive and the error directs the operator back to that installation until the work finishes.
 
 `clarvis-develop --empty-workspace` allocates a different empty
 `/tmp/clarvis-development-temp/workspace-*` directory on every invocation and starts Clarvis with

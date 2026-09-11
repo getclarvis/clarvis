@@ -95,11 +95,16 @@ Git hook, and atomically creates a marked `clarvis-develop` regular file without
 unmanaged destination. The launcher embeds the absolute checkout and Bun paths, does not change the
 caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`; it therefore
 tests the current sources from another workspace without a release or Code build. Reinstallation
-updates only the marked launcher and `--uninstall` removes only that file. Production:
-`dev-install.sh` and `packages/code/tooling/development-install.ts`
-(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`). Test:
+updates only the marked launcher and `--uninstall` removes only that file. Application startup uses
+the authenticated local-host transition in `connectOrLaunchLocalKernel`: a same-wire prior artifact
+is replaced only after it accepts an idle restart, while active physical work preserves the prior
+generation. Production: `dev-install.sh`, `packages/code/tooling/development-install.ts`
+(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`) and
+`packages/kernel/src/hosting/launcher.ts` (`connectOrLaunchLocalKernel`). Test:
 `packages/code/tests/unit/development-install.test.ts` (delegation, caller-workspace preservation,
-source selection, ownership refusal, update, and uninstall cases).
+source selection, ownership refusal, update, and uninstall cases) and
+`packages/kernel/tests/integration/local-host-process.test.ts` (idle artifact transition and active
+work refusal).
 
 The explicit `--candidate [tag]` mode installs a published source prerelease into a separate unique
 checkout below `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`. Without a tag it chooses

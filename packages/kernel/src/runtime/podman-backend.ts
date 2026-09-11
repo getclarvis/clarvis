@@ -1,4 +1,5 @@
 import {
+  containerMountField,
   guestWorkspacePath,
   noContainerCapabilities,
   readContainerInspection,
@@ -92,16 +93,16 @@ function networkArgs(spec: RuntimeLaunchSpec): readonly string[] {
 function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
   return [
     "--mount",
-    `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true,relabel=shared`,
+    `type=bind,${containerMountField("source", spec.workspaceRoot)},target=/workspace,rw=true,relabel=shared`,
     ...spec.readOnlyWorkspacePaths.flatMap((path) => [
       "--mount",
-      `type=bind,source=${path},target=${guestWorkspacePath(spec, path)},ro=true,relabel=shared`,
+      `type=bind,${containerMountField("source", path)},${containerMountField("target", guestWorkspacePath(spec, path))},ro=true,relabel=shared`,
     ]),
     ...(spec.gitCommonDir === undefined
       ? []
       : [
           "--mount",
-          `type=bind,source=${spec.gitCommonDir},target=${spec.gitCommonDir},rw=true,relabel=shared`,
+          `type=bind,${containerMountField("source", spec.gitCommonDir)},${containerMountField("target", spec.gitCommonDir)},rw=true,relabel=shared`,
         ]),
   ];
 }

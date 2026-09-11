@@ -167,6 +167,14 @@ still reviews them, but this option is not a filesystem-immutability boundary an
 modify files its operating-system identity may write. Nothing here executes a helper merely because
 its skill was selected.
 
+Native file-mutation tools also protect the workspace-authored Clarvis roots resolved by
+`configurationRoots`. Reads remain available, including copying a configuration file to an
+ordinary workspace destination. Writes targeting those roots fail before guard review and direct
+the operator to `/clarvis-configure <change>`, whose kernel-owned route asks for consent.
+Project-wide `replace` excludes both roots while continuing over ordinary workspace files. Command
+tools retain the separate shell and sandbox posture above; the builtin configuration guide forbids
+using them as an alternate writer.
+
 A host may additionally pass existing `temporaryRoots`. Every native tool,
 guarded path analysis, and native sandbox admits every listed root; `shell` and
 `monitor_start` expose the first one as `TMPDIR`, `TEMP`, and `TMP`. The standalone

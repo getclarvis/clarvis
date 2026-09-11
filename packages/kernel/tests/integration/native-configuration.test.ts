@@ -56,6 +56,13 @@ it("elicits before native configuration, edits through the real loop, and preser
         new_text: "thoroughly",
       }),
       { text: "Reviewer configured. Workspace trust is a separate operator action." },
+      operation({
+        operation: "write",
+        root: "workspace_clarvis",
+        path: "agents/auditor.md",
+        content: "---\ngrants: [read_workspace]\n---\nAudit only.\n",
+        expected_revision: null,
+      }),
       { text: "The configuration session remains authorized." },
     ],
   });
@@ -95,6 +102,7 @@ it("elicits before native configuration, edits through the real loop, and preser
       });
     let approvals = 0;
     const first = await start();
+    const firstEvents = Array.fromAsync(first.events);
     first.onElicit((request) => {
       approvals++;
       expect(request.kind).toBe("configuration_access");
@@ -107,7 +115,7 @@ it("elicits before native configuration, edits through the real loop, and preser
         content: { answer: "allow_session" },
       });
     });
-    const result = await first.done;
+    const [result, events] = await Promise.all([first.done, firstEvents]);
     expect(result.status).toBe("completed");
     expect(result.result).toContain("Reviewer configured");
     expect(nativeRuns).toBe(1);
@@ -116,13 +124,85 @@ it("elicits before native configuration, edits through the real loop, and preser
     expect(readFileSync(join(workspacePaths(workspaceRoot).clarvisDir, path), "utf8")).toBe(
       changed,
     );
+    expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("trusted");
+    expect(
+      events
+        .filter(
+          (event): event is Extract<(typeof events)[number], { type: "tool_call" }> =>
+            event.type === "tool_call" &&
+            (event.tool === "configure_clarvis" || event.server === "configure_clarvis"),
+        )
+        .map((event) => event.agent),
+    ).toEqual(["lead", "lead", "lead", "lead"]);
+    expect(
+      events
+        .filter(
+          (event): event is Extract<(typeof events)[number], { type: "tool_call" }> =>
+            event.type === "tool_call" &&
+            (event.tool === "configure_clarvis" || event.server === "configure_clarvis"),
+        )
+        .map((event) => ({ arguments: event.arguments, result: event.result })),
+    ).toEqual([
+      {
+        arguments: { operation: "read", root: "global_clarvis", path: "keys.json" },
+        result: "This path is outside authored configuration access.",
+      },
+      {
+        arguments: { operation: "write", root: "workspace_clarvis", path },
+        result: "Write completed.",
+      },
+      {
+        arguments: { operation: "read", root: "workspace_clarvis", path },
+        result: "Read completed.",
+      },
+      {
+        arguments: { operation: "edit", root: "workspace_clarvis", path },
+        result: "Edit completed.",
+      },
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "delegation_created" ||
+          event.type === "delegation_started" ||
+          event.type === "delegation_completed" ||
+          event.type === "delegation_failed",
+      ),
+    ).toBe(false);
+    expect(events.some((event) => "agent" in event && event.agent === "subagent")).toBe(false);
+    expect(events.find((event) => event.type === "run_started")).toMatchObject({
+      lead_model: "anthropic/test",
+    });
+    expect(events.find((event) => event.type === "run_started")).not.toHaveProperty(
+      "subagent_model",
+    );
     const stored = await kernel.runs.get(first.execution_id);
     expect(JSON.stringify(stored)).not.toContain("live-tui-instance");
+    expect(JSON.stringify(stored)).not.toContain("Review carefully.");
+    expect(
+      stored?.events
+        .filter(
+          (event): event is Extract<typeof event, { type: "tool_call" }> =>
+            event.type === "tool_call" &&
+            (event.tool === "configure_clarvis" || event.server === "configure_clarvis"),
+        )
+        .map((event) => event.agent),
+    ).toEqual(["lead", "lead", "lead", "lead"]);
+    expect(stored?.events.some((event) => "agent" in event && event.agent === "subagent")).toBe(
+      false,
+    );
+    expect(stored?.result?.usage?.by_agent?.map((agent) => agent.role)).not.toContain("subagent");
+    writeFileSync(
+      join(workspacePaths(workspaceRoot).clarvisDir, path),
+      changed.replace("thoroughly", "externally"),
+    );
+    expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("changed");
     const second = await start();
     second.onElicit(() => {
       approvals++;
     });
     expect(await second.done).toMatchObject({ status: "completed" });
+    expect((await kernel.config.getSettings()).workspace_trust?.state).toBe("changed");
     expect(approvals).toBe(1);
     kernel.nativeConfiguration.retireSession("operator", "live-tui-instance");
     const retired = await start();

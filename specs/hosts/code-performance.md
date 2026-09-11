@@ -211,16 +211,19 @@ runtime readiness has not been inspected is a passing deferred state, with detai
 check deferred`; ordinary boot seeding and local settings writes only invalidate the local gate
 revision. Doctor's explicit recheck and catalog-dependent provider/model actions perform the remote
 inspection (`packages/code/src/app/commands.tsx`, `recheck`, `inspectReadiness`;
-`packages/code/src/onboarding/doctor.ts`, `credentialGate`). Tests pin both the cold route and the
-explicit recheck boundary in `packages/code/tests/integration/app-commands.test.tsx`.
+`packages/code/src/onboarding/doctor.ts`, `credentialGate`). Escaping a nested configuration page
+does not start that inspection (`packages/code/src/views/overlay-host.ts`, `popView`). Tests pin
+the cold route and the explicit recheck boundary in
+`packages/code/tests/integration/app-commands.test.tsx`, and the Escape boundary in
+`packages/code/tests/integration/app-shell-render.test.tsx`.
 
 The same cold-start boundary applies to sandbox inspection. App command construction leaves
 `sandboxInspection` null and does not run host toolchain `--version` probes. Doctor's explicit
 recheck and the Sandbox settings surface own that inspection; the run-safety gate treats null as a
 passing deferred state (`packages/code/src/app/commands.tsx`, `refreshSandboxInspection`;
 `packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`;
-`packages/code/src/onboarding/doctor.ts`, `run_safety`). The integration test above pins both the
-cold route and explicit recheck.
+`packages/code/src/onboarding/doctor.ts`, `run_safety`). Nested Escape is not an inspection route.
+The integration tests above pin the cold route, explicit recheck, and Escape boundary.
 
 ### 4.3 Artifact loading and lazy boundaries
 
@@ -472,10 +475,12 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
 
 10. **PERF-10: connected subscription readiness is deferred and passing at boot; only an explicit
     Doctor recheck or subscription-dependent surface performs the remote inspection.**
-    Production: `packages/code/src/onboarding/doctor.ts` (`credentialGate`) and
-    `packages/code/src/app/commands.tsx` (`inspectReadiness`).
-    Test: `packages/code/tests/integration/doctor.test.ts` and
-    `packages/code/tests/integration/app-commands.test.tsx` (explicit entitlement recheck).
+    Production: `packages/code/src/onboarding/doctor.ts` (`credentialGate`),
+    `packages/code/src/app/commands.tsx` (`inspectReadiness`), and
+    `packages/code/src/views/overlay-host.ts` (`popView`).
+    Test: `packages/code/tests/integration/doctor.test.ts`,
+    `packages/code/tests/integration/app-commands.test.tsx` (explicit entitlement recheck), and
+    `packages/code/tests/integration/app-shell-render.test.tsx` (nested Escape does not inspect).
 
 11. **PERF-11: repeated full-region visits preserve one bounded transcript shell; Plan, Diff and
     autocomplete reuse bounded renderer ownership after first use, while configuration navigation
@@ -938,7 +943,8 @@ the strict complete-app 500 ms goal remains unmet.
 1. **Remove subscription entitlement from the blocking startup path.** Treat locally connected but
    not-yet-checked readiness as pending rather than repair-worthy; perform the remote entitlement
    check at the first subscription-dependent action. **Implemented:** ordinary boot and internal
-   settings writes only rerun local gates; Doctor's explicit recheck owns remote inspection.
+   settings writes only rerun local gates; Doctor's explicit recheck owns remote inspection;
+   nested Escape does not start that inspection.
 2. **Make catalog deferral temporal, not merely unawaited.** **Implemented:**
    `loadFoundation` does not call `client.models.get()`; a catalog-bearing view crosses the
    single-flight `ensureModelsCatalog` boundary.

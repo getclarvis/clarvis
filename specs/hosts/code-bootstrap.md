@@ -702,9 +702,13 @@ Two orderings the code annotates explicitly:
   `packages/code/tests/integration/app-shell-render.test.tsx`.
 - Application command composition performs no sandbox host inspection. The null probe is a passing
   deferred readiness state; Doctor recheck and Settings > Sandbox are the explicit inspection
-  routes. Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
-  `inspectReadiness`). Test: `packages/code/tests/integration/app-commands.test.tsx` ("sandbox
-  inspection is deferred until an explicit Doctor recheck").
+  routes. Escaping a nested configuration page is not an inspection route.
+  Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
+  `inspectReadiness`) and `packages/code/src/views/overlay-host.ts` (`popView`). Test:
+  `packages/code/tests/integration/app-commands.test.tsx` ("sandbox
+  inspection is deferred until an explicit Doctor recheck") and
+  `packages/code/tests/integration/app-shell-render.test.tsx` ("Tab opens a child and rapid Escape
+  steps back through its hub to the transcript").
 
 `debugSession` is built even when `--debug` was absent, with the stated reason: "a diagnostic channel
 you can only ask for before the failure you want it for is no channel"

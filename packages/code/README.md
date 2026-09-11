@@ -1016,9 +1016,11 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Physically windowed transcript history with incremental Markdown; live tails use OpenTUI's
   streaming mode and preserve an identity-stable committed prefix. Within one response geometry
   epoch, a streaming Markdown tail retains a row-height high-water mark: syntax concealment may
-  reduce the native tail's intrinsic height, but cannot give rows back and pull the reader's scroll
-  anchor downward. A new epoch clears that reservation. This does not disable Markdown parsing or
-  concealment; formatted output such as bold text remains native OpenTUI Markdown. Terminal nodes
+  reduce the native tail's intrinsic height, but cannot give rows back while the tree remains
+  mutable. The reservation is released atomically with the ready final tree, so settlement cannot
+  leave blank rows after a compact final rendering; a new epoch also clears it. This does not
+  disable Markdown parsing or concealment; formatted output such as bold text remains native
+  OpenTUI Markdown. Terminal nodes
   commit immediately as frozen semantic batches. A serial hidden owner parked just below the clipped
   viewport then waits for every Markdown/diff/code descendant and two equal physical observations
   before the same owner becomes visible at its exact measured row. The parked owner remains outside

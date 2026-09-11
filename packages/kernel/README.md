@@ -228,12 +228,13 @@ than becoming a second public `KernelClient`. The concrete engine CLI ports are 
 `@clarvis/kernel/local`, keeping process control off the native eager path. The contract is in the
 owning [`isolated-agent-runtime` spec](../../specs/hosts/isolated-agent-runtime.md).
 The strict `runtime` settings block is global-only: a workspace declaration remains withheld even
-after workspace trust approval. Native startup performs no runtime-factory work. Docker accepts the
-simple `{ "backend": "docker" }` selection and fills product-owned limits, `outbound` network and
-required-Sandbox fallback defaults; executable, context, digest, network, limits and fallback remain
+after workspace trust approval. Native startup performs no runtime-factory work. Docker and Podman
+accept the simple `{ "backend": "docker" }` or `{ "backend": "podman" }` selection and fill
+product-owned limits and `outbound` network; Docker also defaults required-Sandbox fallback.
+Executable, context or Podman connection, digest, network, limits and Docker fallback remain
 advanced overrides. Docker also accepts an advanced operator-owned `recipe` with a safe name, an
 absolute POSIX-shell script path under global `runtime-recipes/` and an optional `none`/`outbound`
-build network. Podman retains the fully explicit contract. All configured limits, including CPU
+build network. Podman has no recipe and no sandbox fallback. All configured limits, including CPU
 count, must be positive safe integers. Acquiring a missing release or candidate image has a bounded
 15-minute pull deadline; short inspection commands keep their separate command deadline.
 Container preparation starts only when a run first needs it, coalesces
@@ -401,10 +402,13 @@ Development deliberately uses the other path and then the same final Containerfi
 
 ```bash
 bun run runtime:build:dev -- clarvis-runtime:development
+bun run runtime:build:dev -- --engine podman clarvis-runtime:development
 ```
 
 That command builds a local source carrier from the frozen root lockfile and marks the final image
-as development. To compose a final image from a released carrier, use:
+as development. `./dev-install.sh` runs the same builder once per installed engine. A missing
+engine is skipped, so a Docker-only or Podman-only host still completes; when every installed
+engine fails to build, installation fails closed. To compose a final image from a released carrier, use:
 
 ```bash
 bun run runtime:build -- \
@@ -422,8 +426,9 @@ effective cgroup/security policy, rootless file ownership, offline mode, cache r
 partitioning across fresh containers. The shared run canary selects the actual Podman control and
 runtime composition; the Docker recipe and rootful DAC canaries remain separate. The Podman engine must be accessible outside any host
 sandbox that blocks its rootless runtime directory. Admission failures are failures, not skipped
-coverage of guest execution. The build helper and Podman adapter canonicalize complete unprefixed
-local image IDs to `sha256:` without accepting short IDs or mutable tags.
+coverage of guest execution. The build helper, first-use image resolver and Podman adapter
+canonicalize complete unprefixed local image IDs to `sha256:` without accepting short IDs or
+mutable tags.
 
 By default Docker resolves `docker` from `PATH` and uses `DOCKER_CONTEXT` or the active Docker
 context; `executable` and `connection` override those choices. Its backend requires a Linux engine,
@@ -446,11 +451,12 @@ already-listening guest TCP port: the host binds only `127.0.0.1`, prefers the s
 ephemeral fallback, relays through a fixed
 engine `exec` argv, caps mappings/connections, and closes them with the runtime. The guest never gets
 the engine socket or chooses a host address, host port, executable or engine arguments. An installed
-release resolves its same-version `runtime-release.json` only on the first Docker run and may pull
-only the digest-pinned GHCR reference it names. Local source development selects the local
-`clarvis-runtime:development` tag and never pulls it. An explicit candidate source installation
+release resolves its same-version `runtime-release.json` only on the first Docker or Podman run and
+may pull only the digest-pinned GHCR reference it names. Local source development selects the local
+`clarvis-runtime:development` tag and never pulls it; `./dev-install.sh` builds that tag into each
+available Docker or Podman store. An explicit candidate source installation
 supplies its same-tag candidate image through the Code resolver, pinned to its source revision and
-protocol, and Docker pulls that digest; no runtime path promotes or publishes an image.
+protocol, and the selected engine pulls that digest; no runtime path promotes or publishes an image.
 When `runtime.recipe` is present, the same lazy resolver first pins that base image ID, captures at
 most 1 MiB from the absolute non-symlink, single-linked script inside the operator-owned global
 `runtime-recipes/` directory, verifies a stable regular UTF-8 file, and derives a cache key from

@@ -355,7 +355,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerAction({
     name: "isolation.picker",
     title: "Isolation",
-    desc: "Choose Host, Sandbox or lazy Docker isolation for the next run",
+    desc: "Choose Host, Sandbox, Docker or Podman isolation for the next run",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
@@ -1117,6 +1117,26 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     view: lazyView(async () => {
       const { SandboxConfigPanel } = await import("../views/cold-surfaces.ts");
       return (host) => SandboxConfigPanel(host, { settings: deps.settings, notify });
+    }),
+  });
+
+  commands.registerView({
+    name: "isolation.config",
+    title: "Isolation",
+    desc: "Choose Host, Sandbox, Docker or Podman for the next run",
+    surface: "internal",
+    group: "navigate",
+    parent: "settings",
+    view: lazyView(async () => {
+      const { IsolationConfigPanel } = await import("../views/cold-surfaces.ts");
+      return (host) =>
+        IsolationConfigPanel(host, {
+          settings: deps.settings,
+          notify,
+          runActive: deps.runActive,
+          openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
+          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
+        });
     }),
   });
 

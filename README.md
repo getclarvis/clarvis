@@ -24,8 +24,8 @@ repository in front of you.
 - **Agent workflows:** use a built-in Lead, delegate to focused Sub-agents, or run the packaged
   `audit`, `implement`, and `research` workflows.
 - **Controlled tool use:** path-based workspace confinement, independent command review, native
-  sandboxing on Linux and macOS, lazy Docker isolation, and explicit workspace trust are separate
-  safeguards.
+  sandboxing on Linux and macOS, lazy Docker or Podman isolation, and explicit workspace trust are
+  separate safeguards.
 - **Extensible:** add MCP servers, plugins, hooks, Agent Skills, custom agents, and workflows.
 - **Interactive or headless:** use the full TUI or run a prompt from scripts with `clarvis -p`.
 
@@ -99,17 +99,19 @@ Essential controls:
 | `/model`  | Choose the default model                                                 |
 | `/effort` | Choose the default reasoning effort supported by that model              |
 | `/goal`   | Create, inspect and control a persistent bounded objective                |
-| `Ctrl+S`  | Choose Host, native Sandbox, or Docker isolation                         |
+| `Ctrl+S`  | Choose Host, native Sandbox, Docker, or Podman isolation                 |
 | `Ctrl+G`  | Choose Off, Approval, or automatic LLM command review                    |
 
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Isolation and command review are independent. Docker starts only when the first run needs it; the
-simple TUI choice uses product-owned limits, ordinary outbound networking, and automatic fallback
-to a required native Sandbox when Docker cannot start operationally. Image-integrity, policy,
-recipe, and guest-handshake failures remain fail-closed. Docker Desktop and Colima satisfy the same
-Docker Engine contract on macOS; advanced `settings.json` configuration may instead select Podman.
+Isolation and command review are independent. Settings > Isolation, Run Controls, and `Ctrl+S`
+share the same global Host/Sandbox/Docker/Podman writer. Docker or Podman starts only when the
+first run needs it; the simple TUI choice uses product-owned limits and ordinary outbound
+networking. Docker falls back to a required native Sandbox after an operational startup failure;
+Podman fails closed if the engine cannot start. Image-integrity, policy, recipe, and
+guest-handshake failures remain fail-closed. Docker Desktop and Colima satisfy the same Docker
+Engine contract on macOS.
 
 An isolated container mounts the already-selected workspace read-write at `/workspace`, so guest
 changes appear on the host immediately. Start Clarvis in a Git worktree when you want that mount to
@@ -157,11 +159,12 @@ isolation is a complete security boundary:
 - file tools reject paths outside the workspace by default, but this path-based check is not a strong
   write sandbox against a concurrent symlink or junction swap; host execution and user-approved
   operations can also reach beyond a sandboxed process;
-- Docker isolation leaves the selected workspace writable and enables ordinary outbound networking
-  by default. A guest can therefore modify that checkout and transmit readable workspace content or
-  reach host/LAN services; use `network: "none"` when the run must be offline;
-- Docker keeps model credentials, host skill paths, Plans, and Memory stores behind narrow host
-  bridges, but anything deliberately committed or copied into the mounted workspace is guest-readable;
+- Docker or Podman isolation leaves the selected workspace writable and enables ordinary outbound
+  networking by default. A guest can therefore modify that checkout and transmit readable workspace
+  content or reach host/LAN services; use `network: "none"` when the run must be offline;
+- Container isolation keeps model credentials, host skill paths, Plans, and Memory stores behind
+  narrow host bridges, but anything deliberately committed or copied into the mounted workspace is
+  guest-readable;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
@@ -216,8 +219,10 @@ To install a source-only command from this checkout after Bun is available, run:
 ./dev-install.sh
 ```
 
-That one-time machine setup installs dependencies, configures the repository hook, and creates
-`clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Run the command
+That one-time machine setup installs dependencies, configures the repository hook, builds the local
+runtime image for each of Docker and Podman that is installed, and creates
+`clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither
+engine still gets the launcher for native use. Run the command
 from any project to test the current checkout without building or downloading a release. Use
 `clarvis-develop --empty-workspace` to open every test in a new directory under
 `/tmp/clarvis-development-temp/`. `clarvis-develop --clear` removes the effective global state and

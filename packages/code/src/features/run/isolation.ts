@@ -2,9 +2,9 @@ import type { RuntimeConfig } from "@clarvis/protocol";
 import type { SettingsAdapter, SettingsFile } from "../../adapters/settings.ts";
 import { deriveIsolation, type IsolationMode } from "../../adapters/execution-safety.ts";
 
-/** Isolation choices intentionally kept smaller than the advanced JSON contract. */
+/** Isolation choices shown by the picker, Run Controls, and Isolation settings. */
 export interface IsolationChoice {
-  value: Exclude<IsolationMode, "podman">;
+  value: IsolationMode;
   label: string;
   detail: string;
 }
@@ -13,7 +13,17 @@ export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
   { value: "host", label: "Host", detail: "direct host execution; fastest and least isolated" },
   { value: "sandbox", label: "Sandbox", detail: "native Seatbelt or Bubblewrap boundary" },
   { value: "docker", label: "Docker", detail: "lazy Linux container with outbound access" },
+  {
+    value: "podman",
+    label: "Podman",
+    detail: "lazy Linux container; fails closed if Podman cannot start",
+  },
 ];
+
+/** True when isolation is a lazy container engine rather than native host or sandbox. */
+export function isContainerIsolation(isolation: IsolationMode): isolation is "docker" | "podman" {
+  return isolation === "docker" || isolation === "podman";
+}
 
 export interface IsolationConfirmation {
   message: string;
@@ -54,16 +64,46 @@ function nativeSandbox(
   };
 }
 
-/** Persist one isolation axis globally; Docker remains a deliberately minimal selection. */
+function runtimeFor(isolation: IsolationMode): RuntimeConfig {
+  return isContainerIsolation(isolation) ? { backend: isolation } : { backend: "native" };
+}
+
+/** Placement-only copy for Isolation settings; command review stays a separate control. */
+export function isolationPlacementLines(isolation: IsolationMode): string[] {
+  switch (isolation) {
+    case "host":
+      return [
+        "No containment boundary.",
+        "Command Review remains a separate control and does not create isolation.",
+      ];
+    case "sandbox":
+      return [
+        "Uses the native Seatbelt or Bubblewrap boundary.",
+        "Open Sandbox settings for filesystem, network and toolchains.",
+      ];
+    case "docker":
+      return [
+        "Agent tools run inside a Linux Docker container.",
+        "The selected workspace is mounted directly; changes appear on the host immediately.",
+        "Docker stays cold until the first run; an operational startup failure requires Sandbox.",
+      ];
+    case "podman":
+      return [
+        "Agent tools run inside a Linux Podman container.",
+        "The selected workspace is mounted directly; changes appear on the host immediately.",
+        "Podman starts on the first run and fails closed if the engine cannot start.",
+      ];
+  }
+}
+
+/** Persist one isolation axis globally; container engines remain a deliberately minimal selection. */
 export async function applyIsolation(
   isolation: IsolationChoice["value"],
   settings: SettingsAdapter,
 ): Promise<IsolationMode> {
   const current = settings.effective();
-  const runtime: RuntimeConfig =
-    isolation === "docker" ? { backend: "docker" } : { backend: "native" };
   await settings.write("global", {
-    runtime,
+    runtime: runtimeFor(isolation),
     sandbox: nativeSandbox(current.sandbox, isolation !== "host"),
   });
   return deriveIsolation(settings.effective());

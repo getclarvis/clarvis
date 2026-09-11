@@ -114,8 +114,14 @@ describe("code host kernel options", () => {
         return { reference: "clarvis-runtime:test", pull: false };
       },
       loadLocalRuntime: async () => ({
-        createLocalPodmanRuntime: async (value) => {
+        createLocalPodmanRuntime: async (value, options) => {
           expect(value.settings.backend).toBe("podman");
+          if (options === undefined) throw new Error("expected Podman runtime options");
+          const controller = new AbortController();
+          expect(await options.resolveImage?.(controller.signal)).toEqual({
+            reference: "clarvis-runtime:test",
+            pull: false,
+          });
           return podman;
         },
         createLocalDockerRuntime: async (value, options) => {

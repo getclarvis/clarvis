@@ -397,12 +397,12 @@ Reload creates a new host generation, not a continuation of a run after host res
 
 ## Runtime, guard, environment and diagnosis
 
-runtime chooses native, docker or podman and is global-only. {runtime: {backend: docker}} uses the
-product defaults; Podman needs explicit settings. Use only qualified images/digests and supported
-network modes. none is offline; outbound permits public, host and LAN destinations; internet is
-currently refused. Docker may use its configured native Sandbox fallback after an operational
-startup failure; integrity/policy/recipe failures stay closed. A started run is never replayed on
-the host. Runtime recipes are operator-authored scripts under global runtime-recipes.
+runtime is global-only: native, docker or podman. {backend: docker} or {backend: podman} uses
+product defaults. Use only qualified images/digests and supported network modes. none is offline;
+outbound permits public, host and LAN destinations; internet is currently refused. Docker may use
+native Sandbox fallback after an operational startup failure; Podman has no fallback or recipe and
+fails closed. Integrity/policy/recipe failures stay closed. A started run is never replayed on the
+host. Runtime recipes are operator-authored scripts under global runtime-recipes.
 Docker's recipe block uses name, script (the absolute path under that root) and network
 (none|outbound for the build). Save a POSIX-shell script first, then bind it in global settings.
 

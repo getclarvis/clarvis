@@ -19,13 +19,14 @@ Production: `createNativeConfigurationRuns` in
 [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
 Test: [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
 
-Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker accepts
-the simple `{ "backend": "docker" }` choice; the kernel defaults it to 2 CPUs, 4 GiB memory, 256
-processes, 16 MiB output, 4 GiB storage, ordinary `outbound` networking and required-Sandbox
-fallback. Executable, Docker context, image digest, network, limits and fallback remain advanced
+Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker and
+Podman accept the simple `{ "backend": "docker" }` or `{ "backend": "podman" }` choice; the kernel
+defaults either to 2 CPUs, 4 GiB memory, 256 processes, 16 MiB output, 4 GiB storage and ordinary
+`outbound` networking. Docker additionally defaults required-Sandbox fallback. Executable, Docker
+context or Podman connection, image digest, network, limits and Docker fallback remain advanced
 overrides. Docker additionally accepts a global operator recipe with a safe name, an absolute script
-path under global `runtime-recipes/` and `none`/`outbound` build network; Podman retains the explicit
-immutable digest, executable, connection and complete-limit contract. `outbound` may reach host/LAN
+path under global `runtime-recipes/` and `none`/`outbound` build network. Podman has no recipe and no
+sandbox fallback. `outbound` may reach host/LAN
 peers and transmit readable workspace content; it does not mean public-only internet. The workspace
 scope can display a requested `runtime` block but can never
 contribute it to the effective merge, including after workspace approval. `createFileKernel` reads
@@ -34,13 +35,18 @@ startup, and injects the same placement-neutral lazy executor into ordinary and 
 The settings schema enforces the launch contract's positive safe integers for every resource limit,
 including CPU count; fractional CPU allocations are refused before persistence.
 
+First-use inspect of a simple Docker or Podman selection canonicalizes a complete unprefixed
+local image ID to `sha256:` and rejects short IDs, tags and manifest digests.
 Production: `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
+`resolveContainerImageDigest` and `canonicalLocalImageId` in `packages/kernel/src/runtime/runtime-image.ts`;
 `stripWorkspaceSubscriptionProviders` in `packages/kernel/src/config/workspace-trust.ts`;
 `createFileKernel` in `packages/kernel/src/file-kernel.ts`; `createLazyRuntimeCoordinator` in
 `packages/kernel/src/runtime/lazy-runtime.ts`; `RunExecutor` in
 `packages/kernel/src/runs/run-service.ts`.
 
 Test: `packages/kernel/tests/unit/runtime-settings.test.ts`;
+`packages/kernel/tests/unit/runtime-image.test.ts`;
+`packages/kernel/tests/unit/local-podman-runtime.test.ts`;
 `packages/kernel/tests/unit/lazy-runtime.test.ts`;
 `packages/kernel/tests/integration/workspace-trust.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
@@ -48,7 +54,7 @@ Test: `packages/kernel/tests/unit/runtime-settings.test.ts`;
 Every complete Code kernel path, including `--print` and `--refresh-models`, enters through the
 workspace manager and the independent Code host entry, which supplies the concrete local factory
 lazily. Only the first container run
-imports the selected engine process adapter and, for Docker, resolves either the local development
+imports the selected engine process adapter and, for Docker or Podman, resolves either the local development
 tag, the explicitly installed candidate's image, or that exact installed version's digest-pinned release image; application startup performs
 neither import, network request nor engine probe. When configured, a Docker recipe is also captured,
 resolved and built on this lazy path before the runtime generation is launched. An uncached
@@ -73,12 +79,18 @@ only that tag's bounded `runtime-candidate.json` from the source repository and 
 `source-v1` contract only when product version, source revision, protocol and candidate image namespace
 match. Candidate identity failures carry `runtime_image_integrity`, preventing silent sandbox fallback.
 The installer pulls the candidate image before launcher activation; runtime initialization resolves
-and pulls the immutable reference through the existing Docker control. Image acquisition uses a
+and pulls the immutable reference through the selected engine control. Image acquisition uses a
 bounded 15-minute operation-specific timeout; inspection keeps the short control-command timeout.
-Podman configuration remains
-explicit. Production: `packages/code/src/adapters/runtime-candidate.ts` (`parseRuntimeCandidate`)
-and `packages/code/src/adapters/runtime-image.ts` (`resolveClarvisRuntimeImage`).
-Test: `packages/code/tests/unit/runtime-image.test.ts` (same-RC selection and identity drift).
+A simple Podman selection uses the same lazy image resolution as Docker, including the Code-owned
+`resolveImage` factory; advanced overrides remain optional. Ordinary `./dev-install.sh` builds the local development tag for each of
+Docker and Podman that is installed, independently, and skips a missing engine; it does not pull.
+When every installed engine fails to build, installation fails closed. Production: `packages/code/src/adapters/runtime-candidate.ts` (`parseRuntimeCandidate`)
+and `packages/code/src/adapters/runtime-image.ts` (`resolveClarvisRuntimeImage`);
+`packages/code/src/adapters/host-kernel-options.ts` (`createCodeHostKernelOptions`);
+`packages/code/tooling/development-install.ts` (`prepareDevelopmentRuntimeImages`).
+Test: `packages/code/tests/unit/runtime-image.test.ts` (same-RC selection and identity drift);
+`packages/code/tests/unit/host-kernel-options.test.ts`;
+`packages/code/tests/unit/development-install.test.ts` (per-engine runtime-image cases).
 
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts` and `main` in

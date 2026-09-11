@@ -91,18 +91,24 @@ download Bun or mutate shell profiles; ordinary root/package builds retain detac
 The distinct POSIX development entry starts at root `dev-install.sh`, which checks that Bun is
 available and delegates to `packages/code/tooling/development-install.ts`. In its default local mode, that typed installer
 requires the exact `mise.toml` version, performs the frozen dependency install, configures the local
-Git hook, and atomically creates a marked `clarvis-develop` regular file without replacing an
-unmanaged destination. The launcher embeds the absolute checkout and Bun paths, does not change the
+Git hook, builds the local `clarvis-runtime:development` image for each of Docker and Podman that is
+installed, and atomically creates a marked `clarvis-develop` regular file without replacing an
+unmanaged destination. Docker and Podman are attempted independently because they keep separate
+image stores; a missing engine is skipped so a Docker-only or Podman-only host still completes.
+When neither engine is installed the launcher is still written and native mode remains usable.
+When every installed engine fails to build, installation fails closed. The launcher embeds the
+absolute checkout and Bun paths, does not change the
 caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`; it therefore
 tests the current sources from another workspace without a release or Code build. Reinstallation
 updates only the marked launcher and `--uninstall` removes only that file. Application startup uses
 the authenticated local-host transition in `connectOrLaunchLocalKernel`: a same-wire prior artifact
 is replaced only after it accepts an idle restart, while active physical work preserves the prior
 generation. Production: `dev-install.sh`, `packages/code/tooling/development-install.ts`
-(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`) and
+(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`,
+`prepareDevelopmentRuntimeImages`) and
 `packages/kernel/src/hosting/launcher.ts` (`connectOrLaunchLocalKernel`). Test:
 `packages/code/tests/unit/development-install.test.ts` (delegation, caller-workspace preservation,
-source selection, ownership refusal, update, and uninstall cases) and
+source selection, ownership refusal, update, uninstall, and per-engine runtime-image cases) and
 `packages/kernel/tests/integration/local-host-process.test.ts` (idle artifact transition and active
 work refusal).
 
@@ -1492,12 +1498,16 @@ contains the complete app's paint/readiness markers. Production:
 **INV-CB-44.** `clarvis-develop` is a marked, source-only launcher distinct from the product's sole
 `clarvis` executable. It preserves the caller's working directory unless `--empty-workspace`
 selects a newly allocated temporary directory, never replaces an unmanaged destination, and
-exposes global-state and managed-temporary deletion only through explicit `--clear`. Production:
+exposes global-state and managed-temporary deletion only through explicit `--clear`. Default
+installation also builds `clarvis-runtime:development` for each of Docker and Podman that is
+installed and skips a missing engine; it fails closed only when every installed engine fails.
+Production:
 `dev-install.sh` and `packages/code/tooling/development-install.ts`
 (`developmentLauncherSource`, `existingLauncher`, `cleanDevelopmentState`,
-`createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`). Test:
-`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup, and
-shell-delegation cases).
+`createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
+`prepareDevelopmentRuntimeImages`). Test:
+`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup,
+shell-delegation, and per-engine runtime-image cases).
 
 **INV-CB-45.** Resume/continue session preflight finishes before OpenTUI renderer creation, so a
 missing session never enters raw mode or the alternate screen. Once renderer creation begins,

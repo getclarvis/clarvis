@@ -5,6 +5,24 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Settings > Isolation is the dedicated global placement screen for Host, native Sandbox, Docker, or
+  Podman. Native Sandbox details stay in Settings > Sandbox. Run Controls and `Ctrl+S` share the
+  same writer; a workspace cannot choose a runtime.
+- Simple Podman isolation now accepts `{ "backend": "podman" }` with the same product-owned limits
+  and outbound default as Docker. Podman has no recipe and no Sandbox fallback: an operational
+  startup failure fails closed.
+- `./dev-install.sh` now builds the local `clarvis-runtime:development` image for each of Docker and
+  Podman that is installed. A missing engine is skipped, so a Docker-only or Podman-only host still
+  completes; native mode remains available when neither engine is present.
+
+### Fixed
+
+- Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
+  the development runtime image, instead of reporting an invalid image id after a successful build.
+- Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
+
 ## [0.2.0] - 2026-09-07
 
 ### Added

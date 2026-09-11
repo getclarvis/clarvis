@@ -31,6 +31,12 @@ export const SETTINGS_ITEMS = [
     cmd: "memory.config",
   },
   { id: "sandbox", label: "Sandbox", desc: "Native command isolation", cmd: "sandbox.config" },
+  {
+    id: "isolation",
+    label: "Isolation",
+    desc: "Host, Sandbox, Docker or Podman",
+    cmd: "isolation.config",
+  },
   { id: "theme", label: "Theme", desc: "Colors, presets, contrast", cmd: "theme.open" },
   {
     id: "keyboard",

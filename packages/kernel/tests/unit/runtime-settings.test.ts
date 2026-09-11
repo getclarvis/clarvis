@@ -32,14 +32,30 @@ describe("runtime settings", () => {
     ).toThrow();
   });
 
-  it("fills the product-owned Docker defaults from one simple selection", () => {
-    expect(runtimeSettingsSchema.parse({ backend: "docker" })).toEqual({
-      backend: "docker",
-      network: "outbound",
-      limits: DEFAULT_RUNTIME_LIMITS,
-      fallback: "sandbox",
-    });
-  });
+  it.each([
+    [
+      "docker",
+      {
+        backend: "docker" as const,
+        network: "outbound" as const,
+        limits: DEFAULT_RUNTIME_LIMITS,
+        fallback: "sandbox" as const,
+      },
+    ],
+    [
+      "podman",
+      {
+        backend: "podman" as const,
+        network: "outbound" as const,
+        limits: DEFAULT_RUNTIME_LIMITS,
+      },
+    ],
+  ] as const)(
+    "fills the product-owned %s defaults from one simple selection",
+    (backend, expected) => {
+      expect(runtimeSettingsSchema.parse({ backend })).toEqual(expected);
+    },
+  );
 
   it("accepts only the closed operator-owned Docker recipe contract", () => {
     expect(
@@ -96,7 +112,7 @@ describe("runtime settings", () => {
     ).toThrow();
   });
 
-  it("keeps advanced Docker overrides and requires Podman's full host contract", () => {
+  it("keeps advanced Docker and Podman overrides without requiring a complete host contract", () => {
     const value = {
       backend: "podman" as const,
       image_digest: `sha256:${"a".repeat(64)}`,
@@ -118,7 +134,7 @@ describe("runtime settings", () => {
       fallback: "sandbox",
     });
     const { executable: _executable, ...incompletePodman } = value;
-    expect(() => runtimeSettingsSchema.parse(incompletePodman)).toThrow();
+    expect(runtimeSettingsSchema.parse(incompletePodman)).toEqual(incompletePodman);
     expect(() => runtimeSettingsSchema.parse({ ...value, image_digest: "latest" })).toThrow();
     expect(() =>
       runtimeSettingsSchema.parse({ ...value, limits: { ...value.limits, process_count: 0 } }),

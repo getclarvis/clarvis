@@ -1019,13 +1019,18 @@ retain the plan. Planning mode is intentionally absent from this presentation he
 TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
-`applyIsolation` maps Host/Sandbox/Docker to an explicit global `{runtime, sandbox}` patch. Docker
-persists only `{backend:"docker"}`, keeps the native Sandbox enabled and required for operational
-fallback, and leaves guard policy untouched. `applyReviewMode` separately maps Off/Approval/Auto to
+`applyIsolation` maps Host/Sandbox/Docker/Podman to an explicit global `{runtime, sandbox}` patch.
+Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both keep the native
+Sandbox enabled; Docker uses it as the required operational fallback, while Podman fails closed if
+the engine cannot start. Guard policy is untouched. Settings > Isolation, Run Controls and the
+`Ctrl+S` picker share that writer. `applyReviewMode` separately maps Off/Approval/Auto to
 the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
 workspace with no local policy; it writes no runtime or Sandbox field. Production:
-`packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`, and
+`packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
+`packages/code/src/views/config/IsolationConfigPanel.tsx`, and
 `packages/code/src/views/config/RunControlsPanel.tsx`. Tests:
+`packages/code/tests/unit/isolation.test.ts`,
+`packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 

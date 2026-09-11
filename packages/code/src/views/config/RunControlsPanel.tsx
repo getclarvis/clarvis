@@ -29,6 +29,7 @@ import {
 import {
   applyIsolation,
   isolationConfirmation,
+  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
 } from "../../features/run/isolation.ts";
@@ -147,7 +148,7 @@ export function RunControlsPanel(
     if (confirmation && !(await host.confirm(confirmation))) return;
     try {
       const effective = await applyIsolation(isolation, deps.settings);
-      if (isolation === "docker") deps.retryRuntime?.();
+      if (isContainerIsolation(isolation)) deps.retryRuntime?.();
       deps.notify(
         `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );

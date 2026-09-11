@@ -706,9 +706,11 @@ stated purpose is to detach a sealed prefix from the ever-growing cumulative sou
 `textEpoch ?? 0` for assistant nodes and `0` otherwise. Sealed Markdown segments render through
 `StableMarkdown` with `streaming={false}`; only the tail passes the live running state. On ordinary
 settlement, `StableMarkdown` keeps the already painted streaming tree visible while one transparent
-final tree receives layout, starts Tree-sitter work, awaits every public descendant
-`CodeRenderable.highlightingDone`, and completes one confirming paint. A single Solid batch then
-reveals the final tree and disposes the old one. No timer or renderer-wide pause participates, and
+final tree receives layout at its intrinsic height, starts Tree-sitter work, awaits every public descendant
+`CodeRenderable.highlightingDone`, and completes one confirming paint. The preparing final tree must
+not inherit the streaming overlay's row count. A single Solid batch then
+reveals the final tree, resets its height to `auto`, and disposes the old one, so a shorter answer
+cannot leave the old streaming height as blank transcript rows. No timer or renderer-wide pause participates, and
 at most two Markdown trees exist during that bounded handoff. Every segment after the first carries
 `marginTop={1}`, because
 `MarkdownRenderable` applies its inter-block margin internally and that margin is exactly what a cut
@@ -1690,11 +1692,15 @@ independent sibling and pruning), and `packages/code/tests/integration/app-shell
 
 **INV-T50.** Settling assistant Markdown never exposes the final OpenTUI tree before its syntax
 descendants and one confirming frame are complete. The already painted streaming tree remains the
-visible owner during preparation, and at most two Markdown trees exist during the handoff.
-Production: `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`,
+visible owner during preparation, and at most two Markdown trees exist during the handoff. The
+preparing final tree keeps its intrinsic height; after the atomic swap its height is `auto`, so a
+shorter final rendering cannot leave the streaming overlay's row count as blank space above the run
+outcome. Production: `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`,
 `waitForSyntaxFrame`) and `packages/code/src/views/blocks.tsx` (`AssistantMarkdown`). Test:
 `packages/code/tests/integration/markdown-render-contract.test.tsx` ("settlement keeps the painted
-streaming markdown visible until its final tree is ready").
+streaming markdown visible until its final tree is ready", "settlement releases a streaming height
+floor after the final tree is ready" and "a tall streaming reply does not leave blank rows above the
+run outcome").
 
 **INV-T51.** Within one continuously mounted `BlockView`, a finalized diff retains the same
 `DiffRenderable` while an unrelated sibling outside that block updates, and a newly mounted diff

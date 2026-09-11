@@ -570,14 +570,15 @@ host-global placement choice and always writes global settings; memory remains s
 
 | Row | Choices | Write |
 | --- | --- | --- |
-| Isolation | `Host`, `Sandbox`, `Docker`; an advanced Podman selection remains visible but is not offered by the simple picker | shared `applyIsolation`, global |
+| Isolation | `Host`, `Sandbox`, `Docker`, `Podman` | shared `applyIsolation`, global |
 | Command review | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
-Run Controls and the `Ctrl+S`/`Alt+S` quick picker share `applyIsolation`. Host requires an explicit
-danger confirmation; Sandbox enables a required native boundary; Docker writes the minimal global
-runtime choice, keeps a required native fallback, and remains cold until the first run. Run Controls
+Run Controls, Settings > Isolation and the `Ctrl+S`/`Alt+S` quick picker share `applyIsolation`. Host requires an explicit
+danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
+global runtime choice. Docker keeps a required native fallback and remains cold until the first run;
+Podman starts on first run and fails closed if the engine cannot start. Run Controls
 and the `Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
 allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
 last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
@@ -875,15 +876,18 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Isolation and Review have separate three-choice vocabularies and shared application paths
-    across Run Controls and their quick pickers. Host confirmation cannot change Review; Review
-    cannot change runtime or Sandbox. Docker persists only the minimal global runtime selector and
-    requests no engine work before the next run.** Production:
+50. **Isolation and Review have separate vocabularies and shared application paths
+    across Settings > Isolation, Run Controls and their quick pickers. Host confirmation cannot change Review; Review
+    cannot change runtime or Sandbox. Docker and Podman persist only the minimal global runtime selector and
+    request no engine work before the next run.** Production:
     `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
     `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,
-    `applyReviewMode`), `packages/code/src/views/config/RunControlsPanel.tsx`,
+    `applyReviewMode`), `packages/code/src/views/config/IsolationConfigPanel.tsx`,
+    `packages/code/src/views/config/RunControlsPanel.tsx`,
     `packages/code/src/views/overlays/IsolationPicker.tsx`, and
     `packages/code/src/views/overlays/ReviewPicker.tsx`. Pinned:
+    `packages/code/tests/unit/isolation.test.ts`,
+    `packages/code/tests/integration/isolation-config-render.test.tsx`,
     `packages/code/tests/integration/run-controls-render.test.tsx` and
     `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 

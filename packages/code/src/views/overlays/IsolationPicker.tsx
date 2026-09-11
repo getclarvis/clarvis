@@ -5,6 +5,7 @@ import { deriveIsolation } from "../../adapters/execution-safety.ts";
 import {
   applyIsolation,
   isolationConfirmation,
+  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
   type IsolationConfirmation,
@@ -44,7 +45,7 @@ export function IsolationPicker(props: {
     applying = true;
     try {
       const effective = await applyIsolation(isolation, props.settings);
-      if (isolation === "docker") props.retryRuntime();
+      if (isContainerIsolation(isolation)) props.retryRuntime();
       props.notify(
         `isolation: ${effective} (global)${props.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
         "success",
@@ -90,7 +91,8 @@ export function IsolationPicker(props: {
       onConfirm={choose}
       onClose={props.onClose}
       footer={() =>
-        confirmation.message() ?? `global setting ${glyph("separator")} Docker starts on first run`
+        confirmation.message() ??
+        `global setting ${glyph("separator")} container engines start on first run`
       }
       footerFg={confirmation.message() ? tokens.del : tokens.muted}
       cells={(choice, selected) => [
@@ -111,14 +113,16 @@ export function IsolationPicker(props: {
                 <text fg={choice.value === "host" ? tokens.warn : tokens.fg}>
                   {choice.value === "host"
                     ? `${glyph("warning")} No containment boundary.`
-                    : choice.value === "docker"
+                    : isContainerIsolation(choice.value)
                       ? "The managed Linux runtime is resolved lazily."
                       : "Uses the native host sandbox."}
                 </text>
                 <text fg={tokens.muted}>
                   {choice.value === "docker"
                     ? "If Docker cannot start, Clarvis reports it and requires Sandbox for this session."
-                    : choice.detail}
+                    : choice.value === "podman"
+                      ? "If Podman cannot start, Clarvis reports it and does not fall back to Sandbox."
+                      : choice.detail}
                 </text>
               </>
             }

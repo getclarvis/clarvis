@@ -5,14 +5,38 @@ import {
   type NamespacedTool,
 } from "@clarvis/capability";
 import type { ConfigurationRoot } from "@clarvis/paths";
-import { configurationFileOperation, type ConfigurationFileRequest } from "./files.ts";
+import type { ConfigurationFileRequest } from "./files.ts";
 
 const TOOL_NAME = "configure_clarvis";
+const OPERATIONS = new Set(["list", "read", "write", "edit", "delete"]);
+
+function traceArguments(
+  roots: Readonly<Record<ConfigurationRoot, string>>,
+  value: unknown,
+): Record<string, string> {
+  const args =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const operation = args.operation;
+  const root = args.root;
+  const path = args.path;
+  return {
+    ...(typeof operation === "string" && OPERATIONS.has(operation) ? { operation } : {}),
+    ...(typeof root === "string" && Object.hasOwn(roots, root) ? { root } : {}),
+    ...(typeof path === "string" && path.length <= 1024 ? { path } : {}),
+  };
+}
+
+function traceResult(operation: ConfigurationFileRequest["operation"]): string {
+  return `${operation.charAt(0).toUpperCase()}${operation.slice(1)} completed.`;
+}
 
 /** Configuration file tools are bound to a live, approved native run, never to a persisted grant. */
 export function createConfigurationCapability(options: {
   roots: Readonly<Record<ConfigurationRoot, string>>;
   assertAuthorized(): void;
+  operate(request: ConfigurationFileRequest): unknown;
 }): Capability {
   const tool: NamespacedTool = {
     fullName: TOOL_NAME,
@@ -75,7 +99,7 @@ export function createConfigurationCapability(options: {
                         iteration,
                         schema: tool.inputSchema,
                         validate: base.validateArgs,
-                        traceArguments: { operation: "configuration" },
+                        traceArguments: traceArguments(options.roots, call.arguments),
                       });
                       if (envelope.invalid !== null)
                         return {
@@ -87,16 +111,11 @@ export function createConfigurationCapability(options: {
                       envelope.start();
                       try {
                         options.assertAuthorized();
-                        const result = configurationFileOperation(
-                          options.roots,
-                          call.arguments as ConfigurationFileRequest,
-                        );
+                        const request = call.arguments as ConfigurationFileRequest;
+                        const result = options.operate(request);
                         return {
                           kind: "result",
-                          text: envelope.ok(
-                            JSON.stringify(result),
-                            "Configuration operation completed.",
-                          ),
+                          text: envelope.ok(JSON.stringify(result), traceResult(request.operation)),
                           progress: true,
                         };
                       } catch (error) {

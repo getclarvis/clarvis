@@ -640,8 +640,19 @@ Transitions:
 | any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts`) |
 | any | `revokeWorkspace()` | `unapproved` | `delete workspaces[key]` |
 | `trusted` | the surface changes | `changed` | withheld again (`packages/kernel/tests/integration/workspace-trust.test.ts`) |
-| `trusted`/`inert` | operator write through `ConfigService` | re-recorded over the new surface | `withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts`) |
-| `unapproved`/`changed` | operator write through `ConfigService` | unchanged | `if (!carried) return out` |
+| `trusted`/`inert` | operator write through `ConfigService` or the approved native configuration capability | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/native-configuration.ts`) |
+| `unapproved`/`changed` | the same operator-authorized write surfaces | unchanged | `if (!carried) return out` |
+
+Ordinary native file-mutation tools cannot write workspace-authored `.clarvis` or `.agents`
+configuration. The dispatcher resolves both names through `@clarvis/paths`, rejects the operation
+before guard review and directs the operator to `/clarvis-configure`, where consent and
+`withOperatorWrite` preserve the trust transition above. Configuration reads remain available.
+Command execution retains the shell/sandbox boundary and is explicitly excluded as an alternate
+writer by the bundled guide. Production: `protectWorkspaceConfiguration` in
+`packages/tools/src/core.ts` and `CLARVIS_CONFIGURE_SKILL` in
+`packages/kernel/src/skills/clarvis-configure.ts`. Test: the authored-configuration mutation case in
+`packages/tools/tests/integration/api.test.ts` and the shipped configuration skill assertions in
+`packages/kernel/tests/component/builtin-skills.test.ts`.
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
 is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Extension Profile (and
@@ -896,9 +907,15 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/src/config/file-config-store.ts`. **Unpinned.**
 40. **A trust key is the realpath of the workspace root.** Production
     `packages/kernel/src/config/workspace-trust.ts`. **Unpinned.**
-41. **An operator write through `ConfigService` carries an existing approval and never creates one.**
-    Production `packages/kernel/src/config/file-config-store.ts`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts`.
+41. **An operator-authorized configuration write carries an existing approval and never creates
+    one.** When the pre-write workspace verdict is `trusted` or `inert`,
+    `ConfigStore.withOperatorWrite` records the post-write fingerprint; when it is `unapproved` or
+    `changed`, the write does not approve it. Both `ConfigService` mutations and approved native
+    `configure_clarvis` workspace mutations use this boundary. Production:
+    `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
+    and `packages/kernel/src/configuration/native-configuration.ts`; pinned by
+    `packages/kernel/tests/integration/workspace-trust.test.ts` and
+    `packages/kernel/tests/integration/native-configuration.test.ts`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts`;
     pinned across all four name-taking methods at

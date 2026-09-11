@@ -701,3 +701,40 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
       return null;
   }
 }
+
+/**
+ * Project the native configuration entry as the standalone operator-facing
+ * agent it is, while retaining the loop's internal leaf execution strategy.
+ *
+ * @remarks A leaf entry is represented inside the loop by the same trace events
+ * as an implicit subagent. Native configuration cannot spawn children, so its
+ * synthetic delegation lifecycle carries no user-visible work and its attributed
+ * events can be safely presented as the entry. This keeps configuration tool
+ * calls visible in the main transcript without granting delegation capability.
+ */
+export function nativeConfigurationEventToProto(
+  ev: TraceEvent,
+  logger: Logger = NOOP_LOGGER,
+): RunEvent | null {
+  const mapped = engineEventToProto(ev, logger);
+  if (mapped === null) return null;
+  if (
+    mapped.type === "delegation_created" ||
+    mapped.type === "delegation_started" ||
+    mapped.type === "delegation_completed" ||
+    mapped.type === "delegation_failed"
+  )
+    return null;
+  if (mapped.type === "run_started" && mapped.subagent_model !== undefined) {
+    return {
+      type: "run_started",
+      at: mapped.at,
+      lead_model: mapped.lead_model ?? mapped.subagent_model,
+    };
+  }
+  if ("agent" in mapped && mapped.agent === "subagent") {
+    const { subagent_id: _subagentId, ...entry } = mapped;
+    return { ...entry, agent: "lead" };
+  }
+  return mapped;
+}

@@ -10,18 +10,20 @@ export const CLARVIS_CONFIGURE_SKILL = {
     "remote SSH, /loop, background runs and reload. Use for customization or diagnosis.",
   body: `# Configure Clarvis
 
-This bundled guide needs no checkout or SKILL.md installation. Loading it grants no permissions.
+Loading grants no permissions. Ordinary turns must direct configuration changes to
+/clarvis-configure <requested change> and stop; only it requests consent.
 
 ## Enter native configuration mode
 
 The user invokes /clarvis-configure <change> in the TUI and approves the host's configuration_access
-prompt before native execution or file access. load_skill only loads guidance. A working default
+prompt before native execution or file access. A working default
 model/provider is required; first-provider setup and login recovery use Settings > Providers.
 
 Approved runs execute on the host without sandbox/container, with only configure_clarvis and ask_user.
-Shell, MCP, hooks, plugins, memory, workflows and subagents cannot execute here. Regular turns retain
-their runtime. Closing, switching away and resuming, or reconnecting requires fresh approval. Saved
-conversation ids grant no access. Without a live session identity, each configuration run asks again.
+Shell, MCP, hooks, plugins, memory, workflows and subagents cannot execute; Code shows each file call
+and spawns no child. Regular turns retain their runtime. Closing, switching away and
+resuming, or reconnecting requires fresh approval. Saved conversation ids grant no access. Without a
+live session identity, each configuration run asks again.
 
 configure_clarvis accepts list, read, write, edit or delete and roots global_clarvis, workspace_clarvis,
 global_agents or workspace_agents. Use host-resolved roots and relative paths with / separators;
@@ -63,8 +65,9 @@ files; filename exclusions cannot detect embedded secrets.
 - settings.json merges eligible plugin defaults, global, then trusted workspace settings. Providers
   merge by name, MCP servers by key; many capability blocks use the nearest complete block. Preserve
   complete blocks; never assume arbitrary deep merging.
-- Workspace executable declarations/agents require trust. Edits can invalidate approved fingerprints;
-  file-edit consent does not approve trust. runtime remains global-only in trusted workspaces too.
+- Workspace executable declarations/agents require trust. Native edits preserve trusted/inert but
+  never approve unapproved/changed. runtime remains
+  global-only in trusted workspaces too.
 - Global CLARVIS.md/AGENTS.md live in the global Clarvis root; project context belongs at the WORKSPACE
   ROOT, outside these four roots. Use ordinary authorized workspace editing; <workspace>/.clarvis
   context files are not loaded. CLARVIS.md wins over AGENTS.md per scope; neither grants authority.

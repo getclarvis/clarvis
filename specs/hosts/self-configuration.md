@@ -8,17 +8,26 @@ settings precedence, providers, Agent Profiles, subagents, grants, optional capa
 Profiles, plugins, skills, MCP, hooks, memory, plans, goals, tasks, workflows, trust, runtime settings,
 remote SSH connections, TUI loop scheduling, background runs and configuration reload.
 The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
+When loaded in an ordinary turn, the guide directs a requested configuration mutation to the exact
+`/clarvis-configure <requested change>` command and stops. Ordinary native file-mutation tools reject
+workspace `.clarvis` and `.agents` targets before guard review, so loading the guide cannot turn a
+file tool into configuration authority. Reads remain available for diagnosis. Command tools retain
+their separately documented shell/sandbox boundary, and the guide forbids using them as an
+alternate writer.
 Container disclosure retains builtin provenance and priority, and uses the same canonical embedded
 instruction text without inventing a `SKILL.md` path or execution directory. The background guidance
 states that detach, takeover, connection loss and leaving the live conversation revoke command
 `allow_session` approvals in native and container execution.
 Production: [skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts),
 [disclosure.ts](../../packages/skills/src/disclosure.ts) and
-[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
+[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts), plus
+`protectWorkspaceConfiguration` in [tools core](../../packages/tools/src/core.ts).
 Test: native/guest builtin conformance in
 [runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts) and
 controller revocation in
-[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts).
+[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts),
+plus the authored-configuration mutation case in
+[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
 
 The file kernel reserves this skill's name and composes it after extension discovery. Disabling
 skills at the host or environment level removes it too. A custom empty Extension Profile excludes
@@ -35,10 +44,18 @@ transcript turn. The file kernel recognizes the reserved name and builtin proven
 Agent Profile assembly or workflow routing. It supplies a dedicated profile for that run; this
 profile is not a sixth editable member of the shipped agent fleet. Loading the guide inside an
 ordinary turn does not switch placement; the guide directs the operator to the slash command.
+The loop may internally execute a leaf entry through its subagent-only strategy, but the kernel
+projects this reserved native route as its standalone agent: tool calls and iterations are attributed
+to `lead`, and the implicit leaf delegation lifecycle is omitted. Code therefore publishes every
+`configure_clarvis` read and mutation in the main transcript, with the same projection after stored
+reconciliation; no child agent was created or granted. Its safe projection retains the concrete
+operation, configuration root and relative path so Code can render action-specific tool rows while
+content, expected revisions and edit snippets remain absent from the trace.
 
 Production: `withBuiltinSkills`, `createRunService` in
-[run-service.ts](../../packages/kernel/src/runs/run-service.ts), and `createNativeConfigurationRuns`
-in [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts), `createNativeConfigurationRuns`
+in [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), and
+`nativeConfigurationEventToProto` plus `nativeConfigurationResultToProto` in the run mappers.
 Test: `elicits before native configuration, edits through the real loop, and preserves ordinary
 Docker placement` in
 [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
@@ -88,13 +105,17 @@ are not exposed to the model as configuration documents.
 
 Because this route executes no extensions, it does not acquire an Extension Profile run lease or
 run its assembly hooks. This permits changes to authored configuration without pinning the very
-snapshot being edited. Workspace trust and extension activation remain independent operator
-decisions; file edits do not approve them. Ordinary and workflow runs retain their normal admission
-and placement. Production: `createNativeConfigurationRuns`, `createConfigurationCapability` in
+snapshot being edited. A native workspace mutation carries trust only when the pre-write workspace
+was already trusted or inert, recording the fingerprint of the resulting executable surface. It
+does not approve a workspace whose pre-write verdict was unapproved or changed. Extension selection
+remains a separate operator decision. Ordinary and workflow runs retain their normal admission and
+placement. Production: `createNativeConfigurationRuns`, `ConfigStore.withOperatorWrite`,
+`createConfigurationCapability` in
 [capability.ts](../../packages/kernel/src/configuration/capability.ts), and the `runs.start` wrapper
 in [kernel.ts](../../packages/kernel/src/kernel.ts). Test: native-configuration integration and
 unit tests cited above assert native routing, capability narrowing, no continuation and ordinary
-Docker admission after configuration.
+Docker admission after configuration; the integration test also asserts trust carry and identical
+live/replayed standalone tool attribution.
 
 The file kernel publishes `RuntimeStatus` as native/host while approved configuration executes and
 restores the coordinator's status on settlement. Code's header therefore displays actual host
@@ -135,7 +156,8 @@ trust records, credential-like filenames, `.env` files and private key files are
 reject traversal, absolute/alternate separators, control characters, Windows devices and alternate
 streams. Stable symlink paths, hardlinked leaves and special files are refused. Read descriptors
 are checked against the inspected inode and decoded as strict UTF-8. Writes use the shared atomic
-replacement helper. Tool envelopes persist operation metadata instead of raw file content.
+replacement helper. Tool envelopes persist operation, root and relative path instead of raw file
+content, expected revisions or edit snippets.
 
 This is mediated native file access, not an OS isolation boundary. Another process replacing a
 parent between validation and mutation remains the documented portable filesystem TOCTOU limit.
@@ -166,10 +188,10 @@ remains below the 32,768-character regression ceiling and is disclosed on demand
 | Remote VPS connection | The guide names paired `--remote`/`--remote-workspace`, remote ownership, SSH authentication sources, forwarding policy and the interactive-login limit | OpenSSH configuration and host-key/login preparation remain operator-owned; configuration mode neither opens SSH nor stores a password |
 | Workflows | Complete `WORKFLOW.md`, relative brief, args, round type/profile, selectors and synthesis | Reloaded each manager run; Admiral or another `workflow` entry invokes the normal preview/preflight and checkpoints |
 | Workflow slash launcher | A separate `SKILL.md` declares `agent: admiral` | Normal skill discovery; custom Extension Profiles must select the standalone launcher |
-| Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection or trust state |
+| Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection state, and only carries a prior trusted/inert verdict across its own workspace mutation |
 | Loop scheduling and background runs | User-operated TUI commands; no new settings fields, grants or native configuration file operations | `/loop` creates in-memory conversation jobs; `/background` hands off an eligible run, `/attach` reattaches and explicit controls manage cancellation |
 | Context and policy prompts | Global context plus supported guard/memory prompts | Workspace `CLARVIS.md`/`AGENTS.md` belong at the workspace root, requiring ordinary authorized workspace editing |
-| Credentials, subscriptions, workspace trust and UI preferences | Outside the configuration file tool | Operator controls; a functioning default model/provider is a prerequisite for this agent mode |
+| Credentials, subscriptions, workspace trust and UI preferences | Trust records stay outside the configuration file tool; an existing trusted/inert verdict is carried across its approved workspace mutation | Operator controls establish or revoke trust; a functioning default model/provider is a prerequisite for this agent mode |
 
 Custom Extension Profiles select installed plugins and standalone skills; they do not contain
 workflow definitions, models or Agent Profiles. An empty custom profile retains product-owned

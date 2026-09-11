@@ -1,4 +1,6 @@
 import { promises as fs } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
+import { configurationRoots } from "@clarvis/paths";
 import { ToolError, fsError } from "../errors.ts";
 import { applyOpsAtomic, withFileLocks, type FileOp } from "../lib/atomic.ts";
 import { listFiles, readFileOptions } from "../lib/files.ts";
@@ -88,8 +90,16 @@ async function scopeFiles(
       { limit: config.maxTraversalEntries },
     );
   }
-  listing.files.sort();
-  return listing.files;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const files = listing.files.filter((file) =>
+    protectedRoots.every((protectedRoot) => {
+      const rel = relative(protectedRoot, file);
+      return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+    }),
+  );
+  files.sort();
+  return files;
 }
 
 /**

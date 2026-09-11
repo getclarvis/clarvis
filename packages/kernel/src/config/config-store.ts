@@ -95,6 +95,16 @@ export interface ConfigStore {
   ): SettingsSnapshot;
 
   /**
+   * Execute an operator-authorized configuration write and carry an existing
+   * workspace approval across the resulting executable-surface fingerprint.
+   *
+   * @remarks File-backed stores implement the trust transition. Stores without
+   * workspace trust may omit this method. The caller remains responsible for
+   * confining and validating the write itself; this method grants no file access.
+   */
+  withOperatorWrite?<T>(scope: Scope, write: () => T): T;
+
+  /**
    * Every agent a host can see: shipped, file-backed and plugin-shipped.
    *
    * @remarks A name Clarvis ships appears **once**, already resolved through

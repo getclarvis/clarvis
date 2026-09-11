@@ -557,8 +557,9 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * @param scope - the scope being written; anything but `workspace` is a no-op wrapper.
    * @param write - performs the write.
    * @remarks
-   * Writing an agent or a settings block *through the config service* is the
-   * operator deliberately authoring workspace configuration inside Clarvis, and
+   * Writing an agent or another authored workspace document through an
+   * operator-authorized configuration surface is the operator deliberately
+   * changing workspace configuration inside Clarvis, and
    * leaving their own edit withheld until they separately approved it would be
    * absurd. So the approval is re-recorded over the new surface — but **only if
    * the workspace was trusted or inert beforehand**. A repository sitting at
@@ -860,6 +861,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
 
   return {
     readSettings: () => snapshot(),
+    withOperatorWrite,
     readSettingsDocument,
     /**
      * Re-read and repair exact source bytes under the same local process lease

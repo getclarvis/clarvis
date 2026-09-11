@@ -10,7 +10,7 @@ import {
   readSync,
   rmSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { stringify as stringifyYaml } from "yaml";
 import {
   acquireLocalLeaseSync,
@@ -32,6 +32,7 @@ import {
   type AgentRecord,
   type ConfigStore,
   type ContextRecord,
+  type OperatorWriteTarget,
   type SettingsSnapshot,
 } from "./config-store.ts";
 import type { PluginContributions } from "../plugins/plugin-contributions.ts";
@@ -550,6 +551,58 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     writeWorkspaceTrust(globalDir, key, approve ? fingerprint : undefined);
   };
 
+  interface OperatorSurfaceSnapshot {
+    fingerprint?: string;
+    extensionFingerprint?: string;
+    documents: ReadonlyMap<string, string>;
+    carried: boolean;
+  }
+
+  const operatorSurfaceSnapshot = (): OperatorSurfaceSnapshot => {
+    const settings = readScopeSettings("workspace");
+    const agents = workspaceAgentFiles();
+    const extensions = opts.extensionProfile?.workspaceTrustSurface({ refresh: true });
+    const fingerprint = workspaceTrustFingerprint(settings.value, agents, extensions);
+    const documents = new Map<string, string>();
+    const workspaceSettingsPath = settingsPath("workspace");
+    if (workspaceSettingsPath !== undefined && settings.document !== null)
+      documents.set(resolve(workspaceSettingsPath), settings.document.revision);
+    const workspaceAgentsDir = agentsDir("workspace");
+    if (workspaceAgentsDir !== undefined) {
+      for (const agent of agents)
+        documents.set(
+          resolve(workspaceAgentsDir, agent.name),
+          settingsDocumentRevision(agent.content),
+        );
+    }
+    const state =
+      fingerprint === undefined
+        ? "inert"
+        : workspaceTrustVerdict(fingerprint, trustKey(), readWorkspaceTrustFile(globalDir).trust)
+            .state;
+    return {
+      fingerprint,
+      extensionFingerprint: workspaceTrustFingerprint(undefined, [], extensions),
+      documents,
+      carried: state === "inert" || state === "trusted",
+    };
+  };
+
+  const verifiedOperatorSurface = (
+    before: OperatorSurfaceSnapshot,
+    after: OperatorSurfaceSnapshot,
+    target: OperatorWriteTarget,
+  ): boolean => {
+    if (before.extensionFingerprint !== after.extensionFingerprint) return false;
+    const targetPath = resolve(target.path);
+    const paths = new Set([...before.documents.keys(), ...after.documents.keys()]);
+    for (const path of paths) {
+      const expected = path === targetPath ? target.expectedRevision : before.documents.get(path);
+      if ((after.documents.get(path) ?? null) !== (expected ?? null)) return false;
+    }
+    return true;
+  };
+
   /**
    * Run an operator write against the workspace scope, carrying approval across
    * it when the workspace already had it.
@@ -579,13 +632,24 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * store, and the surface stays withheld until it is fixed, so nothing becomes
    * silently trusted.
    */
-  const withOperatorWrite = <T>(scope: Scope, write: () => T): T => {
+  const withOperatorWrite = <T>(
+    scope: Scope,
+    write: () => T,
+    target: (result: T) => OperatorWriteTarget,
+  ): T => {
     if (scope !== "workspace") return write();
-    const carried = workspaceTrusted(readScopeSettings("workspace").value);
-    const out = write();
-    if (!carried) return out;
+    let before: OperatorSurfaceSnapshot | undefined;
     try {
-      approveCurrentSurface(true);
+      before = operatorSurfaceSnapshot();
+    } catch {
+      before = undefined;
+    }
+    const out = write();
+    if (before?.carried !== true) return out;
+    try {
+      const after = operatorSurfaceSnapshot();
+      if (!verifiedOperatorSurface(before, after, target(out))) return out;
+      writeWorkspaceTrust(globalDir, trustKey(), after.fingerprint);
     } catch {
       /* see @remarks: the write already landed, so this must not throw */
     }
@@ -850,9 +914,14 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
         throw new SettingsRevisionConflictError(expectedRevision, actualRevision);
       }
       const next = produce(document, path);
-      withOperatorWrite(scope, () => {
-        writeAtomic(scope, path, `${JSON.stringify(next, null, 2)}\n`);
-      });
+      const content = `${JSON.stringify(next, null, 2)}\n`;
+      withOperatorWrite(
+        scope,
+        () => {
+          writeAtomic(scope, path, content);
+        },
+        () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+      );
     } finally {
       lease.release();
     }
@@ -895,13 +964,15 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      *   exactly the fields its own write had just re-approved.
      */
     writeSettings: (scope, data) => {
-      withOperatorWrite(scope, () => {
-        writeAtomic(
-          scope,
-          requireScope(scope, settingsPath(scope)),
-          `${JSON.stringify(data, null, 2)}\n`,
-        );
-      });
+      const path = requireScope(scope, settingsPath(scope));
+      const content = `${JSON.stringify(data, null, 2)}\n`;
+      withOperatorWrite(
+        scope,
+        () => {
+          writeAtomic(scope, path, content);
+        },
+        () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+      );
       return snapshot();
     },
     /**
@@ -999,25 +1070,33 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       });
     },
     /** Serialize frontmatter to a YAML `---` block above the body, write atomically, and re-parse. */
-    writeAgent: (scope, name, input: AgentInput) =>
-      withOperatorWrite(scope, () => {
-        const fm = stringifyYaml(input.frontmatter).trimEnd();
-        const content = `---\n${fm}\n---\n\n${input.body}\n`;
-        if (Buffer.byteLength(content, "utf8") > MAX_AGENT_DOCUMENT_BYTES)
-          throw new ConfigResourceLimitError(
-            requireScope(scope, agentPath(scope, name)),
-            "agent document",
-            MAX_AGENT_DOCUMENT_BYTES,
-          );
-        writeAtomic(scope, requireScope(scope, agentPath(scope, name)), content);
-        return parseAgentFile(scope, name, content);
-      }),
+    writeAgent: (scope, name, input: AgentInput) => {
+      const path = requireScope(scope, agentPath(scope, name));
+      const fm = stringifyYaml(input.frontmatter).trimEnd();
+      const content = `---\n${fm}\n---\n\n${input.body}\n`;
+      return withOperatorWrite(
+        scope,
+        () => {
+          if (Buffer.byteLength(content, "utf8") > MAX_AGENT_DOCUMENT_BYTES)
+            throw new ConfigResourceLimitError(path, "agent document", MAX_AGENT_DOCUMENT_BYTES);
+          writeAtomic(scope, path, content);
+          return parseAgentFile(scope, name, content);
+        },
+        () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+      );
+    },
     /** Remove the agent file when it exists; a silent no-op otherwise. */
-    deleteAgent: (scope, name) =>
-      withOperatorWrite(scope, () => {
-        const p = agentPath(scope, name);
-        if (p !== undefined && existsSync(p)) rmSync(p, { force: true });
-      }),
+    deleteAgent: (scope, name) => {
+      const path = requireScope(scope, agentPath(scope, name));
+      return withOperatorWrite(
+        scope,
+        () => {
+          const p = agentPath(scope, name);
+          if (p !== undefined && existsSync(p)) rmSync(p, { force: true });
+        },
+        () => ({ path, expectedRevision: null }),
+      );
+    },
     /** Return the first of `CLARVIS.md` then `AGENTS.md` under the scope's context base, or `null`. */
     readContext: (scope): ContextRecord | null => {
       const candidates = contextCandidates(scope);

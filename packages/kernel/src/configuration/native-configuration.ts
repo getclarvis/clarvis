@@ -1,6 +1,7 @@
 import type { ExecuteRunOutcome, SkillsProvider } from "@clarvis/loop";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { StartRunParams } from "@clarvis/protocol";
+import { join } from "node:path";
 import type { ConfigStore } from "../config/config-store.ts";
 import type { RunExecutor, RunExecutorArgs } from "../runs/run-service.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
@@ -178,7 +179,22 @@ export function createNativeConfigurationRuns(options: {
               request.root === "workspace_clarvis" || request.root === "workspace_agents";
             if (!mutates || !workspace || options.store.withOperatorWrite === undefined)
               return write();
-            return options.store.withOperatorWrite("workspace", write);
+            return options.store.withOperatorWrite("workspace", write, (result) => {
+              const record =
+                typeof result === "object" && result !== null
+                  ? (result as Record<string, unknown>)
+                  : undefined;
+              const expectedRevision =
+                request.operation === "delete"
+                  ? null
+                  : typeof record?.revision === "string"
+                    ? record.revision
+                    : null;
+              return {
+                path: join(options.roots[request.root], ...request.path.split("/")),
+                expectedRevision,
+              };
+            });
           },
         });
         const { capabilityRegistry: _registry, ...baseDeps } = args.deps;

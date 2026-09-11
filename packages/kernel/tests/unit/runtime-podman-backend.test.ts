@@ -11,6 +11,7 @@ import {
 } from "../../src/index.ts";
 
 import { miseCacheIdentity } from "../../src/runtime/container-mise-cache.ts";
+import { guestWorkspacePath } from "../../src/runtime/container-policy.ts";
 
 const digest = `sha256:${"b".repeat(64)}`;
 const spec: RuntimeLaunchSpec = {
@@ -50,9 +51,10 @@ function fakeControl(
     readonly effective?: (value: Record<string, unknown>) => void;
     readonly bootstrap?: () => Promise<unknown>;
   } = {},
+  runtimeSpec: RuntimeLaunchSpec = spec,
 ) {
   const calls: readonly string[][] & string[][] = [];
-  const cache = miseCacheIdentity(spec, "0:0");
+  const cache = miseCacheIdentity(runtimeSpec, "0:0");
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
   let resolveExit: ((code: number | null) => void) | undefined;
   let rmAttempts = 0;
@@ -117,14 +119,19 @@ function fakeControl(
                   NetworkMode: "none",
                   UsernsMode: "",
                   ReadonlyRootfs: true,
-                  Memory: spec.limits.memoryBytes,
-                  PidsLimit: spec.limits.processCount,
+                  Memory: runtimeSpec.limits.memoryBytes,
+                  PidsLimit: runtimeSpec.limits.processCount,
                   CapAdd: null,
-                  NanoCpus: spec.limits.cpuCount * 1_000_000_000,
+                  NanoCpus: runtimeSpec.limits.cpuCount * 1_000_000_000,
                   SecurityOpt: ["no-new-privileges"],
-                  Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${spec.limits.storageBytes}` },
+                  Tmpfs: {
+                    "/tmp": `rw,nosuid,nodev,noexec,size=${runtimeSpec.limits.storageBytes}`,
+                  },
                 },
-                Config: { User: "0:0", Labels: { "io.clarvis.generation": spec.generation } },
+                Config: {
+                  User: "0:0",
+                  Labels: { "io.clarvis.generation": runtimeSpec.generation },
+                },
                 Mounts: [
                   {
                     Type: "volume",
@@ -135,20 +142,23 @@ function fakeControl(
                   },
                   {
                     Type: "bind",
-                    Source: spec.workspaceRoot,
+                    Source: runtimeSpec.workspaceRoot,
                     Destination: "/workspace",
                     RW: true,
                   },
                   {
                     Type: "bind",
-                    Source: spec.readOnlyWorkspacePaths[0],
-                    Destination: "/workspace/.clarvis/memory",
+                    Source: runtimeSpec.readOnlyWorkspacePaths[0],
+                    Destination: guestWorkspacePath(
+                      runtimeSpec,
+                      runtimeSpec.readOnlyWorkspacePaths[0]!,
+                    ),
                     RW: false,
                   },
                   {
                     Type: "bind",
-                    Source: spec.gitCommonDir,
-                    Destination: spec.gitCommonDir,
+                    Source: runtimeSpec.gitCommonDir,
+                    Destination: runtimeSpec.gitCommonDir,
                     RW: true,
                   },
                 ],
@@ -175,14 +185,14 @@ function fakeControl(
       });
       guest = createExecutionPeer({
         role: "guest",
-        generation: spec.generation,
+        generation: runtimeSpec.generation,
         input: hostToGuest,
         output: guestToHost,
         handlers: {
           "runtime.bootstrap":
             overrides.bootstrap ??
             (async () => ({
-              generation: spec.generation,
+              generation: runtimeSpec.generation,
               imageDigest: overrides.handshakeDigest ?? digest,
               runtimeProtocolRevision: overrides.protocolRevision ?? RUNTIME_PROTOCOL_REVISION,
             })),
@@ -399,6 +409,31 @@ describe("Podman runtime backend", () => {
     await session.stop();
     expect(fake.calls.at(-2)?.slice(0, 3)).toEqual(["stop", "--time", "5"]);
     expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    fake.close();
+  });
+
+  it("CSV-quotes comma-containing workspace, overlay and Git mount fields", async () => {
+    const commaSpec: RuntimeLaunchSpec = {
+      ...spec,
+      workspaceRoot: "/work/tree,one",
+      readOnlyWorkspacePaths: ["/work/tree,one/.clarvis/memory,cache"],
+      gitCommonDir: "/repo,shared/.git",
+    };
+    const fake = fakeControl({}, commaSpec);
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    const session = await backend.start(commaSpec);
+    const create = fake.calls.find((args) => args[0] === "create")!;
+    expect(create).toContain(
+      'type=bind,"source=/work/tree,one",target=/workspace,rw=true,relabel=shared',
+    );
+    expect(create).toContain(
+      'type=bind,"source=/work/tree,one/.clarvis/memory,cache","target=/workspace/.clarvis/memory,cache",ro=true,relabel=shared',
+    );
+    expect(create).toContain(
+      'type=bind,"source=/repo,shared/.git","target=/repo,shared/.git",rw=true,relabel=shared',
+    );
+    await session.stop();
     fake.close();
   });
 

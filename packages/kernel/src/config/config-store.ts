@@ -32,6 +32,14 @@ export class SettingsRevisionConflictError extends Error {
   }
 }
 
+/** Exact file result an operator-authorized workspace mutation intended to persist. */
+export interface OperatorWriteTarget {
+  /** Absolute path confined and owned by the caller. */
+  path: string;
+  /** SHA-256 revision of the intended final bytes, or `null` for deletion. */
+  expectedRevision: string | null;
+}
+
 /**
  * Persistence abstraction for settings, agent markdown, and workspace context
  * files that a {@link createConfigService | ConfigService} is layered over.
@@ -96,13 +104,20 @@ export interface ConfigStore {
 
   /**
    * Execute an operator-authorized configuration write and carry an existing
-   * workspace approval across the resulting executable-surface fingerprint.
+   * workspace approval only across the verified target mutation.
    *
    * @remarks File-backed stores implement the trust transition. Stores without
    * workspace trust may omit this method. The caller remains responsible for
    * confining and validating the write itself; this method grants no file access.
+   * `target` derives the exact expected post-write file revision from the completed
+   * operation. Any concurrent change to another executable input, or a different
+   * final revision at the target, leaves the resulting surface withheld.
    */
-  withOperatorWrite?<T>(scope: Scope, write: () => T): T;
+  withOperatorWrite?<T>(
+    scope: Scope,
+    write: () => T,
+    target: (result: T) => OperatorWriteTarget,
+  ): T;
 
   /**
    * Every agent a host can see: shipped, file-backed and plugin-shipped.

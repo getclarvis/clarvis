@@ -424,7 +424,9 @@ context; `executable` and `connection` override those choices. Its backend requi
 uses the resulting local image ID as `runtime.image_digest`, makes the image root read-only,
 bounds the non-executable `/tmp`, and admits the selected workspace bind, its exact read-only
 overlays, optional linked-worktree Git metadata, plus the labelled workspace/image-specific `/mise`
-volume. It deliberately uses a private bridge rather than host networking. The cache is partitioned
+volume. Bind source and target values are encoded as complete fields for the engines' `--mount` CSV
+parser, so commas in valid host or guest paths do not split the mount declaration. It deliberately
+uses a private bridge rather than host networking. The cache is partitioned
 by effective UID/GID as well as workspace and image. Rootful Docker runs as the invoking operator's
 numeric UID/GID; rootless Docker uses its operator-mapped root. Rootful `userns-remap` is refused
 because the bind identity cannot be preserved. A bounded, networkless initializer with only the cache
@@ -893,7 +895,9 @@ visible as a normal tool call, live and after replay, and no child agent is spaw
 labels the concrete list/read/write/edit/delete action and its scoped authored path while keeping
 content, revisions and edit snippets out of trace storage. An approved
 workspace (including an initially inert workspace) retains trust across these operator-authorized
-workspace mutations; an already unapproved or changed workspace is never approved by file consent.
+workspace mutations only when the resulting revision matches the authorized target and every other
+executable input remains unchanged. Concurrent drift leaves the resulting surface withheld; an
+already unapproved or changed workspace is never approved by file consent.
 See [self-configuration.md](../../specs/hosts/self-configuration.md) for the path policy, volatile
 identity and explicit filesystem limits. Normal turns retain their configured runtime.
 

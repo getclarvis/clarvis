@@ -106,8 +106,10 @@ are not exposed to the model as configuration documents.
 Because this route executes no extensions, it does not acquire an Extension Profile run lease or
 run its assembly hooks. This permits changes to authored configuration without pinning the very
 snapshot being edited. A native workspace mutation carries trust only when the pre-write workspace
-was already trusted or inert, recording the fingerprint of the resulting executable surface. It
-does not approve a workspace whose pre-write verdict was unapproved or changed. Extension selection
+was already trusted or inert, its final bytes match the revision returned by the authorized
+operation, and every other executable input remains unchanged. The store records the fingerprint
+of that verified snapshot; concurrent drift leaves the resulting surface withheld. It does not
+approve a workspace whose pre-write verdict was unapproved or changed. Extension selection
 remains a separate operator decision. Ordinary and workflow runs retain their normal admission and
 placement. Production: `createNativeConfigurationRuns`, `ConfigStore.withOperatorWrite`,
 `createConfigurationCapability` in
@@ -115,7 +117,8 @@ placement. Production: `createNativeConfigurationRuns`, `ConfigStore.withOperato
 in [kernel.ts](../../packages/kernel/src/kernel.ts). Test: native-configuration integration and
 unit tests cited above assert native routing, capability narrowing, no continuation and ordinary
 Docker admission after configuration; the integration test also asserts trust carry and identical
-live/replayed standalone tool attribution.
+live/replayed standalone tool attribution. The workspace-trust integration test asserts that an
+unrelated concurrent executable mutation cannot ride on the authorized write.
 
 The file kernel publishes `RuntimeStatus` as native/host while approved configuration executes and
 restores the coordinator's status on settlement. Code's header therefore displays actual host

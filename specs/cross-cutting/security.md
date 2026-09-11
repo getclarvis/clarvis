@@ -909,9 +909,12 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/src/config/workspace-trust.ts`. **Unpinned.**
 41. **An operator-authorized configuration write carries an existing approval and never creates
     one.** When the pre-write workspace verdict is `trusted` or `inert`,
-    `ConfigStore.withOperatorWrite` records the post-write fingerprint; when it is `unapproved` or
-    `changed`, the write does not approve it. Both `ConfigService` mutations and approved native
-    `configure_clarvis` workspace mutations use this boundary. Production:
+    `ConfigStore.withOperatorWrite` records the already-verified post-write fingerprint only when
+    the authorized file has its expected revision and every other executable input is unchanged.
+    Concurrent drift or a different target revision leaves the resulting surface withheld. When
+    the pre-write verdict is `unapproved` or `changed`, the write does not approve it. Both
+    `ConfigService` mutations and approved native `configure_clarvis` workspace mutations use this
+    boundary. Production:
     `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
     and `packages/kernel/src/configuration/native-configuration.ts`; pinned by
     `packages/kernel/tests/integration/workspace-trust.test.ts` and

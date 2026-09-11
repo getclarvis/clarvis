@@ -10,6 +10,7 @@ import {
 } from "../../src/config.ts";
 import { globalPaths } from "@clarvis/paths";
 import { stripWorkspaceSubscriptionProviders } from "../../src/config/workspace-trust.ts";
+import { settingsDocumentRevision } from "../../src/config/config-store.ts";
 import { kernelError } from "../../src/core/errors.ts";
 
 const HOOK = {
@@ -27,6 +28,7 @@ function freshConfig() {
   };
   return {
     root,
+    store,
     config: createConfigService(store),
     writeGlobal: (s: unknown) => write(dirname(globalPaths(globalDir).settingsFile), s),
     writeWorkspace: (s: unknown) => write(join(root, ".clarvis"), s),
@@ -381,6 +383,30 @@ describe("an operator's own write is not a clone", () => {
     );
     expect(after.workspace_trust?.state).toBe("unapproved");
     expect(after.merged.hooks).toBeUndefined();
+  });
+
+  it("withholds a concurrent executable change instead of carrying it with the authorized target", async () => {
+    const { root, store, config, writeWorkspace } = freshConfig();
+    writeWorkspace({ hooks: [HOOK] });
+    await config.approveWorkspace();
+    const path = join(root, ".clarvis", "agents", "reviewer.md");
+    const content = "---\ntools: []\n---\n\nReview only.\n";
+
+    store.withOperatorWrite!(
+      "workspace",
+      () => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, content);
+        writeWorkspace({ hooks: [EVIL] });
+      },
+      () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+    );
+
+    const after = await config.getSettings();
+    expect(after.workspace_trust?.state).toBe("changed");
+    expect(after.merged.hooks).toBeUndefined();
+    expect(store.readAgent("workspace", "reviewer")).not.toBeNull();
+    expect(store.readEffectiveAgent("reviewer")).toBeNull();
   });
 });
 

@@ -1018,7 +1018,6 @@ export function App(props: AppProps): JSX.Element {
       notify,
     },
   });
-  overlays.setRecheck(appWiring.recheck);
   let backgroundOfferLive = true;
   onCleanup(() => {
     backgroundOfferLive = false;

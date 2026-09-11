@@ -349,7 +349,8 @@ are dynamically imported and mount lazily on first use, remain hidden afterward 
 layers with stable reactive matchers; Plan reloads the current live document on each
 inactive-to-active transition and invalidates in-flight reads on deactivation. The configuration
 stack still preserves only its own inactive parents and disposes a popped frame once; retaining the
-shell does not cache closed configuration frames. Production:
+shell does not cache closed configuration frames. `popView` reactivates the parent and does not
+run Doctor/sandbox/subscription probes. Production:
 `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
 `packages/code/src/views/app/TranscriptRegion.tsx` (`active`, `TranscriptProjection`),
 `packages/code/src/views/overlays/{DiffViewer,PlanOverlay}.tsx`, and

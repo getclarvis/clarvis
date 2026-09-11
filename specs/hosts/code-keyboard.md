@@ -924,10 +924,12 @@ Ctrl+C repeat guard. Exact-versus-prefix ambiguity resolves to the exact action 
 even an active `escape x` sequence cannot add a timer to Back/Close. `Providers -> Settings ->
 Transcript` therefore completes with two immediate presses, and Escape can never fall through into
 run cancellation or quit because those effects are absent from `app.escape` and all local Escape
-handlers. Production: `registerImmediateExactDisambiguation`, `trackWindowPress`, and the
+handlers. Popping a configuration child back to its parent also must not start a sandbox host probe
+or subscription entitlement check: those remain Doctor's explicit recheck and the Sandbox settings
+surface. Production: `registerImmediateExactDisambiguation`, `trackWindowPress`, and the
 `offInteractionBlocker` intercept plus `app.escape` command in
-`packages/code/src/keys/interaction.ts`; the switching effect in `packages/code/src/views/App.tsx`.
-Tests:
+`packages/code/src/keys/interaction.ts`; `popView` in
+`packages/code/src/views/overlay-host.ts`. Tests:
 `packages/code/tests/integration/interaction.test.ts` ("an exact action beats a longer prefix
 synchronously" and "a workspace replacement blocks commands but keeps window Escape live") and
 rapid semantic navigation plus the active-view switching case in

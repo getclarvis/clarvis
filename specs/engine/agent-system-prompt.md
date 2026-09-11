@@ -11,7 +11,7 @@ Every agent — entry lead, spawned leaf, builtin, or user-created — receives 
 - **Shared prompt** — fleet work policy common to every agent in the run.
 - **Profile prompt** — identity and harness of marshall, admiral, coder, explorer, planner, or a user-authored agent.
 
-Clarvis ships a built-in shared prompt. The operator can replace it globally, replace it for one workspace, disable it, or restore inheritance by deleting the override. Changing the shared prompt never rewrites or materializes profile files.
+Clarvis ships a comprehensive built-in operating prompt covering instruction precedence, durable authorization, autonomous completion, workspace discipline, Clarvis capabilities, verification, and communication. The operator can replace it globally, replace it for one workspace, disable it, or restore inheritance by deleting the override. Changing the shared prompt never rewrites or materializes profile files.
 
 ## 2. Surface
 
@@ -115,10 +115,10 @@ Production: `renderSkillsSection`. Test: `packages/skills/tests/unit/tool.test.t
 4. Invalid layers fall back to a complete valid source and surface a diagnostic.
    - Production: `resolveSharedPrompt`
    - Test: `packages/loop/tests/unit/shared-agent-prompt.test.ts`
-5. `DEFAULT_SHARED_AGENT_PROMPT` stays within 500 estimated tokens (`ceil(chars / 4)`) and does not interpolate run state.
-   - Production: `SHARED_AGENT_PROMPT_TOKEN_BUDGET`
+5. `DEFAULT_SHARED_AGENT_PROMPT` provides the complete built-in operating contract, stays within the generic system-prompt character limit, and does not interpolate run state. It has no separate token budget.
+   - Production: `DEFAULT_SHARED_AGENT_PROMPT`, `INPUT_LIMITS.systemPromptChars`
    - Test: `packages/loop/tests/unit/shared-agent-prompt.test.ts`
-6. Builtin profile bodies keep their existing token ceilings (marshall 280, admiral 410, coder 160, explorer 160, planner 180, fleet 1150).
+6. Builtin profile bodies add role-specific collaboration and harness guidance without duplicating the shared operating policy.
    - Production: `packages/kernel/src/config/builtin-agents/`
    - Test: `packages/kernel/tests/component/builtin-agents.test.ts`
 7. Source and diagnostics are host-facing; they are not copied into the model prompt.

@@ -1,10 +1,6 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { INPUT_LIMITS } from "../../src/validation/input-limits.ts";
-import {
-  DEFAULT_SHARED_AGENT_PROMPT,
-  SHARED_AGENT_PROMPT_TOKEN_BUDGET,
-  estimatedPromptTokens,
-} from "../../src/runtime/prompts/shared-agent-prompt.ts";
+import { DEFAULT_SHARED_AGENT_PROMPT } from "../../src/runtime/prompts/shared-agent-prompt.ts";
 import {
   parseSharedPromptDocument,
   renderSharedPromptDocument,
@@ -15,14 +11,31 @@ const REPLACE = renderSharedPromptDocument("replace", "Custom fleet policy.");
 const DISABLED = renderSharedPromptDocument("disabled");
 
 describe("DEFAULT_SHARED_AGENT_PROMPT", () => {
-  it("stays within its own estimated-token ceiling", () => {
-    expect(estimatedPromptTokens(DEFAULT_SHARED_AGENT_PROMPT)).toBeLessThanOrEqual(
-      SHARED_AGENT_PROMPT_TOKEN_BUDGET,
-    );
+  it("ships a complete Clarvis operating contract within the system prompt limit", () => {
+    expect(DEFAULT_SHARED_AGENT_PROMPT.length).toBeLessThanOrEqual(INPUT_LIMITS.systemPromptChars);
+    expect(DEFAULT_SHARED_AGENT_PROMPT.length).toBeGreaterThan(4_000);
+    for (const section of [
+      "# Working in Clarvis",
+      "## Follow instructions and authorization",
+      "## Complete the work",
+      "## Work in the shared workspace",
+      "## Communicate clearly",
+    ]) {
+      expect(DEFAULT_SHARED_AGENT_PROMPT).toContain(section);
+    }
+    for (const behavior of [
+      "authorization and preferences persist",
+      "persist until the requested outcome",
+      "After context compaction",
+      "Inspect the worktree before editing",
+      "The final answer must stand alone",
+    ]) {
+      expect(DEFAULT_SHARED_AGENT_PROMPT).toContain(behavior);
+    }
   });
 
   it("is a static how-you-work policy without interpolating run state", () => {
-    expect(DEFAULT_SHARED_AGENT_PROMPT.startsWith("# How you work")).toBe(true);
+    expect(DEFAULT_SHARED_AGENT_PROMPT.startsWith("# Working in Clarvis")).toBe(true);
     expect(DEFAULT_SHARED_AGENT_PROMPT).not.toMatch(/\$\{/);
     expect(DEFAULT_SHARED_AGENT_PROMPT).not.toContain("process.cwd");
     expect(DEFAULT_SHARED_AGENT_PROMPT).not.toContain("Date.");

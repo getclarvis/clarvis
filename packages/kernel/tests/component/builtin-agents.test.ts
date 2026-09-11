@@ -11,19 +11,6 @@ import { compareAgentDisplayOrder } from "../../src/config/agent-resolution.ts";
 
 const ADMIRAL = readBuiltinAgent("admiral")!;
 const MARSHALL = readBuiltinAgent("marshall")!;
-const PROMPT_TOKEN_BUDGETS = {
-  marshall: 280,
-  admiral: 410,
-  coder: 160,
-  explorer: 160,
-  planner: 180,
-} as const;
-const FLEET_PROMPT_TOKEN_BUDGET = 1150;
-
-/** Match the engine's text-only estimate: one token per four characters. */
-function estimatedTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
 
 describe("the agent fleet Clarvis ships", () => {
   test("is the five profiles, in the product's order", () => {
@@ -60,16 +47,17 @@ describe("the agent fleet Clarvis ships", () => {
     }
   });
 
-  test("keeps the complete builtin prompt payload within its token budget", () => {
-    let total = 0;
+  test("gives every role a collaborative communication pattern without restating shared policy", () => {
     for (const agent of BUILTIN_AGENTS) {
-      const tokens = estimatedTokens(agent.body);
-      total += tokens;
-      expect(tokens).toBeLessThanOrEqual(
-        PROMPT_TOKEN_BUDGETS[agent.name as keyof typeof PROMPT_TOKEN_BUDGETS],
-      );
+      expect(agent.body).toContain("Clarvis");
+      expect(agent.body).not.toContain("# Working in Clarvis");
+      expect(agent.body).not.toContain("User authorization and preferences persist");
     }
-    expect(total).toBeLessThanOrEqual(FLEET_PROMPT_TOKEN_BUDGET);
+    expect(MARSHALL.body).toContain("Communicate like a thoughtful senior colleague");
+    expect(ADMIRAL.body).toContain("Communicate like a calm technical lead");
+    expect(readBuiltinAgent("coder")!.body).toContain("Lead with the outcome");
+    expect(readBuiltinAgent("explorer")!.body).toContain("Lead with the conclusion");
+    expect(readBuiltinAgent("planner")!.body).toContain("Recommend the approach");
   });
 
   test("retains the harness handoff contract in every profile", () => {

@@ -655,17 +655,17 @@ Each entry: **rule** — production anchor — test anchor.
     `packages/kernel/tests/component/builtin-agents.test.ts` ("carries the workflow grant"), whose title states the mechanism: "the only thing that routes a run
     as a workflow"; the reader is `packages/kernel/src/application/workflow-policy.ts`.
 
-16. **The shipped prompt payload stays role- and harness-sized.** `MARSHALL.body`, `ADMIRAL.body`,
+16. **The shipped prompt payload stays role- and harness-focused.** `MARSHALL.body`, `ADMIRAL.body`,
     `CODER.body`, `EXPLORER.body`, and `PLANNER.body` under
     `packages/kernel/src/config/builtin-agents/` contain the role and effective harness boundary
-    without embedded workflow schemas or generic work instructions. Pinned by
-    `packages/kernel/tests/component/builtin-agents.test.ts` ("keeps the complete builtin prompt
-    payload within its token budget"), which uses the engine's text-only
-    one-token-per-four-characters estimate, individual caps, and a 1150-token fleet cap. Every profile
-    states exposed-tool limits, delegated context isolation, the shared workspace and conditional
-    `submit_result` completion; leaves also return blockers. Production: the five `body` values
-    above. Test: the same suite, `retains the harness handoff contract in every profile` and
-    `state their role, limitations and blocker handoff`.
+    without duplicating the generic work policy in the shared prompt. Each profile adds a collaborative
+    communication pattern appropriate to its role: direct synthesis for leads, reviewable outcomes for
+    implementation, evidence-first findings for investigation, and decision-ready recommendations for
+    planning. Every profile states exposed-tool limits, delegated context isolation, the shared workspace
+    and conditional `submit_result` completion; leaves also return blockers. Production: the five `body`
+    values above. Test: `packages/kernel/tests/component/builtin-agents.test.ts` ("gives every role a
+    collaborative communication pattern without restating shared policy", "retains the harness handoff
+    contract in every profile", and "state their role, limitations and blocker handoff").
 
 17. **`builtinAgentRecord` hands out a defensive copy of the frontmatter.**
     `packages/kernel/src/config/agent-overlay.ts` spreads before returning. Partially pinned:

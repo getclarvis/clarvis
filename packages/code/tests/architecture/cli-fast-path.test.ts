@@ -20,7 +20,12 @@ const ALLOWED = new Set([
 ]);
 
 /** Specifiers the launcher must reach only through a dynamic `import()`. */
-const MUST_BE_DYNAMIC = ["@opentui/solid/preload", "./index.tsx", "./update/index.ts"];
+const MUST_BE_DYNAMIC = [
+  "@opentui/solid/preload",
+  "./index.tsx",
+  "./remote-host.ts",
+  "./update/index.ts",
+];
 
 interface Specifier {
   text: string;

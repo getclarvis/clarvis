@@ -445,6 +445,19 @@ error.
   `guardEscalationAsk`/`guardMaxEscalations` at all (`packages/loop/src/runtime/entry-inputs.ts`); its absence means a
   guard trip is unconditionally terminal regardless of `CLARVIS_GUARD_MAX_ESCALATIONS`.
 
+The kernel's internal goal-turn composition constrains the resolved request before launch. It sets
+`budget.on_exceed` to `stop`, caps `total_token_limit` by both the configured run ceiling and the
+remaining cumulative goal allowance, and refuses non-finite iteration limits on any resolved
+profile. It reuses the ordinary tree ledger; it does not create another output-budget owner or
+claim zero overshoot for already admitted work. The goal's cumulative usage and next-stage policy
+belong to [goals](../capabilities/goals.md), not to the engine's soft-budget mechanism.
+Production: `GoalExecutionPolicy.constrain` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
+Test: [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+captures decreasing stop-mode ceilings across two automatic continuations and rejects unbounded
+token/iteration settings before inference. Product host registration is required before this internal
+composition is an available goal control surface.
+
 ### 4.4 The output-token reservation (`packages/loop/src/runtime/loop/output-budget.ts`)
 
 `withOutputTokenBudget(llm, budget)` wraps every `.call`:

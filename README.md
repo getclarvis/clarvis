@@ -98,6 +98,7 @@ Essential controls:
 | `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
 | `/model`  | Choose the default model                                                 |
 | `/effort` | Choose the default reasoning effort supported by that model              |
+| `/goal`   | Create, inspect and control a persistent bounded objective                |
 | `Ctrl+S`  | Choose Host, native Sandbox, or Docker isolation                         |
 | `Ctrl+G`  | Choose Off, Approval, or automatic LLM command review                    |
 
@@ -128,6 +129,7 @@ clarvis -p "explain this repository"     # headless text response
 clarvis -p "review this change" --format md
 clarvis --worktree                       # create a generated dedicated Git worktree
 clarvis --worktree focused-fix           # create or reopen a named worktree
+clarvis --remote clarvis-vps --remote-workspace /srv/project
 clarvis --ascii                          # use ASCII glyphs
 clarvis --update                         # update a managed portable installation
 clarvis --help                           # complete CLI reference
@@ -164,6 +166,10 @@ isolation is a complete security boundary:
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
   never place a secret there;
+- `--remote` carries the complete kernel protocol through OpenSSH stdio. OpenSSH supplies transport
+  encryption, integrity, server host-key verification and user authentication; Clarvis opens no
+  public listener and disables port, agent and X11 forwarding. The remote installation and account
+  can read data after decryption, so its host and storage remain part of the trust boundary;
 - the model catalog, marketplace, subscription login, and updater may make explicit network
   requests.
 
@@ -228,26 +234,27 @@ the RC's pinned Bun version, and Docker. See the
 Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
-| Package                                        | Role                | Path                   | Description                                                  |
-| ---------------------------------------------- | ------------------- | ---------------------- | ------------------------------------------------------------ |
-| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                 |
-| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary. |
-| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                    |
-| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                |
-| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                    |
-| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.             |
-| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.       |
-| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                |
-| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                  |
-| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                |
-| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                |
-| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                  |
-| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                     |
-| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                 |
-| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                 |
-| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.   |
+| Package                                        | Role                | Path                   | Description                                                          |
+| ---------------------------------------------- | ------------------- | ---------------------- | -------------------------------------------------------------------- |
+| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                         |
+| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary.         |
+| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                            |
+| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                        |
+| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                            |
+| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                     |
+| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.               |
+| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                        |
+| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                          |
+| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                        |
+| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                        |
+| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                          |
+| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                             |
+| [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Persistent objectives, checkpoints and bounded continuation policy.  |
+| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                         |
+| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                         |
+| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.           |
 | [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling. |
-| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.   |
+| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.           |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product
 model. The generated

@@ -1,5 +1,6 @@
 import type { ErrorCode, ExecutionMode, ProviderErrorDetails, RunEndedReason } from "./run.ts";
 import type { AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
+import type { FinalizationDisposition } from "./finalization.ts";
 
 /**
  * Every trace kind the engine itself records, as a runtime list.
@@ -458,6 +459,8 @@ export interface RunStartedDetail {
 export interface RunEndedDetail {
   reason: RunEndedReason;
   code?: ErrorCode;
+  /** Successful stage disposition; absent means an ordinary final result. */
+  disposition?: FinalizationDisposition;
 }
 
 /**

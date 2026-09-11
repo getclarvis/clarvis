@@ -38,7 +38,7 @@ function workspacePackageNames(): string[] {
 describe("package architecture policy", () => {
   it("assigns every workspace package exactly one role", () => {
     const packages = workspacePackageNames();
-    expect(packages).toHaveLength(18);
+    expect(packages).toHaveLength(19);
     expect(packageRoleRegistryErrors(packages)).toEqual([]);
     expect(Object.keys(PACKAGE_ROLES).sort()).toEqual(packages);
     for (const packageName of packages) expect(packageRoleOf(packageName)).toBeDefined();

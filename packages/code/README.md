@@ -48,6 +48,9 @@ exit policy. Unsaved settings still require confirmation, and Ctrl+C still reque
 while physical work is active. A refused reload leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
+For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
+workspace lease is retired before the replacement starts. That expected closure is not presented as
+a connection failure.
 
 User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
 conversation in the host before spawning, persist their observation under that reservation, and
@@ -58,6 +61,35 @@ closing the host connection. Offline compaction uses the host's separate mainten
 also uses hosted turn admission and waits for physical closure. The host must remain alive for
 execution to continue; restarting an interrupted host does not replay tools or restore a live run.
 See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
+
+`/goal` shows the conversation's objective, criteria, limits, consumption and physical execution.
+`/goal <objective>` creates and starts it under finite host limits; `/goal -- <objective>` protects
+literal text beginning with a control word. Existing goals open replacement review. `/goal edit`
+opens a deterministic form for objective, criteria and limits; editing a terminal goal requires
+confirmed replacement. Pause, resume, cancel and clear use explicit host controls. Pause alone
+stops future stages; `pause --running` also requests cancellation of the bound run. Editing waits
+for physical closure, including unknown work that requires recovery.
+An edit submits only fields changed from the reviewed snapshot; a no-op closes locally, and a
+limit-only edit does not revise the objective or clear its candidate and human approvals. Once a
+mutation receipt is confirmed, a failed follow-up read leaves the view stale with an error but does
+not report the committed mutation as failed.
+Human criteria show pending or accepted status for the current objective revision. The acceptance
+picker offers only pending criteria; an approval from an earlier revision does not satisfy a new review.
+Completed and cancelled goals retain their approval display without offering new acceptance.
+
+The presentation controller subscribes before reading canonical state, pins each review to its
+conversation and revision, and recovers uncertain mutations by receipt without resubmission.
+The runtime observes host-started stages in the same conversation, retains the painted prefix and
+hydrates stages that finished before observation. It never schedules goal continuation in the TUI.
+The transcript renders accepted stage endings as `Checkpoint saved`, retaining that label during
+reconciliation and session restoration. Ordinary successful runs remain `Completed`; the goal view
+is the authority projection for whether the full objective has completed.
+When stages settle behind a full-region view, returning to the transcript transfers older sealed
+blocks to history navigation even if they are not yet resident. They cannot remain in the live tail
+after a newer completion; scrolling or revealing an earlier checkpoint loads its retained history.
+Hosts without goal authority report explicit unavailability. The
+[goal contract](../../specs/capabilities/goals.md) owns these boundaries; complete local/remote,
+container, real-provider and installed-artifact qualification requires separate journey evidence.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -696,6 +728,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
                     [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
+                    [--remote <user@host>] [--remote-workspace <path>]
                     [--debug[=<error|warn|info|debug>]]
 
   -h, --help                  print this help and exit
@@ -712,6 +745,8 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
   --update                    install the newest eligible Clarvis release and exit
   --ascii                     render glyphs as plain ascii
   --worktree [name]           open a dedicated Git worktree; omit name to generate one
+  --remote <user@host>         connect to a Clarvis installation over SSH
+  --remote-workspace <path>   absolute workspace path on the remote host
   --debug[=<error|warn|info|debug>]  write bounded application diagnostics; --debug=<level>
 ```
 
@@ -721,6 +756,37 @@ The process then stays pinned to that canonical checkout. Git's registered workt
 source of truth; Clarvis keeps no parallel registry. Before creation, Code ensures the primary
 worktree's `.clarvis/.gitignore` excludes `worktrees/` so the nested checkout cannot be staged by
 accident.
+
+`--remote <user@host> --remote-workspace <path>` starts the installed `clarvis` command through
+OpenSSH and carries the ordinary kernel protocol over that process's stdio. Both flags are required
+and cannot be combined with `--worktree`. SSH owns host/user authentication and encryption; Clarvis
+does not copy the client's provider credentials, global configuration or local-host discovery token
+to the remote process. The remote installation resolves its own global state and OAuth session. The
+workspace and optional Extension Profile selector are encoded into one bounded base64url argument;
+the remote host canonicalizes them and returns its server-owned session namespace. It supports
+hosted runs and goals but exposes no browser, inspection, restart or runtime-retry controls belonging
+to the remote machine. `/reconnect` starts a fresh SSH process; configuration reload is unavailable
+for that connection. Client-only diagnostics and prompt history remain under the local invocation's
+state, while workspace files and durable sessions remain remote.
+
+The destination may be a normal `user@host` or an alias from the operator's OpenSSH configuration.
+OpenSSH chooses default identity files, `IdentityFile` entries, certificates and identities already
+loaded in `ssh-agent`; Clarvis has no separate identity-file or password store. A local agent may
+authenticate the connection, but `-a`, `-x` and `ClearAllForwardings=yes` prevent agent, X11 and port
+forwarding to the VPS. Host-key verification, jump hosts and authentication order retain the user's
+SSH configuration. Clarvis does not force `StrictHostKeyChecking` or `BatchMode`.
+The SSH child receives only home/path, platform process-discovery, local agent and askpass/display
+variables from the client environment. Provider keys, Clarvis OAuth values and unrelated variables
+are absent, so OpenSSH `SendEnv` cannot forward them. The already-pinned remote process supplies the
+canonical workspace identity during hello; the client does not resend the operator's raw path.
+
+Before opening the TUI, establish the host key and verify login with the same alias using ordinary
+`ssh`. Password and key-passphrase prompts are not a Clarvis UI contract: SSH may try its controlling
+terminal or askpass helper while Clarvis has reserved stdin/stdout for its protocol, which can make
+interactive startup fail or disturb the display. Prefer a verified host key plus a key, certificate
+or hardware-backed identity already available to `ssh-agent`. The wire receives no second Clarvis
+encryption layer; prompts, events and results are confidential and integrity-protected in transit by
+SSH, while the authenticated remote account can read them after decryption.
 
 Normal interactive launches use the full Unicode glyph theme. Plain ASCII is
 an explicit compatibility choice through `--ascii` or the saved Theme setting.

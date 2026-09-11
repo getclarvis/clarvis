@@ -2177,10 +2177,10 @@ Extracting `runtime/delegation.ts` + `runtime/subagents/` + `runtime/capabilitie
 as a `@clarvis/delegation` package was specified, measured and **abandoned**. It was not a matter of
 effort; it did not build. Recorded so nobody pays for the measurement twice.
 
-The abandonment still stands. The generated block in `specs/package-coupling-analysis.md` reports
-18 packages, 47 internal edges and 3 optional edges, and its table has no `delegation` row — the
-package was never created, and the graph check would fail the gate if the document and the manifests
-disagreed.
+The abandonment still stands. The generated block in `specs/package-coupling-analysis.md` has no
+`delegation` row: the package was never created, and the graph check would fail the gate if that
+document and the manifests disagreed. Its generated counts remain the authority as other packages
+are added or dependency edges change.
 
 What has changed since the original analysis is that **two of the six obstacles dissolved as
 side-effects of other work**, and the coupling numbers moved with them. Both halves are recorded

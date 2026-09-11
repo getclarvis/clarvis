@@ -5,7 +5,7 @@ that composes a list of them. A dependency-free leaf of the graph — its only e
 `zod` — so a capability can live in its own package instead of inside `@clarvis/loop`.
 
 ```text
-capability ──> llm | supervision | trace | mcp-client | hooks | skills | memory | plan
+capability ──> llm | supervision | trace | mcp-client | hooks | skills | memory | plan | goal
            ──> tasks | loop | workflows | kernel | server
 ```
 
@@ -46,6 +46,11 @@ that run without changing the persisted profile. `MCPConnection.instructions`
 carries bounded initialization guidance back across the same leaf contract.
 
 ## Test ownership
+
+`LLMUsage` keeps numeric tallies and separate `usage_unknown` / `cache_unknown` flags. Missing
+provider counters are not measured zero; retry totals preserve any unreported attempt alongside
+the known counters. The provider adapter owns their interpretation in the
+[LLM contract](../../specs/foundations/llm.md).
 
 This package owns the complete unit matrices for its contracts and vocabulary: capability
 composition and registries, open trace/error vocabularies, secret redaction, tool-argument
@@ -89,8 +94,21 @@ the tracker contributes the required `task_id` property for `delegate_task`.
 
 Activation and persistence hooks are host extension boundaries, so they have finite wall budgets.
 All `forRun` activations and `seedBlock` contributions run concurrently under
-`CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by default, hard-capped at 60 s); a timeout skips that
-capability or block without retaining the run. `finalizeRun` and `onRunEnd` use
+`CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by default, hard-capped at 60 s); a timeout skips an
+optional capability or block without retaining the run. A host registration marked `required: true`
+must activate, supply non-empty content for any declared seed, and attach to the entry agent.
+Failure, refusal or unavailable extension capacity stops before inference with
+`required_capability_unavailable`. The flag propagates to `RunCapability`; it does not grant controls
+to children, which retain ordinary per-scope filtering. Required entry attachment errors use the
+same bounded failure code without exposing private exception details. The engine attaches and folds
+the entry's contributions before auxiliary inference as well as its own first call.
+Pre-start cancellation remains cancellation.
+`OrchestrationHooks.beforeIteration` can asynchronously refresh host state before compaction or
+inference. Contributions run in order; an interruption result stops the sweep and the stage. Successful
+completion or checkpoint cannot bypass the finalization gates through this hook. The engine
+bounds the complete sweep to five seconds and retires the supplied signal when it ends, so delayed
+reads must check that signal before publishing. Synchronous iteration observers remain supported.
+`finalizeRun` and `onRunEnd` use
 `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` (2 s by default). A timed-out finalizer forfeits only its new
 state value, while a timed-out post-persist observer continues detached. The host's physical
 extension admission does **not** release that detached call until its real promise settles: ordinary
@@ -343,6 +361,17 @@ it against `CapabilitySettingsSpec.schema` rather than the engine declaring it. 
 happen before settings are parsed.
 
 ## Prompt-cache continuity
+
+`HandlerVerdict.finalize` requests a checkpoint through the loop's finalize gates. The bounded
+`checkpointMetadataSchema` carries `summary` and `next_step` separately from the final output schema.
+`AgentResult` and `RunResponse` retain the accepted `disposition: "checkpoint"`; omission means the
+ordinary final path. `onFinalizeAccepted` receives the accepted attempt. A run capability can set
+`preserveStateOnInterruption`; all finalizers then receive `preserveState` on an interrupted run,
+and every accepted checkpoint sets it. These contracts do not authorize another execution.
+
+`RunEndedDetail` and the persisted `run_ended` event also carry the successful run's disposition.
+Trace consumers can distinguish a saved checkpoint from final completion without interpreting tool
+arguments or prose. Failed or cancelled runs do not advertise an accepted checkpoint.
 
 The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted session and agent instance, escaping embedded underscores and rejecting keys over 512 characters. `RunRequest` carries `session_id` and `agent_instance_id`; tool-call provider metadata, assistant phase and reasoning remain persisted replay data.
 

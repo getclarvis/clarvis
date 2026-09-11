@@ -1,12 +1,12 @@
 /**
- * The indexing pass's deps must differ from the run's in exactly two ways.
+ * The host owns the indexing pass's capability projection.
  *
- * @remarks Both differences are invisible everywhere else. Dropping the hooks
+ * @remarks Dropping the hooks
  * filter fires a `PreToolUse` hook on the indexer's own `write_memory` calls —
- * hooks are not grant-gated, so nothing else would stop it — and a capability
- * that is present but inactive strips the seed block the continuation carried
- * out of the middle of the transcript, re-billing every token behind it.
- * Dropping `enqueueOnRunEnd: false` lets a pass enqueue itself forever.
+ * hooks are not grant-gated, so nothing else would stop it. Dropping
+ * `enqueueOnRunEnd: false` lets a pass enqueue itself forever. Retaining active
+ * planning lets its gates and finalizer mutate the source plan despite dispatch
+ * restrictions; the catalog projection owns neither.
  *
  * `@clarvis/memory`'s own suite proves the flag is invisible on the wire; what
  * only a kernel test can see is that the host actually passes it, and actually
@@ -27,6 +27,7 @@ import { MEMORY_CAPABILITY_NAME, type MemoryFactory } from "@clarvis/memory/capa
 import { createInMemoryMemoryStore } from "@clarvis/memory/testing";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import { composeIndexPassDeps } from "../../src/memory/pass-deps.ts";
+import { createPlansCapability } from "@clarvis/plan/capability";
 
 const named = (name: string): Capability => ({ name, forRun: () => null });
 
@@ -66,6 +67,27 @@ function context(): RunCapabilityContext {
 const names = (deps: ExecuteRunDeps): string[] => (deps.capabilities ?? []).map((c) => c.name);
 
 describe("composeIndexPassDeps", () => {
+  it("replaces planning in place with a catalog projection that cannot open the source provider", async () => {
+    const planning = createPlansCapability({
+      factory: {
+        storeFor: async () => {
+          throw new Error("Source provider accessed");
+        },
+      },
+      defaultPendingTaskNudges: 3,
+      defaultElicitWaitMs: 30000,
+    });
+    const deps = baseDeps();
+    deps.capabilities = [named("tools"), planning, named("tasks")];
+    const pass = composeIndexPassDeps(deps, undefined);
+    expect(names(pass)).toEqual(["tools", "plans", "tasks", MEMORY_CAPABILITY_NAME]);
+    expect(pass.capabilities![0]).toBe(deps.capabilities[0]);
+    expect(pass.capabilities![2]).toBe(deps.capabilities[2]);
+    expect(pass.capabilities![1]).not.toBe(planning);
+    const run = await pass.capabilities![1]!.forRun(context());
+    expect(run).not.toHaveProperty("finalizeRun");
+    expect(run).not.toHaveProperty("onRunEnd");
+  });
   it("removes the workspace-hooks capability rather than leaving it inactive", () => {
     expect(names(composeIndexPassDeps(baseDeps(), undefined))).not.toContain(HOOKS_CAPABILITY_NAME);
   });

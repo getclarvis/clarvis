@@ -63,6 +63,21 @@ self-contained briefs; supervision distinguishes handles, first-child wakeups an
 authorization and unfinished work without treating transcript content as new instructions; bounded
 MCP instruction sections explicitly mark truncation.
 
+A host-bound capability can return `HandlerVerdict.finalize` to request a stage checkpoint. Dispatch
+joins earlier deferred work, pairs every tool call with a result, then runs the same capability and
+workspace-hook gates. Later calls in that batch are recorded as unexecuted. Cancellation or a gate
+failure cannot become a successful checkpoint. Its bounded summary/next-step metadata remains
+separate from `output_schema`, and the accepted disposition reaches the persisted response.
+The successful `run_ended` event retains that disposition for live and restored transcripts;
+unsuccessful termination keeps its existing reason and does not claim a saved checkpoint.
+Capability finalizers receive `preserveState` for checkpoints and for interruptions when a
+registered capability sets `preserveStateOnInterruption`. Scheduling the next run belongs to the host.
+
+Iteration preparation awaits `OrchestrationHooks.beforeIteration` in contribution order before
+compaction or inference, under a five-second wall bound and run cancellation. An interruption result
+ends the stage; successful completion or checkpoint is refused outside the finalization gates; a failed or timed-out sweep cannot proceed to the model. Its signal is retired on
+every exit, and asynchronous publishers must honor it to prevent late context changes.
+
 ## Core flow
 
 ```ts
@@ -297,7 +312,14 @@ generation run concurrently under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by 
 tool/observer hooks use a 5 s per-hook wall budget, rare policy gates use 30 s, and
 `finalizeRun`/`onRunEnd` use
 `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` (2 s by default). A timed-out extension loses only its own
-contribution, while the rest of the run can settle and release its resources. The logical timeout
+contribution when it is optional, while the rest of the run can settle and release its resources.
+Registrations marked `required: true` fail before inference if activation, a declared seed or entry
+attachment is unavailable. Physical extension saturation cannot silently remove their controls;
+`required_capability_unavailable` identifies that failure. Child permissions are unchanged and an
+already-cancelled run keeps cancellation semantics. Entry attachment and contribution folding finish
+before auxiliary vision inference. The reading is then appended to the same live context, after
+preserved history and current reminders; the shared budget is checked before and after preparation.
+The logical timeout
 does not release the host's physical extension permit: non-cooperative promises retain one of 32
 ordinary slots (at most four per stable capability/phase) until they really settle, so repeated runs
 stop invoking the offender instead of accumulating detached work. Finalizers and both run-end

@@ -159,6 +159,7 @@ async function fixture(kind: "loopback" | "local") {
         principal: { id: params.auth === "operator-token" ? "operator" : "observer" },
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           hosting: peer.service,
         },

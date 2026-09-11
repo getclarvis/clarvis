@@ -2,15 +2,15 @@ import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
 import {
-  createCapabilityRegistry,
   detachObserved,
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
   type Logger,
+  type TraceEvent,
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
-import { kernelCapabilityRegistry } from "./config/capability-registry.ts";
+import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
 import type { NativeConfigurationRuns } from "./configuration/native-configuration.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
@@ -45,12 +45,14 @@ import {
   type PreparedRunExecution,
 } from "./runs/run-service.ts";
 import { prepareKernelRun, type PreparedKernelRun } from "./runs/prepare-run.ts";
+import type { GoalExecutionPolicy } from "./goals/hosted-turn.ts";
+import { unavailableGoalService } from "./goals/unavailable.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
 import { createSkillsService } from "./skills/skills-service.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
 import { createWorkspaceService } from "./workspace/workspace-service.ts";
-import { createSessionService } from "./sessions/session-service.ts";
+import { createSessionService, type HostSessionStore } from "./sessions/session-service.ts";
 import { createPluginService } from "./plugins/plugin-service.ts";
 import {
   createFileSecretStore,
@@ -94,7 +96,10 @@ import { createStorageService } from "./storage/storage-service.ts";
  * which is why they are named as a group and reached through
  * {@link InProcessKernel.forOwner}.
  */
-export type OwnerScopedKernel = OwnerServices & { readonly runs: KernelRunService };
+export type OwnerScopedKernel = OwnerServices & {
+  readonly runs: KernelRunService;
+  readonly sessions: HostSessionStore;
+};
 
 /** Reference-counted lease over one owner-scoped service bundle. */
 export interface OwnerLease<T> {
@@ -116,6 +121,8 @@ export interface OwnerLease<T> {
  * {@link InProcessKernel.forOwner}.
  */
 export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
+  /** Private file-store commit authority; never exposed by the session RPC catalog. */
+  readonly sessions: HostSessionStore;
   /** Ordinary service with the trusted prepared-request overload used by this host. */
   readonly runs: KernelRunService;
   /** Absolute workspace root the kernel operates over. */
@@ -171,7 +178,9 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
    */
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
   /** Prepare immutable execution inputs without launching; owner must come from host authentication. */
-  prepareRun(params: StartRunParams, owner?: string): PreparedKernelRun;
+  prepareRun(params: StartRunParams, owner?: string, goal?: GoalExecutionPolicy): PreparedKernelRun;
+  /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
+  readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
@@ -414,22 +423,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
    * declarations are copied too; matching duplicates are harmless and
    * conflicting declarations fail instead of changing a host grant's meaning.
    */
-  const mergedRegistry = createCapabilityRegistry();
-  const seenSpecKeys = new Set<string>();
-  for (const spec of [
-    ...kernelCapabilityRegistry.specs(),
-    ...(opts.deps.capabilityRegistry?.specs() ?? []),
-  ]) {
-    if (seenSpecKeys.has(spec.key)) continue;
-    seenSpecKeys.add(spec.key);
-    mergedRegistry.register(spec);
-  }
-  for (const grant of [
-    ...kernelCapabilityRegistry.grants(),
-    ...(opts.deps.capabilityRegistry?.grants() ?? []),
-  ]) {
-    mergedRegistry.registerGrant(grant);
-  }
+  const mergedRegistry = composeKernelCapabilityRegistry(opts.deps.capabilityRegistry);
   const runDeps: ExecuteRunDeps = {
     ...opts.deps,
     capabilityRegistry: mergedRegistry,
@@ -454,7 +448,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   interface OwnerCacheEntry {
     services: OwnerScopedKernel;
     stateOwner: string;
-    prepareRun(params: StartRunParams): PreparedKernelRun;
+    prepareRun(params: StartRunParams, goal?: GoalExecutionPolicy): PreparedKernelRun;
     refs: number;
     runRefs: number;
     runDrained?: Promise<void>;
@@ -578,29 +572,33 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     return {
       services,
       stateOwner,
-      prepareRun(params) {
+      prepareRun(params, goal) {
         const entry = ownerEntries.get(owner);
         if (entry === undefined)
           throw kernelError("unavailable", "run owner generation is no longer resident");
-        return prepareKernelRun(params, {
-          configStore: opts.configStore,
-          ...(opts.assemblerOptions === undefined
-            ? {}
-            : { assemblerOptions: opts.assemblerOptions }),
-          ...(opts.assembleRunRequest === undefined
-            ? {}
-            : { assembleRunRequest: opts.assembleRunRequest }),
-          ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
-          nativeConfigurationRequested: (request) =>
-            opts.nativeConfiguration?.requested(request) === true,
-          workflowSettings: readWorkflowsSettings,
-          start: (request, prepared) => {
-            if (ownerEntries.get(owner) !== entry)
-              throw kernelError("unavailable", "prepared run owner generation was retired");
-            return entry.services.runs.start(request, prepared);
+        return prepareKernelRun(
+          params,
+          {
+            configStore: opts.configStore,
+            ...(opts.assemblerOptions === undefined
+              ? {}
+              : { assemblerOptions: opts.assemblerOptions }),
+            ...(opts.assembleRunRequest === undefined
+              ? {}
+              : { assembleRunRequest: opts.assembleRunRequest }),
+            ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
+            nativeConfigurationRequested: (request) =>
+              opts.nativeConfiguration?.requested(request) === true,
+            workflowSettings: readWorkflowsSettings,
+            start: (request, prepared) => {
+              if (ownerEntries.get(owner) !== entry)
+                throw kernelError("unavailable", "prepared run owner generation was retired");
+              return entry.services.runs.start(request, prepared);
+            },
+            startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
           },
-          startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
-        });
+          goal,
+        );
       },
     };
   };
@@ -969,9 +967,13 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     extensionProfiles,
     storage,
     tasks: scoped.tasks,
+    goals: unavailableGoalService(),
     forOwner,
     acquireOwner,
-    prepareRun: (params, owner = defaultOwner) => residentOwner(owner, false).prepareRun(params),
+    prepareRun: (params, owner = defaultOwner, goal) =>
+      residentOwner(owner, false).prepareRun(params, goal),
+    readRunTrace: (executionId, owner = defaultOwner) =>
+      runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
     listAgents: () => config.listAgents(),
     startMemoryRecovery,
     async close(): Promise<void> {

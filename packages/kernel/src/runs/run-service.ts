@@ -22,6 +22,7 @@ import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { NativeConfigurationRuns } from "../configuration/native-configuration.ts";
+import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -30,7 +31,8 @@ export type RunRequestAssembler = (params: StartRunParams & { execution_id: stri
 
 /** Trusted host preparation; never accepted as a protocol start parameter. */
 export type PreparedRunExecution =
-  { kind: "ordinary"; rawBody: unknown } | { kind: "workflow"; start(): RunHandle };
+  | { kind: "ordinary"; rawBody: unknown; goal?: GoalExecutionPolicy }
+  | { kind: "workflow"; start(): RunHandle };
 
 /** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
 export interface KernelRunService extends RunService {
@@ -145,14 +147,23 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
+        const goal = prepared?.kind === "ordinary" ? prepared.goal : undefined;
         const request = { ...params, execution_id: executionId };
         const executeRun =
           cfg.executeRun ??
           (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
         const args: Omit<RunExecutorArgs, "rawBody"> = {
           owner,
-          deps,
+          deps:
+            goal === undefined
+              ? deps
+              : {
+                  ...deps,
+                  llm: goal.trackModel(deps.llm),
+                  capabilities: [...(deps.capabilities ?? []), goal.capability],
+                },
           onEvent: (ev) => {
+            goal?.observe(ev);
             const mapped = engineEventToProto(ev, logger);
             if (mapped !== null) context.emit(mapped);
           },

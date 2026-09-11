@@ -13,6 +13,7 @@ import type {
   ExtensionProfileService,
   KernelClient,
   KernelCapabilities,
+  GoalService,
   Message as ProtoMessage,
   MessageContent,
   ModelCatalogService,
@@ -90,6 +91,8 @@ export interface KernelRunClient {
   attachRun(input: AttachHostedRunParams): RunHandle;
   /** Present only when the connected host advertises independent execution ownership. */
   readonly hosting?: HostingService;
+  /** Authenticated conversation goals, or the host's explicit unavailable facade. */
+  readonly goals: GoalService;
   /** The workflow tree control plane (kernel.workflows): get/list/delete. */
   readonly workflows: WorkflowsService;
   steer(input: {
@@ -701,6 +704,9 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     attachRun,
     get hosting() {
       return kernel?.hosting;
+    },
+    get goals() {
+      return requireKernel().goals;
     },
     steer,
     compact,

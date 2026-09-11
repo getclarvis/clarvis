@@ -246,13 +246,23 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts`).
 | --- | --- | --- |
 | `user` / `assistant` / `reasoning` / `thinking` | `text`, `assistantPhase?`, `sourceExecutionId?`, `sourceTextFingerprint?`, `textTruncated?`, `proseReleased?`, `textEpoch?` | `packages/code/src/core/transcript/types.ts` |
 | `tool_call` | `text`, `mcpName?`, `toolName?`, `args?`, `result?`, `diff?`, `error?`, `warn?`, `guard?`, `liveOutput?`, `inputChars?`, `inputComplete?`, `dehydrated?`, `hydrationNotice?`, `signature?`, `mutation?` | `packages/code/src/core/transcript/types.ts` |
-| `run` | `text`, `reason?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts` |
+| `run` | `text`, `reason?`, `disposition?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts` |
 | `subagent` | `text`, `title?`, `reason?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts` |
 | `plan` | `text`, `planTitle?`, `planStatus?`, `planReview?`, `planRemoved?`, `planDiscarded?`, `tasks?`, `revision?` | `packages/code/src/core/transcript/types.ts` |
 | `annotation` | `text`, `tone?: "info"\|"warn"\|"accent"` | `packages/code/src/core/transcript/types.ts` |
 | `error` | `text`, `error?` | `packages/code/src/core/transcript/types.ts` |
 
 `NodeStatus = "running" | "ok" | "error" | "pending"` (`packages/code/src/core/transcript/types.ts`).
+
+Run separators retain the successful event's `disposition`. A checkpoint renders `Checkpoint saved`
+in live, reconciled and restored history; ordinary success renders `Completed`. Failure/cancellation
+status takes precedence over disposition. This marks a stage ending, not a goal completion or an
+authorization to continue. The store preserves the run node's identity during reconciliation.
+Production: run closure in [store.ts](../../packages/code/src/adapters/store.ts), `TranscriptRunNode`
+in [types.ts](../../packages/code/src/core/transcript/types.ts), and `runOutcome` in
+[blocks.tsx](../../packages/code/src/views/blocks.tsx).
+Test: [checkpoint-render.test.tsx](../../packages/code/tests/integration/checkpoint-render.test.tsx)
+exercises live/replay, reconciliation identity, ordinary completion and unsuccessful outcomes.
 
 `packages/code/src/adapters/store.ts` re-derives `TranscriptNode` by replacing the plan variant's `tasks` with
 `PlanTaskActivity[]`; every view module imports the node types from `adapters/store.ts`, not from

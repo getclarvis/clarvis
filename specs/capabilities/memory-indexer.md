@@ -1188,31 +1188,39 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 
 ### 7.3 What the host, not this package, must compose
 
-`IndexerRuntime.passDeps` must differ from `deps` in exactly two ways, both assembled by the host: the
-workspace-hooks capability is **absent from the list** (not merely inactive), and the memory
-capability carries `enqueueOnRunEnd: false` (`packages/memory/src/types.ts`). The kernel does
-precisely that in `composeIndexPassDeps`: it filters both `HOOKS_CAPABILITY_NAME` and the ordinary
-`MEMORY_CAPABILITY_NAME`, preserves every other capability in registration order, then appends
-`createMemoryCapability(memoryFactory, { enqueueOnRunEnd: false })`. `file-kernel.ts` passes the
-fully composed ordinary deps — including tasks — rather than the earlier pre-memory/pre-tasks deps.
-The `absent vs inactive` distinction is stated as load-bearing for seed-block survival
-(`packages/memory/src/types.ts`; same reasoning restated at
-`packages/kernel/src/memory/pass-deps.ts`).
+The host composes `IndexerRuntime.passDeps`: workspace hooks are absent so they cannot run
+against indexing writes, and ordinary memory is replaced with `enqueueOnRunEnd: false`.
+Source-work capabilities must retain their catalog without owning the source work's gates or
+lifecycle. Dispatch denial alone does not stop recovery or finalization from mutating a plan.
+`composeIndexPassDeps` replaces planning in place with `createPlansCatalogCapability`, which
+opens no provider and has no source-plan gates, context publication, reconciliation, finalization
+or retention. Other capabilities, including tasks, retain registration order.
+`file-kernel.ts` supplies fully composed deps and the same kernel-owned registry used for
+foreground execution. `buildIndexerContinuationRequest` carries only request parameters declared
+by that registry, both for the first continuation and recovery of an indexing attempt. This
+preserves source planning modes, including the absent catalog under `off` and review descriptions.
+Historical headers and blocks retain their persisted positions under the
+[prompt-history contract](../cross-cutting/prompt-cache.md).
 Production: `packages/kernel/src/memory/pass-deps.ts` (`composeIndexPassDeps`) and
-`packages/kernel/src/file-kernel.ts` (`passDepsRef.current`). Test:
+`packages/kernel/src/file-kernel.ts` (`passDepsRef.current`),
+`packages/kernel/src/config/capability-registry.ts` (`composeKernelCapabilityRegistry`),
+`packages/plan/src/capability/catalog.ts` (`createPlanCatalogRun`) and
+`packages/memory/src/indexer/request.ts` (`buildIndexerContinuationRequest`). Test:
 `packages/kernel/tests/unit/index-pass-deps.test.ts` pins hooks removal, ordinary-memory
-replacement, enqueue suppression, ordering, pass-through and non-mutation.
+replacement, planning projection, enqueue suppression, ordering, pass-through and non-mutation;
+`packages/kernel/tests/integration/goal-file-host-memory.test.ts` proves a paused checkpoint's
+open discard plan remains byte-equivalent after indexing and captures the real SDK catalog and
+history in all planning modes. `packages/memory/tests/unit/indexer-continuation.test.ts` pins
+registered parameter carry-over without copying unrelated request fields or source budgets.
 
 ---
 
 ## 8. Open questions
 
-1. **Why `passDeps` must remove hooks rather than deactivate them is asserted, not demonstrated.**
-   Both `packages/memory/src/types.ts` and `packages/kernel/src/memory/pass-deps.ts`
-   describe `buildEntrySeed` dropping a carried block when a registered capability's marker is not
-   live, and name `runtime/entry-seed.ts` as the mechanism. That engine module is outside this
-   document's scope, and no test in the memory or kernel scope exercises the
-   registered-but-inactive case. Treat the rule as unverified here.
+1. **Historical seed survival belongs to the engine's context contract.** Hooks are removed here
+   to prevent execution. Persistence and inactive capability restoration are exercised by
+   `packages/loop/tests/unit/entry-seed-markers.test.ts`; a capability's activation state does
+   not authorize rewriting an already-published block.
 
 2. **`DEFAULT_MEMORY_JOB_PAGE_SIZE` is exported from `packages/memory/src/jobs.ts` but not
    re-exported from the barrel** (`packages/memory/src/index.ts`). The file and in-memory

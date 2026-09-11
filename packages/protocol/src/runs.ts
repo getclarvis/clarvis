@@ -164,8 +164,17 @@ export interface RunUsage {
   warnings?: string[];
 }
 
+/** A stage handoff is independent of execution status and final output. */
+export type RunFinalization =
+  | { disposition?: "final"; checkpoint?: never }
+  | {
+      disposition: "checkpoint";
+      /** Bounded stage handoff; separate from a validated final result and continuation authority. */
+      checkpoint: { summary: string; next_step: string };
+    };
+
 /** Final outcome of a finished run. */
-export interface RunResult {
+export type RunResult = RunFinalization & {
   execution_id: string;
   status: RunStatus;
   /** Final text or structured value. */
@@ -175,7 +184,7 @@ export interface RunResult {
   usage?: RunUsage;
   /** Present only on a `failed` run: a stable code plus a message. */
   error?: { code: string; message: string };
-}
+};
 
 /** Result of requesting compaction through the runs service. */
 export type RunCompactionResult =
@@ -338,6 +347,8 @@ export type RunEvent =
       at: Timestamp;
       status: RunStatus;
       reason?: string;
+      /** Successful stage disposition, preserved by live and restored transcripts. */
+      disposition?: "final" | "checkpoint";
       /**
        * The failure's code, when the run ended on one.
        *

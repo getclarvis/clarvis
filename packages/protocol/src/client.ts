@@ -24,6 +24,7 @@ import type { StorageService } from "./storage.ts";
 import type { ExtensionProfileService } from "./extension-profiles.ts";
 import type { HostingService } from "./hosting.ts";
 import type { LocalHostService } from "./local-host.ts";
+import type { GoalService } from "./goals.ts";
 
 /** Features and versions a kernel advertises to a freshly connected client. */
 export interface KernelCapabilities {
@@ -35,8 +36,14 @@ export interface KernelCapabilities {
   agent_tools: boolean;
   /** Whether this host wires the external Tasks capability/control plane. */
   tasks: boolean;
+  /** True only when this connection has persistent conversation goal controls. */
+  goals?: boolean;
   /** Generation of an authenticated local host that owns runs beyond this connection. */
-  hosting?: { host_generation: string };
+  hosting?: {
+    host_generation: string;
+    /** Server-owned session namespace needed when the client cannot canonicalize a remote path. */
+    default_owner?: string;
+  };
   /** Operator process controls accompany the advertised hosted execution service. */
   local_host?: true;
   /** Effective execution placement selected by the host. */
@@ -121,6 +128,8 @@ export interface KernelClient {
   readonly memory: MemoryService;
   /** Workspace-local file-backed plan history. */
   readonly plans: PlansService;
+  /** Persistent conversation objectives; availability is explicit on unsupported hosts. */
+  readonly goals: GoalService;
   /** Agentic workflows: a manager run fanning out isolated leader runs. */
   readonly workflows: WorkflowsService;
   /** User-invocable skills (slash-commands). */

@@ -660,7 +660,10 @@ export function BlockView(props: {
    * after a failure pointed at two things the user could not do.
    */
   const runOutcome = (): { label: string; next?: string } => {
-    if (props.node.status === "ok") return { label: "Completed" };
+    if (props.node.status === "ok")
+      return {
+        label: runNode().disposition === "checkpoint" ? "Checkpoint saved" : "Completed",
+      };
     const restart = "send a follow-up to try again, or /clear to start fresh";
     if (/cancel/i.test(runNode().reason ?? ""))
       return { label: "Canceled", next: `Next: ${restart}` };

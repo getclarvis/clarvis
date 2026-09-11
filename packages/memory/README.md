@@ -247,15 +247,17 @@ for the primary manager run. Retrying that continuation would fail validation
 before a model call, so the digest path preserves memory indexing instead.
 `IndexReport.continuation_blocker` reports which applied.
 
-The host composes the continuation's deps (`IndexerRuntime.passDeps`) and must
-**remove** the workspace hooks capability rather than deactivate it: the engine
-keeps a carried seed block only while its marker is still live, so a registered
-but inactive capability makes the block the continuation carried get dropped out
-of the middle of the transcript. A capability the run never registers is
-unrecognised instead, and its block survives in place.
+The host composes the continuation's deps (`IndexerRuntime.passDeps`) and removes
+workspace hooks so they cannot execute on the indexer's writes. Historical blocks
+remain in their persisted positions.
 The ordinary memory capability is replaced, not duplicated, by the pass form
-whose `onRunEnd` is disabled; every other long-lived capability, including tasks,
-stays in registration order.
+whose `onRunEnd` is disabled. Stateful source capabilities must preserve their
+catalog without inheriting source-work gates or lifecycle. The kernel replaces
+planning in place with its catalog projection: indexing neither waits for open
+plan tasks nor reconciles, finalizes or deletes the source plan. Other capabilities,
+including tasks, stay in registration order. The continuation carries host-registered
+capability request parameters on both initial and recovered passes, preserving
+source modes such as planning `off` or `review` without importing those packages.
 
 ## The index queue
 

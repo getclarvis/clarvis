@@ -1,3 +1,5 @@
+import type { CheckpointMetadata } from "./finalization.ts";
+
 /** Author of a {@link Message}: the system prompt, the user, or the assistant. */
 export type MessageRole = "system" | "user" | "assistant";
 
@@ -614,13 +616,16 @@ export interface AfterToolUseContext {
  *
  * @remarks `mode` distinguishes a plain-text finish (`text` set) from a
  * structured `submit_result` finish (`value` set, already validated against the
- * run's output schema). `subagentInstanceId` is present when the finalizing
+ * run's output schema), or a stage handoff (`checkpoint` set). The handoff
+ * does not satisfy the final output schema. `subagentInstanceId` is present when the finalizing
  * agent is a sub-agent.
  */
 export interface PreFinalizeContext {
   agent: AgentRole;
   subagentInstanceId?: string;
-  mode: "text" | "submit";
+  mode: "text" | "submit" | "checkpoint";
+  /** Accepted stage handoff under review, never a validated final result. */
+  checkpoint?: CheckpointMetadata;
   /** Final assistant text (mode === "text"). */
   text?: string;
   /** Validated submit_result payload (mode === "submit"). */

@@ -5,6 +5,16 @@
 
 ## 1. Purpose
 
+Hosted goals reuse this same prepared-run path. A private `GoalExecutionPolicy` constrains the
+assembled request before launch and injects its mandatory entry capability into ordinary run deps.
+Its observer receives canonical trace events before public projection. Public run arguments cannot
+provide this policy. `PreparedKernelRun.tokenLimit` exposes the prepared finite budget without
+starting inference so goal creation can inherit it once.
+Production: `prepareKernelRun` in [prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts)
+and prepared ordinary execution in [run-service.ts](../../packages/kernel/src/runs/run-service.ts).
+Test: the real FileKernel goal journey in
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
 `packages/kernel/src/runs/` is the layer that turns the protocol's `RunService`
 (`RunService` in `packages/protocol/src/runs.ts`) into calls on the engine's `executeRun`
 (`packages/kernel/src/runs/run-service.ts`), and turns everything the engine and its capabilities

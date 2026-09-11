@@ -5,6 +5,43 @@
 
 ## 1. Purpose
 
+The ordinary operation catalog includes `goals.availability`, `goals.get`, `goals.control` and
+`goals.receipt`. The host advertises the optional boolean goals capability only with conversation
+hosting. Older handshakes without it receive an unavailable facade rather than unknown RPC calls.
+Control has write metadata; state and receipts have read metadata. The closed top-level envelope
+and the goal service's nested schema reject unknown control fields before mutation.
+Production: [operations.ts](../../packages/kernel/src/transport/operations.ts),
+[client.ts](../../packages/kernel/src/transport/client.ts), and
+[service.ts](../../packages/kernel/src/goals/service.ts).
+Test: the catalog dispatch cases in
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts), and
+observer/write refusal plus receipt replay in
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+Goal availability, state and receipts are decoded on receipt. The bounded state must belong to the
+requested session, and its optional physical run must also belong to the connected workspace. A
+receipt must identify the requested operation. Malformed responses close the connection instead of
+being coerced into a usable goal view.
+
+`goals.subscribe` and `goals.unsubscribe` are special read operations. The client installs its
+listener before awaiting the subscription acknowledgement; callers await that acknowledgement
+before their initial state read. `goals.change` carries only a subscription ID and
+`change: { session_id }`. It invalidates a display read and confers no controller or continuation
+authority. The host sends invalidations after canonical goal writes and physical lifecycle changes.
+There are at most eight subscriptions per connection, including pending installations, and 128
+per host. Unsubscribe and connection disposal release each registration once, including one whose
+installation completes late. A failed old registration cannot delete a replacement using its ID.
+Observer faults are logged without their private payload and do not reverse a committed mutation.
+
+Production: `createGoalClient` in [goal-client.ts](../../packages/kernel/src/transport/goal-client.ts),
+the decoders in [goal-codec.ts](../../packages/kernel/src/transport/goal-codec.ts),
+goal dispatch in [server.ts](../../packages/kernel/src/transport/server.ts), and
+`createGoalChanges` in [changes.ts](../../packages/kernel/src/goals/changes.ts).
+Test: goal wire cases in [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts),
+`goal subscription lifecycle` in [transport.test.ts](../../packages/kernel/tests/integration/transport.test.ts),
+the actual IPC goal journey in [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts),
+and [goal-changes.test.ts](../../packages/kernel/tests/unit/goal-changes.test.ts).
+
 `packages/kernel/src/transport/` is the RPC seam between a Clarvis *kernel* and a *client* of the
 `KernelClient` contract. It is JSON-RPC-*shaped* but carries Clarvis's own method vocabulary rather
 than MCP's (`packages/protocol/src/transport.ts`, `packages/kernel/src/transport/wire.ts`).
@@ -344,14 +381,22 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 6; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 5`
+`HelloParams` = `{ wire_version: 7; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 7`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 6; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 7; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
+
+The `run_ended` codec retains optional `final`/`checkpoint` disposition only for completed status.
+Other values or a disposition combined with failure, cancellation or running status are refused.
+Peers must negotiate the current wire version before accepting the extended event contract.
+Production: `RUN_EVENT_SCHEMAS` in [run-event-codec.ts](../../packages/kernel/src/transport/run-event-codec.ts)
+and `CLARVIS_WIRE_VERSION` in [wire.ts](../../packages/kernel/src/transport/wire.ts).
+Test: `carries checkpoint disposition over the live wire and rejects contradictory terminal status`
+in [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 
 ### 3.5 Request ids
 
@@ -1095,7 +1140,9 @@ A socket embedder must provide both identity resolution and operation authorizat
 `createFileRunHost` supplies both hooks. Its required verifier resolves only an operator or observer
 role; the host fixes owner/workspace independently of request fields. Every operation checks the live
 connection role and the catalog's `access` and `sensitivity`. Operators can use the local kernel
-services, including the host's subscription manager. Observers can use only non-sensitive reads;
+services, including the host's subscription manager. Machine-local application controls are a
+separate bootstrap choice: `exposeLocalControls: false` withholds `local_host` and its service while
+retaining hosted goal authority for the operator. Observers can use only non-sensitive reads;
 knowing an execution id grants no control. Disconnect removes that connection's role before cleanup.
 Its hosting service also prevents ordinary starts and unfenced active-run compaction from bypassing
 conversation admission. The owning contract is
@@ -1115,8 +1162,32 @@ wire getter. These input bytes are intentionally preserved, while framing logs r
 Authentication/authorization do not encrypt a transport. The stdio binary trusts the process pipes;
 `serveLocalFileKernel` protects the private endpoint/credential store and fences requests by its
 lease; `connectOrLaunchLocalKernel` authenticates discovery through the same RPC handshake.
+`serveRemoteFileKernelOverStdio` may bind its only peer as operator only after its process launcher
+has authenticated the remote machine and user. It fixes workspace and owner from server-side
+inputs, acquires the durable workspace lease, withholds machine-local controls and stops on pipe
+closure. It creates no network listener or reusable Clarvis credential; exposing generic stdio on a
+network remains invalid.
+The Code launcher wraps that stdio in OpenSSH. SSH supplies confidentiality, integrity, host-key
+verification and user authentication; Clarvis adds no application encryption. The launcher disables
+port, agent and X11 forwarding but retains normal local-agent authentication. Its child environment
+is allowlisted to home/path, platform process-discovery and local agent/askpass inputs; provider
+keys, Clarvis OAuth values and unrelated variables never reach OpenSSH or `SendEnv`. Identity selection,
+jump hosts, host-key policy and authentication order come from the operator's SSH configuration.
+Clarvis does not force `StrictHostKeyChecking`/`BatchMode` or own passwords, private keys and
+passphrases. Interactive prompts are outside the framed stdio/TUI contract, so operators establish a
+verified usable login first. Production: `connectRemoteKernelOverSsh` in
+[connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts). Test:
+[remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) pins the hardened
+process arguments, environment boundary, remote canonical-path handshake and wire composition; it
+is not a network confidentiality test.
+The remote file host may include `default_owner` beside `host_generation` in its hosting capability.
+This value is fixed by server-side canonicalization and lets an application scope session metadata
+without applying the client's operating-system path rules to a remote path. Local hosts omit it
+because their application already derives the same owner from the selected local workspace.
 Code's workspace manager connects to that process composition. Its state belongs outside guest mounts and
-agent-readable roots. The generic server must not be exposed on a network by assuming that a successful
+agent-readable roots. Remote reconnect closes and drains the prior SSH-owned client before launching
+the replacement so the exclusive workspace lease is retired; its expected close is not surfaced as
+a failure. The generic server must not be exposed on a network by assuming that a successful
 unauthenticated hello established a principal.
 
 Production: `OPERATIONS.secrets` in
@@ -1125,6 +1196,10 @@ Production: `OPERATIONS.secrets` in
 `SecretService` contract in [secrets.ts](../../packages/protocol/src/secrets.ts). The caller-supplied
 authentication requirement of the IPC listener remains in
 [local.ts](../../packages/kernel/src/transport/local.ts).
+The authenticated process-owned composition is `serveRemoteFileKernelOverStdio` in
+[serve-remote-stdio.ts](../../packages/kernel/src/hosting/serve-remote-stdio.ts), tested through its
+real framed boundary in
+[remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts).
 The independent host implementation and process-level evidence are owned by
 [hosted runs](hosted-runs.md#independent-process-composition); adding a launcher does not add another
 wire protocol or replay interrupted mutations.
@@ -1159,6 +1234,8 @@ of the service it is given (`ServiceOperations` and `serviceOperations` in the s
 | `packages/kernel/src/index.ts` | re-exports the public surface |
 | `packages/kernel/src/serve.ts` | `createKernelServer` + `serveKernelOverStdio`, the stdio host |
 | `packages/kernel/src/hosting/file-host.ts` | authenticated FileKernel, session coordinator and hosted registry through the same RPC server |
+| `packages/kernel/src/hosting/serve-remote-stdio.ts` | caller-authenticated, process-owned hosted stdio composition with durable workspace fencing |
+| `packages/kernel/src/hosting/connect-remote-ssh.ts` | argv-only OpenSSH client composition, safe remote tokens and owned process lifecycle |
 | `packages/kernel/src/bin.ts` | the `clarvis-kernel` binary, through `serveFileKernelOverStdio` |
 | `tests/contract/*`, `tests/integration/transport.test.ts`, `tests/integration/stdio-transport.test.ts`, `tests/unit/loopback-transport.test.ts` | the only exercisers of the client half in-repo |
 

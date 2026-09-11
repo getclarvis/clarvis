@@ -44,6 +44,11 @@ import { createGuestHookMcpCaller } from "./hook-mcp.ts";
 import { createGuestMcpConnections } from "./remote-mcp.ts";
 import { validRuntimeToolPolicy, type RuntimeToolPolicy } from "./tool-policy.ts";
 import {
+  createGuestGoalCapability,
+  validRuntimeGoalDescriptor,
+  type RuntimeGoalDescriptor,
+} from "./goal-bridge.ts";
+import {
   guestLoopEnvironment,
   validRuntimeLoopPolicy,
   type RuntimeLoopPolicy,
@@ -63,6 +68,7 @@ interface GuestRunEnvelope {
   readonly memory?: MemoryRuntimeDescriptor;
   readonly hooks?: RuntimeHooksDescriptor;
   readonly workflow?: RuntimeWorkflowDescriptor;
+  readonly goal?: RuntimeGoalDescriptor;
   readonly parentRunId?: string;
   readonly outputBudgets?: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
 }
@@ -196,6 +202,15 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
   }
   const envelope = value as GuestRunEnvelope;
   return (
+    (envelope.hostCapabilities === undefined ||
+      (Array.isArray(envelope.hostCapabilities) &&
+        envelope.hostCapabilities.every((name) => typeof name === "string"))) &&
+    (envelope.goal === undefined
+      ? envelope.hostCapabilities?.includes("goal") !== true
+      : envelope.hostCapabilities?.includes("goal") === true &&
+        validRuntimeGoalDescriptor(envelope.goal, envelope.rawBody) &&
+        envelope.workflow === undefined &&
+        envelope.parentRunId === undefined) &&
     (envelope.memory === undefined || validRuntimeMemoryDescriptor(envelope.memory)) &&
     (envelope.memory === undefined || envelope.hostCapabilities?.includes("memory") === true)
   );
@@ -296,6 +311,8 @@ export function createGuestLoopExecutor(
   return {
     async execute(runId, envelope, bridge, signal) {
       if (!validEnvelope(envelope)) throw new Error("guest run envelope is invalid");
+      if (envelope.goal !== undefined && envelope.goal.binding.execution_id !== runId)
+        throw guestControlError("unauthorized", "guest goal execution identity mismatches");
       const child = children.get(runId);
       if (
         envelope.parentRunId !== undefined &&
@@ -388,6 +405,21 @@ export function createGuestLoopExecutor(
         control.elicitMcp = (input, signal) => connections.elicit(input, signal);
         built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
         const extraCapabilities = [
+          ...(envelope.goal === undefined
+            ? []
+            : [
+                createGuestGoalCapability(
+                  envelope.goal,
+                  {
+                    ...bridge,
+                    async capability(...args) {
+                      await eventTail;
+                      return bridge.capability(...args);
+                    },
+                  },
+                  signal,
+                ),
+              ]),
           ...(child?.args.capabilities ?? []),
           ...(envelope.outputBudgets ?? []).map((budget) =>
             createLeaderOutputBudgetCapability(

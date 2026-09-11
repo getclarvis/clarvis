@@ -7,7 +7,7 @@ through its RPC transports, including the independently owned local workspace ho
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
@@ -58,6 +58,11 @@ The root entry's `readHostedSnapshot` incrementally decodes those pages with the
 checks byte/sequence continuity through the immutable cut and releases the snapshot on abandonment.
 `src/hosting/registry.ts` provides shared admission, controller epochs and connection-independent
 handoff receipts over injected turn/persistence ports.
+An internal continuation policy can admit another stage after the complete terminal barrier, using
+authority captured from the actual controller. Its reservation is single-use, preserves the session,
+and loses to admitted human work. Disconnect, conversation close, takeover and background handoff
+revoke future authority. Preparation and failure notification are bounded; old-stage cleanup cannot
+revoke its successor. No public peer or extra observation is synthesized for the automatic stage.
 Handoff failures classify their operation identity as refused before admission or uncertain after
 admission; receipt absence alone never permits replay. A definite refusal does not consume the
 operation identity, allowing clients to retry after resolving its cause.
@@ -70,17 +75,69 @@ the previous controller is fenced.
 Disconnect rejects the local observation without fabricating a failed execution result.
 `src/hosting/sessions.ts` coordinates
 versioned conversation writes, committed turn intent, pending context and single-count usage over
-the canonical file session store. `addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,
+the canonical file session store. Its short internal `transact` operation also owns persistent goal
+state. `src/goals/repository.ts` uses that same transaction, with no second store. Public session
+saves cannot insert, remove or rewrite `goal_state`; the host's `HostSessionStore.saveHost` commit
+port is absent from the RPC catalog. Goal state and its archived conversation bindings are strictly
+validated within a 1 MiB allocation. Preparation releases the mutation lock while resolving the
+execution, so a durable pause can invalidate its snapshot before intent publication. Duplicate
+preparations remain bounded and mutually exclusive. The goal domain and persistence contracts are
+specified in [goals](../../specs/capabilities/goals.md); repository tests do not qualify automatic
+continuation or the complete product journey.
+`prepareHostedGoalTurn` composes a mandatory goal capability, finite stop-mode request budget,
+atomic turn/goal intent, revision-fenced terminal evidence and the internal continuation policy.
+Evidence validation releases the session lock so user controls remain available; the terminal write
+rechecks those controls and charges usage once. The host also checks the persisted absolute deadline
+before every physical model call. An already-started call may finish and remains chargeable, while
+settlement refuses a late completion and records the still-current goal as usage limited. Its
+composition test executes an initial stage and
+two automatic continuations through the real loop and SDK, retaining the serialized prefix and
+agent affinity. `createFileRunHost` registers that policy through ordinary immutable run preparation
+and exposes connection-scoped `goals` controls over the existing RPC catalog. Creation and resume
+persist an operation receipt with the reserved execution ID before the internal hosted start; replay
+returns that receipt without another run. Native and compatible container hosts expose this surface;
+headless hosts return explicit unavailability. The IPC integration test
+performs creation, checkpoint continuation and completion through the real FileKernel. Code's
+`/goal` commands observe these host-owned stages through the same service. The guest bridge runs the
+canonical capability against closed host operations; real engine, complete local/remote,
+real-provider and installed-artifact qualification require separate evidence.
+`createGoalRuntimePort` implements the bound model operations over that private repository. It
+revalidates execution/revision after asynchronous evidence reads and again in the short transaction.
+Notifications follow successful durable publication; a notification failure does not roll back state.
+`createGoalEvidenceSource` derives bounded references from existing tool traces and current artifact
+bytes. Tool identity follows the actual trace mapper's flat-name versus qualified-MCP convention;
+goal controls and polling never enter the evidence catalog. Shell checks require exit zero even when
+transport succeeded, newer contradictory results invalidate older successes, and confined artifact
+reads recheck their digest. Qualitative relevance remains model judgment.
+The goal capability composition test exercises `get_goal`/`update_goal` with the actual loop, plan,
+SDK transport and durable host port under controlled responses. A manually admitted continuation retains its
+plan, catalog, cache identity and complete serialized prefix; blocking or refused plan review keeps
+pending tasks. This is separate from qualification of the hosting controller and real providers.
+The hosted continuation test also pauses while a provider response is pending, settles its checkpoint,
+and resumes through the real SDK. A changed goal reminder follows the complete tool exchange, preserving
+call/result correlation in the persisted context and subsequent request.
+`settleGoalSession` uses the coordinator's host-only settlement callback to persist goal status,
+turn closure and confirmed usage together. Unknown usage remains explicit in the goal audit;
+late measurements update the original binding once, including after archival. `measureGoalRunUsage`
+normalizes either aggregate or agent detail without charging independent memory runs or cache writes.
+`addRunUsage` in `src/sessions/usage.ts`, exposed through `./policy`,
 owns token/cache/pricing accumulation for both the host and Code presentation adapters. The private
 `runtimeStatusSchema` shares runtime variants between discovery storage and local-host transport
 while each boundary supplies its own field limits. That store durably replaces its canonical document and keeps its
 summary rebuildable. `createFileRunHost` composes these services with a FileKernel and an authenticated
 RPC server. Its caller supplies private durable storage and the local token verifier. Operator
-connections can use local subscription controls; observer connections receive non-sensitive reads.
-All conversation runs enter through `hosting.start`; offline compaction and disposable cleanup share
+connections can use local subscription controls when the bootstrap explicitly exposes them; a
+remote-facing bootstrap can retain hosted goal authority while withholding the machine-local
+inspection, browser and restart service. Observer connections receive non-sensitive reads.
+Conversation runs use the same hosted registry for public starts and internal goal admission;
+offline compaction and disposable cleanup share
 a maintenance reservation. `InProcessKernel.prepareRun` resolves the entry, model and skill before
 intent publication and keeps later workflow leaders on the same bounded configuration snapshot.
 Prepared launches retain ordinary execution-id, owner and Extension Profile leases.
+Goal controls retain host-created conversation authority between stages. Disconnect, close and
+takeover retire it without releasing physical work. Pending controls/continuations block maintenance;
+starts revalidate process authority after asynchronous preparation. `readRunTrace` is a host-only,
+owner-scoped evidence port and never enters the client protocol.
 `serveLocalFileKernel` composes a separately launched host with a private lease, credential,
 generation-aware discovery index and idle shutdown. Disabled workspace memory permits idle
 retirement even when the host supports memory; pending jobs and queue inspection failures still
@@ -102,6 +159,32 @@ manager; installed-artifact retention and platform qualification remain applicat
 Process integration tests verify survival after a launching client exits with MockLLM; they do not
 qualify a subscription/TUI journey or native Windows/macOS behavior. The ownership, limits and
 validation scope are specified in [hosted runs](../../specs/hosts/hosted-runs.md).
+
+`serveRemoteFileKernelOverStdio` is the process-owned counterpart for a caller-authenticated remote
+channel such as SSH. It acquires the same canonical workspace lease and durable host state, binds
+the sole stdio peer as the operator, keeps hosted runs and goals available, and deliberately omits
+machine-local inspection, browser, retry and restart controls. The caller must authenticate the
+remote machine/user before launch; this bootstrap neither publishes a listener nor creates a
+Clarvis connection credential. EOF or a broken pipe closes the physical host and releases its
+lease. The remote stdio integration test exercises the real framed transport and FileKernel with
+controlled responses; it does not establish SSH, TUI or provider behavior.
+`connectRemoteKernelOverSsh` launches OpenSSH with argv and no local shell, disables port, agent and
+X11 forwarding, validates the destination and every remote command token, filters the child
+environment to home/path, platform process-discovery and local SSH authentication inputs, bounds
+retained stderr, negotiates the ordinary hello and owns exactly that SSH process. Provider keys,
+Clarvis OAuth values and unrelated environment variables cannot reach OpenSSH or its `SendEnv`
+processing. OpenSSH joins remote command arguments through the
+remote shell, so unsafe tokens are refused before spawn. The server advertises its default session
+namespace because a client on another operating system cannot derive it from remote path semantics.
+The pinned server also owns the canonical workspace identity used by hello, so a symlink or lexical
+alias in the launch request is not compared again after remote canonicalization.
+OpenSSH owns encryption, integrity, host-key checks and user authentication. It reads the operator's
+normal configuration, default identities and local `ssh-agent`; using the agent for login does not
+forward its socket. Clarvis neither forces `StrictHostKeyChecking`/`BatchMode` nor provides an
+identity-file or password prompt. Interactive authentication is outside the stdio product contract;
+operators should verify the host key and make authentication available before TUI launch.
+The process integration test uses a fake SSH executable and a real child FileKernel; it establishes
+transport and lifecycle behavior without claiming network SSH interoperability.
 
 ## File-backed kernel
 
@@ -212,7 +295,7 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 10 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 11 and a rebuilt compatible worker image. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
 directories. Helper guidance requires preparing read resources in the writable workspace before
 guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
@@ -225,6 +308,17 @@ The host model broker accepts only inline base64 images, either raw bytes encode
 user content and tool-result images before invoking the provider. Remote media URLs are refused
 even when a model would strip them: the SDK asset downloader must not grant the guest additional
 host-network access. Admitted inline data remains unchanged.
+
+The `runtime.goal` bridge admits only a factory-owned capability bound to the current session,
+entry instance, execution and objective revision. It refuses duplicates, workflow composition and
+forged names. The guest receives the binding and uses the canonical goal tools and gates; each host
+operation revalidates scope and persisted state, including cancellation inside the transaction.
+Progress, checkpoint, candidate, completion validation, blocking and reads cannot grant user controls
+or another run. Prior guest trace events reach the host before goal operations read their evidence.
+An admitted goal raises the capability message allowance from 256 KiB to 1152 KiB, enough for one
+bounded current goal and its discovery catalog; session archives and receipts never cross. Existing
+call-count, aggregate replay and RPC limits remain enforced. Strict codecs reject missing/stale guest
+projections, and old worker images fail protocol admission without host execution fallback.
 
 Docker and Podman share attachment, bootstrap, private RPC, previews and shutdown in
 `container-session.ts`. Engine-specific identity, rootless setup, mounts and policy inspection
@@ -487,6 +581,10 @@ plan cache and host-owned file-store references are released. Compatibility
 callers using `forOwner` deliberately pin their scope until kernel shutdown.
 Configuration remains shared and operator-owned.
 
+Model-facing plan reads and lists accept null for omitted options (active plan, first page and
+default filters). The plan capability normalizes those options before its typed provider/bridge
+calls; empty IDs and cursors remain invalid, and mutation CAS/review rules stay in force.
+
 The memory factory follows the same owner boundary: it caches one background
 index worker per activated owner, binds tool-server access to that owner, and
 keys ingest subscriptions by owner plus run ID. Stopping the kernel stops every
@@ -630,6 +728,14 @@ without a client-side settings workaround.
 
 ## Remote-ready transport
 
+The goal facade validates availability, receipts and bounded conversation state on the wire,
+including the physical run's session/workspace binding. `goals.subscribe` installs a live
+subscription before its acknowledgement; its `goals.change` notification carries only the affected
+session ID. Consumers reread canonical state. Goal writes and physical lifecycle transitions emit
+these invalidations without transferring execution authority. Registrations are bounded to eight
+per connection and 128 per host, and pending installations are released on disconnect.
+See [kernel transport](../../specs/hosts/kernel-transport.md) for response validation and disposal.
+
 Public stdio and private execution RPC share a 64 MiB logical JSON limit. Larger-than-frame
 messages use contiguous 256 KiB binary fragments, canonical base64 and a 30-second transfer deadline;
 the physical frame limits remain 8 MiB and 4 MiB respectively. Serialized queued data is bounded at
@@ -735,11 +841,20 @@ auto-guard verdict visible after replay rather than leaving it only in audit log
 ## The settings schema
 
 The kernel publishes exactly one, `kernelSettingsSchema`: the engine's blocks
-plus the ones its capability registry contributes (today memory, plans, workflows and
-tasks).
+plus the ones its capability registry contributes: memory, plans, goals, workflows, tasks and
+runtime placement.
 Registration happens at module load in `config/capability-registry.ts`, **before**
 any `settings.json` is read — a block registered afterwards reads as an
 unrecognized key.
+
+The strict `goals` block configures creation defaults: `max_net_tokens` optionally overrides the
+finite entry budget for the whole objective; `max_auto_continuations` defaults to 8 and
+`max_no_progress_checkpoints` to 3. `deadline_at` is an optional absolute Unix timestamp in
+milliseconds. Workspace configuration replaces the whole global block, following plan/workflow
+scope precedence. `createFileRunHost` resolves those defaults through the effective configuration
+only for creation or replacement, after receipt lookup. Explicit control limits take precedence.
+Existing goals retain their limits through configuration changes, replay and resume; changing them
+requires the operator's goal edit. The model and plugins cannot supply this block as a run parameter.
 
 The engine's bare `settingsSchema` is deliberately **not** re-exported. Validating
 a real `settings.json` with it reads a registered capability's block as an
@@ -782,8 +897,11 @@ it through the ordinary skills service. Disabling skills through the host or env
 disables this builtin.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
-models, Extension Profiles, plugins, MCP, hooks, memory, plans, tasks, workflows, runtime,
-`/loop` scheduling and background runs. It distinguishes TUI-owned, in-memory schedules from runs
+models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,
+remote SSH, `/loop` scheduling and background runs. For remote connections it distinguishes the
+local TUI from the remote installation, delegates keys/host verification to OpenSSH, requires login
+preparation outside the TUI and records the disabled forwarding/machine-control boundaries. It
+distinguishes TUI-owned, in-memory schedules from runs
 that continue in the workspace host, and explains attachment, cancellation and consent lifetime.
 Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
 and exercised against the product loaders. They include a complete workflow with its brief and
@@ -1112,13 +1230,54 @@ typechecking this package. The package requires Bun 1.4.0 or newer.
 
 ## Prompt-cache continuity
 
+Live and restored run results retain a checkpoint's disposition and bounded summary/next-step
+handoff separately from a final text or schema value. The SDK composition test in
+`tests/integration/checkpoint-composition.test.ts` exercises an open discard plan, kernel reopen,
+unchanged cache identity and serialized prefix, then final schema validation and plan retention.
+The test supplies explicit continuation; automatic goal admission belongs to the hosted controller.
+Successful `run_ended` events preserve disposition through trace replay and the versioned RPC codec.
+The codec refuses disposition on unsuccessful events; it never derives completion from tool names.
+Goal iteration preparation reads the bound host state before the next request. A future-only pause
+is therefore visible after an ordinary tool batch without model polling, while the current stage
+may still checkpoint and settle. SDK composition tests preserve the preceding request prefix, tool
+exchange, catalog and cache identity through that transition.
+
 Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native/guest execution. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
+For a goal stage, the host observes its provider port directly, including child, compaction and
+retry consumption. A pending call, a cancelled call without usage, or an unreported attempt leaves
+accounting unknown and prevents continuation. A failed stage with confirmed exhausted goal spend
+settles as `budget_limited`, preserving its physical outcome and any measured overrun; newer user
+pause/cancel controls still prevail. Missing cache detail alone counts the full input
+conservatively. Zero-initialized loop or guest totals cannot override that observation.
+The [goal-file-host.test.ts](tests/integration/goal-file-host.test.ts) integration suite exercises IPC, the actual file host, SDK and HTTP
+with controlled responses: two automatic continuations with a delegated plan, prefix/identity
+preservation, pause/resume, cancellation and absent usage. It is separate from live-provider,
+container-engine and installed-artifact qualification.
+The companion [plan review test](tests/integration/goal-file-host-plan.test.ts) answers actual IPC
+elicitations: approval permits delegated work and two checkpoints; cancellation or requested changes
+prevents workspace writes and preserves the unapproved plan even with discard retention.
+The [compaction test](tests/integration/goal-file-host-compaction.test.ts) queues compaction through
+the active hosted handle. The real SDK summary call is included in goal/session consumption; one
+rolling anchor, current goal and plan survive into automatic continuation. SDK requests preserve the
+historical prefix before and after the deliberate compaction boundary.
+The optional [goal-file-host.e2e.test.ts](tests/integration/goal-file-host.e2e.test.ts) runs the same
+automatic journey in a real Docker or Podman engine using the existing runtime canary opt-in,
+image-digest and connection settings. It records the loaded guest binary hash, each stage and
+request, reconciled consumption and verified resource cleanup under `build/goal-file-host-e2e/`.
+Those controlled-HTTP results do not qualify a live provider or the installed TUI.
 Workflow leaders retain the manager's session identity and use their reserved child execution ID
 as their own persisted agent instance. Two leaders of the same profile therefore have distinct
 cache keys, separate from the manager, in both direct and prepared host assembly.
 The captured SDK requests also cover transport retry, two same-profile children, physical-call
 cancellation, guard-policy resume and the actual indexing pass. Restricting indexing dispatch
 preserves the complete advertised catalog while rejecting inherited workspace tools.
+Memory passes receive the same composed capability registry as foreground runs and
+carry the source's registered request parameters. Planning is replaced in place by
+`createPlansCatalogCapability`, preserving its tools and delegation schema while
+removing source-plan gates and lifecycle. Indexing a paused checkpoint therefore
+cannot fail, finalize or discard its open plan. The real file-host/SDK regression in
+`tests/integration/goal-file-host-memory.test.ts` covers that boundary and catalog
+identity in all three planning modes.
 
 The SDK composition tests declare `@clarvis/llm` as a development dependency. Runtime provider
 construction remains owned by the loop's host services; the dependency does not add an eager

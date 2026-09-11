@@ -410,7 +410,9 @@ the order `foldContributions` later folds contributions in when none declares an
 3. Concurrently, for each registered capability, call `capability.forRun(ctx)` under a bounded wall
    budget `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (default `5000`ms, `packages/capability/src/env.ts`);
    a timeout or an `ExtensionCallUnavailableError` (host's extension gate saturated) both resolve to
-   `null` for this run, logged, not thrown (`packages/loop/src/runtime/orchestrator.ts`).
+   `null` for an optional registration, logged, not thrown (`packages/loop/src/runtime/orchestrator.ts`).
+   A `required: true` registration instead fails before inference if activation returns null,
+   times out or cannot acquire extension capacity. The flag survives the admitted wrapper.
 4. Every non-null activation is wrapped by `admittedRunCapability` (`packages/loop/src/runtime/extension-admission.ts`),
    which re-routes `seedBlock`/`onRunEnd`/`finalizeRun`/every lifecycle-hook method through the
    host's `ExtensionAdmissionController`, keyed by the capability's **name** (not object identity, so
@@ -422,7 +424,17 @@ the order `foldContributions` later folds contributions in when none declares an
 5. `runCapabilities = orderCapabilities(<filtered, admitted, non-null activations>)`
    (`packages/loop/src/runtime/orchestrator.ts`); `hooks = runCapabilities.flatMap(c => c.lifecycle ?? [])`.
 6. `seedBlocks` are computed by calling each **activated** capability's `seedBlock()` under the same
-   setup-timeout budget, a timeout dropping the block with a warning (`packages/loop/src/runtime/orchestrator.ts`).
+   setup-timeout budget. An optional block may be omitted; a required declared seed must produce
+   non-empty content before inference (`packages/loop/src/runtime/orchestrator.ts`). Entry attachment
+   is similarly mandatory for a required activation, while child scopes retain their ordinary filter.
+   Entry `forAgent` validation, actual `attach`, and contribution folding precede the optional vision
+   prepass, so unavailable required controls cannot spend an auxiliary provider call before refusal.
+   Attach runs once against the actual entry context; its exceptions use the bounded entry error.
+   Production: `runAgent` in [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts), `runEntryAgent` in
+   [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts), and `capabilitiesForScope` in
+   [compose.ts](../../packages/capability/src/compose.ts). Test: mandatory setup, saturation and
+   auxiliary-vision refusal in
+   [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
 7. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
    set, not the activated one (`packages/loop/src/runtime/orchestrator.ts`) — matching the contract's own rationale
    (§3.3).
@@ -442,6 +454,14 @@ the section. Production: `renderMcpInstructions` and `createMcpInstructionsRunCa
 
 ### 4.3 Per-agent fold (`packages/loop/src/runtime/loop/run-agent.ts`)
 
+Checkpoint requests use the same folded gate ordering. `onFinalizeAccepted` receives the accepted
+attempt, and `preserveStateOnInterruption` survives the admitted run-capability wrapper so interrupted
+stages retain their durable state. Production: [extension-admission.ts](../../packages/loop/src/runtime/extension-admission.ts)
+and [run-agent.ts](../../packages/loop/src/runtime/loop/run-agent.ts).
+Test: [extension-admission.test.ts](../../packages/loop/tests/unit/extension-admission.test.ts),
+[capability-state.test.ts](../../packages/loop/tests/unit/capability-state.test.ts), and
+[checkpoint-composition.test.ts](../../packages/kernel/tests/integration/checkpoint-composition.test.ts).
+
 1. `contributions = (input.agentCapabilities ?? []).map(c => c.attach(bc))`.
 2. `folded = foldContributions(contributions)` (`@clarvis/capability`'s `packages/capability/src/compose.ts`) —
    throws on a duplicate tool wire name across contributions (`packages/capability/src/compose.ts`).
@@ -454,6 +474,20 @@ the section. Production: `renderMcpInstructions` and `createMcpInstructionsRunCa
 6. `mcpHandler` and the optional `submitHandler` are appended **after** every capability handler
     — `submit_result` must stay reachable even if a capability's dispatch chain
    refuses everything ahead of it.
+
+Iteration entry awaits the folded `beforeIteration` sweep before compaction or model inference.
+`runBeforeIteration` applies a five-second wall bound to the complete sweep and composes run
+cancellation with a fresh scope signal. The scope is retired on every exit; asynchronous hooks must
+check it before publishing delayed state. An interruption result ends the stage; successful completion and checkpoints cannot bypass the
+finalization gates. Rejection or timeout
+cannot fall through to inference. Cancellation retains its normal result and teardown path.
+Production: `runBeforeIteration` in
+[lifecycle-hooks.ts](../../packages/loop/src/runtime/loop/lifecycle-hooks.ts) and `runAgentLoop` in
+[loop.ts](../../packages/loop/src/runtime/loop/loop.ts).
+Test: iteration-boundary timeout/cancellation in
+[lifecycle-hooks.test.ts](../../packages/loop/tests/unit/lifecycle-hooks.test.ts) and
+`awaits iteration preparation and honors` in
+[run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts).
 
 ### 4.4 Finalize gates and `force_tool_on_nudge`
 
@@ -622,10 +656,11 @@ their own:**
 | Skill discovery throws (function roots, rescan) | Falls back to last good scan, or an empty provider on first failure | `dynamicSkills`, `packages/loop/src/runtime/build-run-deps.ts`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts` |
 | Root provider function throws | Treated as "no roots" for that rescan, logged at `debug` | `packages/loop/src/runtime/build-run-deps.ts` |
 | Workspace path does not resolve at all | Skills come back `undefined` rather than throwing | test `packages/loop/tests/integration/execute-run-entrypoints.test.ts` |
-| A capability's `forRun` exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Activation resolves `null` for this run; warned | `packages/loop/src/runtime/orchestrator.ts` |
-| A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Activation resolves `null`; warned, not thrown | `packages/loop/src/runtime/orchestrator.ts` |
-| A capability's `seedBlock()` exceeds its setup budget | Block omitted from the seed; warned | `packages/loop/src/runtime/orchestrator.ts` |
-| A capability's extension-admitted `seedBlock` hits a saturated host gate | The block degrades to `undefined`; logged `capability.extension_saturated` | `packages/loop/src/runtime/extension-admission.ts`; test `packages/loop/tests/unit/extension-admission.test.ts` |
+| A capability's `forRun` exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Optional activation resolves `null`; required activation fails before inference | `packages/loop/src/runtime/orchestrator.ts` |
+| A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Optional activation resolves `null`; required activation fails before inference | `packages/loop/src/runtime/orchestrator.ts` |
+| A capability's `seedBlock()` exceeds its setup budget | Optional block omitted; required declared seed fails setup | `packages/loop/src/runtime/orchestrator.ts` |
+| A capability's extension-admitted `seedBlock` hits a saturated host gate | Wrapper returns `undefined` and logs saturation; the orchestrator refuses a required declared seed | `packages/loop/src/runtime/extension-admission.ts`; test `packages/loop/tests/unit/extension-admission.test.ts` |
+| A required entry capability declines `forAgent` or throws in `attach` | `required_capability_unavailable` before entry or auxiliary vision inference; children retain ordinary filtering | `capabilitiesForScope` in `packages/capability/src/compose.ts`; required-entry scope/attach vision cases in `packages/loop/tests/integration/host-capability.test.ts` |
 | A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts` |
 | A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts` |
 | Two contributions declare the same tool wire name | `foldContributions` **throws** synchronously | `packages/capability/src/compose.ts` |

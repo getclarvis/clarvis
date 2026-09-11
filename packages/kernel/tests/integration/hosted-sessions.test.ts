@@ -10,10 +10,7 @@ import type {
   HostedRunRef,
   HostedRecoveryResolution,
 } from "@clarvis/protocol";
-import {
-  createSessionService,
-  type FileSessionService,
-} from "../../src/sessions/session-service.ts";
+import { createSessionService, type HostSessionStore } from "../../src/sessions/session-service.ts";
 import {
   createHostedSessionCoordinator,
   type HostedSessionOptions,
@@ -365,15 +362,15 @@ describe("host-owned conversation transactions", () => {
     test(`reconciles an intent write failure ${afterCommit ? "after" : "before"} canonical publication`, async () => {
       const f = await fixture();
       let fail = true;
-      const service: FileSessionService = {
+      const service: HostSessionStore = {
         ...f.base,
-        async save(value) {
+        async saveHost(value) {
           if (fail && value.turns.length > 0) {
             fail = false;
-            if (afterCommit) await f.base.save(value);
+            if (afterCommit) await f.base.saveHost(value);
             throw new Error("injected disk failure");
           }
-          await f.base.save(value);
+          await f.base.saveHost(value);
         },
       };
       const coordinator = createHostedSessionCoordinator({

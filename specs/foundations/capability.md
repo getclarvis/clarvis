@@ -69,6 +69,7 @@ to [trace-recording-and-persistence](trace.md) and [observability-and-diagnostic
 | Member | Type | Notes |
 | --- | --- | --- |
 | `name` | `string` | `packages/capability/src/contract.ts` |
+| `required?` | `boolean` | host-required activation, declared seed and entry attachment; propagated to `RunCapability` |
 | `persistedTraceProjectors?` | `readonly PersistedTraceProjector[]` | static, collected before activation (`packages/capability/src/contract.ts`) |
 | `grants?` | `readonly CapabilityGrantDeclaration[]` | added to the request vocabulary before validation (`packages/capability/src/contract.ts`) |
 | `seedMarker?` | `string` | collected from every **registered** capability, active or not (`packages/capability/src/contract.ts`) |
@@ -100,9 +101,10 @@ actually stores (§4.3).
 | `services` | `CapabilityServices` | published before any `forRun` runs; a capability publishes its own ports here and a consumer reads them at `attach` time |
 | `executionId` | `string` | the run's resolved execution id — the same id its trace persists under |
 
-`RunCapability` members: `name`, `order?: number` default `0`, `seedBlock?()`, `systemSection?(id)`, `lifecycle?: readonly LifecycleHook[]`,
+`RunCapability` members: `name`, `required?: boolean`, `order?: number` default `0`, `seedBlock?()`, `systemSection?(id)`, `lifecycle?: readonly LifecycleHook[]`,
 `forAgent(scope)` — the only required method besides `name`, `onRunEnd?(record)`,
-`finalizeRun?({status})`, `guardTripCodes?: readonly string[]`.
+`finalizeRun?({status, disposition?, preserveState?})`, `preserveStateOnInterruption?: boolean`,
+`guardTripCodes?: readonly string[]`.
 
 `AgentLoopContribution` members: `tools?`, `handlers?`, `gates?`, `anchor?`, `forcedChoice?`,
 `hooks?`, `outputBudget?`, `advertised?` (`packages/capability/src/contract.ts`). `advertised` defaults to `true`
@@ -142,7 +144,7 @@ and `false` marks a prompt-driven tool that should not count toward `availableWi
 | `partialStructOf` | `(lastSubmitAttempt) => {partialStructured} \| {}` | `packages/capability/src/agent-result.ts` |
 | `EXECUTION_STATUSES` | 6-item tuple | `packages/capability/src/execution-status.ts` |
 | `ProviderError` | class, `code = "provider_error"` | `packages/capability/src/llm-port.ts` |
-| `CodedError`, `ValidationError`, `ConflictError`, `PersistenceError`, `ContinuationUnavailableError`, `executionIdConflict` | error classes + factory | `packages/capability/src/errors.ts` |
+| `CodedError`, `ValidationError`, `CapabilityUnavailableError`, `ConflictError`, `PersistenceError`, `ContinuationUnavailableError`, `executionIdConflict` | error classes + factory | `packages/capability/src/errors.ts` |
 | `MALFORMED_ARGUMENTS_PREVIEW_CHARS` = `200`, `normalizeToolArguments`, `malformedArgumentsMessage` | argument decoding | `packages/capability/src/tool-arguments.ts` |
 | `DELEGATE_TASK_MAX_CHARS` = `32768`, `parseDelegateTaskText` | brief validation | `packages/capability/src/delegate-task.ts` |
 | `TASK_TITLE_MAX` = `60`, `parseTaskTitle` | title validation | `packages/capability/src/task-title.ts` |
@@ -305,7 +307,7 @@ merge. `LifecycleHook` bundles four verdict-returning gates
 | --- | --- | --- |
 | `BeforeToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments` | `packages/capability/src/api.ts` |
 | `AfterToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments`, read-only `result: HandlerResult` | `packages/capability/src/api.ts` |
-| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit"`, `text?`, `value?` | `packages/capability/src/api.ts` |
+| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit" \| "checkpoint"`, `text?`, `value?`, separate `checkpoint?` | `packages/capability/src/api.ts` |
 | `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `packages/capability/src/api.ts` |
 | `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `packages/capability/src/api.ts` |
 | `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `packages/capability/src/api.ts` |
@@ -361,19 +363,25 @@ deliberately absent here because no capability reads it) and calls adding a memb
 contract: prefer a port over exposing an engine type".
 
 `HandlerVerdict` is a tool handler's ruling on one dispatched call: `{kind:"result"...HandlerResult}`,
-`{kind:"deferred", run}` (a continuation to run, optionally under an abort signal), `{kind:"terminal",
+`{kind:"deferred", run}` (a continuation to run, optionally under an abort signal),
+`{kind:"finalize", attempt, ...HandlerResult}` (a checkpoint request through the gates), `{kind:"terminal",
 result: AgentResult}`, or `{kind:"cancelled"}`. `ToolHandler` is `matches(call)` plus an
 optional `canonicalName(call)` for a stable identity when the model-facing wire name is a projection,
 and `handle(call, iteration)`. `FinalizeAttempt` is an agent's bid to finish (`mode: "text" |
-"submit"`, optional `value`/`text`). `GateOutcome` is a finalize gate's ruling:
+"submit"`, optional `value`/`text`, final disposition by default) or a `CheckpointAttempt`
+(`mode: "checkpoint"`, `disposition: "checkpoint"`, bounded `checkpoint` metadata).
+`GateOutcome` is a finalize gate's ruling:
 `{kind:"pass"}`, `{kind:"nudge", note, unbounded?}` — an `unbounded` nudge is exempt from the nudge
 budget — or `{kind:"terminal", result: AgentResult}`. `FinalizeGate` is `check(attempt)`
 plus an optional `fastAcceptOk()` that reports (without running `check`) whether the gate would
 trivially pass, letting the loop skip the sweep.
 
 `OrchestrationHooks` is `beforeIteration?`, `afterDispatch?`, `contributesProgress?`,
-`onFinalizeAccepted?`, `onTeardown?` — the five hooks §4.1's `foldHooks` fans out. The doc-comment
-states `onTeardown` may return a promise the loop awaits, and that it must stay bounded: a capability
+`onFinalizeAccepted?(attempt)`, `onTeardown?` — the five hooks §4.1's `foldHooks` fans out.
+`beforeIteration(signal?)` accepts synchronous or asynchronous preparation and an optional interruption
+`AgentResult` (successful completion and checkpoints are refused by the engine). The fold awaits each contribution, checks the engine-owned signal before and after
+it, and stops on a result; later hooks cannot publish after a retired sweep. The engine bounds and
+awaits preparation before compaction or inference. The doc-comment states `onTeardown` may return a promise the loop awaits, and that it must stay bounded: a capability
 holding work that outlives a dispatch (a background child) has to be able to wind it down while the
 run's trace, MCP pool and usage accounting are all still open, so a fire-and-forget teardown would drop
 that child's token usage on the floor — "everything after the loop resolves is waiting on it".
@@ -677,6 +685,25 @@ and `SpawnGate`'s `terminal` variant (§3.12):
 | `structuredResult?` | `{ value: unknown }` | a completed structured submit |
 | `partialStructured?` | `{ value: unknown }` | a best-effort partial, built by `partialStructOf` (§2.4) |
 
+`RunFinalization` adds either ordinary final disposition (also the meaning of omission) or
+`disposition: "checkpoint"` paired with `checkpoint: { summary, next_step }`. Both strings are
+nonempty after trimming and bounded to 4096 characters; the metadata schema refuses extra fields.
+It is distinct from run status and from a validated final value. The engine never fills a final
+result from checkpoint metadata. A handler can request a checkpoint but cannot accept it before
+dispatch settlement and finalize gates. `PreFinalizeContext` carries `mode: "checkpoint"` and the
+same separate handoff; accepted hooks receive the complete accepted attempt.
+
+Every checkpoint asks finalizers to preserve durable state. A run capability can additionally set
+`preserveStateOnInterruption`, applying the same preservation to unsuccessful runs. Ordinary final
+completion keeps existing behavior. These are lifecycle contracts, not authority to schedule a run.
+Production: [finalization.ts](../../packages/capability/src/finalization.ts), the handler and attempt
+types in [loop-contract.ts](../../packages/capability/src/loop-contract.ts), and
+`collectCapabilityState` in [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: [finalization.test.ts](../../packages/capability/tests/unit/finalization.test.ts),
+`gated checkpoint finalization` in [run-agent.test.ts](../../packages/loop/tests/unit/run-agent.test.ts),
+and the disposition/preservation matrix in
+[capability-state.test.ts](../../packages/loop/tests/unit/capability-state.test.ts).
+
 ## 4. Behavior
 
 ### 4.1 Fold: `foldContributions`
@@ -706,15 +733,36 @@ the empty case is pinned at `packages/capability/tests/unit/compose.test.ts`. Fa
 
 | Hook | Merge | Code |
 | --- | --- | --- |
-| `beforeIteration` | sequential, contribution order | `packages/capability/src/compose.ts` |
+| `beforeIteration` | sequential and awaited; terminal result stops the sweep; retired signal refuses later hooks | `packages/capability/src/compose.ts` |
 | `afterDispatch` | sequential, contribution order | `packages/capability/src/compose.ts` |
 | `contributesProgress` | `Array.some` (logical OR) | `packages/capability/src/compose.ts` |
 | `onFinalizeAccepted` | sequential | `packages/capability/src/compose.ts` |
 | `onTeardown` | sequential **and awaited** | `packages/capability/src/compose.ts` |
 
 Order and the OR are pinned at `packages/capability/tests/unit/compose.test.ts`.
+Production: `OrchestrationHooks` in [loop-contract.ts](../../packages/capability/src/loop-contract.ts)
+and `foldHooks` in [compose.ts](../../packages/capability/src/compose.ts).
+Test: `awaits iteration preparation and stops the sweep on a terminal result or retired signal` in
+[compose.test.ts](../../packages/capability/tests/unit/compose.test.ts).
 
 ### 4.2 Per-scope activation
+
+A host registration marked `required: true` must activate before inference. If it declares a seed,
+that seed must be available and non-empty; its entry-agent attachment must also be non-null. The
+derived `RunCapability.required` preserves this rule through extension admission and entry
+composition. Refusal or setup timeout cannot silently omit mandatory controls. `CapabilityUnavailableError`
+uses the stable `required_capability_unavailable` code and identifies the phase (`activation`,
+`seed`, `entry`). A spawned child's absent attachment remains valid; requiring the entry does not
+expand any child's permissions. Required entry `attach` exceptions are mapped to that same bounded
+entry failure without private exception details; attachment and folding happen before auxiliary
+vision inference. An already-aborted run retains cancellation semantics.
+Production: `Capability.required` / `RunCapability.required` in
+[contract.ts](../../packages/capability/src/contract.ts), `CapabilityUnavailableError` in
+[errors.ts](../../packages/capability/src/errors.ts), and `capabilitiesForScope` in
+[compose.ts](../../packages/capability/src/compose.ts).
+Test: `requires entry attachment without granting the capability to children` in
+[compose-activation.test.ts](../../packages/capability/tests/unit/compose-activation.test.ts), and
+the mandatory setup matrix in [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
 
 `capabilitiesForScope` maps `forAgent(scope)` over the run capabilities and drops `null`s, treating
 `undefined` as an empty list (`packages/capability/src/compose.ts`); pinned at `packages/capability/tests/unit/compose.test.ts`.
@@ -1168,8 +1216,8 @@ Production (engine): `packages/loop/src/runtime/loop/loop.ts`. Test:
 | Tool arguments could not be decoded | `{ ok: false }` with a bounded preview and reason; the caller is expected to refuse the call and say why | `packages/capability/src/tool-arguments.ts`; message |
 | `LLMToolCall.malformedArguments` present | Documented signal that `arguments` is a `{}` **substitute** and the dispatcher must refuse the call | `packages/capability/src/llm-port.ts` |
 | `LLMToolCall.rewrittenFrom` present | Documented signal that `arguments` is not what the model sent (a `beforeToolUse` rewrite) | `packages/capability/src/llm-port.ts` |
-| `Capability.forRun` exceeds its budget | The contract states the capability is **skipped for this run** under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`; long work must observe `ctx.signal` because a timeout stops waiting but cannot stop arbitrary host code | `packages/capability/src/contract.ts`; env key defined `packages/capability/src/env.ts` (default 5000 ms, max 60000); engine handling `packages/loop/src/runtime/orchestrator.ts` |
-| `RunCapability.seedBlock` throws | Documented to **fail the run**; a timeout omits the block instead | `packages/capability/src/contract.ts`; engine timeout branch `packages/loop/src/runtime/orchestrator.ts` |
+| `Capability.forRun` exceeds its budget | Optional activation is skipped; required activation fails before inference under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`. Long work must observe `ctx.signal` because a timeout cannot stop arbitrary host code | `packages/capability/src/contract.ts`; `packages/loop/src/runtime/orchestrator.ts` |
+| `RunCapability.seedBlock` throws | Fails the run; a timeout omits only an optional block, while a required declared seed fails setup | `packages/capability/src/contract.ts`; `packages/loop/src/runtime/orchestrator.ts` |
 | `RunCapability.finalizeRun` throws or times out | The slot is omitted; the run is unaffected. Bounded by `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `packages/capability/src/contract.ts`; env key `packages/capability/src/env.ts` (default 2000 ms); engine `packages/loop/src/runtime/execute-run.ts` |
 | `RunCapability.onRunEnd` rejects or times out | Logged; the run is unaffected. Must not await long work | `packages/capability/src/contract.ts` |
 | A capability event listener throws | Swallowed by the engine, per the contract | `packages/capability/src/contract.ts` |

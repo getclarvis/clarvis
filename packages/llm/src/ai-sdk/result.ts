@@ -23,7 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Projects the AI SDK's usage onto our provider-neutral {@link LLMUsage}.
  *
  * @param usage - the SDK's usage object, possibly partial.
- * @returns the four token counts, each defaulting to `0`.
+ * @returns the four numeric tallies with explicit uncertainty for unreported counters.
  * @remarks `inputTokenDetails` is optional at runtime even though the SDK types
  * declare it required: a provider that answers with a bare
  * `{inputTokens, outputTokens}` — or a test double — would otherwise throw on
@@ -38,6 +38,16 @@ export function normalizeUsage(usage: Partial<LanguageModelUsage> | undefined): 
     output_tokens: usage?.outputTokens ?? 0,
     cached_tokens: details?.cacheReadTokens ?? 0,
     cache_write_tokens: details?.cacheWriteTokens ?? 0,
+    ...([usage?.inputTokens, usage?.outputTokens].every(
+      (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0,
+    )
+      ? {}
+      : { usage_unknown: true as const }),
+    ...(typeof details?.cacheReadTokens === "number" &&
+    Number.isSafeInteger(details.cacheReadTokens) &&
+    details.cacheReadTokens >= 0
+      ? {}
+      : { cache_unknown: true as const }),
   };
 }
 

@@ -4,6 +4,16 @@ export { createFileRunHost } from "./hosting/file-host.ts";
 export type { FileRunHost, FileRunHostOptions } from "./hosting/file-host.ts";
 export { serveLocalFileKernel } from "./hosting/serve-local.ts";
 export type { ServeLocalFileKernelOptions, LocalFileKernelHost } from "./hosting/serve-local.ts";
+export { serveRemoteFileKernelOverStdio } from "./hosting/serve-remote-stdio.ts";
+export type {
+  ServeRemoteStdioOptions,
+  RemoteStdioFileKernelHost,
+} from "./hosting/serve-remote-stdio.ts";
+export { connectRemoteKernelOverSsh } from "./hosting/connect-remote-ssh.ts";
+export type {
+  ConnectedRemoteSshKernel,
+  RemoteSshKernelOptions,
+} from "./hosting/connect-remote-ssh.ts";
 export { connectOrLaunchLocalKernel, parseLocalHostArguments } from "./hosting/launcher.ts";
 export type { LocalKernelLaunchOptions, ConnectedLocalKernel } from "./hosting/launcher.ts";
 export type {

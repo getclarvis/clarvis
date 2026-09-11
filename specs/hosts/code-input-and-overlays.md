@@ -37,6 +37,21 @@ Production: `registerBackgroundCommands` in
 [App.tsx](../../packages/code/src/views/App.tsx).
 Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
 
+`/goal` uses the same registry for deterministic inspection and controls, including literal
+`/goal -- <objective>`, reviewed replacement, a criteria/limits form, pause, resume, cancel and
+archive. Invalid control syntax returns `block` and remains in the composer. A form pins both the
+conversation generation and the reviewed revision, so navigation cannot retarget an old draft.
+Physical execution gates editing independently from goal status; pause alone does not imply a stopped
+run. Replacement, including editing a terminal goal, requires explicit confirmation.
+Human criteria show whether the host accepted them for the current objective revision. The
+acceptance picker offers only pending criteria; historical approvals cannot satisfy a revised goal.
+Production: `registerGoalCommands` in
+[commands.ts](../../packages/code/src/features/goal/commands.ts), `GoalForm` and `GoalView` in
+[form.tsx](../../packages/code/src/features/goal/form.tsx) and
+[view.tsx](../../packages/code/src/features/goal/view.tsx).
+Test: [goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx).
+The owning authority and completion contract is [goals](../capabilities/goals.md).
+
 ### `InputDock.tsx` — the composer
 
 | Symbol | Signature | File |

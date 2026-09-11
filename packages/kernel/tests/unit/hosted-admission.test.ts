@@ -2,6 +2,113 @@ import { describe, expect, test } from "bun:test";
 import { createHostedAdmission } from "../../src/hosting/admission.ts";
 
 describe("hosted admission and interactive authority", () => {
+  test("keeps conversation control between stages and requires explicit takeover", () => {
+    const admission = createHostedAdmission({ revokeInteractiveScope: () => {} });
+    const first = admission.connect("operator");
+    const second = admission.connect("operator");
+    const observer = admission.connect("observer");
+    const authority = admission.claimConversation(first, "session");
+    expect(admission.claimConversation(first, "session")).toBe(authority);
+    expect(() => admission.assertConversation({ ...authority })).toThrow("retired");
+    expect(() => admission.claimConversation({ ...first }, "session")).toThrow("authority");
+    expect(() => admission.claimConversation(observer, "session", true)).toThrow("authority");
+    expect(() => admission.claimConversation(second, "session")).toThrow("explicitly");
+    expect(() => admission.reserve(second, "session", "run", "intruder")).toThrow("takeover");
+    const run = admission.reserve(first, "session", "run", "first");
+    admission.release(run);
+    expect(() => admission.assertConversation(authority)).not.toThrow();
+    const next = admission.claimConversation(second, "session", true);
+    expect(authority.signal.aborted).toBe(true);
+    admission.releaseConversation(authority);
+    expect(() => admission.assertConversation(next)).not.toThrow();
+    const work = admission.reserve(second, "session", "run", "next");
+    admission.disconnect(second);
+    expect(next.signal.aborted).toBe(true);
+    expect(admission.occupied("session")).toBe(true);
+    admission.release(work);
+    const resumed = admission.claimConversation(first, "session");
+    expect(resumed).not.toBe(authority);
+    expect(() => admission.assertConversation(authority)).toThrow("retired");
+    admission.closeSession(first, "session");
+    expect(resumed.signal.aborted).toBe(true);
+  });
+
+  test("physical takeover retires old goal control without releasing occupancy", () => {
+    const admission = createHostedAdmission({ revokeInteractiveScope: () => {} });
+    const first = admission.connect("operator");
+    const second = admission.connect("operator");
+    const old = admission.claimConversation(first, "session");
+    const run = admission.reserve(first, "session", "run", "execution");
+    expect(() => admission.claimConversation(second, "session", true)).toThrow(
+      "execution controller",
+    );
+    admission.acquire(second, run, true);
+    const current = admission.claimConversation(second, "session");
+    expect(old.signal.aborted).toBe(true);
+    expect(current.signal.aborted).toBe(false);
+    expect(admission.occupied("session")).toBe(true);
+    admission.closeSession(second, "session");
+    expect(current.signal.aborted).toBe(true);
+    expect(admission.occupied("session")).toBe(true);
+  });
+
+  test("continues once through the real controller only after physical release", () => {
+    const admission = createHostedAdmission({ revokeInteractiveScope: () => {} });
+    const peer = admission.connect("operator");
+    const run = admission.reserve(peer, "session", "run", "first");
+    const authority = admission.captureContinuation(peer, run);
+    expect(admission.captureContinuation(peer, run)).toBe(authority);
+    expect(() => admission.reserveContinuation(authority, "early")).toThrow("physical work");
+    expect(() => admission.reserveContinuation({ ...authority }, "forged")).toThrow("retired");
+    const scope = admission.control(run).interactiveScope;
+    admission.release(run);
+    const next = admission.reserveContinuation(authority, "second");
+    expect(admission.control(next)).toMatchObject({ peerId: peer.id, interactiveScope: scope });
+    expect(authority.signal.aborted).toBe(true);
+    expect(() => admission.reserveContinuation(authority, "replay")).toThrow("retired");
+    admission.release(next);
+  });
+
+  test.each(["disconnect", "close", "takeover", "human", "retire"] as const)(
+    "%s revokes continuation without granting release or affecting another conversation",
+    (action) => {
+      const admission = createHostedAdmission({ revokeInteractiveScope: () => {} });
+      const first = admission.connect("operator");
+      const second = admission.connect("operator");
+      const run = admission.reserve(first, "session", "run", "first");
+      const other = admission.reserve(second, "other", "run", "other-first");
+      const authority = admission.captureContinuation(first, run);
+      const unrelated = admission.captureContinuation(second, other);
+      if (action === "disconnect") admission.disconnect(first);
+      else if (action === "close") admission.closeSession(first, "session");
+      else if (action === "takeover") admission.acquire(second, run, true);
+      else if (action === "retire") admission.retireContinuation(authority);
+      else {
+        admission.release(run);
+        admission.reserve(first, "session", "run", "human-turn");
+      }
+      expect(authority.signal.aborted).toBe(true);
+      expect(unrelated.signal.aborted).toBe(false);
+      expect(admission.occupied("session")).toBe(true);
+      expect(() => admission.reserveContinuation(authority, "late")).toThrow("retired");
+    },
+  );
+
+  test("retirement of an old continuation cannot revoke its successor", () => {
+    const admission = createHostedAdmission({ revokeInteractiveScope: () => {} });
+    const peer = admission.connect("operator");
+    const run = admission.reserve(peer, "session", "run", "first");
+    const previous = admission.captureContinuation(peer, run);
+    admission.release(run);
+    const next = admission.reserveContinuation(previous, "second");
+    const current = admission.captureContinuation(peer, next);
+    admission.retireContinuation(previous);
+    expect(current.signal.aborted).toBe(false);
+    expect(() => admission.captureContinuation({ ...peer }, next)).toThrow("authority");
+    const observer = admission.connect("observer");
+    expect(() => admission.captureContinuation(observer, next)).toThrow("authority");
+  });
+
   test("revocation failure cannot leave a disconnected peer or its controls usable", () => {
     const attempts: string[] = [];
     const admission = createHostedAdmission({

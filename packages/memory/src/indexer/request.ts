@@ -14,7 +14,13 @@
  * run derives the solo shape and `delegate_task` is never contributed. The only
  * tools it is offered are the ones the indexer's own memory capability supplies.
  */
-import type { AgentProfile, ProviderConfig, RunRequest } from "@clarvis/capability";
+import {
+  requestParamKeys,
+  type AgentProfile,
+  type CapabilityRegistry,
+  type ProviderConfig,
+  type RunRequest,
+} from "@clarvis/capability";
 import type { StoredExecution } from "@clarvis/loop";
 
 /** Profile name and `entry` of every indexer run. */
@@ -332,6 +338,8 @@ function withPolicy(instruction: string, policy: string | undefined): string {
 
 /** What {@link buildIndexerContinuationRequest} needs. */
 export interface ContinuationRequestArgs {
+  /** Host-declared parameters that determine the inherited capability catalog. */
+  capabilityRegistry?: CapabilityRegistry;
   /** The run id of the indexer pass itself. */
   executionId: string;
   /** The indexed run, as persisted. */
@@ -384,7 +392,14 @@ export interface ContinuationRequestArgs {
 export function buildIndexerContinuationRequest(args: ContinuationRequestArgs): RunRequest {
   const { executionId, subject } = args;
   const request = subject.request;
+  const source = request as unknown as Record<string, unknown>;
+  const capabilityParams = Object.fromEntries(
+    requestParamKeys(args.capabilityRegistry?.specs() ?? [])
+      .filter((key) => Object.hasOwn(source, key))
+      .map((key) => [key, source[key]]),
+  );
   return {
+    ...capabilityParams,
     execution_id: executionId,
     continue_from: subject.id,
     session_id: request.session_id ?? subject.id,

@@ -9,6 +9,7 @@ import {
 } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { convertCompatibleUsage } from "./ai-sdk/compatible-usage.ts";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type {
@@ -353,6 +354,7 @@ export class AiSdkAdapter implements LLMProvider {
         return {
           factory: createOpenAICompatible({
             ...openAICompatibleSettings(cfg, headers, apiKey),
+            convertUsage: convertCompatibleUsage,
             fetch: this.boundedFetch,
           }),
           apiKeyPresent,

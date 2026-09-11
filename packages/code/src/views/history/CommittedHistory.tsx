@@ -132,9 +132,13 @@ export interface CommittedHistoryProps {
   handoffKeys?: Accessor<ReadonlySet<string>>;
   /** Mutable frontier artifacts included in the off-tail newer-entry overlay. */
   tailEntries?: Accessor<number>;
-  /** Chronological final flow owner; it remains mounted while native sticky scrolling is paused. */
+  /**
+   * Chronological final flow owner, retained while native sticky scrolling is paused.
+   * The key set transfers ownership through the last resident batch, including older
+   * virtualized history that must never be repeated after this boundary in the tail.
+   */
   tail?: (
-    visibleCommittedKeys: Accessor<ReadonlySet<string>>,
+    historyOwnedKeys: Accessor<ReadonlySet<string>>,
     followingTail: Accessor<boolean>,
     isOwnerVisible: (owner: Renderable) => boolean,
   ) => JSX.Element;
@@ -599,11 +603,12 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     return batch === undefined ? 0 : batchFoldRevision(batch, props.transcript);
   };
   const activeIds = createMemo(() => new Set(physical().activeBatchIds));
-  const visibleCommittedKeys = createMemo<ReadonlySet<string>>(() => {
-    const ids = activeIds();
+  const historyOwnedKeys = createMemo<ReadonlySet<string>>(() => {
+    const snapshot = physical();
+    const end = snapshot.activeBatchIds.length === 0 ? 0 : snapshot.end;
     return new Set(
       semanticBatches()
-        .filter((publication) => ids.has(publication.id))
+        .slice(0, end)
         .flatMap((publication) => publication.nodes.map((node) => node.key)),
     );
   });
@@ -1128,7 +1133,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
         <box id="history-spacer-after" height={physical().afterRows} flexShrink={0} />
       </Show>
       <CommittedHistoryBlockPresentationContext.Provider value={tailBlockPresentation}>
-        {props.tail?.(visibleCommittedKeys, () => physical().followingTail, isOwnerVisible)}
+        {props.tail?.(historyOwnedKeys, () => physical().followingTail, isOwnerVisible)}
       </CommittedHistoryBlockPresentationContext.Provider>
       <Show when={newerEntries() > 0 && !physical().followingTail}>
         <box

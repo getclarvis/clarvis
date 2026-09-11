@@ -83,6 +83,12 @@ const run: z.ZodType<HostedRunRef> = z.strictObject({
     .optional(),
 });
 
+/** Validate the same closed discovery projection at response boundaries without restoring authority. */
+export function decodeHostedRunRef(value: unknown): HostedRunRef | null {
+  const parsed = run.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 /** Validate untrusted disk state before it can enter the bounded registry; never expose parse data. */
 export function decodeHostedRegistryState(
   value: unknown,

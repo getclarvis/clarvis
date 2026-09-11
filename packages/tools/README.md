@@ -66,6 +66,11 @@ the same bound feeds `read_file`, batch reads and the in-process grep path. FIFO
 cannot park the event loop and a concurrent path replacement cannot turn a validated small file into
 an unbounded allocation.
 
+The root library exports `readRawFile`, `ReadFileOptions` and `ReadConfinement` for trusted host
+consumers that need the same bounded descriptor read. Callers supply their byte ceiling and explicit
+confinement policy. The kernel uses it to hash declared goal artifacts inside the selected workspace;
+this library operation does not add a model tool or grant access to host state roots.
+
 The same descriptor-first rule covers ignore sources, `file_stat`, monitor logs and monitor control
 records. Ignore files cap at 1 MiB, monitor metadata at 256 KiB and exit sentinels at 64 bytes;
 non-regular inputs are ignored or rejected according to that surface's existing error contract.

@@ -8,6 +8,8 @@
  * full-price 100k-token transcript where a 4k digest would have done.
  */
 import { describe, expect, it } from "bun:test";
+import { createCapabilityRegistry } from "@clarvis/capability";
+import { z } from "zod";
 
 import type { StoredExecution } from "@clarvis/loop";
 import {
@@ -60,6 +62,31 @@ function withRequest(over: Record<string, unknown>): StoredExecution {
   const base = subject();
   return { ...base, request: { ...base.request, ...over } } as StoredExecution;
 }
+
+it("carries only registered capability parameters while retaining the indexing attempt's own limits and identity", () => {
+  const capabilityRegistry = createCapabilityRegistry({
+    specs: [
+      {
+        key: "fixture",
+        schema: z.object({}),
+        requestParams: { fixture: z.unknown() },
+        merge: "lastWins",
+        pluginContributable: false,
+      },
+    ],
+  });
+  const source = withRequest({ fixture: { mode: "review" }, unregistered: "do not copy" });
+  const request = buildIndexerContinuationRequest({
+    executionId: "index-attempt",
+    subject: source,
+    providers: LIVE_PROVIDERS,
+    capabilityRegistry,
+  });
+  expect(request).toMatchObject({ fixture: { mode: "review" }, execution_id: "index-attempt" });
+  expect(request).not.toHaveProperty("unregistered");
+  expect(request.budget.total_token_limit).toBe(INDEXER_TOKEN_LIMIT);
+  expect(source.request.budget.total_token_limit).toBe(900_000);
+});
 
 describe("deciding whether a pass may continue the run it indexes", () => {
   it("allows it when the run left a resumable context on the same model", () => {

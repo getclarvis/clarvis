@@ -1,10 +1,10 @@
 import { validCacheUsage } from "./evaluation.ts";
-import type { CacheCall, CacheLimits } from "./types.ts";
+import type { CacheCall, CacheLimits, CacheScenario } from "./types.ts";
 
 /** Hard physical-attempt ledger. Limits never expand in response to quota, retries or incomplete work. */
-export class CacheBudget {
+export class CacheBudget<Scenario extends string = CacheScenario> {
   readonly startedAt: number;
-  readonly calls: CacheCall[] = [];
+  readonly calls: CacheCall<Scenario>[] = [];
   private startedCalls = 0;
   private input = 0;
   private output = 0;
@@ -13,7 +13,7 @@ export class CacheBudget {
 
   constructor(
     readonly limits: CacheLimits,
-    previous: readonly CacheCall[] = [],
+    previous: readonly CacheCall<Scenario>[] = [],
     startedAt = Date.now(),
   ) {
     this.startedAt = startedAt;
@@ -37,7 +37,7 @@ export class CacheBudget {
     if (this.exhausted()) throw new Error("cache_qualification_limit_reached");
   }
 
-  record(call: CacheCall): void {
+  record(call: CacheCall<Scenario>): void {
     this.calls.push(call);
     if (validCacheUsage(call.usage)) {
       this.input += call.usage.input;
@@ -48,7 +48,7 @@ export class CacheBudget {
   }
 
   /** Recover already-issued worker calls exactly once, even when their execution exhausted a cap. */
-  reconcile(calls: readonly CacheCall[]): void {
+  reconcile(calls: readonly CacheCall<Scenario>[]): void {
     for (const call of calls) {
       if (
         this.calls.some(

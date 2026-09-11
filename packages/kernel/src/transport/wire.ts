@@ -11,7 +11,7 @@ import type {
 import { OPERATIONS, SPECIAL_OPERATIONS } from "./operations.ts";
 
 /** Clean-break version of Clarvis's internal request/notification wire. */
-export const CLARVIS_WIRE_VERSION = 6 as const;
+export const CLARVIS_WIRE_VERSION = 7 as const;
 
 /**
  * The request/response method vocabulary for kernel RPC — Clarvis's own,
@@ -60,6 +60,8 @@ export const M = {
   getContext: OPERATIONS.config.getContext.method,
   configSubscribe: SPECIAL_OPERATIONS.configSubscribe.method,
   configUnsubscribe: SPECIAL_OPERATIONS.configUnsubscribe.method,
+  goalsSubscribe: SPECIAL_OPERATIONS.goalsSubscribe.method,
+  goalsUnsubscribe: SPECIAL_OPERATIONS.goalsUnsubscribe.method,
 } as const;
 
 /**
@@ -77,6 +79,7 @@ export const N = {
   runResult: "run.result",
   runStreamEnd: "run.stream_end",
   configChange: "config.change",
+  goalChange: "goals.change",
 } as const;
 
 /**

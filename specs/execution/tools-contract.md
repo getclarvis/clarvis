@@ -89,6 +89,16 @@ consumer outside this package's own workspace-linked build.
 
 ### Root (`.`) facade — `packages/tools/src/index.ts`
 
+The facade also exports `readRawFile` and the `ReadFileOptions`/`ReadConfinement` types for trusted
+host consumers. This is the existing bounded descriptor reader, with caller-supplied byte limits
+and confinement; it adds no advertised tool. Its behavior belongs to
+[reads and search](tools-read-and-search.md#42-readrawfile--the-descriptor-bound-read).
+Production: the exports in [index.ts](../../packages/tools/src/index.ts) and `readRawFile` in
+[files.ts](../../packages/tools/src/lib/files.ts).
+Test: [bounded-read.test.ts](../../packages/tools/tests/integration/bounded-read.test.ts), and the
+kernel's confined artifact case in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
+
 | Symbol | Kind | Location | Contract |
 | --- | --- | --- | --- |
 | `AgentTools` | interface | `packages/tools/src/index.ts` | `{ config: RuntimeConfig; listTools(): ToolInfo[]; callTool(name, args?): Promise<DispatchResult> }` |

@@ -41,6 +41,8 @@ import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts
 import { createLoopController, type LoopController } from "../../src/features/loop/controller.ts";
 import { TestLoopClock } from "../helpers/loop-clock.ts";
 import type { LoopTurnCompletion, ScheduledTurnRequest } from "../../src/core/loop-schedule.ts";
+import { createGoalController } from "../../src/features/goal/controller.ts";
+import { goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
 
@@ -319,6 +321,7 @@ function defaultProps(overrides: {
   continuesOnExit?: Accessor<boolean>;
   cancel?: () => boolean;
   status?: Accessor<string>;
+  goals?: AppProps["run"]["goals"];
   elicit?: Accessor<ElicitRequestParams | null>;
   switching?: Accessor<boolean>;
   seedStream?: RunEvent[];
@@ -371,6 +374,7 @@ function defaultProps(overrides: {
         },
       },
       run: {
+        ...(overrides.goals === undefined ? {} : { goals: overrides.goals }),
         status: overrides.status ?? (() => ""),
         submit: overrides.submit ?? (() => {}),
         submitPrompt: overrides.submitPrompt ?? (() => {}),
@@ -444,6 +448,40 @@ test("the complete composer adopts the draft typed during startup", async () => 
   const t = await mountApp(defaultProps({ initialDraft: "draft from startup" }));
   expect(await captureUntil(t, "draft from startup")).toContain("draft from startup");
   t.renderer.destroy();
+});
+
+test("goal state stays visible when idle and does not replace the physical run outcome", async () => {
+  const goals = createGoalController({
+    binding: () => ({ sessionId: "session-hosted", generation: 1 }),
+    prepare: async () => {
+      throw new Error("No goal creation expected");
+    },
+    service: () => ({
+      availability: async () => ({ available: true }),
+      get: async () => goalView({ status: "paused" }),
+      subscribe: async () => () => {},
+      receipt: async () => null,
+      control: async () => {
+        throw new Error("No control expected");
+      },
+    }),
+  });
+  try {
+    await goals.refresh();
+    const [active, setActive] = createSignal(false);
+    const t = await mountApp(defaultProps({ goals, active, status: () => "checkpoint saved" }));
+    let frame = await captureUntil(t, "Goal paused");
+    expect(frame).toContain("ready");
+    expect(frame).toContain("Checkpoint saved");
+    expect(frame).not.toContain("Completed");
+    setActive(true);
+    frame = await captureUntil(t, "working");
+    expect(frame).toContain("Goal paused");
+    expect(frame).not.toContain("Checkpoint saved");
+    t.renderer.destroy();
+  } finally {
+    goals.dispose();
+  }
 });
 
 const CHANGED_WORKSPACE_EXTENSION_PROFILE: ResolvedExtensionProfile = {

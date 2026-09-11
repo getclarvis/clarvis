@@ -14,7 +14,7 @@
 Clarvis uses one flat Bun workspace because package location is an address, not an architecture
 diagram. The entries under `packages/*` are independently named units in one `@clarvis/*` namespace;
 their architectural height comes from dependency direction and ownership. The root manifest lists
-all 18 workspaces explicitly (root `package.json`, `workspaces`), while the graph analyzer derives declared,
+all workspaces explicitly (root `package.json`, `workspaces`), while the graph analyzer derives declared,
 compilation, eager-runtime, dynamic-runtime and type-only edges from manifests and source
 (`tooling/lib/package-graph.ts`, `analyzePackageGraph`).
 
@@ -68,7 +68,7 @@ Every workspace has one primary architectural role:
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
 | execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
-| product capability | `memory`, `plan`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
+| product capability | `memory`, `plan`, `goal`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |
 | application | `code`, `server` | User-facing terminal application and MCP-over-HTTP facade | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
 

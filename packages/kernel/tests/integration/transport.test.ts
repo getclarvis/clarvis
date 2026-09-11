@@ -102,6 +102,121 @@ function makeRemote(
   return { kernel, transport };
 }
 
+describe("goal subscription lifecycle", () => {
+  it.each(["unsubscribe", "disconnect"])(
+    "releases a pending registration exactly once after %s",
+    async (ending) => {
+      const { kernel } = makeRemote();
+      const entered = deferredVoid();
+      const pending = Promise.withResolvers<() => void>();
+      let released = 0;
+      const server = createKernelServer(kernel, {
+        resolveConnection: () => ({
+          project: kernel.project,
+          workspace: kernel.workspace,
+          services: {
+            ...kernel.operatorServices,
+            ...kernel.defaultOwnerServices,
+            goals: {
+              ...kernel.goals,
+              subscribe: async () => {
+                entered.resolve();
+                return pending.promise;
+              },
+            },
+          },
+        }),
+      });
+      const connection = server.connect(
+        () => {},
+        () => {},
+      );
+      try {
+        await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
+        const result = connection.handle(WIRE_METHODS.goalsSubscribe, {
+          session_id: "session",
+          subscription_id: "slot",
+        });
+        const settled = Promise.allSettled([result]);
+        await entered.promise;
+        await expect(
+          connection.handle(WIRE_METHODS.goalsSubscribe, {
+            session_id: "session",
+            subscription_id: "slot",
+          }),
+        ).rejects.toMatchObject({ code: "conflict" });
+        if (ending === "disconnect") connection.close();
+        else await connection.handle(WIRE_METHODS.goalsUnsubscribe, { subscription_id: "slot" });
+        pending.resolve(() => {
+          released++;
+        });
+        expect((await settled)[0]?.status).toBe(ending === "disconnect" ? "rejected" : "fulfilled");
+        expect(released).toBe(1);
+        connection.close();
+        expect(released).toBe(1);
+      } finally {
+        connection.close();
+        await kernel.close();
+      }
+    },
+  );
+
+  it("does not erase a replacement subscription when an older registration fails", async () => {
+    const { kernel } = makeRemote();
+    const entered = deferredVoid();
+    const pending = Promise.withResolvers<() => void>();
+    let registrations = 0;
+    let released = 0;
+    const server = createKernelServer(kernel, {
+      resolveConnection: () => ({
+        project: kernel.project,
+        workspace: kernel.workspace,
+        services: {
+          ...kernel.operatorServices,
+          ...kernel.defaultOwnerServices,
+          goals: {
+            ...kernel.goals,
+            subscribe: async () => {
+              if (++registrations === 1) {
+                entered.resolve();
+                return pending.promise;
+              }
+              return () => {
+                released++;
+              };
+            },
+          },
+        },
+      }),
+    });
+    const connection = server.connect(
+      () => {},
+      () => {},
+    );
+    try {
+      await connection.handle(WIRE_METHODS.hello, { wire_version: CLARVIS_WIRE_VERSION });
+      const first = connection.handle(WIRE_METHODS.goalsSubscribe, {
+        session_id: "session",
+        subscription_id: "slot",
+      });
+      const settled = Promise.allSettled([first]);
+      await entered.promise;
+      await connection.handle(WIRE_METHODS.goalsUnsubscribe, { subscription_id: "slot" });
+      await connection.handle(WIRE_METHODS.goalsSubscribe, {
+        session_id: "session",
+        subscription_id: "slot",
+      });
+      pending.reject(new Error("Registration failed"));
+      expect((await settled)[0]?.status).toBe("rejected");
+      await connection.handle(WIRE_METHODS.goalsUnsubscribe, { subscription_id: "slot" });
+      expect(released).toBe(1);
+    } finally {
+      connection.close();
+      await kernel.close();
+    }
+  });
+});
+
 function planFactory(): PlanFactory {
   const root = mkdtempSync(join(tmpdir(), "clarvis-kernel-transport-plans-"));
   const store: PlanStore = createPlanStore({
@@ -251,6 +366,7 @@ describe("kernel loopback transport", () => {
         workspace: kernel.workspace,
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           config: {
             ...kernel.config,
@@ -296,6 +412,7 @@ describe("kernel loopback transport", () => {
           workspace: kernel.workspace,
           services: {
             ...kernel.operatorServices,
+            goals: kernel.goals,
             ...kernel.defaultOwnerServices,
             config: {
               ...kernel.config,
@@ -338,6 +455,7 @@ describe("kernel loopback transport", () => {
           workspace: kernel.workspace,
           services: {
             ...kernel.operatorServices,
+            goals: kernel.goals,
             ...kernel.forOwner("authenticated-owner"),
           },
         };
@@ -388,7 +506,11 @@ describe("kernel loopback transport", () => {
             principal: { id: `principal-${resolutions}` },
             project: kernel.project,
             workspace: kernel.workspace,
-            services: { ...kernel.operatorServices, ...kernel.defaultOwnerServices },
+            services: {
+              ...kernel.operatorServices,
+              goals: kernel.goals,
+              ...kernel.defaultOwnerServices,
+            },
           };
         },
       }),
@@ -547,6 +669,7 @@ describe("kernel loopback transport", () => {
           workspace: kernel.workspace,
           services: {
             ...kernel.operatorServices,
+            goals: kernel.goals,
             ...kernel.defaultOwnerServices,
             runs: {
               ...kernel.runs,
@@ -657,6 +780,7 @@ describe("kernel loopback transport", () => {
         workspace: kernel.workspace,
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           runs: { ...kernel.runs, start: async () => handle },
         },
@@ -701,7 +825,7 @@ describe("kernel loopback transport", () => {
     const context = {
       project: kernel.project,
       workspace: kernel.workspace,
-      services: { ...kernel.operatorServices, ...kernel.defaultOwnerServices },
+      services: { ...kernel.operatorServices, goals: kernel.goals, ...kernel.defaultOwnerServices },
       close() {
         contextCloseCalls += 1;
       },
@@ -757,6 +881,7 @@ describe("kernel loopback transport", () => {
         workspace: kernel.workspace,
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           runs: { ...kernel.runs, start: async () => handle },
         },
@@ -817,6 +942,7 @@ describe("kernel loopback transport", () => {
         workspace: kernel.workspace,
         services: {
           ...kernel.operatorServices,
+          goals: kernel.goals,
           ...kernel.defaultOwnerServices,
           runs: { ...kernel.runs, start: async () => handle },
         },

@@ -114,6 +114,7 @@ export interface TranscriptRunNode extends TranscriptNodeBase {
   kind: "run";
   text: string;
   reason?: string;
+  disposition?: "final" | "checkpoint";
   toolCalls?: number;
   inputTokens?: number;
   outputTokens?: number;

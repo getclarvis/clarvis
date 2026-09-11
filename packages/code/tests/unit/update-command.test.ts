@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { releaseTarget } from "../../src/update-contract.ts";
 import type { ReleaseFetch } from "../../src/update/github-releases.ts";
 import { runUpdateCommand } from "../../src/update/index.ts";
-import { withUpdateLock } from "../../src/update/installation.ts";
+import { managedInstallation, withUpdateLock } from "../../src/update/installation.ts";
 import { manifestFiles } from "../../src/update/release-manifest.ts";
 
 function output(): { stream: { write(value: string): boolean }; text: () => string } {
@@ -73,6 +73,20 @@ test("a managed installation with no eligible release is a clean no-op", async (
     ).toBe(0);
     expect(stdout.text()).toContain("already up to date");
     await expect(readFile(join(root, "update.lock"), "utf8")).rejects.toThrow();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("managed installation rejects an active version changed by another process", async () => {
+  const target = releaseTarget();
+  if (target === undefined) return;
+  const root = await mkdtemp(join(tmpdir(), "clarvis-managed-update-drift-"));
+  await writeFile(join(root, "current"), "v0.0.2-beta\n");
+  try {
+    await expect(
+      managedInstallation({ CLARVIS_INSTALL_ROOT: root }, "0.0.1-beta", target),
+    ).rejects.toThrow("active installation changed");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

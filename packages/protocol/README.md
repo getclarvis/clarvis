@@ -19,6 +19,14 @@ the kernel and are specified separately in
 
 ## The client contract
 
+`RunResult` distinguishes a stage checkpoint with `disposition: "checkpoint"` and a bounded
+`checkpoint: { summary, next_step }`. It is separate from both run status and a validated final
+`result`. Missing disposition retains the ordinary final path; this DTO grants no continuation
+authority. Live transport and restored run details carry the same handoff.
+The successful `run_ended` event also carries optional `disposition: "final" | "checkpoint"`.
+Clients use it to distinguish stage closure from final completion in live and restored transcripts;
+its absence means ordinary final completion. Failure and cancellation remain separate statuses.
+
 A UI programs against one `KernelClient`, obtained from a concrete client implementation.
 
 ```ts
@@ -47,7 +55,7 @@ Managed `RunHandle` implementations can return an unsubscribe function from `onE
 `onElicitSettled` to retire answered or expired questions. Hosted observations carry sequenced event
 frames and reuse run control methods; they are separate from the single source event consumer.
 
-`KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
+`KernelClient` carries the connected `project`/`workspace` identity and groups asynchronous
 services:
 
 | Service             | Responsibility                                                                         |
@@ -65,11 +73,24 @@ services:
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
 | `skills`            | Skill listing and prompt rendering.                                                    |
 | `sessions`          | Workspace-scoped conversation/session records.                                         |
+| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.        |
 | `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+
+`goals` is always present on the client facade. `KernelCapabilities.goals` is optional; absence or
+false means unsupported, and the facade exposes that through `goals.availability()` without sending
+an unknown operation to an older host. User mutations carry session identity, CAS revision and an
+operation ID. A start receipt retains its reserved execution ID across replay. Authenticated native
+conversation hosts expose these controls; headless hosts remain unavailable. The concrete transport
+and host validate authority separately from the DTO. See [goals](../../specs/capabilities/goals.md).
+
+`goals.subscribe(sessionId, listener)` returns a promise for a disposer. Await it before reading
+the initial state. Notifications contain only the session ID and request another canonical read;
+they do not grant execution authority or announce a completion commit independently of the state.
+The host bounds subscriptions and releases them when the connection closes.
 
 `hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
 snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
@@ -98,7 +119,11 @@ and the local operator role.
 
 Hosted conversation reads include `Session.revision`; the hosted coordinator requires that
 observed revision for saves and turn admission. The ordinary file-store contract does not itself
-enforce hosted ownership. Lifecycle and mutation rules are specified in
+enforce turn/totals ownership. Its optional `Session.goal_state` is host-owned even on ordinary
+file-store saves: clients cannot insert, remove or revert it. `goals.ts` defines the independent
+goal DTOs, user controls and service contract; defining those types alone does not advertise the
+service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
+from checkpoint disposition and a completion candidate. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed

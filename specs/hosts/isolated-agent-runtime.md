@@ -380,6 +380,12 @@ Test: `rejects guest media URLs before the real SDK can download on the host` an
 inline preservation, malformed media and URL refusals in
 [`runtime-model-media.test.ts`](../../packages/kernel/tests/unit/runtime-model-media.test.ts).
 
+The closed provider-error codec preserves `usage_unknown` and `cache_unknown` beside partial
+numeric counters. These flags do not carry credentials or widen the error envelope; zero
+placeholders cannot establish complete goal accounting. Production: `runtimeProviderErrorSchema`
+in [provider-error.ts](../../packages/kernel/src/runtime/provider-error.ts). Test:
+[runtime-provider-error.test.ts](../../packages/kernel/tests/unit/runtime-provider-error.test.ts).
+
 `modelBody` forwards `maxRetries` and `maxRetryAfterMs` unchanged when present, including zero
 retries, so profile policy and output-token reservations remain effective.
 
@@ -487,6 +493,27 @@ The host pins provider and run identity, binding/continuation mode, write settin
 validates canonical provider inputs, and preserves typed provider failures and retry metadata.
 
 Workflows uses the same guest-native scheduler, child registry and shared subtree output budget.
+The trusted `goalRuntimePortOf` projection admits exactly one ordinary entry goal capability.
+`runtime.goal` carries the host-pinned session, entry instance, execution and objective revision;
+closed codecs admit only reads, progress, checkpoint, candidate, validation and blocking. The guest
+uses the canonical goal capability and awaits earlier trace publications before reading evidence.
+Host operations revalidate persisted state and cancellation inside the mutation. User controls,
+ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
+descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
+Private protocol revision 11 prevents older guests from silently ignoring the required capability.
+The bounded current record and evidence catalog may cross; private session archives and receipts do
+not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
+aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
+
+Production: [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts),
+`goalRuntimePortOf` in [capability.ts](../../packages/goal/src/capability.ts),
+[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts).
+Test: [runtime-goal-bridge.test.ts](../../packages/kernel/tests/integration/runtime-goal-bridge.test.ts)
+and `preserves goal authority, plan checkpoint and SDK prefix across guest continuation` in
+[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+Goal controls, persistence and continuation are specified in [goals](../capabilities/goals.md).
+
 The trusted `workflowContextOf` and `workflowOutputBudgetOf` factory-identity projections let the
 kernel retain host composition without serializing executable closures. `runtime.workflows` prepares
 each bounded leader request through the host assembler once, then admits that child to the same
@@ -570,7 +597,9 @@ uploads, pending provider calls and retained downloads. Serialization has bounde
 this is a payload budget, not a process RSS ceiling. Response capacity is reserved before provider
 effects, so capacity refusal cannot occur after a valid mutation commits. Final reads, explicit
 release and run revocation free transfer state; guest cleanup releases partial transfers on failure.
-The shared capability message bound stays 256 KiB and the RPC frame bound stays 4 MiB.
+The shared capability message bound is 256 KiB. An admitted goal run uses 1152 KiB to transport its
+bounded current record and evidence catalog; plan transfers retain their own chunk and reservation
+bounds. The RPC frame bound stays 4 MiB.
 
 Production: `createHostPlansGrant` and `createGuestPlanFactory` in
 [`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts), and `createPlanTransferGrant`

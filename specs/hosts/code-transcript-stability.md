@@ -552,6 +552,20 @@ handoff snapshot until the measured committed owner is visible at the same flow 
 cannot create an empty frame, duplicate row or vertical jump. Later mutable content in that same
 projection remains after the handoff throughout the swap.
 
+History ownership extends through the last resident publication, including older virtualized
+batches. If several stages seal while a full-region view is active, initial history admission may
+start at the newest outcome. Older handoff snapshots then belong to history navigation; retaining
+them after that outcome in the live tail would reverse chronology. Ownership does not transfer
+before any committed owner is resident. Revealing an earlier checkpoint or scrolling back loads its
+original publication without changing the semantic ledger.
+Production: `historyOwnedKeys` in
+[`CommittedHistory`](../../packages/code/src/views/history/CommittedHistory.tsx), propagated by
+[`TranscriptRegion`](../../packages/code/src/views/app/TranscriptRegion.tsx) to
+[`LiveTranscriptTail`](../../packages/code/src/views/live/LiveTranscriptTail.tsx).
+Test: `keeps fast checkpoint stages in chronological flow after an inactive goal view` in
+[`transcript-publication-render.test.tsx`](../../packages/code/tests/integration/transcript-publication-render.test.tsx)
+covers short and virtualized stages, retained checkpoint navigation and return to the final tail.
+
 The same handoff remains bounded while the reader is away. A just-committed frontier owner that
 intersects the viewport stays painted, because replacing visible content with blank geometry would
 break the reader anchor. An owner fully below the viewport is disposed and its last native height is

@@ -19,6 +19,13 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
   };
 
   return {
+    goals: {
+      subscribe: record("goals.subscribe"),
+      availability: record("goals.availability"),
+      get: record("goals.get"),
+      control: record("goals.control"),
+      receipt: record("goals.receipt"),
+    },
     localHost: {
       inspect: record("localHost.inspect"),
       takeBrowserRequest: record("localHost.takeBrowserRequest"),

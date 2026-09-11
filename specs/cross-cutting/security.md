@@ -470,6 +470,15 @@ and `packages/paths/tests/integration/housekeeping.test.ts`.
 
 All bytes are then read from that descriptor with `position: null`, so a later path swap cannot redirect the read.
 
+Goal artifact evidence reuses the exported bounded descriptor reader with only the selected
+workspace admitted, capped at 16 MiB. Model references do not select paths; paths come from the
+user's declared criteria. Current digest validation is a snapshot, not a promise that a workspace
+file can never change afterward. Completion still requires the host's final revalidation and
+durable settlement. Production: `createGoalEvidenceSource` in
+[evidence.ts](../../packages/kernel/src/goals/evidence.ts).
+Test: artifact mutation and outside-workspace directory-link refusal in
+[goal-runtime-port.test.ts](../../packages/kernel/tests/integration/goal-runtime-port.test.ts).
+
 Call sites of `readFileOptions`: `packages/tools/src/lib/rg.ts`, `packages/tools/src/lib/rg.ts`, `packages/tools/src/tools/diff.ts`,
 `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts`, `packages/tools/src/tools/read-image.ts`,
 `packages/tools/src/tools/apply-patch.ts`, `packages/tools/src/tools/edit-file.ts`, `packages/tools/src/tools/replace.ts`,
@@ -1139,6 +1148,19 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     gates. Workflow children use host-assembled requests and one shared guest budget; unprojectable
     host capabilities refuse placement. Model leases admit exact profile, vision and effective judge
     pairs, with bounded, correlated progress frames and a separate terminal result.
+    The goal projection accepts only factory-owned entry authority and pins session, instance,
+    execution and objective revision. Its six closed operations cannot choose an owner, invoke user
+    controls, admit a run or alter limits. The host revalidates persisted binding and per-operation
+    cancellation inside each mutation; revocation prevents a queued write from publishing later.
+    The canonical guest capability restricts goal tools to the entry agent. Forged scopes, duplicate
+    capabilities, missing descriptors and workflow combinations are refused. Only the bounded current
+    goal and evidence catalog cross; session archives, operation receipts and credentials stay host-owned.
+    Production: `createHostGoalBridge` / `createGuestGoalCapability` in
+    [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts) and `createGoalRuntimePort` in
+    [runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts).
+    Test: [runtime-goal-bridge.test.ts](../../packages/kernel/tests/integration/runtime-goal-bridge.test.ts)
+    and goal continuation through the actual guest RPC in
+    [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
     The host resolves provider/model overrides from its captured registry and reconstructs model
     capabilities, ignoring guest-supplied configuration. Before any adapter call, user and tool
     media must be inline base64 image data within the complete-request byte bound; URL-backed
@@ -1213,6 +1235,33 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/tests/integration/sandbox-policy.test.ts`;
     `packages/server/tests/architecture/docker-context.test.ts`
     (`allowlists the repository-root build context and re-excludes credentials`).
+
+61. **A remote Code connection delegates machine/user authentication, host-key verification,
+    transport integrity and encryption to OpenSSH
+    without widening Clarvis authority.** The client spawns SSH with argv and no local shell,
+    disables port, agent and X11 forwarding, validates its destination and restricts every remotely joined command
+    token to a conservative shell-safe alphabet. Workspace and optional Extension Profile selection
+    cross in one closed, bounded base64url payload. Local provider credentials, Clarvis discovery
+    credentials and global configuration do not enter argv or the kernel wire. A local `ssh-agent`
+    may authenticate without its socket being forwarded. OpenSSH selects identities, certificates,
+    jump hosts, authentication order and host-key policy from its ordinary configuration; Clarvis
+    does not force `StrictHostKeyChecking` or `BatchMode`, and offers no identity-file/password store.
+    Password or passphrase prompting through a controlling terminal/askpass helper is not a TUI
+    contract because kernel stdin/stdout already carry the wire. Operators establish the host key and
+    noninteractive authentication before launch. There is no second application encryption layer:
+    SSH protects prompts, tool traffic and events in transit, while both endpoints see plaintext.
+    The remote process resolves its own global state and subscription OAuth, fixes owner/workspace
+    server-side, advertises the resulting session namespace, exposes hosted runs/goals but no
+    machine-local controls, and closes on pipe loss. Production:
+    `connectRemoteKernelOverSsh` in
+    [connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts),
+    `serveRemoteFileKernelOverStdio` in
+    [serve-remote-stdio.ts](../../packages/kernel/src/hosting/serve-remote-stdio.ts), and Code's
+    [remote-kernel-arguments.ts](../../packages/code/src/adapters/remote-kernel-arguments.ts) and
+    [remote-host.ts](../../packages/code/src/remote-host.ts). Test:
+    [remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts),
+    [remote-stdio-host.test.ts](../../packages/kernel/tests/integration/remote-stdio-host.test.ts),
+    and [remote-kernel-arguments.test.ts](../../packages/code/tests/unit/remote-kernel-arguments.test.ts).
 
 ## 6. Failure modes and degradation
 

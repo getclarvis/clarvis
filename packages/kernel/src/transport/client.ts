@@ -28,6 +28,8 @@ import type {
   ExtensionProfileService,
 } from "@clarvis/protocol";
 import { createEventStream, type EventStream } from "../core/event-stream.ts";
+import { unavailableGoalService } from "../goals/unavailable.ts";
+import { createGoalClient } from "./goal-client.ts";
 import {
   M,
   N,
@@ -153,6 +155,7 @@ export async function connectKernelClient(
   const notificationOffs: Array<() => void> = [];
   let closed = false;
   let hosted: ReturnType<typeof createHostingClient> | undefined;
+  let goals: ReturnType<typeof createGoalClient> | undefined;
   let offClose: (() => void) | undefined;
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
@@ -188,6 +191,7 @@ export async function connectKernelClient(
   const clearClientSubscriptions = (): void => {
     configSubs.clear();
     hosted?.close();
+    goals?.close();
   };
   const observe = (method: string, handler: (params: unknown) => void): void => {
     notificationOffs.push(transport.onNotification(method, handler));
@@ -394,10 +398,15 @@ export async function connectKernelClient(
     !isRecord(hello.capabilities) ||
     (hello.capabilities.local_host !== undefined &&
       (hello.capabilities.local_host !== true || hello.capabilities.hosting === undefined)) ||
+    (hello.capabilities.goals !== undefined &&
+      (typeof hello.capabilities.goals !== "boolean" ||
+        (hello.capabilities.goals && hello.capabilities.hosting === undefined))) ||
     (hello.capabilities.hosting !== undefined &&
       (!isRecord(hello.capabilities.hosting) ||
-        !hasOnly(hello.capabilities.hosting, ["host_generation"]) ||
-        !wireId(hello.capabilities.hosting.host_generation))) ||
+        !hasOnly(hello.capabilities.hosting, ["host_generation", "default_owner"]) ||
+        !wireId(hello.capabilities.hosting.host_generation) ||
+        (hello.capabilities.hosting.default_owner !== undefined &&
+          !wireId(hello.capabilities.hosting.default_owner)))) ||
     !validRuntime ||
     !isRecord(hello.project) ||
     !isRecord(hello.workspace) ||
@@ -432,6 +441,13 @@ export async function connectKernelClient(
       protocolViolation,
     });
   }
+  if (hello.capabilities.goals === true)
+    goals = createGoalClient({
+      transport,
+      workspaceId: hello.workspace.id,
+      logger,
+      protocolViolation,
+    });
 
   /**
    * Build a client-side streaming handle (a {@link RunHandle}) whose
@@ -638,6 +654,7 @@ export async function connectKernelClient(
     files,
     memory,
     plans,
+    goals: goals?.service ?? unavailableGoalService(),
     workflows,
     skills,
     sessions,

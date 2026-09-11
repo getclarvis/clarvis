@@ -18,6 +18,7 @@ import {
 } from "@clarvis/memory/capability";
 import { createMemoryServerPort } from "./memory/memory-server-port.ts";
 import { composeIndexPassDeps } from "./memory/pass-deps.ts";
+import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
 import { componentFloor, createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
 import { createTaskServerPort } from "./tasks/task-server-port.ts";
@@ -912,6 +913,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
   const deps: ExecuteRunDeps = {
     ...built.deps,
+    capabilityRegistry: composeKernelCapabilityRegistry(built.deps.capabilityRegistry),
     hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
     capabilities: [
       ...(built.deps.capabilities ?? []),

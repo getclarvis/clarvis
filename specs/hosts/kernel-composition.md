@@ -14,6 +14,19 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
+The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
+supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
+policy, and `readRunTrace` resolves canonical evidence under the requested resident owner scope.
+Neither policy nor raw-trace authority enters the public protocol. `createFileRunHost` composes the
+private session repository, mandatory goal policy and ordinary immutable preparation.
+The scope policy declares goals as owner/workspace/connection data; it is not a globally memoized
+controller service. Production: `createKernelScopePolicy` in
+[scope-policy.ts](../../packages/kernel/src/application/scope-policy.ts).
+Production: [kernel.ts](../../packages/kernel/src/kernel.ts) and
+[file-host.ts](../../packages/kernel/src/hosting/file-host.ts).
+Test: [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts)
+checks headless unavailability and an authenticated goal through actual kernel execution.
+
 `createFileRunHost` composes a FileKernel with the hosted registry, session coordinator and an
 authenticated server of the existing kernel RPC. It accepts host-owned projection/index storage and
 a local token verifier. Client disconnect retires observation/control and applies the run's explicit
@@ -163,6 +176,19 @@ when no foreground handle remains. Production: `acquireExtensionProfileRunLease`
 `executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`, plus `withRunLease` in
 `packages/kernel/src/runs/run-lease.ts`. Test: `packages/kernel/tests/unit/run-lease.test.ts` and
 `packages/memory/tests/component/factory.test.ts`.
+
+The file kernel composes the capability registry before supplying either foreground or memory
+deps. `composeKernelCapabilityRegistry` keeps kernel schema precedence and validates conflicting
+grant declarations; `createInProcessKernel` uses the same composition for external embedders.
+Memory continuation deps replace planning with its catalog projection, retaining source request
+parameters while preventing plan recovery, gates, finalization and retention from running on
+the indexer's behalf. Production: `packages/kernel/src/config/capability-registry.ts`,
+`packages/kernel/src/file-kernel.ts` and `composeIndexPassDeps` in
+`packages/kernel/src/memory/pass-deps.ts`. Test:
+`packages/kernel/tests/integration/goal-file-host-memory.test.ts` and
+`packages/kernel/tests/unit/index-pass-deps.test.ts`. The capability-owned semantics are specified
+in [memory indexing](../capabilities/memory-indexer.md) and
+[planning](../capabilities/plan-capability.md).
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
 `packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;

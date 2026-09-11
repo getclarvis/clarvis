@@ -386,6 +386,13 @@ execution port — is built by the kernel in
 `executeRun` and `generateExecutionId`; tests bind a per-context fake instead of replacing the
 process-wide loop module.
 
+The manager and its leaders share the conversation session, while each leader uses the scheduler's
+reserved run ID as both execution ID and persisted agent-instance ID. Leaders therefore keep stable
+cache affinity across their own continuation and remain distinct from the manager and from another
+leader using the same Agent Profile. Missing reserved IDs are refused before assembly. The owning
+cross-package assertions live in the
+[workflow service contract](../../specs/capabilities/workflows-service.md).
+
 The only engine adapter this package consumes from `@clarvis/loop/workflows` is
 `createElicitSerializer`. Agent, run, tool, compute-clock, trace and elicitation contracts come
 directly from `@clarvis/capability`; they are not consumed through loop re-exports. The child

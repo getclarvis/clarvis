@@ -11,6 +11,7 @@ import type {
   RunDetail,
   RunEvent,
   RunResult,
+  RunFinalization,
   RunStatus,
   RunSummary,
   RunUsage,
@@ -86,11 +87,22 @@ function liveUsage(usage: Usage): RunUsage {
  */
 export function engineResultToProto(executionId: string, response: RunResponse): RunResult {
   const usage = liveUsage(response.usage);
+  const finalization: RunFinalization =
+    response.disposition === "checkpoint"
+      ? {
+          disposition: "checkpoint" as const,
+          checkpoint: {
+            summary: response.checkpoint.summary,
+            next_step: response.checkpoint.next_step,
+          },
+        }
+      : {};
   if (response.status === "error") {
     const e = response.error as { code?: unknown; message?: unknown };
     return {
       execution_id: executionId,
       status: "failed",
+      ...finalization,
       error: {
         code: typeof e.code === "string" ? e.code : "error",
         message: typeof e.message === "string" ? e.message : "run failed",
@@ -107,6 +119,7 @@ export function engineResultToProto(executionId: string, response: RunResponse):
   return {
     execution_id: executionId,
     status,
+    ...finalization,
     result: response.result,
     ...(response.status !== "completed" ? { ended_reason: response.status } : {}),
     usage,

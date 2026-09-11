@@ -1,4 +1,11 @@
-import { bestEffort, NOOP_LOGGER, sanitizeErrorMessage, type Logger } from "@clarvis/capability";
+import { boundPromise } from "@clarvis/loop/host";
+import {
+  bestEffort,
+  NOOP_LOGGER,
+  sanitizeErrorMessage,
+  suppressSecondaryRejection,
+  type Logger,
+} from "@clarvis/capability";
 import type {
   HostedHandoffFailureDetails,
   HostedRecoveryResolution,
@@ -16,6 +23,8 @@ import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "../guar
 import {
   createHostedAdmission,
   type HostedAdmissionOptions,
+  type HostedContinuationAuthority,
+  type HostedConversationAuthority,
   type HostedOccupancy,
   type HostingPeer,
 } from "./admission.ts";
@@ -31,6 +40,15 @@ export interface PreparedHostedTurn {
   commitIntent(): Promise<void>;
   start(): Promise<RunHandle>;
   reconcile(result: RunResult): Promise<void>;
+  /** Host policy for another bounded stage; never serialized or selected by public run arguments. */
+  continuation?: HostedTurnContinuation;
+}
+
+/** Evaluated once after successful physical/durable settlement, under revocable controller authority. */
+export interface HostedTurnContinuation {
+  prepare(signal: AbortSignal): Promise<StartHostedTurnParams | undefined>;
+  /** Persist policy attention after revocation or failure; must preserve a newer user/run decision. */
+  stopped(reason: "revoked" | "superseded" | "failed"): Promise<void>;
 }
 
 /** Private host index; no prompts, provider credentials or volatile consent scopes enter it. */
@@ -49,7 +67,12 @@ export interface HostedRegistryOptions {
   owner: string;
   prepare(
     input: StartHostedTurnParams,
-    authority: { scope: string; signal: AbortSignal },
+    authority: {
+      scope: string;
+      signal: AbortSignal;
+      continuationOf?: string;
+      conversation?: HostedConversationAuthority;
+    },
   ): Promise<PreparedHostedTurn>;
   projection(executionId: string): Promise<HostedProjection>;
   /** Remove only the acknowledged run's private observation artifact, never canonical history. */
@@ -67,8 +90,14 @@ export interface HostedRegistryOptions {
   maxRetainedRuns?: number;
   maxReceipts?: number;
   receiptLifetimeMs?: number;
+  /** Bound read-only continuation preparation and its failure notification; defaults to five seconds. */
+  continuationTimeoutMs?: number;
   now?: () => number;
   logger?: Logger;
+  /** Process-owned maintenance/lease admission also applies to internal automatic starts. */
+  assertStartAllowed?(): void;
+  /** Display invalidation when observation becomes available or physical occupancy is released. */
+  executionChanged?(sessionId: string): void;
 }
 
 /** One authenticated connection's service scope; closing it does not close the kernel. */
@@ -85,6 +114,17 @@ export interface HostedRegistry {
   occupied(sessionId: string): boolean;
   /** Synchronous authority check for process-owned interactive callbacks, never a client claim. */
   controlsConversation(peerId: string, sessionId: string): boolean;
+  /** Internal controls resolve an already authenticated connection, never fabricate a public peer. */
+  claimController(peerId: string, sessionId: string): HostedConversationAuthority;
+  assertOperator(peerId: string): void;
+  assertController(authority: HostedConversationAuthority): void;
+  startControlled(
+    authority: HostedConversationAuthority,
+    input: StartHostedTurnParams,
+  ): Promise<HostedRunRef>;
+  cancelControlled(authority: HostedConversationAuthority, executionId: string): Promise<void>;
+  physicalRun(sessionId: string): HostedRunRef | undefined;
+  hasPendingContinuation(): boolean;
   /** Permit pending-observation saves only for the connection holding that local activity. */
   ownsActivity(peerId: string, sessionId: string): boolean;
   /** Publish the current index before a process exposes its discovery credential. */
@@ -116,6 +156,10 @@ interface Entry {
   pruning?: Promise<void>;
   recovery?: Promise<HostedRunRef>;
   handoff?: { id: string; promise: Promise<HostedRunReceipt> };
+  continuationAuthority?: HostedContinuationAuthority;
+  continuation?: Promise<void>;
+  continuationStop?: Promise<void>;
+  retireContinuationListener?: () => void;
 }
 
 interface ConnectionState {
@@ -153,12 +197,26 @@ function identifier(value: string, name: string): void {
  */
 export function createHostedRegistry(options: HostedRegistryOptions): HostedRegistry {
   const logger = options.logger ?? NOOP_LOGGER;
+  const executionChanged = (sessionId: string): void => {
+    try {
+      options.executionChanged?.(sessionId);
+    } catch {
+      logger.warn(
+        { event: "hosting.change.delivery_failed", session_id: sessionId },
+        "Hosted execution observer failed",
+      );
+    }
+  };
   const now = options.now ?? Date.now;
   const maxRetained = positive(options.maxRetainedRuns ?? 32, "maxRetainedRuns");
   const maxReceipts = positive(options.maxReceipts ?? 128, "maxReceipts");
   const receiptLifetime = positive(
     options.receiptLifetimeMs ?? 24 * 60 * 60 * 1000,
     "receiptLifetimeMs",
+  );
+  const continuationTimeout = positive(
+    options.continuationTimeoutMs ?? 5000,
+    "continuationTimeoutMs",
   );
   const entries = new Map<string, Entry>();
   const connections = new Map<string, ConnectionState>();
@@ -356,6 +414,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     if (
       !entry.acknowledged ||
       entry.occupancy !== undefined ||
+      entry.continuationAuthority !== undefined ||
       entry.ref.execution_state !== "closed"
     )
       return;
@@ -431,6 +490,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           control === "takeover",
         ).epoch;
         touch(entry);
+      } else if (control !== "observe" && admission.hasConversation(entry.ref.session_id)) {
+        admission.claimConversation(connection.peer, entry.ref.session_id, control === "takeover");
       }
       connection.observations.set(attachment.observation_id, observation);
       connection.snapshots.set(attachment.snapshot.snapshot_id, {
@@ -481,6 +542,252 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
     await Promise.all([...entries.values()].map(prune));
   };
 
+  const stopContinuation = (
+    entry: Entry,
+    reason: "revoked" | "superseded" | "failed",
+  ): Promise<void> => {
+    const policy = entry.prepared?.continuation;
+    if (policy === undefined) return Promise.resolve();
+    entry.continuationStop ??= (async () => {
+      try {
+        await boundPromise(() => policy.stopped(reason), {
+          timeoutMs: continuationTimeout,
+          onTimeout: () => {
+            throw kernelError("unavailable", "Continuation attention could not be persisted");
+          },
+          onAbort: () => undefined,
+        });
+      } catch {
+        logger.warn(
+          { event: "hosting.continuation.attention_failed", execution_id: entry.ref.execution_id },
+          "Continuation stopped but its policy attention could not be persisted",
+        );
+      }
+    })();
+    return entry.continuationStop;
+  };
+
+  const continueEntry = async (connection: ConnectionState, entry: Entry): Promise<void> => {
+    const policy = entry.prepared?.continuation;
+    const authority = entry.continuationAuthority;
+    if (policy === undefined || authority === undefined) return;
+    const stopped = (reason: "revoked" | "superseded" | "failed") =>
+      stopContinuation(entry, reason);
+    const revoked = () =>
+      stopped(authority.signal.reason === "superseded" ? "superseded" : "revoked");
+    try {
+      const state = entry.execution?.state();
+      if (state?.terminalCommitted !== true) {
+        await stopped("failed");
+        return;
+      }
+      if (state.result?.status !== "completed" || state.result.disposition !== "checkpoint") return;
+      if (authority.signal.aborted) {
+        await revoked();
+        return;
+      }
+      const input = await boundPromise(() => policy.prepare(authority.signal), {
+        signal: authority.signal,
+        timeoutMs: continuationTimeout,
+        onTimeout: () => {
+          throw kernelError("unavailable", "Continuation preparation exceeded its deadline");
+        },
+        onAbort: () => undefined,
+      });
+      if (authority.signal.aborted) {
+        await revoked();
+        return;
+      }
+      if (input === undefined) return;
+      if (
+        input.session_id !== authority.sessionId ||
+        input.kind !== "conversation" ||
+        input.params.continue_from !== authority.executionId
+      )
+        throw kernelError(
+          "invalid_request",
+          "Continuation must preserve its conversation and predecessor",
+        );
+      await startEntry(connection, input, authority);
+    } catch {
+      logger.warn(
+        { event: "hosting.continuation.failed", execution_id: entry.ref.execution_id },
+        "Automatic continuation was refused or could not be prepared",
+      );
+      await stopped("failed");
+    } finally {
+      entry.retireContinuationListener?.();
+      delete entry.retireContinuationListener;
+      admission.retireContinuation(authority);
+      delete entry.continuationAuthority;
+      await entry.continuationStop;
+      await bestEffort(() => prune(entry), { operation: "hosting.continuation.prune", logger });
+    }
+  };
+
+  const startEntry = async (
+    connection: ConnectionState,
+    input: StartHostedTurnParams,
+    continuation?: HostedContinuationAuthority,
+  ): Promise<Entry> => {
+    assertConnection(connection, true);
+    options.assertStartAllowed?.();
+    const peer = connection.peer;
+    if (unresolvedSessions.has(input.session_id))
+      throw kernelError("conflict", "conversation has unresolved work from a previous host");
+    if (
+      typeof input.user_preview !== "string" ||
+      input.user_preview.length > 4096 ||
+      (input.kind !== "conversation" && input.kind !== "transcript") ||
+      !Number.isSafeInteger(input.session_revision) ||
+      input.session_revision < 0
+    ) {
+      throw kernelError("invalid_request", "invalid hosted turn preview, kind or session revision");
+    }
+    identifier(input.params.execution_id, "execution id");
+    if (entries.has(input.params.execution_id))
+      throw kernelError(
+        "conflict",
+        "execution id is already registered; attach instead of starting it again",
+      );
+    if (entries.size >= maxRetained)
+      throw kernelError("resource_exhausted", "hosted run retention limit reached");
+    const occupancy =
+      continuation === undefined
+        ? admission.reserve(peer, input.session_id, "run", input.params.execution_id)
+        : admission.reserveContinuation(continuation, input.params.execution_id);
+    const entry: Entry = {
+      occupancy,
+      preparation: new AbortController(),
+      acknowledged: false,
+      stopRequested: false,
+      preparationSettled: Promise.withResolvers<void>(),
+      ref: {
+        execution_id: input.params.execution_id,
+        session_id: input.session_id,
+        workspace_id: options.workspaceId,
+        host_generation: options.hostGeneration,
+        title: input.user_preview.slice(0, 256),
+        config: { agent: input.params.agent ?? input.params.skill?.name ?? "default" },
+        created_at: now(),
+        updated_at: now(),
+        revision: 1,
+        disconnect_policy: "cancel",
+        execution_state: "starting",
+        attention: "none",
+        control_epoch: 1,
+        control: "self",
+      },
+    };
+    entries.set(input.params.execution_id, entry);
+    try {
+      const control = admission.control(occupancy);
+      entry.projection = await options.projection(input.params.execution_id);
+      assertControl(connection, entry, control.epoch);
+      entry.prepared = await options.prepare(input, {
+        scope: control.interactiveScope!,
+        signal: entry.preparation.signal,
+        conversation: admission.conversation(peer, input.session_id),
+        ...(continuation === undefined ? {} : { continuationOf: continuation.executionId }),
+      });
+      entry.ref.config = entry.prepared.config;
+      entry.ref.title = entry.prepared.title.slice(0, 256);
+      assertControl(connection, entry, control.epoch);
+      if (entry.prepared.continuation !== undefined) {
+        entry.continuationAuthority = admission.captureContinuation(peer, occupancy);
+        const signal = entry.continuationAuthority.signal;
+        const revoked = (): void => {
+          if (signal.reason !== "superseded")
+            suppressSecondaryRejection(
+              stopContinuation(entry, "revoked"),
+              "the bounded host continuation stop handler",
+            );
+        };
+        signal.addEventListener("abort", revoked, { once: true });
+        entry.retireContinuationListener = () => signal.removeEventListener("abort", revoked);
+      }
+      await entry.prepared.commitIntent();
+      assertControl(connection, entry, control.epoch);
+      await persist();
+      assertControl(connection, entry, control.epoch);
+      options.assertStartAllowed?.();
+      entry.source = await entry.prepared.start();
+      if (entry.source.execution_id !== entry.ref.execution_id)
+        throw kernelError("internal", "hosted start returned a different execution identity");
+      entry.execution = createHostedExecution({
+        handle: entry.source,
+        projection: entry.projection,
+        logger,
+        reconcile: (result) => entry.prepared!.reconcile(result),
+        async commitTerminal() {
+          try {
+            await persist({ terminalExecutionId: entry.ref.execution_id });
+            entry.ref.control_epoch = admission.control(occupancy).epoch;
+            admission.release(occupancy);
+            delete entry.occupancy;
+            executionChanged(entry.ref.session_id);
+          } catch {
+            entry.ref.execution_state = "unknown";
+            entry.ref.recovery_error = "Host could not commit the terminal run index.";
+            throw kernelError("unavailable", entry.ref.recovery_error);
+          }
+        },
+        changed: () => touch(entry),
+      });
+      touch(entry);
+      executionChanged(entry.ref.session_id);
+      void entry.execution.settled.catch(() => {
+        entry.ref.execution_state = "unknown";
+        entry.ref.recovery_error = "Hosted execution closure could not be observed.";
+      });
+      entry.continuation = entry.execution.settled.then(
+        () => continueEntry(connection, entry),
+        () => continueEntry(connection, entry),
+      );
+      if (entry.stopRequested) await entry.source.cancel();
+      return entry;
+    } catch (error) {
+      entry.retireContinuationListener?.();
+      delete entry.retireContinuationListener;
+      if (entry.continuationAuthority !== undefined)
+        admission.retireContinuation(entry.continuationAuthority);
+      delete entry.continuationAuthority;
+      if (entry.execution === undefined) {
+        const reason = toKernelError(error);
+        const failed: RunResult = {
+          execution_id: entry.ref.execution_id,
+          status: "failed",
+          error: { code: reason.code, message: sanitizeErrorMessage(reason.message) },
+        };
+        try {
+          if (entry.source !== undefined) {
+            const source = entry.source;
+            const drain = (async () => {
+              for await (const _event of source.events) {
+                /* Drain without retaining abandoned execution events. */
+              }
+            })();
+            await Promise.all([source.cancel(), source.closed, source.done, drain]);
+          }
+          await entry.prepared?.reconcile(failed);
+          await entry.projection?.close();
+          entry.ref.execution_state = "closed";
+          entry.ref.outcome = { status: failed.status, error: failed.error };
+          await persist();
+          admission.release(occupancy);
+          delete entry.occupancy;
+          executionChanged(entry.ref.session_id);
+        } catch {
+          entry.ref.execution_state = "unknown";
+          entry.ref.recovery_error = "Hosted turn preparation could not be reconciled.";
+        }
+      }
+      throw error;
+    } finally {
+      entry.preparationSettled.resolve();
+    }
+  };
+
   const connect = (role: HostingPeer["role"]): HostedRegistryConnection => {
     if (closing) throw kernelError("unavailable", "host is closing");
     const peer = admission.connect(role);
@@ -500,137 +807,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           .map((entry) => view(entry, peer));
       },
       async start(input) {
-        assertConnection(connection, true);
-        if (unresolvedSessions.has(input.session_id))
-          throw kernelError("conflict", "conversation has unresolved work from a previous host");
-        if (
-          typeof input.user_preview !== "string" ||
-          input.user_preview.length > 4096 ||
-          (input.kind !== "conversation" && input.kind !== "transcript") ||
-          !Number.isSafeInteger(input.session_revision) ||
-          input.session_revision < 0
-        ) {
-          throw kernelError(
-            "invalid_request",
-            "invalid hosted turn preview, kind or session revision",
-          );
-        }
-        identifier(input.params.execution_id, "execution id");
-        if (entries.has(input.params.execution_id))
-          throw kernelError(
-            "conflict",
-            "execution id is already registered; attach instead of starting it again",
-          );
-        if (entries.size >= maxRetained)
-          throw kernelError("resource_exhausted", "hosted run retention limit reached");
-        const occupancy = admission.reserve(
-          peer,
-          input.session_id,
-          "run",
-          input.params.execution_id,
-        );
-        const entry: Entry = {
-          occupancy,
-          preparation: new AbortController(),
-          acknowledged: false,
-          stopRequested: false,
-          preparationSettled: Promise.withResolvers<void>(),
-          ref: {
-            execution_id: input.params.execution_id,
-            session_id: input.session_id,
-            workspace_id: options.workspaceId,
-            host_generation: options.hostGeneration,
-            title: input.user_preview.slice(0, 256),
-            config: { agent: input.params.agent ?? input.params.skill?.name ?? "default" },
-            created_at: now(),
-            updated_at: now(),
-            revision: 1,
-            disconnect_policy: "cancel",
-            execution_state: "starting",
-            attention: "none",
-            control_epoch: 1,
-            control: "self",
-          },
-        };
-        entries.set(input.params.execution_id, entry);
-        try {
-          const control = admission.control(occupancy);
-          entry.projection = await options.projection(input.params.execution_id);
-          assertControl(connection, entry, control.epoch);
-          entry.prepared = await options.prepare(input, {
-            scope: control.interactiveScope!,
-            signal: entry.preparation.signal,
-          });
-          entry.ref.config = entry.prepared.config;
-          entry.ref.title = entry.prepared.title.slice(0, 256);
-          assertControl(connection, entry, control.epoch);
-          await entry.prepared.commitIntent();
-          assertControl(connection, entry, control.epoch);
-          await persist();
-          assertControl(connection, entry, control.epoch);
-          entry.source = await entry.prepared.start();
-          if (entry.source.execution_id !== entry.ref.execution_id)
-            throw kernelError("internal", "hosted start returned a different execution identity");
-          entry.execution = createHostedExecution({
-            handle: entry.source,
-            projection: entry.projection,
-            logger,
-            reconcile: (result) => entry.prepared!.reconcile(result),
-            async commitTerminal() {
-              try {
-                await persist({ terminalExecutionId: entry.ref.execution_id });
-                entry.ref.control_epoch = admission.control(occupancy).epoch;
-                admission.release(occupancy);
-                delete entry.occupancy;
-              } catch {
-                entry.ref.execution_state = "unknown";
-                entry.ref.recovery_error = "Host could not commit the terminal run index.";
-                throw kernelError("unavailable", entry.ref.recovery_error);
-              }
-            },
-            changed: () => touch(entry),
-          });
-          touch(entry);
-          void entry.execution.settled.catch(() => {
-            entry.ref.execution_state = "unknown";
-            entry.ref.recovery_error = "Hosted execution closure could not be observed.";
-          });
-          if (entry.stopRequested) await entry.source.cancel();
-          return await observe(connection, entry, "acquire");
-        } catch (error) {
-          if (entry.execution === undefined) {
-            const reason = toKernelError(error);
-            const failed: RunResult = {
-              execution_id: entry.ref.execution_id,
-              status: "failed",
-              error: { code: reason.code, message: sanitizeErrorMessage(reason.message) },
-            };
-            try {
-              if (entry.source !== undefined) {
-                const source = entry.source;
-                const drain = (async () => {
-                  for await (const _event of source.events) {
-                    /* Drain without retaining abandoned execution events. */
-                  }
-                })();
-                await Promise.all([source.cancel(), source.closed, source.done, drain]);
-              }
-              await entry.prepared?.reconcile(failed);
-              await entry.projection?.close();
-              entry.ref.execution_state = "closed";
-              entry.ref.outcome = { status: failed.status, error: failed.error };
-              await persist();
-              admission.release(occupancy);
-              delete entry.occupancy;
-            } catch {
-              entry.ref.execution_state = "unknown";
-              entry.ref.recovery_error = "Hosted turn preparation could not be reconciled.";
-            }
-          }
-          throw error;
-        } finally {
-          entry.preparationSettled.resolve();
-        }
+        const entry = await startEntry(connection, input);
+        return observe(connection, entry, "acquire");
       },
       async attach(input) {
         identifier(input.host_generation, "host generation");
@@ -896,6 +1074,52 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
 
   return {
     connect,
+    assertOperator(peerId) {
+      const connection = connections.get(peerId);
+      if (connection === undefined)
+        throw kernelError("unauthorized", "conversation controller disconnected");
+      assertConnection(connection, true);
+    },
+    claimController(peerId, sessionId) {
+      const connection = connections.get(peerId);
+      if (connection === undefined)
+        throw kernelError("unauthorized", "conversation controller disconnected");
+      assertConnection(connection, true);
+      return admission.claimConversation(connection.peer, sessionId);
+    },
+    assertController(authority) {
+      if (closing) throw kernelError("unavailable", "host is closing");
+      admission.assertConversation(authority);
+    },
+    async startControlled(authority, input) {
+      admission.assertConversation(authority);
+      if (input.session_id !== authority.sessionId)
+        throw kernelError("unauthorized", "goal control belongs to another conversation");
+      const connection = connections.get(authority.peerId);
+      if (connection === undefined)
+        throw kernelError("unauthorized", "conversation controller disconnected");
+      return view(await startEntry(connection, input), connection.peer);
+    },
+    async cancelControlled(authority, executionId) {
+      admission.assertConversation(authority);
+      const entry = entries.get(executionId);
+      if (entry?.ref.session_id !== authority.sessionId)
+        throw kernelError("not_found", "bound execution is absent");
+      if (entry.occupancy === undefined) return;
+      entry.stopRequested = true;
+      if (entry.source === undefined) entry.preparation.abort();
+      else await entry.source.cancel();
+    },
+    physicalRun(sessionId) {
+      const entry = [...entries.values()].find(
+        (entry) =>
+          entry.ref.session_id === sessionId &&
+          (entry.occupancy !== undefined || entry.ref.execution_state === "unknown"),
+      );
+      return entry === undefined ? undefined : view(entry);
+    },
+    hasPendingContinuation: () =>
+      [...entries.values()].some((entry) => entry.continuationAuthority !== undefined),
     sync: () => persist(),
     guardAllowlistFor({ owner, executionId }) {
       const entry = entries.get(executionId);
@@ -939,6 +1163,8 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           await entry.preparationSettled.promise;
           await entry.source?.cancel();
           await entry.execution?.settled;
+          await entry.continuation;
+          await entry.continuationStop;
           if (entry.execution !== undefined) await entry.execution.dispose();
           else await entry.projection?.close();
         }),

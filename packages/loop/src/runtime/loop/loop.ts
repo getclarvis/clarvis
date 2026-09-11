@@ -6,6 +6,8 @@ import type {
   ToolResultImage,
   LifecycleHook,
   HookVerdict,
+  CheckpointAttempt,
+  OrchestrationHooks,
 } from "@clarvis/capability";
 import type { HandlerResult, HandlerVerdict } from "./loop-contract.ts";
 import type { Logger } from "@clarvis/capability";
@@ -33,6 +35,7 @@ import {
   collectCompactionContributions,
   fireObservers,
   runVerdictHooks,
+  runBeforeIteration,
 } from "./lifecycle-hooks.ts";
 import { runIterationPreamble } from "./loop-iteration.ts";
 import { callModelWithRecovery } from "./model-call.ts";
@@ -69,6 +72,8 @@ export type FinalizeStep = { kind: "return"; result: AgentResult } | { kind: "co
  *   itself.
  */
 export interface FinalizePolicy {
+  /** A capability requested a checkpoint; all call results are appended before the gate sweep. */
+  onRequested: (attempt: CheckpointAttempt) => Promise<FinalizeStep>;
   /**
    * Optional fast path: given the iteration's tool calls, return an
    * {@link AgentResult} to accept a submit immediately (bypassing dispatch) or
@@ -176,8 +181,8 @@ export interface LoopDerived {
   results: AgentLoopResults;
   finalize: FinalizePolicy;
 
-  /** Fires at the top of every iteration, before the preamble. */
-  beforeIteration?: () => void;
+  /** Awaited under a finite wall bound before the preamble; a terminal result stops this stage. */
+  beforeIteration?: OrchestrationHooks["beforeIteration"];
   /** Drains queued user steer messages into the context for this iteration. */
   drainSteer?: (iteration: number) => void | Promise<void>;
   /** Fires after a tool-dispatch batch, before guard/progress evaluation. */
@@ -217,7 +222,9 @@ export interface LoopDerived {
  * `produced` progress.
  */
 type DispatchResult =
-  { kind: "terminal"; result: AgentResult } | { kind: "done"; produced: boolean };
+  | { kind: "terminal"; result: AgentResult }
+  | { kind: "finalize"; attempt: CheckpointAttempt; produced: boolean }
+  | { kind: "done"; produced: boolean };
 
 /**
  * How many consecutive empty/reasoning-only completions end the run as an error.
@@ -728,6 +735,7 @@ async function runDispatch(
   const deferred: Promise<void>[] = [];
   let produced = false;
   let terminal: { result: AgentResult } | null = null;
+  let requested: CheckpointAttempt | undefined;
   let dispatchCompleted = false;
   const batchController = new AbortController();
   let batchCombined: AbortSignal | undefined;
@@ -783,9 +791,12 @@ async function runDispatch(
         continue;
       }
       let v: HandlerVerdict = handled.value;
-      if (v.kind === "result" && core.hooks) {
+      if ((v.kind === "result" || v.kind === "finalize") && core.hooks) {
         const final = await applyAfterHooks(core, call, handler, v, adviseMessages);
-        v = { kind: "result", ...final };
+        v =
+          v.kind === "finalize"
+            ? { kind: "finalize", attempt: v.attempt, ...final }
+            : { kind: "result", ...final };
       }
       if (v.kind === "terminal") {
         results[i] = terminalCallText(call.name, v);
@@ -834,6 +845,10 @@ async function runDispatch(
       taskIds[i] = v.taskId;
       images[i] = v.images;
       if (v.progress) produced = true;
+      if (v.kind === "finalize") {
+        requested = v.attempt;
+        break;
+      }
     }
     dispatchCompleted = true;
   } finally {
@@ -865,6 +880,7 @@ async function runDispatch(
   }
 
   if (terminal) return { kind: "terminal", result: terminal.result };
+  if (requested) return { kind: "finalize", attempt: requested, produced };
 
   return { kind: "done", produced };
 }
@@ -907,7 +923,8 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
 
   try {
     for (;;) {
-      d.beforeIteration?.();
+      const prepared = await runBeforeIteration(d.beforeIteration, { signal: runtime.signal });
+      if (prepared !== undefined) return d.maybeCancelled() ?? prepared;
 
       const pre = await runIterationPreamble({
         signal: runtime.signal,
@@ -1142,6 +1159,11 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
         }
       }
 
+      if (dispatch.kind === "finalize") {
+        const step = await d.finalize.onRequested(dispatch.attempt);
+        if (step.kind === "return") return step.result;
+      }
+
       const productive = d.computeProgress
         ? d.computeProgress(dispatch.produced)
         : dispatch.produced;
@@ -1153,6 +1175,8 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
       if (stop) return stop;
     }
   } catch (err) {
+    const cancelled = d.maybeCancelled();
+    if (cancelled !== null) return cancelled;
     if (err instanceof OutputBudgetExhaustedError) return d.results.budgetExhausted();
     throw err;
   } finally {

@@ -474,6 +474,39 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
 });
 
 describe("reviewGate", () => {
+  it.each(["approve", "request_changes", "no_human"] as const)(
+    "keeps human review on a checkpoint: %s",
+    async (kind) => {
+      let asks = 0;
+      const orch = buildPlansOrchestration(
+        makeDeps({
+          pendingTaskNudges: 3,
+          planReviewAsk: async (): Promise<PlanReviewDecision> => {
+            asks++;
+            return kind === "request_changes" ? { kind, feedback: "correct the scope" } : { kind };
+          },
+        }),
+      );
+      await createPlan(orch);
+      const attempt = {
+        mode: "checkpoint" as const,
+        disposition: "checkpoint" as const,
+        checkpoint: { summary: "stage", next_step: "continue" },
+      };
+      const review = await orch.contribution.gates![0]!.check(attempt);
+      expect(asks).toBe(1);
+      expect(review.kind).toBe(
+        kind === "approve" ? "pass" : kind === "no_human" ? "terminal" : "nudge",
+      );
+      const pending = orch.contribution.gates![1]!;
+      expect(await pending.check(attempt)).toEqual({ kind: "pass" });
+      expect((await pending.check({ mode: "submit" })).kind).toBe("nudge");
+      if (kind === "request_changes") {
+        expect((await orch.contribution.gates![0]!.check(attempt)).kind).toBe("nudge");
+        expect(asks).toBe(1);
+      }
+    },
+  );
   it("a retry within the same iteration after request_changes hits the already-rejected note, without re-eliciting", async () => {
     let asks = 0;
     const orch = buildPlansOrchestration(
@@ -559,7 +592,7 @@ describe("reviewGate", () => {
 
     let outcome: GateOutcome | undefined;
     for (let round = 0; round < 12; round += 1) {
-      orch.contribution.hooks!.beforeIteration!();
+      await orch.contribution.hooks!.beforeIteration!();
       outcome = await reviewGate.check({ mode: "text" });
       if (outcome.kind === "terminal") break;
       await revisePlanObjective(orch, `round ${round}`);
@@ -590,12 +623,12 @@ describe("reviewGate", () => {
     await createPlan(orch);
     const reviewGate = orch.contribution.gates![0]!;
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await reviewGate.check({ mode: "text" })).kind).toBe("nudge");
     expect(asks).toBe(1);
 
     for (let round = 0; round < 3; round += 1) {
-      orch.contribution.hooks!.beforeIteration!();
+      await orch.contribution.hooks!.beforeIteration!();
       const outcome = await reviewGate.check({ mode: "submit" });
       expect(outcome.kind).toBe("nudge");
       if (outcome.kind === "nudge") expect(outcome.note).toContain("fix X");
@@ -603,7 +636,7 @@ describe("reviewGate", () => {
     expect(asks).toBe(1);
 
     await revisePlanObjective(orch, "addressed the feedback");
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await reviewGate.check({ mode: "text" })).kind).toBe("nudge");
     expect(asks).toBe(2);
   });
@@ -621,11 +654,11 @@ describe("reviewGate", () => {
     const reviewGate = orch.contribution.gates![0]!;
     const contributes = orch.contribution.hooks!.contributesProgress!;
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     await reviewGate.check({ mode: "text" });
     expect(contributes()).toBe(true);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     await reviewGate.check({ mode: "text" });
     expect(contributes()).toBe(false);
   });
@@ -820,7 +853,7 @@ describe("reviewBlocker before any plan exists", () => {
     expect(doc.approved_spec_revision).toBeUndefined();
     expect(blocked(orch, "shell")).toBe(true);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await orch.contribution.gates![0]!.check({ mode: "submit" })).kind).toBe("pass");
     expect(asks).toBe(2);
     expect(blocked(orch, "shell")).toBe(false);
@@ -909,11 +942,11 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     return { ctx, stable, canonical };
   }
 
-  it("does nothing while no plan exists yet", () => {
+  it("does nothing while no plan exists yet", async () => {
     const { ctx, stable, canonical } = recordingCtx();
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
 
     expect(stable).toEqual([]);
     expect(canonical).toEqual([]);
@@ -924,7 +957,7 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
     await createPlan(orch);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
 
     expect(stable).toHaveLength(1);
     expect(stable[0]).toContain("## Objective");

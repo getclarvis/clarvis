@@ -18,6 +18,7 @@ import type {
   ExtensionProfileService,
   HostingService,
   LocalHostService,
+  GoalService,
 } from "@clarvis/protocol";
 import type { KernelTransport } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
@@ -42,6 +43,7 @@ export type KernelServices = Pick<
   | "storage"
   | "hosting"
   | "localHost"
+  | "goals"
 >;
 
 function requireLocalHost(services: KernelServices): LocalHostService {
@@ -166,6 +168,34 @@ function listWorkflows(
 
 /** Exhaustive stateless operation catalog, grouped by protocol service. */
 export const OPERATIONS = {
+  goals: serviceOperations<Omit<GoalService, "subscribe">>({
+    availability: {
+      method: "goals.availability",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => services.goals.availability(),
+    },
+    get: {
+      method: "goals.get",
+      metadata: read(),
+      encode: (sessionId) => ({ session_id: sessionId }),
+      invoke: (services, params) => services.goals.get(params.session_id as string),
+    },
+    control: {
+      method: "goals.control",
+      metadata: write(),
+      encode: (request) => ({ request }),
+      invoke: (services, params) =>
+        services.goals.control(params.request as Parameters<GoalService["control"]>[0]),
+    },
+    receipt: {
+      method: "goals.receipt",
+      metadata: read(),
+      encode: (sessionId, operationId) => ({ session_id: sessionId, operation_id: operationId }),
+      invoke: (services, params) =>
+        services.goals.receipt(params.session_id as string, params.operation_id as string),
+    },
+  }),
   localHost: serviceOperations<LocalHostService>({
     inspect: {
       method: "localHost.inspect",
@@ -1011,12 +1041,15 @@ export const SPECIAL_OPERATIONS = {
   runsRespond: { method: "runs.respond", metadata: write() },
   configSubscribe: { method: "config.subscribe", metadata: read() },
   configUnsubscribe: { method: "config.unsubscribe", metadata: read() },
+  goalsSubscribe: { method: "goals.subscribe", metadata: read() },
+  goalsUnsubscribe: { method: "goals.unsubscribe", metadata: read() },
 } as const;
 
 type AnyOperation = KernelOperation<never[], unknown>;
 
 /** Flat ordinary-operation list used to build server dispatch and completeness tests. */
 export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
+  ...Object.values(OPERATIONS.goals),
   ...Object.values(OPERATIONS.localHost),
   ...Object.values(OPERATIONS.hosting),
   ...Object.values(OPERATIONS.runs),

@@ -54,6 +54,13 @@ import {
   type RuntimeHooksDescriptor,
 } from "./hooks-bridge.ts";
 import { workflowContextOf, workflowOutputBudgetOf, type WorkflowCtx } from "@clarvis/workflows";
+import { goalRuntimePortOf } from "@clarvis/goal";
+import {
+  createHostGoalBridge,
+  RUNTIME_GOAL_METHOD,
+  RUNTIME_GOAL_MAX_BYTES,
+  type RuntimeGoalDescriptor,
+} from "./goal-bridge.ts";
 import {
   consumeGuestWorkflowEvent,
   createHostWorkflowBridge,
@@ -359,6 +366,7 @@ export async function createLocalContainerRuntime(
       RUNTIME_MCP_METHOD,
       RUNTIME_HOOKS_METHOD,
       RUNTIME_WORKFLOWS_METHOD,
+      RUNTIME_GOAL_METHOD,
       RUNTIME_PREVIEW_METHOD,
       ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
       ...(input.taskResolver === undefined ? [] : [RUNTIME_TASKS_METHOD]),
@@ -377,6 +385,7 @@ export async function createLocalContainerRuntime(
     readonly hooks?: RuntimeHooksDescriptor;
     readonly workflow?: RuntimeWorkflowDescriptor;
     readonly workflowContext?: WorkflowCtx;
+    readonly goal?: RuntimeGoalDescriptor;
     readonly outputBudgets: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
     readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
     readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
@@ -402,6 +411,7 @@ export async function createLocalContainerRuntime(
           ...(input.taskResolver === undefined ? [] : ["tasks"]),
           ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
           ...(snapshot.memory === undefined ? [] : ["memory"]),
+          ...(snapshot.goal === undefined ? [] : ["goal"]),
         ],
         ...(snapshot.skillCatalog === undefined
           ? {}
@@ -410,6 +420,7 @@ export async function createLocalContainerRuntime(
               skillBootstraps: snapshot.skillBootstraps ?? [],
             }),
         ...(snapshot.memory === undefined ? {} : { memory: snapshot.memory }),
+        ...(snapshot.goal === undefined ? {} : { goal: snapshot.goal }),
         guardSettings: snapshot.guardSettings,
         ...(snapshot.hooks === undefined ? {} : { hooks: snapshot.hooks }),
         ...(snapshot.workflow === undefined ? {} : { workflow: snapshot.workflow }),
@@ -435,6 +446,27 @@ export async function createLocalContainerRuntime(
       const workflowContext = admittedCapabilities
         .map(workflowContextOf)
         .find((context) => context !== undefined);
+      const goalPorts = admittedCapabilities.flatMap((capability) => {
+        const port = goalRuntimePortOf(capability);
+        return port === undefined ? [] : [port];
+      });
+      if (
+        goalPorts.length > 1 ||
+        (goalPorts.length > 0 &&
+          (workflowContext !== undefined ||
+            args.runtimeParentRunId !== undefined ||
+            (args.rawBody as RunRequest).profiles.some((profile) =>
+              profile.grants?.includes("workflow"),
+            )))
+      )
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "Goal requires one ordinary entry capability",
+        );
+      const goal =
+        goalPorts[0] === undefined
+          ? undefined
+          : createHostGoalBridge(goalPorts[0], args.rawBody, runId);
       for (const capability of admittedCapabilities) {
         if (
           ![
@@ -448,6 +480,7 @@ export async function createLocalContainerRuntime(
             "delegation",
           ].includes(capability.name) &&
           workflowContextOf(capability) === undefined &&
+          goalRuntimePortOf(capability) === undefined &&
           workflowOutputBudgetOf(capability) === undefined
         ) {
           throw new RuntimeLaunchError(
@@ -599,9 +632,10 @@ export async function createLocalContainerRuntime(
           ...(memory === undefined ? [] : [memory.grant]),
           ...(hooks === undefined ? [] : [hooks.grant]),
           ...(workflow === undefined ? [] : [workflow.grant]),
+          ...(goal === undefined ? [] : [goal.grant]),
         ],
-        maxArgumentsBytes: 256 * 1024,
-        maxResultBytes: 256 * 1024,
+        maxArgumentsBytes: goal === undefined ? 256 * 1024 : RUNTIME_GOAL_MAX_BYTES,
+        maxResultBytes: goal === undefined ? 256 * 1024 : RUNTIME_GOAL_MAX_BYTES,
       });
       snapshots.set(runId, {
         leaseId,
@@ -611,6 +645,7 @@ export async function createLocalContainerRuntime(
         ...(hooks === undefined ? {} : { hooks: hooks.descriptor }),
         ...(workflow === undefined ? {} : { workflow: workflow.descriptor }),
         ...(workflowContext === undefined ? {} : { workflowContext }),
+        ...(goal === undefined ? {} : { goal: goal.descriptor }),
         outputBudgets,
         ...(skillCatalog === undefined ? {} : { skillCatalog }),
         ...(skillBootstraps === undefined ? {} : { skillBootstraps }),

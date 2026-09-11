@@ -1,4 +1,4 @@
-import type { SkillsProvider } from "@clarvis/loop";
+import type { RunRequest, SkillsProvider } from "@clarvis/loop";
 import type { RunHandle, StartRunParams } from "@clarvis/protocol";
 import { generateExecutionId } from "@clarvis/trace";
 import { createAgentWorkflowPolicy } from "../application/workflow-policy.ts";
@@ -11,12 +11,15 @@ import type {
 import { snapshotRunConfiguration, type RunConfigurationSource } from "./configuration-snapshot.ts";
 import type { KernelRunService, RunRequestAssembler, PreparedRunExecution } from "./run-service.ts";
 import { createSettingsRunAssembler, type SettingsAssemblerOptions } from "./settings-assembler.ts";
+import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 
 /** Host-only admission result; start is single-use and preserves the prepared execution identity. */
 export interface PreparedKernelRun {
   executionId: string;
   agent: string;
   model?: string;
+  /** Effective total retained by this prepared request, without starting inference. */
+  tokenLimit?: number;
   detachable: boolean;
   start(): Promise<RunHandle>;
 }
@@ -42,6 +45,7 @@ export interface PrepareKernelRunOptions {
 export function prepareKernelRun(
   params: StartRunParams,
   options: PrepareKernelRunOptions,
+  goal?: GoalExecutionPolicy,
 ): PreparedKernelRun {
   const request = structuredClone({
     ...params,
@@ -50,8 +54,11 @@ export function prepareKernelRun(
   const configuration = options.nativeConfigurationRequested(request);
   let agent: string;
   let model: string | undefined;
+  let tokenLimit: number | undefined;
   let execution: PreparedRunExecution | undefined;
   if (configuration) {
+    if (goal !== undefined)
+      throw kernelError("unsupported", "Goals cannot run a configuration skill");
     agent = request.skill!.name;
   } else {
     const snapshot = snapshotRunConfiguration(options.configStore);
@@ -63,13 +70,16 @@ export function prepareKernelRun(
         ...(options.skills === undefined ? {} : { skills: options.skills }),
         pluginMcpServerNames: () => pluginNames,
       });
-    const rawBody = structuredClone(assemble(request));
+    const assembled = structuredClone(assemble(request));
+    const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
     if (rawBody === null || typeof rawBody !== "object")
       throw kernelError("invalid_request", "prepared run assembler returned no request object");
     const body = rawBody as {
       entry?: unknown;
       profiles?: Array<{ name?: unknown; model?: unknown; grants?: unknown }>;
+      budget?: { total_token_limit?: number };
     };
+    tokenLimit = body.budget?.total_token_limit;
     if (typeof body.entry !== "string" || !Array.isArray(body.profiles))
       throw kernelError("invalid_request", "prepared run has no entry profile");
     agent = body.entry;
@@ -92,7 +102,7 @@ export function prepareKernelRun(
         start: () => options.startWorkflow({ ...request, agent }, prepared),
       };
     } else {
-      execution = { kind: "ordinary", rawBody };
+      execution = { kind: "ordinary", rawBody, ...(goal === undefined ? {} : { goal }) };
     }
   }
   let started = false;
@@ -100,6 +110,7 @@ export function prepareKernelRun(
     executionId: request.execution_id,
     agent,
     ...(model === undefined ? {} : { model }),
+    ...(tokenLimit === undefined ? {} : { tokenLimit }),
     detachable: !configuration,
     async start() {
       if (started) throw kernelError("conflict", "prepared run start was already attempted");

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { lstatSync, realpathSync } from "node:fs";
-import { ToolError } from "../errors.ts";
+import { ToolError, type ErrorCode } from "../errors.ts";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./log.ts";
 
 /**
@@ -195,15 +195,17 @@ export function assertWithinWorkspace(
 /**
  * Refuse a native mutation whose canonical target overlaps a host-protected root.
  *
- * @param rejectAncestors - Also rejects a target that contains a protected root.
+ * @param options.rejectAncestors - Also rejects a target that contains a protected root.
  *   Recursive callers must enable this because traversing an otherwise writable
  *   ancestor would still let them mutate the protected package below it.
+ * @param options.code - Stable error code for a protected-root overlap.
+ * @param options.message - Human-facing error for a protected-root overlap.
  */
 export function assertOutsideRoots(
   abs: string,
   protectedRoots: readonly string[],
   input: string,
-  rejectAncestors = false,
+  options: { rejectAncestors?: boolean; code?: ErrorCode; message?: string } = {},
 ): void {
   const target = canonicalizeAllowingMissing(abs);
   if (target === undefined) {
@@ -219,11 +221,12 @@ export function assertOutsideRoots(
     if (
       targetReal === rootReal ||
       targetReal.startsWith(rootReal + path.sep) ||
-      (rejectAncestors && rootReal.startsWith(targetReal + path.sep))
+      (options.rejectAncestors === true && rootReal.startsWith(targetReal + path.sep))
     ) {
       throw new ToolError(
-        "path_escape",
-        `Path targets an enabled skill package and cannot be changed by native file tools: ${input}.`,
+        options.code ?? "path_escape",
+        options.message ??
+          `Path targets an enabled skill package and cannot be changed by native file tools: ${input}.`,
         { path: input },
       );
     }

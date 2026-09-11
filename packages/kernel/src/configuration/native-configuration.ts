@@ -1,11 +1,13 @@
 import type { ExecuteRunOutcome, SkillsProvider } from "@clarvis/loop";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { StartRunParams } from "@clarvis/protocol";
+import { join } from "node:path";
 import type { ConfigStore } from "../config/config-store.ts";
 import type { RunExecutor, RunExecutorArgs } from "../runs/run-service.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
 import { CLARVIS_CONFIGURE_SKILL } from "../skills/clarvis-configure.ts";
 import { createConfigurationCapability } from "./capability.ts";
+import { configurationFileOperation, type ConfigurationFileRequest } from "./files.ts";
 import { kernelError } from "../core/errors.ts";
 
 type ConfigurationRunParams = StartRunParams & { execution_id: string };
@@ -167,6 +169,33 @@ export function createNativeConfigurationRuns(options: {
         const capability = createConfigurationCapability({
           roots: options.roots,
           assertAuthorized,
+          operate: (request: ConfigurationFileRequest) => {
+            const write = () => configurationFileOperation(options.roots, request);
+            const mutates =
+              request.operation === "write" ||
+              request.operation === "edit" ||
+              request.operation === "delete";
+            const workspace =
+              request.root === "workspace_clarvis" || request.root === "workspace_agents";
+            if (!mutates || !workspace || options.store.withOperatorWrite === undefined)
+              return write();
+            return options.store.withOperatorWrite("workspace", write, (result) => {
+              const record =
+                typeof result === "object" && result !== null
+                  ? (result as Record<string, unknown>)
+                  : undefined;
+              const expectedRevision =
+                request.operation === "delete"
+                  ? null
+                  : typeof record?.revision === "string"
+                    ? record.revision
+                    : null;
+              return {
+                path: join(options.roots[request.root], ...request.path.split("/")),
+                expectedRevision,
+              };
+            });
+          },
         });
         const { capabilityRegistry: _registry, ...baseDeps } = args.deps;
         return await options.nativeExecuteRun({

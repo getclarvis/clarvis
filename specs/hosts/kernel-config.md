@@ -502,11 +502,16 @@ output keeps first-occurrence order.
 | `unapproved` | `approveWorkspace()` | `trusted` | fields merge; `withheld_workspace_fields` absent |
 | `trusted` | the approved file is edited on disk | `changed` | fields withheld again |
 | `trusted`/`unapproved` | `revokeWorkspace()` | `unapproved` | every approval for the key deleted (`packages/kernel/src/config/workspace-trust.ts`) |
-| `trusted` | operator write through the service | `trusted` | approval re-recorded over the new surface |
+| `trusted` | operator write through the service, exact target revision and no other executable change | `trusted` | approval re-recorded over the verified new surface |
+| `trusted` | operator write concurrent with another executable change or target revision mismatch | `changed` | resulting surface withheld; no approval recorded |
 | `unapproved` | operator write through the service | `unapproved` | **no** approval |
 
-`withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts`) implements the last two rows: it captures
-`workspaceTrusted(...)` **before** the write and only re-approves if that was already true.
+`withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts`) implements the last three
+rows: it captures the complete executable input snapshot before the write, derives the exact target
+path and expected revision from the completed operation, and records the already-verified post-write
+fingerprint only when no other executable input changed. This closes the interval in which an
+unrelated concurrent mutation could otherwise share the authorized write's approval. It only
+carries approval when the pre-write state was already trusted or inert.
 Its failure to record the carried approval is swallowed — the docstring's stated reason is
 that "the settings or agent file has already been written, so rethrowing… reports a failed save for a
 write that in fact landed".
@@ -725,6 +730,13 @@ Each entry: **rule** — production anchor — test anchor.
     `withOperatorWrite` returns, never inside it (`packages/kernel/src/config/file-config-store.ts`). Pinned:
     `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
+26a. **Trust carry is limited to the exact authorized target revision.** Every other settings,
+    agent and Extension Profile input must match the pre-write snapshot, and the trust record uses
+    the fingerprint from the verified post-write snapshot. Production:
+    `packages/kernel/src/config/file-config-store.ts` and
+    `packages/kernel/src/configuration/native-configuration.ts`. Pinned by the concurrent
+    executable-change case in `packages/kernel/tests/integration/workspace-trust.test.ts`.
+
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose
     revision it checked.** `packages/kernel/src/config/file-config-store.ts` (`settingsFromDocument` reuses the
     already-read document; its docstring: "a second read would reintroduce a TOCTOU window inside the
@@ -867,6 +879,7 @@ Each entry: **rule** — production anchor — test anchor.
 | Malformed agent YAML | `parseAgentFile` | lenient `{}` frontmatter **plus** a `malformed` message; a shipped agent's overlay is refused (`packages/kernel/src/config/agent-overlay.ts`) |
 | `workspace-trust.json` unreadable | `readWorkspaceTrustFile` (`packages/kernel/src/config/workspace-trust.ts`) | verdict falls to `unapproved`; `workspaceTrustError()` names it (`packages/kernel/src/config/file-config-store.ts`); `writeWorkspaceTrust` refuses to overwrite (`packages/kernel/src/config/workspace-trust.ts`) |
 | Recording the carried approval fails after an operator write | `packages/kernel/src/config/file-config-store.ts` | **swallowed** — the write already landed |
+| Authorized target revision mismatch or concurrent executable-surface drift | `packages/kernel/src/config/file-config-store.ts` | write result remains, carried approval is withheld |
 | A `SettingsRevisionConflictError` or `ConfigResourceLimitError` escaping uncaught | `toKernelError` (`packages/kernel/src/core/errors.ts`) | name containing `Conflict` ⇒ `conflict`; `ConfigResourceLimitError` matches neither branch ⇒ `internal`, and `details` is dropped |
 
 There are no retries anywhere in this subsystem except the settings-lock acquisition loop, which

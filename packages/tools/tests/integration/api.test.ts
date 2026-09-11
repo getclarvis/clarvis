@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentTools, currentShellFlavor, systemTemporaryRoots } from "../../src/index.ts";
+import { configurationRoots } from "@clarvis/paths";
 import { makeWorkspace, cleanup, write, resultText, posixShell } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
@@ -35,6 +36,86 @@ describe("createAgentTools (library API)", () => {
     const b = await t.callTool("shell", { command: "echo hi" });
     expect(b.isError).toBe(false);
     expect(JSON.parse(resultText(b.content))).toMatchObject({ exit_code: 0 });
+  });
+
+  it("requires /clarvis-configure for authored workspace configuration mutations", async () => {
+    const roots = configurationRoots({ workspaceRoot: root });
+    write(roots.workspace_clarvis, "skills/existing/SKILL.md", "existing");
+    write(roots.workspace_agents, "skills/shared/SKILL.md", "shared");
+    const t = createAgentTools({ workspaceRoot: root, probeRipgrep: () => false });
+
+    for (const path of [
+      join(roots.workspace_clarvis, "skills/new/SKILL.md"),
+      join(roots.workspace_agents, "skills/new/SKILL.md"),
+    ]) {
+      const attempt = await t.callTool("write_file", { path, content: "blocked" });
+      expect(attempt.isError).toBe(true);
+      expect(JSON.parse(resultText(attempt.content))).toMatchObject({
+        error: "denied",
+        path,
+      });
+      expect(resultText(attempt.content)).toContain("/clarvis-configure <change>");
+    }
+
+    const read = await t.callTool("read_file", {
+      path: join(roots.workspace_clarvis, "skills/existing/SKILL.md"),
+    });
+    expect(read.isError).toBe(false);
+    expect(resultText(read.content)).toContain("existing");
+
+    const copy = await t.callTool("copy", {
+      source: join(roots.workspace_clarvis, "skills/existing/SKILL.md"),
+      destination: "copied-skill.md",
+    });
+    expect(copy.isError).toBe(false);
+
+    const copyIntoConfiguration = await t.callTool("copy", {
+      source: "copied-skill.md",
+      destination: join(roots.workspace_clarvis, "copied-skill.md"),
+    });
+    expect(copyIntoConfiguration.isError).toBe(true);
+    expect(JSON.parse(resultText(copyIntoConfiguration.content))).toMatchObject({
+      error: "denied",
+    });
+
+    const patch = await t.callTool("apply_patch", {
+      patch: [
+        "*** Begin Patch",
+        `*** Update File: ${join(roots.workspace_clarvis, "skills/existing/SKILL.md")}`,
+        "@@",
+        "-existing",
+        "+changed",
+        "*** End Patch",
+      ].join("\n"),
+    });
+    expect(patch.isError).toBe(true);
+    expect(JSON.parse(resultText(patch.content))).toMatchObject({ error: "denied" });
+
+    const replaceConfiguration = await t.callTool("replace", {
+      path: roots.workspace_clarvis,
+      pattern: "existing",
+      replacement: "changed",
+      dry_run: false,
+    });
+    expect(replaceConfiguration.isError).toBe(true);
+    expect(resultText(replaceConfiguration.content)).toContain("/clarvis-configure <change>");
+
+    write(root, "ordinary.txt", "shared");
+    const replaceWorkspace = await t.callTool("replace", {
+      path: ".",
+      pattern: "shared",
+      replacement: "changed",
+      dry_run: false,
+    });
+    expect(replaceWorkspace.isError).toBe(false);
+    expect(readFileSync(join(root, "ordinary.txt"), "utf8")).toBe("changed");
+    expect(readFileSync(join(roots.workspace_agents, "skills/shared/SKILL.md"), "utf8")).toBe(
+      "shared",
+    );
+    expect(readFileSync(join(root, "copied-skill.md"), "utf8")).toBe("existing");
+    expect(readFileSync(join(roots.workspace_clarvis, "skills/existing/SKILL.md"), "utf8")).toBe(
+      "existing",
+    );
   });
 
   it("lets native tools read scratch created by shell inside the run-owned temporary root", async () => {
@@ -142,7 +223,7 @@ describe("createAgentTools (library API)", () => {
       content: "no",
     });
     expect(writeAttempt.isError).toBe(true);
-    expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "path_escape" });
+    expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "denied" });
 
     write(packageRoot, "protected.txt", "unchanged");
     const recursiveAttempt = await t.callTool("replace", {
@@ -154,7 +235,7 @@ describe("createAgentTools (library API)", () => {
     });
     expect(recursiveAttempt.isError).toBe(true);
     expect(JSON.parse(resultText(recursiveAttempt.content))).toMatchObject({
-      error: "path_escape",
+      error: "denied",
     });
     expect(readFileSync(join(packageRoot, "protected.txt"), "utf8")).toBe("unchanged");
   });

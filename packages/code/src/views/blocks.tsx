@@ -325,7 +325,7 @@ function ToolLine(props: {
           <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
           <Show when={!props.indent}>
             <span style={{ fg: tokens.accent }}>
-              {toolDisplayLabel(props.node.mcpName, props.node.toolName)}
+              {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
             </span>
           </Show>
           <Show
@@ -817,7 +817,11 @@ export function BlockView(props: {
                                 {statusTone(agg()).glyph + " "}
                               </span>
                               <span style={{ fg: tokens.accent }}>
-                                {toolDisplayLabel(toolNode().mcpName, toolNode().toolName)}
+                                {toolDisplayLabel(
+                                  toolNode().mcpName,
+                                  toolNode().toolName,
+                                  rawToolArguments(toolNode()),
+                                )}
                               </span>
                               <span style={{ fg: tokens.muted }}>
                                 {` ${glyph("multiply")}${members().length}`}

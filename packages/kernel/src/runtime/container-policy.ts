@@ -75,6 +75,12 @@ export function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): s
   return posix.join("/workspace", relative(spec.workspaceRoot, hostPath).split(sep).join("/"));
 }
 
+/** Encode one `--mount` key/value as a field for the engines' outer CSV parser. */
+export function containerMountField(name: string, value: string): string {
+  const field = `${name}=${value}`;
+  return /[",\r\n]/u.test(field) ? `"${field.replaceAll('"', '""')}"` : field;
+}
+
 /** Empty capability arrays and the engine's explicit null representation carry no privilege. */
 export function noContainerCapabilities(value: unknown): boolean {
   return value === null || (Array.isArray(value) && value.length === 0);

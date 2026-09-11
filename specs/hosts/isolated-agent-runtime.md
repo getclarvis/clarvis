@@ -816,7 +816,10 @@ Both backends receive the same host-admitted mount specification: one read-write
 at `/workspace`, zero or more workspace-relative read-only overlays, and the optional read-write Git
 common directory for a linked worktree. They create the container first, inspect the effective
 mount sources, destinations, types and write modes, and refuse attach if the engine widened or
-changed that set. `container-policy.ts` owns the common effective-policy validator; engine adapters
+changed that set. Each source and target is one encoded field for the engines' outer `--mount` CSV
+parser, including quotes around fields containing commas, quotes or line breaks. Valid paths with a
+comma therefore remain one mount field instead of being parsed as another engine option.
+`container-policy.ts` owns the encoding and common effective-policy validator; engine adapters
 normalize only identity, capability and cache-subpath facts. Both require the admitted generation,
 network, read-only root, unprivileged mode, exact CPU/memory/process limits and mount set, empty added
 capabilities, an explicitly enabled `no-new-privileges`, and exactly one bounded non-executable `/tmp`.
@@ -825,7 +828,8 @@ attachment and trigger cleanup. Production: `readContainerInspection` and `valid
 [container-policy.ts](../../packages/kernel/src/runtime/container-policy.ts). Test: the shared
 [container-policy-cases.ts](../../packages/kernel/tests/helpers/container-policy-cases.ts) matrix is
 executed by both [runtime-docker-backend.test.ts](../../packages/kernel/tests/unit/runtime-docker-backend.test.ts)
-and [runtime-podman-backend.test.ts](../../packages/kernel/tests/unit/runtime-podman-backend.test.ts).
+and [runtime-podman-backend.test.ts](../../packages/kernel/tests/unit/runtime-podman-backend.test.ts);
+both backend suites also pin comma-containing workspace, overlay and Git mount fields.
 
 The Podman backend verifies rootless mode and the engine-resolved local image `Id` (not its distinct
 manifest `Digest`). It canonicalizes a complete lowercase hexadecimal ID to `sha256:` and rejects

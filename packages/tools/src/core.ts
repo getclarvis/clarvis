@@ -8,6 +8,7 @@ import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
+import { configurationRoots } from "@clarvis/paths";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -30,7 +31,28 @@ function protectSkillPackages(
   if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
   const context = buildGuardContext(name, args, config);
   for (const fact of context.paths) {
-    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
+    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, {
+      rejectAncestors: name === "replace",
+    });
+  }
+}
+
+/** Require the operator-authorized configuration route for authored workspace configuration. */
+function protectWorkspaceConfiguration(
+  name: string,
+  args: Record<string, unknown>,
+  config: RuntimeConfig,
+): void {
+  if (!NATIVE_MUTATION_TOOLS.has(name)) return;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const context = buildGuardContext(name, args, config);
+  const targets = name === "copy" ? context.paths.slice(1) : context.paths;
+  for (const fact of targets) {
+    assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
+      code: "denied",
+      message: `Workspace Clarvis configuration can only be changed through /clarvis-configure <change>, which requests operator approval: ${fact.raw}.`,
+    });
   }
 }
 
@@ -231,6 +253,7 @@ export async function dispatch(
   }
 
   try {
+    protectWorkspaceConfiguration(name, filled, config);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);

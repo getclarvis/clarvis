@@ -435,6 +435,27 @@ describe("Docker runtime backend", () => {
     fake.close();
   });
 
+  it("CSV-quotes comma-containing workspace, overlay and Git mount fields", async () => {
+    const commaSpec: RuntimeLaunchSpec = {
+      ...spec,
+      workspaceRoot: "/work/tree,one",
+      readOnlyWorkspacePaths: ["/work/tree,one/.clarvis/memory,cache"],
+      gitCommonDir: "/repo,shared/.git",
+    };
+    const fake = fixture({}, commaSpec);
+    const backend = createDockerRuntimeBackend({ control: fake.control });
+    await backend.inspect();
+    const session = await backend.start(commaSpec);
+    const create = fake.calls.find((call) => call[0] === "create")!;
+    expect(create).toContain('type=bind,"source=/work/tree,one",target=/workspace');
+    expect(create).toContain(
+      'type=bind,"source=/work/tree,one/.clarvis/memory,cache","target=/workspace/.clarvis/memory,cache",readonly',
+    );
+    expect(create).toContain('type=bind,"source=/repo,shared/.git","target=/repo,shared/.git"');
+    await session.stop();
+    fake.close();
+  });
+
   it.each(invalidContainerHostPolicies(spec))(
     "refuses effective HostConfig.%s drift before attachment",
     async (field, value) => {

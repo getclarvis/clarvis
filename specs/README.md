@@ -112,6 +112,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`budgets-and-guards.md`](engine/budgets-and-guards.md) | Five self-defence mechanisms: the shared token ledger and iteration counter, the pausable compute clock, the concurrency-safe output-token reservation, admission control and convergence guards | `loop`, `capability` |
 | [`delegation-and-subagents.md`](engine/delegation-and-subagents.md) | How one run produces children: independent `spawn_subagent`, tracked `delegate_task`, inline/background execution, and the five `agent_*` supervision tools | `loop`, `supervision`, `capability` |
 | [`vision-routing.md`](engine/vision-routing.md) | The two ways an image enters a run, and the tool-less vision pre-pass spliced in when the entry agent's own model cannot see it | `loop`, `code`, `tools` |
+| [`agent-system-prompt.md`](engine/agent-system-prompt.md) | The four-layer system head, the fleet-wide shared prompt, last-wins global/workspace overrides, workspace trust, and run-start snapshotting | `loop`, `kernel`, `paths`, `code`, `skills` |
 
 ### `capabilities/` — features that compose onto the engine
 

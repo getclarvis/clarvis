@@ -6,6 +6,7 @@ import {
   type AgentRecord,
   type ConfigStore,
   type SettingsSnapshot,
+  type SharedPromptFile,
 } from "./config-store.ts";
 import { builtinAgentRecord, resolveEffectiveAgent } from "./agent-overlay.ts";
 import { BUILTIN_AGENT_NAMES, isBuiltinAgent, readBuiltinAgent } from "./builtin-agents/index.ts";
@@ -18,6 +19,8 @@ export interface MemoryConfigSeed {
   agents?: AgentRecord[];
   /** Per-scope context markdown to preload. */
   context?: Partial<Record<Scope, string>>;
+  /** Per-scope shared-agent prompt documents to preload. */
+  sharedPrompts?: Partial<Record<Scope, string>>;
 }
 
 const SCOPES: readonly Scope[] = ["global", "workspace"];
@@ -45,6 +48,7 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
   const agents = new Map<string, AgentRecord>();
   for (const a of seed?.agents ?? []) agents.set(`${a.scope}/${a.name}`, a);
   const context: Partial<Record<Scope, string>> = { ...(seed?.context ?? {}) };
+  const sharedPrompts: Partial<Record<Scope, string>> = { ...(seed?.sharedPrompts ?? {}) };
   const listeners = new Set<(c: ConfigChange) => void>();
 
   const emit = (kind: ConfigChange["kind"], scope: Scope): void => {
@@ -152,6 +156,19 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
     },
     deleteAgent: (scope, name) => {
       agents.delete(`${scope}/${name}`);
+      emit("agents", scope);
+    },
+    readSharedPrompt: (scope): SharedPromptFile => ({
+      path: `memory:${scope}/shared-agent.md`,
+      ...(sharedPrompts[scope] !== undefined ? { raw: sharedPrompts[scope] } : {}),
+    }),
+    writeSharedPrompt: (scope, content) => {
+      sharedPrompts[scope] = content;
+      emit("agents", scope);
+      return { path: `memory:${scope}/shared-agent.md`, raw: content };
+    },
+    deleteSharedPrompt: (scope) => {
+      delete sharedPrompts[scope];
       emit("agents", scope);
     },
     readContext: (scope) =>

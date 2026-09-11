@@ -611,6 +611,9 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     renameAgent: (scope, oldName, newName) =>
       requireKernel().config.renameAgent(scope, oldName, newName),
     getContext: (scope) => requireKernel().config.getContext(scope),
+    getSharedPrompt: () => requireKernel().config.getSharedPrompt(),
+    writeSharedPrompt: (scope, doc) => requireKernel().config.writeSharedPrompt(scope, doc),
+    deleteSharedPrompt: (scope) => requireKernel().config.deleteSharedPrompt(scope),
     subscribe: (kinds, listener) => requireKernel().config.subscribe(kinds, listener),
   };
   const secrets: SecretService = {

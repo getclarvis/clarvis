@@ -225,6 +225,21 @@ function baseDeps(
       remove: async () => {},
       rename: async () => {},
       reload: async () => {},
+      sharedPrompt: async () => ({
+        source: "builtin",
+        prompt: "",
+        diagnostics: [],
+        paths: { global: "/fake/shared-agent.md" },
+        layers: { global: { exists: false, status: "inherited" } },
+      }),
+      writeSharedPrompt: async (scope) => ({
+        source: scope,
+        prompt: "",
+        diagnostics: [],
+        paths: { global: "/fake/shared-agent.md" },
+        layers: { global: { exists: scope === "global", status: "active" } },
+      }),
+      deleteSharedPrompt: async () => {},
     } satisfies AgentsStore,
     plugins: fakePluginService(),
     extensionProfiles: {} as never,
@@ -584,7 +599,7 @@ function mountView(
   const { host } = createViewHost({
     interaction: {
       keymap,
-      renderer: undefined as never,
+      renderer: { isDestroyed: false, on: () => {}, off: () => {} } as never,
       pushOverlayContext: () => {},
       popOverlayContext: () => {},
       setModalContext: () => {},
@@ -607,7 +622,7 @@ function mountInteractiveView(commands: Commands, name: string) {
   const { host, controls } = createViewHost({
     interaction: {
       keymap,
-      renderer: undefined as never,
+      renderer: { isDestroyed: false, on: () => {}, off: () => {} } as never,
       pushOverlayContext: () => {},
       popOverlayContext: () => {},
     } as unknown as Interaction,

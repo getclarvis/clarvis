@@ -40,6 +40,26 @@ describe("the agent fleet Clarvis ships", () => {
     }
   });
 
+  test("does not teach channels, tools, models, or products Clarvis does not ship", () => {
+    const forbidden = [
+      "todowrite",
+      "websearch",
+      "webfetch",
+      "notebookedit",
+      "computer_use",
+      "gpt-4",
+      "claude-3",
+      "gemini-1",
+      "chatgpt",
+      "claude code",
+      "cursor",
+    ];
+    for (const agent of BUILTIN_AGENTS) {
+      const text = agent.body.toLowerCase();
+      for (const token of forbidden) expect(text).not.toContain(token);
+    }
+  });
+
   test("keeps the complete builtin prompt payload within its token budget", () => {
     let total = 0;
     for (const agent of BUILTIN_AGENTS) {

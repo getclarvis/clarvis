@@ -27,7 +27,9 @@ workflows, tasks) contributes its own tools to this particular agent. The
 grant string is the single input to all three decisions, and each decision is
 made independently, by a different piece of code, at a different point in the
 run's lifecycle (request validation, run-shape derivation, and per-agent
-capability activation).
+capability activation). The fleet shared prompt tells the model that grants and
+user approvals for this run persist; that is instruction, not a change to the
+grant mechanism. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md).
 
 ## 2. Surface
 

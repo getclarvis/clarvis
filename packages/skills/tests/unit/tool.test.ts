@@ -69,6 +69,9 @@ describe("renderSkillsSection", () => {
     expect(section).toContain(`\`${READ_SKILL_RESOURCE_TOOL_NAME}\``);
     expect(section).toContain("That tool accepts only `name`");
     expect(section).toContain("only when the task actually calls for it");
+    expect(section).toContain("If the user names a skill, load it before acting on that work");
+    expect(section).toContain("The user's current instructions take precedence over the skill");
+    expect(section).toContain("identify the relevant SKILL.md rule");
   });
 
   it("is byte-identical with no bootstraps, however the argument is omitted", () => {

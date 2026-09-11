@@ -471,6 +471,31 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         services.config.getContext(p.scope as Parameters<ConfigService["getContext"]>[0]),
     },
+    getSharedPrompt: {
+      method: "config.getSharedPrompt",
+      metadata: read(),
+      encode: () => ({}),
+      invoke: (services) => services.config.getSharedPrompt(),
+    },
+    writeSharedPrompt: {
+      method: "config.writeSharedPrompt",
+      metadata: write(),
+      encode: (scope, doc) => ({ scope, doc }),
+      invoke: (services, p) =>
+        services.config.writeSharedPrompt(
+          p.scope as Parameters<ConfigService["writeSharedPrompt"]>[0],
+          p.doc as Parameters<ConfigService["writeSharedPrompt"]>[1],
+        ),
+    },
+    deleteSharedPrompt: {
+      method: "config.deleteSharedPrompt",
+      metadata: write(),
+      encode: (scope) => ({ scope }),
+      invoke: (services, p) =>
+        services.config.deleteSharedPrompt(
+          p.scope as Parameters<ConfigService["deleteSharedPrompt"]>[0],
+        ),
+    },
   }),
   plugins: serviceOperations<PluginService>({
     list: {

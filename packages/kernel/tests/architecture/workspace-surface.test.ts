@@ -40,6 +40,7 @@ const ALLOWED_TOP_LEVEL = new Set([
   "workflows",
   "plugins",
   "extension-profiles",
+  "shared-agent.md",
   "guard-judge.md",
   "plans",
   "memory",

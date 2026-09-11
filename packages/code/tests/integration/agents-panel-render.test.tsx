@@ -64,6 +64,21 @@ function fakeAgentsStore(seed: AgentFile[]): FakeAgentsStore {
       );
     },
     reload: async () => {},
+    sharedPrompt: async () => ({
+      source: "builtin",
+      prompt: "# How you work\n\nFinish the user's request.",
+      diagnostics: [],
+      paths: { global: "/fake/shared-agent.md" },
+      layers: { global: { exists: false, status: "inherited" } },
+    }),
+    writeSharedPrompt: async () => ({
+      source: "global",
+      prompt: "custom",
+      diagnostics: [],
+      paths: { global: "/fake/shared-agent.md" },
+      layers: { global: { exists: true, status: "active" } },
+    }),
+    deleteSharedPrompt: async () => {},
     stored,
   };
 }
@@ -279,6 +294,86 @@ async function renderPanel(
   mounted.host.interaction.renderer = rendered.renderer;
   return rendered;
 }
+
+test("L0 lists the shared prompt ahead of agents with its effective source", async () => {
+  const mounted = mount(fixtureAgents());
+  const rendered = await renderPanel(mounted, 30);
+  await rendered.renderOnce();
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Shared prompt");
+  expect(frame).toContain("builtin");
+  const rows = frame.split("\n");
+  const shared = rows.findIndex((row) => row.includes("Shared prompt"));
+  const builder = rows.findIndex((row) => row.includes("builder"));
+  expect(shared).toBeGreaterThanOrEqual(0);
+  expect(builder).toBeGreaterThan(shared);
+});
+
+test("a rejected shared prompt reports its layer reason in the list", async () => {
+  const mounted = mount(fixtureAgents());
+  mounted.deps.agents.sharedPrompt = async () => ({
+    source: "builtin",
+    prompt: "default",
+    diagnostics: [{ scope: "global", path: "/fake/shared-agent.md", reason: "override too large" }],
+    paths: { global: "/fake/shared-agent.md" },
+    layers: { global: { exists: true, status: "rejected", reason: "override too large" } },
+  });
+  const rendered = await renderPanel(mounted, 30);
+  mounted.press("up");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("override too large"));
+
+  expect(rendered.captureCharFrame()).toContain("rejected");
+  expect(rendered.captureCharFrame()).toContain("override too large");
+
+  mounted.press("return");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("Status"));
+  expect(rendered.captureCharFrame()).toContain("/fake/shared-agent.md");
+  expect(rendered.captureCharFrame()).toContain("override too large");
+});
+
+test("a shared prompt load failure is surfaced as an error notification", async () => {
+  const mounted = mount(fixtureAgents());
+  mounted.deps.agents.sharedPrompt = async () => {
+    throw new Error("shared prompt unavailable");
+  };
+  const rendered = await renderPanel(mounted, 30);
+  await renderUntil(rendered, () => mounted.notes.includes("shared prompt unavailable"));
+
+  expect(mounted.notes).toContain("shared prompt unavailable");
+});
+
+test("opening Shared prompt shows origin, preview, disable and reset", async () => {
+  const mounted = mount(fixtureAgents());
+  const rendered = await renderPanel(mounted, 30);
+  await rendered.renderOnce();
+  mounted.press("up");
+  mounted.press("return");
+  await rendered.renderOnce();
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Origin");
+  expect(frame).toContain("builtin");
+  expect(frame).toContain("# How you work");
+  expect(frame).toContain("[d] disable");
+  expect(frame).toContain("[x] clear");
+
+  mounted.press("d");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("custom"));
+  expect(rendered.captureCharFrame()).toContain("custom");
+
+  mounted.press("x");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("# How you work"));
+  expect(rendered.captureCharFrame()).toContain("# How you work");
+
+  mounted.press("return");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toContain("[^s] apply");
+  await rendered.mockInput.typeText("\nKeep the scope explicit.");
+  mounted.press("ctrl+s");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("custom"));
+  expect(rendered.captureCharFrame()).toContain("custom");
+});
 
 test("L0 lists agents under a labeled column header with blockers anchored below", async () => {
   const mounted = mount(fixtureAgents());

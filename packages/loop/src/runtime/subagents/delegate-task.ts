@@ -250,6 +250,8 @@ export interface DelegateTaskContext {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * the spawned sub-agent's own registry. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
 }
 
 /**
@@ -461,6 +463,8 @@ export async function prepareSpawn(
 export interface SubagentRunContext {
   task: string;
   images?: ImagePart[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
   subagentInstanceId: string;
   llm: LLMProvider;
   registry: NamespacedRegistry;
@@ -499,6 +503,7 @@ export function buildRunSubagentInput(
   return {
     task: base.task,
     images: base.images,
+    ...(base.sharedPrompt !== undefined ? { sharedPrompt: base.sharedPrompt } : {}),
     basePrompt: profile.basePrompt,
     model: profile.model,
     provider: profile.provider,
@@ -626,6 +631,7 @@ export async function runPreparedSubagent(
       buildRunSubagentInput(selectedProfile, {
         task: subagentTask,
         images,
+        ...(ctx.sharedPrompt !== undefined ? { sharedPrompt: ctx.sharedPrompt } : {}),
         subagentInstanceId,
         llm: ctx.llm,
         registry,

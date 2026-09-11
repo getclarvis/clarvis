@@ -16,8 +16,10 @@ export type {
   AgentRecord,
   AgentInput,
   ContextRecord,
+  SharedPromptFile,
 } from "./config/config-store.ts";
 export { compareAgentDisplayOrder, resolveAgentsByName } from "./config/agent-resolution.ts";
+export { DEFAULT_SHARED_AGENT_PROMPT, renderSharedPromptDocument } from "@clarvis/loop/host";
 export {
   BUILTIN_AGENTS,
   BUILTIN_AGENT_NAMES,

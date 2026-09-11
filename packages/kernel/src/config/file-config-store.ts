@@ -34,6 +34,7 @@ import {
   type ContextRecord,
   type OperatorWriteTarget,
   type SettingsSnapshot,
+  type SharedPromptFile,
 } from "./config-store.ts";
 import type { PluginContributions } from "../plugins/plugin-contributions.ts";
 import { builtinAgentRecord, resolveEffectiveAgent } from "./agent-overlay.ts";
@@ -367,6 +368,12 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       : workspaceConfigDir === undefined
         ? undefined
         : join(workspaceConfigDir, "settings.json");
+  const sharedPromptPath = (scope: Scope): string | undefined =>
+    scope === "global"
+      ? global.sharedAgentPromptFile
+      : workspaceConfigDir === undefined
+        ? undefined
+        : join(workspaceConfigDir, "shared-agent.md");
   const agentsDir = (scope: Scope): string | undefined =>
     scope === "global"
       ? global.agentsDir
@@ -497,6 +504,22 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
   };
 
   /**
+   * The workspace shared-agent prompt contents, for the trust fingerprint.
+   *
+   * @returns the file text, a withheld sentinel when it cannot be read, or
+   *   `undefined` when the file is absent.
+   */
+  const workspaceSharedPrompt = (): string | undefined => {
+    const path = sharedPromptPath("workspace");
+    if (path === undefined || !existsSync(path)) return undefined;
+    try {
+      return readBoundedText(path, MAX_AGENT_DOCUMENT_BYTES, "shared prompt");
+    } catch {
+      return "<resource-limit>";
+    }
+  };
+
+  /**
    * The trust store key for this workspace.
    *
    * @remarks Prefers the workspace root, falling back to the config dir so a
@@ -523,6 +546,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       settings,
       workspaceAgentFiles(),
       extensionSurface,
+      workspaceSharedPrompt(),
     );
     if (fingerprint === undefined) return { state: "inert" };
     const key = trustKey();
@@ -545,6 +569,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       readScopeSettings("workspace").value,
       workspaceAgentFiles(),
       opts.extensionProfile?.workspaceTrustSurface({ refresh: true }),
+      workspaceSharedPrompt(),
     );
     if (fingerprint === undefined && approve) return;
     const key = trustKey();
@@ -562,7 +587,12 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const settings = readScopeSettings("workspace");
     const agents = workspaceAgentFiles();
     const extensions = opts.extensionProfile?.workspaceTrustSurface({ refresh: true });
-    const fingerprint = workspaceTrustFingerprint(settings.value, agents, extensions);
+    const fingerprint = workspaceTrustFingerprint(
+      settings.value,
+      agents,
+      extensions,
+      workspaceSharedPrompt(),
+    );
     const documents = new Map<string, string>();
     const workspaceSettingsPath = settingsPath("workspace");
     if (workspaceSettingsPath !== undefined && settings.document !== null)
@@ -574,6 +604,11 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
           resolve(workspaceAgentsDir, agent.name),
           settingsDocumentRevision(agent.content),
         );
+    }
+    const workspaceSharedPath = sharedPromptPath("workspace");
+    const sharedPrompt = workspaceSharedPrompt();
+    if (workspaceSharedPath !== undefined && sharedPrompt !== undefined) {
+      documents.set(resolve(workspaceSharedPath), settingsDocumentRevision(sharedPrompt));
     }
     const state =
       fingerprint === undefined
@@ -1093,6 +1128,40 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
         () => {
           const p = agentPath(scope, name);
           if (p !== undefined && existsSync(p)) rmSync(p, { force: true });
+        },
+        () => ({ path, expectedRevision: null }),
+      );
+    },
+    readSharedPrompt: (scope) => {
+      const path = sharedPromptPath(scope);
+      if (path === undefined) return null;
+      if (!existsSync(path)) return { path };
+      try {
+        return { path, raw: readBoundedText(path, MAX_AGENT_DOCUMENT_BYTES, "shared prompt") };
+      } catch (err) {
+        if (err instanceof ConfigResourceLimitError) return { path, oversized: true };
+        return { path, unreadable: true };
+      }
+    },
+    writeSharedPrompt: (scope, content) => {
+      const path = requireScope(scope, sharedPromptPath(scope));
+      return withOperatorWrite(
+        scope,
+        () => {
+          if (Buffer.byteLength(content, "utf8") > MAX_AGENT_DOCUMENT_BYTES)
+            throw new ConfigResourceLimitError(path, "shared prompt", MAX_AGENT_DOCUMENT_BYTES);
+          writeAtomic(scope, path, content);
+          return { path, raw: content } satisfies SharedPromptFile;
+        },
+        () => ({ path, expectedRevision: settingsDocumentRevision(content) }),
+      );
+    },
+    deleteSharedPrompt: (scope) => {
+      const path = requireScope(scope, sharedPromptPath(scope));
+      return withOperatorWrite(
+        scope,
+        () => {
+          if (existsSync(path)) rmSync(path, { force: true });
         },
         () => ({ path, expectedRevision: null }),
       );

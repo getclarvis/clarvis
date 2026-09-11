@@ -13,6 +13,7 @@ import {
 } from "../../types/execution-id.ts";
 import { messagesField } from "./message-schemas.ts";
 import { nonnegativeIntField } from "./numeric-schemas.ts";
+import { INPUT_LIMITS } from "../input-limits.ts";
 import { agentProfileSchema, modelField } from "./profile-schemas.ts";
 import { providerConfigSchema } from "./provider-schemas.ts";
 import { serverSchema } from "./server-schemas.ts";
@@ -175,6 +176,14 @@ export const runRequestSchema = z
       .describe(
         "Name of the root profile the run starts on. An entry with a non-empty can_spawn runs as " +
           "the orchestrator (Lead+Sub-agent); otherwise it runs solo (Sub-agent-only).",
+      ),
+    shared_prompt: z
+      .string()
+      .max(INPUT_LIMITS.systemPromptChars)
+      .optional()
+      .describe(
+        "Fleet-wide shared prompt injected ahead of every profile prompt. Omit to use the " +
+          "engine default; an empty string disables the shared layer.",
       ),
     providers: z
       .array(providerConfigSchema)

@@ -25,6 +25,12 @@ The API separates skill discovery from loading:
 2. load a selected skill's body;
 3. resolve its scripts, references, assets and other resources only when needed.
 
+`renderSkillsSection` tells the model to load a named skill before acting, to apply an unnamed
+skill only when it would materially improve the outcome, and to let the user's current
+instructions take precedence. If a skill is why the run must pause, it identifies the relevant
+`SKILL.md` rule. Fleet-wide precedence lives in the shared prompt; this section owns discovery
+and loading.
+
 Discovery reads only a bounded manifest prefix and retains metadata plus a lazy
 body loader. It does not keep every `SKILL.md` body in the catalog. The first
 body disclosure is cached for that registry generation; `refresh()` replaces

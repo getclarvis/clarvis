@@ -51,6 +51,9 @@ export type SubagentUsageSnapshot = TokenCounts & { iterations: number };
 export interface RunSubagentInput {
   task?: string;
   images?: ImagePart[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
+  /** Profile identity/harness; alias kept as `basePrompt` on this input. */
   basePrompt?: string;
   model: string;
   provider: string;
@@ -99,8 +102,9 @@ export interface RunSubagentResult {
  * Builds the sub-agent's seed message list from its task and prompt sections.
  *
  * @param task - the sub-task text (empty string when none was provided).
- * @param basePrompt - the profile's base prompt/identity, if any.
- * @param workspaceRoot - the workspace root for the `# Workspace` preamble.
+ * @param sharedPrompt - the run's snapshotted shared prompt, if any.
+ * @param profilePrompt - the profile's identity/harness, if any.
+ * @param workspaceRoot - the workspace root for the `# Environment` preamble.
  * @param images - image parts to attach alongside the task text.
  * @param capabilitySections - capability-contributed system sections.
  * @returns a `[system?, user]` message pair — the system message is emitted only
@@ -109,14 +113,16 @@ export interface RunSubagentResult {
  */
 function seedFromTask(
   task: string,
-  basePrompt?: string,
+  sharedPrompt?: string,
+  profilePrompt?: string,
   workspaceRoot?: string,
   images?: ImagePart[],
   capabilitySections?: readonly string[],
 ): Message[] {
   const sections = buildSystemSections({
     ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-    ...(basePrompt !== undefined ? { basePrompt } : {}),
+    ...(sharedPrompt !== undefined ? { sharedPrompt } : {}),
+    ...(profilePrompt !== undefined ? { profilePrompt } : {}),
     ...(capabilitySections !== undefined ? { capabilitySections } : {}),
   });
   const systemContent = sections.length > 0 ? sections.join("\n\n") : undefined;
@@ -150,6 +156,7 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
   const usage: TokenAccumulator = { input: 0, output: 0, cached: 0, cache_write: 0 };
   const messages: Message[] = seedFromTask(
     input.task ?? "",
+    input.sharedPrompt,
     input.basePrompt,
     input.workspaceRoot,
     input.images,

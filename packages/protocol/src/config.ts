@@ -392,6 +392,47 @@ export interface ContextDoc {
   content: string;
 }
 
+/** Which layer supplied the effective shared prompt. */
+export type SharedPromptSource = "builtin" | "global" | "workspace" | "disabled";
+
+/** Why one shared-prompt document was not used. */
+export interface SharedPromptDiagnostic {
+  scope: Scope;
+  path: string;
+  reason: string;
+}
+
+/** How one editable scope relates to the effective shared prompt. */
+export type SharedPromptLayerStatus = "inherited" | "active" | "rejected";
+
+/** One editable shared-prompt scope as the UI renders it. */
+export interface SharedPromptLayerView {
+  exists: boolean;
+  status: SharedPromptLayerStatus;
+  reason?: string;
+}
+
+/** Effective shared prompt plus the two editable layers. */
+export interface SharedPromptView {
+  source: SharedPromptSource;
+  /** Config scope that won, when the winner is a file rather than the builtin. */
+  from?: Scope;
+  /** Winning prompt text; omitted when the layer is disabled. */
+  prompt?: string;
+  diagnostics: SharedPromptDiagnostic[];
+  paths: { global: string; workspace?: string };
+  layers: {
+    global: SharedPromptLayerView;
+    workspace?: SharedPromptLayerView;
+  };
+}
+
+/** Write payload for creating or updating a shared-prompt document. */
+export interface SharedPromptWrite {
+  mode: "replace" | "disabled";
+  body: string;
+}
+
 /** Kind of configuration surface that changed. */
 export type ConfigChangeKind = "settings" | "agents" | "context";
 
@@ -522,6 +563,24 @@ export interface ConfigService {
    * @param scope - Scope to read.
    */
   getContext(scope: Scope): Promise<ContextDoc | null>;
+
+  /** The effective shared prompt and the two editable layers. */
+  getSharedPrompt(): Promise<SharedPromptView>;
+
+  /**
+   * Create or overwrite the shared-prompt document in one scope.
+   *
+   * @param scope - Target scope.
+   * @param doc - Replace body or an explicit disable.
+   */
+  writeSharedPrompt(scope: Scope, doc: SharedPromptWrite): Promise<SharedPromptView>;
+
+  /**
+   * Delete the shared-prompt document in one scope so that scope inherits again.
+   *
+   * @param scope - Scope that owns the file.
+   */
+  deleteSharedPrompt(scope: Scope): Promise<void>;
 
   /**
    * Subscribe to reactive config refresh.

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "../bun-test.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import type { LLMCallParams } from "@clarvis/capability";
-import { ENV_SECTION } from "../env-section.ts";
+import { SYSTEM_HEAD } from "../env-section.ts";
 
 let harness: TestHarness | null = null;
 afterEach(async () => {
@@ -85,7 +85,7 @@ describe("specialized subagents", () => {
     const subagentSeed = firstCallFor(llm, "claude-haiku-4-5").messages;
     expect(subagentSeed[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}\n\nYou are a careful extraction Subagent.`,
+      content: SYSTEM_HEAD(process.cwd(), "You are a careful extraction Subagent."),
     });
     expect(subagentSeed[1]).toMatchObject({ role: "user", content: "extract the plaintiff" });
   });
@@ -150,7 +150,7 @@ describe("specialized subagents", () => {
     const subagentCall = firstCallFor(llm, "claude-sonnet-4-5");
     expect(subagentCall.messages[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}\n\nYou are a RESEARCHER.`,
+      content: SYSTEM_HEAD(process.cwd(), "You are a RESEARCHER."),
     });
     const subagentToolNames = subagentCall.tools.map((t) => t.fullName);
     expect(subagentToolNames).toContain("info.lookup");
@@ -197,7 +197,7 @@ describe("specialized subagents", () => {
     const subagentSeed = firstCallFor(llm, "claude-haiku-4-5").messages;
     expect(subagentSeed[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}`,
+      content: SYSTEM_HEAD(process.cwd()),
     });
     expect(subagentSeed[1]).toMatchObject({ role: "user", content: "do it" });
 

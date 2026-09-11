@@ -1,5 +1,5 @@
 import { kernelSettingsSchema } from "./capability-registry.ts";
-import { agentFrontmatterSchema } from "@clarvis/loop/host";
+import { agentFrontmatterSchema, renderSharedPromptDocument } from "@clarvis/loop/host";
 import type {
   AgentDoc,
   AgentSummary,
@@ -13,6 +13,9 @@ import type {
   SettingsData,
   SettingsRepairPlan,
   SettingsView,
+  SharedPromptLayerView,
+  SharedPromptView,
+  SharedPromptWrite,
   Unsubscribe,
 } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
@@ -21,7 +24,9 @@ import {
   SettingsRevisionConflictError,
   type AgentRecord,
   type ConfigStore,
+  type SharedPromptFile,
 } from "./config-store.ts";
+import { resolveStoreSharedPrompt, sharedPromptPaths } from "./shared-prompt.ts";
 
 /** Host-supplied collaborators for {@link createConfigService}. */
 export interface ConfigServiceOptions {
@@ -117,6 +122,52 @@ function requireNoCrossScopeConflict(store: ConfigStore, scope: Scope, name: str
 /** Extract the first Zod issue message for a terse `invalid_request` detail. */
 function firstIssue(error: { issues: readonly { message: string }[] }): string {
   return error.issues[0]?.message ?? "invalid input";
+}
+
+function layerView(
+  file: SharedPromptFile | null,
+  source: SharedPromptView["source"],
+  from: SharedPromptView["from"],
+  scope: Scope,
+  diagnostics: SharedPromptView["diagnostics"],
+): SharedPromptLayerView {
+  const rejected = diagnostics.find((d) => d.scope === scope);
+  const exists =
+    file !== null &&
+    (file.raw !== undefined || file.unreadable === true || file.oversized === true);
+  if (rejected !== undefined) return { exists: true, status: "rejected", reason: rejected.reason };
+  if (source === scope || (source === "disabled" && from === scope)) {
+    return { exists: true, status: "active" };
+  }
+  return { exists, status: "inherited" };
+}
+
+function presentSharedPrompt(store: ConfigStore): SharedPromptView {
+  const resolved = resolveStoreSharedPrompt(store);
+  const global = store.readSharedPrompt("global");
+  const workspace = store.readSharedPrompt("workspace");
+  const diagnostics = resolved.diagnostics;
+  return {
+    source: resolved.source,
+    ...(resolved.from !== undefined ? { from: resolved.from } : {}),
+    ...(resolved.prompt !== undefined ? { prompt: resolved.prompt } : {}),
+    diagnostics,
+    paths: sharedPromptPaths(store),
+    layers: {
+      global: layerView(global, resolved.source, resolved.from, "global", diagnostics),
+      ...(workspace === null
+        ? {}
+        : {
+            workspace: layerView(
+              workspace,
+              resolved.source,
+              resolved.from,
+              "workspace",
+              diagnostics,
+            ),
+          }),
+    },
+  };
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -581,6 +632,29 @@ export function createConfigService(
     async getContext(scope: Scope): Promise<ContextDoc | null> {
       const record = store.readContext(scope);
       return record === null ? null : { scope, path: record.path ?? "", content: record.content };
+    },
+
+    async getSharedPrompt(): Promise<SharedPromptView> {
+      return presentSharedPrompt(store);
+    },
+
+    async writeSharedPrompt(scope: Scope, doc: SharedPromptWrite): Promise<SharedPromptView> {
+      if (doc.mode !== "replace" && doc.mode !== "disabled") {
+        throw kernelError("invalid_request", 'mode must be "replace" or "disabled"');
+      }
+      const body = doc.body.trim();
+      if (doc.mode === "replace" && body.length === 0) {
+        throw kernelError("invalid_request", "replace requires a non-empty body");
+      }
+      if (doc.mode === "disabled" && body.length > 0) {
+        throw kernelError("invalid_request", "disabled requires an empty body");
+      }
+      store.writeSharedPrompt(scope, renderSharedPromptDocument(doc.mode, body));
+      return presentSharedPrompt(store);
+    },
+
+    async deleteSharedPrompt(scope: Scope): Promise<void> {
+      store.deleteSharedPrompt(scope);
     },
 
     /**

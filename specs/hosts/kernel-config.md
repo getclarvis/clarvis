@@ -682,7 +682,7 @@ Each entry: **rule** — production anchor — test anchor.
     `resolveEffectiveAgent` returns the file record even when `malformed` (`packages/kernel/src/config/agent-overlay.ts`).
     Pinned: `packages/kernel/tests/component/agent-overlay.test.ts`.
 
-20. **INV-268 — an untrusted workspace contributes neither risky settings nor agent files.**
+20. **INV-268 — an untrusted workspace contributes neither risky settings, agent files, nor `shared-agent.md`.**
     Settings: `packages/kernel/src/config/file-config-store.ts`. Agents: `listAgents` skips the scope, `readEffectiveAgent` passes `null` for the workspace layer, and both read the
     same verdict through `agentFilesTrusted` (over `workspaceTrusted`) —
     deliberately the *same* verdict as the executable settings fields, because "an agent's markdown

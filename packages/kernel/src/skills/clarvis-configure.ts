@@ -408,7 +408,7 @@ Docker's recipe block uses name, script (the absolute path under that root) and 
 
 ${configurationExample("runtime")}
 
-sandbox uses type: native, enabled, availability (required|optional; optional is treated as required), filesystem
+sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
 guard configures command approval. guard.mode is
 on, off or auto. off disables command guard evaluation. With on or auto, denied_commands wins over

@@ -319,7 +319,9 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
         fg: tokens.warn,
       };
     const fallback =
-      (sandbox.availability ?? "required") === "optional" ? " (optional is treated as required)" : "";
+      (sandbox.availability ?? "required") === "optional"
+        ? " (optional is treated as required)"
+        : "";
     return {
       text: `on ${glyph("emDash")} ${sandbox.filesystem ?? "workspace-write"}, network:${sandbox.network ?? "host"}${fallback}`,
       fg: tokens.add,

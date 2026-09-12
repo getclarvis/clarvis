@@ -1,9 +1,6 @@
 import { ToolError } from "../errors.ts";
 import type { RuntimeConfig } from "../config.ts";
 
-/** Per-call sandbox posture advertised on `shell` and `monitor_start`. */
-export type SandboxPermissions = "use_default" | "require_escalated";
-
 /** Shared JSON Schema properties for per-call sandbox escalation. */
 export const SANDBOX_PERMISSION_PROPERTIES = {
   sandbox_permissions: {

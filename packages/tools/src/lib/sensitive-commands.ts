@@ -20,7 +20,7 @@ function executableName(program: string): string {
 /**
  * Refuse secret-token and hidden Git-helper invocations on model command tools.
  */
-export function denySensitiveArgv(program: string, args: readonly string[]): void {
+function denySensitiveArgv(program: string, args: readonly string[]): void {
   const executable = executableName(program);
   const command = args[0];
   if (executable === "git" && command === "credential") {

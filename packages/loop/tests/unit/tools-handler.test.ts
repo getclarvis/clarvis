@@ -109,6 +109,8 @@ describe("buildAgentToolsHandler", () => {
     expect(handler.matches(call("read_file", {}))).toBe(true);
     expect(handler.matches(call("shell", {}))).toBe(false);
     expect(handler.matches(call("ask_user", {}))).toBe(false);
+    expect(handler.interruptible?.(call("shell", {}))).toBe(true);
+    expect(handler.interruptible?.(call("read_file", {}))).toBe(false);
   });
 
   it("dispatches success through the port and records durable/live trace separately", async () => {

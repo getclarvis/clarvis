@@ -291,7 +291,9 @@ export function buildAgentToolsHandler(deps: {
   const { base, toolset } = deps;
   return {
     matches: (call) => toolset.names.has(call.name),
-    async handle(call, iteration): Promise<HandlerVerdict> {
+    canonicalName: (call) => (toolset.names.has(call.name) ? call.name : undefined),
+    interruptible: (call) => call.name === "shell",
+    async handle(call, iteration, context): Promise<HandlerVerdict> {
       const { resultText, errText, productive, images } = await executeAgentToolCall({
         call,
         toolset,
@@ -302,7 +304,9 @@ export function buildAgentToolsHandler(deps: {
           ? { subagentInstanceId: base.subagentInstanceId }
           : {}),
         iteration,
-        ...(base.signal ? { signal: base.signal } : {}),
+        signal: context?.signal ?? base.signal,
+        ...(base.signal !== undefined ? { runSignal: base.signal } : {}),
+        ...(context?.control !== undefined ? { control: context.control } : {}),
       });
       const text =
         errText === null

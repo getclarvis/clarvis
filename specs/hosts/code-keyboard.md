@@ -34,7 +34,11 @@ subsystem is generated from what the keymap says is *currently enabled*, never p
 static text (`packages/code/src/ui/patterns/list-navigation.ts`,
 `packages/code/src/keys/commands.ts`). Third, Escape is never a close/cancel gesture: every Escape press immediately clears input
 or moves back one semantic screen, while Ctrl+C exclusively owns run cancellation and app
-quit. Terminals can deliver repeated packets while the cancel binding is held, so
+quit. Contextual `Ctrl+X` may stop the focused live builtin `shell` (`tool.interruptFocused`)
+without cancelling the run. It is not a global binding: elicitation decline and a manual
+protected `run.cancel = Ctrl+X` still take precedence, and without an interruptible target the
+key is not consumed. The clickable `[Stop shell]` affordance remains available regardless of the
+shortcut. Production: `packages/code/src/keys/interaction.ts`. Terminals can deliver repeated packets while the cancel binding is held, so
 `createInteraction` retains a 1-second repeat-metadata window for the current `run.cancel` binding;
 Escape never enters that timing path (`packages/code/src/keys/interaction.ts`).
 

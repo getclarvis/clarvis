@@ -34,6 +34,13 @@ watcher) — by redirecting its output into a log file, minting an id the model 
 (`packages/tools/src/tools/monitor.ts`), and separating "read the log" from "manage the process"
 into small idempotent operations.
 
+A selective operator interrupt of one live builtin `shell` reuses this abort/kill-tree path. The
+builtin reports a generic abort; the engine classifies operator interrupt versus run cancellation
+from the two signals it owns. `monitor_*` processes that outlive a tool call are out of scope for
+that control. Production: `createShell` in `packages/tools/src/tools/shell.ts` and
+`packages/loop/src/runtime/tools/tool-interrupt.ts`. Test: `packages/loop/tests/unit/tool-interrupt.test.ts`
+and `packages/loop/tests/unit/toolset.test.ts`.
+
 Underneath both, `resolveShell`/`shellArgs`/`exitCaptureWrapper` (`packages/tools/src/shell.ts`)
 make "which shell, which syntax" a single derived fact rather than two independently configurable
 ones, and `killTree`/`ownProcessGroup` (`packages/tools/src/lib/process.ts`) make "kill everything

@@ -197,6 +197,10 @@ export async function connectContainerSession(
         ...(signal === undefined ? {} : { signal }),
       });
     },
+    interruptTool: (runId, payload, signal) =>
+      peer.request("runtime.interrupt_tool", { generation: spec.generation, runId }, payload, {
+        ...(signal === undefined ? {} : { signal }),
+      }),
     async cancel(runId) {
       await peer.request("runtime.cancel", { generation: spec.generation, runId });
     },

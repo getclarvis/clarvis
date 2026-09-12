@@ -28,7 +28,7 @@ author needs: the request and settings vocabulary, the ports, the trace kinds, a
 
 | Entry                       | Contents                                                                                                                                                             |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`), persisted trace projector registry, `compose`, and settings/run vocabulary |
+| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`, `ToolInvocationContext`), persisted trace projector registry, `compose`, and settings/run vocabulary |
 | `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                   |
 | `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                       |
 

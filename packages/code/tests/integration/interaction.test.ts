@@ -46,6 +46,11 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
       calls.push("cancelRun");
       return false;
     },
+    interruptFocusedShell: () => {
+      calls.push("interruptFocusedShell");
+      return false;
+    },
+    canInterruptFocusedShell: () => false,
     clearInputDraft: () => {
       calls.push("clearInputDraft");
     },
@@ -867,6 +872,22 @@ test("createInteraction: queued input is inert after the renderer destroys its k
     ),
   ).not.toThrow();
   expect(effects.calls).toEqual([]);
+});
+
+test("createInteraction: Ctrl+X interrupts the focused shell when that command is enabled", async () => {
+  const t = await openCoreRenderer({ width: 80, height: 24 });
+  const effects = fakeEffects({
+    canInterruptFocusedShell: () => true,
+    interruptFocusedShell: () => {
+      effects.calls.push("interruptFocusedShell");
+      return true;
+    },
+  });
+  createInteraction(t.renderer, fakePlatform(), effects);
+  press(t.renderer, "x", { ctrl: true });
+  await settle();
+  expect(effects.calls).toContain("interruptFocusedShell");
+  t.renderer.destroy();
 });
 
 test("createInteraction: app.escape clears a non-empty draft without cancelling the run", async () => {

@@ -51,6 +51,26 @@ async function frame(
   return out;
 }
 
+test("a live shell control paints Stop shell", async () => {
+  const node: TranscriptNode = {
+    key: "sh1",
+    kind: "tool_call",
+    status: "running",
+    toolPhase: "running",
+    text: "",
+    toolName: "shell",
+    args: { command: "sleep 30" },
+    control: { tool_execution_id: "tok_shell", actions: ["interrupt"] },
+  };
+  const t = await openRender(() => <BlockView node={node} canInterruptShell={() => true} />, {
+    width: 120,
+    height: 8,
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toMatch(/Stop shell|Stopping/);
+  t.renderer.destroy();
+});
+
 test("a per-block 'expanded' override opens a collapsed tool body", async () => {
   const node = bash("hello-from-stdout");
   expect((await frame([node], new Map())).includes("hello-from-stdout")).toBe(false);

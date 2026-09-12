@@ -34,6 +34,7 @@ export interface GuestRunExecutor {
     signal: AbortSignal,
   ): Promise<unknown>;
   steer?(runId: string, input: unknown, signal: AbortSignal): Promise<void>;
+  interruptTool?(runId: string, payload: unknown): Promise<unknown>;
   /** Execute a bounded hook call using only a live run's guest MCP configuration. */
   callHookMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
   /** Deliver remote elicitation without moving its authenticated connection into the guest. */
@@ -118,6 +119,16 @@ export function serveExecutionWorker(options: {
           throw Object.assign(new Error("run cannot be steered"), { code: "not_found" });
         }
         await options.executor.steer(runId, payload, signal);
+      },
+      "runtime.interrupt_tool": async ({ runId, payload }) => {
+        if (
+          runId === undefined ||
+          !runs.has(runId) ||
+          options.executor.interruptTool === undefined
+        ) {
+          throw Object.assign(new Error("run cannot interrupt a tool"), { code: "not_found" });
+        }
+        return options.executor.interruptTool(runId, payload);
       },
       "runtime.hook_mcp": async ({ runId, payload, signal }) => {
         const run = runId === undefined ? undefined : runs.get(runId);

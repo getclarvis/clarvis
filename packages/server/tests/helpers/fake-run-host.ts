@@ -172,6 +172,9 @@ export function createFakeRunHost(script: (params: StartRunParams) => ScriptedRu
             abort.abort();
             return Promise.resolve();
           },
+          interruptTool(toolExecutionId) {
+            return Promise.resolve({ tool_execution_id: toolExecutionId, status: "not_running" });
+          },
           respond(response: ElicitationResponse): Promise<void> {
             responses.push(response);
             const entry = pending.get(response.id);

@@ -118,6 +118,10 @@ describe("tool surface", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -168,6 +172,10 @@ describe("tool surface", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -230,6 +238,10 @@ describe("tool surface", () => {
       cancel: async () => {
         cancelled += 1;
       },
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };

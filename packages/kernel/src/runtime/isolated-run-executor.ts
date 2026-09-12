@@ -113,6 +113,7 @@ export function createIsolatedRunExecutor(options: {
     const runId = raw.execution_id;
     const authority = await options.authority(args, runId);
     let release: (() => void) | undefined;
+    let unsubscribeToolInterrupts: (() => void) | undefined;
     let finished = false;
     const controls = new AbortController();
     let pumpTask = Promise.resolve();
@@ -211,6 +212,22 @@ export function createIsolatedRunExecutor(options: {
       args.externalSignal?.addEventListener("abort", abort, { once: true });
       listeningForAbort = args.externalSignal !== undefined;
       if (args.externalSignal?.aborted === true) abort();
+      unsubscribeToolInterrupts = args.toolInterrupts?.subscribe((delivery) => {
+        options.session
+          .interruptTool(runId, { tool_execution_id: delivery.toolExecutionId }, controls.signal)
+          .then((value) => {
+            const receipt = value as { status?: unknown };
+            const status = receipt.status;
+            delivery.settle(
+              status === "accepted" || status === "already_requested" || status === "not_running"
+                ? status
+                : "not_running",
+            );
+          })
+          .catch(() => {
+            delivery.settle("not_running");
+          });
+      });
       pumpTask = pump().catch(() => {
         args.deps.logger?.warn(
           { event: "runtime.control_pump_failed", run_id: runId },
@@ -249,6 +266,7 @@ export function createIsolatedRunExecutor(options: {
       return result;
     } finally {
       finished = true;
+      unsubscribeToolInterrupts?.();
       controls.abort();
       if (listeningForAbort) args.externalSignal?.removeEventListener("abort", abort);
       try {

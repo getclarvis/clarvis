@@ -73,6 +73,7 @@ interface FakeRun {
   input: StartRunInput;
   handle: RunHandle;
   cancelled: boolean;
+  interrupts: string[];
   resolve: (envelope: RunResult | undefined) => void;
   reject: (e: unknown) => void;
 }
@@ -102,6 +103,7 @@ function fakeClient(): {
     const run: FakeRun = {
       input,
       cancelled: false,
+      interrupts: [],
       resolve,
       reject,
       handle: {
@@ -109,6 +111,10 @@ function fakeClient(): {
         cancel: () => {
           run.cancelled = true;
           return Promise.resolve();
+        },
+        interruptTool: (toolExecutionId) => {
+          run.interrupts.push(toolExecutionId);
+          return Promise.resolve({ tool_execution_id: toolExecutionId, status: "accepted" });
         },
         done,
         closed: done.then(
@@ -3319,4 +3325,47 @@ test("loadSessionMeta: the folded prefix gets one visible marker and only 20 res
   expect(notices[0]!.text).toContain("/export");
   expect(store.nodes.filter((node) => node.kind === "user")).toHaveLength(20);
   dispose();
+});
+
+test("interruptTool is not_running when idle", async () => {
+  const { host } = mount();
+  await expect(host.interruptTool("tok_shell")).resolves.toEqual({
+    tool_execution_id: "tok_shell",
+    status: "not_running",
+  });
+});
+
+test("interruptTool surfaces a transport failure without cancelling", async () => {
+  const fake = fakeClient();
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  const { host, store } = mount({ client: fake.client });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  fake.runs[0]!.handle.interruptTool = () => Promise.reject(new Error("wire down"));
+  await expect(host.interruptTool("tok_shell")).rejects.toThrow("wire down");
+  expect(
+    store.nodes.some(
+      (node) => node.kind === "annotation" && node.text.includes("Could not interrupt the shell"),
+    ),
+  ).toBe(true);
+  expect(fake.runs[0]!.cancelled).toBe(false);
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await receipt.completion;
+});
+
+test("interruptTool asks the live handle without cancelling the run", async () => {
+  const fake = fakeClient();
+  fake.getRunImpl.fn = async (id) => persisted(id);
+  const { host } = mount({ client: fake.client });
+  const receipt = admitted(host.submitScheduledTurn(schedule(host)));
+  await flush();
+  expect(host.canControlCurrentRun()).toBe(true);
+  await expect(host.interruptTool("tok_shell")).resolves.toEqual({
+    tool_execution_id: "tok_shell",
+    status: "accepted",
+  });
+  expect(fake.runs[0]!.interrupts).toEqual(["tok_shell"]);
+  expect(fake.runs[0]!.cancelled).toBe(false);
+  fake.runs[0]!.resolve(completed(receipt.executionId));
+  await receipt.completion;
 });

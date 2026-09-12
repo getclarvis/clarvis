@@ -44,6 +44,8 @@ export interface InteractionEffects {
   /** Suppresses every key except unmodified Escape while the workspace runtime is replaced. */
   interactionBlocked?(): boolean;
   cancelRun(): boolean;
+  interruptFocusedShell(): boolean;
+  canInterruptFocusedShell(): boolean;
   clearInputDraft(): void;
   quit(opts: { confirm: boolean }): void;
   dismissTopOverlay(): boolean;
@@ -118,6 +120,7 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
     { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
   ],
   "transcript.toggleCollapse": [{ key: "ctrl+o" }],
+  "tool.interruptFocused": [],
   "transcript.focusPrev": [{ key: "ctrl+up" }],
   "transcript.focusNext": [{ key: "ctrl+down" }],
   "transcript.scrollPageUp": [{ key: "pageup" }],
@@ -261,6 +264,10 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
     footerLabel: "expand",
     hintPriority: 50,
     hintGroup: "primary",
+  },
+  "tool.interruptFocused": {
+    uiSurfaces: ["full-help"],
+    hintGroup: "mutation",
   },
   "transcript.focusPrev": {
     uiSurfaces: ["footer", "full-help"],
@@ -645,10 +652,23 @@ export function createInteraction(
       desc: "Reveal the older turns the transcript window is holding back",
       category: "view",
     }),
+    command(
+      "tool.interruptFocused",
+      () => {
+        effects.interruptFocusedShell();
+      },
+      {
+        title: "Stop focused shell",
+        desc: "Interrupt the focused live shell without cancelling the run",
+        category: "tool",
+        enabled: () => effects.canInterruptFocusedShell(),
+      },
+    ),
   ];
   const offCommands = keymap.registerLayer({ commands });
 
   let offVital: (() => void) | undefined;
+  let offContextualInterrupt: (() => void) | undefined;
   function configureKeyboard(config: KeyboardConfig): void {
     const input = keyboardInput(platform, keymap);
     const id = keyboardEnvironmentId(input);
@@ -679,6 +699,34 @@ export function createInteraction(
     );
     offVital?.();
     offVital = keymap.registerLayer({ priority: LAYER.VITAL, bindings: vital });
+    offContextualInterrupt?.();
+    const interruptKeys = resolveCommandBindings(
+      "tool.interruptFocused",
+      DEFAULT_BINDING_CANDIDATES["tool.interruptFocused"] ?? [],
+      environment,
+      validOverrides,
+    );
+    const cancelKeys = resolveCommandBindings(
+      "run.cancel",
+      DEFAULT_BINDING_CANDIDATES["run.cancel"] ?? [],
+      environment,
+      validOverrides,
+    );
+    const cancelUsesCtrlX = cancelKeys.some((key) => key.replaceAll(" ", "") === "ctrl+x");
+    offContextualInterrupt =
+      interruptKeys.length === 0 && !cancelUsesCtrlX
+        ? keymap.registerLayer({
+            priority: 850,
+            bindings: [
+              {
+                key: "ctrl+x",
+                cmd: "tool.interruptFocused",
+                when: "overlay==none",
+                modal: "none",
+              },
+            ],
+          })
+        : undefined;
     setEnvironmentId(id);
     setKeyboardEnvironment(environment);
     keymap.setData("keyboard.profile", environment.profile);
@@ -706,6 +754,7 @@ export function createInteraction(
     process.off("SIGCONT", onContinue);
     const disposers = [
       offVital,
+      offContextualInterrupt,
       offCommands,
       offWindowRelease,
       offWindowPress,

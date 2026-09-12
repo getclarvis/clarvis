@@ -212,6 +212,10 @@ describe("runtime execution worker", () => {
         async steer(runId, input) {
           observations.push(`${runId}:${String(input)}`);
         },
+        async interruptTool(runId, payload) {
+          observations.push(`interrupt:${runId}:${JSON.stringify(payload)}`);
+          return { tool_execution_id: "tok_shell", status: "accepted" };
+        },
       },
     });
     const host = createExecutionPeer({
@@ -258,8 +262,19 @@ describe("runtime execution worker", () => {
       host.request("runtime.start", { generation: "generation-1", runId: "run-1" }, {}),
     ).rejects.toMatchObject({ code: "conflict" });
     await host.request("runtime.steer", { generation: "generation-1", runId: "run-1" }, "message");
+    await expect(
+      host.request(
+        "runtime.interrupt_tool",
+        { generation: "generation-1", runId: "run-1" },
+        { tool_execution_id: "tok_shell" },
+      ),
+    ).resolves.toEqual({ tool_execution_id: "tok_shell", status: "accepted" });
     await host.request("runtime.cancel", { generation: "generation-1", runId: "run-1" });
-    expect(observations).toEqual(["run-1:message", "aborted"]);
+    expect(observations).toEqual([
+      "run-1:message",
+      'interrupt:run-1:{"tool_execution_id":"tok_shell"}',
+      "aborted",
+    ]);
     await expect(
       host.request("runtime.cancel", { generation: "generation-1" }),
     ).rejects.toMatchObject({ code: "invalid_request" });
@@ -298,6 +313,9 @@ describe("runtime execution worker", () => {
     );
     await expect(
       host.request("runtime.steer", { generation: "generation-1", runId: "missing" }, {}),
+    ).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      host.request("runtime.interrupt_tool", { generation: "generation-1", runId: "missing" }, {}),
     ).rejects.toMatchObject({ code: "not_found" });
     await expect(
       host.request("runtime.hook_mcp", { generation: "generation-1", runId: "missing" }, {}),

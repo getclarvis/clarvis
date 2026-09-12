@@ -429,6 +429,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     return {
       executionId,
       cancel: () => handleP.then((handle) => handle.cancel()),
+      interruptTool: (toolExecutionId) =>
+        handleP.then((handle) => handle.interruptTool(toolExecutionId)),
       ...(hosted ? { releaseObservation: () => handleP.then((handle) => handle.release?.()) } : {}),
       ...(hosted
         ? {

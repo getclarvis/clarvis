@@ -23,6 +23,7 @@ import {
 } from "./build-subagent-input.ts";
 import type { AgentCapability } from "@clarvis/capability";
 import type { ComputeClock, ComputeRegion } from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 /**
  * The terminal outcome of a sub-agent run: a `completed` result text, a
@@ -90,6 +91,7 @@ export interface RunSubagentInput {
   clock?: ComputeClock;
   workspaceRoot?: string;
   hooks?: LifecycleHook[];
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /** A finished sub-agent run: its {@link SubagentOutcome} and usage snapshot. */
@@ -177,7 +179,11 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
         input,
       ),
       budget: { ledger: input.ledger, counter, usage },
-      runtime: { trace: input.trace, ...(input.signal ? { signal: input.signal } : {}) },
+      runtime: {
+        trace: input.trace,
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.toolInterrupts !== undefined ? { toolInterrupts: input.toolInterrupts } : {}),
+      },
       compaction: input.compaction ?? DISABLED_COMPACTION,
       ...(input.compactionPrompt !== undefined ? { compactionPrompt: input.compactionPrompt } : {}),
       ...(input.workspaceRoot !== undefined

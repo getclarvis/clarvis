@@ -240,6 +240,16 @@ describe("hosted observation client budgets and retirement", () => {
     f.client.close();
   });
 
+  test("interruptTool forwards the live token over the hosted control method", async () => {
+    const f = fixture();
+    const attaching = f.attach();
+    f.admit();
+    const { handle } = await attaching;
+    await handle.interruptTool("tok_shell");
+    expect(f.calls).toContain(M.hostingInterruptTool);
+    f.client.close();
+  });
+
   test("closure before the reconciled outcome rejects observation without fabricating a result", async () => {
     const f = fixture();
     const attaching = f.attach();

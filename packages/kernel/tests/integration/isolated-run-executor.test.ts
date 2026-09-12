@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOME_ENV } from "@clarvis/paths";
 import { createSteerQueue } from "../../src/runs/steer-queue.ts";
+import { createToolInterruptChannel } from "../../src/runs/tool-interrupt-channel.ts";
 import {
   createCapabilityBroker,
   createIsolatedRunExecutor,
@@ -71,6 +72,12 @@ describe("isolated run executor", () => {
             if (delivery !== "delivered")
               throw Object.assign(new Error("guest finished"), { code: "not_found" });
           },
+          async interruptTool(_runId, payload) {
+            return {
+              tool_execution_id: (payload as { tool_execution_id: string }).tool_execution_id,
+              status: "accepted",
+            };
+          },
           async cancel() {},
           async stop() {},
           async exposePort() {
@@ -102,14 +109,20 @@ describe("isolated run executor", () => {
           },
         }),
       });
+      const toolInterrupts = createToolInterruptChannel();
       const running = executor({
         rawBody: { execution_id: "run" },
         owner: "owner",
         deps: {} as never,
         steer,
+        toolInterrupts,
       });
       try {
         await received.promise;
+        await expect(toolInterrupts.interruptTool("tok_shell")).resolves.toEqual({
+          tool_execution_id: "tok_shell",
+          status: "accepted",
+        });
         expect(acknowledged).toBeUndefined();
         if (delivery === "settled") finish.resolve();
         else {
@@ -133,6 +146,7 @@ describe("isolated run executor", () => {
         deliver.resolve();
         finish.resolve();
         steer.close();
+        toolInterrupts.close();
         await running.catch(() => undefined);
       }
     },
@@ -238,6 +252,9 @@ describe("isolated run executor", () => {
       async callHookMcp() {},
       async elicitMcp() {},
       async steer() {},
+      async interruptTool() {
+        return { status: "not_running" };
+      },
       async cancel() {},
       async exposePort() {
         throw new Error("not exercised");
@@ -373,6 +390,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
@@ -399,6 +417,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
@@ -428,6 +447,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           boundaryOrder.push("cancel");
         },
@@ -469,6 +489,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           cancelled = true;
         },
@@ -521,6 +542,7 @@ describe("isolated run executor", () => {
           callHookMcp: async () => undefined,
           elicitMcp: async () => undefined,
           steer: async () => undefined,
+          interruptTool: async () => ({ status: "not_running" }),
           cancel: async () => undefined,
           exposePort: async () => Promise.reject(new Error("not exercised")),
           stop: async () => undefined,

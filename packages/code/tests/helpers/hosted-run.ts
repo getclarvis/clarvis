@@ -38,6 +38,10 @@ export function hostedAttachment(ref = hostedRef()): HostedRunAttachment {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running",
+      }),
       respond: async () => {},
       onElicit: () => () => {},
     },

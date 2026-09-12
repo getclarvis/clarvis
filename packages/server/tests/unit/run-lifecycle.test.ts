@@ -38,6 +38,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -81,6 +85,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -131,6 +139,10 @@ describe("run stream lifecycle", () => {
       cancel: async () => {
         cancelled += 1;
       },
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -203,6 +215,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -297,6 +313,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -365,6 +385,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };

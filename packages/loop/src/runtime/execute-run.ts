@@ -9,6 +9,7 @@ import type { TraceStore } from "@clarvis/trace";
 import type { RunJournal } from "@clarvis/trace";
 import type { RunResponse } from "@clarvis/capability";
 import type { CompactionSource, SteerSource } from "@clarvis/capability";
+import { createToolInterruptRegistry, type ToolInterruptSource } from "./tools/tool-interrupt.ts";
 import type { TraceEvent } from "@clarvis/capability";
 import { bind, unref } from "@clarvis/capability";
 import { deriveRunShape, validateBody } from "../validation/request-schema.ts";
@@ -93,6 +94,12 @@ export interface ExecuteRunArgs {
   steer?: SteerSource;
   /** Explicit entry-agent compaction requests, drained before iterations. */
   compaction?: CompactionSource;
+  /**
+   * Operator requests to interrupt one live tool invocation.
+   *
+   * @remarks Push delivery; never model content and never transcribed.
+   */
+  toolInterrupts?: ToolInterruptSource;
   /** Per-run capabilities from session-bound hosts (e.g. lifecycle hooks);
    * activated after the deps-level ones. */
   capabilities?: Capability[];
@@ -294,6 +301,7 @@ export async function executeRun({
   elicit,
   steer,
   compaction,
+  toolInterrupts,
   capabilities,
   onCapabilityEvent,
 }: ExecuteRunArgs): Promise<ExecuteRunOutcome> {
@@ -401,6 +409,11 @@ export async function executeRun({
       else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
     }
 
+    const toolInterruptRegistry = createToolInterruptRegistry();
+    const unsubscribeToolInterrupts = toolInterrupts?.subscribe((delivery) => {
+      toolInterruptRegistry.deliver(delivery);
+    });
+
     let journal: RunJournal | undefined;
     try {
       const { response, trace, wallStartedAt, finalContext, runCapabilities } =
@@ -428,6 +441,7 @@ export async function executeRun({
           elicit,
           ...(steer !== undefined ? { steer } : {}),
           ...(compaction !== undefined ? { compaction } : {}),
+          toolInterruptRegistry,
           ...(continuation !== undefined ? { continuation } : {}),
           workspaceRoot: deps.workspaceRoot,
           executionId,
@@ -524,6 +538,8 @@ export async function executeRun({
       return { executionId, response };
     } finally {
       externalSignal?.removeEventListener("abort", onExternalAbort);
+      unsubscribeToolInterrupts?.();
+      toolInterruptRegistry.close();
       journal?.close();
     }
   } finally {

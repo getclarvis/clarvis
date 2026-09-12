@@ -46,6 +46,7 @@ import { buildSubagentInputPersona, userText } from "./subagents/build-subagent-
 import { buildLeadInputPersona } from "./subagents/build-lead-input.ts";
 import type { SubagentAggregate } from "./subagents/delegate-task.ts";
 import type { RunShape } from "./run-shape.ts";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 
 /**
  * The run-scoped dependencies {@link createEntryInput} threads into the entry
@@ -61,6 +62,8 @@ export interface EntryInputDeps {
   elicit?: Elicit;
   steer?: SteerSource;
   compaction?: CompactionSource;
+  /** Run-local registry of interruptible tool invocations. */
+  toolInterruptRegistry?: ToolInterruptRegistry;
   hooks?: LifecycleHook[];
   logger?: Logger;
   resultContract?: ResultContract;
@@ -201,6 +204,9 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
             ? {}
             : { capabilityReserved: deps.capabilityReserved }),
           ...(shape.sharedPrompt !== undefined ? { sharedPrompt: shape.sharedPrompt } : {}),
+          ...(deps.toolInterruptRegistry !== undefined
+            ? { toolInterrupts: deps.toolInterruptRegistry }
+            : {}),
         }),
         ...(deps.runCapabilities ?? []),
       ]
@@ -245,7 +251,13 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
         ...(softBudget ? { softBudget } : {}),
         ...(softLimitAsk ? { softLimitAsk } : {}),
       },
-      runtime: { trace, ...(signal ? { signal } : {}) },
+      runtime: {
+        trace,
+        ...(signal ? { signal } : {}),
+        ...(deps.toolInterruptRegistry !== undefined
+          ? { toolInterrupts: deps.toolInterruptRegistry }
+          : {}),
+      },
       compaction: entryResolved.compaction,
       ...(entryResolved.compactionPrompt !== undefined
         ? { compactionPrompt: entryResolved.compactionPrompt }

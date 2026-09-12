@@ -28,6 +28,7 @@ import { createTokenLedger } from "./budget/budget.ts";
 import { createTrace } from "@clarvis/trace";
 import type { TraceHandle } from "@clarvis/trace";
 import { runAgent } from "./loop/run-agent.ts";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 import { fireObservers } from "./loop/lifecycle-hooks.ts";
 import { buildEntrySeed } from "./entry-seed.ts";
 import { createUsageAccounting } from "./usage-accounting.ts";
@@ -101,6 +102,8 @@ export interface OrchestratorDeps {
   elicit?: Elicit;
   steer?: SteerSource;
   compaction?: CompactionSource;
+  /** Run-local registry of interruptible tool invocations. */
+  toolInterruptRegistry?: ToolInterruptRegistry;
   continuation?: RunContinuation;
   workspaceRoot: string;
   executionId?: string;

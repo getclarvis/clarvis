@@ -75,6 +75,9 @@ describe("isolated runtime controller", () => {
           async callHookMcp() {},
           async elicitMcp() {},
           async steer() {},
+          async interruptTool() {
+            return { status: "not_running" };
+          },
           async cancel() {},
           async exposePort() {
             throw new Error("not exercised");
@@ -121,6 +124,9 @@ describe("isolated runtime controller", () => {
             async callHookMcp() {},
             async elicitMcp() {},
             async steer() {},
+            async interruptTool() {
+              return { status: "not_running" };
+            },
             async cancel() {},
             async exposePort() {
               throw new Error("not exercised");

@@ -14,7 +14,7 @@ the sidebar, the export command — drives.
 
 Below it sit two families of module. One is the *backend adapter*:
 `packages/code/src/adapters/kernel-run-client.ts` wraps a `KernelClient` (`@clarvis/protocol`) and
-presents `startRun → RunHandle`, `steer`, `compact`, `getRun`, `deleteRun`, `listProfiles`, plus thin
+presents `startRun → RunHandle`, `steer`, `compact`, `interruptTool`, `getRun`, `deleteRun`, `listProfiles`, plus thin
 pass-throughs for the remaining kernel services (`packages/code/src/adapters/kernel-run-client.ts`).
 `packages/code/src/adapters/workspace-client-manager.ts` sits under *that*, owning the process's one
 connection to its independently hosted workspace kernel. `open` accepts only that workspace and

@@ -336,6 +336,8 @@ this proof; disconnect, close and takeover revoke it. A different peer must expl
 including while the goal is physically idle. Old proof cleanup cannot retire a newer controller.
 `startControlled` and `cancelControlled` are host-only registry methods using this proof and the
 existing start/cancel machinery. They cannot target another session or bypass physical exclusion.
+`hosting.interrupt_tool` uses the same interactive-control admission as steer, compact, cancel and
+respond: an `observe` attachment cannot interrupt a live shell; acquire/takeover can.
 The proof crosses preparation only through the private host context. Process-owned start admission
 also applies to automatic starts, and pending continuations/goal controls prevent maintenance.
 Production: `claimConversation`, `assertConversation` and `releaseConversation` in

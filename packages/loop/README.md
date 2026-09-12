@@ -36,6 +36,11 @@ MCP itself. What remains of the last two is engine _policy_ — when to record a
 when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
+A run-scoped tool-interrupt registry listens for operator requests and aborts only the matching
+child controller for an interruptible builtin `shell`. The loop then records an operator
+interruption, returns that fact to the model, and continues. Run cancellation still wins when both
+signals fire.
+
 The engine records one minimal `tool_call_announced` per call in each physical provider attempt:
 actor, call identity, tool name, iteration and attempt. Every cumulative `tool_input_delta`, including
 `complete: true`, is a live signal. Argument `chars` and optional provider `stream_chars` remain

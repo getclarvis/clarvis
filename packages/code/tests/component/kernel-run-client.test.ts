@@ -58,6 +58,10 @@ function controllableHandle(executionId: string) {
     steer: async (m: unknown) => void steered.push(m),
     compact: async (request?: string) => void compacted.push(request),
     cancel: async () => {},
+    interruptTool: async (toolExecutionId: string) => ({
+      tool_execution_id: toolExecutionId,
+      status: "not_running" as const,
+    }),
     respond: async (r: unknown) => void responded.push(r),
     onElicit: (h: (req: ElicitationRequest) => void) => {
       elicitHandler = h;

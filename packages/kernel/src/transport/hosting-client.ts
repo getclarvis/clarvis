@@ -305,6 +305,11 @@ export function createHostingClient(options: {
           steer: (message) => control(M.hostingSteer, { message }),
           compact: (request) => control(M.hostingCompact, { request }),
           cancel: () => control(M.hostingCancel),
+          interruptTool: (toolExecutionId) =>
+            transport.request(M.hostingInterruptTool, {
+              subscription_id: id,
+              tool_execution_id: toolExecutionId,
+            }),
           respond: (response) => control(M.hostingRespond, { response }),
           onElicit(listener) {
             const unsubscribe = listen(subscription.questionListeners, listener);

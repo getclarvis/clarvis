@@ -391,7 +391,7 @@ function runCommand(
             "a shell command settled; the trace keeps its output as opaque text and indexes none of these",
           );
           if (aborted) {
-            reject(new ToolError("aborted", "Command aborted (run cancelled)", { stdout, stderr }));
+            reject(new ToolError("aborted", "Command aborted", { stdout, stderr }));
             return;
           }
 

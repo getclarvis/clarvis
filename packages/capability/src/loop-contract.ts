@@ -95,6 +95,32 @@ export type HandlerVerdict =
   | { kind: "cancelled" };
 
 /**
+ * Engine-facing live control for one physical tool invocation.
+ *
+ * @remarks A structural projection of the protocol `ToolExecutionControl`
+ * envelope, not a shared type. This package must not depend on
+ * `@clarvis/protocol`. The trace mapper converts camelCase to the public
+ * snake_case envelope.
+ */
+export interface ToolInvocationControl {
+  readonly toolExecutionId: string;
+  readonly actions: readonly ["interrupt"];
+}
+
+/**
+ * Per-call execution context handed to {@link ToolHandler.handle}.
+ *
+ * @remarks `signal` is the effective abort for this invocation. For ordinary
+ * handlers it is the run signal. For an interruptible builtin `shell` it is
+ * `AbortSignal.any([runSignal, toolSignal])`. `control` is present only when
+ * the invocation is currently interruptible.
+ */
+export interface ToolInvocationContext {
+  readonly signal: AbortSignal;
+  readonly control?: ToolInvocationControl;
+}
+
+/**
  * A dispatcher for one family of tool calls: `matches` claims a call, and
  * `handle` executes the claimed call at the given iteration, yielding a
  * {@link HandlerVerdict}.
@@ -103,7 +129,18 @@ export interface ToolHandler {
   matches(call: LLMToolCall): boolean;
   /** Stable tool identity for lifecycle consumers when the wire name is projected. */
   canonicalName?(call: LLMToolCall): string | undefined;
-  handle(call: LLMToolCall, iteration: number): Promise<HandlerVerdict>;
+  /**
+   * Whether this invocation may receive live operator interrupt control.
+   *
+   * @remarks Only the builtin coding-tools handler returns `true`, and only
+   * when {@link ToolHandler.canonicalName} is `shell`.
+   */
+  interruptible?(call: LLMToolCall): boolean;
+  handle(
+    call: LLMToolCall,
+    iteration: number,
+    context?: ToolInvocationContext,
+  ): Promise<HandlerVerdict>;
 }
 
 /**

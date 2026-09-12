@@ -1,4 +1,5 @@
 import type { LLMProvider, ResolvedProviderConfig, TracePort } from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 import type { IterationCounter, TokenLedger } from "../budget/budget.ts";
 import type { TokenAccumulator } from "@clarvis/capability";
 import type { SoftBudget, SoftLimitAsk } from "../budget/soft-budget.ts";
@@ -87,6 +88,8 @@ export interface LoopBudget {
 export interface LoopRuntime {
   trace: TracePort;
   signal?: AbortSignal;
+  /** Run-local registry of interruptible tool invocations, when the host wired one. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**

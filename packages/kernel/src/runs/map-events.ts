@@ -467,6 +467,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         tool: ev.tool_name,
         server: ev.mcp_name,
         arguments: ev.arguments as Record<string, unknown>,
+        ...(ev.control !== undefined ? { control: ev.control } : {}),
       };
     case "tool_output_delta":
       return {
@@ -515,6 +516,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...(ev.error !== null ? { error: ev.error } : {}),
         ...(ev.diff !== undefined ? { diff: ev.diff } : {}),
         ...(ev.guard !== undefined ? { guard: ev.guard } : {}),
+        ...(ev.interruption !== undefined ? { interruption: ev.interruption } : {}),
       };
 
     case "model_reasoning":

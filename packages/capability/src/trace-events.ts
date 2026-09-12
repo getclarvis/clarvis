@@ -94,6 +94,7 @@ export type BuiltinTraceEvent =
       error: string | null;
       diff?: string;
       guard?: CommandGuardReview;
+      interruption?: { source: "operator" };
     }
   | {
       type: "tool_call_started";
@@ -105,6 +106,7 @@ export type BuiltinTraceEvent =
       mcp_name: string;
       tool_name: string;
       arguments: object;
+      control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
     }
   | {
       type: "tool_output_delta";

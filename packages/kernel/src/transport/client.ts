@@ -460,7 +460,14 @@ export async function connectKernelClient(
    * @returns the live handle; a start that throws settles the run as `failed`.
    */
   const streamingStart = async (
-    methods: { start: string; steer: string; compact: string; cancel: string; respond: string },
+    methods: {
+      start: string;
+      steer: string;
+      compact: string;
+      cancel: string;
+      interruptTool: string;
+      respond: string;
+    },
     params: { execution_id?: string },
   ): Promise<RunHandle> => {
     const executionId = params.execution_id ?? randomUUID();
@@ -531,6 +538,12 @@ export async function connectKernelClient(
       async cancel() {
         await transport.request(methods.cancel, { execution_id: executionId });
       },
+      async interruptTool(toolExecutionId) {
+        return transport.request(methods.interruptTool, {
+          execution_id: executionId,
+          tool_execution_id: toolExecutionId,
+        });
+      },
       async respond(response) {
         await transport.request(methods.respond, { execution_id: executionId, response });
       },
@@ -574,6 +587,7 @@ export async function connectKernelClient(
           steer: M.runsSteer,
           compact: M.runsCompact,
           cancel: M.runsCancel,
+          interruptTool: M.runsInterruptTool,
           respond: M.runsRespond,
         },
         params,

@@ -97,7 +97,7 @@ function buildAgentToolDefs(config: RuntimeConfig): NamespacedTool[] {
 
 /** The error result substituted for a tool call that the abort signal preempts. */
 function abortedResult(): AgentToolResult {
-  return { isError: true, text: "Tool call aborted (run cancelled)." };
+  return { isError: true, text: "Tool call aborted." };
 }
 
 /**

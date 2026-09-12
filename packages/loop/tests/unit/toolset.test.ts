@@ -141,7 +141,7 @@ describe("createAgentToolset policy", () => {
 
     await expect(created.dispatch("read_file", {}, AbortSignal.abort())).resolves.toEqual({
       isError: true,
-      text: "Tool call aborted (run cancelled).",
+      text: "Tool call aborted.",
     });
   });
 
@@ -157,7 +157,7 @@ describe("createAgentToolset policy", () => {
     controller.abort();
     await expect(result).resolves.toEqual({
       isError: true,
-      text: "Tool call aborted (run cancelled).",
+      text: "Tool call aborted.",
     });
     expect(getEventListeners(controller.signal, "abort")).toEqual([]);
     settle({ isError: false, text: "late" });

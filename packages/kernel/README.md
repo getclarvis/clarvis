@@ -300,7 +300,9 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 12 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 13 and a rebuilt compatible worker image. Operator interruption
+of a live guest `shell` uses `runtime.interrupt_tool`; the guest aborts its own child controller
+and the host never kills a PID. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
 directories. Helper guidance requires preparing read resources in the writable workspace before
 guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the

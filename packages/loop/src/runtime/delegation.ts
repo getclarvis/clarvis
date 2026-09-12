@@ -44,6 +44,7 @@ import type {
   TaskTrackingPort,
 } from "@clarvis/capability";
 import type { ComputeClock } from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 
 /**
  * Whether a child-spawn call asked for a background spawn.
@@ -201,6 +202,8 @@ export interface DelegationDeps {
   capabilityReserved?: readonly string[];
   /** Fleet-wide shared prompt snapshotted for this run. */
   sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -252,6 +255,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
     ...(deps.emitCapabilityEvent ? { emitCapabilityEvent: deps.emitCapabilityEvent } : {}),
     ...(deps.capabilityReserved ? { capabilityReserved: deps.capabilityReserved } : {}),
     ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
+    ...(deps.toolInterrupts !== undefined ? { toolInterrupts: deps.toolInterrupts } : {}),
   };
 
   const spawnHandler: ToolHandler = {

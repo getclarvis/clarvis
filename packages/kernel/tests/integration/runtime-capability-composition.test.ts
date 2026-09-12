@@ -165,6 +165,8 @@ async function fixture(
         steer: async (runId, payload, signal) => {
           await host.request("runtime.steer", { generation, runId }, payload, { signal });
         },
+        interruptTool: (runId, payload, signal) =>
+          host.request("runtime.interrupt_tool", { generation, runId }, payload, { signal }),
         cancel: async (runId) => {
           await host.request("runtime.cancel", { generation, runId });
         },

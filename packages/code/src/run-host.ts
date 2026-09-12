@@ -19,7 +19,13 @@ import type {
   PlansMode,
   TaskRefDto,
 } from "@clarvis/protocol";
-import type { RunDetail, RunEvent, RunRecovery, RunResult } from "@clarvis/protocol";
+import type {
+  RunDetail,
+  RunEvent,
+  RunRecovery,
+  RunResult,
+  ToolInterruptReceipt,
+} from "@clarvis/protocol";
 import { memoryIngestIsPending } from "./adapters/event-span.ts";
 import { appendMentionImages, buildContent, MentionImageError } from "./core/attachments.ts";
 import { createImageLoader } from "./adapters/workspace-files.ts";
@@ -182,6 +188,15 @@ export interface RunHost {
    */
   onMemoryIngest(notice: MemoryIngestNotice): void;
   cancelCurrentRun(): boolean;
+  /** True when this TUI currently holds interactive control of the live run. */
+  canControlCurrentRun(): boolean;
+  /**
+   * Interrupt one live tool invocation without cancelling the run.
+   *
+   * @remarks Captures the current handle and ownership epoch before awaiting.
+   *   A late receipt never mutates a newer run.
+   */
+  interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt>;
   compactCurrentRun(request?: string): Promise<void>;
   inspectCurrentContext(targetWindowTokens: number): ReturnType<KernelRunClient["context"]> | null;
   fitCurrentContext(targetWindowTokens: number): Promise<CompactResult | null>;
@@ -405,6 +420,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   };
   let sessionTask: ActiveTaskRequestDto | undefined;
   const [runActive, setRunActive] = createSignal(false);
+  const [interactiveControl, setInteractiveControl] = createSignal(true);
   const [disconnectPolicy, setDisconnectPolicy] =
     createSignal<HostedRunRef["disconnect_policy"]>("cancel");
   const [compactionActive, setCompactionActive] = createSignal(false);
@@ -759,6 +775,31 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setStatus([base, "  ", { mark: "separator" }, "  ", ...memoryNoticeStatus(notice)]);
   }
 
+  function canControlCurrentRun(): boolean {
+    return runActive() && interactiveControl() && currentHandle !== undefined;
+  }
+
+  async function interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt> {
+    const handle = currentHandle;
+    const ownership = runOwnershipEpoch;
+    if (!handle || !runActive() || !interactiveControl() || handle.interruptTool === undefined) {
+      return { tool_execution_id: toolExecutionId, status: "not_running" };
+    }
+    store.setToolInterruptRequest(toolExecutionId, true);
+    try {
+      const receipt = await handle.interruptTool(toolExecutionId);
+      if (currentHandle !== handle || ownership !== runOwnershipEpoch) return receipt;
+      if (receipt.status === "not_running") store.setToolInterruptRequest(toolExecutionId, false);
+      return receipt;
+    } catch (error) {
+      if (currentHandle === handle && ownership === runOwnershipEpoch) {
+        store.setToolInterruptRequest(toolExecutionId, false);
+        store.appendNotice(`Could not interrupt the shell: ${errorText(error)}`, "warn");
+      }
+      throw error;
+    }
+  }
+
   function cancelCurrentRun(): boolean {
     if (bashAbort) {
       // Aborting is idempotent at the platform boundary, but it must not be
@@ -1002,6 +1043,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     executionId: string;
     initialStatus: StatusLine;
     disconnectPolicy?: HostedRunRef["disconnect_policy"];
+    interactiveControl?: boolean;
     run: (setHandle: (h: RunHandle) => void) => Promise<RunEnvelope>;
     afterRun?: (envelope: RunEnvelope) => void;
     onStored: (envelope: RunEnvelope, stored: StoredRun, sink: RunSink) => void;
@@ -1022,6 +1064,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setSessionUsageBaseline(baseline === undefined ? null : { ...baseline });
     setDisconnectPolicy(hosted ? (opts.disconnectPolicy ?? "cancel") : "cancel");
     setRunActive(true);
+    setInteractiveControl(opts.interactiveControl !== false);
     setCompactionActive(false);
     setRunStartedAt(Date.now());
     setStatus(opts.initialStatus);
@@ -1044,6 +1087,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       currentHandle = undefined;
       workflowRunId = null;
       setRunActive(false);
+      setInteractiveControl(false);
       setCompactionActive(false);
       attention?.setTitle(null);
       if (heldIngest?.execution_id === executionId) {
@@ -2192,8 +2236,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (handle.acquireControl === undefined)
         throw new Error("backend does not support control of an existing observation");
       await handle.acquireControl(control);
-      if (currentHandle === handle && runOwnershipEpoch === ownership)
+      if (currentHandle === handle && runOwnershipEpoch === ownership) {
+        setInteractiveControl(true);
         setStatus(["controlling hosted run"]);
+      }
       return;
     }
     if (ref.execution_state === "unknown")
@@ -2232,6 +2278,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       sess,
       executionId: ref.execution_id,
       initialStatus: [control === "observe" ? "observing hosted run" : "reattached to hosted run"],
+      interactiveControl: control !== "observe",
       disconnectPolicy: ref.disconnect_policy,
       run: (setHandle) => {
         const handle = client.attachRun!({
@@ -2296,6 +2343,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     onEvent,
     onMemoryIngest,
     cancelCurrentRun,
+    canControlCurrentRun,
+    interruptTool,
     compactCurrentRun,
     inspectCurrentContext,
     fitCurrentContext,

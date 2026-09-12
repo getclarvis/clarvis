@@ -149,6 +149,9 @@ const runHandle = {
     void request;
   },
   async cancel() {},
+  async interruptTool(toolExecutionId) {
+    return { tool_execution_id: toolExecutionId, status: "not_running" };
+  },
   async respond(response) {
     void response;
   },

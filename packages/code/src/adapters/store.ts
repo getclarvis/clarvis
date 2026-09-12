@@ -318,6 +318,12 @@ export interface TranscriptStore {
    *   concurrent calls for the same key share one fetch.
    */
   rehydrate(key: string): Promise<void>;
+  /**
+   * Mark or clear a pending operator interrupt on the live tool with this token.
+   *
+   * @returns whether a running matching node was found.
+   */
+  setToolInterruptRequest(toolExecutionId: string, pending: boolean): boolean;
 }
 
 /** Construction-time dependencies for {@link createTranscriptStore}. */
@@ -1058,6 +1064,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             m.status = "error";
             m.toolPhase = "interrupted";
             m.error = "Execution scope closed without an authoritative tool result.";
+            m.control = undefined;
+            m.interruptRequest = undefined;
             m.liveOutput = undefined;
             foldDefaults.set(m.key, true);
           });
@@ -1148,6 +1156,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             node.status = "error";
             node.toolPhase = phase;
             node.error = reason;
+            node.control = undefined;
+            node.interruptRequest = undefined;
             node.inputChars = undefined;
             node.inputStreamChars = undefined;
             node.inputComplete = undefined;
@@ -1271,6 +1281,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.args = asArgs(event.arguments);
               n.status = "running";
               Object.assign(n, reduceToolLifecycle(n, { type: "start" }));
+              n.control = event.control;
+              n.interruptRequest = undefined;
               const described = describeCall(event.server, event.tool, asArgs(event.arguments));
               if (described !== undefined) n.signature = described.signature;
             });
@@ -1704,7 +1716,9 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.error = event.error;
             n.guard = event.guard;
             n.status = event.ok ? "ok" : "error";
-            n.toolPhase = event.ok ? "completed" : "failed";
+            n.toolPhase = event.interruption ? "interrupted" : event.ok ? "completed" : "failed";
+            n.control = undefined;
+            n.interruptRequest = undefined;
             n.liveOutput = undefined;
             n.inputChars = undefined;
             n.inputStreamChars = undefined;
@@ -1969,5 +1983,22 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     openRun,
     clear,
     rehydrate,
+    setToolInterruptRequest(toolExecutionId, pending) {
+      let found = false;
+      for (let i = 0; i < state.nodes.length; i += 1) {
+        const node = state.nodes[i];
+        if (
+          node?.kind !== "tool_call" ||
+          node.control?.tool_execution_id !== toolExecutionId ||
+          node.toolPhase !== "running"
+        )
+          continue;
+        found = true;
+        patchKind(i, "tool_call", (n) => {
+          n.interruptRequest = pending ? "pending" : undefined;
+        });
+      }
+      return found;
+    },
   };
 }

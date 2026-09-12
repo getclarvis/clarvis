@@ -245,6 +245,10 @@ describe("kernel loopback transport", () => {
       messages: [{ role: "user", content: "Do it" }],
       agent: "solo",
     });
+    await expect(handle.interruptTool("tok_shell")).resolves.toEqual({
+      tool_execution_id: "tok_shell",
+      status: "not_running",
+    });
     const events: RunEvent[] = [];
     for await (const event of handle.events) events.push(event);
     const result = await handle.done;
@@ -771,6 +775,10 @@ describe("kernel loopback transport", () => {
       cancel: async () => {
         cancelCalls += 1;
       },
+      interruptTool: async (toolExecutionId) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running",
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -871,6 +879,10 @@ describe("kernel loopback transport", () => {
         compactRequest = request;
       },
       cancel: async () => {},
+      interruptTool: async (toolExecutionId) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running",
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -899,6 +911,17 @@ describe("kernel loopback transport", () => {
       execution_id: handle.execution_id,
       request: "keep decisions",
     });
+    await expect(
+      connection.handle(WIRE_METHODS.runsInterruptTool, {
+        execution_id: handle.execution_id,
+        tool_execution_id: "tok_shell",
+      }),
+    ).resolves.toEqual({ tool_execution_id: "tok_shell", status: "not_running" });
+    await expect(
+      connection.handle(WIRE_METHODS.runsInterruptTool, {
+        execution_id: handle.execution_id,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     rejectDone(new Error("provider token leaked: sk-secret"));
     await Bun.sleep(0);
 
@@ -933,6 +956,10 @@ describe("kernel loopback transport", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running",
+      }),
       respond: async () => {},
       onElicit: () => {},
     };

@@ -138,6 +138,11 @@ export interface ToolCallDetail {
   diff?: string;
   /** Final command-review outcome, present only when the host guard exposes its mode. */
   guard?: CommandGuardReview;
+  /**
+   * Operator interruption of this invocation. Present only when the child
+   * signal aborted while the run remained live. Implies a non-null `error`.
+   */
+  interruption?: { source: "operator" };
 }
 
 /** Persisted final command-review fact attached to its terminal tool call. */
@@ -162,6 +167,11 @@ export interface ToolCallStartedDetail {
   started_at: number;
   name: string;
   arguments: unknown;
+  /**
+   * Live operator control for this physical invocation. Present only while the
+   * call is interruptible; omitted from historical events without the field.
+   */
+  control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
 }
 
 /**

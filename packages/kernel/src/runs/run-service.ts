@@ -184,6 +184,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           },
           steer: context.steer,
           compaction: context.compaction,
+          toolInterrupts: context.toolInterrupts,
           externalSignal: context.signal,
           elicit: context.elicit,
         };

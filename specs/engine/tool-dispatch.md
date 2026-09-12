@@ -29,6 +29,14 @@ cannot influence, not by convention.
 behind a policy layer — grant ceilings, exec-tool filtering, abort racing — so the rest of the engine
 never touches the feature package directly.
 
+`ToolHandler.handle` receives an optional per-invocation `ToolInvocationContext` with the effective
+`AbortSignal` and, for interruptible builtins, `control`. Only the coding-tools handler opts in, and
+only when the canonical name is `shell`. The loop mints an opaque `toolExecutionId`, combines the run
+signal with a child controller, and continues after an operator interrupt instead of treating it as
+run cancellation. Production: `packages/capability/src/loop-contract.ts`,
+`packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/tools/tool-interrupt.ts`.
+Test: `packages/loop/tests/unit/tool-interrupt.test.ts`.
+
 ## 2. Surface
 
 Model guidance follows [`model-instructions.md`](../cross-cutting/model-instructions.md).

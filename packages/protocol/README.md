@@ -165,7 +165,12 @@ announcement is neither execution nor approval. UI state never enters this DTO.
 argument progress; optional `stream_chars` is the distinct physical provider-stream character
 total and may advance while arguments remain unavailable. Its optional `complete: true` closes only
 the argument-composition phase; `tool_call_started` still owns actual
-execution start and terminal `tool_call` still owns the tool outcome. A client must not infer that a
+execution start and terminal `tool_call` still owns the tool outcome.
+A live builtin `shell` may carry `control: { tool_execution_id, actions: ["interrupt"] }`
+on start. The operator interrupts that invocation through `RunHandle.interruptTool`
+and receives `accepted`, `already_requested`, or `not_running`. The terminal may then
+carry `interruption: { source: "operator" }` with `ok: false`. Absence of these
+fields keeps the previous contract. A client must not infer that a
 prior call ended merely because another tool input starts, because providers may compose calls in
 parallel.
 

@@ -32,7 +32,7 @@ a 21,000-character regression ceiling; that is not a provider token count.
   copy, move, mkdir, remove and stat.
 - Discovery: directory listing, tree, glob, grep and diff.
 - Project-wide regular-expression replacement.
-- Shell execution and background-process monitors, including a per-call host escalation field when Isolation is Sandbox.
+- Shell execution and background-process monitors, including a per-call host escalation field when Isolation is Sandbox. An abort of the process tree is a generic `Command aborted` error; the engine, not this package, distinguishes run cancellation from a selective operator interrupt of one live `shell`. `monitor_*` is not interruptible through that path.
 - Read-only and workspace-confined surfaces.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.

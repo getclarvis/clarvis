@@ -45,7 +45,11 @@ that control. Production: `createShell` in `packages/tools/src/tools/shell.ts` a
 and `packages/loop/tests/unit/toolset.test.ts`. The real output/continuation contract is exercised by
 [selective-shell-interrupt.test.ts](../../packages/loop/tests/integration/selective-shell-interrupt.test.ts).
 Test: [shell.test.ts](../../packages/tools/tests/integration/shell.test.ts) covers successful spawn,
-failed spawn, pre-abort and abort during output finalization. Production: `runCommand` in
+failed spawn, pre-abort and abort during output finalization. Its `keeps a completed shell successful
+when abort arrives after exit but before stdio close` case wraps native spawn through `createShell`'s
+injected process dependency and aborts on the child's real `exit` event, before `close`; it does not
+infer completion from a fixed sleep or a platform-specific detached-process command.
+Production: `runCommand` in
 [shell.ts](../../packages/tools/src/tools/shell.ts).
 
 Underneath both, `resolveShell`/`shellArgs`/`exitCaptureWrapper` (`packages/tools/src/shell.ts`)

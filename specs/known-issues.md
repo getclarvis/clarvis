@@ -1905,10 +1905,12 @@ directory link.
 The discipline held as the file grew: `canSymlink` and `nonUtf8FilenamesSupported`
 are **probed** rather than derived from `process.platform`, because Windows can symlink given
 Developer Mode or elevation and encoding validity is a property of the filesystem rather than the OS;
-`detachedSleepCommand` records that `setsid(1)` is util-linux and absent on macOS and the
-BSDs, where the fixture silently stopped constructing its scenario at all and passed vacuously on
-Linux while failing everywhere else. `lines()` normalizes CRLF so a fixture never fails on
-the line ending alone.
+the former detached-sleep fixture depended on `setsid(1)`, which is absent on macOS and the
+BSDs. It was removed when its last consumer, the late-abort shell regression, switched to observing
+native process `exit` before `close` rather than assuming completion after 50 ms. The Windows CI
+failure showed that the fixed delay could cancel a still-running shell. The replacement in
+`packages/tools/tests/integration/shell.test.ts` runs on every platform without a detached-process
+command. `lines()` normalizes CRLF so a fixture never fails on the line ending alone.
 
 Four packages joined the Windows job after this record was written. Plan and Paths retain local
 predicates in `packages/plan/tests/integration/file-repository.test.ts`,

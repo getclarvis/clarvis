@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { spawn } from "node:child_process";
 import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
@@ -14,7 +15,6 @@ const {
   chmod,
   modeBitsEnforced,
   lines,
-  detachedSleepCommand,
   posixShell,
   backgroundSettleIsMeasurable,
 } = await import("../helpers/fixtures.ts");
@@ -243,24 +243,32 @@ describe("shell", () => {
       expect(r.json.error).toBe("aborted");
     });
 
-    it.skipIf(detachedSleepCommand === undefined)(
-      "keeps a completed shell successful when abort arrives during descendant stdio drain",
-      async () => {
-        const ac = new AbortController();
-        const p = callTool(
-          "shell",
-          { command: `${detachedSleepCommand} & echo hi`, timeout_ms: 60000 },
-          config,
-          ac.signal,
-        );
-        await sleep(50);
-        ac.abort();
-        const r = await p;
-        expect(r.isError).toBe(false);
-        expect(r.json.exit_code).toBe(0);
-        expect(r.json.stdout).toContain("hi");
-      },
-    );
+    it("keeps a completed shell successful when abort arrives after exit but before stdio close", async () => {
+      const controller = new AbortController();
+      const events: string[] = [];
+      const shell = createShell({
+        spawn: ((...args: Parameters<typeof spawn>) => {
+          const child = spawn(...args);
+          child.once("exit", () => {
+            events.push("exit");
+            controller.abort();
+            events.push("abort");
+          });
+          child.once("close", () => events.push("close"));
+          return child;
+        }) as typeof spawn,
+      });
+      const result = await shell.handler({ command: "echo hi" }, config, controller.signal);
+      expect(events).toEqual(["exit", "abort", "close"]);
+      expect(controller.signal.aborted).toBe(true);
+      expect(typeof result).toBe("string");
+      expect(JSON.parse(result as string)).toMatchObject({
+        exit_code: 0,
+        stdout: expect.stringContaining("hi"),
+        signal: null,
+        timed_out: false,
+      });
+    });
   });
 
   describe("output limits and spill", () => {

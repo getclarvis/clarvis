@@ -452,6 +452,10 @@ function createGuardRuntimeResolver(
       effectEnabled || chosenHuman !== undefined || humanElicit !== undefined
         ? async (req) => {
             if (effectEnabled && guardMode === "auto") {
+              if (req.matched !== "host_command" && (await approval?.covers(req)) === true) {
+                recordAnswer(audit, "session_allowlist", true, false);
+                return { allowed: true, answerer: "session_allowlist" };
+              }
               const batch = batches.get(req.args);
               let result =
                 batch === undefined

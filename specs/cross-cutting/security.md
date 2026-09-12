@@ -1479,3 +1479,10 @@ The execution ceiling and captured placement do not change when intent changes. 
 [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 The complete boundaries are in [effect review](../execution/effect-review.md).
+Host effect probes do not attest a shell whose inherited Git/GitHub or executable-loading overrides
+differ from the admitted probe environment. Only lookup/configuration roots are recaptured from the
+actual spawn; arbitrary host variables are not forwarded. The comparison is repeated after review.
+Production: `resolveEffectEnvironment` in
+[environment.ts](../../packages/kernel/src/guard/effects/environment.ts). Test:
+[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts), including
+environment changes during a reviewer decision.

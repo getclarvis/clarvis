@@ -76,6 +76,43 @@ function response(name: string, args: unknown): LLMCallResult {
   };
 }
 describe("host-validated effect review", () => {
+  test("retains historical target exclusions without admitting historical target grants", () => {
+    const { ledger, registry, batch, envelope } = fixture();
+    const exclusions = [{ effect_id: "workspace.content.write", target_digests: [target] }];
+    expect(installAuthorityEnvelope(ledger.reader, { ...envelope, exclusions })).toBe(true);
+    const nextTarget = effectDigest("other", "branch");
+    const nextBatch = structuredClone(batch);
+    nextBatch.facts[0]!.target!.digest = nextTarget;
+    const next = {
+      ...envelope,
+      objectives: envelope.objectives.map((objective) => ({
+        ...objective,
+        target_digests: [nextTarget],
+      })),
+      grants: envelope.grants.map((grant) => ({ ...grant, target_digests: [nextTarget] })),
+      exclusions,
+    };
+    expect(validateAuthorityEnvelope(next, ledger.reader, registry, nextBatch)).toEqual(next);
+    expect(
+      validateAuthorityEnvelope({ ...next, exclusions: [] }, ledger.reader, registry, nextBatch),
+    ).toBeUndefined();
+    expect(
+      validateAuthorityEnvelope(
+        { ...next, grants: envelope.grants },
+        ledger.reader,
+        registry,
+        nextBatch,
+      ),
+    ).toBeUndefined();
+    expect(
+      validateAuthorityEnvelope(
+        { ...next, exclusions: [...exclusions, { target_digests: [effectDigest("invented")] }] },
+        ledger.reader,
+        registry,
+        nextBatch,
+      ),
+    ).toBeUndefined();
+  });
   test("rejects unknown exclusions and prevents removing an installed operator exclusion", () => {
     const { ledger, registry, batch, envelope } = fixture();
     expect(

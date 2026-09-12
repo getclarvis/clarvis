@@ -114,9 +114,13 @@ export function validateAuthorityEnvelope(
       return undefined;
   }
   for (const item of envelope.exclusions) {
+    const retained = [
+      ...(state.envelope?.exclusions ?? []),
+      ...(state.ceiling?.exclusions ?? []),
+    ].some((previous) => JSON.stringify(previous) === JSON.stringify(item));
     if (
       (item.effect_id !== undefined && registry.get(item.effect_id) === undefined) ||
-      item.target_digests?.some((target) => !targets.has(target))
+      (!retained && item.target_digests?.some((target) => !targets.has(target)))
     )
       return undefined;
   }

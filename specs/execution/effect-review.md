@@ -80,6 +80,14 @@ output cap. They never execute the reviewed operation. The resolver reattests sh
 returning a model allow. Network, authentication, malformed output or target mismatch closes the
 attestation. Unsupported external variants retain human review; registry membership is not proof
 that every CLI spelling has a complete attestor.
+Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
+`resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
+close attestation before any query; arbitrary environment values are not copied into probes. The
+same check runs during reattestation after review, including explicit Host escalation. Production:
+[environment.ts](../../packages/kernel/src/guard/effects/environment.ts). Test:
+`refuses an inherited %s override before querying or approving a target` and
+`routes the real resolver through complete attestation and validated grants` in
+[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 Literal `git -C` is resolved within the workspace; dynamic or escaping directories remain closed.
 An omitted GitHub repository is resolved only from the canonical host origin.
 
@@ -112,6 +120,11 @@ bounded schema. Unknown effects, evidence IDs, targets or constraints invalidate
 Only bounded descriptors accept prerequisite inference. Explicit effects require direct evidence;
 human-only descriptors are never inferable. Existing exclusions and inherited ceilings cannot be
 removed by the model. The decision must cite a covering grant for every composed fact.
+An unchanged exclusion already present in the ledger or inherited ceiling may retain a target from
+an earlier call. New exclusions and all new grants still require current-call targets; retaining an
+exclusion never admits a historical target for a grant. Production: `validateAuthorityEnvelope`.
+Test: `retains historical target exclusions without admitting historical target grants` in
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
 Cache identity includes authority revision and exact facts. Failures, invalid responses, uncertainty
 and human fallback do not become clean cached verdicts. Failed-only rerun identity is reserved once
@@ -148,6 +161,11 @@ Review `auto` always uses this host-validated service; there is no compatibility
 a model verdict directly into authority. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
+Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings
+still stop the call first, and explicit Host escalation never consumes session consent. Human
+consent is not operator evidence. Production: `createGuardResolver` in
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
+[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts).
 
 Compiler and judge have their own explicit timeout, retries, output cap and reasoning effort.
 Timeout, auth, quota, rate limit, transport, admission, cancellation, invalid response and unknown

@@ -11,6 +11,7 @@ import { effectDigest, effectFact } from "./facts.ts";
 import { repository } from "./git.ts";
 import { githubRerun } from "./github-cli.ts";
 import { projectLiteralData } from "./literal-data.ts";
+import { resolveEffectEnvironment } from "./environment.ts";
 
 /** Closed composition of initially supported shell effects; one unknown segment closes the batch. */
 export async function attestShell(
@@ -22,6 +23,9 @@ export async function attestShell(
     reviewability: "human_only",
   });
   if (typeof ctx.args.command !== "string" || process.platform === "win32") return unknown();
+  const environment = resolveEffectEnvironment(ctx, deps.environment);
+  if (environment === undefined) return unknown();
+  deps = { ...deps, environment };
   const projection = projectLiteralData(ctx.args.command);
   const shell = analyzeShell(projection.source, posixDialect);
   if (shell.segments.length > 32) return unknown();

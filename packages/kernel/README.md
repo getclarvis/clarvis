@@ -834,6 +834,11 @@ operator-owned `effect_review` settings or the default model; `guard_judge` supp
 overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
 cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
 owns the host evidence ledger, effect registry, rollout and validated review path.
+Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
+matches and explicit Host escalation retain their precedence. Shell attestation recaptures process
+lookup/configuration roots from the actual spawn and refuses unmatched execution-affecting
+environment overrides. Historical target exclusions survive reviews of other targets without
+authorizing grants for those historical targets.
 
 The resolver snapshots host-owned placement once per run: enabled native sandbox means
 contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count

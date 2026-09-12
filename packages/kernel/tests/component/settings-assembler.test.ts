@@ -739,14 +739,11 @@ describe("settings run assembler · prompt cache", () => {
     expect(await ttlFor({}, { guard_mode: "on" })).toBe("1h");
   });
 
-  // Mode `auto` builds the judge only when a guard_judge is configured and
-  // otherwise falls back to the human prompt, so "auto with no judge" parks on a
-  // human exactly as `on` does.
-  it("treats auto WITHOUT a judge as parking on a human, and auto WITH one as not", async () => {
+  it("parks Auto on a human when the reviewer provider cannot resolve", async () => {
     expect(await ttlFor({}, { guard_mode: "auto" })).toBe("1h");
-    expect(
-      await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } }),
-    ).toBeUndefined();
+    expect(await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } })).toBe(
+      "1h",
+    );
   });
 
   it("leaves the TTL to the loop when the guard is off", async () => {

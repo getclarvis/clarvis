@@ -70,14 +70,7 @@ function validHostedQuestion(value: unknown): value is ElicitationRequest {
     return false;
   const detail = value.detail;
   if (detail === undefined) return value.kind !== "guard_confirm";
-  return (
-    wireRecord(detail) &&
-    only(detail, ["command", "cwd", "reason", "warning"]) &&
-    typeof detail.command === "string" &&
-    typeof detail.cwd === "string" &&
-    typeof detail.reason === "string" &&
-    (detail.warning === undefined || typeof detail.warning === "string")
-  );
+  return elicitationCommandDetailSchema.safeParse(detail).success;
 }
 
 /** Reject malformed notification discriminants before allocating per-observation history. */
@@ -178,3 +171,4 @@ export function validHostedAttachment(
     )
   );
 }
+import { elicitationCommandDetailSchema } from "../guard/review-detail-schema.ts";

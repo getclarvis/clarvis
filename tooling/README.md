@@ -58,6 +58,7 @@ never require short-name selection.
 Both Containerfiles and the build helper carry private protocol revision 12, matching the kernel
 worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
 model policy, resolved operator loop defaults/ceilings and the bound goal capability projection.
+Operator authority and effect review remain outside the guest protocol.
 Older images are refused at admission and must be rebuilt; changing an active runtime
 image remains an operator choice.
 

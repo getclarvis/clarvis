@@ -1,4 +1,5 @@
 import { PLANS_DEFAULTS } from "@clarvis/plan/settings";
+import { parseModelRef, resolveProvider, type ProviderConfig } from "@clarvis/capability";
 import {
   agentPromptOf,
   mcpServerSettingsSchema,
@@ -19,6 +20,7 @@ import type { PlansMode } from "@clarvis/protocol";
 /** The subset of merged config settings this assembler reads when building a run
  * request; deliberately loose, since the config store owns the full schema. */
 interface EngineSettings {
+  effect_review?: { model?: string };
   default_model?: string;
   default_vision_model?: string;
   default_reasoning_effort?: string;
@@ -494,7 +496,17 @@ export function createSettingsRunAssembler(
         : {}),
       ...(params.prompt_cache_ttl !== undefined
         ? { prompt_cache_ttl: params.prompt_cache_ttl }
-        : guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)
+        : guardParksOnHuman(
+              params.guard_mode,
+              merged.guard,
+              reviewerResolves(
+                params.guard_judge?.model ??
+                  merged.effect_review?.model ??
+                  merged.default_model ??
+                  options.defaultModel,
+                merged.providers,
+              ),
+            )
           ? { prompt_cache_ttl: "1h" as const }
           : {}),
       ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
@@ -530,4 +542,11 @@ export function createSettingsRunAssembler(
         : {}),
     };
   };
+}
+
+/** Prompt presence is independent of whether the configured reviewer provider can run. */
+function reviewerResolves(model: string | undefined, providers: unknown[] | undefined): boolean {
+  if (model === undefined) return false;
+  const ref = parseModelRef(model);
+  return resolveProvider(ref.provider, (providers ?? []) as ProviderConfig[], ref.modelId).ok;
 }

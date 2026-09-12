@@ -87,6 +87,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
     defaultOwner: owner,
     ownershipMode: "single",
     sessionAllowlistFor: (run) => registry?.guardAllowlistFor(run),
+    operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
     onRuntimePlacement(notice) {
       options.kernel.onRuntimePlacement?.(notice);
       if (notice.message !== undefined) publishRuntimeNotice(notice.message);

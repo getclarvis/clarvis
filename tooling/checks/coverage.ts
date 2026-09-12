@@ -118,6 +118,7 @@ const NO_COUNTER_ALLOWLIST = {
     "src/subscriptions/types.ts",
     // Type-only.
     "src/config/builtin-agents/types.ts",
+    "src/guard/effects/types.ts",
     "src/connection-health.ts",
     "src/ports/plugin-repository.ts",
     "src/ports/process-runner.ts",
@@ -182,7 +183,7 @@ const NO_COUNTER_ALLOWLIST = {
     // Type-only.
     "src/guard/dialect.ts",
     "src/guard/types.ts",
-    "src/sandbox-entry.ts",
+    "src/guard/effect-review.ts",
     "src/tools/types.ts",
     // Pure re-export barrels for the narrow shell and monitor subpaths.
     "src/monitor-entry.ts",

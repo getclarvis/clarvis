@@ -1,3 +1,4 @@
+import type { RunServiceConfig } from "../runs/run-service.ts";
 import { boundPromise } from "@clarvis/loop/host";
 import {
   bestEffort,
@@ -109,6 +110,8 @@ export interface HostedRegistryConnection {
 
 /** Shared authority over all connections to one workspace/owner generation. */
 export interface HostedRegistry {
+  /** Live semantic-authority binding; retirement revokes its signal synchronously. */
+  operatorAuthorityFor: NonNullable<RunServiceConfig["operatorAuthorityFor"]>;
   connect(role: HostingPeer["role"]): HostedRegistryConnection;
   guardAllowlistFor(run: { executionId: string; owner: string }): GuardSessionAllowlist | undefined;
   occupied(sessionId: string): boolean;
@@ -143,6 +146,7 @@ export interface HostedRegistry {
 }
 
 interface Entry {
+  operatorInput?: boolean;
   ref: HostedRunRef;
   occupancy?: HostedOccupancy;
   prepared?: PreparedHostedTurn;
@@ -221,11 +225,14 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
   const entries = new Map<string, Entry>();
   const connections = new Map<string, ConnectionState>();
   const allowlists = new Map<string, GuardSessionAllowlist>();
+  const authorityScopes = new Map<string, AbortController>();
   const receipts = new Map<string, { receipt: HostedRunReceipt; expires_at: number }>();
   const seenOperations = new Set<string>();
   const admission = createHostedAdmission({
     ...options.limits,
     revokeInteractiveScope(scope) {
+      authorityScopes.get(scope)?.abort();
+      authorityScopes.delete(scope);
       allowlists.get(scope)?.revoke();
       allowlists.delete(scope);
       options.retireConfigurationSession(scope);
@@ -657,6 +664,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         ? admission.reserve(peer, input.session_id, "run", input.params.execution_id)
         : admission.reserveContinuation(continuation, input.params.execution_id);
     const entry: Entry = {
+      operatorInput: continuation === undefined,
       occupancy,
       preparation: new AbortController(),
       acknowledged: false,
@@ -1132,6 +1140,26 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
         allowlists.set(scope, allowlist);
       }
       return allowlist;
+    },
+    operatorAuthorityFor({ owner, executionId }) {
+      const entry = entries.get(executionId);
+      if (owner !== options.owner || entry?.occupancy === undefined) return undefined;
+      const scope = admission.control(entry.occupancy).interactiveScope;
+      if (scope === undefined) return undefined;
+      let controller = authorityScopes.get(scope);
+      if (controller === undefined) {
+        controller = new AbortController();
+        authorityScopes.set(scope, controller);
+      }
+      return {
+        captureInput: entry.operatorInput === true,
+        binding: {
+          owner_key_name: owner,
+          session_id: entry.ref.session_id,
+          controller_epoch: scope,
+        },
+        signal: controller.signal,
+      };
     },
     occupied: (sessionId) => unresolvedSessions.has(sessionId) || admission.occupied(sessionId),
     controlsConversation: (peerId, sessionId) =>

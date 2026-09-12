@@ -47,14 +47,18 @@ export type GuardMode = "off" | "on" | "auto";
 
 /** Caller-owned judge configuration for guard confirmations. */
 export interface GuardJudge {
-  /** Caller-owned judge system prompt; the kernel relays it verbatim. */
-  prompt: string;
+  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
+  prompt?: string;
+  /** Data below the host's immutable safety policy. */
+  guidance?: string;
   /** Model id the judge runs on; omitted defers to the kernel's default. */
   model?: string;
   /** Fallback verdict when the judge is not confident: prompt the user or deny. */
   on_unsure?: "ask" | "deny";
   /** Milliseconds to wait for the judge before falling back. */
   timeout_ms?: number;
+  /** Independent reviewer retry budget. */
+  max_retries?: number;
 }
 
 /** Whether memory is engaged for a run. */
@@ -326,6 +330,18 @@ interface Attributed {
 
 /** Durable final decision made by the command guard for one tool call. */
 export interface CommandGuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";
@@ -695,7 +711,7 @@ export type RunEvent =
   | { type: "mcp_degraded"; at: Timestamp; servers: { name: string; reason: string }[] };
 
 /** Structured command context on a `guard_confirm` elicitation. */
-export interface ElicitationCommandDetail {
+export interface ElicitationCommandDetail extends EffectReviewDetail {
   /** The literal command awaiting approval, exactly as the agent wants to run it. */
   command: string;
   /** Absolute directory the command would run in. */
@@ -854,3 +870,4 @@ export interface RunService {
    */
   delete(execution_id: string): Promise<void>;
 }
+import type { EffectReviewDetail } from "./effect-review.ts";

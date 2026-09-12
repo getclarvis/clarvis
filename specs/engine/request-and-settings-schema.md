@@ -829,3 +829,14 @@ is a compile-time-only edge with zero runtime cost.
   used at `packages/loop/src/validation/request/provider-rules.ts`) is out of this document's scope
   (owned by `@clarvis/capability`); what is verified is only that `rejectProviderMapIssues` calls it to
   reject any leftover `${` after stripping every well-formed match.
+## Shared reviewer settings
+
+`effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
+uncertainty fallback and operator rollout. Kernel scope resolution admits only reductions from
+workspace configuration. `guard_judge` accepts optional guidance and deprecated prompt data, plus
+explicit overrides; a full prompt is not required. Authority seeds remain absent from the strict
+public request schema. Production:
+[effect-review-settings.ts](../../packages/loop/src/runtime/capabilities/effect-review-settings.ts),
+[tools-settings.ts](../../packages/loop/src/runtime/capabilities/tools-settings.ts), and
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). The complete contract is
+[effect review](../execution/effect-review.md).

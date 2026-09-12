@@ -32,6 +32,8 @@ import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { NativeConfigurationRuns } from "../configuration/native-configuration.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import { randomUUID } from "node:crypto";
+import type { OperatorAuthoritySeed, OperatorAuthorityBinding } from "@clarvis/capability";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -41,7 +43,7 @@ export type RunRequestAssembler = (params: StartRunParams & { execution_id: stri
 /** Trusted host preparation; never accepted as a protocol start parameter. */
 export type PreparedRunExecution =
   | { kind: "ordinary"; rawBody: unknown; goal?: GoalExecutionPolicy }
-  | { kind: "workflow"; start(): RunHandle };
+  | { kind: "workflow"; start(seed?: OperatorAuthoritySeed, signal?: AbortSignal): RunHandle };
 
 /** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
 export interface KernelRunService extends RunService {
@@ -59,6 +61,15 @@ export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
 
 /** Configuration for {@link createRunService}. */
 export interface RunServiceConfig {
+  /** Live host admission; public session ids alone are never binding evidence. */
+  operatorAuthorityFor?: (run: { owner: string; executionId: string }) =>
+    | {
+        binding: OperatorAuthorityBinding;
+        signal: AbortSignal;
+        /** False for a host-generated continuation body; its prior authority may still be restored. */
+        captureInput?: boolean;
+      }
+    | undefined;
   /** Engine dependencies passed to `executeRun`; its `traceStore` also backs
    * this service's list/get/delete. */
   deps: ExecuteRunDeps;
@@ -73,7 +84,11 @@ export interface RunServiceConfig {
   isManagerRun?: (params: StartRunParams) => boolean;
   /** Runs a manager turn as a workflow, returning the same {@link RunHandle}. Called
    * by `start` only when {@link RunServiceConfig.isManagerRun} returns true. */
-  runManagerWorkflow?: (params: StartRunParams & { execution_id: string }) => RunHandle;
+  runManagerWorkflow?: (
+    params: StartRunParams & { execution_id: string },
+    seed?: OperatorAuthoritySeed,
+    signal?: AbortSignal,
+  ) => RunHandle;
   /** How long the event stream lingers, after each `memory_ingest` notice, for
    * the next one to arrive before giving up. Test override; defaults to
    * {@link DEFAULT_INGEST_CLOSE_GRACE_MS}. */
@@ -140,15 +155,61 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
     executionId: string,
     prepared?: PreparedRunExecution,
   ): RunHandle {
+    const authorityAdmission = cfg.operatorAuthorityFor?.({ owner, executionId });
+    const admittedBinding = authorityAdmission?.binding;
+    const previousAuthority =
+      params.continue_from === undefined
+        ? undefined
+        : store.getById(owner, params.continue_from)?.operator_authority_state;
+    const continuedOutcome =
+      admittedBinding !== undefined &&
+      previousAuthority?.status === "active" &&
+      previousAuthority.binding.owner_key_name === owner &&
+      previousAuthority.binding.session_id === admittedBinding.session_id &&
+      previousAuthority.binding.controller_epoch === admittedBinding.controller_epoch
+        ? previousAuthority.binding.outcome_id
+        : undefined;
+    const operatorAuthoritySeed: OperatorAuthoritySeed | undefined =
+      cfg.operatorAuthorityFor !== undefined && authorityAdmission === undefined
+        ? undefined
+        : {
+            binding: {
+              ...(admittedBinding ?? {
+                owner_key_name: owner,
+                session_id: executionId,
+                controller_epoch: randomUUID(),
+              }),
+              outcome_id: continuedOutcome ?? randomUUID(),
+            },
+            evidence: (authorityAdmission?.captureInput === false ? [] : params.messages)
+              .filter((message) => message.role === "user")
+              .map((message) => ({
+                id: randomUUID(),
+                source: params.continue_from === undefined ? "start" : "continue",
+                text:
+                  typeof message.content === "string"
+                    ? message.content
+                    : message.content
+                        .filter((part) => part.type === "text")
+                        .map((part) => part.text)
+                        .join("\n"),
+                execution_id: executionId,
+              })),
+          };
     const configuration = cfg.nativeConfiguration?.requested(params) === true;
-    if (!configuration && prepared?.kind === "workflow") return prepared.start();
+    if (!configuration && prepared?.kind === "workflow")
+      return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);
     if (
       !configuration &&
       prepared === undefined &&
       cfg.runManagerWorkflow !== undefined &&
       cfg.isManagerRun?.(params) === true
     ) {
-      return cfg.runManagerWorkflow({ ...params, execution_id: executionId });
+      return cfg.runManagerWorkflow(
+        { ...params, execution_id: executionId },
+        operatorAuthoritySeed,
+        authorityAdmission?.signal,
+      );
     }
     return createManagedRun({
       executionId,
@@ -162,6 +223,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           cfg.executeRun ??
           (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
         const args: Omit<RunExecutorArgs, "rawBody"> = {
+          operatorAuthoritySeed,
           owner,
           deps:
             goal === undefined
@@ -185,6 +247,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           steer: context.steer,
           compaction: context.compaction,
           externalSignal: context.signal,
+          operatorAuthoritySignal: authorityAdmission?.signal,
           elicit: context.elicit,
         };
         const outcome = configuration

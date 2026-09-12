@@ -9,6 +9,7 @@ import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
 import { configurationRoots } from "@clarvis/paths";
+import { isCanonicalAuthoringPath } from "./guard/authoring-path.ts";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -42,6 +43,7 @@ function protectWorkspaceConfiguration(
   name: string,
   args: Record<string, unknown>,
   config: RuntimeConfig,
+  authoringReviewed = false,
 ): void {
   if (!NATIVE_MUTATION_TOOLS.has(name)) return;
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
@@ -49,6 +51,8 @@ function protectWorkspaceConfiguration(
   const context = buildGuardContext(name, args, config);
   const targets = name === "copy" ? context.paths.slice(1) : context.paths;
   for (const fact of targets) {
+    if (authoringReviewed && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
+      continue;
     assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
       code: "denied",
       message: `Workspace Clarvis configuration can only be changed through /clarvis-configure <change>, which requests operator approval: ${fact.raw}.`,
@@ -157,6 +161,7 @@ export function listTools(config: RuntimeConfig): ToolInfo[] {
 interface GuardGate {
   denied?: DispatchResult;
   review?: GuardReview;
+  authoringReviewed?: boolean;
 }
 
 async function applyGuard(
@@ -190,6 +195,9 @@ async function applyGuard(
       args: ctx.args,
       reason: decision.reason,
       shell: ctx.shell,
+      ...(decision.analysis === undefined ? {} : { analysis: decision.analysis }),
+      ...(decision.effect === undefined ? {} : { effect: decision.effect }),
+      ...(decision.effects === undefined ? {} : { effects: decision.effects }),
       ...(decision.matched !== undefined ? { matched: decision.matched } : {}),
       ...(decision.placement !== undefined ? { placement: decision.placement } : {}),
       ...(decision.network !== undefined ? { network: decision.network } : {}),
@@ -205,11 +213,21 @@ async function applyGuard(
     const answer = await config.elicit(req);
     const allowed = answer === true || (typeof answer === "object" && answer.allowed === true);
     const answerer = typeof answer === "object" ? answer.answerer : "human";
+    const finalReview = review(allowed ? "allowed" : "denied", answerer);
+    if (finalReview !== undefined && typeof answer === "object" && answer.review !== undefined) {
+      Object.assign(finalReview, answer.review);
+    }
     return allowed
-      ? { review: review("allowed", answerer) }
+      ? {
+          review: finalReview,
+          authoringReviewed:
+            decision.effects?.some(
+              (fact) => fact.id === "clarvis.authoring.write" && fact.attestation === "complete",
+            ) === true,
+        }
       : {
           denied: errorResult(new ToolError("denied", `command review did not approve: ${reason}`)),
-          review: review("denied", answerer),
+          review: finalReview,
         };
   } catch (err) {
     return { denied: errorResult(err) };
@@ -255,7 +273,7 @@ export async function dispatch(
   }
 
   try {
-    protectWorkspaceConfiguration(name, filled, config);
+    protectWorkspaceConfiguration(name, filled, config, true);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
@@ -265,6 +283,7 @@ export async function dispatch(
   if (gate.denied) return { ...gate.denied, ...(gate.review ? { guard: gate.review } : {}) };
 
   try {
+    protectWorkspaceConfiguration(name, filled, config, gate.authoringReviewed);
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {

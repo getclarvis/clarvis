@@ -1,3 +1,4 @@
+import type { Logger } from "@clarvis/capability";
 import type { ExecuteRunOutcome, SkillsProvider } from "@clarvis/loop";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { StartRunParams } from "@clarvis/protocol";
@@ -7,8 +8,15 @@ import type { RunExecutor, RunExecutorArgs } from "../runs/run-service.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
 import { CLARVIS_CONFIGURE_SKILL } from "../skills/clarvis-configure.ts";
 import { createConfigurationCapability } from "./capability.ts";
-import { configurationFileOperation, type ConfigurationFileRequest } from "./files.ts";
+import {
+  configurationFileMutationFacts,
+  configurationFileOperation,
+  type ConfigurationFileRequest,
+} from "./files.ts";
 import { kernelError } from "../core/errors.ts";
+import { attestConfiguration } from "../guard/effects/configuration.ts";
+import { createGuardEffectRegistry } from "../guard/effects/registry.ts";
+import { effectReviewServiceFor } from "../guard/effect-review-service.ts";
 
 type ConfigurationRunParams = StartRunParams & { execution_id: string };
 type ConfigurationRunArgs = Omit<RunExecutorArgs, "rawBody">;
@@ -42,6 +50,8 @@ export function createNativeConfigurationRuns(options: {
   nativeExecuteRun: RunExecutor;
   /** Publish actual native placement only while an approved configuration run is executing. */
   onActivity?: (active: boolean) => void;
+  /** Sanitized shared effect audit, independent of diagnostic log level. */
+  audit?: Logger;
 }): NativeConfigurationRuns {
   const owners = new Map<string, Map<string, Consent>>();
   let closed = false;
@@ -169,7 +179,33 @@ export function createNativeConfigurationRuns(options: {
         const capability = createConfigurationCapability({
           roots: options.roots,
           assertAuthorized,
-          operate: (request: ConfigurationFileRequest) => {
+          operate: async (request: ConfigurationFileRequest, authority, providers, llm) => {
+            const registry = createGuardEffectRegistry();
+            const reviewer = effectReviewServiceFor({
+              llm: llm ?? args.deps.llm,
+              providers: providers ?? [],
+              defaultModel: model,
+              authority,
+              registry,
+              options: settings.effect_review,
+              audit:
+                options.audit?.child?.({ run_id: params.execution_id, owner: args.owner }) ??
+                options.audit,
+              signal: externalSignal,
+            });
+            const preview = configurationFileMutationFacts(options.roots, request);
+            if (preview !== undefined) {
+              const fact = attestConfiguration(preview, registry);
+              reviewer.attest(fact, "configure_clarvis");
+              const receipt = await reviewer.review(
+                { facts: [fact], reviewability: fact.reviewability },
+                { operation: request.operation, root: request.root, path: request.path },
+                "configure_clarvis",
+              );
+              if (receipt.decision === "deny")
+                throw new Error("Configuration effect was denied by authority review.");
+              if (receipt.decision === "unsure") assertAuthorized();
+            }
             const write = () => configurationFileOperation(options.roots, request);
             const mutates =
               request.operation === "write" ||

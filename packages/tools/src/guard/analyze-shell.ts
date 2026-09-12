@@ -1,6 +1,6 @@
 import type { ShellDialect } from "./dialect.ts";
 import { currentDialect } from "./dialects/index.ts";
-import type { ShellFacts, Segment } from "./types.ts";
+import type { ShellFacts, Segment, ShellAnalysisIssue } from "./types.ts";
 
 /**
  * Statically analyze a shell command into the {@link ShellFacts} a guard reasons
@@ -43,6 +43,7 @@ export function analyzeShell(
   dialect: ShellDialect = currentDialect(),
 ): ShellFacts {
   const { segments: sources, balanced } = dialect.split(command);
+  if (!balanced && sources.length === 0) sources.push(command);
   const rewritten = dialect.analyzeSources?.(command, sources);
   const views =
     rewritten !== undefined && rewritten.length === sources.length ? rewritten : sources;
@@ -50,23 +51,40 @@ export function analyzeShell(
   const segments: Segment[] = [];
   const paths: string[] = [];
   const seen = new Set<string>();
-  let tokenUndecidable = false;
 
   for (const [index, source] of sources.entries()) {
     const view = views[index] ?? source;
     const tokens = dialect.tokenize(view);
     const { argv, envAssignments } = dialect.normalize(tokens.map((t) => t.text));
+    const analysisIssues: ShellAnalysisIssue[] = (dialect.analysisIssues?.(view) ?? []).map(
+      (issue) => ({ ...issue, segmentIndex: index }),
+    );
+    if (!dialect.decidable(view) && analysisIssues.length === 0) {
+      analysisIssues.push({ segmentIndex: index, kind: "tokenizer_gap", impact: "control_flow" });
+    }
+    if (argv.length === 0 && envAssignments.length === 0) {
+      analysisIssues.push({ segmentIndex: index, kind: "tokenizer_gap", impact: "executable" });
+    }
+    if (!balanced && index === sources.length - 1) {
+      analysisIssues.push({
+        segmentIndex: index,
+        kind: "unbalanced_syntax",
+        impact: "control_flow",
+      });
+    }
     segments.push({
       command: source,
       argv,
       normalized: argv.join(" "),
       envAssignments,
-      decidable: dialect.decidable(view),
+      decidable: analysisIssues.length === 0,
+      analysisIssues,
     });
     for (const token of tokens) {
       const candidate = dialect.pathCandidate(token);
       if (candidate.kind === "opaque") {
-        tokenUndecidable = true;
+        analysisIssues.push({ segmentIndex: index, kind: "opaque_path", impact: "path" });
+        segments[index]!.decidable = false;
         continue;
       }
       if (candidate.kind === "none") continue;
@@ -76,8 +94,6 @@ export function analyzeShell(
     }
   }
 
-  const emptySegment = segments.some((s) => s.argv.length === 0 && s.envAssignments.length === 0);
-  const undecidable =
-    !balanced || tokenUndecidable || emptySegment || segments.some((s) => !s.decidable);
-  return { paths, undecidable, segments };
+  const analysisIssues = segments.flatMap((segment) => segment.analysisIssues);
+  return { paths, undecidable: analysisIssues.length > 0, segments, analysisIssues };
 }

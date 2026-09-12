@@ -279,12 +279,7 @@ export async function connectKernelClient(
    * command nobody was shown, which is the one failure this transport must not pass on silently.
    */
   const isCommandDetail = (value: unknown): boolean =>
-    isRecord(value) &&
-    hasOnly(value, ["command", "cwd", "reason", "warning"]) &&
-    typeof value.command === "string" &&
-    typeof value.cwd === "string" &&
-    typeof value.reason === "string" &&
-    (value.warning === undefined || typeof value.warning === "string");
+    elicitationCommandDetailSchema.safeParse(value).success;
   observe(N.runElicitation, (params) => {
     if (
       !isRecord(params) ||
@@ -673,3 +668,4 @@ export async function connectKernelClient(
     },
   };
 }
+import { elicitationCommandDetailSchema } from "../guard/review-detail-schema.ts";

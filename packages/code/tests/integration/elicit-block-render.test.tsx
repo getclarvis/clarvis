@@ -172,6 +172,34 @@ const GUARD_CONFIRM: ElicitRequestParams = {
   },
 };
 
+test("effect review shows segment value position and a distinct timeout receipt", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={{
+        ...GUARD_CONFIRM,
+        detail: {
+          command: "git commit -m message",
+          cwd: "/workspace",
+          reason: "Review requires an answer",
+          analysis: {
+            reviewability: "judgeable",
+            issues: [{ segmentIndex: 1, kind: "command_substitution", impact: "value" }],
+          },
+          effect: { id: "git.commit", class: "local_mutation", attestation: "complete" },
+          reviewer: { status: "failed", failure_kind: "timeout", attempts: 1 },
+        },
+      }}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("git.commit");
+  expect(out).toContain("Segment 2: command substitution");
+  expect(out).toContain("argument value");
+  expect(out).toContain("Reviewer timed out after 1 attempt");
+  expect(out).not.toContain("undecidable expansions");
+});
+
 test("a guard confirmation is framed as a command approval, not a neutral question", async () => {
   const out = await frame(() => (
     <ElicitBlock interaction={stubInteraction} request={GUARD_CONFIRM} onResolve={() => {}} />

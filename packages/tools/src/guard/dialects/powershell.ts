@@ -1,4 +1,5 @@
 import type { PathCandidate, ShellDialect, Token } from "../dialect.ts";
+import type { ShellAnalysisIssue } from "../types.ts";
 import { stripWindowsExecutableSuffix } from "../../lib/system-executables.ts";
 
 /**
@@ -391,6 +392,30 @@ function decidable(segment: string): boolean {
     if (!INERT_VARIABLES.has(match[0].toLowerCase())) return false;
   }
   return true;
+}
+
+/** Preserve PowerShell expansion semantics; backticks remain escapes, never substitutions. */
+function analysisIssues(segment: string): Array<Omit<ShellAnalysisIssue, "segmentIndex">> {
+  const issues: Array<Omit<ShellAnalysisIssue, "segmentIndex">> = [];
+  const { scrubbed, unbalanced } = scrubExpansions(segment);
+  if (unbalanced) issues.push({ kind: "unbalanced_syntax", impact: "control_flow" });
+  if (COMMAND_POSITION_OPERATOR.test(scrubbed)) {
+    issues.push({ kind: "dynamic_command", impact: "executable" });
+  }
+  for (const match of scrubbed.matchAll(/\$\(|\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_:]*/g)) {
+    if (INERT_VARIABLES.has(match[0].toLowerCase())) continue;
+    const before = tokenize(scrubbed.slice(0, match.index));
+    const impact =
+      before.length === 0 ? "executable" : /^\$env:/i.test(match[0]) ? "environment" : "value";
+    issues.push({
+      kind: match[0] === "$(" ? "command_substitution" : "parameter_expansion",
+      impact,
+    });
+  }
+  if (!decidable(segment) && issues.length === 0) {
+    issues.push({ kind: "opaque_command", impact: "control_flow" });
+  }
+  return issues;
 }
 
 /**
@@ -871,6 +896,7 @@ function pathCandidate(token: Token): PathCandidate {
  * to flag rather than peel.
  */
 export const powershellDialect: ShellDialect = {
+  analysisIssues,
   flavor: "powershell",
   split,
   tokenize,

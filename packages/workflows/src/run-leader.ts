@@ -11,7 +11,7 @@ import type {
   TraceEvent,
   Usage,
 } from "@clarvis/capability";
-import { levelEnabled } from "@clarvis/capability";
+import { levelEnabled, inheritOperatorAuthority } from "@clarvis/capability";
 import { createFairShareOutputBudget, type WorkflowReservation } from "./ledger.ts";
 import { faultFields, workflowLogger } from "./log.ts";
 import type { LeaderResult, LeaderSpec, WorkflowCtx } from "./types.ts";
@@ -112,6 +112,8 @@ export async function runLeader(
       );
     }
     const { response } = await ctx.runDeps.executeRun({
+      operatorAuthoritySeed: inheritOperatorAuthority(ctx.operatorAuthority, ctx.managerRunId),
+      operatorAuthorityParent: ctx.operatorAuthority,
       rawBody,
       owner: ctx.owner,
       deps: ctx.deps,

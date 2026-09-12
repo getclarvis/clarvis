@@ -1121,3 +1121,14 @@ on the engine" as one design, not two.
   `coverage.ts` deliberately exempts such a package: its `test:coverage`
   writes no LCOV, so whatever file exists can never be refreshed and the warning would be permanent
   noise.
+## Effect review detail
+
+`ElicitationCommandDetail` adds optional closed analysis, effect, authority and reviewer fields.
+Legacy command/cwd/reason details remain valid. `CommandGuardReview` carries optional effect ID,
+relation and failure kind for replay. `GuardJudge` accepts optional guidance and explicit retries;
+deprecated prompt is data, never a system-policy replacement. Public run requests contain no
+operator evidence seed or controller binding. Production:
+[runs.ts](../../packages/protocol/src/runs.ts) and
+[review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).
+Test: [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+See [effect review](../execution/effect-review.md).

@@ -215,6 +215,25 @@ async function fixture(
 }
 
 describe("runtime capability composition", () => {
+  it.each(["on", "auto"] as const)(
+    "rejects explicit guard_mode %s before a container guest starts",
+    async (guard_mode) => {
+      const f = await fixture({
+        async call() {
+          throw new Error("no model call may start");
+        },
+      });
+      await expect(
+        f.runtime.executeRun({
+          rawBody: { ...body(`guard-${guard_mode}`), guard_mode },
+          owner: "owner",
+          deps: f.deps,
+        }),
+      ).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(f.guestEnvelopes).toEqual([]);
+    },
+  );
+
   it("preserves goal authority, plan checkpoint and SDK prefix across guest continuation", async () => {
     const host = await goalHostFixture();
     cleanup.push(host.close);

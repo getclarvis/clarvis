@@ -29,6 +29,13 @@ either name today gets the same `not_found` refusal as a typo
 
 ## 2. Surface
 
+The guard surface exports `ShellAnalysisIssue`, `ShellAnalysisIssueKind`, `ShellAnalysisImpact`
+and `GuardReviewability` through both root and guard entries. Causes describe syntax, not authority;
+the host owns effect attestation and approval. Production:
+[guard types](../../packages/tools/src/guard/types.ts) and
+[analyzer](../../packages/tools/src/guard/analyze-shell.ts) (`analyzeShell`). Test:
+[analysis issues](../../packages/tools/tests/unit/analysis-issues.test.ts).
+
 ### Package exports (six `exports` keys, five source entries)
 
 `packages/tools/package.json` declares six keys under `exports`: five source entries each with a
@@ -629,3 +636,11 @@ conventions; that consumer side is outside this document's scope.
   `@clarvis/hooks` (`subprocess.ts`) and `@clarvis/kernel` (`local.ts`, `capability-executables/session-manager.ts`)
   each import from it directly. **`./sandbox` has no documented consumer** — no consumer of
   `SandboxConfig` is within this document's scope.
+## Host effect facts
+
+`GuardEffectCallFact` and `EffectReviewDetail` are standalone serialized projections. Tools do not
+own their effect registry or semantic authority. Native canonical authoring writes require a
+completed host review; other operational configuration remains excluded before review, including
+with guard off. Production: [core.ts](../../packages/tools/src/core.ts) and
+[authoring-path.ts](../../packages/tools/src/guard/authoring-path.ts).
+The cross-package contract is [effect review](effect-review.md).

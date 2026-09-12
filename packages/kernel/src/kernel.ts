@@ -1,3 +1,4 @@
+import type { RunServiceConfig } from "./runs/run-service.ts";
 import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
@@ -198,6 +199,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
  * Clarvis dir (see {@link createInProcessKernel}).
  */
 export interface CreateKernelOptions {
+  /** Authenticated host controller binding, separate from protocol run parameters. */
+  operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
   /** Host-only native configuration execution, bound to volatile user consent. */
   nativeConfiguration?: NativeConfigurationRuns;
   /** Loop execution deps the run service drives (built by `buildExecuteRunDeps`). */
@@ -511,6 +514,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const baseRuns = createRunService({
+      ...(opts.operatorAuthorityFor === undefined
+        ? {}
+        : { operatorAuthorityFor: opts.operatorAuthorityFor }),
       ...(opts.nativeConfiguration === undefined
         ? {}
         : { nativeConfiguration: opts.nativeConfiguration }),
@@ -519,7 +525,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       assembleRunRequest,
       eventBuffer,
       isManagerRun: (params) => workflowPolicy.isManagerRun(params),
-      runManagerWorkflow: (params) => workflows.runManagerWorkflow(params),
+      runManagerWorkflow: (params, seed, signal) =>
+        workflows.runManagerWorkflow(params, undefined, seed, signal),
       lifecycle,
       logger: runLogger,
       ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
@@ -595,7 +602,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
                 throw kernelError("unavailable", "prepared run owner generation was retired");
               return entry.services.runs.start(request, prepared);
             },
-            startWorkflow: (request, prepared) => workflows.runManagerWorkflow(request, prepared),
+            startWorkflow: (request, prepared, seed, signal) =>
+              workflows.runManagerWorkflow(request, prepared, seed, signal),
           },
           goal,
         );

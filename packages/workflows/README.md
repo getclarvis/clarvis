@@ -443,3 +443,9 @@ bun --filter @clarvis/workflows format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+## Operator evidence across leaders
+
+The capability resolves `OPERATOR_AUTHORITY_PORT` at attach time. `runLeader` passes a bounded
+compiled intersection and parent reader separately from its model-visible brief. Parent revision
+changes invalidate inherited authority. Independent leaders do not inherit single-attempt CI retry
+grants. See [effect review](../../specs/execution/effect-review.md).

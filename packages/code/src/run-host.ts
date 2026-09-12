@@ -95,7 +95,7 @@ export interface RunHostDeps {
   activeProfile: () => string;
   setActiveProfile: (name: string) => void;
   guardMode: () => GuardMode;
-  judgePayload: (mode: GuardMode) => { guardJudge?: { prompt: string } };
+  judgePayload: (mode: GuardMode) => { guardJudge?: { prompt?: string; guidance?: string } };
   memoryMode: () => MemoryMode;
   /** The planning policy the next run will use, so the shell can warn about an
    * approval gate before the run starts. Optional; headless hosts omit it. */

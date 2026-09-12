@@ -518,3 +518,10 @@ Direct runs persist missing session/agent identities before inference; continuat
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+## Host operator authority
+
+`ExecuteRunArgs.operatorAuthoritySeed` is private host input, separate from `rawBody`.
+`ExecuteRunDeps.operatorAuthority` creates one runtime before capability activation. The loop
+prepublishes its reader, admits steers through its private hook, and persists
+`operator_authority_state` separately from capability slots. It never reconstructs evidence from
+`final_context`. See [effect review](../../specs/execution/effect-review.md).

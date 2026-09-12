@@ -719,107 +719,69 @@ describe("runtime guest loop", () => {
     });
   });
 
-  it.each(["docker", "podman"])(
-    "passes %s placement and operator brief to Auto for guest expansions",
-    async (backend) => {
+  it.each(["guardSettings", "operatorAuthoritySeed"] as const)(
+    "rejects forged host-only %s in the guest envelope",
+    async (field) => {
       const root = await mkdtemp(join(tmpdir(), "clarvis-guest-auto-"));
       directories.push(root);
       const workspaceRoot = join(root, "workspace");
       await mkdir(workspaceRoot);
-      let leadCalls = 0;
-      let judged: Record<string, unknown> | undefined;
       const bridge: GuestExecutionBridge = {
-        async model(_id, request) {
-          const body = request.body as {
-            tools?: Array<{ fullName: string }>;
-            messages: Array<{ content: string }>;
-          };
-          const judge = body.tools?.some((tool) => tool.fullName === "decide");
-          if (judge) judged = JSON.parse(body.messages[1]!.content);
-          else leadCalls++;
-          const result = judge
-            ? { toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "deny" } }] }
-            : leadCalls === 1
-              ? {
-                  toolCalls: [
-                    { id: "shell", name: "shell", arguments: { command: 'printf "$MSG"' } },
-                  ],
-                }
-              : { text: "reviewed" };
-          return {
-            events: [
-              {
-                type: "result",
-                result: {
-                  ...result,
-                  usage: {
-                    input_tokens: 1,
-                    output_tokens: 1,
-                    cached_tokens: 0,
-                    cache_write_tokens: 0,
-                  },
-                },
-              },
-            ],
-            outputBytes: 128,
-          };
+        async model() {
+          throw new Error("invalid envelope must fail before a model call");
         },
-        async capability(_id, request) {
-          expect(request.method).toBe("runtime.guard_approval");
-          expect(request.arguments).toMatchObject({ operation: "covers" });
-          return false;
-        },
+        async capability() {},
         async event() {},
         async checkpoint() {},
       };
-      const result = await createGuestLoopExecutor({
-        workspaceRoot,
-        scratchRoot: join(root, "scratch"),
-      }).execute(
-        "exec_guest_auto",
-        {
-          owner: "owner",
-          modelLeaseId: "lease",
-          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-          loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          guardSettings: {
-            guard: { type: "shell", mode: "auto" },
-            defaultModel: "anthropic/x",
-            runtime: { backend, network: "none" },
-          },
-          rawBody: {
-            execution_id: "exec_guest_auto",
-            messages: [{ role: "user", content: "inspect this workspace" }],
-            guard_judge: { prompt: "judge" },
-            servers: [],
-            profiles: [
-              {
-                name: "solo",
-                model: "anthropic/x",
-                tools: [],
-                grants: ["run_commands"],
-                iteration_limit: 5,
+      const hostOnly =
+        field === "guardSettings"
+          ? { guardSettings: { guard: { type: "shell", mode: "auto" } } }
+          : {
+              operatorAuthoritySeed: {
+                binding: {
+                  owner_key_name: "owner",
+                  session_id: "session",
+                  controller_epoch: "epoch",
+                },
+                evidence: [],
               },
-            ],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            budget: { on_exceed: "stop", total_token_limit: 1000 },
+            };
+      await expect(
+        createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
+          "exec_guest_auto",
+          {
+            owner: "owner",
+            modelLeaseId: "lease",
+            toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+            loopPolicy: runtimeLoopPolicy(loadEnv({})),
+            ...hostOnly,
+            rawBody: {
+              execution_id: "exec_guest_auto",
+              messages: [{ role: "user", content: "inspect this workspace" }],
+              servers: [],
+              profiles: [
+                {
+                  name: "solo",
+                  model: "anthropic/x",
+                  tools: [],
+                  grants: ["run_commands"],
+                  iteration_limit: 5,
+                },
+              ],
+              entry: "solo",
+              providers: [{ name: "anthropic", kind: "anthropic" }],
+              budget: { on_exceed: "stop", total_token_limit: 1000 },
+            },
           },
-        },
-        bridge,
-        new AbortController().signal,
-      );
-      expect(result).toMatchObject({ response: { status: "completed", result: "reviewed" } });
-      expect(judged).toMatchObject({
-        placement: "contained",
-        network: "none",
-        undecidable: true,
-        operator_message: "inspect this workspace",
-      });
+          bridge,
+          new AbortController().signal,
+        ),
+      ).rejects.toThrow("guest run envelope is invalid");
     },
   );
 
-  it("guards guest shell execution and exposes a granted service through host authority", async () => {
+  it("executes guest shell and exposes a granted service through host authority", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-preview-"));
     directories.push(root);
     const workspaceRoot = join(root, "workspace");
@@ -896,9 +858,6 @@ describe("runtime guest loop", () => {
           modelLeaseId: "lease",
           toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
           loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          guardSettings: {
-            guard: { type: "shell", mode: "on", allowed_commands: ["printf"] },
-          },
           rawBody: {
             execution_id: "exec_guest_preview",
             messages: [{ role: "user", content: "start a service" }],
@@ -931,14 +890,6 @@ describe("runtime guest loop", () => {
       },
     ]);
     expect(JSON.stringify(modelBodies)).toContain("mise x <tool>@<version>");
-    expect(events).toContainEqual({
-      channel: "guard_audit",
-      level: "info",
-      fields: expect.objectContaining({
-        event: "guard.decision",
-        verdict: "allow",
-        tool: "shell",
-      }),
-    });
+    expect(events.some((event) => JSON.stringify(event).includes("guard"))).toBe(false);
   });
 });

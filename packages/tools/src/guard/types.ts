@@ -1,4 +1,5 @@
 import type { RuntimeConfig } from "../config.ts";
+import type { EffectReviewDetail, GuardEffectCallFact } from "./effect-review.ts";
 
 /**
  * A guard's ruling on a tool call: run it silently (`allow`), refuse it
@@ -9,8 +10,36 @@ export type Verdict = "allow" | "deny" | "ask";
 /** Execution boundary committed to for this call, not an approval verdict. */
 export type GuardPlacement = "host" | "contained";
 
+/** Syntactic uncertainty reported without making an approval decision. */
+export type ShellAnalysisIssueKind =
+  | "parameter_expansion"
+  | "command_substitution"
+  | "process_substitution"
+  | "dynamic_command"
+  | "dynamic_subcommand"
+  | "dynamic_path"
+  | "opaque_command"
+  | "opaque_path"
+  | "unbalanced_syntax"
+  | "tokenizer_gap";
+
+/** Position affected by uncertainty; value position alone proves no effect safety. */
+export type ShellAnalysisImpact =
+  "value" | "executable" | "subcommand" | "path" | "environment" | "control_flow";
+
+/** Zero-based segment attribution; presentation may add one. */
+export interface ShellAnalysisIssue {
+  segmentIndex: number;
+  kind: ShellAnalysisIssueKind;
+  impact: ShellAnalysisImpact;
+}
+
+/** Host effect attestation, never syntax alone, may select judgeable. */
+export type GuardReviewability = "static" | "judgeable" | "human_only";
+
 /** Trusted host facts for one review; never populated from model-supplied arguments. */
-export interface GuardCallFacts {
+export interface GuardCallFacts extends EffectReviewDetail {
+  effects?: GuardEffectCallFact[];
   matched?: string;
   placement?: GuardPlacement;
   network?: "none" | "host";
@@ -56,10 +85,23 @@ export type GuardAnswerer = "human" | "judge" | "session_allowlist" | "unavailab
 export interface GuardElicitAnswer {
   allowed: boolean;
   answerer: GuardAnswerer;
+  review?: Pick<GuardReview, "effect_id" | "relation" | "failure_kind">;
 }
 
 /** Final command-review fact attached to a dispatched tool result. */
 export interface GuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: GuardAnswerer | "policy";
@@ -85,6 +127,7 @@ export interface Segment {
    * would ride a plain `cmd` grant. */
   envAssignments: string[];
   decidable: boolean;
+  analysisIssues: ShellAnalysisIssue[];
 }
 
 /**
@@ -103,6 +146,7 @@ export interface ShellFacts {
   paths: string[];
   segments: Segment[];
   undecidable: boolean;
+  analysisIssues: ShellAnalysisIssue[];
 }
 
 /**

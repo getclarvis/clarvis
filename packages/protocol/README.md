@@ -318,3 +318,10 @@ Run start carries `session_id` and `agent_instance_id`; the hosted session persi
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+## Effect review presentation
+
+`effect_review` configures the shared reviewer. `GuardJudge.prompt` is deprecated additional
+guidance; `guidance` is its replacement. `ElicitationCommandDetail` optionally carries closed
+analysis, effect, authority and reviewer receipts; old details remain accepted. Shell review rows
+may retain effect, relation and failure kind. No evidence seed, controller epoch or authority ledger
+is part of public run input. See [effect review](../../specs/execution/effect-review.md).

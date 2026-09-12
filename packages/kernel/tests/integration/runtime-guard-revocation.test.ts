@@ -5,38 +5,17 @@ import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createGuestLoopExecutor } from "../../src/runtime/guest-loop-executor.ts";
-import { createHostGuardApprovalGrant } from "../../src/runtime/guard-approval-bridge.ts";
 import type { GuestExecutionBridge } from "../../src/runtime/execution-worker.ts";
-import { fixture, input } from "../helpers/hosted-registry.ts";
 
-it("the real guest loop consults revoked host consent before repeating an approved command", async () => {
+it("the guest loop executes without a host Guard approval bridge", async () => {
   const root = await mkdtemp(join(tmpdir(), "clarvis-guest-consent-"));
   const workspaceRoot = join(root, "workspace");
   await mkdir(workspaceRoot);
-  const f = fixture();
-  const operator = f.registry.connect("operator");
-  const view = await operator.service.start(input());
   const signal = new AbortController().signal;
-  let detached = false;
-  let questions = 0;
   let modelCalls = 0;
-  const grant = createHostGuardApprovalGrant({
-    elicit: async () => {
-      questions++;
-      return detached
-        ? { action: "cancel" }
-        : { action: "accept", content: { decision: "allow_session" } };
-    },
-    allowlist: () => f.registry.guardAllowlistFor({ executionId: "run-1", owner: "owner" }),
-    workspaceRoot,
-  });
   const bridge: GuestExecutionBridge = {
     async model() {
       modelCalls++;
-      if (modelCalls === 2) {
-        await operator.service.detach(f.handoff(view));
-        detached = true;
-      }
       const result =
         modelCalls <= 2
           ? {
@@ -62,11 +41,7 @@ it("the real guest loop consults revoked host consent before repeating an approv
         outputBytes: 128,
       };
     },
-    capability: (_id, call, callSignal) => {
-      expect(call.method).toBe(grant.method);
-      expect(grant.validateArguments(call.arguments)).toBe(true);
-      return grant.invoke(call.arguments, callSignal ?? signal);
-    },
+    capability: () => Promise.reject(new Error("guest shell must not request host approval")),
     event: async () => {},
     checkpoint: async () => {},
   };
@@ -81,10 +56,8 @@ it("the real guest loop consults revoked host consent before repeating an approv
         modelLeaseId: "lease",
         toolPolicy: { enabled: true, confine: true, maxGrant: "exec" },
         loopPolicy: runtimeLoopPolicy(loadEnv({})),
-        guardSettings: { guard: { mode: "on", allowed_commands: [], denied_commands: [] } },
         rawBody: {
           execution_id: "run-1",
-          guard_mode: "on",
           messages: [{ role: "user", content: "Exercise the two controlled test commands." }],
           servers: [],
           profiles: [
@@ -105,11 +78,8 @@ it("the real guest loop consults revoked host consent before repeating an approv
       signal,
     );
     expect(result).toMatchObject({ response: { status: "completed" } });
-    expect(questions).toBe(2);
-    expect(await readFile(join(workspaceRoot, "consent.txt"), "utf8")).toBe("approved");
+    expect(await readFile(join(workspaceRoot, "consent.txt"), "utf8")).toBe("approvedapproved");
   } finally {
-    f.finish();
-    await f.registry.close();
     await rm(root, { recursive: true, force: true });
   }
 });

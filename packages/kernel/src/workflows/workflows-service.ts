@@ -1,3 +1,4 @@
+import type { OperatorAuthoritySeed } from "@clarvis/capability";
 import {
   bind,
   isBuiltinTraceEvent,
@@ -134,7 +135,12 @@ export interface KernelWorkflowsService extends WorkflowsService {
   list(page?: Pagination, scan?: WorkflowPageScanOptions): Promise<Page<WorkflowSummary>>;
   /** Run one manager turn as a workflow: execute the manager with the `workflows`
    * capability injected, persist its tree record, and return the run handle. */
-  runManagerWorkflow(params: StartRunParams, prepared?: PreparedWorkflowExecution): RunHandle;
+  runManagerWorkflow(
+    params: StartRunParams,
+    prepared?: PreparedWorkflowExecution,
+    seed?: OperatorAuthoritySeed,
+    signal?: AbortSignal,
+  ): RunHandle;
 }
 
 /** Admission-time configuration for a hosted manager and all its subsequently admitted leaders. */
@@ -261,6 +267,8 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
   function runManagerWorkflow(
     params: StartRunParams,
     prepared?: PreparedWorkflowExecution,
+    operatorAuthoritySeed?: OperatorAuthoritySeed,
+    authoritySignal?: AbortSignal,
   ): RunHandle {
     const settings = prepared?.settings ?? cfg.readSettings();
     const assemble = prepared?.assembleRunRequest ?? assembleRunRequest;
@@ -582,6 +590,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           });
         });
         const managerArgs: RunExecutorArgs = {
+          operatorAuthoritySeed,
           rawBody: managerBody,
           owner,
           deps,
@@ -597,6 +606,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           steer: context.steer,
           compaction: context.compaction,
           externalSignal: context.signal,
+          operatorAuthoritySignal: authoritySignal,
           elicit: mux.manager,
         };
         const runTask = runDeps.executeRun(managerArgs);

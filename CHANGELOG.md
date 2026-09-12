@@ -7,6 +7,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Added
 
+- Composer `$name` inserts a skill mention. The kernel expands unique user-invocable skills that do
+  not name an `agent`; `$clarvis-configure` stays literal and does not start native configuration.
 - Settings > Isolation is the dedicated global placement screen for Host, native Sandbox, Docker, or
   Podman. Native Sandbox details stay in Settings > Sandbox. Run Controls and `Ctrl+S` share the
   same writer; a workspace cannot choose a runtime.
@@ -16,6 +18,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - `./dev-install.sh` now builds the local `clarvis-runtime:development` image for each of Docker and
   Podman that is installed. A missing engine is skipped, so a Docker-only or Podman-only host still
   completes; native mode remains available when neither engine is present.
+
+### Changed
+
+- `host_vcs` is gone. Host Git or credential needs that the sandbox cannot satisfy retry the same
+  `shell` or `monitor_start` command with `sandbox_permissions: "require_escalated"` and a
+  justification. Isolation Sandbox reviews that one host effect; Isolation Host is already
+  unsandboxed; Docker/Podman guests reject the field.
+- Review Auto may judge Isolation Sandbox `require_escalated` host execution from attested facts.
+  Approval stays human-only. Host-command asks never use session coverage or `allow_session`.
 
 ### Fixed
 

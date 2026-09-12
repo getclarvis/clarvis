@@ -98,7 +98,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`command-guard.md`](execution/command-guard.md) | Per-call approval, split three ways: the shell analyzer that produces facts, the kernel's fixed-precedence policy cascade, and the engine wiring that consults them once per run | `tools`, `kernel`, `loop`, `code` |
 | [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
-| [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees across roots with last-wins precedence, and serving them in three tiers through `load_skill` | `skills`, `kernel`, `loop` |
+| [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees with last-wins precedence; serving catalog, body and confined resource pages through `load_skill` and `read_skill_resource`; and routing named or description-matching skills into the run | `skills`, `kernel`, `loop` |
 
 ### `engine/` — the loop itself
 
@@ -126,7 +126,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`memory-indexer.md`](capabilities/memory-indexer.md) | Turning a finished run into something the wiki knows: the durable enqueue, the background drain with leases and retry budgets, and the isolated versus continuation index passes | `memory`, `kernel` |
 | [`workflows-scheduling.md`](capabilities/workflows-scheduling.md) | Manager-to-leader fan-out: the four spawn tools, wave scheduling and write-conflict separation, round barriers, the FIFO concurrency semaphore and the tree-wide token ledger | `workflows` |
 | [`workflows-service.md`](capabilities/workflows-service.md) | The non-live half: code-backed built-ins, optional `WORKFLOW.md` overrides, the three reusable result schemas, and the kernel's persisted workflow tree and routing | `workflows`, `kernel`, `code` |
-| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, linked-checkout sandbox mounts and approved host VCS access | `code`, `kernel`, `paths`, `tools` |
+| [`worktrees.md`](capabilities/worktrees.md) | Launch-time Git worktrees: Git-owned identity and lifecycle, immutable process scope, linked-checkout sandbox mounts, and Isolation Sandbox `require_escalated` host-command fallback | `code`, `kernel`, `paths`, `tools` |
 | [`tasks-domain.md`](capabilities/tasks-domain.md) | The vendor-neutral task model: stages, actors, claims, strict schemas, the stable error taxonomy, provider identity, the `clarvis.tasks.v2` MCP adapter and its conformance harness | `tasks` |
 | [`tasks-capability.md`](capabilities/tasks-capability.md) | Binding one run to one remote task: the ten tools, the four-way gate on what is offered, `task_outcome_unknown` handling, and the kernel's single provider factory | `tasks`, `kernel` |
 | [`provider-executables.md`](capabilities/provider-executables.md) | Replacing a capability's *content* without changing its vocabulary: memory/plan provider registries and the language-neutral JSON-RPC executable protocol | `capability`, `memory`, `plan`, `kernel`, `code` |
@@ -136,7 +136,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | Document | Covers | Implemented in |
 | --- | --- | --- |
 | [`protocol.md`](hosts/protocol.md) | The transport-agnostic contract: wire DTOs plus the `KernelClient` service interfaces, a pure leaf with no dependency of any kind | `protocol` |
-| [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, file backing, and the project host fanning one Git project out into ref-counted workspace kernels — plus owner scoping | `kernel` |
+| [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, `createFileKernel` as the sole local one-workspace bootstrap, and `createFileRunHost` process hosting — plus owner scoping | `kernel` |
 | [`isolated-agent-runtime.md`](hosts/isolated-agent-runtime.md) | Host-owned admission and model/remote-MCP brokers, direct selected-workspace mounts, private execution, immutable OCI distribution, and Docker/Podman adapters for disposable agent workers | `kernel`, `protocol`, `code`, `paths`, `loop`, `mcp-client`, `tools`, `tooling/` |
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
 | [`self-configuration.md`](hosts/self-configuration.md) | Shipped TypeScript configuration skill, explicit native execution, live-session consent and credential-excluding file operations | `kernel`, `paths`, `protocol`, `code`, `skills` |

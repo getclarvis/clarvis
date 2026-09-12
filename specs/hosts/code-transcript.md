@@ -400,7 +400,8 @@ batches at the edges. Wheel and trackpad packets stay on OpenTUI's native Scroll
 `BlockView` structure still reads frozen publication metadata rather than these dynamic maps.
 `LiveTranscriptTail` independently applies the same
 Lead-or-selected-child filter and derives grouping from `store.frontierNodes()` because mutation is
-allowed there. Committed keys transfer to the frozen history projection without a second scroll area.
+allowed there. Committed keys stay in `LiveTranscriptTail` until that suffix is released; history
+omits the same keys so one Solid owner paints each tool. There is no second scroll area.
 It has no fixed reservation or nested scrollbox; the complete placement and handoff contract are
 normative in [code-transcript-stability.md](code-transcript-stability.md).
 

@@ -1086,6 +1086,9 @@ scrolling is the only follow-the-tail authority. The normative contract is
 The quoted `later batch` wording below is retained only as the exact historical symptom. That
 superseded bottom boundary is not current UI: newer work is now admitted by downward native scroll,
 with a non-interactive count overlaid at the top only while the reader is away from the tail.
+Intermediate clamp-latch, handoff-spacer and culling-suspend repairs described later in this entry
+were themselves replaced: `returnToTail` is a native bottom scroll, there is no handoff spacer, and
+`viewportCulling` stays on.
 
 **A follow-on scroll regression was resolved under OpenTUI 0.5.9.** An upward wheel
 intent changed `followingTail` to false and the Solid `<Show>` around `LiveTranscriptTail` removed

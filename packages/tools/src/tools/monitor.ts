@@ -23,6 +23,12 @@ import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
 import { sandboxCommand } from "../sandbox.ts";
 import { sandboxWithReadableStateArtifacts } from "../lib/state-artifacts.ts";
+import { denySensitiveShellCommand } from "../lib/sensitive-commands.ts";
+import {
+  resolveSandboxEscalation,
+  SANDBOX_PERMISSION_CONDITION,
+  SANDBOX_PERMISSION_PROPERTIES,
+} from "../lib/sandbox-permissions.ts";
 import { exitCaptureWrapper, resolveShell, type ShellSpec } from "../shell.ts";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -205,11 +211,15 @@ export function createMonitorStart(
             "Readiness wait in ms. Configuration default: 30000. " +
             "Ignored unless ready_when is set.",
         },
+        ...SANDBOX_PERMISSION_PROPERTIES,
       },
       required: ["command"],
+      ...SANDBOX_PERMISSION_CONDITION,
     },
     async handler(args, config, signal) {
       const command = args.command as string;
+      denySensitiveShellCommand(command);
+      const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
       const cwd = cwdArg
         ? resolvePath(
@@ -263,6 +273,7 @@ export function createMonitorStart(
           secretEnvNames: config.secretEnvNames,
           shell: () => host,
           logger: config.logger,
+          forceBare,
         });
         const detached = ownProcessGroup();
         config.logger.debug(

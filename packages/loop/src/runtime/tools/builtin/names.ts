@@ -30,7 +30,7 @@ export const EDIT_TOOL_NAMES: readonly string[] = AGENT_TOOL_NAMES.filter(
  * whether a tool *changes the workspace*, and every exec tool is already
  * not-read-only by that measure. Adding an `exec` bit beside it would ask
  * `@clarvis/tools` to model a grant boundary that belongs to the engine, and it
- * would be a bit with exactly these six members.
+ * would be a bit with exactly these five members.
  *
  * Being written out is also what makes it auditable: the set of tools that can
  * run arbitrary commands is the most security-relevant list in the engine, and a
@@ -40,7 +40,6 @@ export const EDIT_TOOL_NAMES: readonly string[] = AGENT_TOOL_NAMES.filter(
  */
 export const EXEC_TOOL_NAMES: readonly string[] = [
   "shell",
-  "host_vcs",
   "monitor_start",
   "monitor_poll",
   "monitor_stop",
@@ -48,12 +47,8 @@ export const EXEC_TOOL_NAMES: readonly string[] = [
 ];
 
 /**
- * Coding tools presented as direct mutations: edit tools minus sandbox command runners.
- *
- * @remarks `host_vcs` remains in this presentation set so its potentially mutating host operation
- * is never grouped away in the transcript. It is independently in {@link EXEC_TOOL_NAMES}, so the
- * exec grant ceiling still removes it from an edit-capped agent.
+ * Coding tools presented as direct mutations: edit tools minus command runners.
  */
 export const FILE_MUTATING_TOOL_NAMES: readonly string[] = EDIT_TOOL_NAMES.filter(
-  (n) => n === "host_vcs" || !EXEC_TOOL_NAMES.includes(n),
+  (n) => !EXEC_TOOL_NAMES.includes(n),
 );

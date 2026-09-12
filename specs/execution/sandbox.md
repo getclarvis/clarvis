@@ -88,7 +88,7 @@ The contributed settings block is strict and not plugin-contributable:
 | --- | --- | --- |
 | `type` | required literal `"native"` | Select the host-native backend |
 | `enabled` | optional boolean; enabled unless `false` | Whether a run receives the block |
-| `availability` | `"required"` by default; `"optional"` | Fail closed or explicitly fall back to the host |
+| `availability` | `"required"` by default; `"optional"` is accepted and treated as required | Fail closed when the native backend cannot apply its policy |
 | `filesystem` | `"workspace-write"` by default; `"workspace-read-only"` | Workspace and linked Git metadata posture |
 | `network` | `"host"` by default; `"none"` | Share or deny host networking |
 | `pass_env` | bounded list | Extra host variable names admitted to the minimal environment |
@@ -205,9 +205,9 @@ A sandboxed command does not inherit `process.env`. `minimalEnv` creates:
   `node_modules/.bin` entries;
 - present `LANG`, `TZ`, `TERM`, `NO_COLOR`, every `LC_*`, and explicitly named `passEnv` values.
 
-The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. An
-`optional` fallback uses that same scrubbed bare path; it never restores provider credentials merely
-because the backend is unavailable.
+The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. Per-call
+`forceBare` uses that same scrubbed bare path; an unavailable backend never restores provider
+credentials.
 
 Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`, `withoutSecrets`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`does not pass provider
@@ -375,14 +375,12 @@ probeSandbox`).
 
 `sandboxCommand` resolves the host shell, then:
 
-1. no `sandbox` → return the bare shell with `secretEnvNames` removed;
-2. unavailable plus `availability: "optional"` → emit `tools.sandbox_unavailable` and return that
-   scrubbed bare shell;
-3. unavailable with required/default availability → throw `ToolError("io_error", "Native sandbox is
+1. `forceBare` or no `sandbox` → return the bare shell with `secretEnvNames` removed;
+2. unavailable, including stored `availability: "optional"` → throw `ToolError("io_error", "Native sandbox is
    required: <reason>")` before a command process starts;
-4. available Seatbelt → validate paths, build the parameterized profile, and return
+3. available Seatbelt → validate paths, build the parameterized profile, and return
    `/usr/bin/sandbox-exec`;
-5. available Bubblewrap → validate paths and return `bwrap` argv.
+4. available Bubblewrap → validate paths and return `bwrap` argv.
 
 The returned `sandboxed` bit reports what will actually run, not what was requested. Shell and monitor
 diagnostics consume it; callers never infer wrapping by reparsing argv.
@@ -391,7 +389,7 @@ Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`),
 `packages/tools/src/tools/shell.ts` (`runCommand`), and
 `packages/tools/src/tools/monitor.ts` (`monitor_start`). Tests:
 `packages/tools/tests/integration/sandbox.test.ts` and
-`packages/tools/tests/unit/observability.test.ts` (`tools.sandbox_unavailable`).
+`packages/tools/tests/unit/observability.test.ts` (`fails closed instead of logging a silent optional fallback`).
 
 ### 4.3 Host path policy
 
@@ -440,8 +438,8 @@ and `packages/kernel/tests/contract/config-service.test.ts`.
 
 The Sandbox panel stages the strict `type: "native"` block, edits availability/filesystem/network/
 environment/toolchain policy, refreshes host inspection, and labels the actual backend as Bubblewrap
-or Seatbelt. Run controls and Doctor use `SandboxInspection.backend`; required unavailability is an
-error/fail-closed warning, optional unavailability says commands run directly, and `host-proc` names
+or Seatbelt. Run controls and Doctor use `SandboxInspection.backend`; unavailability is an
+error/fail-closed warning even when stored availability is `optional`, and `host-proc` names
 its reduced isolation. Cold boot defers backend probing and passive inventory until a surface needs
 them.
 
@@ -487,13 +485,13 @@ Bubblewrap only on Linux and Seatbelt only on macOS; unsupported hosts never gue
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`dispatches the native backend by
   platform`).
 
-**INV-S2 — Required isolation fails closed before the command.** An unavailable required/default
-sandbox throws; only explicit `availability: "optional"` may run bare, and that degradation is
-logged.
+**INV-S2 — Required isolation fails closed before the command.** An unavailable sandbox throws,
+including stored `availability: "optional"`. Per-call `forceBare` is the only remaining unsandbox
+path and is gated by command review.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`fails closed when the native sandbox is
-  required but unavailable`) and `packages/tools/tests/unit/observability.test.ts`.
+  optional but unusable`) and `packages/tools/tests/unit/observability.test.ts`.
 
 **INV-S3 — Non-degraded backends enforce the same configured host boundary.** Both allow the declared
 workspace posture, primary scratch and compatible temporary roots, deny every other undeclared host
@@ -526,7 +524,7 @@ skill package roots, including a skill directory nested beneath the workspace.
   `packages/tools/tests/integration/config.test.ts` (skill-root merge).
 
 **INV-S6 — Provider secrets are absent by default on every branch.** Native backends start from
-`minimalEnv`; bare/optional paths subtract `secretEnvNames` from a copy without mutating
+`minimalEnv`; bare/`forceBare` paths subtract `secretEnvNames` from a copy without mutating
 `process.env`.
 
 - Production: `packages/tools/src/sandbox.ts` (`minimalEnv`, `withoutSecrets`, `sandboxCommand`).
@@ -719,4 +717,4 @@ OS promise. This external platform risk is tracked in [`../known-issues.md`](../
 
 There is no native Windows backend in this contract. Adding one requires its own backend probe,
 policy compiler, real-host canary, protocol mode, security review, and documentation change; an
-optional bare fallback is not Windows sandbox support.
+per-call host spawn is not Windows sandbox support.

@@ -141,17 +141,33 @@ describe("sandboxCommand", () => {
     );
   });
 
-  it("falls back explicitly when the native sandbox is optional but unusable", () => {
+  it("fails closed when the native sandbox is optional but unusable", () => {
+    expect(() =>
+      sandboxCommand({
+        command: "echo ok",
+        cwd: "/ws",
+        workspaceRoot: "/ws",
+        sandbox: { type: "native", availability: "optional" },
+        probe: () => ({
+          backend: "unsupported",
+          mode: "unavailable",
+          reason: "no native backend",
+        }),
+        shell: () => ({ flavor: "posix", file: "sh" }),
+      }),
+    ).toThrow("Native sandbox is required: no native backend");
+  });
+
+  it("skips the native probe when forceBare is set", () => {
     const spec = sandboxCommand({
       command: "echo ok",
       cwd: "/ws",
       workspaceRoot: "/ws",
-      sandbox: { type: "native", availability: "optional" },
-      probe: () => ({
-        backend: "unsupported",
-        mode: "unavailable",
-        reason: "no native backend",
-      }),
+      sandbox: { type: "native", availability: "required" },
+      forceBare: true,
+      probe: () => {
+        throw new Error("probe must not run for a bare host spawn");
+      },
       shell: () => ({ flavor: "posix", file: "sh" }),
     });
     expect(spec.file).toBe("sh");
@@ -1118,25 +1134,23 @@ describe("sandboxCommand — withholding credentials without a sandbox", () => {
     });
   });
 
-  it("also scrubs when a sandbox is configured but unavailable and optional", () => {
-    // The degraded path is the dangerous one: the operator believes a sandbox is
-    // in force, and the command is in fact running straight on the host.
+  it("does not fall back to a secret-bearing host spawn when optional isolation is unusable", () => {
     withEnv({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
-      const spec = sandboxCommand({
-        command: "true",
-        cwd: "/ws",
-        workspaceRoot: "/ws",
-        sandbox: { type: "native", availability: "optional" },
-        secretEnvNames: ["CLARVIS_TEST_SECRET"],
-        probe: () => ({
-          backend: "unsupported",
-          mode: "unavailable",
-          reason: "no namespaces here",
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: "/ws",
+          workspaceRoot: "/ws",
+          sandbox: { type: "native", availability: "optional" },
+          secretEnvNames: ["CLARVIS_TEST_SECRET"],
+          probe: () => ({
+            backend: "unsupported",
+            mode: "unavailable",
+            reason: "no namespaces here",
+          }),
+          shell: () => ({ flavor: "posix", file: "sh" }),
         }),
-        shell: () => ({ flavor: "posix", file: "sh" }),
-      });
-      expect(spec.file).toBe("sh");
-      expect(spec.options.env?.CLARVIS_TEST_SECRET).toBeUndefined();
+      ).toThrow("Native sandbox is required: no namespaces here");
     });
   });
 

@@ -5,7 +5,7 @@ import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_
 import { ToolError } from "./errors.ts";
 import { executableOnPath } from "@clarvis/paths";
 import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
-import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
+import type { ToolsLogger } from "./lib/log.ts";
 import { systemExecutableRoots } from "./lib/system-executables.ts";
 
 export { systemExecutableRoots } from "./lib/system-executables.ts";
@@ -14,13 +14,12 @@ export { systemExecutableRoots } from "./lib/system-executables.ts";
  * Configuration for running a command inside the host's native sandbox.
  *
  * @remarks
- * Clarvis selects Bubblewrap on Linux and Seatbelt on macOS. `availability:
- * "optional"` lets a command fall back to running unsandboxed when the native
- * backend is unavailable, whereas `"required"` (the default posture in
- * {@link sandboxCommand}) makes that a hard error. `readOnlyPaths` and
- * `runtimePaths` are exposed read-only; `runtimePaths` additionally shape the
- * sandboxed `PATH`. `passEnv` names extra host env vars to carry through the
- * otherwise minimal environment.
+ * Clarvis selects Bubblewrap on Linux and Seatbelt on macOS. A configured sandbox
+ * always fails closed when the native backend is unavailable; `availability:
+ * "optional"` is accepted on stored settings and treated as `"required"`.
+ * `readOnlyPaths` and `runtimePaths` are exposed read-only; `runtimePaths`
+ * additionally shape the sandboxed `PATH`. `passEnv` names extra host env vars to
+ * carry through the otherwise minimal environment.
  */
 export interface NativeSandbox {
   type: "native";
@@ -47,10 +46,8 @@ export interface SandboxedCommand {
   /**
    * Whether the command is actually wrapped in the selected native backend.
    *
-   * @remarks False both when no sandbox was configured and when one was
-   *   configured `optional` and the host cannot provide it — the caller needs
-   *   the distinction to report what a spawn really ran under, and it is not
-   *   recoverable from `file`/`args` without re-parsing them.
+   * @remarks False when no sandbox was configured or when the caller requested a
+   *   bare host spawn. It is not recoverable from `file`/`args` without re-parsing them.
    */
   sandboxed: boolean;
 }
@@ -526,11 +523,13 @@ export interface SandboxCommandArgs {
    * environment.
    */
   sandbox?: SandboxConfig | undefined;
-  /**
-   * Where a silently dropped `optional` sandbox is reported; defaults to
-   * {@link NOOP_TOOLS_LOGGER}.
-   */
+  /** Unused; accepted so existing callers that passed a fallback logger still typecheck. */
   logger?: ToolsLogger | undefined;
+  /**
+   * Skip the native backend and return the bare host spawn. Used when a call
+   * requested `require_escalated` after command review.
+   */
+  forceBare?: boolean;
   /**
    * Environment variable names holding credentials, subtracted from the
    * inherited environment on the unsandboxed path.
@@ -538,8 +537,8 @@ export interface SandboxCommandArgs {
    * @remarks
    * Ignored under a native backend, which builds its environment from nothing
    * via {@link minimalEnv} and where `passEnv` is already the only way in. This
-   * exists for the bare path on an unsupported host or an explicitly optional
-   * fallback — there, an agent's own shell tool could simply print the host's
+   * exists for the bare path on an unsupported host or a `forceBare` host
+   * spawn — there, an agent's own shell tool could simply print the host's
    * API keys, and a command that exfiltrates them is indistinguishable from one
    * that legitimately reads the environment.
    */
@@ -757,14 +756,15 @@ function appendBubblewrapMounts(args: string[], mounts: readonly BubblewrapMount
  *
  * @param args_ - see {@link SandboxCommandArgs}.
  * @returns the executable, args, and spawn options to run.
- * @throws {@link ToolError} (`io_error`) when the sandbox is required but
+ * @throws {@link ToolError} (`io_error`) when a sandbox is configured but
  *   the native sandbox is unavailable; (`invalid_input`) when a read-only path is
  *   relative or {@link validateReadOnlyPath} rejects it.
  * @remarks
- * When `sandbox` is undefined, or unavailable with `availability: "optional"`,
- * the command runs bare through the host shell with the host environment less
- * {@link SandboxCommandArgs.secretEnvNames | secretEnvNames}. Otherwise,
- * Bubblewrap drops capabilities and unshares user/pid/ipc/uts, while Seatbelt
+ * When `sandbox` is undefined or `forceBare` is set, the command runs through the
+ * host shell with the host environment less
+ * {@link SandboxCommandArgs.secretEnvNames | secretEnvNames}. A configured sandbox
+ * whose backend is unavailable fails closed, including `availability: "optional"`.
+ * Otherwise, Bubblewrap drops capabilities and unshares user/pid/ipc/uts, while Seatbelt
  * applies an SBPL profile to the spawned process. Both expose the same declared
  * filesystem roots, honor `network`, and run with the scrubbed
  * {@link minimalEnv}.
@@ -780,7 +780,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     temporaryRoots = [],
     probe = probeSandbox,
     shell = resolveShell,
-    logger = NOOP_TOOLS_LOGGER,
+    forceBare = false,
   } = args_;
   const resolvedTemporaryRoots = [...new Set(temporaryRoots.map((path) => resolve(path)))];
   const primaryTemporaryRoot = resolvedTemporaryRoots[0];
@@ -802,15 +802,8 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
       sandboxed: false,
     };
   };
-  if (sandbox === undefined) return bare();
+  if (forceBare || sandbox === undefined) return bare();
   const support = probe();
-  if (support.mode === "unavailable" && sandbox.availability === "optional") {
-    logger.warn(
-      { event: "tools.sandbox_unavailable", requested: sandbox.type, reason: support.reason },
-      "the configured sandbox is unavailable on this host and was declared optional; the command runs unsandboxed",
-    );
-    return bare();
-  }
   if (support.mode === "unavailable") {
     throw new ToolError("io_error", `Native sandbox is required: ${support.reason}`);
   }

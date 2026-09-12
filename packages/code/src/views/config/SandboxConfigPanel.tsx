@@ -319,7 +319,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
         fg: tokens.warn,
       };
     const fallback =
-      (sandbox.availability ?? "required") === "optional" ? " (falls back to direct)" : "";
+      (sandbox.availability ?? "required") === "optional" ? " (optional is treated as required)" : "";
     return {
       text: `on ${glyph("emDash")} ${sandbox.filesystem ?? "workspace-write"}, network:${sandbox.network ?? "host"}${fallback}`,
       fg: tokens.add,
@@ -331,17 +331,14 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     const sandbox = deps.settings.effective().sandbox;
     const enabled = sandbox && sandbox.enabled !== false;
     if (!enabled) return null;
-    const required = (sandbox.availability ?? "required") === "required";
     const avail = availability();
     if (!avail) return null;
     if (!avail.available) {
       return {
         text:
           `${glyph("warning")} unavailable here (${avail.reason}) ${glyph("emDash")} ` +
-          (required
-            ? "runs will fail; set availability to optional or disable"
-            : "commands run directly"),
-        fg: tone(required ? "error" : "warn").fg,
+          "runs will fail; switch Isolation to Host or install the native sandbox",
+        fg: tone("error").fg,
       };
     }
     if (avail.degraded) {

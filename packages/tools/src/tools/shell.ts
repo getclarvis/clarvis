@@ -17,6 +17,12 @@ import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
 import { sandboxCommand } from "../sandbox.ts";
 import { currentShellFlavor } from "../shell.ts";
+import { denySensitiveShellCommand } from "../lib/sensitive-commands.ts";
+import {
+  resolveSandboxEscalation,
+  SANDBOX_PERMISSION_CONDITION,
+  SANDBOX_PERMISSION_PROPERTIES,
+} from "../lib/sandbox-permissions.ts";
 import {
   createdTemporaryDirectories,
   snapshotExplicitTemporaryDirectories,
@@ -164,11 +170,15 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
             "Run-time limit in ms, clamped to the configured ceiling. Configuration defaults: " +
             "120000, ceiling 600000. Timeout kills the process tree and returns an error.",
         },
+        ...SANDBOX_PERMISSION_PROPERTIES,
       },
       required: ["command"],
+      ...SANDBOX_PERMISSION_CONDITION,
     },
     async handler(args, config, signal, hooks) {
       const command = args.command as string;
+      denySensitiveShellCommand(command);
+      const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
       const cwd = cwdArg
         ? resolvePath(
@@ -184,7 +194,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
 
       await statDirectory(cwd, cwdArg ?? cwd);
 
-      return runCommand(command, cwd, timeoutMs, config, signal, finalize, hooks?.onOutput);
+      return runCommand(command, cwd, timeoutMs, config, signal, finalize, hooks?.onOutput, forceBare);
     },
   };
 }
@@ -221,6 +231,7 @@ function runCommand(
   signal?: AbortSignal,
   finalize: typeof finalizeOutput = finalizeOutput,
   onOutput?: (chunk: string) => void,
+  forceBare = false,
 ): Promise<string> {
   const startedAt = Date.now();
   const temporarySnapshots = snapshotExplicitTemporaryDirectories(command);
@@ -236,6 +247,7 @@ function runCommand(
         sandbox: sandboxWithReadableStateArtifacts(command, config),
         secretEnvNames: config.secretEnvNames,
         logger: config.logger,
+        forceBare,
       });
       const detached = ownProcessGroup();
       config.logger.debug(

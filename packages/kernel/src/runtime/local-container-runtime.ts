@@ -8,7 +8,6 @@ import { lstat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { NOOP_LOGGER, resolveProvider, type RunRequest } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
-import { withGuardElicitWaitBound } from "@clarvis/loop/capabilities/tools";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
 import {
@@ -39,11 +38,7 @@ import {
 } from "@clarvis/paths";
 import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
 import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
-import {
-  createGuardRuntimeResolver,
-  resolveGuardMode,
-  type GuardSettings,
-} from "../guard/resolver.ts";
+import { resolveGuardMode, type GuardSettings } from "../guard/resolver.ts";
 import { streamHostModelCall } from "./model-stream.ts";
 import { assertInlineModelMedia } from "./model-media.ts";
 import { createHostRemoteMcpBridge, RUNTIME_MCP_METHOD } from "./remote-mcp.ts";
@@ -72,7 +67,6 @@ import {
   RUNTIME_WORKFLOWS_METHOD,
   type RuntimeWorkflowDescriptor,
 } from "./workflows-bridge.ts";
-import { createHostVcsGrant, RUNTIME_HOST_VCS_METHOD } from "./host-vcs-bridge.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
 type ResolvedLocalRuntimeInput = Omit<LocalRuntimeInput, "settings"> & {
@@ -374,7 +368,6 @@ export async function createLocalContainerRuntime(
       RUNTIME_WORKFLOWS_METHOD,
       RUNTIME_GOAL_METHOD,
       RUNTIME_PREVIEW_METHOD,
-      RUNTIME_HOST_VCS_METHOD,
       ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
       ...(input.taskResolver === undefined ? [] : [RUNTIME_TASKS_METHOD]),
       ...(input.skillsProvider === undefined ? [] : [RUNTIME_SKILLS_METHOD]),
@@ -409,22 +402,18 @@ export async function createLocalContainerRuntime(
       const snapshot = snapshots.get(runId);
       if (snapshot === undefined) throw new Error("runtime run snapshot was not prepared");
       const raw = args.rawBody as { continue_from?: unknown };
+      const hostCapabilities = [
+        ...(input.planFactory === undefined ? [] : ["plans"]),
+        ...(input.taskResolver === undefined ? [] : ["tasks"]),
+        ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
+        ...(snapshot.memory === undefined ? [] : ["memory"]),
+        ...(snapshot.goal === undefined ? [] : ["goal"]),
+      ];
       return {
         modelLeaseId: snapshot.leaseId,
         toolPolicy: snapshot.toolPolicy,
         loopPolicy: snapshot.loopPolicy,
-        hostCapabilities: [
-          ...(input.planFactory === undefined ? [] : ["plans"]),
-          ...(input.taskResolver === undefined ? [] : ["tasks"]),
-          ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
-          ...(snapshot.memory === undefined ? [] : ["memory"]),
-          ...(snapshot.goal === undefined ? [] : ["goal"]),
-          ...(snapshot.toolPolicy.enabled &&
-          snapshot.toolPolicy.maxGrant === "exec" &&
-          runAllowsCommandExecution(args.rawBody)
-            ? ["host_vcs"]
-            : []),
-        ],
+        ...(hostCapabilities.length > 0 ? { hostCapabilities } : {}),
         ...(snapshot.skillCatalog === undefined
           ? {}
           : {
@@ -455,7 +444,7 @@ export async function createLocalContainerRuntime(
         confine: args.deps.env.CLARVIS_AGENT_TOOLS_CONFINE,
         maxGrant: args.deps.env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
       };
-      const hostVcsEnabled =
+      const hostPreviewEnabled =
         toolPolicy.enabled &&
         toolPolicy.maxGrant === "exec" &&
         runAllowsCommandExecution(args.rawBody);
@@ -532,36 +521,6 @@ export async function createLocalContainerRuntime(
           (args.deps.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
       });
       const model = hostModelBroker(input, args, runId, leaseId, guardSettings);
-      const hostGuardResolution = hostVcsEnabled
-        ? createGuardRuntimeResolver({
-            loadSettings: () => loadedGuardSettings,
-            logger: input.deps.logger,
-            ...(input.guardAudit === undefined ? {} : { audit: input.guardAudit }),
-            sessionAllowlistFor: ({ executionId, owner }) =>
-              input.sessionAllowlistFor === undefined
-                ? defaultGuardAllowlist
-                : input.sessionAllowlistFor({ executionId, owner }),
-          })({
-            request: args.rawBody as RunRequest,
-            owner: args.owner,
-            env: args.deps.env,
-            workspaceRoot: input.workspaceRoot,
-            llm: args.deps.llm,
-            ...(args.elicit === undefined ? {} : { elicit: args.elicit }),
-            logger: args.deps.logger,
-            ...(args.externalSignal === undefined ? {} : { signal: args.externalSignal }),
-            executionId: runId,
-          })
-        : undefined;
-      const hostGuardElicit =
-        hostGuardResolution?.elicit === undefined
-          ? undefined
-          : withGuardElicitWaitBound(
-              hostGuardResolution.elicit,
-              (args.rawBody as RunRequest).elicit_wait_ms ??
-                args.deps.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS,
-              args.externalSignal,
-            );
       const skillCatalog =
         input.skillsProvider === undefined
           ? undefined
@@ -620,17 +579,8 @@ export async function createLocalContainerRuntime(
               return args.elicit(value.params, { signal, timeoutMs: value.timeoutMs });
             },
           },
-          ...(hostVcsEnabled
+          ...(hostPreviewEnabled
             ? [
-                createHostVcsGrant({
-                  workspaceRoot: input.workspaceRoot,
-                  ...(input.deps.logger === undefined ? {} : { logger: input.deps.logger }),
-                  ...(hostGuardResolution?.guard === undefined
-                    ? {}
-                    : { guard: hostGuardResolution.guard }),
-                  ...(hostGuardElicit === undefined ? {} : { elicit: hostGuardElicit }),
-                  secretEnvNames: input.loadSecretNames?.() ?? [],
-                }),
                 {
                   method: RUNTIME_PREVIEW_METHOD,
                   revision: RUNTIME_PREVIEW_REVISION,

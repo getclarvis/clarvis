@@ -64,12 +64,7 @@ export {
   DEFAULT_MAX_MONITORS,
   DEFAULT_REGEX_SCAN_BUDGET_MS,
 } from "./config.ts";
-export type {
-  RuntimeConfig,
-  AgentToolsOptions,
-  HostVcsDispatcher,
-  HostVcsDispatchResult,
-} from "./config.ts";
+export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
 export type { SandboxConfig } from "./sandbox.ts";
 export { systemTemporaryRoots } from "./sandbox.ts";
 export {

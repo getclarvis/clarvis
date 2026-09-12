@@ -32,12 +32,19 @@ function shellFacts(normalized: string, undecidable = false): ShellFacts {
 }
 
 function ctx(tool: string, args: Record<string, unknown>, shell?: ShellFacts): GuardContext {
+  const sandboxPermissions =
+    args.sandbox_permissions === "require_escalated" || args.sandbox_permissions === "use_default"
+      ? args.sandbox_permissions
+      : undefined;
+  const justification = typeof args.justification === "string" ? args.justification : undefined;
   return {
     tool,
     args,
     config: { workspaceRoot: ROOT } as unknown as GuardContext["config"],
     paths: [],
     ...(shell === undefined ? {} : { shell }),
+    ...(sandboxPermissions !== undefined ? { sandboxPermissions } : {}),
+    ...(justification !== undefined ? { justification } : {}),
   };
 }
 
@@ -78,15 +85,20 @@ describe("createShellGuard onDecision", () => {
     expect(decision).toMatchObject({ verdict: "deny", matched: "deny_list", tool: "shell" });
   });
 
-  it("reports host execution as reviewable by the configured answerer", () => {
-    const [decision] = decisionsFor(
-      { allowedCommands: ["*"] },
-      ctx("host_vcs", { command: "gh pr view 1" }),
-    );
+  it("reports require_escalated sandbox commands as human-escalated host execution", () => {
+    const context = ctx("shell", {
+      command: "gh pr view 1",
+      sandbox_permissions: "require_escalated",
+      justification: "need host gh",
+    });
+    context.config = { ...context.config, sandbox: { type: "native" } } as GuardContext["config"];
+    const [decision] = decisionsFor({ allowedCommands: ["*"] }, context);
     expect(decision).toMatchObject({
       verdict: "ask",
       matched: "host_command",
-      tool: "host_vcs",
+      escalate: "human",
+      tool: "shell",
+      reason: "need host gh",
     });
   });
 

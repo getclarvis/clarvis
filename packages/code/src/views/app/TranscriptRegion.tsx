@@ -4,7 +4,6 @@ import type { ElicitRequestParams, ElicitResult } from "../../adapters/elicit-ty
 import type { ActivityStore } from "../../adapters/activity-store.ts";
 import type { TranscriptStore } from "../../adapters/store.ts";
 import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
-import type { MemoryPressureSnapshot } from "../../adapters/memory-pressure.ts";
 import type { LayoutMode, SecondarySurfaceMode } from "../../app/layout.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import { tokens } from "../../theme/tokens.ts";
@@ -21,7 +20,6 @@ import {
   type TranscriptViewportHandle,
 } from "../transcript/TranscriptViewport.tsx";
 import { ElicitBlock } from "../ElicitBlock.tsx";
-import { MemoryPressureBanner } from "../MemoryPressureBanner.tsx";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;
@@ -76,10 +74,6 @@ export interface TranscriptRegionProps {
   onScrollbox: (scrollbox: ScrollBoxRenderable) => void;
   onHistoryHandle?: (handle: TranscriptViewportHandle | undefined) => void;
   draftNonEmpty?: Accessor<boolean>;
-  memoryPressure?: {
-    state: Accessor<MemoryPressureSnapshot>;
-    onRecover: () => void;
-  };
 }
 
 /**
@@ -175,14 +169,6 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
           onScrollbox={props.onScrollbox}
           onHandle={publishHandle}
         >
-          <Show when={props.memoryPressure !== undefined}>
-            <MemoryPressureBanner
-              state={() => props.memoryPressure!.state()}
-              onRecover={() => {
-                if (regionActive()) props.memoryPressure!.onRecover();
-              }}
-            />
-          </Show>
           <Show when={regionActive() ? props.run.elicit() : null} keyed>
             {(request: ElicitRequestParams) => (
               <ElicitBlock

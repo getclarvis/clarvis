@@ -103,7 +103,9 @@ import { isAvailablePlan, isLivePlan } from "../adapters/plan-projection.ts";
 import { bindSyntaxStyleRenderer } from "../theme/syntax.ts";
 import {
   createMemoryPressureController,
+  MEMORY_PRESSURE_STATUS_FAILED,
   memoryPressureAllowsSlash,
+  memoryPressureStatus,
   tuiRssLimitBytes,
   type MemoryPressurePhase,
 } from "../adapters/memory-pressure.ts";
@@ -216,7 +218,7 @@ export interface AppRunControls {
   inspectContext?: RunHost["inspectCurrentContext"];
   fitContext?: RunHost["fitCurrentContext"];
   cancel: () => boolean;
-  /** Detach an unresponsive run after the memory fuse's cancellation grace. */
+  /** Detach an unresponsive run after a host-owned cancellation grace. */
   forceStop?: () => void;
   active: () => boolean;
   /** Host-confirmed continuation of the observed run; independent of volatile tool consent. */
@@ -410,11 +412,23 @@ export function App(props: AppProps): JSX.Element {
   });
   const memoryPressure = createMemoryPressureController({
     limitBytes: tuiRssLimitBytes(process.env.CLARVIS_TUI_RSS_LIMIT_MB),
-    isRunActive: props.run.active,
-    cancelRun: props.run.cancel,
-    ...(props.run.forceStop === undefined ? {} : { forceStopRun: props.run.forceStop }),
-    reconnect: props.backend.reconnect,
-    canCollect: () => !(props.run.physicalActive?.() ?? props.run.active()),
+    maintain: () =>
+      props.store.releaseReconstructible?.() ?? {
+        attempted: [],
+        completed: true,
+        pending: false,
+        before: {},
+        after: {},
+      },
+    canCollect: () => {
+      const storeMem = props.store.memory?.();
+      const runMem = props.run.memory?.();
+      if ((storeMem?.active_rehydrates ?? 0) > 0 || (storeMem?.queued_rehydrates ?? 0) > 0)
+        return false;
+      if (runMem?.local_process_active) return false;
+      if (props.run.localBusy()) return false;
+      return !(props.run.physicalActive?.() ?? false);
+    },
     gc: () => Bun.gc(true),
     ledgerEnabled: () => activeDiagnosticLogger() !== undefined,
     ledger: () => ({
@@ -433,29 +447,14 @@ export function App(props: AppProps): JSX.Element {
     unsubscribePressure();
   });
   let previousPressurePhase: MemoryPressurePhase = pressure().phase;
-  let previousMemoryAdvisory = pressure().advisory;
   createEffect(() => {
-    const state = pressure();
-    const phase = state.phase;
-    if (phase === "aborting" && previousPressurePhase !== "aborting")
-      notify("RSS limit reached; active work was aborted and recovery is available", "error");
-    if (state.advisory && !previousMemoryAdvisory)
-      notify("Memory is rising above the healthy baseline; diagnostics captured a ledger", "warn");
+    const phase = pressure().phase;
+    if (phase === "failed" && previousPressurePhase !== "failed")
+      notify(MEMORY_PRESSURE_STATUS_FAILED, "error");
     previousPressurePhase = phase;
-    previousMemoryAdvisory = state.advisory;
   });
-  const pressureBlocked = (): boolean =>
-    ["aborting", "tripped", "recovering", "cooling"].includes(pressure().phase);
-  const pressureBlockedReason = (): string | null =>
-    pressureBlocked()
-      ? "New work is blocked by the memory fuse; use /recover-memory or clear the transcript with /clear."
-      : null;
-  const recoverMemory = (): void => {
-    memoryPressure
-      .recover()
-      .then((result) => notify(result.message, result.ok ? "success" : "warn"))
-      .catch((error: unknown) => notify(`memory recovery failed: ${errorText(error)}`, "error"));
-  };
+  const pressureBlocked = (): boolean => pressure().blocked;
+  const pressureBlockedReason = (): string | null => pressure().status;
   const refuseModelAction = (): boolean => {
     const reason = pressureBlockedReason();
     if (reason === null) return false;
@@ -808,10 +807,7 @@ export function App(props: AppProps): JSX.Element {
     status: () => notify(props.session.statusLine()),
     exportSession: () => {
       if (pressureBlocked()) {
-        notify(
-          "Export is blocked while the memory fuse is active; recover memory or start a new session first.",
-          "warn",
-        );
+        notify(pressureBlockedReason() ?? MEMORY_PRESSURE_STATUS_FAILED, "warn");
         return;
       }
       props.session
@@ -1113,10 +1109,6 @@ export function App(props: AppProps): JSX.Element {
   );
 
   const onSlashCommand = (name: string, args: string): SlashOutcome => {
-    if (name === "recover-memory") {
-      recoverMemory();
-      return "handled";
-    }
     if (pressureBlocked() && !memoryPressureAllowsSlash(name)) {
       notify(pressureBlockedReason()!, "warn");
       return "block";
@@ -1154,7 +1146,7 @@ export function App(props: AppProps): JSX.Element {
     return "pass";
   };
 
-  const commandProvider = createCommandCompletionProvider({ commands, recoverMemory });
+  const commandProvider = createCommandCompletionProvider({ commands });
 
   const mentionProvider: CompleteProvider = {
     id: "file",
@@ -1524,7 +1516,6 @@ export function App(props: AppProps): JSX.Element {
                 onScrollbox={(el) => (scrollEl = el)}
                 onHistoryHandle={(handle) => (historyHandle = handle)}
                 draftNonEmpty={draftNonEmpty}
-                memoryPressure={{ state: pressure, onRecover: recoverMemory }}
               />
             }
           />
@@ -1733,7 +1724,7 @@ export function App(props: AppProps): JSX.Element {
             onPopupOpenChange={setInputPopupOpen}
             onDraftChange={setDraftNonEmpty}
             targetLabel={() => {
-              if (pressureBlocked()) return "Memory recovery required";
+              if (pressureBlocked()) return "New work paused";
               if (props.run.active())
                 return props.run.workflowActivity() ? "Message workflow" : "Steer this run";
               if (/done|completed|cancel/i.test(props.run.status())) return "Ask for an adjustment";
@@ -1743,11 +1734,17 @@ export function App(props: AppProps): JSX.Element {
           />
           <Footer
             hint={footerHint}
-            status={() =>
-              props.run.compacting?.() === true
+            status={() => {
+              const restoring = memoryPressureStatus(pressure().phase);
+              if (restoring)
+                return {
+                  text: restoring,
+                  tone: pressure().phase === "failed" ? "error" : "running",
+                };
+              return props.run.compacting?.() === true
                 ? { text: "Compacting context…", tone: "running" }
-                : { text: "", tone: "info" }
-            }
+                : { text: "", tone: "info" };
+            }}
             runStrip={footerRunStrip}
             onRunStripMouseDown={() => {
               if (compactActivityStrip()) {

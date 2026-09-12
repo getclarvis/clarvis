@@ -298,8 +298,8 @@ moved process RSS from 173,328 KiB to 253,872 KiB before explicit collection; a 
 agent-picker churn moved it from 241,488 KiB to 305,692 KiB. Those are immediate post-churn samples,
 not leak rates, because heap/external allocations had not all been collected.
 
-A second Context Help run used a 220 MiB fuse to reach the supported `/recover-memory` path, whose
-successful backend rebuild invokes `Bun.gc(true)`. After 30 open/close cycles and recovery, process
+A second Context Help run used a 220 MiB fuse to reach the then-supported `/recover-memory` path, whose
+successful backend rebuild invoked `Bun.gc(true)`. After 30 open/close cycles and recovery, process
 RSS settled at 203,392 KiB versus 176,548 KiB before churn, about 26 MiB higher. Rebuilding the
 backend is a confounder, so this confirms retained residue but does not supersede the controlled
 post-GC per-row rates below. It also exposed a separate configuration property: with a healthy

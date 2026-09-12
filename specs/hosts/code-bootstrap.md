@@ -982,7 +982,7 @@ its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `Isola
 `ReviewPicker`, `ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
 after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
-floor panel. `MemoryPressureBanner`, elicitation and the fixed reading runway remain final children
+floor panel. Elicitation and the fixed reading runway remain final children
 of the single `TranscriptViewport` ScrollBox; no Plan pane is mounted below the transcript.
 
 The two-route overlay rule is stated at `packages/code/src/views/App.tsx`: a kind that owns the whole

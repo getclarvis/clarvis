@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { RunDetail, RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore, type TranscriptToolNode } from "../../src/adapters/store.ts";
+import {
+  createTranscriptStore,
+  type LocalBashDisplay,
+  type TranscriptToolNode,
+} from "../../src/adapters/store.ts";
 import { formatToolCall } from "../../src/views/tools/signature.ts";
 import { mutationStats } from "../../src/views/tools/mutation-gate.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
@@ -546,4 +550,53 @@ test("clear() cancels queued reloads and discards an in-flight reload result", a
       expect(store.nodes).toEqual([]);
     },
   );
+});
+
+test("pressure release dehydrates persisted tool bodies that rehydrate can refill", async () => {
+  const call = toolCall("c0");
+  await withStore({ fetchRun: async () => detail([call]) }, async (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(sink, call, "live");
+    expect(toolNodes(store)[0]!.result).toBe("result-c0");
+
+    const release = store.releaseReconstructible?.();
+    expect(release).toMatchObject({
+      attempted: ["transcript.reconstructible_tools"],
+      completed: true,
+      pending: false,
+    });
+    expect(release?.before.hydrated_tool_nodes).toBe(1);
+    expect(release?.after.hydrated_tool_nodes).toBe(0);
+    expect(toolNodes(store)[0]!.dehydrated).toBe(true);
+    expect(toolNodes(store)[0]!.result).toBeUndefined();
+
+    await store.rehydrate('exec_1::tool:["lead","c0"]');
+    expect(toolNodes(store)[0]!.result).toBe("result-c0");
+  });
+});
+
+test("pressure release keeps the only copy of local and unpersisted tool bodies", () => {
+  withStore({}, (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(sink, toolCall("c0"), "live");
+    const settle = store.beginLocalBash("echo keep");
+    const local: LocalBashDisplay = {
+      exitCode: 0,
+      stdout: "keep",
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      cancelled: false,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    };
+    settle(local);
+
+    const release = store.releaseReconstructible?.();
+    expect(release).toMatchObject({ attempted: [], completed: true, pending: false });
+    expect(toolNodes(store).map((node) => node.result)).toEqual([
+      "result-c0",
+      expect.stringContaining('"stdout":"keep"'),
+    ]);
+  });
 });

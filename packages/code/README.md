@@ -466,31 +466,33 @@ with the user, then applies it through `repairSettings`. A concurrent edit is a
 
 ### Interactive memory fuse
 
-`clarvis code` samples its own RSS every 500 ms. The interactive TUI warns at 80% of a 2 GiB
-default limit and, at the limit, cancels active work and blocks new model/tool submissions while
-leaving the process, transcript navigation, explicit transcript clearing and quit controls alive. Export is blocked
-after the fuse trips because constructing a large document is itself memory-intensive. The
-controller stops waiting after a 10-second abort grace even when a non-cooperative run still reports
-itself active; `/recover-memory` can then rebuild the backend instead of leaving the TUI permanently
-stuck in `aborting`. The sampler covers the TUI process RSS, not arbitrary external MCP/shell process
-trees, so host-level monitoring remains appropriate for untrusted external services. The banner and
-`/recover-memory` rebuild the backend through the normal reconnect path. A non-cooperative rebuild
-returns control to the TUI after 10 seconds and remains one physical attempt; a late success enters
-the ordinary cooling gate instead of starting a second backend beside it. The fuse rearms only after
-three samples below 70%. Recovery never clears the transcript automatically, so `/clear` remains an
-explicit user choice. Every model-start path, including `Work on task`, rechecks the fuse immediately
-before dispatch. Positive custom limits have a 512 MiB floor, preventing a recovery threshold below
-the measured healthy baseline. A separate efficiency advisory observes a 20-sample slope and requires
-both 512 MiB absolute RSS and 256 MiB growth from the process baseline; it records evidence but never
-cancels work or runs GC.
+`clarvis code` samples its own RSS every 500 ms. The interactive TUI treats three consecutive samples
+at 80% of a 2 GiB default as sustained pressure and then silently drops reconstructible completed
+tool bodies that persistence can refill. At the 2 GiB limit it blocks new model/tool submissions,
+export, and other expensive admissions while leaving the process, live observation, transcript
+navigation, explicit `/clear`, and quit controls alive. It does not cancel independent hosted work,
+restart the workspace host, or ask the user to recover memory. A 10-second bound covers one local
+maintenance callback; a 30-second bound covers a blocking critical episode. The sampler covers the
+TUI process RSS, not arbitrary external MCP/shell process trees, so host-level monitoring remains
+appropriate for untrusted external services. The fuse rearms after three samples below 70% with no
+pending local maintenance. A later natural drop can also rearm a measured failure that did not lose
+integrity. `/clear` remains an explicit session action, not part of recovery. Every model-start path,
+including `Work on task` and scheduled `/loop` turns, rechecks the fuse immediately before dispatch.
+Positive custom limits have a 512 MiB floor, preventing a rearm threshold below the measured healthy
+baseline. A separate efficiency advisory observes a 20-sample slope and requires both 512 MiB
+absolute RSS and 256 MiB growth from the process baseline; it records diagnostics but never blocks
+work, maintains, or runs GC.
 
-Recovery uses synchronous `Bun.gc(true)` only after the backend reconnects and every physical run
-handle and local process has settled. Forced visual detachment does not release that physical lease.
-If work is still settling, recovery skips collection and records `memory.gc.skipped`; it never queues
-an asynchronous collection that could overlap the next run. Every ten seconds and at memory state
-changes, debug mode records one aggregate `memory.ledger` containing transcript/session bytes,
-renderer renderable, lifecycle-pass and frame-listener counts,
-renderable ownership, physical handles, and protocol event-queue counters.
+Successful maintenance is silent. While admission is blocked the footer shows `Restoring the
+interface…`. A definitive failure notifies once that new work is paused because the interface is out
+of memory. Diagnostics never claim a ledger capture unless a diagnostic logger is active.
+
+Maintenance uses synchronous `Bun.gc(true)` at most once per episode, and only after reconstructible
+local caches were released and TUI-owned work (local shell, tool rehydration, and physical run
+handles) is idle. If that work is still settling, collection records `memory.gc.skipped` and is not
+queued for later. Every ten seconds and at memory state changes, debug mode records one aggregate
+`memory.ledger` containing transcript/session bytes, renderer renderable, lifecycle-pass and
+frame-listener counts, renderable ownership, physical handles, and protocol event-queue counters.
 
 Set `CLARVIS_TUI_RSS_LIMIT_MB` to another MiB value, or `0` to disable this interactive-only guard.
 It is not installed in the server, print mode or embeddable kernel.

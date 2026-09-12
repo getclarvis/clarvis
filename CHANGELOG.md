@@ -21,6 +21,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Changed
 
+- The interactive TUI now recovers from high process RSS locally and silently. Sustained pressure
+  drops reconstructible completed tool bodies; the 2 GiB limit only blocks expensive new admissions.
+  `/recover-memory`, the memory banner, and host rebuilds are gone. The footer may show
+  `Restoring the interface…`; a definitive failure notifies once. Independent hosted work is not
+  cancelled. `/clear`, `/quit`, and `/exit` remain available.
 - `host_vcs` is gone. Host Git or credential needs that the sandbox cannot satisfy retry the same
   `shell` or `monitor_start` command with `sandbox_permissions: "require_escalated"` and a
   justification. Isolation Sandbox reviews that one host effect; Isolation Host is already

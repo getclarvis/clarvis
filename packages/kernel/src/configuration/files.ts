@@ -18,6 +18,7 @@ import {
 } from "@clarvis/paths";
 import { settingsDocumentRevision } from "../config/config-store.ts";
 import { kernelSettingsSchema } from "../config/capability-registry.ts";
+import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
 
 const MAX_BYTES = 256 * 1024;
 const MAX_ENTRIES = 200;
@@ -152,6 +153,7 @@ function readDocument(file: string): { content: string; revision: string } | nul
 export function configurationFileOperation(
   roots: Readonly<Record<ConfigurationRoot, string>>,
   request: ConfigurationFileRequest,
+  onAttested?: (facts: ConfigurationMutationFacts) => void,
 ): unknown {
   if (!Object.hasOwn(roots, request.root)) throw new Error("Unknown configuration root.");
   const parts = pathParts(request.path);
@@ -191,6 +193,14 @@ export function configurationFileOperation(
     throw new Error("Configuration revision conflict. Read the file again before changing it.");
   if (request.operation === "delete") {
     if (current === null) throw new Error("Configuration file does not exist.");
+    onAttested?.({
+      canonicalPath: file,
+      root: request.root,
+      expectedRevision: current.revision,
+      nextRevision: null,
+      bytes: 0,
+      surface: "delete",
+    });
     directories(root, parents, false);
     unlinkSync(file);
     return { deleted: true };
@@ -216,7 +226,38 @@ export function configurationFileOperation(
       throw new Error("settings.json must be valid JSON satisfying Clarvis settings schema.");
     }
   }
+  const authoring =
+    (parts[0] === "agents" && parts.length === 2 && parts[1]?.endsWith(".md") === true) ||
+    (parts[0] === "skills" && parts.length === 3 && parts[2] === "SKILL.md") ||
+    (parts[0] === "workflows" && parts.length === 3 && parts[2] === "WORKFLOW.md");
+  onAttested?.({
+    canonicalPath: file,
+    root: request.root,
+    expectedRevision: current?.revision ?? null,
+    nextRevision: settingsDocumentRevision(content),
+    bytes: Buffer.byteLength(content),
+    surface: authoring ? "authoring" : "operational",
+  });
   directories(root, parents, true);
   writeFileAtomicSync(file, content);
   return { written: true, revision: settingsDocumentRevision(content) };
+}
+
+const EFFECT_PREVIEW_COMPLETE = new Error("configuration effect preview complete");
+
+/** Validate a prospective mutation through the real writer without applying it. */
+export function configurationFileMutationFacts(
+  roots: Readonly<Record<ConfigurationRoot, string>>,
+  request: ConfigurationFileRequest,
+): ConfigurationMutationFacts | undefined {
+  let facts: ConfigurationMutationFacts | undefined;
+  try {
+    configurationFileOperation(roots, request, (input) => {
+      facts = input;
+      throw EFFECT_PREVIEW_COMPLETE;
+    });
+  } catch (error) {
+    if (error !== EFFECT_PREVIEW_COMPLETE) throw error;
+  }
+  return facts;
 }

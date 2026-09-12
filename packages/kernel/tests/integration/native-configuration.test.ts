@@ -8,6 +8,7 @@ import { MockLLM } from "@clarvis/loop/testing";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
 import { settingsDocumentRevision } from "../../src/config/config-store.ts";
+import { withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -67,6 +68,7 @@ it("elicits before native configuration, edits through the real loop, and preser
     ],
   });
   let nativeRuns = 0;
+  const reviewStages: string[] = [];
   let containerStarts = 0;
   const placements: string[] = [];
   const kernel = await createFileKernel({
@@ -83,7 +85,13 @@ it("elicits before native configuration, edits through the real loop, and preser
     executeRun: async (args) => {
       expect(placements.at(-1)).toBe("host");
       nativeRuns++;
-      return executeRun({ ...args, deps: { ...args.deps, llm } });
+      return executeRun({
+        ...args,
+        deps: {
+          ...args.deps,
+          llm: withHostValidatedEffectReview(llm, (stage) => reviewStages.push(stage)),
+        },
+      });
     },
     runtimeFactory: {
       create: async () => {
@@ -95,7 +103,7 @@ it("elicits before native configuration, edits through the real loop, and preser
   try {
     const start = () =>
       kernel.runs.start({
-        messages: [],
+        messages: [{ role: "user", content: "Create and update the requested reviewer files." }],
         agent: "admiral",
         skill: { name: "clarvis-configure", task: "Create a reviewer" },
         configuration_session_id: "live-tui-instance",
@@ -119,6 +127,7 @@ it("elicits before native configuration, edits through the real loop, and preser
     expect(result.status).toBe("completed");
     expect(result.result).toContain("Reviewer configured");
     expect(nativeRuns).toBe(1);
+    expect(reviewStages).toEqual(["compile", "decide", "compile", "decide"]);
     expect(containerStarts).toBe(0);
     expect(placements.at(-1)).toBe("docker");
     expect(readFileSync(join(workspacePaths(workspaceRoot).clarvisDir, path), "utf8")).toBe(

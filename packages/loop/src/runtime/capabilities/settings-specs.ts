@@ -26,6 +26,11 @@
 import type { CapabilitySettingsSpec } from "@clarvis/capability";
 import { requestParamKeys } from "@clarvis/capability";
 import {
+  effectReviewSchema,
+  effectReviewSettingsSpec,
+  EFFECT_REVIEW_PLUGIN_FIELDS,
+} from "./effect-review-settings.ts";
+import {
   AGENT_TOOLS_REQUEST_PARAMS,
   AGENT_TOOLS_SETTINGS_FIELDS,
   GUARD_PLUGIN_FIELDS,
@@ -48,6 +53,7 @@ import {
 /** The built-in capability settings specs, in the order the generic merge /
  * plugin-surface / request-passthrough machinery iterates them. */
 export const BUILTIN_SETTINGS_SPECS: readonly CapabilitySettingsSpec[] = [
+  effectReviewSettingsSpec,
   hooksSettingsSpec,
   agentToolsSettingsSpec,
   sandboxSettingsSpec,
@@ -56,6 +62,7 @@ export const BUILTIN_SETTINGS_SPECS: readonly CapabilitySettingsSpec[] = [
 
 /** Capability blocks of settings.json (spread into settingsSchema). */
 export const capabilitySettingsFields = {
+  effect_review: effectReviewSchema.optional(),
   ...HOOKS_SETTINGS_FIELDS,
   ...AGENT_TOOLS_SETTINGS_FIELDS,
   ...AGENTS_SETTINGS_FIELDS,
@@ -75,6 +82,7 @@ export const capabilityRequestParamFields = {
  * therefore never reaches merged settings and never joins the executable
  * surface. */
 export const capabilityPluginFields = {
+  ...EFFECT_REVIEW_PLUGIN_FIELDS,
   ...HOOKS_PLUGIN_FIELDS,
   ...GUARD_PLUGIN_FIELDS,
   ...SKILLS_PLUGIN_FIELDS,

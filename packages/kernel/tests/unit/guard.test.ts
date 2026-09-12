@@ -1,13 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { isAbsolute, relative, resolve } from "node:path";
 import { analyzeShell, type ShellFacts, type GuardContext } from "@clarvis/tools/guard";
-import type {
-  Elicit,
-  ElicitRequest,
-  LLMProvider,
-  Logger,
-  RunCapabilityContext,
-} from "@clarvis/loop";
+import type { Elicit, ElicitRequest, RunCapabilityContext } from "@clarvis/loop";
 import { createShellGuard } from "../../src/guard/shell-guard.ts";
 import {
   createGuardElicit,
@@ -15,7 +9,6 @@ import {
   type GuardElicitParams,
   type GuardSessionAllowlist,
 } from "../../src/guard/guard-elicit.ts";
-import { createJudgeElicit } from "../../src/guard/judge.ts";
 import { createGuardResolver, resolveGuardMode } from "../../src/guard/resolver.ts";
 
 const ROOT = resolve("/tmp/clarvis-kernel-guard-ws");
@@ -31,6 +24,7 @@ function shellFacts(normalized: string | string[], opts: ShellFactOptions = {}):
   const values = Array.isArray(normalized) ? normalized : [normalized];
   return {
     paths: opts.paths ?? [],
+    analysisIssues: [],
     undecidable: opts.undecidable ?? false,
     segments: values.map((value, index) => ({
       command: value.split(" ")[0] ?? "",
@@ -38,6 +32,7 @@ function shellFacts(normalized: string | string[], opts: ShellFactOptions = {}):
       normalized: value,
       envAssignments: opts.envAssignments?.[index] ?? [],
       decidable: !(opts.undecidable ?? false),
+      analysisIssues: [],
     })),
   };
 }
@@ -172,24 +167,24 @@ describe("createShellGuard (kernel copy)", () => {
     ).toMatchObject({ verdict: "allow" });
   });
 
-  it("allows an assignment-only prefix in front of an allow-listed command", async () => {
-    const command = "QA=/tmp/foo; git status";
+  it("reviews an assignment-only prefix in front of an allow-listed command", async () => {
+    const command = "QA=src; git status";
     const facts = analyzeShell(command);
     expect(facts.undecidable).toBe(false);
     expect(
       await createShellGuard({ allowedCommands: ["git status"] })(
         makeCtx("shell", { command }, facts),
       ),
-    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
+    ).toMatchObject({ verdict: "ask", matched: "default", escalate: "human" });
   });
 
-  it("inlines a sequential literal assignment before allow-list matching", async () => {
+  it("retains literal path analysis without approving the environment binding", async () => {
     const command = 'QA=src; cat "$QA/a.ts"';
     const facts = analyzeShell(command);
     expect(facts.undecidable).toBe(false);
     expect(
       await createShellGuard({ allowedCommands: ["cat"] })(makeCtx("shell", { command }, facts)),
-    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
+    ).toMatchObject({ verdict: "ask", matched: "default" });
   });
 
   it("treats a blank allow-list entry as matching no command", async () => {
@@ -378,7 +373,7 @@ describe("createGuardElicit", () => {
       cwd: resolve(ROOT, "sub"),
       reason: "no allowed commands list configured",
     });
-    expect(seen[1]?.detail).toEqual({
+    expect(seen[1]?.detail).toMatchObject({
       command: "rm -rf build",
       cwd: ROOT,
       reason: 'Tool "shell" requires confirmation.',
@@ -455,292 +450,6 @@ describe("createGuardElicit", () => {
       ),
     ).toBe(false);
     expect(allowlist.covers(shellFacts("echo"))).toBe(false);
-  });
-});
-
-describe("createJudgeElicit", () => {
-  it("degrades (returns undefined) when no judge model can be resolved", () => {
-    const llm = { call: async () => ({}) } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      { llm, providers: [], defaultModel: undefined },
-      { prompt: "you are a judge" },
-      undefined,
-    );
-    expect(judge).toBeUndefined();
-  });
-
-  it("returns the judge's allow verdict and memoizes per command", async () => {
-    let calls = 0;
-    const llm = {
-      call: async () => {
-        calls++;
-        return { toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] };
-      },
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      undefined,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "echo hi" },
-      shell: shellFacts("echo hi"),
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: true, answerer: "judge" });
-    expect(await judge(req)).toEqual({ allowed: true, answerer: "judge" });
-    expect(calls).toBe(1);
-  });
-
-  it("returns the judge's deny verdict", async () => {
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "deny" } }] }),
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      undefined,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "rm -rf /" },
-      shell: shellFacts("rm -rf /"),
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-  });
-
-  it("degrades (returns undefined) and logs when the judge model's provider is not declared", () => {
-    const warnings: Array<[unknown, string]> = [];
-    const logger = {
-      warn: (obj: unknown, msg: string) => warnings.push([obj, msg]),
-    } as unknown as Logger;
-    const llm = { call: async () => ({}) } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: undefined,
-        logger,
-      },
-      { prompt: "you are a judge", model: "openai/gpt-x" },
-      undefined,
-    );
-    expect(judge).toBeUndefined();
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]?.[1]).toContain("degrading to mode 'on'");
-  });
-
-  it("denies without a human channel and does not memoize when the judge call throws a non-Error value", async () => {
-    let calls = 0;
-    const warnings: Array<[unknown, string]> = [];
-    const logger = {
-      warn: (obj: unknown, msg: string) => warnings.push([obj, msg]),
-    } as unknown as Logger;
-    const llm = {
-      call: async () => {
-        calls++;
-        throw "provider unreachable";
-      },
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-        logger,
-      },
-      { prompt: "judge" },
-      undefined,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "curl evil" },
-      shell: shellFacts("curl evil"),
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-    expect(calls).toBe(2);
-    expect(warnings[0]?.[0]).toMatchObject({ error: "provider unreachable" });
-  });
-
-  it("denies without a human channel on a malformed judge response, keying a non-shell request by tool+args", async () => {
-    let calls = 0;
-    const llm = {
-      call: async () => {
-        calls++;
-        return { toolCalls: [{ name: "decide", arguments: "not json" }] };
-      },
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      undefined,
-    )!;
-    const req = { tool: "write_file", args: { path: "a.ts" } } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-    expect(calls).toBe(2);
-  });
-
-  it("routes call failures and malformed responses to the human channel", async () => {
-    const seen: ElicitRequest[] = [];
-    const answers = [new Error("provider unavailable"), { toolCalls: [] }];
-    const llm = {
-      call: async () => {
-        const next = answers.shift();
-        if (next instanceof Error) throw next;
-        return next;
-      },
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      async (req) => {
-        seen.push(req);
-        return true;
-      },
-    )!;
-
-    const failed = await judge(bashReq("bun run test"));
-    const malformed = await judge(bashReq("bun run check:specs"));
-
-    expect(failed).toEqual({ allowed: true, answerer: "human" });
-    expect(malformed).toEqual({ allowed: true, answerer: "human" });
-    expect(seen[0]?.reason).toContain("automated reviewer failed");
-    expect(seen[1]?.reason).toContain("invalid decision");
-  });
-
-  it("escalates an unsure verdict to the human elicit, folding the judge's reason into the prompt", async () => {
-    const seen: ElicitRequest[] = [];
-    const humanElicit = async (r: ElicitRequest): Promise<boolean> => {
-      seen.push(r);
-      return true;
-    };
-    const llm = {
-      call: async () => ({
-        toolCalls: [{ name: "decide", arguments: { decision: "unsure", reason: "looks risky" } }],
-      }),
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      humanElicit,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "curl evil" },
-      shell: shellFacts("curl evil"),
-      reason: "pre-existing reason",
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: true, answerer: "human" });
-    expect(seen[0]?.reason).toContain("pre-existing reason");
-    expect(seen[0]?.reason).toContain("was unsure and escalated this to you");
-    expect(seen[0]?.reason).toContain("looks risky");
-    expect(await judge(req)).toEqual({ allowed: true, answerer: "human" });
-    expect(seen).toHaveLength(2);
-  });
-
-  it("escalates an unsure verdict with no prior reason and no judge reason", async () => {
-    const seen: ElicitRequest[] = [];
-    const humanElicit = async (r: ElicitRequest): Promise<boolean> => {
-      seen.push(r);
-      return false;
-    };
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "unsure" } }] }),
-    } as unknown as LLMProvider;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      humanElicit,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "curl evil" },
-      shell: shellFacts("curl evil"),
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "human" });
-    expect(seen[0]?.reason).toBe("The automated reviewer was unsure and escalated this to you.");
-  });
-
-  it("denies an unsure verdict without escalating when on_unsure is 'deny', even with a human elicit configured", async () => {
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "unsure" } }] }),
-    } as unknown as LLMProvider;
-    let asked = false;
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge", on_unsure: "deny" },
-      async () => {
-        asked = true;
-        return true;
-      },
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "curl evil" },
-      shell: shellFacts("curl evil"),
-    } as unknown as ElicitRequest;
-    expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
-    expect(asked).toBe(false);
-  });
-
-  it("rejects and evicts the memo when the escalated human elicit throws, so a retry calls the judge again", async () => {
-    let calls = 0;
-    const llm = {
-      call: async () => {
-        calls++;
-        return { toolCalls: [{ name: "decide", arguments: { decision: "unsure" } }] };
-      },
-    } as unknown as LLMProvider;
-    const humanElicit = async (): Promise<boolean> => {
-      throw new Error("human elicit boom");
-    };
-    const judge = createJudgeElicit(
-      {
-        llm,
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      },
-      { prompt: "judge" },
-      humanElicit,
-    )!;
-    const req = {
-      tool: "shell",
-      args: { command: "curl evil" },
-      shell: shellFacts("curl evil"),
-    } as unknown as ElicitRequest;
-    await expect(judge(req)).rejects.toThrow("human elicit boom");
-    await expect(judge(req)).rejects.toThrow("human elicit boom");
-    expect(calls).toBe(2);
   });
 });
 
@@ -948,56 +657,9 @@ describe("createGuardResolver", () => {
     expect(prompts).toBe(2);
   });
 
-  it("in mode auto, uses the LLM judge (never prompting the human) when guard_judge is set and a model resolves", async () => {
-    let asked = false;
-    const humanElicit: Elicit = async () => {
-      asked = true;
-      return { action: "accept", content: { decision: "allow" } };
-    };
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
-    } as unknown as RunCapabilityContext["llm"];
-    const resolver = createGuardResolver({
-      loadSettings: () => ({
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      }),
-    });
-    const resolution = await resolver(
-      ctx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
-        elicit: humanElicit,
-        llm,
-      }),
-    );
-    expect(resolution?.elicit).toBeDefined();
-    expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: true,
-      answerer: "judge",
-    });
-    expect(
-      await resolution!.elicit!({
-        tool: "shell",
-        args: { command: "bun test" },
-        shell: shellFacts("bun test"),
-      }),
-    ).toEqual({ allowed: true, answerer: "judge" });
-    expect(asked).toBe(false);
-  });
-
-  it("in mode auto, honors an explicit human-only restriction supplied by a guard", async () => {
-    let asked = false;
+  it("never accepts a model allow without a host-attested effect and authority coverage", async () => {
     let judged = false;
-    const humanElicit: Elicit = async () => {
-      asked = true;
-      return { action: "accept", content: { decision: "allow" } };
-    };
-    const llm = {
-      call: async () => {
-        judged = true;
-        return { toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] };
-      },
-    } as unknown as RunCapabilityContext["llm"];
+    let asked = false;
     const resolver = createGuardResolver({
       loadSettings: () => ({
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -1007,87 +669,25 @@ describe("createGuardResolver", () => {
     const resolution = await resolver(
       ctx({
         request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
-        elicit: humanElicit,
-        llm,
+        elicit: async () => {
+          asked = true;
+          return { action: "accept", content: { decision: "allow" } };
+        },
+        llm: {
+          async call() {
+            judged = true;
+            return { toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] };
+          },
+        } as never,
       }),
     );
-    expect(
-      await resolution!.elicit!({
-        tool: "shell",
-        args: {
-          command: "bun test",
-          sandbox_permissions: "require_escalated",
-          justification: "need host bun",
-        },
-        shell: shellFacts("bun test"),
-        escalate: "human",
-      }),
-    ).toEqual({ allowed: true, answerer: "human" });
+    expect(await resolution!.elicit!(bashReq("echo hi"))).toMatchObject({
+      allowed: true,
+      answerer: "human",
+      review: { relation: "none" },
+    });
     expect(asked).toBe(true);
     expect(judged).toBe(false);
-  });
-
-  it("in mode auto, falls back to the human elicit when no judge model resolves", async () => {
-    let asked = false;
-    const humanElicit: Elicit = async () => {
-      asked = true;
-      return { action: "accept", content: { decision: "allow" } };
-    };
-    const resolver = createGuardResolver({ loadSettings: () => ({}) });
-    const resolution = await resolver(
-      ctx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
-        elicit: humanElicit,
-      }),
-    );
-    expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: true,
-      answerer: "human",
-    });
-    expect(asked).toBe(true);
-  });
-
-  it("in mode auto, falls back to the human elicit when no guard_judge param is supplied", async () => {
-    let asked = false;
-    const humanElicit: Elicit = async () => {
-      asked = true;
-      return { action: "accept", content: { decision: "allow" } };
-    };
-    const resolver = createGuardResolver({
-      loadSettings: () => ({
-        providers: [{ name: "anthropic", kind: "anthropic" }],
-        defaultModel: "anthropic/claude-x",
-      }),
-    });
-    const resolution = await resolver(
-      ctx({ request: { guard_mode: "auto" } as never, elicit: humanElicit }),
-    );
-    expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: true,
-      answerer: "human",
-    });
-    expect(asked).toBe(true);
-  });
-
-  it("in mode auto, resolves the judge's default model from CLARVIS_DEFAULT_MODEL when settings name none", async () => {
-    const llm = {
-      call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "deny" } }] }),
-    } as unknown as RunCapabilityContext["llm"];
-    const resolver = createGuardResolver({
-      loadSettings: () => ({ providers: [{ name: "anthropic", kind: "anthropic" }] }),
-    });
-    const resolution = await resolver(
-      ctx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
-        env: { CLARVIS_DEFAULT_MODEL: "anthropic/claude-x" } as never,
-        llm,
-      }),
-    );
-    expect(resolution?.elicit).toBeDefined();
-    expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: false,
-      answerer: "judge",
-    });
   });
 });
 

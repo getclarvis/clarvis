@@ -764,3 +764,12 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   one call site (`packages/loop/src/runtime/build-run-deps.ts`); whether `@clarvis/server` or
   a bare `createAgentTools` consumer does anything with the default `stderr` sink is not visible from
   this package's own source.
+## Effect review boundary
+
+Shell/monitor execution consumes the host guard outcome without changing its coarse tool effect.
+Segment issues and literal-data proof are review facts, not a shell fallback. Git/GitHub probes use
+a separate host-injected argv runner and never dispatch the command under review. Docker/Podman
+retain their escalation refusal. Production:
+[shell.ts](../../packages/kernel/src/guard/effects/shell.ts).
+Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
+See [effect review](effect-review.md).

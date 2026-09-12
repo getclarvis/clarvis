@@ -13,5 +13,8 @@ export function guardReviewLabel(node: TranscriptToolNode): string {
   if ((node.toolName || node.mcpName) !== "shell" || node.guard === undefined) return "";
   const prefix = node.guard.mode === "auto" ? "auto-guard" : "guard";
   const verdict = node.guard.outcome === "allowed" ? "approved" : "denied";
-  return `${prefix} ${verdict} · ${ANSWERER_LABEL[node.guard.answerer]}`;
+  const facts = [node.guard.effect_id, node.guard.relation, node.guard.failure_kind].filter(
+    (value): value is string => value !== undefined && /^[a-z][a-z0-9_.]{0,127}$/.test(value),
+  );
+  return `${prefix} ${verdict} · ${ANSWERER_LABEL[node.guard.answerer]}${facts.length === 0 ? "" : " · " + facts.join(" · ")}`;
 }

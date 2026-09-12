@@ -1,4 +1,4 @@
-import { composePromptCacheKey, sanitizeErrorMessage } from "@clarvis/capability";
+import { composePromptCacheKey, sanitizeErrorMessage, contentToText } from "@clarvis/capability";
 import { randomUUID } from "node:crypto";
 import type { EnvConfig } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
@@ -40,6 +40,12 @@ import { composeCapabilityRegistry, createCapabilityRequestView } from "@clarvis
 import { createRunTraceProjectors } from "./run-trace.ts";
 import { boundPromise } from "./support/bounded.ts";
 import type { ExtensionAdmissionController } from "@clarvis/capability";
+import type {
+  OperatorAuthorityReader,
+  OperatorAuthoritySeed,
+  OperatorAuthorityState,
+  UserSteerContext,
+} from "@clarvis/capability";
 import { extensionAdmissionFor } from "./extension-admission.ts";
 
 /**
@@ -52,6 +58,22 @@ import { extensionAdmissionFor } from "./extension-admission.ts";
  *   through {@link ExecuteRunArgs} instead.
  */
 export interface ExecuteRunDeps {
+  /** Host substrate factory; callbacks are private to the engine, never capability ports. */
+  operatorAuthority?: (input: {
+    seed?: OperatorAuthoritySeed;
+    prior?: OperatorAuthorityState;
+    parent?: OperatorAuthorityReader;
+    owner: string;
+    executionId: string;
+    signal?: AbortSignal;
+  }) => {
+    reader: OperatorAuthorityReader;
+    onSteer(context: UserSteerContext): void;
+    finalize(outcome: {
+      status: string;
+      disposition?: "final" | "checkpoint";
+    }): OperatorAuthorityState;
+  };
   env: EnvConfig;
   llm: LLMProvider;
   connections: ConnectionManager;
@@ -84,6 +106,12 @@ export interface ExecuteRunDeps {
  * capabilities).
  */
 export interface ExecuteRunArgs {
+  /** Authenticated host input; intentionally absent from rawBody and RunRequest. */
+  operatorAuthoritySeed?: OperatorAuthoritySeed;
+  /** Same-process inherited authority is fenced against the parent's live revision. */
+  operatorAuthorityParent?: OperatorAuthorityReader;
+  /** Host controller retirement revokes intention without cancelling background execution. */
+  operatorAuthoritySignal?: AbortSignal;
   rawBody: unknown;
   owner: string;
   deps: ExecuteRunDeps;
@@ -286,6 +314,9 @@ export async function collectCapabilityState(
  *   {@link CapabilityEvent}s on {@link ExecuteRunArgs.onCapabilityEvent}.
  */
 export async function executeRun({
+  operatorAuthoritySeed,
+  operatorAuthorityParent,
+  operatorAuthoritySignal,
   rawBody,
   owner,
   deps,
@@ -358,6 +389,7 @@ export async function executeRun({
     const promptCacheTtl = parsed.prompt_cache_ttl ?? (shape.humanParkLikely ? "1h" : "5m");
 
     let continuation: RunContinuation | undefined;
+    let priorAuthority: OperatorAuthorityState | undefined;
     if (parsed.continue_from !== undefined) {
       const prior = deps.traceStore.getById(owner, parsed.continue_from);
       if (prior === null || prior.final_context === undefined || prior.final_context.length === 0) {
@@ -369,6 +401,7 @@ export async function executeRun({
           ? {}
           : { capability_state: prior.capability_state }),
       };
+      priorAuthority = prior.operator_authority_state;
       parsed.session_id ??= prior.request.session_id ?? prior.id;
       parsed.agent_instance_id ??= prior.request.agent_instance_id;
     }
@@ -402,9 +435,51 @@ export async function executeRun({
     }
 
     let journal: RunJournal | undefined;
+    const authority = deps.operatorAuthority?.({
+      seed: operatorAuthoritySeed,
+      parent: operatorAuthorityParent,
+      prior: priorAuthority,
+      owner,
+      executionId,
+      signal:
+        operatorAuthoritySignal === undefined
+          ? controller.signal
+          : AbortSignal.any([controller.signal, operatorAuthoritySignal]),
+    });
+    const admittedSteers = new Map<string, string>();
+    const authoritySteer: SteerSource | undefined =
+      steer === undefined
+        ? undefined
+        : {
+            drain() {
+              return steer.drain().map((message) => {
+                const id = message.id ?? randomUUID();
+                if (
+                  operatorAuthoritySeed !== undefined &&
+                  operatorAuthoritySeed.parent_run_id === undefined
+                ) {
+                  admittedSteers.set(id, contentToText(message.content));
+                }
+                return { ...message, id };
+              });
+            },
+          };
     try {
       const { response, trace, wallStartedAt, finalContext, runCapabilities } =
         await runOrchestrator(parsed, {
+          operatorAuthority: authority?.reader,
+          onOperatorSteer:
+            authority === undefined
+              ? undefined
+              : (context) => {
+                  if (
+                    context.id === undefined ||
+                    admittedSteers.get(context.id) !== context.message
+                  )
+                    return;
+                  admittedSteers.delete(context.id);
+                  authority.onSteer(context);
+                },
           openJournal: (startedAt: number): RunJournal | undefined => {
             journal = deps.traceStore.openJournal?.({
               header: {
@@ -426,7 +501,7 @@ export async function executeRun({
           resultContract,
           signal: controller.signal,
           elicit,
-          ...(steer !== undefined ? { steer } : {}),
+          ...(authoritySteer !== undefined ? { steer: authoritySteer } : {}),
           ...(compaction !== undefined ? { compaction } : {}),
           ...(continuation !== undefined ? { continuation } : {}),
           workspaceRoot: deps.workspaceRoot,
@@ -457,6 +532,9 @@ export async function executeRun({
         ...(finalContext !== undefined ? { finalContext } : {}),
         ...(capabilityState !== undefined ? { capabilityState } : {}),
         ...(hostMetadata === undefined ? {} : { hostMetadata }),
+        ...(authority === undefined
+          ? {}
+          : { operatorAuthorityState: authority.finalize(response) }),
       });
 
       try {
@@ -523,6 +601,7 @@ export async function executeRun({
 
       return { executionId, response };
     } finally {
+      authority?.finalize({ status: "cancelled" });
       externalSignal?.removeEventListener("abort", onExternalAbort);
       journal?.close();
     }

@@ -17,6 +17,10 @@ export type {
   GuardReview,
   Segment,
   ShellFacts,
+  ShellAnalysisIssue,
+  ShellAnalysisIssueKind,
+  ShellAnalysisImpact,
+  GuardReviewability,
   PathFact,
   GuardContext,
   Guard,
@@ -31,3 +35,5 @@ export { WINDOWS_DEFAULT_ALLOWED_COMMANDS } from "./dialects/powershell.ts";
 export { buildGuardContext } from "./context.ts";
 export { resolveCandidate } from "./paths.ts";
 export { withinWorkspace, touchesOutside, isDangerousCommand } from "./helpers.ts";
+export type { GuardEffectCallFact, EffectReviewDetail } from "./effect-review.ts";
+export { isCanonicalAuthoringPath } from "./authoring-path.ts";

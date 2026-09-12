@@ -1,9 +1,12 @@
+import type { OperatorAuthorityState } from "@clarvis/capability";
 import type { RunRequest } from "@clarvis/capability";
 import type { ContextSnapshotEntry, RunResponse } from "@clarvis/capability";
 import type { ExecutionRecord, Trace } from "@clarvis/capability";
 
 /** The inputs {@link buildRecord} folds into a persistable {@link ExecutionRecord}. */
 export interface BuildRecordInput {
+  /** Final host-owned authority state, separate from capability slots and transcript. */
+  operatorAuthorityState?: OperatorAuthorityState;
   /** The execution id this record is keyed by. */
   id: string;
   /** The owner key name the record is filed under. */
@@ -65,5 +68,8 @@ export function buildRecord(input: BuildRecordInput): ExecutionRecord {
     ...(input.finalContext !== undefined ? { final_context: input.finalContext } : {}),
     ...(input.capabilityState !== undefined ? { capability_state: input.capabilityState } : {}),
     ...(input.hostMetadata !== undefined ? { host_metadata: input.hostMetadata } : {}),
+    ...(input.operatorAuthorityState === undefined
+      ? {}
+      : { operator_authority_state: input.operatorAuthorityState }),
   };
 }

@@ -401,3 +401,17 @@ export {
   capabilityRunPoliciesSchema,
 } from "./capability-run-policies.ts";
 export type { CapabilityRunPolicies, CapabilitySkillPlansMode } from "./capability-run-policies.ts";
+export type {
+  EffectReviewConfig,
+  ReviewedEffectClass,
+  ReviewedEffectInference,
+  ReviewedEffectTarget,
+  OperatorEvidence,
+  OperatorAuthorityBinding,
+  OperatorAuthoritySeed,
+  AuthorityEnvelopeV1,
+  OperatorAuthorityState,
+  OperatorAuthoritySnapshot,
+  OperatorAuthorityReader,
+} from "./operator-authority.ts";
+export { OPERATOR_AUTHORITY_PORT, inheritOperatorAuthority } from "./operator-authority.ts";

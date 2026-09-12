@@ -132,10 +132,13 @@ export const guardJudgeSchema = z
     prompt: z
       .string()
       .min(1, "guard_judge.prompt must be a non-empty string")
-      .max(32_768, "guard_judge.prompt must be at most 32768 characters"),
+      .max(32_768, "guard_judge.prompt must be at most 32768 characters")
+      .optional(),
+    guidance: z.string().min(1).max(32_768).optional(),
     model: z.string().min(1).optional(),
     on_unsure: z.enum(["ask", "deny"]).optional(),
     timeout_ms: z.number().int().positive().max(120_000).optional(),
+    max_retries: z.number().int().min(0).max(2).optional(),
   })
   .strict();
 

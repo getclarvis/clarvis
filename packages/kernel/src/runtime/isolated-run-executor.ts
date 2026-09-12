@@ -104,7 +104,7 @@ export function createIsolatedRunExecutor(options: {
   const pollIntervalMs = Math.max(5, Math.min(250, options.pollIntervalMs ?? 25));
   return async (args) => {
     args.externalSignal?.throwIfAborted();
-    const raw = args.rawBody as { execution_id?: unknown };
+    const raw = args.rawBody as { execution_id?: unknown; continue_from?: unknown };
     if (typeof raw?.execution_id !== "string") {
       throw Object.assign(new Error("isolated run requires a host execution id"), {
         code: "invalid_request",
@@ -142,7 +142,11 @@ export function createIsolatedRunExecutor(options: {
               args.onCapabilityEvent?.(event.event as CapabilityEvent);
             } else if (event.channel === "trace_record") {
               const record = (value as { record?: unknown }).record as ExecutionRecord;
-              if (record?.id !== runId || record.owner_key_name !== args.owner) {
+              if (
+                record?.id !== runId ||
+                record.owner_key_name !== args.owner ||
+                record.operator_authority_state !== undefined
+              ) {
                 throw Object.assign(new Error("runtime trace identity mismatch"), {
                   code: "unauthorized",
                 });

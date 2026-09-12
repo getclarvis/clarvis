@@ -1,4 +1,5 @@
 import type { ShellFlavor } from "../lib/platform.ts";
+import type { ShellAnalysisIssue } from "./types.ts";
 
 /**
  * A word produced by a dialect's tokenizer: its unquoted `text`, and whether it
@@ -68,6 +69,9 @@ export interface ShellDialect {
    * reason about quoting and command position.
    */
   decidable(segment: string): boolean;
+
+  /** Structured causes; older dialects conservatively fall back to tokenizer_gap. */
+  analysisIssues?(segment: string): Array<Omit<ShellAnalysisIssue, "segmentIndex">>;
 
   /**
    * Reduce a token list to the real argv, recording any stripped prefix

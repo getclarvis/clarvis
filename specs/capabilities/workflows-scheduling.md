@@ -1221,3 +1221,13 @@ grant from every profile so a leader can never become a
   so the constant is a judgement that cannot be verified mechanically.
 - **`DispatchUnit.replicaCount`** is recorded into the start trace by `runOne` and projected
   (`packages/workflows/src/trace-events.ts`), but nothing in this package reads it back; its consumer would be a UI.
+## Authority inheritance
+
+`runLeader` receives only a compiled parent intersection through host-only execution arguments.
+The workflow capability reads the authority port at attach time. A manager-generated brief and
+leader steer queue do not become operator evidence. Parent revision drift closes inherited grants;
+independent child runs cannot multiply one-attempt retry grants. Production:
+[run-leader.ts](../../packages/workflows/src/run-leader.ts) and
+[operator-authority.ts](../../packages/capability/src/operator-authority.ts).
+Test: [operator-authority.test.ts](../../packages/capability/tests/unit/operator-authority.test.ts).
+See [effect review](../execution/effect-review.md).

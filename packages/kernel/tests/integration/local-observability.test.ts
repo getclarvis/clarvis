@@ -8,6 +8,31 @@ import type { ProcessRunner } from "../../src/ports/process-runner.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
 describe("local.process.failed", () => {
+  it("enforces a combined UTF-8 output ceiling without disclosing child output", async () => {
+    const logger = recordingLogger();
+    const runner = createNodeProcessRunner(logger);
+    await expect(
+      runner.run({
+        command: process.execPath,
+        args: [
+          "-e",
+          "process.stdout.write('private'.repeat(100)); process.stderr.write('private'.repeat(100))",
+        ],
+        environment: {},
+        maxOutputBytes: 100,
+        timeoutMs: 1000,
+      }),
+    ).rejects.toThrow("admitted limit");
+    expect(JSON.stringify(logger.records)).not.toContain("private");
+    const result = await runner.run({
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('ok')"],
+      environment: {},
+      maxOutputBytes: 2,
+      timeoutMs: 1000,
+    });
+    expect(result).toMatchObject({ exitCode: 0, stdout: "ok" });
+  });
   it("rejects pre-start, in-flight, timeout, and spawn failures", async () => {
     const runner = createNodeProcessRunner();
     const already = new AbortController();

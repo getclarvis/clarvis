@@ -58,6 +58,8 @@ export interface ShellGuardDecision {
  * Command entries may include `*` globs matched against normalized bash segments.
  */
 export interface ShellGuardOptions {
+  /** Complete host proof may refine syntactic uncertainty, never a deterministic denial. */
+  attestedReviewable?: (ctx: GuardContext) => boolean;
   /** Auto review lets the judge answer explicit unsandbox asks; ordinary Host opacity stays human-only. */
   allowHostJudge?: boolean;
   /** Host-attested run placement; omitted means ordinary host execution. */
@@ -191,6 +193,7 @@ function commandsAllowed(
 ): boolean {
   if (bash.undecidable) return false;
   if (bash.segments.length === 0) return false;
+  if (bash.segments.some((segment) => segment.envAssignments.length > 0)) return false;
   return commands.every((command) => command === undefined || matchers.some((m) => m(command)));
 }
 
@@ -278,7 +281,8 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         reason: "command matches the denied commands list",
       };
     }
-    if (ctx.shell?.undecidable && denied !== undefined && denied.length > 0) {
+    const attested = opts?.attestedReviewable?.(ctx) === true;
+    if (ctx.shell?.undecidable && !attested && denied !== undefined && denied.length > 0) {
       return {
         matched: "undecidable",
         verdict: "deny",
@@ -298,7 +302,7 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
             : "this command will run outside the sandbox on the host",
       };
     }
-    if (ctx.shell?.undecidable) {
+    if (ctx.shell?.undecidable && !attested) {
       return {
         matched: "undecidable",
         verdict: "ask",
@@ -311,6 +315,14 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         matched: "outside_workspace",
         verdict: "deny",
         reason: "command touches paths outside the workspace",
+      };
+    }
+    if (ctx.shell?.segments.some((segment) => segment.envAssignments.length > 0)) {
+      return {
+        matched: "default",
+        verdict: "ask",
+        ...(placement === "host" ? { escalate: "human" as const } : {}),
+        reason: "command changes an environment binding that has not been attested",
       };
     }
     const sensitive = sensitivePath(ctx);

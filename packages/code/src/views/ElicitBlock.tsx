@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { InputRenderable } from "@opentui/core";
 import { PLAN_REVIEW_ELICIT_KIND } from "../adapters/elicit-types.ts";
+import { effectReviewExplanation } from "../core/transcript/effect-review.ts";
 import type {
   ElicitCommandDetail,
   ElicitRequestParams,
@@ -359,6 +360,9 @@ export function ElicitBlock(props: {
           {(detail: ElicitCommandDetail) => (
             <box flexDirection="column" flexShrink={0}>
               <text fg={tokens.fg}>{detail.reason}</text>
+              <For each={effectReviewExplanation(detail)}>
+                {(line) => <text fg={tokens.warn}>{line}</text>}
+              </For>
               <Show when={detail.warning} keyed>
                 {(warning: string) => <text fg={tokens.warn}>{warning}</text>}
               </Show>

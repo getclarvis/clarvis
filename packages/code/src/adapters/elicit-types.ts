@@ -40,7 +40,7 @@ export interface ElicitRequestParams {
 }
 
 /** Structured command context of a guard confirmation. */
-export interface ElicitCommandDetail {
+export interface ElicitCommandDetail extends EffectReviewDetail {
   /** The literal command awaiting approval, exactly as the agent wants to run it. */
   command: string;
   /** Absolute directory the command would run in. */
@@ -50,6 +50,8 @@ export interface ElicitCommandDetail {
   /** Analyzer caveat (e.g. undecidable expansions) rendered as a warning. */
   warning?: string;
 }
+
+import type { EffectReviewDetail } from "@clarvis/protocol";
 
 type ElicitAction = "accept" | "decline" | "cancel";
 

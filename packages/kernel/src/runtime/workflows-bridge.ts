@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { parseTaskTitle, type Capability, type RunRequest } from "@clarvis/capability";
+import {
+  inheritOperatorAuthority,
+  parseTaskTitle,
+  type Capability,
+  type RunRequest,
+} from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import { generateExecutionId } from "@clarvis/trace";
 import {
@@ -123,6 +128,11 @@ export function createHostWorkflowBridge(
         try {
           const elicit = ctx.elicitForLeader?.(request.runId);
           return await executeRun({
+            operatorAuthoritySeed: inheritOperatorAuthority(
+              ctx.operatorAuthority,
+              ctx.managerRunId,
+            ),
+            operatorAuthorityParent: ctx.operatorAuthority,
             rawBody,
             owner: ctx.owner,
             deps: ctx.deps,

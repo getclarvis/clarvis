@@ -177,27 +177,23 @@ describe("runtime model stream", () => {
     gate.resolve();
   });
 
-  it("admits only the exact profile, vision and resolved auto-judge models", () => {
+  it("admits only profile and vision models, never a host reviewer model", () => {
     const body = {
       profiles: [{ model: "chat/main" }],
       vision_model: "vision/image/model",
       guard_mode: "auto",
       guard_judge: { prompt: "review" },
     };
-    expect([...runtimeModelPairs(body, { defaultModel: "judge/default" })]).toEqual([
+    expect([...runtimeModelPairs(body)]).toEqual(["chat\0main", "vision\0image/model"]);
+    expect([...runtimeModelPairs({ ...body, guard_judge: { model: "judge/override" } })]).toEqual([
       "chat\0main",
       "vision\0image/model",
-      "judge\0default",
     ]);
-    expect([
-      ...runtimeModelPairs(
-        { ...body, guard_judge: { model: "judge/override" } },
-        { defaultModel: "judge/default" },
-      ),
-    ]).toEqual(["chat\0main", "vision\0image/model", "judge\0override"]);
-    expect([
-      ...runtimeModelPairs({ ...body, guard_mode: "on" }, { defaultModel: "judge/default" }),
-    ]).toEqual(["chat\0main", "vision\0image/model"]);
-    expect([...runtimeModelPairs({ profiles: [{ model: "invalid" }, {}] }, {})]).toEqual([]);
+    expect([...runtimeModelPairs({ ...body, guard_mode: "on" })]).toEqual([
+      "chat\0main",
+      "vision\0image/model",
+    ]);
+    expect([...runtimeModelPairs({ profiles: [{ model: "invalid" }, {}] })]).toEqual([]);
+    expect([...runtimeModelPairs({ profiles: [], guard_mode: "auto" })]).toEqual([]);
   });
 });

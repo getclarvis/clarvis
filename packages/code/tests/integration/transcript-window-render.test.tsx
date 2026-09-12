@@ -53,10 +53,105 @@ test("wheel-up reveals one page on user intent and idle frames never rewind repe
     await fixture.frames(20);
     expect(fixture.history().snapshot().start).toBe(start);
     expect(box.stickyScroll).toBe(false);
+    expect(fixture.history().snapshot().followingTail).toBe(false);
     expect(fixture.history().scrollBy(Infinity)).toBe("end");
     await fixture.frames();
     expect(box.stickyScroll).toBe(true);
+    expect(fixture.history().snapshot().followingTail).toBe(true);
     expect(fixture.rendered.captureCharFrame()).toContain("WHEEL_119");
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
+});
+
+test("streaming height shrink while following the tail does not pause follow", async () => {
+  const fixture = await openTranscript();
+  const stillFollowing = () => {
+    expect(fixture.history().snapshot().followingTail).toBe(true);
+    expect(fixture.scrollbox().stickyScroll).toBe(true);
+    expect(
+      fixture.scrollbox().content.findDescendantById("transcript-reader-indicator"),
+    ).toBeUndefined();
+  };
+  const waitFor = async (token: string) => {
+    for (let frame = 0; frame < 20; frame++) {
+      await fixture.frames(1);
+      if (fixture.rendered.captureCharFrame().includes(token)) return;
+    }
+    expect(fixture.rendered.captureCharFrame()).toContain(token);
+  };
+  try {
+    for (let i = 0; i < 40; i++) fixture.store.appendNotice(`FOLLOW_${i}`);
+    await waitFor("FOLLOW_39");
+    stillFollowing();
+
+    const sink = fixture.store.openRun("follow");
+    applyEvent(
+      sink,
+      { type: "iteration_started", agent: "lead", iteration: 1, model: "fixture", at: 0 },
+      "live",
+    );
+    applyEvent(
+      sink,
+      {
+        type: "text_delta",
+        agent: "lead",
+        iteration: 1,
+        channel: "text",
+        text: Array.from({ length: 24 }, (_, index) => `STREAM_${index}`).join("\n\n"),
+        reset: true,
+        at: 1,
+      },
+      "live",
+    );
+    await waitFor("STREAM_23");
+    stillFollowing();
+
+    fixture.resize(22, 24);
+    await fixture.frames(3);
+    stillFollowing();
+    const prefixes = [
+      "aaaaaaaaaaaaaa **bol",
+      "aaaaaaaaaaaaaa **bold",
+      "aaaaaaaaaaaaaa **bold*",
+      "aaaaaaaaaaaaaa **bold**",
+      "aaaaaaaaaaaaaa **bold** xx",
+    ];
+    for (const [index, prefix] of prefixes.entries()) {
+      applyEvent(
+        sink,
+        {
+          type: "text_delta",
+          agent: "lead",
+          iteration: 1,
+          channel: "text",
+          text: prefix,
+          reset: true,
+          at: 2 + index,
+        },
+        "live",
+      );
+      await fixture.frames(3);
+      stillFollowing();
+    }
+
+    applyEvent(
+      sink,
+      {
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        model: "fixture",
+        at: 10,
+        response: "DONE_SHORT",
+        response_phase: "final_answer",
+        input_tokens: 1,
+        output_tokens: 1,
+      },
+      "live",
+    );
+    await waitFor("DONE_SHORT");
+    stillFollowing();
   } finally {
     fixture.rendered.renderer.destroy();
   }

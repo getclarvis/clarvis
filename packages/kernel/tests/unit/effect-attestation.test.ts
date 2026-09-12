@@ -351,6 +351,7 @@ describe("closed effect attestation", () => {
     "binds retry to repository, branch, HEAD and open PR using bounded argv probes",
     async () => {
       const deps = fixture();
+      deps.environment.HOME = "/stale-probe-home";
       const result = await attestShell(context("gh run rerun 42 --repo owner/repo --failed"), deps);
       expect(result.facts[0]).toMatchObject({
         id: "github.actions.rerun_failed",
@@ -362,9 +363,13 @@ describe("closed effect attestation", () => {
           (call) =>
             call.timeoutMs === 3000 &&
             call.maxOutputBytes === 16384 &&
-            call.environment === deps.environment,
+            call.environment.HOME === process.env.HOME &&
+            call.environment.PATH === process.env.PATH,
         ),
       ).toBe(true);
+      expect(deps.calls).toHaveLength(6);
+      expect(deps.calls[0]!.environment).not.toBe(deps.environment);
+      expect(deps.environment.HOME).toBe("/stale-probe-home");
       expect(deps.calls.some((call) => call.args.includes("rerun"))).toBe(false);
     },
   );

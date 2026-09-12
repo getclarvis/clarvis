@@ -193,7 +193,7 @@ memory notices. Production and test ownership live in
 
 | Key | Value |
 | --- | --- |
-| `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` |
+| `messages` | `protoMessagesToEngine(params.messages)`, then one appended `{ role: "user", content }` per expandable `$name` mention (`dollarSkillSeeds`), then, for a skill run, `{ role: "user", content: skillRun.seed }` |
 | `providers` | `merged.providers ?? []` |
 | `servers` | every active-plugin MCP namespace plus each operator MCP namespace referenced by a profile; plugin entries carry `auto_tools: true` |
 | `profiles` | the transitive `can_spawn` closure, deduplicated |
@@ -412,6 +412,13 @@ Per call, in order:
    contract this implies: a host that already rendered the skill's seed into the current turn's
    `messages` for display must still forward the `skill` start param, and must leave that local copy
    out of `messages`, or the run doubles the seed.
+3a. Independently, `dollarSkillSeeds(userMessagesText(params.messages), options.skills, params.skill?.name)`
+   (`packages/kernel/src/skills/dollar-mentions.ts`) appends one `renderSkillPrompt` user message per
+   `$name` mention that resolves to exactly one user-invocable skill with no `agent` field. This is
+   the harness analog of `load_skill` on an already-open turn: it does not fork, does not expand
+   agent-backed names such as `$clarvis-configure`, ignores denylisted environment tokens and unknown
+   names, and skips a name already seeded by `params.skill`. Start and continue share this path
+   because both go through the assembler.
 4. `skillPlansMode` is consulted only when both a `skill` param and a resolved skill exist, and is passed the skill's root `source` for provenance.
    The same resolved invocation produces `hook_user_prompt_expansion.command_name`: a plugin source
    contributes its install identity as `<plugin>:<skill>`, while other sources keep the skill name
@@ -919,6 +926,14 @@ is. Test `packages/kernel/tests/component/settings-assembler.test.ts`.
 user-invoked skill, and plugin provenance is represented by a generic qualified command name rather
 than by changing the skill seed or forwarding the kernel-only `skill` input.
 Production `packages/kernel/src/runs/settings-assembler.ts`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts`.
+
+**INV-R34b.** `$name` mentions in the current turn's user text inject a skill seed into that
+turn when the name is a unique user-invocable skill without `agent`; they never fork a run, never
+expand agent-backed or denylisted names, and never duplicate a `skill` start-param seed.
+Production `packages/kernel/src/skills/dollar-mentions.ts` and
+`packages/kernel/src/runs/settings-assembler.ts`. Test
+`packages/kernel/tests/unit/dollar-mentions.test.ts` and
 `packages/kernel/tests/component/settings-assembler.test.ts`.
 
 **INV-R35.** A malformed `mcpServers` entry fails the whole assembly by name; it is never dropped.

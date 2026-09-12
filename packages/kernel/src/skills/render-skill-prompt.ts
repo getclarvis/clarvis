@@ -74,7 +74,9 @@ function metadataBucket(metadata: unknown): Record<string, unknown> {
  * It does not govern the model-facing `load_skill` tool, which serves a skill's
  * body into the run that asked for it and never consults this field. A skill
  * naming an agent therefore runs on it when a user types `/name`, and in the
- * caller's own turn when an agent loads it mid-run.
+ * caller's own turn when an agent loads it mid-run. A `$name` mention in
+ * already-open user text never consults this field to fork a run: agent-backed
+ * skills stay literal tokens there.
  */
 export function skillEntryAgent(metadata: unknown): string | undefined {
   const agent = (metadata as { agent?: unknown } | undefined)?.agent;

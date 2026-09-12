@@ -7,7 +7,8 @@ export const CLARVIS_CONFIGURE_SKILL = {
   description:
     "Configure Clarvis itself: settings, models, Agent Profiles, subagents, grants, capabilities, " +
     "Extension Profiles, plugins, skills, MCP, hooks, memory, plans, goals, tasks, workflows, runtime, " +
-    "remote SSH, /loop, background runs and reload. Use for customization or diagnosis.",
+    "remote SSH, /loop, background runs and reload. Use for customization or diagnosis. " +
+    "Not for implementing workspace tasks.",
   body: `# Configure Clarvis
 
 Loading grants no permissions. Ordinary turns must direct configuration changes to

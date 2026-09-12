@@ -16,7 +16,7 @@ configuration hubs their contents (`app/commands.tsx`), and the one deliberate e
 command outside the agent loop entirely (`adapters/local-shell.ts`).
 
 The unifying problem is turning one line of typed text into one of four dispatches — an ordinary
-chat message, a `/slash` command, a `!shell` command, or a `@mention`/attachment — while a single
+chat message, a `/slash` command, a `!shell` command, or a `@mention`/`$skill`/attachment — while a single
 popup (`AutocompletePopup`) and a family of generic list/card primitives (`FloatFrame`,
 `ListPicker`, `PickerRow`, `ChoiceRows`, `FilterField`) serve every place in the app that needs a
 searchable, keyboard-navigable, windowed list: the Agent Profile picker and the slash-command popup
@@ -314,6 +314,16 @@ understate its own size to slip past the budget.
 providers are display-only — the popup shows their items but the popup claims no keys, so Enter
 still submits the line (used for argument-hint providers built in `packages/code/src/views/App.tsx` from
 each command's declared `args`).
+
+`App.tsx` hands the dock `/` (`createCommandCompletionProvider`), `@` (workspace files), `$`
+(`createSkillMentionProvider` in `packages/code/src/views/input/skill-completion.ts`), then argument
+hints. The `$` provider fuzzy-filters `Commands.entries()` whose `namespace` is `"skills"` — the same
+`LivePrompt` rows `skillCommand` registered — and inserts the bare name. Accepting a row uses
+`acceptMention` and does **not** submit; `$clarvis-configure` is listed but never converted into a
+configure run. Expansion of `$name` in an already-open turn is owned by the kernel assembler
+([kernel-runs.md](kernel-runs.md) INV-R34b). Production: `providerList` in
+`packages/code/src/views/App.tsx`. Test: `packages/code/tests/unit/autocomplete.test.ts` and
+`packages/code/tests/integration/input-dock-submit.test.tsx`.
 
 `InputDock` lazily mounts autocomplete on its first open and then changes the container's `visible`
 state instead of destroying the OpenTUI subtree. Closing clears provider/query/selection state but

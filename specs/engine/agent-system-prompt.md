@@ -97,7 +97,7 @@ Production: `packages/code/src/views/config/AgentsPanel.tsx`, `packages/code/src
 
 ### 4.7 Skills catalog
 
-The skills section still owns discovery and loading. It additionally tells the model: if the user names a skill, load it before acting; otherwise use judgement; the user's current instructions take precedence; if a skill is why the run must pause, identify the relevant `SKILL.md` rule.
+The skills section still owns discovery and loading. It tells the model: if the user names a skill, load it before acting; if they did not, load a listed skill when its description clearly matches the current task and skip it only with a short reason; do not load a skill merely because it is in the list; the user's current instructions take precedence; if a skill is why the run must pause, identify the relevant `SKILL.md` rule.
 
 Production: `renderSkillsSection`. Test: `packages/skills/tests/unit/tool.test.ts`.
 

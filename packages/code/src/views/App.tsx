@@ -79,6 +79,7 @@ import {
 } from "./input/autocomplete.ts";
 import { fuzzyFilter } from "../core/fuzzy.ts";
 import { createCommandCompletionProvider } from "./input/command-completion.ts";
+import { createSkillMentionProvider } from "./input/skill-completion.ts";
 import { capitalize } from "./blocks.tsx";
 import { projectHeader } from "./header-projection.ts";
 import { HeaderRows } from "./HeaderRows.tsx";
@@ -1169,6 +1170,19 @@ export function App(props: AppProps): JSX.Element {
         .map((f) => ({ label: f, value: f, insert: f })),
   };
 
+  const skillMentionProvider = createSkillMentionProvider({
+    skills: () =>
+      commands
+        .entries()
+        .filter((entry) => entry.namespace === "skills")
+        .map((entry) => ({
+          name:
+            entry.slashes[0]?.replace(/^\//, "") ||
+            (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
+          description: entry.desc,
+        })),
+  });
+
   const argHintProviders = (): CompleteProvider[] =>
     commands
       .entries()
@@ -1207,7 +1221,7 @@ export function App(props: AppProps): JSX.Element {
    */
   const providerList = createMemo<CompleteProvider[]>(() => {
     commands.revision();
-    return [commandProvider, mentionProvider, ...argHintProviders()];
+    return [commandProvider, mentionProvider, skillMentionProvider, ...argHintProviders()];
   });
 
   let copyingSelection = false;

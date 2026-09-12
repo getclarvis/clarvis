@@ -9,6 +9,7 @@ import { type AgentProfile, type McpServerConfig, type SkillsProvider } from "@c
 import { kernelError } from "../core/errors.ts";
 import type { AgentRecord, ConfigStore, ContextRecord } from "../config/config-store.ts";
 import { resolveStoreSharedPrompt, stampedSharedPrompt } from "../config/shared-prompt.ts";
+import { dollarSkillSeeds, userMessagesText } from "../skills/dollar-mentions.ts";
 import { renderSkillPrompt, skillEntryAgent } from "../skills/render-skill-prompt.ts";
 import { protoMessagesToEngine } from "./map-message.ts";
 import { guardParksOnHuman } from "../guard/resolver.ts";
@@ -360,6 +361,13 @@ function buildProfile(
  * `skill` key itself is deliberately not forwarded to the engine, which has no
  * concept of one; everything a skill run means is expressed as an ordinary
  * request.
+ *
+ * Independently, `$name` mentions in the current turn's user text inject one
+ * {@link renderSkillPrompt} seed per expandable skill (user-invocable, no
+ * `agent` field) after those messages. This is the harness analog of
+ * `load_skill` on an already-open turn: it does not fork a run, does not
+ * expand `/clarvis-configure`-style agent skills, and skips a name already
+ * seeded by `params.skill`.
  */
 export function createSettingsRunAssembler(
   store: Pick<
@@ -401,6 +409,11 @@ export function createSettingsRunAssembler(
     });
 
     const skillRun = resolveSkillRun(params.skill, options.skills);
+    const mentionSeeds = dollarSkillSeeds(
+      userMessagesText(params.messages),
+      options.skills,
+      params.skill?.name,
+    );
     const skillPlansMode =
       params.skill === undefined || skillRun === undefined
         ? undefined
@@ -458,6 +471,7 @@ export function createSettingsRunAssembler(
     return {
       messages: [
         ...protoMessagesToEngine(params.messages),
+        ...mentionSeeds.map((content) => ({ role: "user" as const, content })),
         ...(skillRun !== undefined ? [{ role: "user" as const, content: skillRun.seed }] : []),
       ],
       providers: merged.providers ?? [],

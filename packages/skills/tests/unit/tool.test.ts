@@ -28,6 +28,8 @@ describe("loadSkillTool definition", () => {
 
   it("uses a separate strict tool for resource pages", () => {
     expect(loadSkillTool.description).toContain("accepts only `name`");
+    expect(loadSkillTool.description).toContain("clearly matches");
+    expect(loadSkillTool.description).not.toContain("only when the task calls for that skill");
     expect(readSkillResourceTool.wireName).toBe(READ_SKILL_RESOURCE_TOOL_NAME);
     const schema = readSkillResourceTool.inputSchema as {
       required: string[];
@@ -68,10 +70,13 @@ describe("renderSkillsSection", () => {
     expect(section).toContain(`\`${LOAD_SKILL_TOOL_NAME}\``);
     expect(section).toContain(`\`${READ_SKILL_RESOURCE_TOOL_NAME}\``);
     expect(section).toContain("That tool accepts only `name`");
-    expect(section).toContain("only when the task actually calls for it");
-    expect(section).toContain("If the user names a skill, load it before acting on that work");
+    expect(section).toContain("If the user names a skill");
+    expect(section).toContain("description clearly matches");
+    expect(section).toContain("merely because it is in the list");
     expect(section).toContain("The user's current instructions take precedence over the skill");
     expect(section).toContain("identify the relevant SKILL.md rule");
+    expect(section).not.toContain("not because of keywords or mere availability");
+    expect(section).not.toContain("only when the task actually calls for it");
   });
 
   it("is byte-identical with no bootstraps, however the argument is omitted", () => {

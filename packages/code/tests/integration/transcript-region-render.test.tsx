@@ -17,7 +17,6 @@ import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elici
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { LayoutMode } from "../../src/app/layout.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
-import type { MemoryPressureSnapshot } from "../../src/adapters/memory-pressure.ts";
 import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import type { TranscriptViewportHandle } from "../../src/views/transcript/TranscriptViewport.tsx";
@@ -143,7 +142,6 @@ function baseProps(overrides: Partial<TranscriptRegionProps> = {}): TranscriptRe
     onOpenDetail: overrides.onOpenDetail,
     onScrollbox: overrides.onScrollbox ?? (() => {}),
     onHistoryHandle: overrides.onHistoryHandle,
-    memoryPressure: overrides.memoryPressure,
   };
 }
 
@@ -162,32 +160,6 @@ test("with no nodes and no elicitation, the splash screen renders", async () => 
   const out = t.captureCharFrame();
   expect(out).toContain("coder");
   expect(out).toContain("z-ai/glm-5.2");
-  t.renderer.destroy();
-});
-
-test("memory pressure stays after committed history in the mutable tail", async () => {
-  const pressure: MemoryPressureSnapshot = {
-    phase: "tripped",
-    advisory: false,
-    rss: 5 * 1024 ** 3,
-    heapUsed: 1,
-    external: 1,
-    arrayBuffers: 1,
-    limitBytes: 5 * 1024 ** 3,
-    warningBytes: 4 * 1024 ** 3,
-    rearmBytes: 3.5 * 1024 ** 3,
-    sampledAt: 1,
-  };
-  const nodes = [toolNode()];
-  const t = await mount(
-    baseProps({
-      store: store(nodes),
-      memoryPressure: { state: () => pressure, onRecover: () => {} },
-    }),
-  );
-  const out = t.captureCharFrame();
-  expect(out).toContain("Work is blocked");
-  expect(out).toContain("/recover-memory");
   t.renderer.destroy();
 });
 

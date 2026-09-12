@@ -84,11 +84,12 @@ Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). T
 | default RSS limit | 2 GiB | `packages/code/src/adapters/memory-pressure.ts` (`DEFAULT_TUI_RSS_LIMIT_BYTES`) |
 | positive custom-limit floor | 512 MiB | `packages/code/src/adapters/memory-pressure.ts` (`MIN_TUI_RSS_LIMIT_BYTES`, `tuiRssLimitBytes`) |
 | sampling interval | 500 ms | `packages/code/src/adapters/memory-pressure.ts` |
-| warning threshold | 80% of the configured limit | `packages/code/src/adapters/memory-pressure.ts` |
-| recovery threshold | three samples below 70% | `packages/code/src/adapters/memory-pressure.ts` |
-| abort grace | 10 seconds before forced run detachment | `packages/code/src/adapters/memory-pressure.ts` |
-| recovery GC | synchronous `Bun.gc(true)` only when every physical run handle and local process has settled; otherwise skip | `packages/code/src/views/App.tsx` (`createMemoryPressureController`), `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
-| efficiency advisory | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not abort or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`) |
+| warning threshold | 80% of the configured limit, sustained for three samples before local maintenance | `packages/code/src/adapters/memory-pressure.ts` |
+| recovery threshold | three samples below 70% with no pending local maintenance | `packages/code/src/adapters/memory-pressure.ts` |
+| maintenance step | 10 seconds for one in-flight local `maintain` callback | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_PRESSURE_STEP_TIMEOUT_MS`) |
+| critical episode | 30 seconds before a blocking episode fails closed | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_PRESSURE_EPISODE_TIMEOUT_MS`) |
+| recovery GC | at most one synchronous `Bun.gc(true)` per episode, only when TUI-owned work (local shell, rehydration, physical handles) is idle; otherwise skip | `packages/code/src/views/App.tsx` (`createMemoryPressureController`), `packages/code/src/adapters/memory-pressure.ts` (`collectOnce`) |
+| efficiency advisory | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not maintain, block or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`) |
 
 The fuse samples only the TUI process. It does not account for external MCP servers, shell children
 or other process trees (`packages/code/README.md`).
@@ -102,6 +103,7 @@ or other process trees (`packages/code/README.md`).
 | one sealed record's mounted prose | 512 Ki characters | `packages/code/src/core/transcript/records.ts` (`snapshotTranscriptNode`), `packages/code/src/core/transcript/presenters.ts` (`TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS`) |
 | one immutable publication tool field | 64 Ki characters; arguments additionally use a 40 Ki character/value and 512-node projection | `packages/code/src/core/transcript/tool-display.ts` (`TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `projectTranscriptToolDisplay`) |
 | hydrated tool bodies | 200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts` |
+| pressure release of reconstructible tools | drop completed persisted bodies only; local/`!` results and in-flight tools keep their only copy | `packages/code/src/adapters/store.ts` (`releaseReconstructible`) |
 | one hydrated tool body | 32 MiB estimated | `packages/code/src/adapters/store.ts` |
 | visual transcript turns | 20 semantic turns | `packages/code/src/run-host.ts` |
 | session resume chain | 10,000 messages and 16,000,000 payload characters | `SESSION_RESUME_MAX_MESSAGES`, `SESSION_RESUME_MAX_PAYLOAD_CHARS`, and `resumeSession` in `packages/code/src/adapters/session.ts` |
@@ -398,21 +400,25 @@ not a blanket assumption that every conditional surface has the upstream `FloatF
 
 ### 4.7 RSS fuse and recovery
 
-The memory controller samples every 500 ms. At 80% it warns; at the limit it cancels active work
-once and blocks new work while leaving explicit recovery, clear and quit routes available
-(`packages/code/src/adapters/memory-pressure.ts`). Recovery reconnects the backend,
-synchronously collects JavaScript garbage only when every physical backend handle and local process
-has settled, then waits for three samples below 70% before rearming. Forced UI detachment does not
-release the physical lease; when work is still settling, recovery records `memory.gc.skipped` and
-does not schedule collection for later (`packages/code/src/run-host.ts`, `physicalWorkActive`;
-`packages/code/src/adapters/memory-pressure.ts`, `finishRecovery`). This prevents a recovery GC from
-overlapping the next provider/tool run.
+The memory controller samples every 500 ms. Three consecutive samples at 80% start one silent local
+maintenance pass that drops reconstructible completed tool bodies
+(`packages/code/src/adapters/store.ts`, `releaseReconstructible`). At the limit it blocks expensive
+new admissions without cancelling independent hosted work or restarting the workspace host
+(`packages/code/src/adapters/memory-pressure.ts`). One in-flight `maintain` callback is kept even
+after its 10-second step timeout; a blocking critical episode fails closed after 30 seconds. At most
+one synchronous `Bun.gc(true)` runs per episode, and only when TUI-owned local shell work,
+rehydration, and physical run handles are idle. When that work is still settling, recovery records
+`memory.gc.skipped` and does not schedule collection for later (`packages/code/src/views/App.tsx`,
+`canCollect`; `packages/code/src/adapters/memory-pressure.ts`, `collectOnce`). Rearm requires three
+samples below 70% and no pending local maintenance. A later natural RSS drop can also rearm a
+measured failure that did not lose integrity.
 
-The default is 2 GiB, so warning begins at 1.6 GiB. Positive overrides are clamped to 512 MiB, while
-zero still disables the fuse. A separate efficiency advisory can report sustained growth far below
-the hard limit, but never cancels, reconnects or collects. Debug-only aggregate ledgers are gated by
-the active diagnostic logger so ordinary runs do not traverse renderer or host counters every ten
-seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
+The default is 2 GiB, so the preventive band begins at 1.6 GiB. Positive overrides are clamped to
+512 MiB, while zero still disables the fuse. A separate efficiency advisory can report sustained
+growth far below the hard limit, but never maintains, blocks or collects. Debug-only aggregate
+ledgers are gated by the active diagnostic logger so ordinary runs do not traverse renderer or host
+counters every ten seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`). Successful
+maintenance is silent; the footer shows `Restoring the interface…` only while admission is blocked.
 
 ## 5. Invariants
 
@@ -449,13 +455,15 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
    Test: `packages/code/tests/component/run-host.test.ts` ("manager runs release persisted history
    and rebuild the complete chain for the next turn").
 
-8. **PERF-8: the 2 GiB-default RSS fuse warns at 80%, cancels once at the limit, and remains
-   recoverable rather than exiting the process. Positive overrides cannot fall below 512 MiB, and
-   recovery GC runs only while physical work is idle.**
+8. **PERF-8: the 2 GiB-default RSS fuse starts silent local maintenance after sustained 80%
+   samples, blocks expensive admissions at the limit without exiting or restarting the host, and
+   rearms after three safe samples. Positive overrides cannot fall below 512 MiB, and recovery GC
+   runs at most once per episode while TUI-owned work is idle.**
    Production: `packages/code/src/adapters/memory-pressure.ts` (`tuiRssLimitBytes`,
-   `finishRecovery`), `packages/code/src/run-host.ts` (`physicalWorkActive`).
+   `createMemoryPressureController`), `packages/code/src/adapters/store.ts`
+   (`releaseReconstructible`).
    Test: `packages/code/tests/unit/memory-pressure.test.ts` and
-   `packages/code/tests/component/run-host.test.ts` (physical lease cases).
+   `packages/code/tests/unit/store-hydration.test.ts` (pressure-release cases).
 
 9. **PERF-9: memory sampling uses one unrefed 500 ms timer and a disabled fuse installs no timer.**
    Production: `packages/code/src/adapters/memory-pressure.ts`.
@@ -727,11 +735,13 @@ churn moved process RSS from 173,328 KiB to 253,872 KiB before an explicit colle
 100-cycle agent-picker churn moved it from 241,488 KiB to 305,692 KiB. Those immediate deltas include
 collectable JS/external allocations and are not leak rates.
 
-A second Help run used a 220 MiB fuse so the supported `/recover-memory` path would rebuild the
+A second Help run used a 220 MiB fuse so the then-supported `/recover-memory` path would rebuild the
 backend and invoke `Bun.gc(true)`. After 30 cycles, the settled process remained at 203,392 KiB versus
-176,548 KiB before churn, about 26 MiB higher. Backend reconstruction is a confounder, so this run
-shows a retained residue in that full-process path but does not replace the controlled rates in
+176,548 KiB before churn, about 26 MiB higher. Backend reconstruction is a historical confounder, so
+this run shows a retained residue in that full-process path but does not replace the controlled rates
+in
 [`../known-issues.md`](../known-issues.md#every-floatframe-overlay-leaks-native-memory-per-rendered-row).
+The current fuse no longer rebuilds the backend to collect.
 It also demonstrated that a low fixed fuse can never rearm when 70% of its limit is below healthy
 idle RSS.
 

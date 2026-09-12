@@ -2,7 +2,7 @@
 
 > Implemented at `packages/code/src/theme/**`, `packages/code/src/core/theme-types.ts`,
 > `packages/code/src/core/marks.ts`, `packages/code/src/ui/primitives/**`,
-> `packages/code/src/views/brand.tsx`, `packages/code/src/views/MemoryPressureBanner.tsx` and
+> `packages/code/src/views/brand.tsx` and
 > `packages/code/src/views/config/ThemeView.tsx`. Every claim below is anchored to a file and a named symbol or test.
 > Open questions are collected in the final section.
 
@@ -180,14 +180,6 @@ explicit-import primitive with a focused render contract
 `bg` (`packages/code/src/views/brand.tsx`); `WORDMARK = " Clarvis"` (`packages/code/src/views/brand.tsx`); `MINI_WORDMARK = "Clarvis"`
 (`packages/code/src/views/brand.tsx`); `SPLASH_WORDMARK = "  C L A R V I S"` (`packages/code/src/views/brand.tsx`); `BrandWordmark()` — renders
 `glyph("diamond") + WORDMARK` with each character colored by a gradient stop (`packages/code/src/views/brand.tsx`).
-
-### `views/MemoryPressureBanner.tsx`
-
-`MemoryPressureBanner(props: { state: Accessor<MemoryPressureSnapshot>; onRecover: () => void
-}): JSX.Element` (`packages/code/src/views/MemoryPressureBanner.tsx`). `gib(bytes: number): string` formats bytes as
-one-decimal GiB (`packages/code/src/views/MemoryPressureBanner.tsx`). `MemoryPressureSnapshot`/its `phase` field are
-defined in `adapters/memory-pressure.ts` and are outside this document's scope — only the banner's own
-phase→visual mapping is described here (§4).
 
 ### `views/config/ThemeView.tsx`
 
@@ -455,29 +447,12 @@ on `appearanceRevision`, calls `applyAsciiMode(asciiFlag || input.code.asciiEnab
 `ui.ascii` setting OR together, so passing
 `--ascii` once does not have to also flip the persisted setting to take effect for that run.
 
-### `MemoryPressureBanner`'s phase → visual mapping (`packages/code/src/views/MemoryPressureBanner.tsx`)
+### Memory-pressure status in the existing footer
 
-| `state().phase` | `visible()` | `blocked()` | `detail()` text |
-| --- | --- | --- | --- |
-| `"armed"` | false (hidden) | — | — |
-| `"disabled"` | false (hidden) | — | — |
-| `"warning"` | true | false | "High memory use; finish or cancel expensive work if it keeps rising." |
-| `"aborting"` | true | true | "Memory limit reached; aborting active work while the TUI stays alive." |
-| `"tripped"` | true | true | "Work is blocked. Recover memory to rebuild the backend." |
-| `"recovering"` | true | true | "Rebuilding the backend and releasing runtime resources." |
-| `"cooling"` | true | true | "Backend rebuilt; waiting for three safe RSS samples. /clear can clear the transcript." |
-
-(`visible`: `packages/code/src/views/MemoryPressureBanner.tsx`; `blocked`: `detail`:.) The banner's
-foreground color is `tokens.del` when `blocked()`, else `tokens.warn` (`packages/code/src/views/MemoryPressureBanner.tsx`);
-its glyph is `glyph("error")` when blocked, else `glyph("warning")` (`packages/code/src/views/MemoryPressureBanner.tsx`).
-The full rendered header line is not just `detail()`: it also live-renders current RSS against the
-limit — `` `${glyph} Memory ${gib(rss)} / ${gib(limitBytes)} · ${detail()}` `` — via `gib()`
-(`packages/code/src/views/MemoryPressureBanner.tsx`). Only in the `"tripped"` phase is a "Recover memory (/recover-memory)"
-affordance rendered, and it is wired only as `onMouseDown={props.onRecover}`
-(`packages/code/src/views/MemoryPressureBanner.tsx`) — nothing in this file gives it a keybinding; the `/recover-memory`
-text names a slash-command path, but whether that command is wired to the same handler elsewhere is
-not determined from this file (see §8). `MemoryPressureSnapshot`'s phase enum itself and what drives
-its transitions are defined in `adapters/memory-pressure.ts`, outside this document's scope.
+There is no dedicated memory-pressure banner. While admission is blocked, `App` reuses `Footer`'s
+status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_FAILED`
+(`packages/code/src/views/App.tsx`, `packages/code/src/adapters/memory-pressure.ts`,
+`packages/code/src/views/Footer.tsx`). Those strings are not a theme-token mapping.
 
 ## 5. Invariants
 
@@ -613,7 +588,6 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 | `theme/theme.ts` | `../keys/commands.ts` (`Scope` type) | type-only | `packages/code/src/theme/theme.ts` |
 | `ui/primitives/*` | `theme/tokens.ts`, `theme/glyphs.ts`, `theme/surfaces.ts`, `theme/tone.ts` | value | e.g. `packages/code/src/ui/primitives/selectable-row.tsx` |
 | `views/brand.tsx` | `theme/tokens.ts`, `theme/model.ts` (`mixHex`), `theme/contrast.ts` (`nudgeToAA`), `theme/glyphs.ts` | value | `packages/code/src/views/brand.tsx` |
-| `views/MemoryPressureBanner.tsx` | `theme/tokens.ts`, `theme/glyphs.ts`, `adapters/memory-pressure.ts` (type only, out of scope) | value + type | `packages/code/src/views/MemoryPressureBanner.tsx` |
 | `views/config/ThemeView.tsx` | almost the entire `theme/` surface, plus `views/brand.tsx` (`MINI_WORDMARK`), `views/config/view-host.tsx` (out of scope, delegated) | value | `packages/code/src/views/config/ThemeView.tsx` |
 
 **What is FORCED, not just observed:**
@@ -642,8 +616,7 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 - `views/tools/registry.tsx` imports `diffColorProps`, `filetypeFor`, `syntaxStyle` from
   `theme/syntax.ts` (`packages/code/src/views/tools/registry.tsx`, delegated to [hosts/code-transcript.md](code-transcript.md)).
 - `views/App.tsx` imports and invokes `bindSyntaxStyleRenderer`, and separately owns the memory-pressure
-  controller that it passes into `TranscriptRegion`; `App.tsx` does not import or mount
-  `MemoryPressureBanner` directly
+  controller whose compact status is painted by `Footer`
   (`packages/code/src/views/App.tsx`; delegated to
   [hosts/code-bootstrap.md](code-bootstrap.md)).
 - `src/runtime.tsx` calls `createTheme`, reads/writes `tokens.bg`, and drives `applyAsciiMode` from the
@@ -681,11 +654,9 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
   `ThemeConfig`/`ui.ascii` data shape (§3); its validation behavior is a sibling document's concern
   (likely [hosts/code-settings-panels.md](code-settings-panels.md), though no file in this document's scope explicitly assigns
   `code-config.ts` to that document).
-- **`MemoryPressureSnapshot`'s phase state machine** (what drives `"armed"` → `"warning"` →
-  `"aborting"` → `"tripped"` → `"recovering"` → `"cooling"` → back to `"armed"`/`"disabled"`, and the
-  `rearmBytes`/`warningBytes`/`limitBytes` thresholds referenced in the banner's own `gib()`
-  formatting) lives in `adapters/memory-pressure.ts`, outside this document's scope; only
-  the banner component's own phase→visual mapping (§4) is specified here.
+- **`MemoryPressureSnapshot`'s phase state machine** lives in `adapters/memory-pressure.ts` and is
+  specified in [hosts/code-run-host.md](code-run-host.md). This document only notes that blocked
+  admission reuses `Footer` status rather than a themed banner.
 - **Layout/keybinding mechanics `ThemeView.tsx` depends on** (`registerLevel`, `LevelHost`,
   `bindLevelKeys`, `createFieldEditor`, the `Sub`-level push/pop navigation, `useTerminalDimensions`)
   are `ui/patterns/**` and `views/config/view-host.tsx` concerns, explicitly delegated to
@@ -700,8 +671,5 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
   `packages/code/tests/unit/theme-model.test.ts` (`parseColor` on `"not a color"`/`""`) — malformed but
   partially-matching inputs (e.g. `rgb(999,999,999)`, `hsl(0,150%,50%)`) are clamped by `clampByte`
   where the regex matches at all, but no test asserts this for the HSL percentage path specifically.
-- **Whether the "Recover memory" affordance has any keyboard-triggerable equivalent.**
-  `MemoryPressureBanner.tsx` itself wires it only as `onMouseDown={props.onRecover}`
-  (`packages/code/src/views/MemoryPressureBanner.tsx`) — the component has no visible key handler for it, and whether
-  `onRecover` (or the `/recover-memory` command its label names) is also reachable from a keybinding
-  is decided by this component's caller, outside this document's scope.
+- Memory-pressure presentation is a footer status owned by `App` and
+  `adapters/memory-pressure.ts`, not a themed banner in this file set.

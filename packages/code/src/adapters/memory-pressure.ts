@@ -13,37 +13,32 @@ const MEMORY_LEDGER_SAMPLE_INTERVAL = 20;
  * The warning and re-arm fractions of {@link DEFAULT_TUI_RSS_LIMIT_BYTES}.
  *
  * @remarks A hysteresis pair, and the *gap* between them is what is being set,
- * not either ratio: with one threshold, RSS oscillating around it would trip and
- * re-arm on alternating samples, aborting runs on noise. Ten points of the limit
- * is wider than the sampling jitter of a process doing ordinary work and
- * narrower than the growth of a real leak, so a genuine climb crosses it once.
+ * not either ratio: with one threshold, RSS oscillating around it would start
+ * and end episodes on alternating samples. Ten points of the limit is wider
+ * than ordinary sampling jitter and narrower than a real climb, so a genuine
+ * climb crosses it once.
  *
- * The warning ratio sits where there is still room to act — cancelling a run and
- * rebuilding the backend both allocate — rather than at the limit itself, where
- * the recovery would be the allocation that fails.
+ * The warning ratio is the preventive band: local maintenance still has room
+ * to run before the limit. {@link MEMORY_PRESSURE_SUSTAINED_SAMPLES} consecutive
+ * samples are required before that band starts an episode, and
  * {@link MEMORY_PRESSURE_REARM_SAMPLES} consecutive samples below the lower
- * ratio are required for the same reason the gap exists: one sample is noise.
+ * ratio are required to leave one, so one noisy sample is not a transition.
  */
 const MEMORY_PRESSURE_WARNING_RATIO = 0.8;
 const MEMORY_PRESSURE_REARM_RATIO = 0.7;
+const MEMORY_PRESSURE_SUSTAINED_SAMPLES = 3;
 const MEMORY_PRESSURE_REARM_SAMPLES = 3;
-/**
- * Maximum wait for a cancelled run to report itself inactive.
- *
- * @remarks Both of these bound a *cooperative* step whose failure is already
- * handled: exceeding either proceeds anyway, so the budget only decides how long
- * the TUI waits for a clean outcome before taking the abrupt one. They are equal
- * because they are consecutive stages of one recovery and there is no reason to
- * be more patient with either. Ten seconds is past the tail of an in-flight
- * provider call — the slowest thing a cancel has to unwind — and short enough
- * that a wedged backend does not read as a frozen terminal.
- */
-export const MEMORY_PRESSURE_ABORT_GRACE_MS = 10_000;
-/** Maximum wait before a non-cooperative backend rebuild returns control to the TUI. */
-export const MEMORY_PRESSURE_RECOVERY_TIMEOUT_MS = 10_000;
+/** Maximum wait for one local maintenance callback before it is treated as pending. */
+export const MEMORY_PRESSURE_STEP_TIMEOUT_MS = 10_000;
+/** Maximum time a blocking critical episode may wait before it fails closed. */
+export const MEMORY_PRESSURE_EPISODE_TIMEOUT_MS = 30_000;
+
+export const MEMORY_PRESSURE_STATUS_RESTORING = "Restoring the interface…";
+export const MEMORY_PRESSURE_STATUS_FAILED =
+  "New work is paused because the interface is out of memory.";
 
 export type MemoryPressurePhase =
-  "disabled" | "armed" | "warning" | "aborting" | "tripped" | "recovering" | "cooling";
+  "disabled" | "armed" | "maintaining" | "critical" | "cooling" | "failed";
 
 export interface ProcessMemorySample {
   rss: number;
@@ -52,18 +47,23 @@ export interface ProcessMemorySample {
   arrayBuffers: number;
 }
 
+export interface MemoryMaintenanceReport {
+  attempted: readonly string[];
+  completed: boolean;
+  pending: boolean;
+  before: Readonly<Record<string, number>>;
+  after: Readonly<Record<string, number>>;
+}
+
 export interface MemoryPressureSnapshot extends ProcessMemorySample {
   phase: MemoryPressurePhase;
   advisory: boolean;
+  blocked: boolean;
+  status: string | null;
   limitBytes: number;
   warningBytes: number;
   rearmBytes: number;
   sampledAt: number;
-}
-
-export interface MemoryRecoveryResult {
-  ok: boolean;
-  message: string;
 }
 
 interface TimerHandle {
@@ -74,22 +74,19 @@ export interface MemoryPressureDeps {
   limitBytes?: number;
   sample?: () => ProcessMemorySample;
   now?: () => number;
-  isRunActive: () => boolean;
-  cancelRun: () => boolean;
-  /** Detach a run that ignored cancellation before backend recovery. */
-  forceStopRun?: () => void;
-  reconnect: () => Promise<MemoryRecoveryResult>;
-  /** Recovery deadline and timer seams; production uses a 10-second one-shot timer. */
-  recoveryTimeoutMs?: number;
-  setAfter?: (callback: () => void, delayMs: number) => TimerHandle;
-  clearAfter?: (handle: TimerHandle) => void;
-  /** True only after every physical run handle and local process has settled. */
+  /** Drop reconstructible local caches. One in-flight call is kept even after timeout. */
+  maintain?: () => MemoryMaintenanceReport | Promise<MemoryMaintenanceReport>;
+  /** True only when TUI-owned work that would make a synchronous GC unsafe is idle. */
   canCollect?: () => boolean;
   gc?: () => void;
   /** Bounded application counters sampled every ten seconds and at state changes. */
   ledger?: () => Readonly<Record<string, string | number | boolean | null | undefined>>;
   /** Prevent ledger collection itself from doing work unless diagnostics can consume it. */
   ledgerEnabled?: () => boolean;
+  stepTimeoutMs?: number;
+  episodeTimeoutMs?: number;
+  setAfter?: (callback: () => void, delayMs: number) => TimerHandle;
+  clearAfter?: (handle: TimerHandle) => void;
   setEvery?: (callback: () => void, delayMs: number) => TimerHandle;
   clearEvery?: (handle: TimerHandle) => void;
 }
@@ -100,15 +97,21 @@ export interface MemoryPressureController {
   start(): void;
   stop(): void;
   sampleNow(): MemoryPressureSnapshot;
-  recover(): Promise<MemoryRecoveryResult>;
   subscribe(listener: (snapshot: MemoryPressureSnapshot) => void): () => void;
 }
 
-const SAFE_PRESSURE_SLASHES = new Set(["clear", "quit", "exit", "recover-memory"]);
+const SAFE_PRESSURE_SLASHES = new Set(["clear", "quit", "exit"]);
 
 /** Slash commands that remain usable after the fuse blocks model/tool work. */
 export function memoryPressureAllowsSlash(name: string): boolean {
   return SAFE_PRESSURE_SLASHES.has(name);
+}
+
+/** Compact status shown only while admission is blocked. */
+export function memoryPressureStatus(phase: MemoryPressurePhase): string | null {
+  if (phase === "critical" || phase === "cooling") return MEMORY_PRESSURE_STATUS_RESTORING;
+  if (phase === "failed") return MEMORY_PRESSURE_STATUS_FAILED;
+  return null;
 }
 
 /** Parse the TUI-only RSS fuse. `0` disables it; positive values have a 512 MiB floor. */
@@ -132,14 +135,19 @@ function processMemorySample(): ProcessMemorySample {
 }
 
 function isBlockedPhase(phase: MemoryPressurePhase): boolean {
-  return ["aborting", "tripped", "recovering", "cooling"].includes(phase);
+  return phase === "critical" || phase === "cooling" || phase === "failed";
+}
+
+function emptyMaintenanceReport(): MemoryMaintenanceReport {
+  return { attempted: [], completed: true, pending: false, before: {}, after: {} };
 }
 
 /**
- * Run-scoped RSS circuit breaker for the interactive Code host.
+ * Run-scoped RSS controller for the interactive Code host.
  *
- * It deliberately never exits the process. A trip aborts once, waits for the
- * run to become inactive, then leaves the TUI in an explicit recoverable state.
+ * It never exits the process, never restarts the workspace host, and never
+ * cancels independent work. Sustained pressure starts one local maintenance
+ * pass; only the critical band blocks expensive new admissions.
  */
 export function createMemoryPressureController(deps: MemoryPressureDeps): MemoryPressureController {
   const limitBytes = Math.max(0, deps.limitBytes ?? DEFAULT_TUI_RSS_LIMIT_BYTES);
@@ -158,21 +166,31 @@ export function createMemoryPressureController(deps: MemoryPressureDeps): Memory
     ((callback: () => void, delayMs: number): TimerHandle => setTimeout(callback, delayMs));
   const clearAfter =
     deps.clearAfter ?? ((handle: TimerHandle): void => clearTimeout(handle as Timer));
-  const recoveryTimeoutMs =
-    deps.recoveryTimeoutMs !== undefined && Number.isFinite(deps.recoveryTimeoutMs)
-      ? Math.max(1, Math.floor(deps.recoveryTimeoutMs))
-      : MEMORY_PRESSURE_RECOVERY_TIMEOUT_MS;
+  const stepTimeoutMs =
+    deps.stepTimeoutMs !== undefined && Number.isFinite(deps.stepTimeoutMs)
+      ? Math.max(1, Math.floor(deps.stepTimeoutMs))
+      : MEMORY_PRESSURE_STEP_TIMEOUT_MS;
+  const episodeTimeoutMs =
+    deps.episodeTimeoutMs !== undefined && Number.isFinite(deps.episodeTimeoutMs)
+      ? Math.max(1, Math.floor(deps.episodeTimeoutMs))
+      : MEMORY_PRESSURE_EPISODE_TIMEOUT_MS;
   let timer: TimerHandle | null = null;
+  let generation = 0;
+  let warningSamples = 0;
   let coolSamples = 0;
-  let abortStartedAt: number | null = null;
-  let forcedStop = false;
-  let recoveryAttempt: Promise<MemoryRecoveryResult> | null = null;
   let sampleCount = 0;
   let baselineRss = Number.POSITIVE_INFINITY;
   const rssWindow: number[] = [];
+  let episodeStartedAt: number | null = null;
+  let maintainUsed = false;
+  let gcUsed = false;
+  let integrityFailed = false;
+  let maintainAttempt: Promise<MemoryMaintenanceReport> | null = null;
   let snapshot: MemoryPressureSnapshot = {
     phase: limitBytes === 0 ? "disabled" : "armed",
     advisory: false,
+    blocked: false,
+    status: null,
     limitBytes,
     warningBytes,
     rearmBytes,
@@ -198,7 +216,15 @@ export function createMemoryPressureController(deps: MemoryPressureDeps): Memory
       memory.rss - baselineRss >= MEMORY_EFFICIENCY_GROWTH_BYTES &&
       slope >= MEMORY_EFFICIENCY_SLOPE_BYTES;
     sampleCount += 1;
-    snapshot = { ...snapshot, ...memory, phase, advisory, sampledAt: now() };
+    snapshot = {
+      ...snapshot,
+      ...memory,
+      phase,
+      advisory,
+      blocked: isBlockedPhase(phase),
+      status: memoryPressureStatus(phase),
+      sampledAt: now(),
+    };
     diagnosticCount("memory.sample", {
       phase,
       rss: snapshot.rss,
@@ -211,7 +237,7 @@ export function createMemoryPressureController(deps: MemoryPressureDeps): Memory
       diagnosticEvent(
         "memory.phase",
         { from: previousPhase, to: phase, rss: snapshot.rss, limitBytes },
-        phase === "aborting" || phase === "tripped" ? "warn" : "info",
+        phase === "critical" || phase === "failed" ? "warn" : "info",
       );
     if (advisory !== previousAdvisory)
       diagnosticEvent(
@@ -240,76 +266,175 @@ export function createMemoryPressureController(deps: MemoryPressureDeps): Memory
     return snapshot;
   };
 
+  const resetEpisode = (): void => {
+    episodeStartedAt = null;
+    maintainUsed = false;
+    gcUsed = false;
+    integrityFailed = false;
+    warningSamples = 0;
+    coolSamples = 0;
+  };
+
+  const collectOnce = (reason: string): void => {
+    if (gcUsed) return;
+    gcUsed = true;
+    if (deps.canCollect?.() === false) {
+      diagnosticEvent(
+        "memory.gc.skipped",
+        { mode: "synchronous", reason: "tui_work_active" },
+        "info",
+      );
+      return;
+    }
+    try {
+      deps.gc?.();
+      diagnosticEvent("memory.gc.completed", { mode: "synchronous", reason }, "info");
+    } catch (error) {
+      diagnosticEvent("memory.gc.failed", { mode: "synchronous", reason, error }, "warn");
+    }
+  };
+
+  const finishMaintain = (report: MemoryMaintenanceReport, attemptGeneration: number): void => {
+    if (attemptGeneration !== generation) return;
+    maintainAttempt = null;
+    diagnosticEvent(
+      "memory.maintain.completed",
+      {
+        attempted: report.attempted.join(","),
+        completed: report.completed,
+        pending: report.pending,
+        ...report.after,
+      },
+      "debug",
+    );
+    collectOnce("maintenance");
+    const memory = sample();
+    if (snapshot.phase === "critical" && memory.rss < rearmBytes) publish("cooling", memory);
+  };
+
+  const startMaintain = (): void => {
+    if (maintainUsed || maintainAttempt !== null) return;
+    maintainUsed = true;
+    const attemptGeneration = generation;
+    const attempt = Promise.resolve()
+      .then(() => deps.maintain?.() ?? emptyMaintenanceReport())
+      .then((report) => {
+        if (attemptGeneration !== generation) return report;
+        finishMaintain(report, attemptGeneration);
+        return report;
+      })
+      .catch((error: unknown) => {
+        if (attemptGeneration !== generation) return emptyMaintenanceReport();
+        maintainAttempt = null;
+        diagnosticEvent("memory.maintain.failed", { error }, "warn");
+        if (isBlockedPhase(snapshot.phase)) {
+          integrityFailed = true;
+          publish("failed", sample());
+        }
+        return emptyMaintenanceReport();
+      });
+    maintainAttempt = attempt;
+    const timeout = setAfter(() => {
+      if (attemptGeneration !== generation || maintainAttempt !== attempt) return;
+      diagnosticEvent("memory.maintain.timeout", { step_timeout_ms: stepTimeoutMs }, "warn");
+      // Keep the attempt identity; a late result still finishes this episode's
+      // single pass instead of starting another on the same resources.
+    }, stepTimeoutMs);
+    timeout.unref?.();
+    void attempt.then(
+      () => {
+        if (attemptGeneration === generation) clearAfter(timeout);
+      },
+      () => {
+        if (attemptGeneration === generation) clearAfter(timeout);
+      },
+    );
+  };
+
+  const rearmIfSafe = (
+    memory: ProcessMemorySample,
+    phase: MemoryPressurePhase,
+  ): MemoryPressurePhase => {
+    if (maintainAttempt !== null || integrityFailed) {
+      coolSamples = 0;
+      return phase;
+    }
+    if (memory.rss < rearmBytes) {
+      coolSamples += 1;
+      if (coolSamples >= MEMORY_PRESSURE_REARM_SAMPLES) {
+        resetEpisode();
+        return "armed";
+      }
+      return phase === "armed" ? "armed" : phase === "maintaining" ? "maintaining" : "cooling";
+    }
+    coolSamples = 0;
+    return phase;
+  };
+
   const sampleNow = (): MemoryPressureSnapshot => {
     if (limitBytes === 0) return publish("disabled", sample());
     const memory = sample();
+    const sampledAt = now();
 
-    if (snapshot.phase === "recovering" || snapshot.phase === "tripped")
-      return publish(snapshot.phase, memory);
-
-    if (snapshot.phase === "aborting") {
-      const elapsed = abortStartedAt === null ? 0 : now() - abortStartedAt;
-      if (deps.isRunActive() && elapsed >= MEMORY_PRESSURE_ABORT_GRACE_MS && !forcedStop) {
-        forcedStop = true;
-        deps.forceStopRun?.();
-      }
-      return publish(
-        deps.isRunActive() && elapsed < MEMORY_PRESSURE_ABORT_GRACE_MS ? "aborting" : "tripped",
-        memory,
-      );
+    if (snapshot.phase === "failed") {
+      if (integrityFailed || maintainAttempt !== null) return publish("failed", memory);
+      return publish(rearmIfSafe(memory, "failed") === "armed" ? "armed" : "failed", memory);
     }
 
-    if (snapshot.phase === "cooling") {
-      coolSamples = memory.rss < rearmBytes ? coolSamples + 1 : 0;
-      if (coolSamples >= MEMORY_PRESSURE_REARM_SAMPLES) {
-        coolSamples = 0;
-        return publish("armed", memory);
+    if (
+      snapshot.phase === "critical" &&
+      episodeStartedAt !== null &&
+      sampledAt - episodeStartedAt >= episodeTimeoutMs &&
+      memory.rss >= rearmBytes
+    ) {
+      return publish("failed", memory);
+    }
+
+    if (snapshot.phase === "cooling" || snapshot.phase === "critical") {
+      if (memory.rss >= limitBytes) {
+        if (snapshot.phase !== "critical") episodeStartedAt = sampledAt;
+        startMaintain();
+        return publish("critical", memory);
       }
-      return publish("cooling", memory);
+      const next = rearmIfSafe(memory, snapshot.phase === "cooling" ? "cooling" : "critical");
+      if (next === "armed") return publish("armed", memory);
+      if (next === "cooling") return publish("cooling", memory);
+      return publish("critical", memory);
+    }
+
+    if (snapshot.phase === "maintaining") {
+      if (memory.rss >= limitBytes) {
+        episodeStartedAt = sampledAt;
+        startMaintain();
+        return publish("critical", memory);
+      }
+      const next = rearmIfSafe(memory, "maintaining");
+      return publish(next === "armed" ? "armed" : "maintaining", memory);
     }
 
     if (memory.rss >= limitBytes) {
-      abortStartedAt = now();
-      forcedStop = false;
-      publish("aborting", memory);
-      deps.cancelRun();
-      return publish(deps.isRunActive() ? "aborting" : "tripped", memory);
+      warningSamples = 0;
+      episodeStartedAt = sampledAt;
+      publish("critical", memory);
+      startMaintain();
+      return snapshot;
     }
-    return publish(memory.rss >= warningBytes ? "warning" : "armed", memory);
-  };
-
-  const finishRecovery = (): MemoryRecoveryResult => {
-    if (deps.canCollect?.() !== false) {
-      try {
-        deps.gc?.();
-        diagnosticEvent("memory.gc.completed", { mode: "synchronous", reason: "recovery" }, "info");
-      } catch (error) {
-        diagnosticEvent(
-          "memory.gc.failed",
-          { mode: "synchronous", reason: "recovery", error },
-          "warn",
-        );
+    if (memory.rss >= warningBytes) {
+      warningSamples += 1;
+      if (warningSamples >= MEMORY_PRESSURE_SUSTAINED_SAMPLES) {
+        publish("maintaining", memory);
+        startMaintain();
+        return snapshot;
       }
-    } else {
-      diagnosticEvent(
-        "memory.gc.skipped",
-        { mode: "synchronous", reason: "physical_work_active" },
-        "info",
-      );
+      return publish("armed", memory);
     }
-    coolSamples = 0;
-    abortStartedAt = null;
-    publish("cooling");
-    sampleNow();
-    return {
-      ok: true,
-      message: "backend rebuilt; monitoring memory before resuming new work",
-    };
+    warningSamples = 0;
+    return publish("armed", memory);
   };
 
   return {
     state: () => snapshot,
-    blocked: () => isBlockedPhase(snapshot.phase),
+    blocked: () => snapshot.blocked,
     start: () => {
       if (timer !== null || limitBytes === 0) return;
       sampleNow();
@@ -317,97 +442,13 @@ export function createMemoryPressureController(deps: MemoryPressureDeps): Memory
       timer.unref?.();
     },
     stop: () => {
+      generation += 1;
+      maintainAttempt = null;
       if (timer === null) return;
       clearEvery(timer);
       timer = null;
     },
     sampleNow,
-    recover: async () => {
-      if (recoveryAttempt !== null) {
-        return {
-          ok: false,
-          message:
-            snapshot.phase === "recovering"
-              ? "memory recovery is already in progress"
-              : "backend recovery is still pending after its timeout; restart clarvis if it does not finish",
-        };
-      }
-      if (snapshot.phase !== "tripped") {
-        return {
-          ok: false,
-          message:
-            snapshot.phase === "aborting"
-              ? "waiting for the active run to stop"
-              : snapshot.phase === "cooling"
-                ? "backend rebuilt; waiting for memory to fall below the safe threshold"
-                : "memory recovery is not required",
-        };
-      }
-      publish("recovering");
-      const attempt = Promise.resolve().then(deps.reconnect);
-      recoveryAttempt = attempt;
-      let timeout: TimerHandle | undefined;
-      const outcome = await new Promise<
-        | { kind: "result"; result: MemoryRecoveryResult }
-        | { kind: "error"; error: unknown }
-        | { kind: "timeout" }
-      >((resolve) => {
-        let settled = false;
-        const finish = (
-          value:
-            | { kind: "result"; result: MemoryRecoveryResult }
-            | { kind: "error"; error: unknown }
-            | { kind: "timeout" },
-        ): void => {
-          if (settled) return;
-          settled = true;
-          if (value.kind !== "timeout" && timeout !== undefined) clearAfter(timeout);
-          resolve(value);
-        };
-        void attempt.then(
-          (result) => finish({ kind: "result", result }),
-          (error: unknown) => finish({ kind: "error", error }),
-        );
-        timeout = setAfter(() => finish({ kind: "timeout" }), recoveryTimeoutMs);
-        timeout.unref?.();
-      });
-
-      if (outcome.kind === "timeout") {
-        publish("tripped");
-        // The reconnect API cannot abort a kernel close. Keep this physical
-        // attempt single-flight after returning control to the UI; if it does
-        // eventually rebuild successfully, advance through the normal cooling
-        // gate instead of requiring a second concurrent rebuild.
-        void attempt.then(
-          (result) => {
-            if (recoveryAttempt !== attempt) return;
-            recoveryAttempt = null;
-            if (result.ok && snapshot.phase === "tripped") finishRecovery();
-          },
-          () => {
-            if (recoveryAttempt === attempt) recoveryAttempt = null;
-          },
-        );
-        return {
-          ok: false,
-          message: `memory recovery timed out after ${String(recoveryTimeoutMs)}ms; backend shutdown is still pending`,
-        };
-      }
-
-      recoveryAttempt = null;
-      if (outcome.kind === "error") {
-        publish("tripped");
-        return {
-          ok: false,
-          message: `memory recovery failed: ${outcome.error instanceof Error ? outcome.error.message : String(outcome.error)}`,
-        };
-      }
-      if (!outcome.result.ok) {
-        publish("tripped");
-        return outcome.result;
-      }
-      return finishRecovery();
-    },
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);

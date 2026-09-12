@@ -123,10 +123,14 @@ test("bare slash completion reuses rows while still rechecking dynamic eligibili
       calls.push("dynamic");
     },
   });
-  const provider = createCommandCompletionProvider({ commands, recoverMemory: () => {} });
+  const provider = createCommandCompletionProvider({ commands });
   const first = provider.query("");
   expect(provider.query("")).toBe(first);
   expect(first.some((item) => item.label === "/dynamic")).toBe(true);
+  expect(first.some((item) => item.label.includes("recover-memory"))).toBe(false);
+  expect(provider.query("recover").some((item) => item.label.includes("recover-memory"))).toBe(
+    false,
+  );
 
   enabled = false;
   const hidden = provider.query("");

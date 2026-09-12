@@ -232,6 +232,27 @@ export type LocalBashDisplay = Pick<
   | "stderrTruncated"
 >;
 
+/** Bounded resident counters sampled by diagnostics and local memory maintenance. */
+export interface TranscriptMemoryCounters {
+  transcript_nodes: number;
+  transcript_prose_bytes: number;
+  sealed_records: number;
+  hydrated_tool_nodes: number;
+  hydrated_tool_bytes: number;
+  active_rehydrates: number;
+  queued_rehydrates: number;
+  [key: string]: number;
+}
+
+/** Outcome of one local pass that drops reconstructible completed tool bodies. */
+export interface TranscriptMemoryRelease {
+  attempted: readonly string[];
+  completed: boolean;
+  pending: boolean;
+  before: TranscriptMemoryCounters;
+  after: TranscriptMemoryCounters;
+}
+
 /** The reactive transcript the UI renders, and the reducers that populate it from runs and local commands. */
 export interface TranscriptStore {
   nodes: TranscriptNode[];
@@ -240,15 +261,15 @@ export interface TranscriptStore {
   /** Bounded terminal content, keyed independently of row residence and projection. */
   committedNodes(): readonly TranscriptNode[];
   /** O(1) retained-memory counters for the process-level diagnostic ledger. */
-  memory?(): {
-    transcript_nodes: number;
-    transcript_prose_bytes: number;
-    sealed_records: number;
-    hydrated_tool_nodes: number;
-    hydrated_tool_bytes: number;
-    active_rehydrates: number;
-    queued_rehydrates: number;
-  };
+  memory?(): TranscriptMemoryCounters;
+  /**
+   * Drop reconstructible completed tool bodies that persistence can refill.
+   *
+   * @remarks Local-only results, in-flight tools, and hosts without a run fetcher
+   *   keep their only copy. This does not tighten the ordinary 200-node / 64 MiB
+   *   window; it is an explicit pressure pass over what that window still holds.
+   */
+  releaseReconstructible?(): TranscriptMemoryRelease;
   /** Ephemeral presentation default derived while reducing the current run. */
   defaultFolded(key: string): boolean;
   appendUserMessage(
@@ -1860,6 +1881,56 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     return sink;
   }
 
+  function memoryCounters(): TranscriptMemoryCounters {
+    return {
+      transcript_nodes: state.nodes.length,
+      transcript_prose_bytes: proseBytes,
+      sealed_records: sealedRecords().size,
+      hydrated_tool_nodes: hydratedTools.length,
+      hydrated_tool_bytes: hydratedToolBytes,
+      active_rehydrates: activeRehydrates,
+      queued_rehydrates: rehydrateQueue.length,
+    };
+  }
+
+  function persistedToolKey(key: string): boolean {
+    return key.includes("::");
+  }
+
+  /**
+   * Drop completed tool bodies that {@link rehydrate} can refill from persistence.
+   *
+   * Running tools, local `!` results, and stores without a fetcher keep their
+   * only resident copy. The ordinary count/byte window is unchanged.
+   */
+  function releaseReconstructible(): TranscriptMemoryRelease {
+    const before = memoryCounters();
+    if (deps.fetchRun === undefined) {
+      return {
+        attempted: [],
+        completed: true,
+        pending: false,
+        before,
+        after: before,
+      };
+    }
+    for (const key of [...hydratedTools]) {
+      const index = indexOfKey.get(key);
+      const node = index === undefined ? undefined : state.nodes[index];
+      if (node?.kind !== "tool_call") continue;
+      if (node.status === "running" || !persistedToolKey(key)) continue;
+      forgetHydrated(key);
+      dehydrate(key);
+    }
+    return {
+      attempted: ["transcript.reconstructible_tools"],
+      completed: true,
+      pending: false,
+      before,
+      after: memoryCounters(),
+    };
+  }
+
   function clear(): void {
     setState("nodes", []);
     setSealedRecords(new Map());
@@ -1886,15 +1957,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     },
     frontierNodes: () => state.nodes.filter((node) => !sealedRecords().has(node.key)),
     committedNodes: () => [...sealedRecords().values()],
-    memory: () => ({
-      transcript_nodes: state.nodes.length,
-      transcript_prose_bytes: proseBytes,
-      sealed_records: sealedRecords().size,
-      hydrated_tool_nodes: hydratedTools.length,
-      hydrated_tool_bytes: hydratedToolBytes,
-      active_rehydrates: activeRehydrates,
-      queued_rehydrates: rehydrateQueue.length,
-    }),
+    memory: memoryCounters,
+    releaseReconstructible,
     defaultFolded: (key) => foldDefaults.get(key) ?? false,
     appendUserMessage,
     foldPrefixBefore,

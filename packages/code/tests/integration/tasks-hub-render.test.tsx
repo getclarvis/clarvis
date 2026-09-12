@@ -324,7 +324,7 @@ test("Work on task rechecks the memory fuse after the agent picker opens", async
 
   mounted.press("w");
   await captureUntil(output, "Choose agent");
-  blockedReason = "New work is blocked by the memory fuse; use /recover-memory.";
+  blockedReason = "Restoring the interface…";
   mounted.press("return");
   await waitFor(() => mounted.errors.length === 1);
 

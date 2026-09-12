@@ -263,7 +263,7 @@ optional `prepareReconnect`, and `callbacks`.
 | `adapters/active-agent.ts` | `ActiveAgentStore`, `ActiveAgentDeps`, `AutomaticAgentCandidate`, `automaticAgentFallback`, `createActiveAgentStore` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `packages/code/src/adapters/session-store.ts` |
-| `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_ABORT_GRACE_MS`, `MEMORY_PRESSURE_RECOVERY_TIMEOUT_MS`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryPressureSnapshot`, `MemoryRecoveryResult`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `tuiRssLimitBytes`, `createMemoryPressureController` | `packages/code/src/adapters/session-store.ts` |
+| `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_STEP_TIMEOUT_MS`, `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS`, `MEMORY_PRESSURE_STATUS_RESTORING`, `MEMORY_PRESSURE_STATUS_FAILED`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryMaintenanceReport`, `MemoryPressureSnapshot`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `memoryPressureStatus`, `tuiRssLimitBytes`, `createMemoryPressureController` | `packages/code/src/adapters/memory-pressure.ts` |
 | `adapters/execution-safety.ts` | `IsolationMode`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveIsolation`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `planRetentionDescription` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/workspace-client-manager.ts` | `ManagedWorkspaceClient`, `WorkspaceClientOptions`, `WorkspaceClientManager` | symbols of the same names |
@@ -404,9 +404,12 @@ emits a record with empty `counts`/`rates` — pinned by
 
 ### 3.5 `MemoryPressureSnapshot`
 
-`{ phase, limitBytes, warningBytes, rearmBytes, rss, heapUsed, external, arrayBuffers, sampledAt }`
-(`packages/code/src/adapters/memory-pressure.ts`). Thresholds are derived from the limit:
-`warningBytes = floor(limit * 0.8)`, `rearmBytes = floor(limit * 0.7)`.
+`{ phase, advisory, blocked, status, limitBytes, warningBytes, rearmBytes, rss, heapUsed, external, arrayBuffers, sampledAt }`
+(`packages/code/src/adapters/memory-pressure.ts`). `phase` is `disabled` / `armed` / `maintaining` /
+`critical` / `cooling` / `failed`. Thresholds are derived from the limit:
+`warningBytes = floor(limit * 0.8)`, `rearmBytes = floor(limit * 0.7)`. `status` is
+`MEMORY_PRESSURE_STATUS_RESTORING` while `critical` or `cooling`, `MEMORY_PRESSURE_STATUS_FAILED`
+while `failed`, and `null` otherwise.
 
 ## 4. Behavior
 
@@ -1051,44 +1054,32 @@ composition in `packages/kernel/src/file-kernel.ts`; `safetyDescription` in
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts`)
 
-Sampled every `MEMORY_PRESSURE_SAMPLE_MS = 500` ms by an unref'd interval.
+Sampled every `MEMORY_PRESSURE_SAMPLE_MS = 500` ms by an unref'd interval. Sampling never restarts
+the workspace host or cancels independent work. Local maintenance is `deps.maintain`, which App
+wires to `TranscriptStore.releaseReconstructible` (`packages/code/src/views/App.tsx`).
 
 | State | Sample condition | → State | Effect |
 | --- | --- | --- | --- |
 | any, `limitBytes === 0` | — | `disabled` | publish only |
-| `recovering` / `tripped` | — | unchanged | publish the fresh memory reading |
-| `aborting` | run active and `elapsed < 10_000` ms | `aborting` | at `elapsed >= grace`, call `forceStopRun()` once |
-| `aborting` | run inactive, or grace elapsed | `tripped` | publish the tripped state (`packages/code/src/adapters/memory-pressure.ts`) |
-| `cooling` | `rss < rearmBytes` on 3 consecutive samples | `armed` | reset the counter |
-| `armed` / `warning` | `rss >= limitBytes` | `aborting`, then `tripped` if the run is already inactive | `deps.cancelRun()` exactly once per trip |
-| `armed` / `warning` | `rss >= warningBytes` | `warning` | publish the warning state (`packages/code/src/adapters/memory-pressure.ts`) |
-| `armed` / `warning` | otherwise | `armed` | publish the armed state (`packages/code/src/adapters/memory-pressure.ts`) |
+| `armed` | `rss >= warningBytes` for fewer than 3 consecutive samples | `armed` | no maintain, not blocked |
+| `armed` | 3 consecutive samples at `rss >= warningBytes` and `rss < limitBytes` | `maintaining` | one silent `maintain` pass |
+| `armed` / `maintaining` | `rss >= limitBytes` | `critical` | block expensive admissions; start the episode's single `maintain` if not already used |
+| `maintaining` | `rss < rearmBytes` on 3 consecutive samples and no in-flight maintain | `armed` | reset the episode |
+| `critical` | `rss < rearmBytes` after maintain, or 3 consecutive safe samples | `cooling` then `armed` | stay blocked until rearm |
+| `critical` | still `rss >= rearmBytes` after `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS` | `failed` | stop retrying; keep cheap observation |
+| `failed` | 3 consecutive samples below `rearmBytes`, no pending maintain, no integrity error | `armed` | unblock; do not replay interrupted work |
+| `failed` | maintain threw during a blocked phase | `failed` | `integrityFailed`; a later low RSS does not become success |
 
-`blocked()` is true for `aborting`, `tripped`, `recovering`, `cooling`.
-`memoryPressureAllowsSlash` permits exactly `clear`, `quit`, `exit`, `recover-memory`.
+`blocked()` is true for `critical`, `cooling`, `failed`.
+`memoryPressureAllowsSlash` permits exactly `clear`, `quit`, `exit`.
 
-`recover()` is guarded in two stages, checked in this order, and the guard is keyed on
-`recoveryAttempt`, not on `phase`:
-
-1. `recoveryAttempt !== null` refuses first, with one of two messages: "memory recovery
-   is already in progress" while `phase === "recovering"`, or "backend recovery is still pending after
-   its timeout; restart clarvis if it does not finish" otherwise — the second message covers a prior
-   `recover()` call that timed out (below) while its underlying `deps.reconnect()` promise is still
-   outstanding. That window can occur while `phase` has already reverted to `"tripped"` (see the
-   timeout branch), so this stage's refusal is not implied by the phase check that follows it.
-2. Only once `recoveryAttempt` is `null` does `phase !== "tripped"` refuse, with a
-   phase-specific message.
-
-Past both guards, `recover()` publishes `recovering`, races `deps.reconnect()` against a 10 s timeout, and:
-
-- on timeout → back to `tripped`, but the in-flight attempt stays single-flight and, if it later
-  succeeds while still `tripped`, advances through `finishRecovery()`;
-- on rejection or a `{ok:false}` result → back to `tripped`;
-- on success → `finishRecovery()`: best-effort `gc()` inside a `try`, reset counters, publish
-  `cooling`, sample once.
+One `maintain` attempt is kept even after `MEMORY_PRESSURE_STEP_TIMEOUT_MS`. A late success of that
+same attempt still finishes the episode's single pass (optional GC, then cooling when RSS is already
+safe) and never starts a second pass on the same resources. `stop()` increments a generation so a
+late callback cannot mutate a replacement controller.
 
 Every publish emits `diagnosticCount("memory.sample", …)`, and a phase *change* additionally emits
-`diagnosticEvent("memory.phase", …)` at `warn` for `aborting`/`tripped` and `info` otherwise.
+`diagnosticEvent("memory.phase", …)` at `warn` for `critical`/`failed` and `info` otherwise.
 
 ## 5. Invariants
 
@@ -1294,17 +1285,17 @@ The following are derived directly from this document's own source and its tests
     (`packages/code/src/adapters/store.ts`).
     Pinned: `packages/code/tests/component/reactive-batching.test.ts`.
 
-39. **The RSS fuse never exits the process; a trip cancels once and leaves an explicitly recoverable
-    state.** `cancelRun()` is called exactly once per trip
+39. **The RSS fuse never exits the process, never restarts the workspace host, and never cancels
+    independent work.** Sustained pressure starts one local maintain pass; the limit only blocks
+    expensive new admissions (`packages/code/src/adapters/memory-pressure.ts`). Pinned:
+    `packages/code/tests/unit/memory-pressure.test.ts`.
+
+40. **A critical episode cannot wait forever.** After `MEMORY_PRESSURE_EPISODE_TIMEOUT_MS = 30_000`
+    with RSS still above the rearm band, the phase becomes `failed`
     (`packages/code/src/adapters/memory-pressure.ts`). Pinned:
     `packages/code/tests/unit/memory-pressure.test.ts`.
 
-40. **A run that ignores cancellation cannot leave the fuse stuck aborting.** After
-    `MEMORY_PRESSURE_ABORT_GRACE_MS = 10_000`, `forceStopRun()` fires once and the phase advances to
-    `tripped` (`packages/code/src/adapters/memory-pressure.ts`). Pinned:
-    `packages/code/tests/unit/memory-pressure.test.ts`.
-
-41. **Recovery is single-flight and time-bounded, and a late-succeeding rebuild still rearms.**
+41. **Maintenance is single-flight and time-bounded, and a late-succeeding pass still rearms.**
     `packages/code/src/adapters/memory-pressure.ts`. Pinned:
     `packages/code/tests/unit/memory-pressure.test.ts`.
 
@@ -1516,8 +1507,7 @@ The following are derived directly from this document's own source and its tests
 | `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` routing connection recovery to `workspaceManager.recover` and configuration reload to `invalidate` | `createWorkspaceRunClient` |
 | `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; headless and interactive modes connect to the independent application host, whose entry composes the lazy runtime factory | `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`, `prepareStartupFoundation` |
 | `packages/code/src/runtime.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `runApp` |
-| `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | — |
-| `packages/code/src/runtime.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `runControls.forceStop` |
+| `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `store.releaseReconstructible` and TUI-owned `canCollect` | — |
 
 ### 7.4 The layering constraint
 

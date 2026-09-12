@@ -296,7 +296,7 @@ export function TranscriptViewport(props: {
         element.scrollTo({ x: 0, y: maximum() });
         element.stickyScroll = true;
         current.window.reader = { mode: "tail" };
-        pending = undefined;
+        if (atBottom() || active.attempts >= 3) pending = undefined;
       } else {
         const row = element.content.findDescendantById(`transcript-row:${active.reader.rowId}`);
         if (row && row.height > 0) {
@@ -326,7 +326,7 @@ export function TranscriptViewport(props: {
       correcting = false;
     } else if (element.scrollTop !== lastTop) {
       const previous = lastTop;
-      if (element.scrollTop < previous || current.window.reader.mode !== "tail") pause();
+      if (current.window.reader.mode !== "tail" || !atBottom()) pause();
       if (element.scrollTop <= 1 && previous > 1 && current.window.start > 0) page(-1);
       else if (atBottom() && element.scrollTop > previous) {
         if (current.window.end < current.window.ids.length) page(1);
@@ -388,7 +388,7 @@ export function TranscriptViewport(props: {
         value.verticalScrollBar.visible = true;
         props.onScrollbox(value);
       }}
-      stickyScroll
+      stickyScroll={(revision(), current.window.reader.mode === "tail")}
       stickyStart="bottom"
       viewportCulling
       flexGrow={1}

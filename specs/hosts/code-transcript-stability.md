@@ -98,10 +98,14 @@ Up to 80 rows mount in a short projection. Longer projections normally mount 40 
 20-row paging and at most 80 rows during an anchor-preserving transition. Active off-window tools
 continue as data, not hidden native owners.
 
-Scrolling away from the tail pauses follow. New data does not move the anchor. Reaching a window
+Scrolling away from the tail pauses follow. New data does not move the anchor. A content-height
+change that leaves the reader at the native bottom — Markdown wrap or settlement, viewport culling,
+or a shrinking tool body — is not scrolling away and keeps tail follow. Reaching a window
 edge reveals adjacent retained rows; it is not the end of the conversation while newer rows are
 hidden. End/return-to-tail explicitly selects the tail and restores native sticky behavior.
 Repeated unchanged frames at the upper edge are not new wheel intent.
+Production: `TranscriptViewport`.
+Test: `transcript-window-render.test.tsx`, streaming height shrink and wheel-intent cases.
 
 A transaction captures semantic intent, updates residence/content/width, then compensates the same
 row after OpenTUI's native layout frame. The callback checks its projection and generation token.
@@ -150,9 +154,11 @@ Clearing/replacing the session releases reader and expansion state.
    Test: [transcript-window.test.ts](../../packages/code/tests/unit/transcript-window.test.ts),
    [transcript-window-render.test.tsx](../../packages/code/tests/integration/transcript-window-render.test.tsx)
    and `transcript-rows-render.test.tsx`.
-5. Concurrent append and prepend preserve the reader reference; idle upper-edge frames do not rewind.
+5. Concurrent append and prepend preserve the reader reference; idle upper-edge frames do not rewind;
+   height jitter at the native bottom does not pause tail follow.
    Production: `TranscriptViewport` anchor transactions and native input handling.
-   Test: `transcript-window-render.test.tsx`, prepend/concurrent-append and wheel-intent cases.
+   Test: `transcript-window-render.test.tsx`, prepend/concurrent-append, wheel-intent and
+   streaming height-shrink cases.
 6. Projection navigation restores independent readers and mounts no inactive child tree.
    Production: `TranscriptViewport`, `createTranscriptState`.
    Test: `transcript-window-render.test.tsx`, 100 Lead/child cycles.

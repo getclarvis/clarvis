@@ -506,19 +506,19 @@ The TUI shell treats a newly visible request as explicit navigation to the live 
 the composer as a painted but keyboard-inert bridge until `active-elicitation` owns a visible
 transcript row, then requests the tail again before removing that bridge. A dirty full-page editor
 pauses this transition without polling renderer frames; the retained request restarts it reactively
-when the overlay closes. Each `CommittedHistory` request waits until the physical tail is resident,
-clamps once and releases its latch, while `App` repeats the request across the question's actual
-layout transition. Clearing the request restores the composer and requests the changed tail again.
+when the overlay closes. `CommittedHistory.returnToTail` mounts the newest slice and scrolls to the
+native bottom, while `App` repeats that request across the question's actual layout transition.
+Clearing the request restores the composer and requests the changed tail again.
 A confirmation cannot therefore be stranded in an unmounted live tail while the screen remains
 anchored to older history, no transition frame contains neither interaction surface, and native
 scrollbar movement is not captured after the transition settles. Production:
 `packages/code/src/views/App.tsx` (`elicitComposerHidden`, `revealHistoryTail`, elicitation effect),
 `packages/code/src/views/ElicitBlock.tsx` (`active-elicitation`),
-and `packages/code/src/views/history/CommittedHistory.tsx` (`tailClampRequested`). Tests:
+and `packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistoryHandle.returnToTail`). Tests:
 `packages/code/tests/integration/app-shell-render.test.tsx` ("an elicitation returns an old reader to
 the live tail before hiding the composer" and "a pending elicitation does not discard an in-progress
 config edit") and `packages/code/tests/integration/transcript-window-render.test.tsx` ("native
-scrollbar movement is free after an explicit tail clamp settles"). The physical-history contract is owned by
+scrollbar movement is free after returning to the tail"). The physical-history contract is owned by
 [hosts/code-transcript-stability.md](../hosts/code-transcript-stability.md) (INV-TP34).
 
 `kernel-run-client.ts`'s `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts`) is the piece that turns a protocol

@@ -86,6 +86,9 @@ Not exported from `./config` but exported from their module and imported by test
 | `deleteAgent(scope, name)` | `packages/kernel/src/config/config-service.ts` | `invalid_request` |
 | `renameAgent(scope, oldName, newName)` | `packages/kernel/src/config/config-service.ts` | `invalid_request`, `not_found`, `conflict` |
 | `getContext(scope)` | `packages/kernel/src/config/config-service.ts` | — |
+| `getSharedPrompt()` | `packages/kernel/src/config/config-service.ts` | — |
+| `writeSharedPrompt(scope, doc)` | `packages/kernel/src/config/config-service.ts` | `invalid_request` |
+| `deleteSharedPrompt(scope)` | `packages/kernel/src/config/config-service.ts` | — |
 | `subscribe(kinds, listener)` | `packages/kernel/src/config/config-service.ts` | — |
 
 `createConfigService` takes two optional host collaborators (`packages/kernel/src/config/config-service.ts`):
@@ -110,6 +113,9 @@ cited above in Section 6.
 | `readEffectiveAgent(name)` | `→ AgentRecord \| null` | yes |
 | `writeAgent(scope, name, input)` / `deleteAgent(scope, name)` |  | yes |
 | `readContext(scope)` | `→ ContextRecord \| null` | yes |
+| `readSharedPrompt(scope)` | `→ SharedPromptFile \| null` | yes |
+| `writeSharedPrompt(scope, content)` | `→ SharedPromptFile` | yes |
+| `deleteSharedPrompt(scope)` | `→ void` | yes |
 | `setWorkspaceTrust?(approve)` | `→ SettingsSnapshot` | **optional** |
 | `workspaceTrustError?()` | `→ string \| null` | **optional** |
 | `watch?(listener)` | `→ Unsubscribe` | **optional** |
@@ -697,10 +703,13 @@ Each entry: **rule** — production anchor — test anchor.
     the file's own description and body. The test states the reason : a
     file placed on disk "is indistinguishable from arriving with a clone — so it is withheld until
     approved". `coder` being a shipped name is what makes the assertion sharp: the question is never
-    whether the agent is listed, only whether the repository's file overlays it.
+    whether the agent is listed, only whether the repository's file overlays it. Shared prompt:
+    `packages/kernel/src/config/shared-prompt.ts` (`resolveStoreSharedPrompt`). Pinned:
+    `packages/kernel/tests/component/shared-prompt.test.ts` ("does not inject an untrusted workspace
+    shared prompt" and "uses the workspace override after approval").
 
 21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings,
-    agent file digests, *and* every installed `scope: "workspace"` plugin's qualified ref and atomic
+    agent file digests, `sharedPrompt`, *and* every installed `scope: "workspace"` plugin's qualified ref and atomic
     contribution digest before Extension Profile selection. Global operator-owned plugins do not enter this surface
     (`WorkspaceExecutableSurface` and `workspaceExecutableSurface` in
     `packages/kernel/src/config/workspace-trust.ts`) and the verdict is recomputed per call

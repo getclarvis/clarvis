@@ -21,7 +21,7 @@ This document owns the transcript's **publication lifecycle and physical viewpor
 still change, when one semantic artifact becomes immutable, and which owners may remain mounted.
 Clarvis separates an immutable committed history from
 a mutable live frontier. Background work may append after history, but cannot patch, move, hide,
-reparse or remount a committed artifact that remains in the current physical window.
+reparse or remount a committed artifact that remains in the current mounted index slice.
 
 The mounted history window is index-driven. Sessions at or below
 `TRANSCRIPT_FULL_MOUNT_CEILING` committed batches mount every frozen owner. Longer sessions keep a

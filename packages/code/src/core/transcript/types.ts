@@ -1,4 +1,4 @@
-import type { CommandGuardReview } from "@clarvis/protocol";
+import type { CommandGuardReview, ToolExecutionControl } from "@clarvis/protocol";
 
 /** Minimal plan-task activity embedded on semantic plan nodes. */
 export interface TranscriptPlanTask {
@@ -76,6 +76,15 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
   warn?: boolean;
   /** Final command-guard verdict, retained across live display and replay. */
   guard?: CommandGuardReview;
+  /**
+   * Live operator control for this physical invocation. Present only while the
+   * call is interruptible; removed on every terminal.
+   */
+  control?: ToolExecutionControl;
+  /** Operator interrupt requested; waiting for receipt or the tool terminal. */
+  interruptRequest?: "pending";
+  /** Authoritative terminal cause; scope closure and composition cleanup never infer an operator. */
+  interruption?: { source: "operator" };
   liveOutput?: string;
   /**
    * Size, in characters, of the argument payload the model has streamed so far

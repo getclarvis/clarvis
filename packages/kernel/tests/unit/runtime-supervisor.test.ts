@@ -53,6 +53,9 @@ const sessionMethods = {
   async callHookMcp() {},
   async elicitMcp() {},
   async steer() {},
+  async interruptTool() {
+    return { status: "not_running" };
+  },
   async cancel() {},
   async exposePort(guestPort: number, protocol: "http" | "https" | "tcp" = "http") {
     return {

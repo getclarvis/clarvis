@@ -26,11 +26,11 @@ author needs: the request and settings vocabulary, the ports, the trace kinds, a
 
 ## Exports
 
-| Entry                       | Contents                                                                                                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`), persisted trace projector registry, `compose`, and settings/run vocabulary |
-| `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                   |
-| `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                       |
+| Entry                       | Contents                                                                                                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`, `ToolInvocationContext`), persisted trace projector registry, `compose`, and settings/run vocabulary |
+| `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                                            |
+| `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                                                |
 
 `McpServerConfig` carries the complete normalized MCP seam shared by settings, plugin manifests and
 direct run requests. In addition to transport fields, that includes stdio `cwd`/`env_vars`, remote
@@ -167,6 +167,13 @@ concurrent agents; a budget implementation may grant less than requested but nev
 current headroom.
 
 ## The two ports
+
+Tool handlers receive a per-call `ToolInvocationContext` with the effective `signal` and optional
+`ToolInvocationControl` (`toolExecutionId`, `actions: ["interrupt"]`). `interruptible(call)` is an
+explicit opt-in used only by the builtin shell handler. The loop owns the child controller and
+run-scoped registry; this package owns neither process management nor a dependency on protocol.
+Selective interruption returns a local tool error, not `HandlerVerdict.cancelled`; global run
+cancellation remains distinct. See [tool dispatch](../../specs/engine/tool-dispatch.md).
 
 `AgentBuildContext` would otherwise reference the engine's `LiveContext` (~50 members) and
 `TraceHandle`, dragging the loop into this package. Instead it is declared over two ports that the
@@ -382,6 +389,7 @@ The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted 
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
 ## Operator authority vocabulary
 
 `operator-authority.ts` exports host evidence, binding, effect classes, compiled envelope and

@@ -21,6 +21,16 @@ afterEach(async () => {
 });
 
 describe("runtime guest loop", () => {
+  it("rejects malformed interrupt payloads and reports not_running for unknown runs", async () => {
+    const executor = createGuestLoopExecutor();
+    await expect(executor.interruptTool?.("missing", {})).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(
+      executor.interruptTool?.("missing", { tool_execution_id: "tok_shell" }),
+    ).resolves.toEqual({ tool_execution_id: "tok_shell", status: "not_running" });
+  });
+
   it.each([
     undefined,
     null,

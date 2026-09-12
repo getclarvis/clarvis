@@ -159,6 +159,13 @@ const RUN_EVENT_SCHEMAS = {
       tool: text,
       server: text,
       arguments: argumentsRecord.optional(),
+      control: z
+        .object({
+          tool_execution_id: text,
+          actions: z.tuple([z.literal("interrupt")]),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
   tool_call: z
@@ -174,8 +181,13 @@ const RUN_EVENT_SCHEMAS = {
       error: text.optional(),
       diff: text.optional(),
       guard: commandGuardReview.optional(),
+      interruption: z
+        .object({ source: z.literal("operator") })
+        .strict()
+        .optional(),
     })
-    .strict(),
+    .strict()
+    .refine((event) => event.interruption === undefined || event.ok === false),
   tool_output_delta: z
     .object({
       type: z.literal("tool_output_delta"),

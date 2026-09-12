@@ -115,8 +115,10 @@ async function finalizeOutput(
   return { stdout, stderr };
 }
 
-/** Injectable seams for {@link createShell}, for tests to stub output handling. */
+/** Injectable process and output seams for {@link createShell}. */
 interface ShellDependencies {
+  /** Override process creation for lifecycle tests; defaults to Node's spawn. */
+  spawn?: typeof spawn;
   /** Override for {@link finalizeOutput}; defaults to the real bounding/spill. */
   finalizeOutput?: typeof finalizeOutput;
 }
@@ -125,8 +127,8 @@ interface ShellDependencies {
  * Build the `shell` tool: run a command through the host shell to completion and
  * return a JSON string of `{ exit_code, stdout, stderr, signal, timed_out }`.
  *
- * @param dependencies - optional overrides (a test double for
- *   {@link finalizeOutput}); the real bounding/spill logic is used by default.
+ * @param dependencies - optional process/output overrides for tests; native spawn
+ *   and the real bounding/spill logic are used by default.
  * @returns a {@link ToolDef} whose handler blocks until the command exits.
  * @remarks The command runs with stdin closed - and, on POSIX, in its own
  *   process group (see {@link ownProcessGroup}) - so a
@@ -203,6 +205,8 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         finalize,
         hooks?.onOutput,
         forceBare,
+        hooks?.onExecutionStarted,
+        dependencies.spawn,
       );
     },
   };
@@ -241,7 +245,12 @@ function runCommand(
   finalize: typeof finalizeOutput = finalizeOutput,
   onOutput?: (chunk: string) => void,
   forceBare = false,
+  onExecutionStarted?: () => void,
+  spawnChild: typeof spawn = spawn,
 ): Promise<string> {
+  if (signal?.aborted) {
+    return Promise.reject(new ToolError("aborted", "Command aborted", { stdout: "", stderr: "" }));
+  }
   const startedAt = Date.now();
   const temporarySnapshots = snapshotExplicitTemporaryDirectories(command);
   return new Promise((resolve, reject) => {
@@ -271,7 +280,7 @@ function runCommand(
         },
         "a shell command is being spawned; everything it does from here is attributed to this process group",
       );
-      child = spawn(spec.file, spec.args, {
+      child = spawnChild(spec.file, spec.args, {
         ...spec.options,
         stdio: ["ignore", "pipe", "pipe"],
         detached,
@@ -308,6 +317,7 @@ function runCommand(
     };
 
     const onAbort = (): void => {
+      if (settled || child.exitCode !== null || child.signalCode !== null) return;
       aborted = true;
       killAll();
     };
@@ -391,7 +401,7 @@ function runCommand(
             "a shell command settled; the trace keeps its output as opaque text and indexes none of these",
           );
           if (aborted) {
-            reject(new ToolError("aborted", "Command aborted (run cancelled)", { stdout, stderr }));
+            reject(new ToolError("aborted", "Command aborted", { stdout, stderr }));
             return;
           }
 
@@ -446,5 +456,8 @@ function runCommand(
     });
 
     child.on("close", (code, signal) => finish(code, signal));
+    child.once("spawn", () => {
+      if (!settled && !signal?.aborted) onExecutionStarted?.();
+    });
   });
 }

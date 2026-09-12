@@ -202,6 +202,7 @@ Every signature below is the one declared in its file.
 | `steer` | `(message: Message \| string) => Promise<void>` | `RunHandle.steer` |
 | `compact` | `(request?: string) => Promise<void>` | `RunHandle.compact` |
 | `cancel` | `() => Promise<void>` | `RunHandle.cancel` |
+| `interruptTool` | `(toolExecutionId: string) => Promise<ToolInterruptReceipt>` | `RunHandle.interruptTool`; interrupts one live builtin `shell` without cancelling the run |
 | `respond` | `(response: ElicitationResponse) => Promise<void>` | `RunHandle.respond` |
 | `onElicit` | `(handler: (req: ElicitationRequest) => void) => void \| (() => void)` | `RunHandle.onElicit`; managed handles return unsubscribe |
 | `onElicitSettled?` | `(handler: (id: string) => void) => () => void` | `RunHandle.onElicitSettled`; answered or expired questions |
@@ -499,8 +500,8 @@ distinguishing fields:
 | `run_ended` | `status`, `reason?`, `code?`, `disposition?: "final"\|"checkpoint"` | `packages/protocol/src/runs.ts` |
 | `iteration_started` | `iteration`, `model?` | `packages/protocol/src/runs.ts` |
 | `iteration_completed` | `iteration`, `model?`, `response`, `response_phase?: "commentary"\|"final_answer"`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts` |
-| `tool_call_started` | `call_id`, `tool`, `server`, `arguments?` | `packages/protocol/src/runs.ts` |
-| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `guard?` | `packages/protocol/src/runs.ts` |
+| `tool_call_started` | `call_id`, `tool`, `server`, `arguments?`, `control?` | `packages/protocol/src/runs.ts`; `control` is present only while the invocation is interruptible |
+| `tool_call` | `call_id?`, `tool`, `server`, `arguments?`, `ok`, `result?`, `error?`, `diff?`, `guard?`, `interruption?` | `packages/protocol/src/runs.ts`; `interruption` implies `ok: false` and is operator-only |
 | `tool_output_delta` | `call_id`, `chunk` | `packages/protocol/src/runs.ts` |
 
 `guard`, when present, is the strict `CommandGuardReview` object with mode,

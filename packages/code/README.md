@@ -552,7 +552,7 @@ the draft. From the instant the bootstrap renderer enters raw/alternate-screen m
 lifecycle owner restores it on exit and every platform-supported catchable OpenTUI signal, then
 the platform retains the same ownership; `SIGKILL` is inherently outside this contract. Raw Ctrl+C
 stays owned through complete-keymap mount. The fatal-boot screen takes priority during that interval,
-so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. While a workspace runtime is being replaced, the
+so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block can also show `[Stop shell]`. Clicking it, or focusing that block and pressing contextual `Ctrl+X`, interrupts only that invocation; the run continues. `Ctrl+X` is not a global cancel: elicitation decline and a manual protected `run.cancel = Ctrl+X` binding still win, and with no interruptible target the key is not consumed. While a workspace runtime is being replaced, the
 mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
 every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
@@ -1066,6 +1066,13 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   failed group likewise renders one aggregate failure row rather than repeating each member's error.
   Nonzero local-shell results remain expanded warnings because their partial stdout/stderr is the
   result the user asked to inspect, not a rejected tool call.
+- A live controllable builtin shell exposes `[Stop shell]` without folding its row or cancelling
+  the run. The focused eligible shell also accepts contextual Ctrl+X; elicitation and a rebound
+  protected cancellation shortcut take precedence. `[Stopping…]` waits for the authoritative tool
+  terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
+  renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
+  actual diagnostic instead. See [transcript interruption](../../specs/hosts/code-transcript.md#47-provenance-and-interruption)
+  and [run hosting](../../specs/hosts/code-run-host.md#selective-shell-interruption).
 - Session persistence keeps one physical write and only the newest queued snapshot per session, so
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload

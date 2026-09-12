@@ -23,6 +23,10 @@ function managerHandle(executionId: string, closed: Promise<void>): RunHandle {
     steer: async () => {},
     compact: async () => {},
     cancel: async () => {},
+    interruptTool: async (toolExecutionId) => ({
+      tool_execution_id: toolExecutionId,
+      status: "not_running",
+    }),
     respond: async () => {},
     onElicit: () => {},
   };

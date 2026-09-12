@@ -17,7 +17,7 @@ import {
 import type { HostedProjection } from "./projection.ts";
 
 type Observation = Omit<HostedRunAttachment, "run">;
-type Controls = Pick<RunHandle, "steer" | "compact" | "cancel" | "respond">;
+type Controls = Pick<RunHandle, "steer" | "compact" | "cancel" | "interruptTool" | "respond">;
 
 /** One live subscriber; its failure must never become abandonment of the execution's source. */
 interface Subscriber {
@@ -336,6 +336,10 @@ export function createHostedExecution(options: HostedExecutionOptions): HostedEx
             async cancel() {
               assertObserver();
               await controls.cancel();
+            },
+            async interruptTool(toolExecutionId) {
+              assertObserver();
+              return controls.interruptTool(toolExecutionId);
             },
             async respond(response) {
               assertObserver();

@@ -164,11 +164,13 @@ The special operations and their metadata:
 | `hosting.steer` | write | — |
 | `hosting.compact` | write | — |
 | `hosting.cancel` | write | — |
+| `hosting.interrupt_tool` | write | — |
 | `hosting.respond` | write | — |
 | `runs.start` | write | — |
 | `runs.steer` | write | — |
 | `runs.compact` | write | — |
 | `runs.cancel` | write | — |
+| `runs.interrupt_tool` | write | — |
 | `runs.respond` | write | — |
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
@@ -381,11 +383,11 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 8; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 8`
+`HelloParams` = `{ wire_version: 9; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 9`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 8; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 9; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
@@ -886,8 +888,17 @@ replace the first handle.
 Production: `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
-**INV-221.** `steer`/`compact`/`cancel`/`respond` each forward with the handle's own `execution_id`
-under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.respond`.
+**INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond` each forward with the handle's own `execution_id`
+under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`.
+
+Interrupt receipt statuses describe registry outcomes, not transport health. Container RPC failures,
+invalid receipts and timeout after delivery reject the handle's request as sanitized `unavailable`
+rather than returning `not_running`. Expiry before delivery to a subscriber instead returns
+`not_running`; the bounded channel contract is owned by
+[kernel runs](kernel-runs.md). Production: `createIsolatedRunExecutor` in
+[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts).
+Test: `rejects interrupt delivery without fabricating not_running` in
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
 Production: `packages/kernel/src/transport/client.ts`, names bound at `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 

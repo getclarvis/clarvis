@@ -34,6 +34,10 @@ export interface TranscriptStateDeps {
    *   function is in the middle of changing.
    */
   rehydrate?: (key: string) => void;
+  /** Whether the operator may interrupt this live shell from the current TUI. */
+  canInterruptTool?: (node: TranscriptToolNode) => boolean;
+  /** Request interruption of the focused or clicked live shell. */
+  interruptTool?: (node: TranscriptToolNode) => void;
 }
 
 /**
@@ -62,6 +66,8 @@ export interface TranscriptState {
   focusBlock(delta: number): string | null;
   clearFocus(): boolean;
   pickDiffNode(): TranscriptToolNode | null;
+  canInterruptTool(node: TranscriptToolNode): boolean;
+  interruptTool(node: TranscriptToolNode): void;
 }
 
 /** External row-keyed expansion and focus survive unmounting and projection navigation. */
@@ -233,6 +239,10 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
         if (n && isDiffTool(n)) return chosen(n);
       }
       return null;
+    },
+    canInterruptTool: (node) => deps.canInterruptTool?.(node) === true,
+    interruptTool: (node) => {
+      deps.interruptTool?.(node);
     },
   };
 }

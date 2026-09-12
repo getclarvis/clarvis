@@ -142,6 +142,7 @@ export interface RuntimeSession {
   /** Deliver a host remote server's elicitation to its active guest-owned relay. */
   elicitMcp(runId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
+  interruptTool(runId: string, payload: unknown, signal?: AbortSignal): Promise<unknown>;
   cancel(runId: string): Promise<void>;
   exposePort(
     guestPort: number,

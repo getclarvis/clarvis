@@ -1,5 +1,11 @@
 # `@clarvis/loop`
 
+Selective shell interruption waits up to two seconds for executor settlement and bounded partial
+stdout/stderr. Global cancellation can preempt that wait. A noncooperative executor instead returns
+an explicit unconfirmed-termination error, never a falsely confirmed operator terminal. Live control
+is published after successful shell spawn, not while command review is pending; late callbacks
+cannot reopen a settled tool. See [tool dispatch](../../specs/engine/tool-dispatch.md).
+
 The embeddable Clarvis agent-loop engine. It runs model-backed agents and
 sub-agents in process, with tool use, budgets, context compaction, persistence,
 steering and structured results.
@@ -36,6 +42,16 @@ MCP itself. What remains of the last two is engine _policy_ — when to record a
 when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
+A run-scoped tool-interrupt registry listens for operator requests and aborts only the matching
+child controller for an interruptible builtin `shell`. The loop then records an operator
+interruption, returns that fact to the model, and continues. Run cancellation still wins when both
+signals fire.
+
+The host-facing `ToolInterruptDelivery` carries both `settle(status)` and mandatory `fail(error)`;
+transport adapters use failure rather than inventing `not_running` on an unavailable channel. The
+host owns promise coalescing, deadlines and error sanitization; the native registry retains its
+three receipt statuses and does not depend on the protocol package.
+
 The engine records one minimal `tool_call_announced` per call in each physical provider attempt:
 actor, call identity, tool name, iteration and attempt. Every cumulative `tool_input_delta`, including
 `complete: true`, is a live signal. Argument `chars` and optional provider `stream_chars` remain
@@ -66,7 +82,11 @@ children reuse the stamped value. See
 
 Model-facing contracts are collected in
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Spawn guidance requires
-self-contained briefs; supervision distinguishes handles, first-child wakeups and completed work.
+self-contained briefs. The default shared prompt requires an explicit request from the user or an
+explicit instruction from an applicable loaded skill or agent-instruction file (such as `AGENTS.md`
+or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
+the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
+and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
 `submit_result` ends a run only when both validation and runtime gates accept it. Compaction retains
 authorization and unfinished work without treating transcript content as new instructions; bounded
 MCP instruction sections explicitly mark truncation.

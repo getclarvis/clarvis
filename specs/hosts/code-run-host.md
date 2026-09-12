@@ -14,7 +14,7 @@ the sidebar, the export command — drives.
 
 Below it sit two families of module. One is the *backend adapter*:
 `packages/code/src/adapters/kernel-run-client.ts` wraps a `KernelClient` (`@clarvis/protocol`) and
-presents `startRun → RunHandle`, `steer`, `compact`, `getRun`, `deleteRun`, `listProfiles`, plus thin
+presents `startRun → RunHandle`, `steer`, `compact`, `interruptTool`, `getRun`, `deleteRun`, `listProfiles`, plus thin
 pass-throughs for the remaining kernel services (`packages/code/src/adapters/kernel-run-client.ts`).
 `packages/code/src/adapters/workspace-client-manager.ts` sits under *that*, owning the process's one
 connection to its independently hosted workspace kernel. `open` accepts only that workspace and
@@ -44,6 +44,19 @@ whether a late callback still owns the surface it wants to write to
 (`packages/code/src/run-host.ts`).
 
 ## 2. Surface
+
+### Selective shell interruption
+
+`RunHost.interruptTool` requests one live invocation through the current controlled handle without
+cancelling the run. A receipt is not a tool terminal: `accepted` keeps the pending projection;
+`not_running` or a failed request clears pending without inventing an outcome or operator cause.
+A current-owner failure adds a warning, while a late response from retired run ownership cannot
+mutate the current UI. Production: `createRunHost.interruptTool` in
+[run-host.ts](../../packages/code/src/run-host.ts) and `setToolInterruptRequest` in
+[store.ts](../../packages/code/src/adapters/store.ts). Test:
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), `interrupt receipts preserve
+running state and clear pending only on not_running or error` and `a late interrupt failure cannot
+add a notice after run ownership changes`.
 
 ### Hosted backend adapter
 

@@ -116,7 +116,7 @@ kernel's confined artifact case in
 | `StartupError` | class | `packages/tools/src/config.ts` | thrown by `resolveConfig` on invalid startup options |
 | thirteen `DEFAULT_*` limit constants | const | `packages/tools/src/config.ts` | see §3 |
 | `tools`, `readOnlyTools`, `getTool`, `selectSurface` | value | `packages/tools/src/tools/registry.ts` | the registry (see §2's surface table below) |
-| `ToolDef`, `ToolCallHooks` | type | `packages/tools/src/tools/types.ts` | one tool's schema+handler; optional live-output hooks |
+| `ToolDef`, `ToolCallHooks` | type | `packages/tools/src/tools/types.ts` | one tool's schema+handler; optional live output and successful-shell-spawn hooks |
 | `ContentPart`, `TextPart`, `ImagePart`, `ToolResult`, `contentText` | type/fn | `tools/content.ts` | the result envelope shape |
 | `ToolError`, `serializeError`, `fsError` | class/fn | `packages/tools/src/errors.ts` | the package's error type and its two renderers |
 | `ErrorCode` | type | `packages/tools/src/errors.ts` | the closed union of 18 stable codes |

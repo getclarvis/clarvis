@@ -15,6 +15,7 @@ import type { Guard, Elicit as GuardElicit } from "../../src/runtime/tools/built
 import type { LifecycleHook, SteerSource } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 import type { ExecutionStatus, RunRequest, Trace } from "@clarvis/capability";
+import type { ToolInterruptSource } from "../../src/runtime/tools/tool-interrupt.ts";
 
 interface ExecutionDetail {
   execution_id: string;
@@ -98,6 +99,8 @@ export interface HarnessOptions {
   hooks?: LifecycleHook[];
   capabilities?: readonly Capability[];
   onEvent?: (event: TraceEvent) => void;
+  toolInterrupts?: ToolInterruptSource;
+  externalSignal?: AbortSignal;
 }
 
 export { makeExecutionRecord } from "../helpers/execution-record.ts";
@@ -203,6 +206,8 @@ export async function makeHarness(opts: HarnessOptions): Promise<TestHarness> {
         ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
         ...(opts.steer !== undefined ? { steer: opts.steer } : {}),
         ...(opts.onEvent !== undefined ? { onEvent: opts.onEvent } : {}),
+        ...(opts.toolInterrupts !== undefined ? { toolInterrupts: opts.toolInterrupts } : {}),
+        ...(opts.externalSignal !== undefined ? { externalSignal: opts.externalSignal } : {}),
       });
       return { execution_id: executionId, ...response };
     },

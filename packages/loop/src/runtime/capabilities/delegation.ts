@@ -27,6 +27,7 @@ import { buildDelegationContribution } from "../delegation.ts";
 import type { SubagentAggregate } from "../subagents/delegate-task.ts";
 import type { SubagentProfileRegistry } from "../subagents/subagent-profiles.ts";
 import type { Elicit } from "../tools/ask-user-tool.ts";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 /** Registry name of the delegation (sub-agent spawning) capability. */
 export const DELEGATION_CAPABILITY_NAME = "delegation";
@@ -77,6 +78,8 @@ export interface DelegationCapabilityDeps {
   capabilityReserved?: readonly string[];
   /** Fleet-wide shared prompt snapshotted for this run. */
   sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -138,6 +141,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
                 ? {}
                 : { emitCapabilityEvent: deps.emitCapabilityEvent }),
               ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
+              ...(deps.toolInterrupts !== undefined ? { toolInterrupts: deps.toolInterrupts } : {}),
             }),
           };
         },

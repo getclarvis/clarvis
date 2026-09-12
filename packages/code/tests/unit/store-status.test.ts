@@ -941,6 +941,144 @@ test("dropComposing settles a named composing tool instead of removing it", () =
   expect(tool?.kind === "tool_call" ? tool.inputChars : "not-tool").toBeUndefined();
 });
 
+test("live shell control is installed on start and interruption projects interrupted", () => {
+  const running = replay([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "sh-1",
+      at: 2,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30" },
+      control: { tool_execution_id: "tok_live", actions: ["interrupt"] },
+    }),
+  ]);
+  const live = running.find((node) => node.kind === "tool_call");
+  expect(live?.kind === "tool_call" ? live.control : undefined).toEqual({
+    tool_execution_id: "tok_live",
+    actions: ["interrupt"],
+  });
+
+  const nodes = replay([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "sh-1",
+      at: 2,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30" },
+      control: { tool_execution_id: "tok_live", actions: ["interrupt"] },
+    }),
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "sh-1",
+      at: 3,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30" },
+      ok: false,
+      result: "Shell interrupted by the operator.",
+      error: "Shell interrupted by the operator.",
+      interruption: { source: "operator" },
+    }),
+  ]);
+  const tool = nodes.find((node) => node.kind === "tool_call");
+  expect(tool).toMatchObject({
+    kind: "tool_call",
+    toolName: "shell",
+    toolPhase: "interrupted",
+    interruption: { source: "operator" },
+    status: "error",
+  });
+  expect(tool?.kind === "tool_call" ? tool.control : "not-tool").toBeUndefined();
+  expect(tool?.kind === "tool_call" ? tool.interruptRequest : "not-tool").toBeUndefined();
+});
+
+test("setToolInterruptRequest marks only the matching live shell pending", () => {
+  const store = replayStore([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "sh-1",
+      at: 2,
+      server: "",
+      tool: "shell",
+      arguments: { command: "sleep 30" },
+      control: { tool_execution_id: "tok_live", actions: ["interrupt"] },
+    }),
+  ]);
+  expect(store.setToolInterruptRequest("tok_missing", true)).toBe(false);
+  expect(store.setToolInterruptRequest("tok_live", true)).toBe(true);
+  const tool = store.nodes.find((node) => node.kind === "tool_call");
+  expect(tool?.kind === "tool_call" ? tool.interruptRequest : undefined).toBe("pending");
+  expect(store.setToolInterruptRequest("tok_live", false)).toBe(true);
+  expect(tool?.kind === "tool_call" ? tool.interruptRequest : "pending").toBeUndefined();
+});
+
+test("only authoritative terminals attribute interruption across live, replay and reconciliation", () => {
+  for (const source of ["live", "replay"] as const)
+    createRoot((dispose) => {
+      const store = createTranscriptStore();
+      const sink = store.openRun("cause");
+      const start = ev({
+        type: "tool_call_started",
+        at: 2,
+        agent: "lead",
+        call_id: "shell",
+        server: "",
+        tool: "shell",
+        arguments: {},
+        control: { tool_execution_id: "tok_cause", actions: ["interrupt"] },
+      });
+      applyRunEvent(sink, ev({ type: "run_started", at: 1 }), source);
+      applyRunEvent(sink, start, source);
+      store.setToolInterruptRequest("tok_cause", true);
+      applyRunEvent(
+        sink,
+        ev({ type: "run_ended", at: 3, status: "completed", reason: "completed" }),
+        source,
+      );
+      const tool = store.nodes.find((node) => node.kind === "tool_call");
+      expect(tool).toMatchObject({ toolPhase: "interrupted" });
+      expect(tool?.kind === "tool_call" ? tool.interruption : "missing").toBeUndefined();
+      const terminal = ev({
+        type: "tool_call",
+        at: 3,
+        agent: "lead",
+        call_id: "shell",
+        server: "",
+        tool: "shell",
+        arguments: {},
+        ok: false,
+        interruption: { source: "operator" },
+        error: "stopped",
+      });
+      sink.beginReconcile();
+      applyRunEvent(sink, terminal, "replay");
+      sink.endReconcile();
+      expect(tool).toMatchObject({
+        interruption: { source: "operator" },
+        toolPhase: "interrupted",
+      });
+      sink.beginReconcile();
+      applyRunEvent(
+        sink,
+        { ...terminal, ok: true, interruption: undefined, error: undefined },
+        "replay",
+      );
+      sink.endReconcile();
+      expect(tool).toMatchObject({ toolPhase: "completed" });
+      expect(tool?.kind === "tool_call" ? tool.interruption : "missing").toBeUndefined();
+      dispose();
+    });
+});
+
 test("dropComposing still removes a nameless composing placeholder", () => {
   const nodes = replay([
     ev({ type: "run_started", at: 1 }),

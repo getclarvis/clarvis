@@ -362,11 +362,13 @@ export function createKernelServer(
           [M.hostingSteer]: ["subscription_id", "message"],
           [M.hostingCompact]: ["subscription_id", "request"],
           [M.hostingCancel]: ["subscription_id"],
+          [M.hostingInterruptTool]: ["subscription_id", "tool_execution_id"],
           [M.hostingRespond]: ["subscription_id", "response"],
           [M.runsStart]: ["params"],
           [M.runsSteer]: ["execution_id", "message"],
           [M.runsCompact]: ["execution_id", "request", "options"],
           [M.runsCancel]: ["execution_id"],
+          [M.runsInterruptTool]: ["execution_id", "tool_execution_id"],
           [M.runsRespond]: ["execution_id", "response"],
           [M.configSubscribe]: ["kinds", "subscription_id"],
           [M.configUnsubscribe]: ["subscription_id"],
@@ -507,6 +509,7 @@ export function createKernelServer(
             case M.hostingSteer:
             case M.hostingCompact:
             case M.hostingCancel:
+            case M.hostingInterruptTool:
             case M.hostingRespond:
               return hosted.handle(method, p);
             case M.hello: {
@@ -598,6 +601,13 @@ export function createKernelServer(
             case M.runsCancel:
               await liveOrThrow(p.execution_id as string).cancel();
               return {};
+            case M.runsInterruptTool: {
+              const toolExecutionId = p.tool_execution_id;
+              if (typeof toolExecutionId !== "string") {
+                throw kernelError("invalid_request", "tool_execution_id is required");
+              }
+              return liveOrThrow(p.execution_id as string).interruptTool(toolExecutionId);
+            }
             case M.runsRespond:
               await liveOrThrow(p.execution_id as string).respond(
                 p.response as ElicitationResponse,

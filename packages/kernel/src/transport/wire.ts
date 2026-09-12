@@ -11,7 +11,7 @@ import type {
 import { OPERATIONS, SPECIAL_OPERATIONS } from "./operations.ts";
 
 /** Clean-break version of Clarvis's internal request/notification wire. */
-export const CLARVIS_WIRE_VERSION = 8 as const;
+export const CLARVIS_WIRE_VERSION = 9 as const;
 
 /**
  * The request/response method vocabulary for kernel RPC — Clarvis's own,
@@ -30,11 +30,13 @@ export const M = {
   hostingSteer: SPECIAL_OPERATIONS.hostingSteer.method,
   hostingCompact: SPECIAL_OPERATIONS.hostingCompact.method,
   hostingCancel: SPECIAL_OPERATIONS.hostingCancel.method,
+  hostingInterruptTool: SPECIAL_OPERATIONS.hostingInterruptTool.method,
   hostingRespond: SPECIAL_OPERATIONS.hostingRespond.method,
   runsStart: SPECIAL_OPERATIONS.runsStart.method,
   runsSteer: SPECIAL_OPERATIONS.runsSteer.method,
   runsCompact: SPECIAL_OPERATIONS.runsCompact.method,
   runsCancel: SPECIAL_OPERATIONS.runsCancel.method,
+  runsInterruptTool: SPECIAL_OPERATIONS.runsInterruptTool.method,
   runsRespond: SPECIAL_OPERATIONS.runsRespond.method,
   runsGet: OPERATIONS.runs.get.method,
   runsList: OPERATIONS.runs.list.method,

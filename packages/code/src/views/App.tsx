@@ -81,6 +81,7 @@ import { fuzzyFilter } from "../core/fuzzy.ts";
 import { createCommandCompletionProvider } from "./input/command-completion.ts";
 import { createSkillMentionProvider } from "./input/skill-completion.ts";
 import { capitalize } from "./blocks.tsx";
+import { toolIdentity } from "../adapters/tool-identity.ts";
 import { projectHeader } from "./header-projection.ts";
 import { HeaderRows } from "./HeaderRows.tsx";
 import { createTranscriptState } from "./transcript-state.ts";
@@ -218,6 +219,8 @@ export interface AppRunControls {
   inspectContext?: RunHost["inspectCurrentContext"];
   fitContext?: RunHost["fitCurrentContext"];
   cancel: () => boolean;
+  canControl?: () => boolean;
+  interruptTool?: (toolExecutionId: string) => Promise<unknown>;
   /** Detach an unresponsive run after a host-owned cancellation grace. */
   forceStop?: () => void;
   active: () => boolean;
@@ -490,6 +493,18 @@ export function App(props: AppProps): JSX.Element {
     notify,
     defaultFolded: (key) => props.store.defaultFolded(key),
     rehydrate: (key) => void props.store.rehydrate(key),
+    canInterruptTool: (node) =>
+      (props.run.active() &&
+        (props.run.canControl?.() ?? true) &&
+        node.toolPhase === "running" &&
+        toolIdentity(node.mcpName, node.toolName) === "shell" &&
+        node.control?.actions.includes("interrupt") === true &&
+        node.interruptRequest !== "pending") === true,
+    interruptTool: (node) => {
+      const id = node.control?.tool_execution_id;
+      if (id === undefined || props.run.interruptTool === undefined) return;
+      void props.run.interruptTool(id).catch(() => undefined);
+    },
   });
   const [diffNode, setDiffNode] = createSignal<TranscriptToolNode | null>(null);
   useSpinnerClock(
@@ -656,6 +671,20 @@ export function App(props: AppProps): JSX.Element {
   const effects: InteractionEffects = {
     interactionBlocked: () => props.run.switching?.() ?? false,
     cancelRun: () => props.run.cancel(),
+    interruptFocusedShell: () => {
+      const key = ts.focusedKey();
+      if (key === null) return false;
+      const node = props.store.nodes.find((item) => item.key === key);
+      if (node?.kind !== "tool_call" || !ts.canInterruptTool(node)) return false;
+      ts.interruptTool(node);
+      return true;
+    },
+    canInterruptFocusedShell: () => {
+      const key = ts.focusedKey();
+      if (key === null) return false;
+      const node = props.store.nodes.find((item) => item.key === key);
+      return node?.kind === "tool_call" && ts.canInterruptTool(node);
+    },
     clearInputDraft: () => {
       if (overlays.overlay() !== "none") return;
       inputEl?.setText("");

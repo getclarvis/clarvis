@@ -482,6 +482,10 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           assertControl(connection, entry, observation.epoch);
           await source.cancel();
         },
+        async interruptTool(toolExecutionId) {
+          assertControl(connection, entry, observation.epoch);
+          return source.interruptTool(toolExecutionId);
+        },
         async respond(response) {
           assertControl(connection, entry, observation.epoch);
           await source.respond(response);

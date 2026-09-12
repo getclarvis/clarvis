@@ -62,6 +62,8 @@ export type {
   AgentRunState,
   AgentBuildContext,
   HandlerVerdict,
+  ToolInvocationControl,
+  ToolInvocationContext,
   ToolHandler,
   FinalizeAttempt,
   CheckpointAttempt,

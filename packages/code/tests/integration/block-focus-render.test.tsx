@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { For } from "solid-js";
+import { createStore } from "solid-js/store";
 import { openRender } from "../helpers/tracked-render.ts";
-import { rgbToHex } from "@opentui/core";
+import { rgbToHex, TextRenderable, type Renderable } from "@opentui/core";
 import { BlockView } from "../../src/views/blocks.tsx";
 import type { BlockOverride } from "../../src/views/block-focus.ts";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
@@ -51,11 +52,129 @@ async function frame(
   return out;
 }
 
+test("a live shell control paints Stop shell", async () => {
+  const node: TranscriptNode = {
+    key: "sh1",
+    kind: "tool_call",
+    status: "running",
+    toolPhase: "running",
+    text: "",
+    toolName: "shell",
+    args: { command: "sleep 30" },
+    control: { tool_execution_id: "tok_shell", actions: ["interrupt"] },
+  };
+  const t = await openRender(() => <BlockView node={node} canInterruptShell={() => true} />, {
+    width: 120,
+    height: 8,
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toMatch(/Stop shell|Stopping/);
+  t.renderer.destroy();
+});
+
 test("a per-block 'expanded' override opens a collapsed tool body", async () => {
   const node = bash("hello-from-stdout");
   expect((await frame([node], new Map())).includes("hello-from-stdout")).toBe(false);
   const open = new Map<string, BlockOverride>([[node.key, "expanded"]]);
   expect((await frame([node], open)).includes("hello-from-stdout")).toBe(true);
+});
+
+test("narrow shell headers reserve the stop target without folding or growing while pending", async () => {
+  const [node, setNode] = createStore<Extract<TranscriptNode, { kind: "tool_call" }>>({
+    key: "shell-click",
+    kind: "tool_call",
+    text: "",
+    toolName: "shell",
+    status: "running",
+    toolPhase: "running",
+    control: { tool_execution_id: "tok_click", actions: ["interrupt"] },
+    args: {
+      command: "echo a very long shell command signature that must truncate before the action",
+    },
+    startedAt: Date.now() - 30_000,
+  });
+  let stops = 0;
+  let folds = 0;
+  const t = await openRender(
+    () => (
+      <BlockView
+        node={node}
+        defaultFolded={() => true}
+        canInterruptShell={() => node.interruptRequest !== "pending"}
+        onInterruptShell={() => {
+          stops++;
+          setNode("interruptRequest", "pending");
+        }}
+        onToggle={() => {
+          folds++;
+        }}
+      />
+    ),
+    { width: 52, height: 20 },
+  );
+  const texts = (root: Renderable): TextRenderable[] => [
+    ...(root instanceof TextRenderable ? [root] : []),
+    ...root.getChildren().flatMap(texts),
+  ];
+  const click = async (label: string) => {
+    await t.renderOnce();
+    const action = texts(t.renderer.root).find((text) => text.plainText.includes(label))!;
+    expect(action).toBeDefined();
+    expect(action.width).toBe(13);
+    expect(action.height).toBe(1);
+    expect(action.x + action.width).toBeLessThanOrEqual(52);
+    const identity = texts(t.renderer.root).find((text) => text.plainText.includes("shell("))!;
+    expect(identity.y).toBe(action.y);
+    expect(identity.height).toBe(1);
+    expect(identity.x + identity.width).toBeLessThanOrEqual(action.x);
+    const lines = t.captureCharFrame().split("\n");
+    const actionSpan = t
+      .captureSpans()
+      .lines[action.y]!.spans.find((span) => span.text.includes(label));
+    expect(actionSpan?.text.trimEnd().endsWith(` ${label}`)).toBe(true);
+    expect(lines.filter((line) => line.trim().length > 0)).toHaveLength(1);
+    expect(lines[action.y]).not.toContain("before the action");
+    await t.mockMouse.click(action.x + 2, action.y);
+    await t.renderOnce();
+  };
+  await click("[Stop shell]");
+  expect(stops).toBe(1);
+  expect(folds).toBe(0);
+  expect(t.captureCharFrame()).toContain("Stopping");
+  await click("[Stopping…]");
+  expect(stops).toBe(1);
+  expect(folds).toBe(0);
+  setNode({
+    status: "error",
+    toolPhase: "interrupted",
+    interruption: { source: "operator" },
+    control: undefined,
+    interruptRequest: undefined,
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Stop shell");
+  expect(t.captureCharFrame()).not.toContain("Stopping");
+  expect(t.captureCharFrame()).toContain("Interrupted by operator");
+});
+
+test("interrupted scope and composition rows do not blame the operator", async () => {
+  for (const error of [
+    "Execution scope closed without an authoritative tool result.",
+    "Argument composition interrupted by a model retry.",
+  ]) {
+    const node: TranscriptNode = {
+      key: error,
+      kind: "tool_call",
+      status: "error",
+      toolPhase: "interrupted",
+      text: "",
+      toolName: "shell",
+      error,
+    };
+    const out = await frame([node], new Map());
+    expect(out).toContain(error);
+    expect(out).not.toContain("Interrupted by operator");
+  }
 });
 
 test("the explicit expand lifts the 10-line clamp (full body, no '+N more lines')", async () => {

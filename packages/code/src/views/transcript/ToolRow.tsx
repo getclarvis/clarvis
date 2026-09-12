@@ -24,6 +24,8 @@ export function ToolRow(props: {
       focused={() => props.transcript.focusedKey() === props.node.key}
       onToggle={props.onToggle}
       onOpenDetail={props.onOpenDetail}
+      canInterruptShell={(node) => props.transcript.canInterruptTool(node)}
+      onInterruptShell={(node) => props.transcript.interruptTool(node)}
       fillAvailableWidth={() => true}
     />
   );

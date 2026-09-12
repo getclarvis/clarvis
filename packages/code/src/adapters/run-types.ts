@@ -5,6 +5,7 @@ import type {
   RunCompactionResult,
   RunResult,
   StartHostedTurnParams,
+  ToolInterruptReceipt,
 } from "@clarvis/protocol";
 import type { GuardMode } from "./guard-mode.ts";
 
@@ -61,6 +62,8 @@ export interface StartRunInput {
 export interface RunHandle {
   executionId: string;
   cancel(): Promise<void>;
+  /** Interrupt one live tool invocation without cancelling the run. */
+  interruptTool?(toolExecutionId: string): Promise<ToolInterruptReceipt>;
   /** Release this hosted observation; the host separately applies the conversation's exit policy. */
   releaseObservation?(): Promise<void>;
   /** Explicitly acquire this existing observation's controller without replaying its transcript. */

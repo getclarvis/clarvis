@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NOOP_LOGGER, sanitizeErrorMessage } from "@clarvis/capability";
 import type {
   AgentRole,
@@ -49,6 +50,8 @@ import {
   type LoopRuntime,
 } from "./loop-shared.ts";
 import { combineSignals } from "../support/signals.ts";
+import { invocationRunSignal } from "../tools/tool-interrupt.ts";
+import type { ToolInvocationContext } from "@clarvis/capability";
 import type { ProgressTracker } from "./progress.ts";
 import type {
   AssistantReasoningPart,
@@ -703,6 +706,34 @@ async function settleOrAbort<T>(
   }
 }
 
+function openToolInvocation(
+  handler: ToolHandler,
+  call: LLMToolCall,
+  core: LoopCore,
+): { context: ToolInvocationContext; release: () => void } {
+  const runSignal = invocationRunSignal(core.runtime.signal);
+  const registry = core.runtime.toolInterrupts;
+  if (handler.interruptible?.(call) !== true || registry === undefined) {
+    return { context: { signal: runSignal }, release() {} };
+  }
+  const toolExecutionId = randomUUID();
+  const controller = new AbortController();
+  registry.register({
+    toolExecutionId,
+    callId: call.id,
+    controller,
+  });
+  return {
+    context: {
+      signal: combineSignals(runSignal, controller.signal) ?? controller.signal,
+      control: { toolExecutionId, actions: ["interrupt"] },
+    },
+    release() {
+      registry.unregister(toolExecutionId);
+    },
+  };
+}
+
 /**
  * Executes one iteration's tool calls in order, honoring hooks, cancellation,
  * and deferred (parallel) handlers, then appends every result to the context.
@@ -770,10 +801,16 @@ async function runDispatch(
         rewritten === undefined
           ? original
           : { ...original, arguments: rewritten.arguments, rewrittenFrom: original.arguments };
-      const handled = await settleOrAbort(
-        Promise.resolve().then(() => handler.handle(call, iteration)),
-        core.runtime.signal,
-      );
+      const invocation = openToolInvocation(handler, call, core);
+      let handled: Awaited<ReturnType<typeof settleOrAbort<HandlerVerdict>>>;
+      try {
+        handled = await settleOrAbort(
+          Promise.resolve().then(() => handler.handle(call, iteration, invocation.context)),
+          core.runtime.signal,
+        );
+      } finally {
+        invocation.release();
+      }
       if (handled.kind === "aborted") {
         results[i] = `Tool '${call.name}' was cancelled.`;
         const c = d.maybeCancelled();

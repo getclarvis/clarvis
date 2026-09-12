@@ -225,7 +225,7 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts`).
 | `kind` | Extra fields | File |
 | --- | --- | --- |
 | `user` / `assistant` / `reasoning` / `thinking` | `text`, `assistantPhase?`, `sourceExecutionId?`, `sourceTextFingerprint?`, `textTruncated?`, `proseReleased?`, `textEpoch?` | `packages/code/src/core/transcript/types.ts` |
-| `tool_call` | `text`, `mcpName?`, `toolName?`, `args?`, `result?`, `diff?`, `error?`, `warn?`, `guard?`, `liveOutput?`, `inputChars?`, `inputComplete?`, `dehydrated?`, `hydrationNotice?`, `signature?`, `mutation?` | `packages/code/src/core/transcript/types.ts` |
+| `tool_call` | `text`, `mcpName?`, `toolName?`, `args?`, `result?`, `diff?`, `error?`, `warn?`, `guard?`, `control?`, `interruptRequest?`, `interruption?`, `liveOutput?`, `inputChars?`, `inputComplete?`, `dehydrated?`, `hydrationNotice?`, `signature?`, `mutation?` | `packages/code/src/core/transcript/types.ts` |
 | `run` | `text`, `reason?`, `disposition?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts` |
 | `subagent` | `text`, `title?`, `reason?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts` |
 | `plan` | `text`, `planTitle?`, `planStatus?`, `planReview?`, `planRemoved?`, `planDiscarded?`, `tasks?`, `revision?` | `packages/code/src/core/transcript/types.ts` |
@@ -409,6 +409,27 @@ Missing child attribution is isolated and linked through a provenance notice, ne
 A call with no authoritative outcome after its execution scope closes is interrupted, not successful
 and not a proven tool failure. Durable minimal announcements reconstruct named pre-start interruption
 without storing partial arguments. Global host interactions remain independent of transcript selection.
+
+`toolPhase: interrupted` alone never attributes operator intent. The node retains the terminal
+event's explicit `interruption` separately; only `source: operator` produces the folded summary
+`Interrupted by operator`. Scope closure, composition cleanup and accepted interrupt receipts do
+not synthesize that cause. Reconciliation replaces it with the authoritative terminal's cause,
+including clearing it when absent. Production: `TranscriptToolNode` in
+[types.ts](../../packages/code/src/core/transcript/types.ts), `createTranscriptStore` terminal and
+cleanup branches in [store.ts](../../packages/code/src/adapters/store.ts), and `ToolLine.failureSummary`
+in [blocks.tsx](../../packages/code/src/views/blocks.tsx). Test:
+[store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts), `only authoritative
+terminals attribute interruption across live, replay and reconciliation`, and
+[block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx),
+`interrupted scope and composition rows do not blame the operator`.
+
+The shell's stop target is separate from header folding; a pending request paints `[Stopping…]`
+and repeated clicks issue no further request. The action reserves its full width, including a leading
+space, at narrow terminal widths; the identity truncates instead of clipping the action or adding a
+header row. The pending label keeps the same reservation. Terminal settlement removes the control.
+Production: `ToolLine` and `BlockView` in [blocks.tsx](../../packages/code/src/views/blocks.tsx). Test:
+`narrow shell headers reserve the stop target without folding or growing while pending` in
+[block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx).
 
 ### 4.8 Assistant Markdown segmentation
 

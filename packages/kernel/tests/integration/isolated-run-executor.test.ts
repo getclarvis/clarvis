@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HOME_ENV } from "@clarvis/paths";
 import { createSteerQueue } from "../../src/runs/steer-queue.ts";
+import { createToolInterruptChannel } from "../../src/runs/tool-interrupt-channel.ts";
 import {
   createCapabilityBroker,
   createIsolatedRunExecutor,
@@ -27,6 +28,89 @@ afterEach(async () => {
 });
 
 describe("isolated run executor", () => {
+  it.each(["refused", "sync_throw", "malformed", "wrong_token", "disconnect", "timeout"] as const)(
+    "rejects interrupt delivery without fabricating not_running: %s",
+    async (mode) => {
+      const finish = deferred();
+      const received = deferred();
+      const toolInterrupts = createToolInterruptChannel();
+      let signal: AbortSignal | undefined;
+      const executor = createIsolatedRunExecutor({
+        generation: "generation",
+        workspaceRoot: tmpdir(),
+        router: createRuntimeAuthorityRouter("generation"),
+        pollIntervalMs: 5,
+        session: {
+          closed: false,
+          info: {} as RuntimeInfo,
+          async startRun() {
+            await finish.promise;
+            throw new Error("runtime disconnected");
+          },
+          interruptTool(_runId, _payload, requestSignal) {
+            signal = requestSignal;
+            received.resolve();
+            if (mode === "sync_throw") throw new Error("failed Bearer secret-token");
+            if (mode === "refused") return Promise.reject(new Error("failed Bearer secret-token"));
+            if (mode === "malformed") return Promise.resolve({ status: "invalid" });
+            if (mode === "wrong_token")
+              return Promise.resolve({ status: "accepted", tool_execution_id: "tok_other" });
+            return new Promise((_resolve, reject) => {
+              requestSignal!.addEventListener("abort", () => reject(new Error("disconnected")), {
+                once: true,
+              });
+            });
+          },
+          async steer() {},
+          async callHookMcp() {},
+          async elicitMcp() {},
+          async stop() {},
+          async cancel() {},
+          async exposePort() {
+            throw new Error("not exercised");
+          },
+        },
+        authority: () => ({
+          model: {
+            async execute() {
+              return { events: [], outputBytes: 0 };
+            },
+            revoke() {},
+          },
+          capabilities: { async invoke() {}, revoke() {} },
+          terminalParticipants: () => [],
+        }),
+      });
+      const running = executor({
+        rawBody: { execution_id: "run" },
+        owner: "owner",
+        deps: {} as never,
+        toolInterrupts,
+      });
+      const runFailure = running.catch((error: unknown) => error);
+      const pending = toolInterrupts.interruptTool("tok_shell");
+      const failure = pending.catch((error: unknown) => error);
+      try {
+        await received.promise;
+        if (mode === "disconnect") finish.resolve();
+        const error = await failure;
+        expect(error).toMatchObject({ code: "unavailable" });
+        expect((error as Error).message).not.toContain("secret-token");
+        if (mode === "timeout" && !signal?.aborted) {
+          await new Promise<void>((resolve) =>
+            signal!.addEventListener("abort", () => resolve(), { once: true }),
+          );
+        }
+        if (mode === "disconnect" || mode === "timeout") expect(signal?.aborted).toBe(true);
+      } finally {
+        finish.resolve();
+        await runFailure;
+        toolInterrupts.close();
+      }
+    },
+    60_000,
+  );
+
   it("does not transport operator authority into the guest envelope", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-authority-retirement-"));
     directories.push(root);
@@ -56,6 +140,9 @@ describe("isolated run executor", () => {
           return { executionId: runId, response: { status: "completed" } };
         },
         async steer() {},
+        async interruptTool() {
+          return { status: "not_running" };
+        },
         async callHookMcp() {},
         async elicitMcp() {},
         async stop() {},
@@ -139,6 +226,12 @@ describe("isolated run executor", () => {
             if (delivery !== "delivered")
               throw Object.assign(new Error("guest finished"), { code: "not_found" });
           },
+          async interruptTool(_runId, payload) {
+            return {
+              tool_execution_id: (payload as { tool_execution_id: string }).tool_execution_id,
+              status: "accepted",
+            };
+          },
           async cancel() {},
           async stop() {},
           async exposePort() {
@@ -170,14 +263,20 @@ describe("isolated run executor", () => {
           },
         }),
       });
+      const toolInterrupts = createToolInterruptChannel();
       const running = executor({
         rawBody: { execution_id: "run" },
         owner: "owner",
         deps: {} as never,
         steer,
+        toolInterrupts,
       });
       try {
         await received.promise;
+        await expect(toolInterrupts.interruptTool("tok_shell")).resolves.toEqual({
+          tool_execution_id: "tok_shell",
+          status: "accepted",
+        });
         expect(acknowledged).toBeUndefined();
         if (delivery === "settled") finish.resolve();
         else {
@@ -201,6 +300,7 @@ describe("isolated run executor", () => {
         deliver.resolve();
         finish.resolve();
         steer.close();
+        toolInterrupts.close();
         await running.catch(() => undefined);
       }
     },
@@ -306,6 +406,9 @@ describe("isolated run executor", () => {
       async callHookMcp() {},
       async elicitMcp() {},
       async steer() {},
+      async interruptTool() {
+        return { status: "not_running" };
+      },
       async cancel() {},
       async exposePort() {
         throw new Error("not exercised");
@@ -447,6 +550,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
@@ -473,6 +577,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
@@ -502,6 +607,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           boundaryOrder.push("cancel");
         },
@@ -543,6 +649,7 @@ describe("isolated run executor", () => {
         callHookMcp: async () => undefined,
         elicitMcp: async () => undefined,
         steer: async () => undefined,
+        interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           cancelled = true;
         },
@@ -595,6 +702,7 @@ describe("isolated run executor", () => {
           callHookMcp: async () => undefined,
           elicitMcp: async () => undefined,
           steer: async () => undefined,
+          interruptTool: async () => ({ status: "not_running" }),
           cancel: async () => undefined,
           exposePort: async () => Promise.reject(new Error("not exercised")),
           stop: async () => undefined,

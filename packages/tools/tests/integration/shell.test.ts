@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { readFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { readFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { constants as osConstants } from "node:os";
 import path from "node:path";
 import { isSpillFile, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
 import type { ServerConfig } from "../../src/config.ts";
+import { createShell } from "../../src/tools/shell.ts";
 
 const {
   makeWorkspace,
@@ -13,7 +15,6 @@ const {
   chmod,
   modeBitsEnforced,
   lines,
-  detachedSleepCommand,
   posixShell,
   backgroundSettleIsMeasurable,
 } = await import("../helpers/fixtures.ts");
@@ -98,6 +99,57 @@ describe("shell", () => {
   });
 
   describe("live output (onOutput hook)", () => {
+    it("publishes successful spawn once before output, with abort handling already installed", async () => {
+      const events: string[] = [];
+      const controller = new AbortController();
+      const result = await callTool("shell", { command: "sleep 5" }, config, controller.signal, {
+        onExecutionStarted() {
+          events.push("start");
+          controller.abort();
+        },
+        onOutput(chunk) {
+          events.push(chunk);
+        },
+      });
+      expect(events).toEqual(["start"]);
+      expect(result.json.error).toBe("aborted");
+    });
+
+    it("does not publish started on an asynchronous spawn failure", async () => {
+      const events: string[] = [];
+      const cwd = path.join(root, "vanishing-cwd");
+      mkdirSync(cwd);
+      config = {
+        ...config,
+        logger: {
+          ...config.logger,
+          debug(fields) {
+            if (fields.event === "tools.shell_spawn") rmSync(cwd, { recursive: true });
+          },
+        },
+      };
+      const result = await callTool("shell", { command: "echo no", cwd }, config, undefined, {
+        onExecutionStarted() {
+          events.push("start");
+        },
+      });
+      expect(result.json.error).toBe("io_error");
+      expect(events).toEqual([]);
+    });
+
+    it("does not turn completed execution into abort while output is being finalized", async () => {
+      const controller = new AbortController();
+      const shell = createShell({
+        async finalizeOutput() {
+          controller.abort();
+          return { stdout: "done", stderr: "" };
+        },
+      });
+      const result = await shell.handler({ command: "echo done" }, config, controller.signal);
+      expect(typeof result).toBe("string");
+      expect(JSON.parse(result as string)).toMatchObject({ exit_code: 0, stdout: "done" });
+    });
+
     it("streams coalesced incremental chunks while the command runs, then the full result", async () => {
       const chunks: string[] = [];
       const r = await callTool(
@@ -191,23 +243,32 @@ describe("shell", () => {
       expect(r.json.error).toBe("aborted");
     });
 
-    it.skipIf(detachedSleepCommand === undefined)(
-      "falls back to child.kill when the process group is already gone",
-      async () => {
-        const ac = new AbortController();
-        const p = callTool(
-          "shell",
-          { command: `${detachedSleepCommand} & echo hi`, timeout_ms: 60000 },
-          config,
-          ac.signal,
-        );
-        await sleep(50);
-        ac.abort();
-        const r = await p;
-        expect(r.isError).toBe(true);
-        expect(r.json.error).toBe("aborted");
-      },
-    );
+    it("keeps a completed shell successful when abort arrives after exit but before stdio close", async () => {
+      const controller = new AbortController();
+      const events: string[] = [];
+      const shell = createShell({
+        spawn: ((...args: Parameters<typeof spawn>) => {
+          const child = spawn(...args);
+          child.once("exit", () => {
+            events.push("exit");
+            controller.abort();
+            events.push("abort");
+          });
+          child.once("close", () => events.push("close"));
+          return child;
+        }) as typeof spawn,
+      });
+      const result = await shell.handler({ command: "echo hi" }, config, controller.signal);
+      expect(events).toEqual(["exit", "abort", "close"]);
+      expect(controller.signal.aborted).toBe(true);
+      expect(typeof result).toBe("string");
+      expect(JSON.parse(result as string)).toMatchObject({
+        exit_code: 0,
+        stdout: expect.stringContaining("hi"),
+        signal: null,
+        timed_out: false,
+      });
+    });
   });
 
   describe("output limits and spill", () => {

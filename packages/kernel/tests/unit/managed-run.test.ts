@@ -194,6 +194,41 @@ describe("createManagedRunWithRuntime", () => {
     await expect(handle.compact("too late")).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("interrupts a live tool without aborting the run signal", async () => {
+    const clock = new FakeClock();
+    const finish = deferred<RunResult>();
+    let context!: ManagedRunContext;
+    const handle = createManagedRunWithRuntime(
+      {
+        executionId: "run-interrupt",
+        execute(value) {
+          context = value;
+          return finish.promise;
+        },
+      },
+      clock,
+    );
+    await flushPromises();
+    const seen: string[] = [];
+    const unsubscribe = context.toolInterrupts.subscribe((delivery) => {
+      seen.push(delivery.toolExecutionId);
+      delivery.settle("accepted");
+    });
+    await expect(handle.interruptTool("tok_shell")).resolves.toEqual({
+      tool_execution_id: "tok_shell",
+      status: "accepted",
+    });
+    expect(seen).toEqual(["tok_shell"]);
+    expect(context.signal.aborted).toBe(false);
+    unsubscribe();
+    finish.resolve(completed("run-interrupt"));
+    await handle.done;
+    await expect(handle.interruptTool("tok_shell")).resolves.toEqual({
+      tool_execution_id: "tok_shell",
+      status: "not_running",
+    });
+  });
+
   it("cancels execution when the sole event consumer abandons the stream", async () => {
     const clock = new FakeClock();
     let observedSignal!: AbortSignal;

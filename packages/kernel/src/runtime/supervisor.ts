@@ -46,6 +46,7 @@ export function createRuntimeSupervisor(backend: RuntimeBackend): RuntimeSupervi
         callHookMcp: (runId, call, signal) => started.callHookMcp(runId, call, signal),
         elicitMcp: (runId, input, signal) => started.elicitMcp(runId, input, signal),
         steer: (runId, input, signal) => started.steer(runId, input, signal),
+        interruptTool: (runId, payload, signal) => started.interruptTool(runId, payload, signal),
         cancel: (runId) => started.cancel(runId),
         exposePort: (guestPort, protocol, signal) =>
           started.exposePort(guestPort, protocol, signal),

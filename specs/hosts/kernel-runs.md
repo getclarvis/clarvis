@@ -125,7 +125,9 @@ through `ManagedRunSpec`, not by replacing the kernel's clock" (`packages/kernel
 ### 2.4 `ManagedRunSpec` / `ManagedRunContext` (`packages/kernel/src/runs/managed-run.ts`)
 
 `ManagedRunContext` is what the execution callback receives: `executionId`, `signal`, `elicit`,
-`steer`, `compaction`, `emit`. `ManagedRunSpec` is what a host plugs in: `executionId`,
+`steer`, `compaction`, `toolInterrupts`, `emit`. The interrupt source exposes deliveries, not
+process controllers; `RunHandle.interruptTool` is the validated receipt-facing operation.
+`ManagedRunSpec` is what a host plugs in: `executionId`,
 `execute(context)`, optional `observe(event)`, `settle(result)`, `eventBuffer`, `ingestGraceMs`,
 `ingestMaxWaitMs`, `lifecycle`. Two producers use it — `packages/kernel/src/runs/run-service.ts` for an
 ordinary run and `runManagerWorkflow` in
@@ -478,7 +480,7 @@ Order of construction, which matters because later steps capture earlier ones:
 | `AbortController` | backs `context.signal` and `handle.cancel` |
 | `resolveEventBuffer(spec.eventBuffer)` | merges host overrides over kernel defaults, then wraps `droppable` |
 | `createEventStream` with `onSaturated` / `onAbandoned` | a saturated stream aborts the run with `unavailable`; an abandoned one aborts with `cancelled` |
-| steer queue, compaction queue, elicit bridge | run-scoped control channels |
+| steer queue, compaction queue, tool-interrupt channel, elicit bridge | run-scoped control channels |
 | ingest bounds | see §4.5 |
 | `emitRelay.connect(...)` | push, then observe, then ingest bookkeeping |
 | lifecycle registration | close means abort, await `executionStarted`, await `done`, force-settle ingest, await `closed` |
@@ -496,12 +498,29 @@ sliding wait or settles it.
 
 ### 4.4 The `done` promise (`packages/kernel/src/runs/managed-run.ts`)
 
+The managed tool-interrupt channel is bounded to 16 pending tokens and two promises per token:
+one for the first caller and one shared by every pending repeat. An accepted delivery resolves the
+first as `accepted` and repeats as `already_requested`; other registry statuses remain unchanged.
+The absolute 30-second deadline starts at admission and is never renewed by repeats. Expiry before
+delivery to a subscriber resolves both promises as `not_running` and removes the queued delivery.
+Expiry after delivery and `ToolInterruptDelivery.fail(error)` reject both promises as `unavailable`,
+with a shared sanitizer and a 1,024-character error-message bound, without retaining foreign details
+or causes. Settlement,
+failure and close clear timers and remove queued entries. Close resolves pending calls as
+`not_running` and refuses further subscription work. Late callbacks are bound to their original
+delivery, so they cannot settle a subsequent request reusing the same token.
+
+Production: `createToolInterruptChannel` in
+[tool-interrupt-channel.ts](../../packages/kernel/src/runs/tool-interrupt-channel.ts).
+Test: same-token flood, queued timeout, late-delivery readmission, sanitized rejection and close
+cases in [tool-interrupt-channel.test.ts](../../packages/kernel/tests/unit/tool-interrupt-channel.test.ts).
+
 | Situation | Result |
 | --- | --- |
 | lifecycle exists and `state !== "open"` | throws `kernelError("unavailable", "kernel is closing")` before `execute` runs |
 | `execute` throws or rejects | `failedResult(executionId, toKernelError(error))` |
 | `settle` throws | the settle failure replaces the result: `failedResult(...)` |
-| always | `steer.close()`, `compaction.close()`, `closeStream()` in `finally` |
+| always | `steer.close()`, `compaction.close()`, `toolInterrupts.close()`, `bridge.close()`, `closeStream()` in `finally` |
 
 `packages/kernel/tests/unit/managed-run.test.ts` pins both failure conversions (code `internal`, messages
 `"execution exploded"` and `"settlement exploded"`), pins that a lifecycle closed
@@ -1056,6 +1075,11 @@ type. Production: `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` 
 ## 7. Coupling
 
 ### 7.1 Outbound (static imports)
+
+The engine-local `ToolInterruptDelivery` contract in
+[tool-interrupt.ts](../../packages/loop/src/runtime/tools/tool-interrupt.ts) requires `fail(error)`
+alongside status settlement. Kernel supplies rejection, sanitization and bounded promise ownership;
+the loop registry continues to settle only its authoritative live-invocation statuses.
 
 | Dependency | Where | What forces it |
 | --- | --- | --- |

@@ -36,6 +36,7 @@ import { fireObservers } from "../loop/lifecycle-hooks.ts";
 import type { CapabilityEventListener } from "@clarvis/capability";
 import { DELEGATE_TASK_TOOL_NAME } from "../tools/wire-names.ts";
 import type { SPAWN_SUBAGENT_TOOL_NAME } from "../tools/wire-names.ts";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 type ChildSpawnToolName = typeof DELEGATE_TASK_TOOL_NAME | typeof SPAWN_SUBAGENT_TOOL_NAME;
 
@@ -252,6 +253,8 @@ export interface DelegateTaskContext {
   capabilityReserved?: readonly string[];
   /** Fleet-wide shared prompt snapshotted for this run. */
   sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -483,6 +486,7 @@ export interface SubagentRunContext {
   workspaceRoot?: string;
   hooks?: LifecycleHook[];
   usageSink?: SubagentUsageSnapshot;
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -534,6 +538,7 @@ export function buildRunSubagentInput(
     workspaceRoot: base.workspaceRoot,
     hooks: base.hooks,
     usageSink: base.usageSink,
+    ...(base.toolInterrupts !== undefined ? { toolInterrupts: base.toolInterrupts } : {}),
   };
 }
 
@@ -648,6 +653,7 @@ export async function runPreparedSubagent(
         workspaceRoot: ctx.workspaceRoot,
         hooks: ctx.hooks,
         usageSink,
+        ...(ctx.toolInterrupts !== undefined ? { toolInterrupts: ctx.toolInterrupts } : {}),
       }),
     ));
   } catch (err) {

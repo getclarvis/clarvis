@@ -269,12 +269,15 @@ function ToolLine(props: {
   full?: boolean;
   ungatedMutationBody?: boolean;
   onHeaderClick?: () => void;
+  onInterruptShell?: () => void;
+  showStopShell?: boolean;
 }): JSX.Element {
   const display = createMemo(() =>
     projectTranscriptToolDisplay(props.node, rawToolArguments(props.node)),
   );
   const isCollapsed = (): boolean => !props.showBody && props.node.status !== "running";
   const failureSummary = (): string => {
+    if (props.node.interruption?.source === "operator") return "Interrupted by operator";
     const error = display().error ?? "No authoritative result";
     if (toolIdentity(props.node.mcpName, props.node.toolName) === "shell") {
       const shell = parseBash(display().result, error);
@@ -324,66 +327,85 @@ function ToolLine(props: {
       overflow="hidden"
       backgroundColor={tokens.bg}
     >
-      <box paddingLeft={props.indent ? 3 : 1}>
-        <text
-          onMouseDown={props.indent ? undefined : props.onHeaderClick}
-          wrapMode="none"
-          truncate
-          selectable={false}
-        >
-          <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
-          <Show when={!props.indent}>
-            <span style={{ fg: tokens.accent }}>
-              {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
-            </span>
-          </Show>
-          <Show
-            when={props.node.inputChars !== undefined}
-            fallback={
-              <span style={{ fg: tokens.muted }}>
-                {resolveToolCallSignature(props.node, display().arguments)}
+      <box paddingLeft={props.indent ? 3 : 1} flexDirection="row" width="100%" flexShrink={0}>
+        <box flexGrow={1} flexBasis={0} minWidth={0}>
+          <text
+            onMouseDown={props.indent ? undefined : props.onHeaderClick}
+            wrapMode="none"
+            truncate
+            selectable={false}
+          >
+            <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
+            <Show when={!props.indent}>
+              <span style={{ fg: tokens.accent }}>
+                {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
               </span>
-            }
-          >
-            <span style={{ fg: tokens.muted }}>{(props.indent ? "" : " ") + composing()}</span>
-          </Show>
-          <Show when={props.node.status === "running" && props.node.startedAt !== undefined}>
-            <span style={{ fg: tokens.muted }}>
-              {"  " + formatElapsed(tickNow() - props.node.startedAt!)}
-            </span>
-          </Show>
-          <Show
-            when={props.node.status !== "running" && (props.node.elapsedMs ?? 0) >= SLOW_TOOL_MS}
-          >
-            <span style={{ fg: tokens.muted }}>{"  " + formatElapsed(props.node.elapsedMs!)}</span>
-          </Show>
-          <Show when={diffChip()}>
-            <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
-            <span style={{ fg: tokens.add }}>{`+${diffChip()!.added}`}</span>
-            <Show when={diffChip()!.removed > 0}>
-              <span style={{ fg: tokens.del }}>{` ${glyph("minus")}${diffChip()!.removed}`}</span>
             </Show>
-            <span style={{ fg: tokens.muted }}>
-              {` ${glyph("separator")} ${moreChip(diffChip()!.lines)}`}
-            </span>
-          </Show>
-          <Show when={hiddenLines() > 0}>
-            <span style={{ fg: tokens.muted }}>{`  ${moreChip(hiddenLines())}`}</span>
-          </Show>
-          <Show when={guardLabel().length > 0}>
-            <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
-            <span
-              style={{
-                fg: props.node.guard?.outcome === "allowed" ? tokens.add : tokens.del,
-              }}
+            <Show
+              when={props.node.inputChars !== undefined}
+              fallback={
+                <span style={{ fg: tokens.muted }}>
+                  {resolveToolCallSignature(props.node, display().arguments)}
+                </span>
+              }
             >
-              {guardLabel()}
-            </span>
-          </Show>
-          <Show when={props.node.status === "error" && isCollapsed()}>
-            <span style={{ fg: tokens.del }}>{` · ${failureSummary()}`}</span>
-          </Show>
-        </text>
+              <span style={{ fg: tokens.muted }}>{(props.indent ? "" : " ") + composing()}</span>
+            </Show>
+            <Show when={props.node.status === "running" && props.node.startedAt !== undefined}>
+              <span style={{ fg: tokens.muted }}>
+                {"  " + formatElapsed(tickNow() - props.node.startedAt!)}
+              </span>
+            </Show>
+            <Show
+              when={props.node.status !== "running" && (props.node.elapsedMs ?? 0) >= SLOW_TOOL_MS}
+            >
+              <span style={{ fg: tokens.muted }}>
+                {"  " + formatElapsed(props.node.elapsedMs!)}
+              </span>
+            </Show>
+            <Show when={diffChip()}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span style={{ fg: tokens.add }}>{`+${diffChip()!.added}`}</span>
+              <Show when={diffChip()!.removed > 0}>
+                <span style={{ fg: tokens.del }}>{` ${glyph("minus")}${diffChip()!.removed}`}</span>
+              </Show>
+              <span style={{ fg: tokens.muted }}>
+                {` ${glyph("separator")} ${moreChip(diffChip()!.lines)}`}
+              </span>
+            </Show>
+            <Show when={hiddenLines() > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${moreChip(hiddenLines())}`}</span>
+            </Show>
+            <Show when={guardLabel().length > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span
+                style={{
+                  fg: props.node.guard?.outcome === "allowed" ? tokens.add : tokens.del,
+                }}
+              >
+                {guardLabel()}
+              </span>
+            </Show>
+            <Show when={props.node.status === "error" && isCollapsed()}>
+              <span style={{ fg: tokens.del }}>{` · ${failureSummary()}`}</span>
+            </Show>
+          </text>
+        </box>
+        <Show when={props.showStopShell === true}>
+          <text
+            width={13}
+            flexShrink={0}
+            wrapMode="none"
+            selectable={false}
+            fg={props.node.interruptRequest === "pending" ? tokens.muted : tokens.del}
+            onMouseDown={() => {
+              if (props.node.interruptRequest === "pending") return;
+              props.onInterruptShell?.();
+            }}
+          >
+            {props.node.interruptRequest === "pending" ? " [Stopping…]" : " [Stop shell]"}
+          </text>
+        </Show>
       </box>
       <Show when={tail().length > 0}>
         <box flexDirection="column" paddingLeft={props.indent ? 6 : 4} overflow="hidden">
@@ -526,6 +548,8 @@ export function BlockView(props: {
   focused?: () => boolean;
   onToggle?: () => void;
   onOpenDetail?: (detail: ActivityDetail) => void;
+  onInterruptShell?: (node: TranscriptToolNode) => void;
+  canInterruptShell?: (node: TranscriptToolNode) => boolean;
   defaultFolded?: () => boolean;
   /** Lets a containing split pane use its full content width; the physical
    * parent remains the hard boundary, so this cannot overlap an adjacent
@@ -644,6 +668,14 @@ export function BlockView(props: {
                       full={fullBody()}
                       ungatedMutationBody={leadMutation()}
                       onHeaderClick={onToggle}
+                      showStopShell={
+                        interactive() &&
+                        toolNode().toolPhase === "running" &&
+                        toolIdentity(toolNode().mcpName, toolNode().toolName) === "shell" &&
+                        (props.canInterruptShell?.(toolNode()) === true ||
+                          toolNode().interruptRequest === "pending")
+                      }
+                      onInterruptShell={() => props.onInterruptShell?.(toolNode())}
                     />
                   </Match>
 

@@ -29,6 +29,16 @@ cannot influence, not by convention.
 behind a policy layer — grant ceilings, exec-tool filtering, abort racing — so the rest of the engine
 never touches the feature package directly.
 
+`ToolHandler.handle` receives an optional per-invocation `ToolInvocationContext` with the effective
+`AbortSignal` and, for interruptible builtins, `control`. Only the coding-tools handler opts in, and
+only when the canonical name is `shell`. The loop mints an opaque `toolExecutionId`, combines the run
+signal with a child controller, and continues after an operator interrupt instead of treating it as
+run cancellation. Production: `packages/capability/src/loop-contract.ts`,
+`packages/loop/src/runtime/loop/loop.ts`, `packages/loop/src/runtime/tools/tool-interrupt.ts`.
+Test: `packages/loop/tests/unit/tool-interrupt.test.ts` covers registry addressing;
+[selective-shell-interrupt.test.ts](../../packages/loop/tests/integration/selective-shell-interrupt.test.ts)
+covers real shell output, receipts, continuation, review timing and global cancellation.
+
 ## 2. Surface
 
 Model guidance follows [`model-instructions.md`](../cross-cutting/model-instructions.md).
@@ -75,7 +85,7 @@ Production: `packages/loop/src/runtime/tools/submit-result-tool.ts` and
 | `McpCallResult` | `{ resultText: string; errText: string \| null; productive: boolean; images?: ToolResultImage[] }` | `packages/loop/src/runtime/tools/mcp-dispatch.ts` |
 | `buildMcpHandler` | `(deps: { base, registry, argValidator, guards, progress, availableWireNames? }) => ToolHandler` | `packages/loop/src/runtime/loop/mcp-handler.ts` |
 | `executeAgentToolCall` | `(args: AgentToolDispatchArgs) => Promise<AgentToolCallResult>` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` |
-| `AgentToolDispatchArgs` | `{ call, toolset, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` |
+| `AgentToolDispatchArgs` | `{ call, toolset, guards, trace, agent, subagentInstanceId?, iteration, signal?, runSignal?, control? }` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` |
 
 `ToolHandler` may additionally expose `canonicalName(call)`. The model-facing wire name remains the
 call's `name`; the optional canonical identity exists only for lifecycle consumers that must retain a
@@ -124,8 +134,8 @@ owns.
 | --- | --- | --- |
 | `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
-| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
-| `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?, onExecutionStarted?, runSignal?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `AgentToolResult` | `{ isError; text; images?; diff?; guard?; executionAborted?; abortUnsettled? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; skillExecutionRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to ordered temporary access/approved skill roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
 | `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 
@@ -349,7 +359,10 @@ throws inside the reporter itself.
 ### 4.4 Dispatching one built-in coding-tool call (`executeAgentToolCall`, `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`)
 
 Mirrors §4.3's shape without a registry resolve step (the toolset's `dispatch` already gates on
-`names.has(name)` — see §4.6): malformed arguments short-circuit to a traced, non-productive error; otherwise a `tool_call_started` record fires, `toolset.dispatch` runs with an `onOutput`
+`names.has(name)` — see §4.6): malformed arguments short-circuit to a traced, non-productive error. A controlled shell publishes
+`tool_call_started` only from its successful-spawn callback, after review and abort-listener setup;
+other tools publish it before dispatch. Denied review and failed spawn expose no control.
+`toolset.dispatch` runs with an `onOutput`
 callback relayed as `tool_output_delta` trace **signals**, and the terminal `tool_call`
 record carries any returned `diff` and final command-review `guard` metadata. The convergence-guard signature always uses
 `safeStringify(call.arguments)` here — there is no malformed-preview branch for the signal, because
@@ -410,8 +423,13 @@ raw tool defs + dispatch, then:
 - builds `names` as the `Set` of the (possibly filtered) defs' wire names;
 - wraps `dispatch` so a call whose name is not in `names` never reaches the adapter at all — it
   resolves immediately to `{ isError: true, text: "Tool '<name>' is not available to this agent." }`;
-- otherwise races the adapter's own dispatch promise against the abort `signal` via `raceAbort`, resolving to `abortedResult()` (`"Tool call aborted (run cancelled)."`) the instant the
-  signal fires, always removing its own abort listener afterward.
+- otherwise `raceAbort` returns `"Tool call aborted."` immediately for global cancellation.
+  Selective interruption gives the executor two seconds to settle its bounded stdout/stderr result;
+  the separate `runSignal` can preempt this grace even if the combined signal already fired.
+  Expired grace returns `abortUnsettled` with an explicit unconfirmed-termination error, not an
+  operator-interrupted terminal. Listeners/timers are removed and late start/output callbacks are inert.
+  `executionAborted` comes from the trusted shell's structured `ToolError` code, not human prose:
+  an abort arriving after process exit cannot relabel a completed result.
 
 `createAgentToolset` is the only barrel-exported factory and always binds
 `REAL_AGENT_TOOLS_ADAPTER`, which calls `@clarvis/tools`' `resolveConfig`/`listTools`/
@@ -580,7 +598,7 @@ Additional invariants derived directly from the code, carrying no INV number of 
 | MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` | non-productive (excused from convergence-guard penalty) |
 | MCP tool call errors, any other code | `executeMcpToolCall` | productive (a real tool failure, still counted) |
 | Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | immediate error result, tool never reached |
-| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | `abortedResult()`, adapter promise abandoned (listener always removed) |
+| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | Global cancel returns immediately; selective abort allows bounded settlement grace, then reports unconfirmed termination if needed; listeners always removed |
 | Coding-tool malformed arguments | `executeAgentToolCall` (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`) | traced + guarded as non-productive, `malformedArgumentsMessage` |
 | Argument schema itself uncompilable/`$async`/throws | `createToolArgValidator` (`packages/loop/src/runtime/tools/tool-arg-validator.ts`) | call accepted unchecked (`null`), one `tool.args_validation_failed_open` log line |
 | `output_schema` malformed / oversized / cyclic / non-object | `compileResultContract` (`packages/loop/src/runtime/tools/result-contract.ts`) | `ValidationError("invalid_output_schema")` thrown pre-execution, run never starts |

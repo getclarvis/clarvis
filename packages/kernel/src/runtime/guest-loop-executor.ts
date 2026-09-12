@@ -37,6 +37,8 @@ import { createGuestMemoryCapability, validRuntimeMemoryDescriptor } from "./mem
 import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-queue.ts";
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
+import { createToolInterruptChannel, TOOL_EXECUTION_ID } from "../runs/tool-interrupt-channel.ts";
+import type { ToolInterruptChannel } from "../runs/tool-interrupt-channel.ts";
 import { createGuestHookMcpCaller } from "./hook-mcp.ts";
 import { createGuestMcpConnections } from "./remote-mcp.ts";
 import { validRuntimeToolPolicy, type RuntimeToolPolicy } from "./tool-policy.ts";
@@ -72,6 +74,7 @@ interface GuestRunEnvelope {
 interface GuestRunControl {
   readonly steer: SteerQueue;
   readonly compaction: CompactionQueue;
+  readonly toolInterrupts: ToolInterruptChannel;
   readonly hookCalls: AbortController;
   callHookMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
   elicitMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
@@ -331,6 +334,7 @@ export function createGuestLoopExecutor(
       const control: GuestRunControl = {
         steer: createSteerQueue(),
         compaction: createCompactionQueue(),
+        toolInterrupts: createToolInterruptChannel(),
         hookCalls: new AbortController(),
       };
       controls.set(runId, control);
@@ -469,6 +473,7 @@ export function createGuestLoopExecutor(
                     drain: () => [...control.steer.drain(), ...child.args.steer!.drain()],
                   },
             compaction: control.compaction,
+            toolInterrupts: control.toolInterrupts,
             elicit: (params, opts) =>
               bridge.capability(
                 randomUUID(),
@@ -507,6 +512,7 @@ export function createGuestLoopExecutor(
         control.hookCalls.abort(new Error("guest run MCP hooks closed"));
         control.steer.close();
         control.compaction.close();
+        control.toolInterrupts.close();
         if (controls.get(runId) === control) controls.delete(runId);
       }
     },
@@ -523,6 +529,23 @@ export function createGuestLoopExecutor(
         throw guestControlError("not_found", "run MCP elicitation is unavailable");
       }
       return control.elicitMcp(input, signal);
+    },
+    async interruptTool(runId, payload) {
+      const control = controls.get(runId);
+      const body = record(payload);
+      const toolExecutionId = body?.tool_execution_id;
+      if (
+        body === undefined ||
+        !exactKeys(body, ["tool_execution_id"]) ||
+        typeof toolExecutionId !== "string" ||
+        !TOOL_EXECUTION_ID.test(toolExecutionId)
+      ) {
+        throw guestControlError("invalid_request", "runtime interrupt payload is invalid");
+      }
+      if (control === undefined) {
+        return { tool_execution_id: toolExecutionId, status: "not_running" };
+      }
+      return control.toolInterrupts.interruptTool(toolExecutionId);
     },
     async steer(runId, input, _signal) {
       const control = controls.get(runId);

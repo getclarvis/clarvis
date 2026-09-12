@@ -132,7 +132,10 @@ describe("the shipped admiral agent", () => {
     expect(prompt).toContain("`spawn_subagent`");
     expect(prompt).toContain("`delegate_task`");
     expect(prompt).toContain("manager-local children");
-    expect(prompt).toContain("delegate only when it adds value");
+    expect(prompt).toContain("only on explicit instruction under the shared policy");
+    expect(prompt).toContain("when explicitly instructed and their profile allows");
+    expect(prompt).toContain("does not itself authorize delegation");
+    expect(prompt).not.toContain("when the agent harness adds clear value");
   });
 
   test("names the installed-workflow and human-preflight capability", () => {
@@ -158,7 +161,10 @@ describe("the shipped marshall agent", () => {
 
   test("uses separate tools for independent spawning and tracked delegation", () => {
     const prompt = MARSHALL.body.replace(/\s+/g, " ");
-    expect(prompt).toContain("agent harness adds clear value");
+    expect(prompt).toContain(
+      "by default; delegation requires explicit instruction under the shared policy",
+    );
+    expect(prompt).not.toContain("unless the agent harness adds clear value");
     expect(prompt).toContain("`spawn_subagent` for independent work");
     expect(prompt).toContain("`delegate_task` for an existing plan task");
     expect(prompt).toContain("exact `task_id`");

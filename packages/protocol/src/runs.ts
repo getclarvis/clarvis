@@ -348,6 +348,38 @@ export interface CommandGuardReview {
 }
 
 /**
+ * Opaque live control for one physical tool invocation.
+ *
+ * @remarks `tool_execution_id` is minted by the runtime for this invocation and
+ * is never a PID, process group, command text, or `call_id`. `actions` is an
+ * allowlist; the first delivery only advertises `"interrupt"`.
+ */
+export interface ToolExecutionControl {
+  readonly tool_execution_id: string;
+  readonly actions: readonly ["interrupt"];
+}
+
+/** Cause of a selective tool interruption. The model never authors this field. */
+export interface ToolInterruption {
+  readonly source: "operator";
+}
+
+/** Settlement of {@link RunHandle.interruptTool}. */
+export type ToolInterruptStatus = "accepted" | "already_requested" | "not_running";
+
+/**
+ * Receipt for a selective tool-interrupt request.
+ *
+ * @remarks `accepted` means the abort was requested, not that the process has
+ * already exited. `already_requested` is idempotent. `not_running` covers an
+ * unknown, expired, or already-removed token on this live handle.
+ */
+export interface ToolInterruptReceipt {
+  readonly tool_execution_id: string;
+  readonly status: ToolInterruptStatus;
+}
+
+/**
  * Streamed run events — UI-facing, engine-independent projection.
  *
  * A clean protocol-owned vocabulary a UI renders from. Lead and sub-agent
@@ -417,6 +449,14 @@ export type RunEvent =
       tool: string;
       server: string;
       arguments?: Record<string, unknown>;
+      /**
+       * Live operator control for this physical invocation.
+       *
+       * @remarks Present only while the invocation is interruptible. The token is
+       * opaque, distinct from `call_id`, and valid only on the live handle that
+       * emitted it. Absence keeps the previous start-event semantics.
+       */
+      control?: ToolExecutionControl;
     })
   | (Attributed & {
       type: "tool_call";
@@ -430,6 +470,14 @@ export type RunEvent =
       diff?: string;
       /** Final command-review fact, persisted with the shell call for replay. */
       guard?: CommandGuardReview;
+      /**
+       * Why this call ended without success when the operator interrupted it.
+       *
+       * @remarks Implies `ok: false`. Absence keeps the previous terminal
+       * semantics (`ok ? completed : failed`). The terminal does not repeat
+       * `control`; arrival of this event removes live interrupt capacity.
+       */
+      interruption?: ToolInterruption;
     })
   /**
    * Live, incremental slice of a running tool's output (streamed only — never
@@ -785,6 +833,15 @@ export interface RunHandle {
 
   /** Request cancellation of the in-flight run. */
   cancel(): Promise<void>;
+
+  /**
+   * Request interruption of one live tool invocation without cancelling the run.
+   *
+   * @param toolExecutionId - Opaque token from {@link ToolExecutionControl}.
+   * @returns a receipt. A well-formed token with no live entry is
+   *   `not_running`, not an exception. A malformed token is `invalid_request`.
+   */
+  interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt>;
 
   /**
    * Answer a pending elicitation.

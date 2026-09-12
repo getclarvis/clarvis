@@ -129,6 +129,13 @@ export function createHostingDispatcher(options: {
         case M.hostingCancel:
           await handle.cancel();
           break;
+        case M.hostingInterruptTool: {
+          const toolExecutionId = params.tool_execution_id;
+          if (typeof toolExecutionId !== "string") {
+            throw kernelError("invalid_request", "tool_execution_id is required");
+          }
+          return handle.interruptTool(toolExecutionId);
+        }
         case M.hostingRespond:
           if (!wireRecord(params.response) || !wireId(params.response.id))
             throw kernelError(

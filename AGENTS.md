@@ -323,6 +323,16 @@ end-to-end evidence contract, the `tui-driver` skill for its PTY interaction mec
 Read [`packages/code/README.md`](packages/code/README.md) and the applicable `specs/hosts/code-*.md`
 documents before changing the TUI.
 
+Never run TUI tests with the operator's real `CLARVIS_*` environment or live settings/state.
+Before launching a test process, remove all inherited `CLARVIS_*` variables, then set only the
+explicit test-owned values. Use a disposable `HOME`, a separate disposable `CLARVIS_HOME`, and a
+disposable workspace under a test-owned temporary root outside the live installation. Changing
+`HOME` alone is insufficient: inherited `CLARVIS_HOME`, `CLARVIS_WORKSPACE_ROOT`,
+`CLARVIS_INSTALL_ROOT`, or `CLARVIS_CODE_SOURCE` can still select live data or the wrong artifact.
+Do not copy, overwrite, restore, or otherwise modify the operator's real settings to prepare a test.
+Test fixtures must be authored independently. Validate the isolated environment before starting the
+TUI and verify that the live settings remain unchanged afterward using read-only evidence.
+
 ## Source and documentation style
 
 - Public APIs and non-obvious internal contracts use TSDoc. Describe behavior, invariants, failure

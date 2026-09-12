@@ -348,8 +348,24 @@ Test: shared waiter cancellation and shutdown cleanup in
 [local-docker-runtime.test.ts](../../packages/kernel/tests/unit/local-docker-runtime.test.ts), and
 lease cancellation in [local-lease.test.ts](../../packages/paths/tests/contract/local-lease.test.ts).
 
-The worker also routes the closed `runtime.steer` control operation to the active guest executor.
-The payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
+The worker also routes the closed `runtime.steer` and `runtime.interrupt_tool` control operations to the active guest executor. `runtime.interrupt_tool` delivers a token-only payload `{ tool_execution_id }`; the guest validates the token against its run-local registry and aborts the matching child controller. The host never kills a guest PID.
+The host validates the interrupt receipt's token and status. A failed request or malformed receipt
+uses `ToolInterruptDelivery.fail` rather than fabricating `not_running`. The channel rejects the
+handle's pending promise with a sanitized, bounded `unavailable` error. A separate 30-second RPC
+deadline aborts the pending transport request; executor teardown likewise aborts pending delivery
+and rejects it even if the session has not yet rejected its own promise. Timers and control-abort
+listeners are removed on settlement, timeout and teardown. An interrupt failure does not replace
+the run's outcome. Production: `createIsolatedRunExecutor` in
+[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts).
+Test: refusal, synchronous throw, malformed receipt, disconnect and timeout cases in
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
+The opt-in test `interrupts a real guest shell through its handle and continues the same run with partial output`
+in [local-docker-runtime.e2e.test.ts](../../packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts)
+exercises the real guest for either selected engine: both partial streams, one operator terminal,
+repeated and expired receipts, no extra engine command for interruption, and a subsequent synthetic
+model call completing the same run. A skipped canary establishes no engine qualification.
+
+The steering payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
 fields, malformed message content and inactive run IDs are refused. `createGuestLoopExecutor`
 registers the two run-scoped queues before its first asynchronous preparation step, passes them to
 the real `executeRun`, and closes them when that run settles. Steering retains native delivery
@@ -357,7 +373,7 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 12 requires resolved host loop and tool-policy snapshots,
+successful run result. Protocol revision 13 requires resolved host loop and tool-policy snapshots,
 canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution,
 host-owned remote MCP with reverse elicitation,
 typed provider failures and incremental host model events;
@@ -512,7 +528,7 @@ uses the canonical goal capability and awaits earlier trace publications before 
 Host operations revalidate persisted state and cancellation inside the mutation. User controls,
 ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
 descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
-Private protocol revision 12 prevents older guests from silently ignoring required host capabilities.
+Private protocol revision 13 prevents older guests from silently ignoring required host capabilities.
 The bounded current record and evidence catalog may cross; private session archives and receipts do
 not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
 aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
@@ -983,7 +999,8 @@ an outbound guest can transmit readable workspace content or reach host/LAN serv
 Operator evidence, bindings, epochs, compiled envelopes and reviewer receipts remain in the native
 Host/Sandbox composition. `createIsolatedRunExecutor` neither sends authority in `runtime.start` nor
 persists a host authority mirror for a guest record, and the private control vocabulary remains
-limited to steer and compaction. Container does not add a protocol revision for effect review.
+limited to run controls, including steer, compaction and token-scoped tool interruption, not operator
+authority. Container does not add a protocol revision for effect review.
 Production: [isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts) and
 [guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
 [isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts)

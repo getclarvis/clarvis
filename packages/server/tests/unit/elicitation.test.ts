@@ -25,6 +25,8 @@ function fakeHandle(executionId: string): {
     steer: () => Promise.resolve(),
     compact: () => Promise.resolve(),
     cancel: () => Promise.resolve(),
+    interruptTool: (toolExecutionId) =>
+      Promise.resolve({ tool_execution_id: toolExecutionId, status: "not_running" }),
     respond: (response) => {
       responses.push(response);
       return Promise.resolve();

@@ -27,7 +27,7 @@ import { connectLocalKernelTransport, listenLocalKernel } from "../../src/transp
 import { decodeHostedFrame } from "../../src/transport/hosting-codec.ts";
 import { kernelError } from "../../src/core/errors.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
-import { N } from "../../src/transport/wire.ts";
+import { M, N } from "../../src/transport/wire.ts";
 import { wireRecord } from "../../src/transport/hosting-codec.ts";
 
 const cleanup: Array<() => Promise<unknown>> = [];
@@ -277,6 +277,84 @@ test.each(["loopback", "local"] as const)(
 );
 
 describe("hosted runs on the existing kernel RPC", () => {
+  test.each(["loopback", "local"] as const)(
+    "fences tool interrupts by observation, connection, run and control epoch over %s",
+    async (kind) => {
+      const f = await fixture(kind);
+      const firstTransport = await f.transport();
+      let originalSubscription: unknown;
+      const first = await connectKernelClient(
+        {
+          ...firstTransport,
+          request<T>(method: string, params?: unknown) {
+            if (method === M.hostingStart && wireRecord(params))
+              originalSubscription = params.subscription_id;
+            return firstTransport.request<T>(method, params);
+          },
+        },
+        { auth: "operator-token" },
+      );
+      const original = await first.hosting!.start(input());
+      const secondTransport = await f.transport();
+      const second = await connectKernelClient(secondTransport, { auth: "operator-token" });
+      const sibling = await second.hosting!.start(input("run-2", "session-2"));
+      const deliveries: string[] = [];
+      for (const id of ["run-1", "run-2"]) {
+        f.contexts.get(id)!.toolInterrupts.subscribe((delivery) => {
+          deliveries.push(`${id}:${delivery.toolExecutionId}`);
+          delivery.settle(delivery.toolExecutionId === `tok_${id}` ? "accepted" : "not_running");
+        });
+      }
+      const observer = await f.connect("observer");
+      const readonly = await observer.hosting!.attach({
+        execution_id: "run-1",
+        host_generation: "generation",
+        control: "observe",
+      });
+      await expect(readonly.handle.interruptTool("tok_run-1")).rejects.toMatchObject({
+        code: "unauthorized",
+      });
+      const observed = await second.hosting!.attach({
+        execution_id: "run-1",
+        host_generation: "generation",
+        control: "observe",
+      });
+      await expect(observed.handle.interruptTool("tok_run-1")).rejects.toMatchObject({
+        code: "conflict",
+      });
+      expect(typeof originalSubscription).toBe("string");
+      await expect(
+        secondTransport.request(M.hostingInterruptTool, {
+          subscription_id: originalSubscription,
+          tool_execution_id: "tok_run-1",
+        }),
+      ).rejects.toMatchObject({ code: "not_found" });
+      expect(deliveries).toEqual([]);
+      await f.detach(first.hosting!);
+      await first.hosting!.controlObservation(original.observation_id, "acquire");
+      expect((await original.handle.interruptTool("tok_run-1")).status).toBe("accepted");
+      await second.hosting!.controlObservation(observed.observation_id, "takeover");
+      await expect(original.handle.interruptTool("tok_run-1")).rejects.toMatchObject({
+        code: "conflict",
+      });
+      expect(deliveries).toEqual(["run-1:tok_run-1"]);
+      expect((await observed.handle.interruptTool("tok_run-1")).status).toBe("accepted");
+      expect((await sibling.handle.interruptTool("tok_run-1")).status).toBe("not_running");
+      expect((await sibling.handle.interruptTool("tok_run-2")).status).toBe("accepted");
+      expect(deliveries).toEqual([
+        "run-1:tok_run-1",
+        "run-1:tok_run-1",
+        "run-2:tok_run-1",
+        "run-2:tok_run-2",
+      ]);
+      expect(f.contexts.get("run-1")!.signal.aborted).toBe(false);
+      expect(f.contexts.get("run-2")!.signal.aborted).toBe(false);
+      f.finish("run-1");
+      f.finish("run-2");
+      await Promise.all([observed.handle.closed, sibling.handle.closed]);
+    },
+  );
+
   test("buffers sequenced tail events that arrive before the attachment reply", async () => {
     const f = await fixture("local");
     const first = await f.connect();

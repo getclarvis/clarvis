@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { malformedArgumentsMessage } from "@clarvis/capability";
-import type { LLMToolCall, TracePort } from "@clarvis/capability";
+import type { LLMToolCall, ToolInvocationControl, TracePort } from "@clarvis/capability";
+import { wasOperatorInterrupted } from "../tool-interrupt.ts";
 import type { ConvergenceGuards } from "../../guards/convergence-guards.ts";
 import type { AgentRole } from "@clarvis/capability";
 import { safeStringify } from "../../support/stringify.ts";
@@ -33,6 +34,10 @@ export interface AgentToolDispatchArgs {
   subagentInstanceId?: string;
   iteration: number;
   signal?: AbortSignal;
+  /** Run-only abort; used to distinguish global cancel from a selective interrupt. */
+  runSignal?: AbortSignal;
+  /** Live operator control published on `tool_call_started` when present. */
+  control?: ToolInvocationControl;
 }
 
 /**
@@ -65,7 +70,27 @@ function originalArgumentsPatch(call: LLMToolCall): { arguments_original?: objec
 export async function executeAgentToolCall(
   args: AgentToolDispatchArgs,
 ): Promise<AgentToolCallResult> {
-  const { call, toolset, guards, trace, agent, subagentInstanceId, iteration, signal } = args;
+  const {
+    call,
+    toolset,
+    guards,
+    trace,
+    agent,
+    subagentInstanceId,
+    iteration,
+    signal,
+    runSignal,
+    control,
+  } = args;
+  const startedControl =
+    control === undefined
+      ? {}
+      : {
+          control: {
+            tool_execution_id: control.toolExecutionId,
+            actions: control.actions,
+          },
+        };
   const toolStart = trace.now();
   const callId = call.id && call.id.length > 0 ? call.id : randomUUID();
   const tracedArguments =
@@ -99,17 +124,27 @@ export async function executeAgentToolCall(
 
   const callArgs = call.arguments as Record<string, unknown>;
 
-  trace.record("tool_call_started", {
-    agent,
-    ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
-    iteration_ref: iteration,
-    call_id: callId,
-    started_at: toolStart,
-    name: call.name,
-    arguments: tracedArguments,
-  });
+  let terminal = false;
+  let started = false;
+  const recordStarted = (): void => {
+    if (terminal || started || signal?.aborted || runSignal?.aborted) return;
+    started = true;
+    trace.record("tool_call_started", {
+      agent,
+      ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
+      iteration_ref: iteration,
+      call_id: callId,
+      started_at: toolStart,
+      name: call.name,
+      arguments: tracedArguments,
+      ...startedControl,
+    });
+  };
+
+  if (control === undefined) recordStarted();
 
   const onOutput = (chunk: string): void => {
+    if (terminal || runSignal?.aborted) return;
     trace.signal("tool_output_delta", {
       agent,
       ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
@@ -118,14 +153,23 @@ export async function executeAgentToolCall(
     });
   };
 
-  const { isError, text, images, diff, guard } = await toolset.dispatch(
-    call.name,
-    callArgs,
-    signal,
-    onOutput,
-  );
-  const errText = isError ? text : null;
-  const productive = !isError;
+  const { isError, text, images, diff, guard, abortUnsettled, executionAborted } =
+    await toolset.dispatch(
+      call.name,
+      callArgs,
+      signal,
+      onOutput,
+      control === undefined ? undefined : recordStarted,
+      runSignal,
+    );
+  terminal = true;
+  const interrupted =
+    executionAborted === true &&
+    !abortUnsettled &&
+    wasOperatorInterrupted(runSignal ?? signal, signal);
+  const resultText = interrupted ? `Shell interrupted by the operator.\n${text}` : text;
+  const errText = interrupted || isError ? resultText : null;
+  const productive = !isError && !interrupted;
 
   trace.record("tool_call", {
     agent,
@@ -137,10 +181,11 @@ export async function executeAgentToolCall(
     name: call.name,
     arguments: tracedArguments,
     ...originalArgumentsPatch(call),
-    result: text,
+    result: resultText,
     error: errText,
     ...(diff !== undefined ? { diff } : {}),
     ...(guard !== undefined ? { guard } : {}),
+    ...(interrupted ? { interruption: { source: "operator" as const } } : {}),
   });
 
   if (!signal?.aborted) {
@@ -151,5 +196,5 @@ export async function executeAgentToolCall(
     );
   }
 
-  return { resultText: text, errText, productive, ...(images ? { images } : {}) };
+  return { resultText, errText, productive, ...(images ? { images } : {}) };
 }

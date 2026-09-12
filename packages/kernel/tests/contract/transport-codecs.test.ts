@@ -443,6 +443,32 @@ describe("remote run codec", () => {
     expect(decodeRunEvent(event)).toEqual(event);
   });
 
+  it("preserves live shell interrupt control and rejects interruption with ok true", () => {
+    const started = {
+      type: "tool_call_started",
+      at: 12,
+      agent: "lead",
+      call_id: "c1",
+      tool: "shell",
+      server: "",
+      control: { tool_execution_id: "tok_1", actions: ["interrupt"] as const },
+    } as const;
+    const interrupted = {
+      type: "tool_call",
+      at: 13,
+      agent: "lead",
+      call_id: "c1",
+      tool: "shell",
+      server: "",
+      ok: false,
+      interruption: { source: "operator" as const },
+    } as const;
+    expect(decodeRunEvent(started)).toEqual(started);
+    expect(decodeRunEvent(interrupted)).toEqual(interrupted);
+    expect(decodeRunEvent({ ...interrupted, ok: true })).toBeNull();
+    expect(decodeRunEvent({ ...started, pid: 12 })).toBeNull();
+  });
+
   it("preserves an iteration's declared assistant response phase", () => {
     const event = {
       type: "iteration_completed",

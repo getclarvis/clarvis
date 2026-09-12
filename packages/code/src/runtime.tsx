@@ -1473,6 +1473,8 @@ async function runApp(
     inspectContext: (targetWindowTokens) => runHost.inspectCurrentContext(targetWindowTokens),
     fitContext: (targetWindowTokens) => runHost.fitCurrentContext(targetWindowTokens),
     cancel: () => runHost.cancelCurrentRun(),
+    canControl: () => runHost.canControlCurrentRun(),
+    interruptTool: (toolExecutionId) => runHost.interruptTool(toolExecutionId),
     forceStop: () => runHost.teardownRuns(),
     active: () => runHost.runActive(),
     continuesOnExit: () => runHost.continuesOnExit(),

@@ -335,6 +335,17 @@ this proof; disconnect, close and takeover revoke it. A different peer must expl
 including while the goal is physically idle. Old proof cleanup cannot retire a newer controller.
 `startControlled` and `cancelControlled` are host-only registry methods using this proof and the
 existing start/cancel machinery. They cannot target another session or bypass physical exclusion.
+`hosting.interrupt_tool` uses the same interactive-control admission as steer, compact, cancel and
+respond: an `observe` attachment cannot interrupt a live shell; acquire/takeover can. A stale
+controller epoch is refused before delivery. Subscription identities belong to one connection;
+knowing another connection's identity cannot control its run. A token is delivered only to the
+observation's bound run, never looked up across runs.
+Production: `createHostingDispatcher` in
+[hosting-server.ts](../../packages/kernel/src/transport/hosting-server.ts) and `assertControl` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: `fences tool interrupts by observation, connection, run and control epoch` in
+[hosted-transport.test.ts](../../packages/kernel/tests/integration/hosted-transport.test.ts), over
+loopback and local IPC.
 The proof crosses preparation only through the private host context. Process-owned start admission
 also applies to automatic starts, and pending continuations/goal controls prevent maintenance.
 Production: `claimConversation`, `assertConversation` and `releaseConversation` in

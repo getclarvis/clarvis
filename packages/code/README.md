@@ -696,7 +696,10 @@ it comes back on the next boot.
 
 **Auto needs a usable reviewer model.** The kernel resolves `effect_review.model` or the default
 model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
-files provide guidance below that policy, never authority. Code sends guidance only when present.
+files provide guidance below that policy, never authority. When both exist, Code preserves the
+operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
+Code sends guidance only when present. Docker/Podman runs do not run Auto Guard; an explicit
+Review `on` or `auto` request is incompatible with those placements.
 
 It is plain prose — no frontmatter, no schema. Write the standing rules you would
 apply yourself:

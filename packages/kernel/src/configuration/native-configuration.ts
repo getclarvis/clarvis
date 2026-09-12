@@ -8,7 +8,11 @@ import type { RunExecutor, RunExecutorArgs } from "../runs/run-service.ts";
 import { protoMessagesToEngine } from "../runs/map-message.ts";
 import { CLARVIS_CONFIGURE_SKILL } from "../skills/clarvis-configure.ts";
 import { createConfigurationCapability } from "./capability.ts";
-import { configurationFileOperation, type ConfigurationFileRequest } from "./files.ts";
+import {
+  configurationFileMutationFacts,
+  configurationFileOperation,
+  type ConfigurationFileRequest,
+} from "./files.ts";
 import { kernelError } from "../core/errors.ts";
 import { attestConfiguration } from "../guard/effects/configuration.ts";
 import { createGuardEffectRegistry } from "../guard/effects/registry.ts";
@@ -175,10 +179,10 @@ export function createNativeConfigurationRuns(options: {
         const capability = createConfigurationCapability({
           roots: options.roots,
           assertAuthorized,
-          operate: (request: ConfigurationFileRequest, authority, providers) => {
+          operate: async (request: ConfigurationFileRequest, authority, providers, llm) => {
             const registry = createGuardEffectRegistry();
             const reviewer = effectReviewServiceFor({
-              llm: args.deps.llm,
+              llm: llm ?? args.deps.llm,
               providers: providers ?? [],
               defaultModel: model,
               authority,
@@ -189,11 +193,20 @@ export function createNativeConfigurationRuns(options: {
                 options.audit,
               signal: externalSignal,
             });
-            const write = () =>
-              configurationFileOperation(options.roots, request, (input) => {
-                const fact = attestConfiguration(input, registry);
-                reviewer.attest(fact, "configure_clarvis");
-              });
+            const preview = configurationFileMutationFacts(options.roots, request);
+            if (preview !== undefined) {
+              const fact = attestConfiguration(preview, registry);
+              reviewer.attest(fact, "configure_clarvis");
+              const receipt = await reviewer.review(
+                { facts: [fact], reviewability: fact.reviewability },
+                { operation: request.operation, root: request.root, path: request.path },
+                "configure_clarvis",
+              );
+              if (receipt.decision === "deny")
+                throw new Error("Configuration effect was denied by authority review.");
+              if (receipt.decision === "unsure") assertAuthorized();
+            }
+            const write = () => configurationFileOperation(options.roots, request);
             const mutates =
               request.operation === "write" ||
               request.operation === "edit" ||

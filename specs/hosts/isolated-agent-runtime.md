@@ -61,7 +61,7 @@ resolved and built on this lazy path before the runtime generation is launched. 
 identity emits one path-free first-use preparation message through the existing runtime-placement
 notice while lifecycle remains `starting`. The factory then composes one authority router, runtime
 generation, engine backend and placement adapter. Each run receives a random opaque model
-lease, exact profile, vision and resolved automatic-judge models from its immutable run snapshot,
+lease and exact profile/vision models from its immutable run snapshot,
 host-side provider execution, a bounded
 elicitation grant, a loopback-only preview grant when a selected profile carries `run_commands`, and
 an optional prior trace record for continuation. Preview also requires enabled host tools and an
@@ -357,8 +357,9 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 13 requires resolved host loop and tool-policy snapshots, host-owned human
-command consent, canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution, host-owned remote MCP with reverse elicitation,
+successful run result. Protocol revision 12 requires resolved host loop and tool-policy snapshots,
+canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution,
+host-owned remote MCP with reverse elicitation,
 typed provider failures and incremental host model events;
 older worker images fail admission and must be rebuilt.
 
@@ -366,9 +367,8 @@ Model progress frames are exclusive to `host.model`, monotonically sequenced, co
 pending call and bounded by the existing frame/queue/byte limits. `streamHostModelCall` drains text
 and reasoning deltas while the provider is running, then emits a separate terminal result. Partial
 output is delivered before a provider error, and cancellation does not wait forever for a provider
-that ignores abort. Only exact provider/model pairs are admitted, including `vision_model` and the
-effective automatic judge's explicit or default model; auxiliary models do not broaden provider
-authority.
+that ignores abort. Only exact profile and `vision_model` provider/model pairs are admitted. Reviewer models are absent
+because Container does not run effect review; auxiliary models do not broaden provider authority.
 
 For each admitted pair, `hostModelBroker` resolves the captured host registry through the shared
 `resolveProvider(provider, registry, model)` before calling the adapter. This preserves `apiKeyEnv`,
@@ -512,7 +512,7 @@ uses the canonical goal capability and awaits earlier trace publications before 
 Host operations revalidate persisted state and cancellation inside the mutation. User controls,
 ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
 descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
-Private protocol revision 13 prevents older guests from silently ignoring required host capabilities.
+Private protocol revision 12 prevents older guests from silently ignoring required host capabilities.
 The bounded current record and evidence catalog may cross; private session archives and receipts do
 not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
 aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
@@ -549,32 +549,19 @@ Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
 `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
 `packages/kernel/tests/unit/lazy-runtime.test.ts`.
 
-Guest command execution retains the host-selected guard contract without exposing host policy
-authority. The host strips provider secrets before sending the bounded guard settings; the guest
-reconstructs `createGuardResolver`, preserves the host's `CLARVIS_AGENT_TOOLS_ENABLED`,
-`CLARVIS_AGENT_TOOLS_CONFINE` and `CLARVIS_AGENT_TOOLS_MAX_GRANT`, and emits only the closed
-guard-audit vocabulary. `forwardGuestGuardAudit` validates that event again and replaces its
-claimed run and owner identities with the authenticated host values before logging. The outer OCI
-policy is the containment boundary; this profile does not pretend to run a second Bubblewrap or
-Seatbelt sandbox inside the container.
+Guest command execution follows the core-only container boundary. The host sends the immutable tool
+ceiling and confinement setting, but no Command Guard settings, reviewer configuration, operator
+evidence, authority envelope, approval capability or guard-audit channel. An explicit
+`guard_mode: "on" | "auto"` fails as `unsupported_policy` before the first guest/model call; an absent
+or explicit `off` setting leaves the persisted host preference untouched for later Host/Sandbox runs.
+The guest envelope uses an exact-key validator so forged host-only fields are rejected.
 
-The guard settings envelope captures the selected container's backend and network from the launch
-input, not from a later live settings read or a model argument. `guestGuardSettings` preserves that
-projection while omitting a nested native sandbox. Auto therefore sees `placement: "contained"`
-for undecidable guest commands; they remain reviewable asks, never silent policy approvals.
-Container network `none` is reported as `none`; outbound/internet modes are omitted from the native
-`network: "host" | "none"` vocabulary. The judge also receives the run's bounded start/continue user
-text, not host conversation history or live steers. Human-consent RPC still reconstructs its own
-shell facts and does not accept new placement authority from the guest.
-
-Production: `guardRuntime` in
-[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts),
-`guestGuardSettings` in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts),
-and `createGuardResolver` in [`resolver.ts`](../../packages/kernel/src/guard/resolver.ts).
-Test: [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts)
-(`passes %s placement and operator brief to Auto for guest expansions`) and
-[`guard-auto-review.test.ts`](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
-These deterministic bridge tests do not qualify a real Docker/Podman engine or real-model ruling.
+Production: `createLocalContainerRuntime` in
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
+`validEnvelope`/`createGuestLoopExecutor` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+and [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 The guest has no host-exec channel. `shell` and `monitor_start` with
 `sandbox_permissions: "require_escalated"` fail closed inside the container: Isolation Docker/Podman
@@ -657,19 +644,12 @@ large canonical documents, aliased metadata, list pages, transfer saturation, ca
 and real guest keep/discard teardown in
 [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
 
-Human command consent uses the non-replayable `runtime.guard_approval` bridge. Its closed operations
-are `covers` and `ask`, scoped to the current host run. The host derives shell facts from the displayed
-command, resolves the current interactive allowlist on every call and rejects answers from a retired
-scope. The guest stores no human consent or allowlist; `runtime.elicit` remains the general question
-channel. The judge retains only its own clean final verdicts, never a human fallback response.
-Detach, takeover, disconnect and conversation close revoke native and guest consent equally.
-Production: `createGuardHumanApproval` in
-[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts), `createHostGuardApprovalGrant`
-and `createGuestGuardApproval` in
-[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts), and
-`createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
-Test: [runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
-and [runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts).
+Human command consent remains a native Host/Sandbox service. Container guests receive neither a
+`runtime.guard_approval` method nor a local consent cache; `runtime.elicit` remains the general
+question channel. Production: `createGuardHumanApproval` in
+[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts) and
+`createLocalContainerRuntime` in [local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts).
+Test: [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 Skills use a read-only companion bridge.
 At generation admission the host projects name, description, scope, safe provenance and MCP
@@ -797,9 +777,7 @@ Production: `createExecutionPeer` in `packages/kernel/src/runtime/execution-rpc.
 `packages/kernel/src/runtime/authority-brokers.ts`; `createRuntimeHostHandlers` in
 `packages/kernel/src/runtime/host-execution-bridge.ts`; `createGuestLoopExecutor` in
 `packages/kernel/src/runtime/guest-loop-executor.ts`; `RUNTIME_PROTOCOL_REVISION` in
-`packages/kernel/src/runtime/protocol-revision.ts`; `createGuestGuardAuditLogger` and
-`forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
-`createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`;
+`packages/kernel/src/runtime/protocol-revision.ts`; `createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`;
 `createHostPlansGrant` and `createGuestPlanFactory` in
 `packages/kernel/src/runtime/plan-bridge.ts`; `createRuntimeSkillCatalog`,
 `createRuntimeSkillBootstraps`, `createHostSkillsGrant` and `createGuestSkillsCapability` in
@@ -820,7 +798,6 @@ Test: `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
 `packages/kernel/tests/unit/guard.test.ts` (`mise x` bootstrap admission);
 `packages/kernel/tests/integration/runtime-execution-worker.test.ts`;
 `packages/kernel/tests/integration/runtime-guest-loop.test.ts`;
-`packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`;
 `packages/kernel/tests/unit/runtime-plan-bridge.test.ts`;
 `packages/kernel/tests/unit/runtime-skills-bridge.test.ts`;
 `packages/kernel/tests/unit/runtime-memory-bridge.test.ts` (including forged-mutation refusal);
@@ -1001,13 +978,13 @@ hard `storage_bytes` quota. The read-write Git common mount grants repository-wi
 an outbound guest can transmit readable workspace content or reach host/LAN services. Public-only
 `internet` enforcement remains unavailable and is refused; only `none` and the broader
 `outbound` policy are admitted.
-## Private operator evidence projection
+## Host-only operator authority
 
-Private protocol revision 13 carries a bounded host-authenticated seed into the guest. The guest
-cannot set authority through public requests or returned trace records. The host records its own
-ledger mirror; loss of binding prevents continuation inheritance. No host-shell or credential
-capability is introduced for effect probes. Failure receipts crossing the human-approval bridge use
-a closed schema; operator evidence and grants cannot be sent through it. Production:
-[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts) and
-[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts).
-See [effect review](../execution/effect-review.md).
+Operator evidence, bindings, epochs, compiled envelopes and reviewer receipts remain in the native
+Host/Sandbox composition. `createIsolatedRunExecutor` neither sends authority in `runtime.start` nor
+persists a host authority mirror for a guest record, and the private control vocabulary remains
+limited to steer and compaction. Container does not add a protocol revision for effect review.
+Production: [isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts) and
+[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts)
+and [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).

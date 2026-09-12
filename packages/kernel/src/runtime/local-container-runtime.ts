@@ -6,7 +6,7 @@ import { planRefFromCapabilityState } from "../runs/plan-ref.ts";
 import type { Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { NOOP_LOGGER, resolveProvider, type RunRequest } from "@clarvis/capability";
+import { resolveProvider, type RunRequest } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
@@ -16,7 +16,6 @@ import {
   type ModelBroker,
 } from "./authority-brokers.ts";
 import { createIsolatedRunExecutor, type RuntimeAuthorityRouter } from "./isolated-run-executor.ts";
-import { forwardGuestGuardAudit } from "./guard-audit-bridge.ts";
 import { RUNTIME_PREVIEW_METHOD, RUNTIME_PREVIEW_REVISION } from "./preview-capability.ts";
 import { createHostPlansGrant, RUNTIME_PLANS_METHOD } from "./plan-bridge.ts";
 import {
@@ -38,15 +37,9 @@ import {
 } from "@clarvis/paths";
 import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
 import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
-import { resolveGuardMode, type GuardSettings } from "../guard/resolver.ts";
 import { streamHostModelCall } from "./model-stream.ts";
 import { assertInlineModelMedia } from "./model-media.ts";
 import { createHostRemoteMcpBridge, RUNTIME_MCP_METHOD } from "./remote-mcp.ts";
-import { createGuardSessionAllowlist } from "../guard/guard-elicit.ts";
-import {
-  createHostGuardApprovalGrant,
-  RUNTIME_GUARD_APPROVAL_METHOD,
-} from "./guard-approval-bridge.ts";
 import { createHostTasksGrant, RUNTIME_TASKS_METHOD } from "./tasks-bridge.ts";
 import {
   createHostHooksBridge,
@@ -179,21 +172,13 @@ async function readOnlyWorkspacePaths(
 }
 
 /** Exact models the assembled request can use, including its resolved auxiliary paths. */
-export function runtimeModelPairs(rawBody: unknown, guardSettings: GuardSettings): Set<string> {
+export function runtimeModelPairs(rawBody: unknown): Set<string> {
   const raw = rawBody as {
     profiles?: Array<{ model?: unknown }>;
     vision_model?: unknown;
-    guard_mode?: Parameters<typeof resolveGuardMode>[0];
-    guard_judge?: { model?: string };
   };
   const pairs = new Set<string>();
-  const models = [
-    ...(raw.profiles ?? []).map((profile) => profile.model),
-    raw.vision_model,
-    ...(resolveGuardMode(raw.guard_mode, guardSettings.guard) === "auto"
-      ? [raw.guard_judge?.model ?? guardSettings.effect_review?.model ?? guardSettings.defaultModel]
-      : []),
-  ];
+  const models = [...(raw.profiles ?? []).map((profile) => profile.model), raw.vision_model];
   for (const model of models) {
     if (typeof model !== "string") continue;
     const slash = model.indexOf("/");
@@ -237,9 +222,8 @@ function hostModelBroker(
   args: ExecuteRunArgs,
   runId: string,
   leaseId: string,
-  guardSettings: GuardSettings,
 ): ModelBroker {
-  const admitted = runtimeModelPairs(args.rawBody, guardSettings);
+  const admitted = runtimeModelPairs(args.rawBody);
   const providers = structuredClone((args.rawBody as RunRequest).providers);
   const brokers = new Map<string, ModelBroker>();
   let revoked = false;
@@ -355,17 +339,12 @@ export async function createLocalContainerRuntime(
   router: RuntimeAuthorityRouter,
   options: LocalContainerRuntimeOptions = {},
 ): Promise<RuntimeHost> {
-  const guardRuntime = {
-    backend: input.settings.backend,
-    network: input.settings.network,
-  };
   const protectedPaths = await readOnlyWorkspacePaths(input);
   const controller = await launchIsolatedRuntime({
     ...input,
     readOnlyWorkspacePaths: protectedPaths,
     capabilityMethods: [
       "runtime.elicit",
-      RUNTIME_GUARD_APPROVAL_METHOD,
       RUNTIME_MCP_METHOD,
       RUNTIME_HOOKS_METHOD,
       RUNTIME_WORKFLOWS_METHOD,
@@ -378,13 +357,10 @@ export async function createLocalContainerRuntime(
     ],
     backend,
   });
-  const defaultGuardAllowlist =
-    input.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
   interface RunSnapshot {
     readonly leaseId: string;
     readonly toolPolicy: RuntimeToolPolicy;
     readonly loopPolicy: RuntimeLoopPolicy;
-    readonly guardSettings: GuardSettings;
     readonly hooks?: RuntimeHooksDescriptor;
     readonly workflow?: RuntimeWorkflowDescriptor;
     readonly workflowContext?: WorkflowCtx;
@@ -405,6 +381,16 @@ export async function createLocalContainerRuntime(
       const snapshot = snapshots.get(runId);
       if (snapshot === undefined) throw new Error("runtime run snapshot was not prepared");
       const raw = args.rawBody as { continue_from?: unknown };
+      const priorExecution =
+        typeof raw.continue_from === "string"
+          ? args.deps.traceStore.getById(args.owner, raw.continue_from)
+          : undefined;
+      const guestPrior =
+        priorExecution === undefined || priorExecution === null
+          ? undefined
+          : Object.fromEntries(
+              Object.entries(priorExecution).filter(([key]) => key !== "operator_authority_state"),
+            );
       const hostCapabilities = [
         ...(input.planFactory === undefined ? [] : ["plans"]),
         ...(input.taskResolver === undefined ? [] : ["tasks"]),
@@ -425,17 +411,21 @@ export async function createLocalContainerRuntime(
             }),
         ...(snapshot.memory === undefined ? {} : { memory: snapshot.memory }),
         ...(snapshot.goal === undefined ? {} : { goal: snapshot.goal }),
-        guardSettings: snapshot.guardSettings,
         ...(snapshot.hooks === undefined ? {} : { hooks: snapshot.hooks }),
         ...(snapshot.workflow === undefined ? {} : { workflow: snapshot.workflow }),
         ...(args.runtimeParentRunId === undefined ? {} : { parentRunId: args.runtimeParentRunId }),
         outputBudgets: snapshot.outputBudgets,
-        ...(typeof raw.continue_from === "string"
-          ? { priorExecution: args.deps.traceStore.getById(args.owner, raw.continue_from) }
-          : {}),
+        ...(guestPrior === undefined ? {} : { priorExecution: guestPrior }),
       };
     },
     authority: async (args, runId) => {
+      const requestedGuard = (args.rawBody as RunRequest).guard_mode;
+      if (requestedGuard === "on" || requestedGuard === "auto") {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          `guard_mode '${requestedGuard}' is incompatible with ${input.settings.backend} runtime placement`,
+        );
+      }
       const admittedCapabilities = [
         ...(args.deps.capabilities ?? []),
         ...(args.capabilities ?? []),
@@ -516,18 +506,7 @@ export async function createLocalContainerRuntime(
       const hooks = await createHostHooksBridge(args, runId, (call, signal) =>
         controller.session.callHookMcp(runId, call, signal),
       );
-      const loadedGuardSettings = structuredClone(input.loadGuardSettings?.() ?? {});
-      const guardSettings: GuardSettings = structuredClone({
-        ...(loadedGuardSettings.guard === undefined ? {} : { guard: loadedGuardSettings.guard }),
-        ...(loadedGuardSettings.effect_review === undefined
-          ? {}
-          : { effect_review: loadedGuardSettings.effect_review }),
-        runtime: guardRuntime,
-        defaultModel:
-          loadedGuardSettings.defaultModel ??
-          (args.deps.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
-      });
-      const model = hostModelBroker(input, args, runId, leaseId, guardSettings);
+      const model = hostModelBroker(input, args, runId, leaseId);
       const skillCatalog =
         input.skillsProvider === undefined
           ? undefined
@@ -565,14 +544,6 @@ export async function createLocalContainerRuntime(
         generation: input.generation,
         runId,
         grants: [
-          createHostGuardApprovalGrant({
-            elicit: args.elicit,
-            allowlist: () =>
-              input.sessionAllowlistFor === undefined
-                ? defaultGuardAllowlist
-                : input.sessionAllowlistFor({ executionId: runId, owner: args.owner }),
-            workspaceRoot: input.workspaceRoot,
-          }),
           remoteMcp.grant,
           {
             method: "runtime.elicit",
@@ -651,7 +622,6 @@ export async function createLocalContainerRuntime(
         leaseId,
         toolPolicy,
         loopPolicy: runtimeLoopPolicy(args.deps.env),
-        guardSettings,
         ...(hooks === undefined ? {} : { hooks: hooks.descriptor }),
         ...(workflow === undefined ? {} : { workflow: workflow.descriptor }),
         ...(workflowContext === undefined ? {} : { workflowContext }),
@@ -682,9 +652,8 @@ export async function createLocalContainerRuntime(
         },
       };
     },
-    consumeGuestEvent: (args, runId, value) =>
-      consumeGuestWorkflowEvent(snapshots.get(runId)?.workflowContext, value) ||
-      forwardGuestGuardAudit(value, input.guardAudit ?? NOOP_LOGGER, runId, args.owner),
+    consumeGuestEvent: (_args, runId, value) =>
+      consumeGuestWorkflowEvent(snapshots.get(runId)?.workflowContext, value),
   });
   return {
     executeRun,

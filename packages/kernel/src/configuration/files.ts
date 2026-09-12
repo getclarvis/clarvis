@@ -242,3 +242,22 @@ export function configurationFileOperation(
   writeFileAtomicSync(file, content);
   return { written: true, revision: settingsDocumentRevision(content) };
 }
+
+const EFFECT_PREVIEW_COMPLETE = new Error("configuration effect preview complete");
+
+/** Validate a prospective mutation through the real writer without applying it. */
+export function configurationFileMutationFacts(
+  roots: Readonly<Record<ConfigurationRoot, string>>,
+  request: ConfigurationFileRequest,
+): ConfigurationMutationFacts | undefined {
+  let facts: ConfigurationMutationFacts | undefined;
+  try {
+    configurationFileOperation(roots, request, (input) => {
+      facts = input;
+      throw EFFECT_PREVIEW_COMPLETE;
+    });
+  } catch (error) {
+    if (error !== EFFECT_PREVIEW_COMPLETE) throw error;
+  }
+  return facts;
+}

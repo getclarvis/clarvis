@@ -7,7 +7,7 @@ export const DEFAULT_GUARD_JUDGE_PROMPT = "";
 /** Additional reviewer guidance and its source, never a replacement system policy. */
 export interface GuardJudgePrompt {
   prompt: string;
-  source: "workspace" | "global" | "builtin";
+  source: "workspace" | "global" | "global+workspace" | "builtin";
 }
 
 /**
@@ -41,16 +41,22 @@ function readPrompt(file: string | undefined): string | undefined {
 }
 
 /**
- * Resolves the guard-judge prompt to use: a workspace-local `guard-judge.md`
- * wins, then a global one, then {@link DEFAULT_GUARD_JUDGE_PROMPT}.
+ * Resolves additional reviewer guidance with operator-global guidance first and
+ * workspace guidance appended only when the combined bounded payload fits.
  *
  * @remarks A file that exists but is blank (or unreadable) is treated as
  *   absent, falling through to the next scope.
  */
 export function loadGuardJudgePrompt(dirs: ClarvisDirs): GuardJudgePrompt {
   const workspace = readPrompt(dirs.workspace?.guardJudgeFile);
-  if (workspace !== undefined) return { prompt: workspace, source: "workspace" };
   const global = readPrompt(dirs.global.guardJudgeFile);
+  if (global !== undefined && workspace !== undefined) {
+    const combined = `Operator-global guidance:\n${global}\n\nWorkspace guidance:\n${workspace}`;
+    if (Buffer.byteLength(combined) <= MAX_GUARD_JUDGE_PROMPT_BYTES)
+      return { prompt: combined, source: "global+workspace" };
+    return { prompt: global, source: "global" };
+  }
+  if (workspace !== undefined) return { prompt: workspace, source: "workspace" };
   if (global !== undefined) return { prompt: global, source: "global" };
   return { prompt: DEFAULT_GUARD_JUDGE_PROMPT, source: "builtin" };
 }

@@ -30,7 +30,7 @@ and user-authored extensions are not a fixed inventory.
 | Skill loading and resource reads | 2 | `loadSkillTool` and `readSkillResourceTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
 | Public MCP run and controls | 4 | [server/mcp/tools.ts](../../packages/server/src/mcp/tools.ts) |
 | MCP resource listing and reading | 2 | [mcp-client/resources.ts](../../packages/mcp-client/src/resources.ts) |
-| Auxiliary guard decision and workflow title | 2 | [guard/judge.ts](../../packages/kernel/src/guard/judge.ts), [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
+| Auxiliary authority compilation, effect decision and workflow title | 3 | [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts), [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
 
 Prompt assembly also includes the five [built-in agents](../../packages/kernel/src/config/builtin-agents/index.ts),
 the three [built-in workflows](../../packages/workflows/src/builtin-workflows/index.ts),

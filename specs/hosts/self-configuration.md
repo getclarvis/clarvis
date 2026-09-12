@@ -266,7 +266,13 @@ restricted writer. Production: [files.ts](../../packages/kernel/src/configuratio
 See [effect review](../execution/effect-review.md).
 The configuration capability reads the prepublished authority reader at attach. Both consumers
 resolve `effectReviewServiceFor` by that reader identity, sharing reviewer configuration, registry
-policy and telemetry; existing deterministic native consent does not need another model call.
+policy, compilation, decisions and telemetry. The writer first validates a mutation into a complete
+revision-bound fact without applying it. A reviewer denial stops the write; a validated allow
+proceeds, while `unsure` falls back to the already active, explicit native configuration consent.
+The writer then revalidates CAS and path constraints while applying the mutation. Reads and lists do
+not invoke the reviewer.
 Production: [capability.ts](../../packages/kernel/src/configuration/capability.ts) and
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), and
+[files.ts](../../packages/kernel/src/configuration/files.ts).
+Test: [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts)
+and [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).

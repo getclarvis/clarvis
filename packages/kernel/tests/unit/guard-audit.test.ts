@@ -272,7 +272,7 @@ describe("guard audit records", () => {
     expect(answerers).toEqual(["human", "session_allowlist"]);
   });
 
-  it("attributes an auto-mode answer to the judge", async () => {
+  it("does not attribute an unvalidated auto-mode answer to the judge", async () => {
     const llm = {
       call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
     } as unknown as RunCapabilityContext["llm"];
@@ -291,12 +291,11 @@ describe("guard audit records", () => {
       }),
     );
     expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: true,
-      answerer: "judge",
+      allowed: false,
+      answerer: "unavailable",
+      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
     });
-    expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields.answerer).toBe(
-      "judge",
-    );
+    expect(records.find((r) => r.fields.event === "guard.elicit.answered")).toBeUndefined();
   });
 
   it("attributes a judge failure fallback to the human who answered it", async () => {
@@ -328,6 +327,7 @@ describe("guard audit records", () => {
     expect(await resolution!.elicit!(bashReq("bun run test"))).toEqual({
       allowed: true,
       answerer: "human",
+      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
       answerer: "human",
@@ -357,7 +357,11 @@ describe("guard audit records", () => {
       ...bashReq("$(x) y", shellFacts("y", true)),
       escalate: "human",
     });
-    expect(denied).toEqual({ allowed: false, answerer: "unavailable" });
+    expect(denied).toEqual({
+      allowed: false,
+      answerer: "unavailable",
+      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
+    });
     const escalation = records.find((r) => r.fields.event === "guard.escalation.no_channel");
     expect(escalation?.level).toBe("warn");
     expect(escalation?.fields).toMatchObject({ run_id: "run-1" });

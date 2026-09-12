@@ -42,10 +42,10 @@ independence from agent overlays are specified in
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 revokes volatile consent scopes on disconnect, takeover or conversation close.
-Native and container guard decisions share the host lookup of the current interactive command
-allowlist. The guest consults `runtime.guard_approval` for each human consent check and never retains
-a human approval locally. Retired scopes reject late answers, including one-time approval, and the
-judge caches only its own final decisions. Native configuration can retire an individual live session,
+Native Host/Sandbox guard decisions use the current interactive command allowlist. Container guests
+receive no guard policy, approval bridge, reviewer or operator authority. Retired native scopes
+reject late answers, including one-time approval, and effect review caches only host-validated final
+decisions. Native configuration can retire an individual live session,
 aborting its pending approval and active native work without revoking another conversation.
 `createFileKernel` accepts `sessionAllowlistFor` and exposes host-only native routing/revocation
 through `nativeConfiguration`; these controls are not model-callable services.
@@ -297,13 +297,12 @@ and strict request schema over a host-owned provider port, retaining binding, wr
 errors. Admiral scheduling and its shared
 leader/subagent budget stay together in the guest, while the host assembles each leader request and
 admits execution to the same generation. An unknown host capability that cannot be projected refuses
-container placement instead of silently disappearing. Model leases include exact profile, vision and
-resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
+container placement instead of silently disappearing. Model leases include exact profile and vision
+models; reviewer models and authority evidence never enter the guest. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 13 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 12 and a rebuilt compatible worker image. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
-directories. Helper guidance requires preparing read resources in the writable workspace before
-guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
+directories. Embedded builtins retain their no-file disclosure. Each run carries the
 host's resolved non-secret loop defaults and ceilings, validated through the canonical environment
 schema. Missing, coerced or extra policy fields are refused; owner, logging and retention settings
 stay on the host.

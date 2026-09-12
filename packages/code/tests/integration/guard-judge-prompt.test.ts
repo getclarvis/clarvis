@@ -31,14 +31,15 @@ test("falls back to the built-in prompt when no override file exists", () => {
   expect(DEFAULT_GUARD_JUDGE_PROMPT).toBe("");
 });
 
-test("workspace override wins over global; global wins over builtin", () => {
+test("operator-global guidance precedes workspace guidance; either can stand alone", () => {
   const dirs = tmpDirs();
   seed(dirs.global.guardJudgeFile, "global judge rules");
   expect(loadGuardJudgePrompt(dirs)).toEqual({ prompt: "global judge rules", source: "global" });
   seed(dirs.workspace.guardJudgeFile!, "workspace judge rules");
   expect(loadGuardJudgePrompt(dirs)).toEqual({
-    prompt: "workspace judge rules",
-    source: "workspace",
+    prompt:
+      "Operator-global guidance:\nglobal judge rules\n\nWorkspace guidance:\nworkspace judge rules",
+    source: "global+workspace",
   });
 });
 
@@ -46,6 +47,14 @@ test("a whitespace-only override file is ignored", () => {
   const dirs = tmpDirs();
   seed(dirs.workspace.guardJudgeFile!, "   \n  ");
   expect(loadGuardJudgePrompt(dirs).source).toBe("builtin");
+});
+
+test("the combined bound preserves operator-global guidance instead of replacing it", () => {
+  const dirs = tmpDirs();
+  const global = "global ".repeat(3_000);
+  seed(dirs.global.guardJudgeFile, global);
+  seed(dirs.workspace.guardJudgeFile!, "workspace ".repeat(3_000));
+  expect(loadGuardJudgePrompt(dirs)).toEqual({ prompt: global, source: "global" });
 });
 
 test("an oversized sparse override is ignored without reading its body", () => {

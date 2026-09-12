@@ -3,7 +3,7 @@ import { z } from "zod";
 const word = z.string().regex(/^[a-z][a-z0-9_.]{0,127}$/);
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 /** Closed receipt vocabulary at every transport boundary; no evidence or model prose is accepted. */
-export const effectReviewDetailShape = {
+const effectReviewDetailShape = {
   analysis: z
     .object({
       reviewability: z.enum(["static", "judgeable", "human_only"]),

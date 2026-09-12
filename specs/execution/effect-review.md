@@ -138,13 +138,14 @@ fallback and temporary rollout stage. The file kernel accepts the model and roll
 operator settings. Workspace configuration may lower timeout/retry limits or require denial on
 uncertainty. A plugin cannot contribute this block. Explicit run reviewer overrides remain supported.
 `guard_judge.prompt` is deprecated guidance; `guidance` is the typed replacement. Neither replaces the
-first system message, `EFFECT_REVIEW_POLICY`, which is owned by the kernel. Code sends optional
-guidance and overrides; an absent prompt does not disable Auto.
+first system message, `EFFECT_REVIEW_POLICY`, which is owned by the kernel. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; an absent prompt does not disable Auto.
 
 The explicit rollout stages are `shadow`, `local` and `ci_retry`. Shadow computes review evidence
-without changing the existing guard outcome. Local enables fully attested local effects; CI retry
-also permits the tightly correlated failed-only effect. Unknown effects remain closed. Without an
-enabled rollout the existing command review path is retained. Review `on` remains human review,
+without changing the existing guard outcome. An absent rollout uses the same conservative effect
+ceiling as `local`: fully attested local effects only. CI retry
+also permits the tightly correlated failed-only effect. Unknown effects remain closed. Outside shadow,
+Review `auto` always uses this host-validated service; there is no compatibility judge that can turn
+a model verdict directly into authority. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
 
@@ -162,12 +163,11 @@ Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-re
 
 ## Wire and presentation
 
-Private runtime revision 13 carries only a host-supplied bounded seed into the guest. Guest trace
-records cannot replace host authority state. The host persists its own evidence mirror. Guests do
-not receive a host shell, probe capability or new credentials, and still reject escalation. Guest
-human-review requests may report closed failure metadata; they cannot publish authority or evidence.
-The host-to-guest control `revoke_operator_authority` has no data fields and retires only the
-guest ledger. Failure to deliver revocation closes execution rather than retaining a stale grant.
+Operator authority and effect review are Host/Sandbox-only and do not cross the private runtime
+protocol. Docker/Podman guests receive no evidence, binding, epoch, envelope, reviewer settings,
+approval bridge or guard audit channel. Explicit `guard_mode: "on" | "auto"` is rejected before the
+guest starts; absent/`off` container runs keep the core-only boundary. This change therefore does not
+advance the private runtime protocol revision.
 
 The public elicitation detail has optional analysis, effect, authority and reviewer fields. Older
 details still validate. The UI shows a one-based segment, affected argument position, effect and
@@ -175,13 +175,11 @@ failure kind. Durable shell rows retain answerer, effect, relation and failure v
 reviewer prose. The standalone tools DTO and dependency-free protocol DTO share no package edge.
 
 Production: [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts),
-[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts),
 [isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts), and
 [effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts).
-Test: [runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
+Test: [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts),
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts),
 and [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
-The private revocation is exercised in
-[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
 DTO discriminator drift is checked by
 [effect-review-dto.test.ts](../../packages/kernel/tests/architecture/effect-review-dto.test.ts).
 

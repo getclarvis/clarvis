@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
 import {
+  configurationFileMutationFacts,
   configurationFileOperation,
   type ConfigurationFileRequest,
 } from "../../src/configuration/files.ts";
@@ -33,6 +34,27 @@ function fixture() {
 }
 
 describe("native configuration files", () => {
+  it("previews a complete mutation fact without applying the write", () => {
+    const f = fixture();
+    const request: ConfigurationFileRequest = {
+      operation: "write",
+      root: "workspace_clarvis",
+      path: "agents/reviewer.md",
+      content: "Review carefully.\n",
+      expected_revision: null,
+    };
+    expect(configurationFileMutationFacts(f.roots, request)).toMatchObject({
+      root: "workspace_clarvis",
+      expectedRevision: null,
+      bytes: 18,
+      surface: "authoring",
+    });
+    expect(f.call({ operation: "read", root: request.root, path: request.path })).toEqual({
+      content: null,
+      revision: null,
+    });
+  });
+
   it("preserves a UTF-8 BOM and CRLF when editing an authored workflow brief", () => {
     const f = fixture();
     const root = "global_clarvis";

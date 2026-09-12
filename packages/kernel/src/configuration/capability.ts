@@ -3,6 +3,7 @@ import {
   openCallEnvelope,
   OPERATOR_AUTHORITY_PORT,
   type OperatorAuthorityReader,
+  type LLMProvider,
   type ProviderConfig,
   type Capability,
   type NamespacedTool,
@@ -43,6 +44,7 @@ export function createConfigurationCapability(options: {
     request: ConfigurationFileRequest,
     authority?: OperatorAuthorityReader,
     providers?: ProviderConfig[],
+    llm?: LLMProvider,
   ): unknown;
 }): Capability {
   const tool: NamespacedTool = {
@@ -120,7 +122,12 @@ export function createConfigurationCapability(options: {
                       try {
                         options.assertAuthorized();
                         const request = call.arguments as ConfigurationFileRequest;
-                        const result = options.operate(request, authority, ctx.request.providers);
+                        const result = await options.operate(
+                          request,
+                          authority,
+                          ctx.request.providers,
+                          ctx.llm,
+                        );
                         return {
                           kind: "result",
                           text: envelope.ok(JSON.stringify(result), traceResult(request.operation)),

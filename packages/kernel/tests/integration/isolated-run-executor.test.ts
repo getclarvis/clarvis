@@ -27,14 +27,13 @@ afterEach(async () => {
 });
 
 describe("isolated run executor", () => {
-  it("forwards authority retirement as a private revocation without cancelling the guest run", async () => {
+  it("does not transport operator authority into the guest envelope", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-authority-retirement-"));
     directories.push(root);
     const router = createRuntimeAuthorityRouter("generation");
     const retired = new AbortController();
-    const delivered = deferred();
     let cancelled = false;
-    const messages: unknown[] = [];
+    let envelope: unknown;
     const executor = createIsolatedRunExecutor({
       generation: "generation",
       workspaceRoot: join(root, "workspace"),
@@ -44,9 +43,9 @@ describe("isolated run executor", () => {
       session: {
         closed: false,
         info: {} as RuntimeInfo,
-        async startRun(runId) {
+        async startRun(runId, input) {
+          envelope = input;
           retired.abort();
-          await delivered.promise;
           await router.handlers["host.checkpoint"]!({
             method: "host.checkpoint",
             generation: "generation",
@@ -56,10 +55,7 @@ describe("isolated run executor", () => {
           });
           return { executionId: runId, response: { status: "completed" } };
         },
-        async steer(_runId, input) {
-          messages.push(input);
-          delivered.resolve();
-        },
+        async steer() {},
         async callHookMcp() {},
         async elicitMcp() {},
         async stop() {},
@@ -97,7 +93,7 @@ describe("isolated run executor", () => {
     });
     expect(result.response.status).toBe("completed");
     expect(cancelled).toBe(false);
-    expect(messages).toEqual([{ kind: "revoke_operator_authority" }]);
+    expect(envelope).not.toHaveProperty("operatorAuthoritySeed");
   });
   it.each(["delivered", "refused", "settled"] as const)(
     "settles steering only on guest delivery and always revokes authority: %s",
@@ -382,7 +378,7 @@ describe("isolated run executor", () => {
       {
         id: "run-1",
         owner_key_name: "owner",
-        operator_authority_state: { version: 1, status: "revoked", evidence: [] },
+        response: { status: "completed" },
       },
     ]);
     expect(capabilityEvents).toEqual([{ type: "capability_event" }]);

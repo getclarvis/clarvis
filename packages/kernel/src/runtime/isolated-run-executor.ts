@@ -10,8 +10,6 @@ import {
 } from "./host-execution-bridge.ts";
 import { loadRuntimeCheckpoint, settleRuntimeTerminal } from "./runtime-checkpoints.ts";
 import type { RuntimeSession } from "./types.ts";
-import { contentToText } from "@clarvis/capability";
-import { createOperatorAuthorityRuntime } from "../guard/operator-authority.ts";
 
 /** Dynamic run registry behind one long-lived runtime generation's guest handlers. */
 export interface RuntimeAuthorityRouter {
@@ -113,30 +111,7 @@ export function createIsolatedRunExecutor(options: {
       });
     }
     const runId = raw.execution_id;
-    const operatorAuthority = createOperatorAuthorityRuntime({
-      seed: args.operatorAuthoritySeed,
-      parent: args.operatorAuthorityParent,
-      owner: args.owner,
-      executionId: runId,
-      signal:
-        args.operatorAuthoritySignal === undefined
-          ? args.externalSignal
-          : AbortSignal.any([
-              args.operatorAuthoritySignal,
-              ...(args.externalSignal === undefined ? [] : [args.externalSignal]),
-            ]),
-      prior:
-        typeof raw.continue_from === "string"
-          ? args.deps.traceStore.getById(args.owner, raw.continue_from)?.operator_authority_state
-          : undefined,
-    });
-    let authority: Awaited<ReturnType<typeof options.authority>>;
-    try {
-      authority = await options.authority(args, runId);
-    } catch (error) {
-      operatorAuthority.finalize({ status: "cancelled" });
-      throw error;
-    }
+    const authority = await options.authority(args, runId);
     let release: (() => void) | undefined;
     let finished = false;
     const controls = new AbortController();
@@ -176,10 +151,7 @@ export function createIsolatedRunExecutor(options: {
                   code: "unauthorized",
                 });
               }
-              await args.deps.traceStore.insert({
-                ...record,
-                operator_authority_state: operatorAuthority.finalize(record.response),
-              });
+              await args.deps.traceStore.insert(record);
             } else if ((await options.consumeGuestEvent?.(args, runId, value)) === true) {
               return;
             } else {
@@ -219,22 +191,11 @@ export function createIsolatedRunExecutor(options: {
         }
       };
       const pump = async (): Promise<void> => {
-        let authorityRevoked = args.operatorAuthoritySeed === undefined;
         while (!finished) {
-          if (!authorityRevoked && operatorAuthority.reader.snapshot().status === "revoked") {
-            authorityRevoked = true;
-            if (!(await forwardControl({ kind: "revoke_operator_authority" }))) abort();
-          }
           const deliveries =
             args.steer?.take?.() ??
             (args.steer?.drain() ?? []).map((message) => ({ message, settle: () => undefined }));
           for (const delivery of deliveries) {
-            operatorAuthority.onSteer({
-              agent: "lead",
-              iteration: 0,
-              id: delivery.message.id,
-              message: contentToText(delivery.message.content),
-            });
             delivery.settle(await forwardControl({ kind: "steer", message: delivery.message }));
           }
           for (const request of args.compaction?.drain() ?? []) {
@@ -250,9 +211,6 @@ export function createIsolatedRunExecutor(options: {
         rawBody: args.rawBody,
         owner: args.owner,
         ...options.guestEnvelope?.(args, runId),
-        ...(args.operatorAuthoritySeed === undefined
-          ? {}
-          : { operatorAuthoritySeed: args.operatorAuthoritySeed }),
       });
       args.externalSignal?.addEventListener("abort", abort, { once: true });
       listeningForAbort = args.externalSignal !== undefined;
@@ -294,7 +252,6 @@ export function createIsolatedRunExecutor(options: {
       });
       return result;
     } finally {
-      operatorAuthority.finalize({ status: "cancelled" });
       finished = true;
       controls.abort();
       if (listeningForAbort) args.externalSignal?.removeEventListener("abort", abort);

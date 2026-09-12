@@ -142,6 +142,18 @@ export interface ToolCallDetail {
 
 /** Persisted final command-review fact attached to its terminal tool call. */
 export interface CommandGuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";

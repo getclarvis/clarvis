@@ -357,7 +357,7 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 12 requires resolved host loop and tool-policy snapshots, host-owned human
+successful run result. Protocol revision 13 requires resolved host loop and tool-policy snapshots, host-owned human
 command consent, canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution, host-owned remote MCP with reverse elicitation,
 typed provider failures and incremental host model events;
 older worker images fail admission and must be rebuilt.
@@ -512,7 +512,7 @@ uses the canonical goal capability and awaits earlier trace publications before 
 Host operations revalidate persisted state and cancellation inside the mutation. User controls,
 ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
 descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
-Private protocol revision 12 prevents older guests from silently ignoring required host capabilities.
+Private protocol revision 13 prevents older guests from silently ignoring required host capabilities.
 The bounded current record and evidence catalog may cross; private session archives and receipts do
 not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
 aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
@@ -1001,3 +1001,13 @@ hard `storage_bytes` quota. The read-write Git common mount grants repository-wi
 an outbound guest can transmit readable workspace content or reach host/LAN services. Public-only
 `internet` enforcement remains unavailable and is refused; only `none` and the broader
 `outbound` policy are admitted.
+## Private operator evidence projection
+
+Private protocol revision 13 carries a bounded host-authenticated seed into the guest. The guest
+cannot set authority through public requests or returned trace records. The host records its own
+ledger mirror; loss of binding prevents continuation inheritance. No host-shell or credential
+capability is introduced for effect probes. Failure receipts crossing the human-approval bridge use
+a closed schema; operator evidence and grants cannot be sent through it. Production:
+[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts) and
+[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts).
+See [effect review](../execution/effect-review.md).

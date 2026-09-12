@@ -1,4 +1,5 @@
 import type { LogFn, Logger } from "@clarvis/capability";
+import { effectReviewAuditSchema } from "../guard/review-audit-schema.ts";
 
 type AuditLevel = "info" | "warn";
 
@@ -98,6 +99,19 @@ function answered(fields: Record<string, unknown>): Record<string, unknown> {
 }
 
 function sanitize(fields: Record<string, unknown>, level: AuditLevel): Record<string, unknown> {
+  if (
+    typeof fields.event === "string" &&
+    (fields.event.startsWith("effect_review.") || fields.event === "operator_authority.recompiled")
+  ) {
+    const { owner: _owner, run_id: _run, ...payload } = fields;
+    const parsed = effectReviewAuditSchema.safeParse(payload);
+    if (
+      !parsed.success ||
+      (payload.event === "effect_review.reviewer.failed" ? level !== "warn" : level !== "info")
+    )
+      return invalidAudit();
+    return parsed.data;
+  }
   if (fields.event === "guard.decision" && level === "info") return decision(fields);
   if (fields.event === "guard.resolved" && level === "info") return resolved(fields);
   if (fields.event === "guard.elicit.answered" && level === "info") return answered(fields);
@@ -160,6 +174,9 @@ export function forwardGuestGuardAudit(
     "guard.elicit.answered": "a guarded guest command was answered",
     "guard.escalation.no_channel": "a guest command needed an unavailable human decision channel",
   };
-  audit[envelope.level](sanitized, messages[String(sanitized["event"])]);
+  audit[envelope.level](
+    sanitized,
+    messages[String(sanitized["event"])] ?? "guest effect review receipt",
+  );
   return true;
 }

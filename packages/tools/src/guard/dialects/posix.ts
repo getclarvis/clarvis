@@ -1,4 +1,5 @@
 import type { PathCandidate, ShellDialect, Token } from "../dialect.ts";
+import type { ShellAnalysisIssue, ShellAnalysisImpact } from "../types.ts";
 
 /**
  * Expansions whose effect cannot be read off the text. Command names are not
@@ -8,7 +9,15 @@ import type { PathCandidate, ShellDialect, Token } from "../dialect.ts";
  */
 const EXPANSION_PATTERNS: RegExp[] = [/\$\(/, /`/, /\$\{?[A-Za-z_]/, /<\(/, />\(/];
 
-const UNDECIDABLE_COMMANDS = new Set(["eval", "exec", "source", "env", "xargs", "base64"]);
+const UNDECIDABLE_COMMANDS = new Set([
+  "eval",
+  "exec",
+  "source",
+  "env",
+  "xargs",
+  "base64",
+  "export",
+]);
 
 /**
  * Tokens that introduce a command without being the command: grouping, negation,
@@ -584,6 +593,39 @@ function opaqueCommand(argv: string[]): boolean {
   return (name === "sh" || name === "bash") && hasDashC(effective.slice(1));
 }
 
+/** Attribute expansion positions without claiming that dynamic argument values are safe. */
+function analysisIssues(segment: string): Array<Omit<ShellAnalysisIssue, "segmentIndex">> {
+  const issues: Array<Omit<ShellAnalysisIssue, "segmentIndex">> = [];
+  const { scrubbed, unbalanced } = scrubExpansions(segment);
+  if (unbalanced) issues.push({ kind: "unbalanced_syntax", impact: "control_flow" });
+  const { argv } = stripEnvAndWrappers(tokenize(segment).map((token) => token.text));
+  if (opaqueCommand(argv)) issues.push({ kind: "opaque_command", impact: "executable" });
+  for (const match of scrubbed.matchAll(
+    /\$\(|`|[<>]\(|\$\{?[A-Za-z_][A-Za-z0-9_]*|\$[0-9@*#?!$-]/g,
+  )) {
+    const prefix = scrubbed.slice(0, match.index);
+    const before = stripEnvAndWrappers(tokenize(prefix).map((token) => token.text)).argv;
+    const word = prefix.slice(prefix.search(/[^\s]*$/)).replace(/["']/g, "");
+    let impact: ShellAnalysisImpact = "value";
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(word)) impact = "environment";
+    else if (before.length === 0) impact = "executable";
+    else if (before.length === 1 && ["git", "gh"].includes(before[0]!)) impact = "subcommand";
+    else if (/[<>]\s*["']?[^\s]*$/.test(prefix) || /[/~]/.test(word)) impact = "path";
+    else if (["cat", "cd", "rm", "cp", "mv", "mkdir"].includes(before[0]!)) impact = "path";
+    const kind =
+      match[0] === "$(" || match[0] === "`"
+        ? "command_substitution"
+        : match[0] === "<(" || match[0] === ">("
+          ? "process_substitution"
+          : "parameter_expansion";
+    issues.push({ kind, impact });
+    if (impact === "executable") issues.push({ kind: "dynamic_command", impact });
+    if (impact === "subcommand") issues.push({ kind: "dynamic_subcommand", impact });
+    if (impact === "path") issues.push({ kind: "dynamic_path", impact });
+  }
+  return issues;
+}
+
 const UNSAFE_LITERAL = /[`$\\*?[\](){}|<>!;&\s]/;
 const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -726,6 +768,9 @@ function analyzeSources(command: string, sources: string[]): string[] {
  * dropped prefix is never the fact a decision rests on.
  */
 function pathCandidate(token: Token): PathCandidate {
+  if (ENV_ASSIGN.test(token.text)) {
+    return pathCandidate({ ...token, text: token.text.slice(token.text.indexOf("=") + 1) });
+  }
   const redirect = REDIRECT_PREFIX.exec(token.text);
   let text = token.text;
   if (redirect !== null) {
@@ -765,6 +810,7 @@ export const posixDialect: ShellDialect = {
     return !opaqueCommand(argv);
   },
   normalize: stripEnvAndWrappers,
+  analysisIssues,
   analyzeSources,
   pathCandidate,
 };

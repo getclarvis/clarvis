@@ -18,6 +18,7 @@ const ROOT = resolve("/tmp/clarvis-kernel-guard-audit-ws");
 function shellFacts(normalized: string, undecidable = false): ShellFacts {
   return {
     paths: [],
+    analysisIssues: [],
     undecidable,
     segments: [
       {
@@ -26,6 +27,7 @@ function shellFacts(normalized: string, undecidable = false): ShellFacts {
         normalized,
         envAssignments: [],
         decidable: !undecidable,
+        analysisIssues: [],
       },
     ],
   };

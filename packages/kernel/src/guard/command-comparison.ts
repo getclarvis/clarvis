@@ -37,11 +37,7 @@ function sequential(ctx: GuardContext): boolean {
 export function commandComparison(ctx: GuardContext): CommandComparison {
   const paths = [...ctx.paths];
   const commands: Array<string | undefined> =
-    ctx.shell?.segments.map((segment) =>
-      segment.argv.length === 0 && segment.envAssignments.length > 0
-        ? undefined
-        : segment.normalized,
-    ) ?? [];
+    ctx.shell?.segments.map((segment) => segment.normalized) ?? [];
   if (ctx.shell === undefined || currentDialect().flavor !== "posix" || !sequential(ctx)) {
     return { paths, commands };
   }
@@ -58,7 +54,6 @@ export function commandComparison(ctx: GuardContext): CommandComparison {
       );
     }
     if (segment.argv.length === 0 && segment.envAssignments.length > 0) {
-      commands[index] = undefined;
       continue;
     }
     const [head, operand] = segment.argv;

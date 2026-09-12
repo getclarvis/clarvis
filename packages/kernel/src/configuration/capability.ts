@@ -1,6 +1,9 @@
 import {
   handlerBaseOf,
   openCallEnvelope,
+  OPERATOR_AUTHORITY_PORT,
+  type OperatorAuthorityReader,
+  type ProviderConfig,
   type Capability,
   type NamespacedTool,
 } from "@clarvis/capability";
@@ -36,7 +39,11 @@ function traceResult(operation: ConfigurationFileRequest["operation"]): string {
 export function createConfigurationCapability(options: {
   roots: Readonly<Record<ConfigurationRoot, string>>;
   assertAuthorized(): void;
-  operate(request: ConfigurationFileRequest): unknown;
+  operate(
+    request: ConfigurationFileRequest,
+    authority?: OperatorAuthorityReader,
+    providers?: ProviderConfig[],
+  ): unknown;
 }): Capability {
   const tool: NamespacedTool = {
     fullName: TOOL_NAME,
@@ -69,7 +76,7 @@ export function createConfigurationCapability(options: {
     grants: [{ name: TOOL_NAME }],
     reservedWireNames: [TOOL_NAME],
     toolEffects: { [TOOL_NAME]: "mutate" },
-    forRun() {
+    forRun(ctx) {
       options.assertAuthorized();
       return {
         name: "native-configuration",
@@ -83,6 +90,7 @@ export function createConfigurationCapability(options: {
           if (!scope.entry || !scope.grants.includes(TOOL_NAME)) return null;
           return {
             attach(build) {
+              const authority = ctx.services.get(OPERATOR_AUTHORITY_PORT);
               const base = handlerBaseOf(build);
               return {
                 tools: [tool],
@@ -112,7 +120,7 @@ export function createConfigurationCapability(options: {
                       try {
                         options.assertAuthorized();
                         const request = call.arguments as ConfigurationFileRequest;
-                        const result = options.operate(request);
+                        const result = options.operate(request, authority, ctx.request.providers);
                         return {
                           kind: "result",
                           text: envelope.ok(JSON.stringify(result), traceResult(request.operation)),

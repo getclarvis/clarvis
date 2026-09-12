@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { effectReviewDetailShape } from "../guard/review-detail-schema.ts";
 import { analyzeShell, posixDialect } from "@clarvis/tools/guard";
 import type { Elicit, GuardElicit } from "@clarvis/loop";
 import type { GuardSessionAllowlist } from "../guard/guard-elicit.ts";
@@ -17,6 +18,7 @@ const requestSchema = z
     args: z.record(z.string(), z.unknown()),
     reason: z.string().max(2_048).optional(),
     escalate: z.literal("human").optional(),
+    reviewer: effectReviewDetailShape.reviewer,
   })
   .strict();
 const answerSchema = z.object({ allowed: z.boolean(), persisted: z.boolean() }).strict();
@@ -40,6 +42,7 @@ export function createHostGuardApprovalGrant(options: {
         args: input.args,
         reason: input.reason,
         escalate: input.escalate,
+        reviewer: input.reviewer,
         ...((input.tool === "shell" || input.tool === "monitor_start") &&
         typeof command === "string"
           ? { shell: analyzeShell(command, posixDialect) }
@@ -74,6 +77,7 @@ export function createGuestGuardApproval(
           args: request.args,
           ...(request.reason === undefined ? {} : { reason: request.reason }),
           ...(request.escalate === undefined ? {} : { escalate: request.escalate }),
+          ...(request.reviewer === undefined ? {} : { reviewer: request.reviewer }),
         },
       },
       signal,

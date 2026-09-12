@@ -1283,3 +1283,12 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   (`.github/workflows/ci.yml`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts`) and the file-mode assertions
   (`packages/trace/src/json-trace-store.ts`; `packages/trace/src/journal.ts`) are POSIX-shaped; whether they behave as specified
   on Windows is unverified from this repository.
+## Transversal operator state
+
+`operator_authority_state` is a sanitized versioned `ExecutionRecord` field, not a tools capability
+slot. Only kernel binding validation may restore its active envelope. It is absent from public
+event projection and model context; missing recovery state fails closed. Production:
+[record-builder.ts](../../packages/trace/src/record-builder.ts) and
+[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts).
+Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
+See [effect review](../execution/effect-review.md).

@@ -190,9 +190,8 @@ export function runtimeModelPairs(rawBody: unknown, guardSettings: GuardSettings
   const models = [
     ...(raw.profiles ?? []).map((profile) => profile.model),
     raw.vision_model,
-    ...(resolveGuardMode(raw.guard_mode, guardSettings.guard) === "auto" &&
-    raw.guard_judge !== undefined
-      ? [raw.guard_judge.model ?? guardSettings.defaultModel]
+    ...(resolveGuardMode(raw.guard_mode, guardSettings.guard) === "auto"
+      ? [raw.guard_judge?.model ?? guardSettings.effect_review?.model ?? guardSettings.defaultModel]
       : []),
   ];
   for (const model of models) {
@@ -520,6 +519,9 @@ export async function createLocalContainerRuntime(
       const loadedGuardSettings = structuredClone(input.loadGuardSettings?.() ?? {});
       const guardSettings: GuardSettings = structuredClone({
         ...(loadedGuardSettings.guard === undefined ? {} : { guard: loadedGuardSettings.guard }),
+        ...(loadedGuardSettings.effect_review === undefined
+          ? {}
+          : { effect_review: loadedGuardSettings.effect_review }),
         runtime: guardRuntime,
         defaultModel:
           loadedGuardSettings.defaultModel ??

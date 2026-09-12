@@ -533,16 +533,18 @@ export interface AgentsParam {
   finish_nudges?: number;
 }
 
-/** Command-guard policy: `off` (allow all), `on` (ask for approval), or `auto` (an LLM judge decides, configured by {@link GuardJudgeConfig}). */
+/** Command review: `off` skips this guard, `on` asks a human, and `auto` uses the host reviewer. */
 export type GuardMode = "off" | "on" | "auto";
 
-/** Judge configuration for guard_mode 'auto': the caller supplies the judge's
- * entire system prompt; the host's guard resolver consumes it. */
+/** Optional reviewer overrides and guidance; the host always supplies its invariant policy. */
 export interface GuardJudgeConfig {
-  prompt: string;
+  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
+  prompt?: string;
+  guidance?: string;
   model?: string;
   on_unsure?: "ask" | "deny";
   timeout_ms?: number;
+  max_retries?: number;
 }
 
 /**

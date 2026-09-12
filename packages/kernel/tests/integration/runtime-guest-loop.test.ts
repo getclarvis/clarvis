@@ -720,7 +720,7 @@ describe("runtime guest loop", () => {
   });
 
   it.each(["docker", "podman"])(
-    "passes %s placement and operator brief to Auto for guest expansions",
+    "passes %s placement without promoting the guest transcript to authority",
     async (backend) => {
       const root = await mkdtemp(join(tmpdir(), "clarvis-guest-auto-"));
       directories.push(root);
@@ -735,7 +735,7 @@ describe("runtime guest loop", () => {
             messages: Array<{ content: string }>;
           };
           const judge = body.tools?.some((tool) => tool.fullName === "decide");
-          if (judge) judged = JSON.parse(body.messages[1]!.content);
+          if (judge) judged = JSON.parse(body.messages[2]!.content);
           else leadCalls++;
           const result = judge
             ? { toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "deny" } }] }
@@ -814,7 +814,6 @@ describe("runtime guest loop", () => {
         placement: "contained",
         network: "none",
         undecidable: true,
-        operator_message: "inspect this workspace",
       });
     },
   );

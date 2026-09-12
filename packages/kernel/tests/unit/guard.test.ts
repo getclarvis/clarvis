@@ -31,6 +31,7 @@ function shellFacts(normalized: string | string[], opts: ShellFactOptions = {}):
   const values = Array.isArray(normalized) ? normalized : [normalized];
   return {
     paths: opts.paths ?? [],
+    analysisIssues: [],
     undecidable: opts.undecidable ?? false,
     segments: values.map((value, index) => ({
       command: value.split(" ")[0] ?? "",
@@ -38,6 +39,7 @@ function shellFacts(normalized: string | string[], opts: ShellFactOptions = {}):
       normalized: value,
       envAssignments: opts.envAssignments?.[index] ?? [],
       decidable: !(opts.undecidable ?? false),
+      analysisIssues: [],
     })),
   };
 }
@@ -172,24 +174,24 @@ describe("createShellGuard (kernel copy)", () => {
     ).toMatchObject({ verdict: "allow" });
   });
 
-  it("allows an assignment-only prefix in front of an allow-listed command", async () => {
-    const command = "QA=/tmp/foo; git status";
+  it("reviews an assignment-only prefix in front of an allow-listed command", async () => {
+    const command = "QA=src; git status";
     const facts = analyzeShell(command);
     expect(facts.undecidable).toBe(false);
     expect(
       await createShellGuard({ allowedCommands: ["git status"] })(
         makeCtx("shell", { command }, facts),
       ),
-    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
+    ).toMatchObject({ verdict: "ask", matched: "default", escalate: "human" });
   });
 
-  it("inlines a sequential literal assignment before allow-list matching", async () => {
+  it("retains literal path analysis without approving the environment binding", async () => {
     const command = 'QA=src; cat "$QA/a.ts"';
     const facts = analyzeShell(command);
     expect(facts.undecidable).toBe(false);
     expect(
       await createShellGuard({ allowedCommands: ["cat"] })(makeCtx("shell", { command }, facts)),
-    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
+    ).toMatchObject({ verdict: "ask", matched: "default" });
   });
 
   it("treats a blank allow-list entry as matching no command", async () => {
@@ -378,7 +380,7 @@ describe("createGuardElicit", () => {
       cwd: resolve(ROOT, "sub"),
       reason: "no allowed commands list configured",
     });
-    expect(seen[1]?.detail).toEqual({
+    expect(seen[1]?.detail).toMatchObject({
       command: "rm -rf build",
       cwd: ROOT,
       reason: 'Tool "shell" requires confirmation.',
@@ -568,7 +570,8 @@ describe("createJudgeElicit", () => {
     expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
     expect(await judge(req)).toEqual({ allowed: false, answerer: "judge" });
     expect(calls).toBe(2);
-    expect(warnings[0]?.[0]).toMatchObject({ error: "provider unreachable" });
+    expect(warnings[0]?.[0]).toMatchObject({ tool: "shell" });
+    expect(JSON.stringify(warnings)).not.toContain("provider unreachable");
   });
 
   it("denies without a human channel on a malformed judge response, keying a non-shell request by tool+args", async () => {

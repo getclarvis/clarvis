@@ -99,7 +99,8 @@ export function prepareKernelRun(
       };
       execution = {
         kind: "workflow",
-        start: () => options.startWorkflow({ ...request, agent }, prepared),
+        start: (seed, signal) =>
+          options.startWorkflow({ ...request, agent }, prepared, seed, signal),
       };
     } else {
       execution = { kind: "ordinary", rawBody, ...(goal === undefined ? {} : { goal }) };

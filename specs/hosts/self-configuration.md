@@ -10,8 +10,9 @@ remote SSH connections, TUI loop scheduling, background runs and configuration r
 The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
 When loaded in an ordinary turn, the guide directs a requested configuration mutation to the exact
 `/clarvis-configure <requested change>` command and stops. Ordinary native file-mutation tools reject
-workspace `.clarvis` and `.agents` targets before guard review, so loading the guide cannot turn a
-file tool into configuration authority. Reads remain available for diagnosis. Command tools retain
+operational configuration before guard review. Canonical authoring files can reach effect review,
+but require a complete `clarvis.authoring.write` fact and an explicit review approval; loading the
+guide grants no authority. Reads remain available for diagnosis. Command tools retain
 their separately documented shell/sandbox boundary, and the guide forbids using them as an
 alternate writer.
 Container disclosure retains builtin provenance and priority, and uses the same canonical embedded
@@ -250,3 +251,22 @@ owns its open-session lifetime and uses the existing skill/elicitation UI. The l
 this product mode and composes the host-supplied capabilities normally. Skills owns catalog and
 on-demand presentation, including the builtin label instead of a fictitious file path. Runtime
 bridges never acquire configuration mutation authority.
+## Effect attribution
+
+The restricted writer emits effect facts only after resolving its canonical target, validating
+content and checking the expected revision. Facts include revision digests and byte bounds, never
+free-form model claims. Canonical authoring and operational configuration are distinct descriptors
+in the same registry as command review. The existing native human-consent route remains explicit;
+approval does not add semantic evidence to the operator ledger. Native ordinary tools may write
+only canonical authoring Markdown after host effect review; operational files still require this
+restricted writer. Production: [files.ts](../../packages/kernel/src/configuration/files.ts),
+[configuration.ts](../../packages/kernel/src/guard/effects/configuration.ts), and
+[tools core](../../packages/tools/src/core.ts). Test:
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+See [effect review](../execution/effect-review.md).
+The configuration capability reads the prepublished authority reader at attach. Both consumers
+resolve `effectReviewServiceFor` by that reader identity, sharing reviewer configuration, registry
+policy and telemetry; existing deterministic native consent does not need another model call.
+Production: [capability.ts](../../packages/kernel/src/configuration/capability.ts) and
+[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).

@@ -788,6 +788,11 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledPlugins) : [];
     const mergeScopes = [...pluginScopes, ...operatorScopes];
     const merged = mergeSettings(mergeScopes, kernelCapabilityRegistry) as unknown as SettingsData;
+    const effectReview = resolveEffectReviewSettings(
+      global?.effect_review,
+      workspace?.effect_review,
+    );
+    if (effectReview !== undefined) merged.effect_review = effectReview;
     const scopes: Partial<Record<Scope, SettingsData>> = {
       ...(global !== undefined ? { global } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -1182,3 +1187,4 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     },
   };
 }
+import { resolveEffectReviewSettings } from "./effect-review-settings.ts";

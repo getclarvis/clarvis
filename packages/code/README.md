@@ -504,7 +504,7 @@ overlay and its cache together with the existing developer error surface.
 Prompt history is likewise a bounded convenience cache: at most 1,000 entries, 1 million
 characters per entry and 8 million resident characters. Startup reads only the newest 8 MiB of its
 JSONL file and compacts an older oversized file in the background. A custom guard-judge prompt is
-limited to 1 MiB and an oversized override safely falls through to the next scope.
+limited to 32 KiB and oversized guidance safely falls through to the next scope.
 
 ### Navigation and keyboard environments
 
@@ -688,24 +688,15 @@ executes that one command on the host without a reviewer. Isolated container run
 the host this way. The safety explanation always states the selected Review consequence
 for Host, native Sandbox, Docker and Podman placements.
 
-A **deny** is enforced before any of this, in every mode; `denied_commands` wins
+In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
 over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
 normalized command; an entry with `*` is an anchored glob. Turning the guard off
 is a persisted choice — write `"mode": "off"` rather than deleting the block, or
 it comes back on the next boot.
 
-**`auto` needs a usable model and a complete prompt.** `code` resolves the prompt
-from two optional files and otherwise supplies its built-in policy:
-
-| file                           | scope                |
-| ------------------------------ | -------------------- |
-| `<ws>/.clarvis/guard-judge.md` | this project         |
-| `~/.clarvis/guard-judge.md`    | you, every workspace |
-
-Unlike `memory-policy.md`, these **do not concatenate**: the workspace file wins
-whole, then the global one, then a built-in default. A judging prompt is one
-complete instruction, so two of them would be two rulings for one verdict. A file
-that exists but is blank counts as absent and falls through to the next scope.
+**Auto needs a usable reviewer model.** The kernel resolves `effect_review.model` or the default
+model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
+files provide guidance below that policy, never authority. Code sends guidance only when present.
 
 It is plain prose — no frontmatter, no schema. Write the standing rules you would
 apply yourself:
@@ -719,30 +710,11 @@ or edits files under `infra/`.
 Never approve a command that pipes a network fetch into a shell.
 ```
 
-The builtin receives the command plus host-attested placement and analysis facts, and up to 4 KiB
-of user text from the run's start/continue request as `operator_message`. It does not receive the
-full conversation, assistant text, images, tool results or mid-run steers. A child supplies its own
-brief. The command, justification and other arguments are data under review, never sources of
-authorization; only `operator_message` supplies intent.
+The effect reviewer uses host-attributed operator evidence and mechanically attested effects.
+The opt-in local and CI-retry rollout validates every model allow against current grants; uncertain
+syntax without complete attestation remains human-reviewed. The prompt shows segment causes,
+effect identity and operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
 
-For contained, non-dangerous routine workspace work, the builtin prefers `allow`: this includes
-ordinary `git add`/`git commit`, in-tree `mkdir`/`cp`/`mv`, `cd`, builds/tests and ordinary expansions
-such as `$MSG`. There is no silent policy allow for unmatched contained commands: Auto still asks
-the judge. Host or missing placement does not imply a sandbox and keeps more conservative review.
-A requested host command explicitly authorized by `operator_message` may be allowed without
-containment; destructive or external effects still require explicit intent for that effect.
-Destructive effects — `git restore`, hard reset, forced clean/removal, checkout-over-files or broad
-deletion — require explicit intent for that effect in `operator_message`; otherwise `unsure` opens
-the human prompt. Credential access and exfiltration are denied. An explicit deny-list match or
-ordinary workspace escape is still rejected before the judge. `require_escalated` under Isolation
-Sandbox reaches the judge in Auto, as a host effect without native network restrictions: `allow`
-executes and `deny` refuses. An inconclusive, failed or malformed response follows `on_unsure`
-(`ask` by default, configured `deny` respected); without a usable model, Auto degrades to Approval.
-Approval (`on`) remains human-only and `off` is unchanged. Host-command review never uses session
-coverage or offers `allow_session`, including human fallback; clean exact-call judge memoization
-is separate. Docker/Podman still reject escalation; on Host the field is a no-op under normal review.
-See [the command-guard contract](../../specs/execution/command-guard.md) for the exact cascade and
-snapshot limits. Prompt tests pin the shipped instructions, not every real model's decision.
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 

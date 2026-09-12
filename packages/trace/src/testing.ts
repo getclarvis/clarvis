@@ -48,6 +48,11 @@ export function createMemoryTraceStore(): TraceStore {
         ended_at: record.ended_at,
         elapsed_ms: record.elapsed_ms,
         request: sanitizeDeep(record.request),
+        ...(record.operator_authority_state === undefined
+          ? {}
+          : {
+              operator_authority_state: sanitizeDeep(record.operator_authority_state),
+            }),
         response: sanitizeDeep(record.response),
         trace: structuredClone(record.trace),
         total_input_tokens: record.total_input_tokens,

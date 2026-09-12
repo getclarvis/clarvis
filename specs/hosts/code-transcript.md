@@ -1731,3 +1731,13 @@ any renderer at all is still not determinable: nothing this document or the side
 `error` nodes.** `packages/code/src/views/transcript-markdown.ts` silently yields nothing for those four kinds;
 `packages/code/tests/unit/transcript-markdown.test.ts` exercises only the five kinds that do render. Whether the
 omission is intended is not stated.
+## Structured effect review receipts
+
+Guard elicitation shows one-based segment causes and argument positions, effect attestation and
+reviewer failure kind. The global expansion warning is omitted when structured causes are available.
+Durable shell labels append bounded effect, relation and failure vocabulary to their answerer;
+they contain no evidence text or reviewer prose. Production:
+[effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts),
+[guard-review.ts](../../packages/code/src/core/transcript/guard-review.ts), and
+[ElicitBlock.tsx](../../packages/code/src/views/ElicitBlock.tsx).
+Wire ownership is in [effect review](../execution/effect-review.md).

@@ -198,3 +198,9 @@ deletion can race the rewrite and resurrect stale context.
 Terminal `tool_call` rows may include the final command-guard review. The mapper
 preserves that small structured fact so restored sessions can show whether an
 automatic review approved or denied the command and who supplied the answer.
+## Authority state
+
+`buildRecord` and trace stores preserve sanitized, versioned `operator_authority_state` as transversal
+host state. Kernel validates its binding and active status before restoration. A recovered record
+without that state grants no authority. It is not mapped into model content or public run events.
+See [effect review](../../specs/execution/effect-review.md).

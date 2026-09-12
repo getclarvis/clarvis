@@ -77,6 +77,7 @@ export function createNodeProcessRunner(logger: Logger = NOOP_LOGGER): ProcessRu
         let stderr = "";
         let timer: ReturnType<typeof setTimeout> | undefined;
         let settled = false;
+        let outputBytes = 0;
 
         const finish = (outcome: { result: ProcessRunResult } | { error: Error }): void => {
           if (settled) return;
@@ -93,11 +94,21 @@ export function createNodeProcessRunner(logger: Logger = NOOP_LOGGER): ProcessRu
 
         child.stdout.setEncoding("utf8");
         child.stderr.setEncoding("utf8");
+        const admitOutput = (chunk: string): boolean => {
+          if (settled) return false;
+          outputBytes += Buffer.byteLength(chunk, "utf8");
+          if (request.maxOutputBytes !== undefined && outputBytes > request.maxOutputBytes) {
+            child.kill("SIGKILL");
+            finish({ error: new Error("process output exceeded the admitted limit") });
+            return false;
+          }
+          return true;
+        };
         child.stdout.on("data", (chunk: string) => {
-          stdout += chunk;
+          if (admitOutput(chunk)) stdout += chunk;
         });
         child.stderr.on("data", (chunk: string) => {
-          stderr += chunk;
+          if (admitOutput(chunk)) stderr += chunk;
         });
         child.once("error", (error) => finish({ error }));
         child.once("close", (exitCode) => {

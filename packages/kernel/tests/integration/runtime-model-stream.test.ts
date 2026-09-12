@@ -199,5 +199,22 @@ describe("runtime model stream", () => {
       ...runtimeModelPairs({ ...body, guard_mode: "on" }, { defaultModel: "judge/default" }),
     ]).toEqual(["chat\0main", "vision\0image/model"]);
     expect([...runtimeModelPairs({ profiles: [{ model: "invalid" }, {}] }, {})]).toEqual([]);
+    expect([
+      ...runtimeModelPairs(
+        { profiles: [], guard_mode: "auto" },
+        {
+          defaultModel: "judge/default",
+          effect_review: { model: "reviewer/configured" },
+        },
+      ),
+    ]).toEqual(["reviewer\0configured"]);
+    expect([
+      ...runtimeModelPairs(
+        { profiles: [], guard_mode: "auto" },
+        {
+          defaultModel: "judge/default",
+        },
+      ),
+    ]).toEqual(["judge\0default"]);
   });
 });

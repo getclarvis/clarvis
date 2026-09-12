@@ -140,7 +140,8 @@ export function createGuardElicit(elicit: Elicit, opts?: GuardElicitOptions): Gu
         `Command segments: ${req.shell.segments.map((s) => s.normalized).join(", ")}`,
       );
     }
-    if (req.shell?.undecidable) messageParts.push(UNDECIDABLE_WARNING);
+    if (req.shell?.undecidable && req.shell.analysisIssues.length === 0)
+      messageParts.push(UNDECIDABLE_WARNING);
     const session =
       opts?.allowlist !== undefined &&
       req.shell !== undefined &&
@@ -172,7 +173,20 @@ export function createGuardElicit(elicit: Elicit, opts?: GuardElicitOptions): Gu
         command,
         cwd: cwdArg !== undefined ? resolve(opts.workspaceRoot, cwdArg) : opts.workspaceRoot,
         reason,
-        ...(req.shell?.undecidable ? { warning: UNDECIDABLE_WARNING } : {}),
+        ...(req.shell?.undecidable && req.shell.analysisIssues.length === 0
+          ? { warning: UNDECIDABLE_WARNING }
+          : {}),
+        analysis:
+          req.analysis ??
+          (req.shell === undefined
+            ? undefined
+            : {
+                reviewability: req.shell.undecidable ? "human_only" : "static",
+                issues: req.shell.analysisIssues,
+              }),
+        effect: req.effect,
+        authority: req.authority,
+        reviewer: req.reviewer,
       };
     }
     const result = await elicit(params, {

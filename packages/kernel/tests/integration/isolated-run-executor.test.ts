@@ -27,6 +27,78 @@ afterEach(async () => {
 });
 
 describe("isolated run executor", () => {
+  it("forwards authority retirement as a private revocation without cancelling the guest run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-authority-retirement-"));
+    directories.push(root);
+    const router = createRuntimeAuthorityRouter("generation");
+    const retired = new AbortController();
+    const delivered = deferred();
+    let cancelled = false;
+    const messages: unknown[] = [];
+    const executor = createIsolatedRunExecutor({
+      generation: "generation",
+      workspaceRoot: join(root, "workspace"),
+      roots: { env: { [HOME_ENV]: join(root, "home") } },
+      router,
+      pollIntervalMs: 5,
+      session: {
+        closed: false,
+        info: {} as RuntimeInfo,
+        async startRun(runId) {
+          retired.abort();
+          await delivered.promise;
+          await router.handlers["host.checkpoint"]!({
+            method: "host.checkpoint",
+            generation: "generation",
+            runId,
+            signal: new AbortController().signal,
+            payload: { sequence: 1, terminal: false, state: {} },
+          });
+          return { executionId: runId, response: { status: "completed" } };
+        },
+        async steer(_runId, input) {
+          messages.push(input);
+          delivered.resolve();
+        },
+        async callHookMcp() {},
+        async elicitMcp() {},
+        async stop() {},
+        async cancel() {
+          cancelled = true;
+        },
+        async exposePort() {
+          throw new Error("not exercised");
+        },
+      },
+      authority: () => ({
+        model: {
+          async execute() {
+            return { events: [], outputBytes: 0 };
+          },
+          revoke() {},
+        },
+        capabilities: { async invoke() {}, revoke() {} },
+        terminalParticipants: () =>
+          (["session", "trace", "capabilities"] as const).map((name) => ({
+            name,
+            async commit() {},
+          })),
+      }),
+    });
+    const result = await executor({
+      rawBody: { execution_id: "run" },
+      owner: "owner",
+      deps: {} as never,
+      operatorAuthoritySignal: retired.signal,
+      operatorAuthoritySeed: {
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        evidence: [{ id: "operator", source: "start", text: "Inspect", execution_id: "run" }],
+      },
+    });
+    expect(result.response.status).toBe("completed");
+    expect(cancelled).toBe(false);
+    expect(messages).toEqual([{ kind: "revoke_operator_authority" }]);
+  });
   it.each(["delivered", "refused", "settled"] as const)(
     "settles steering only on guest delivery and always revokes authority: %s",
     async (delivery) => {
@@ -222,7 +294,7 @@ describe("isolated run executor", () => {
           runId,
           payload: {
             channel: "trace_record",
-            record: { id: runId, owner_key_name: "owner" },
+            record: { id: runId, owner_key_name: "owner", response: { status: "completed" } },
           },
           signal,
         });
@@ -306,7 +378,13 @@ describe("isolated run executor", () => {
       }),
     ).resolves.toMatchObject({ executionId: "run-1" });
     expect(events).toEqual([{ type: "run_started" }]);
-    expect(persisted).toEqual([{ id: "run-1", owner_key_name: "owner" }]);
+    expect(persisted).toMatchObject([
+      {
+        id: "run-1",
+        owner_key_name: "owner",
+        operator_authority_state: { version: 1, status: "revoked", evidence: [] },
+      },
+    ]);
     expect(capabilityEvents).toEqual([{ type: "capability_event" }]);
     expect(calls).toEqual(["session", "trace", "capabilities"]);
   });

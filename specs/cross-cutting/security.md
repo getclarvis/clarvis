@@ -579,6 +579,16 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 
 ### 4.6 Other subprocess environments use distinct policies
 
+Command-review allowlists never silently approve an environment prefix or assignment-only segment,
+even through a wildcard command entry. The normalized executable remains visible to deny rules;
+path-shaped assignment values are resolved as values, not assignment-shaped filenames. Unattested
+bindings require human review on Host and explicit review under containment. This does not change
+mode `off` or the independent subprocess environment filters. Production:
+[shell guard](../../packages/kernel/src/guard/shell-guard.ts) (`commandsAllowed`, `createShellGuard`)
+and [POSIX dialect](../../packages/tools/src/guard/dialects/posix.ts) (`pathCandidate`). Test:
+[guard contrasts](../../packages/kernel/tests/integration/guard-auto-review.test.ts) and
+[analysis issues](../../packages/tools/tests/unit/analysis-issues.test.ts).
+
 | Consumer | Policy | File |
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts` |
@@ -1459,3 +1469,13 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   `AgentToolsOptions.confineToWorkspace` (`packages/tools/src/config.ts`) and
   `CLARVIS_AGENT_TOOLS_CONFINE` (`packages/capability/src/env.ts`). Whether the historical variable
   was ever read is not determinable from the current tree.
+## Operator evidence and effect interpretation
+
+Workspace text, synthetic seeds, assistant output, commands and justification are never authority
+evidence. Only host-admitted operator input supplies evidence. The LLM interprets it within host
+effect descriptors; the host validates target coverage, exclusions and revision after interpretation.
+The execution ceiling and captured placement do not change when intent changes. Production:
+[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts) and
+[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+The complete boundaries are in [effect review](../execution/effect-review.md).

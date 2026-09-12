@@ -26,7 +26,8 @@ export function guardAutoResolves(
   settings: Pick<SettingsAdapter, "effective" | "validateProviders">,
 ): boolean {
   const eff = settings.effective();
-  return !!eff.default_model && settings.validateProviders(eff).ok;
+  const model = eff.effect_review?.model ?? eff.default_model;
+  return !!model && settings.validateProviders({ ...eff, default_model: model }).ok;
 }
 
 /** The session's current {@link GuardMode}, settable directly or by cycling. */

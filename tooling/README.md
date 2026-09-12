@@ -55,9 +55,9 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
-Both Containerfiles and the build helper carry private protocol revision 12, matching the kernel
+Both Containerfiles and the build helper carry private protocol revision 13, matching the kernel
 worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
-model policy, resolved operator loop defaults/ceilings and the bound goal capability projection.
+model policy, resolved operator loop defaults/ceilings and the bound goal capability projection, host-attributed operator evidence and structured effect-review receipts.
 Older images are refused at admission and must be rebuilt; changing an active runtime
 image remains an operator choice.
 

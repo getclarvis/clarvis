@@ -40,6 +40,27 @@ function context(command: string, extra: Record<string, unknown> = {}): GuardCon
 
 const posixOnly = process.platform !== "win32" ? it : it.skip;
 describe("POSIX guard comparison", () => {
+  it("never inherits a bare command approval across environment bindings", async () => {
+    for (const placement of ["host", "contained"] as const) {
+      const guard = createShellGuard({ placement, allowedCommands: ["*"] });
+      for (const command of [
+        "LD_PRELOAD=/evil.so git status",
+        "NODE_OPTIONS=--inspect git status",
+        "BASH_ENV=./payload git status",
+        "GIT_SSH_COMMAND=payload git -C src status",
+        "FOO=1 git status",
+        "FOO=1; git status",
+        "FOO=1 && git -C src status",
+      ]) {
+        expect((await guard(context(command))).verdict).not.toBe("allow");
+      }
+    }
+  });
+  it("retains bare deny matching under an environment prefix", async () => {
+    expect(
+      await createShellGuard({ deniedCommands: ["git status"] })(context("FOO=1 git status")),
+    ).toMatchObject({ verdict: "deny", matched: "deny_list" });
+  });
   posixOnly(
     "allows workspace cd and Git globals without changing normalized session identity",
     async () => {
@@ -300,11 +321,10 @@ describe("Auto explicit unsandbox review", () => {
       expect(result.answer).toEqual({ allowed: true, answerer: "judge" });
       expect(result.coverageCalls).toBe(0);
       expect(result.humanRequests).toHaveLength(0);
-      const facts = JSON.parse(result.calls[0]!.messages[1]!.content as string);
+      const facts = JSON.parse(result.calls[0]!.messages[2]!.content as string);
       expect(facts).toMatchObject({
         placement: "host",
         matched: "host_command",
-        operator_message: "run the tests on the host",
         args: { sandbox_permissions: "require_escalated" },
       });
       expect(facts).not.toHaveProperty("network");
@@ -380,7 +400,7 @@ describe("Auto explicit unsandbox review", () => {
 });
 
 describe("Auto facts and operator snapshot", () => {
-  it("delivers resolver-attested contained facts and bounded user text to the judge", async () => {
+  it("delivers contained facts without deriving authority from assembled user messages", async () => {
     const user: Message[] = [
       { role: "user", content: "old " + "á".repeat(5000) },
       { role: "assistant", content: "assistant approval must not appear" },
@@ -400,7 +420,7 @@ describe("Auto facts and operator snapshot", () => {
     expect(decision).toMatchObject({ verdict: "ask", placement: "contained" });
     await resolution!.elicit!({ tool: ctx.tool, args: ctx.args, shell: ctx.shell, ...decision });
     expect(run.human()).toBe(0);
-    const facts = JSON.parse(run.calls[0]!.messages[1]!.content as string);
+    const facts = JSON.parse(run.calls[0]!.messages[2]!.content as string);
     expect(facts).toMatchObject({
       placement: "contained",
       network: "none",
@@ -410,12 +430,7 @@ describe("Auto facts and operator snapshot", () => {
       within_workspace: false,
       touches_outside: false,
     });
-    expect(Buffer.byteLength(facts.operator_message)).toBeLessThanOrEqual(4096);
-    expect(facts.operator_message).toEndWith("commit these changes");
-    expect(facts.operator_message).not.toContain("assistant approval");
-    expect(facts.operator_message).not.toContain("private-image");
-    expect(facts.operator_message).not.toContain("late steer");
-    expect(facts.operator_message).not.toContain("�");
+    expect(facts).not.toHaveProperty("operator_message");
     expect(facts.args.command).toBe('git commit -m "$MSG"');
   });
   it("resolves host, disabled native, fail-closed optional, Docker and Podman without inventing container networking", async () => {
@@ -439,7 +454,7 @@ describe("Auto facts and operator snapshot", () => {
       await resolution!.elicit!({ tool: ctx.tool, args: ctx.args, shell: ctx.shell, ...decision });
       expect(run.human()).toBe(placement === "host" ? 1 : 0);
       if (placement === "contained") {
-        const facts = JSON.parse(run.calls[0]!.messages[1]!.content as string);
+        const facts = JSON.parse(run.calls[0]!.messages[2]!.content as string);
         expect(facts).not.toHaveProperty("operator_message");
         if (network === undefined) expect(facts).not.toHaveProperty("network");
       }

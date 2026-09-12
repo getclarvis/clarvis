@@ -15,6 +15,11 @@ import { executeRun, type ExecuteRunArgs } from "@clarvis/loop";
 import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
 import { createGuardResolver, type GuardSettings } from "../guard/resolver.ts";
+import {
+  createOperatorAuthorityRuntime,
+  validOperatorAuthoritySeed,
+} from "../guard/operator-authority.ts";
+import type { OperatorAuthoritySeed } from "@clarvis/capability";
 import { createGuestGuardAuditLogger } from "./guard-audit-bridge.ts";
 import { createGuestGuardApproval } from "./guard-approval-bridge.ts";
 import { createRuntimePreviewCapability } from "./preview-capability.ts";
@@ -55,6 +60,7 @@ import {
 } from "./loop-policy.ts";
 
 interface GuestRunEnvelope {
+  readonly operatorAuthoritySeed?: OperatorAuthoritySeed;
   readonly rawBody: unknown;
   readonly owner: string;
   readonly modelLeaseId: string;
@@ -74,6 +80,7 @@ interface GuestRunEnvelope {
 }
 
 interface GuestRunControl {
+  readonly operatorAuthority: AbortController;
   readonly steer: SteerQueue;
   readonly compaction: CompactionQueue;
   readonly hookCalls: AbortController;
@@ -82,6 +89,7 @@ interface GuestRunControl {
 }
 
 type GuestControlInput =
+  | { readonly kind: "revoke_operator_authority" }
   | { readonly kind: "steer"; readonly message: SteerMessage }
   | { readonly kind: "compact"; readonly request: CompactionRequest };
 
@@ -135,6 +143,7 @@ function validCompactionRequest(value: unknown): value is CompactionRequest {
 
 function validControlInput(value: unknown): value is GuestControlInput {
   const input = record(value);
+  if (input?.kind === "revoke_operator_authority") return exactKeys(input, ["kind"]);
   if (input?.kind === "steer") {
     return exactKeys(input, ["kind", "message"]) && validSteerMessage(input.message);
   }
@@ -159,7 +168,9 @@ function guestTraceStore(
   let inserted: ExecutionRecord | undefined;
   return {
     async insert(record) {
-      await bridge.event({ channel: "trace_record", record });
+      const projection = { ...record };
+      delete projection.operator_authority_state;
+      await bridge.event({ channel: "trace_record", record: projection });
       inserted = record;
     },
     getById(requestOwner, id) {
@@ -202,6 +213,8 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
   }
   const envelope = value as GuestRunEnvelope;
   return (
+    (envelope.operatorAuthoritySeed === undefined ||
+      validOperatorAuthoritySeed(envelope.operatorAuthoritySeed)) &&
     (envelope.hostCapabilities === undefined ||
       (Array.isArray(envelope.hostCapabilities) &&
         envelope.hostCapabilities.every((name) => typeof name === "string"))) &&
@@ -290,6 +303,9 @@ function guestGuardSettings(envelope: GuestRunEnvelope): GuardSettings {
   const raw = envelope.rawBody as { providers?: unknown };
   return {
     ...(envelope.guardSettings?.guard === undefined ? {} : { guard: envelope.guardSettings.guard }),
+    ...(envelope.guardSettings?.effect_review === undefined
+      ? {}
+      : { effect_review: envelope.guardSettings.effect_review }),
     ...(envelope.guardSettings?.defaultModel === undefined
       ? {}
       : { defaultModel: envelope.guardSettings.defaultModel }),
@@ -328,6 +344,7 @@ export function createGuestLoopExecutor(
       }
       if (controls.has(runId)) throw guestControlError("conflict", "guest run already exists");
       const control: GuestRunControl = {
+        operatorAuthority: new AbortController(),
         steer: createSteerQueue(),
         compaction: createCompactionQueue(),
         hookCalls: new AbortController(),
@@ -462,9 +479,12 @@ export function createGuestLoopExecutor(
             signal: AbortSignal.any([signal, control.hookCalls.signal]),
           });
           const outcome = await executeRun({
+            operatorAuthoritySeed: envelope.operatorAuthoritySeed,
+            operatorAuthoritySignal: control.operatorAuthority.signal,
+            operatorAuthorityParent: child?.args.operatorAuthorityParent,
             rawBody: envelope.rawBody,
             owner: envelope.owner,
-            deps: built.deps,
+            deps: { ...built.deps, operatorAuthority: createOperatorAuthorityRuntime },
             capabilities: extraCapabilities,
             externalSignal: signal,
             steer:
@@ -536,6 +556,10 @@ export function createGuestLoopExecutor(
       }
       if (!validControlInput(input)) {
         throw guestControlError("invalid_request", "runtime control input is invalid");
+      }
+      if (input.kind === "revoke_operator_authority") {
+        control.operatorAuthority.abort();
+        return;
       }
       if (input.kind === "compact") {
         if (!control.compaction.push(input.request)) {

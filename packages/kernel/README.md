@@ -300,7 +300,7 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 12 and a rebuilt compatible worker image. Remote filesystem skills
+require runtime protocol revision 13 and a rebuilt compatible worker image. Remote filesystem skills
 are disclosed by name and resource tools, using opaque locators rather than advertised guest
 directories. Helper guidance requires preparing read resources in the writable workspace before
 guarded execution. Embedded builtins retain their no-file disclosure. Each run carries the
@@ -826,42 +826,38 @@ than model-callable MCP tools.
 A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`
 settings block, else `on` (`resolveGuardMode`). The three modes differ only in
 what happens to an **ask** verdict — `off` skips the ruling, `on` relays it to a
-human, `auto` has an LLM answer it. A **deny** is enforced before any of that, in
-every mode, and `denied_commands` outranks `allowed_commands`.
+human, `auto` has an LLM answer it. In `on` and `auto`, a **deny** is enforced before
+review, and `denied_commands` outranks `allowed_commands`. Mode `off` supplies no command guard;
+independent filesystem, credential, capability and runtime boundaries remain active.
 
-**The judge prompt is supplied by the host, per run, and the kernel never reads a
-file for it.** `auto` builds a judge only when the run carries a `guard_judge`;
-without one `routesToHuman` reports true and the run behaves exactly as `on`
-(`resolver.ts`). That is deliberate — it makes a misconfigured `auto` degrade to
-asking a human rather than to approving silently — but it also means "I set mode
-to auto and nothing changed" is the expected symptom of a missing prompt, not a
-bug. `@clarvis/code` is what resolves that prompt from `guard-judge.md`
-(workspace, then global, then a built-in default, winner-takes-all); see its
-README. `@clarvis/server` deliberately does not accept `guard_mode` at all, so a
-caller cannot switch off the operator's guard.
+The kernel supplies the first, nonreplaceable reviewer policy. Auto resolves its model from
+operator-owned `effect_review` settings or the default model; `guard_judge` supplies optional
+overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
+cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
+owns the host evidence ledger, effect registry, rollout and validated review path.
 
 The resolver snapshots host-owned placement once per run: enabled native sandbox means
 contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
-Undecidable contained commands remain ordinary asks that Auto may judge; ordinary Host
-undecidable commands still require a human, and a nonempty deny list rejects either. No unmatched
+Outside the effect rollout, undecidable contained commands remain ordinary asks that Auto may
+judge; ordinary Host undecidable commands still require a human, and a nonempty deny list rejects
+either. Within the rollout, only complete effect attestations can refine syntactic opacity into
+judgeable effects, after deterministic denials. No unmatched
 contained silent-allow rule is installed. Forced `rm` and `sudo` ask after allowlist checks.
 
 POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
 Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
-Assignment-only `NAME=value` segments are skipped for allow-list comparison, and sequential
-literal `$NAME` bindings are inlined by the POSIX analyzer before that match. Session
+Environment prefixes and assignment-only `NAME=value` segments prevent static allow-list approval,
+including wildcard entries. Unattested bindings require a human on Host and explicit review when
+contained. Bare normalized commands remain visible to deny matching. Sequential literal `$NAME`
+bindings are still inlined for path analysis without authorizing their environment effects. Session
 approval keys keep their original normalized identities; unsupported control flow and PowerShell
 retain ordinary matching. Paths still participate in denial.
 
-Judge JSON contains trusted per-call analysis facts plus `operator_message`: at most 4 KiB of
-start/continue user text, selected newest-first and retained chronologically with a UTF-8-safe
-prefix cut. Assistant text, images, tool results and mid-run steers are absent. Child runs supply
-their own brief. The memo key is the actual reviewed JSON, so changed raw commands, cwd or facts
-cannot reuse a normalized-only ruling. Native `network` stays `host | none`; container `none` is
-reported as `none`, and outbound/internet modes are omitted rather than mislabeled as host network.
-See [command guard](../../specs/execution/command-guard.md) for the tools/kernel/Code contract.
+Operator evidence is captured before synthetic message assembly and transported outside the public
+request. The effect reviewer reads the live revisioned ledger, and does not derive grants from
+assistant text, child briefs, command arguments, justification or role-filtered final context.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
 the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when
@@ -953,7 +949,8 @@ it through the ordinary skills service. `/clarvis-configure` is the only path th
 privileged configure run. A `$clarvis-configure` mention in an already-open turn stays literal text:
 it does not dump the guide and does not request `configuration_access`. Loading it during an ordinary
 turn grants no configuration authority: the guide directs changes to `/clarvis-configure`, and native
-file-mutation tools reject workspace `.clarvis` and `.agents` targets before guard review. Disabling
+file-mutation tools reject operational configuration before guard review. Canonical authoring files
+require a complete authoring effect and review approval. Disabling
 skills through the host or environment also disables this builtin.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,

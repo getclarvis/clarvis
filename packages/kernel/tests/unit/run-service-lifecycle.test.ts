@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { loadEnv, type ContextSnapshotEntry, type ExecutionRecord } from "@clarvis/capability";
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
@@ -69,6 +69,94 @@ function settledRecord(id: string, context: ContextSnapshotEntry[]): ExecutionRe
 }
 
 describe("run-service lifecycle reservation", () => {
+  it.each(["synthetic", "unadmitted"] as const)(
+    "does not capture %s continuation text as authority",
+    async (admission) => {
+      let captured: ExecuteRunArgs | undefined;
+      const service = createRunService({
+        deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+        owner: "owner",
+        ingestGraceMs: 0,
+        operatorAuthorityFor: () =>
+          admission === "unadmitted"
+            ? undefined
+            : {
+                binding: {
+                  owner_key_name: "owner",
+                  session_id: "session",
+                  controller_epoch: "epoch",
+                },
+                captureInput: false,
+                signal: new AbortController().signal,
+              },
+        assembleRunRequest: (params) => params,
+        executeRun: async (args) => {
+          captured = args;
+          return {
+            executionId: "synthetic-authority",
+            response: {
+              status: "completed",
+              result: "done",
+              usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+            },
+          };
+        },
+      });
+      const handle = await service.start({
+        execution_id: "synthetic-authority",
+        messages: [{ role: "user", content: "Continue working on the goal" }],
+      });
+      await handle.done;
+      if (admission === "unadmitted") expect(captured?.operatorAuthoritySeed).toBeUndefined();
+      else expect(captured?.operatorAuthoritySeed?.evidence).toEqual([]);
+      await handle.closed;
+    },
+  );
+  it("captures admitted operator text before skill seeds and keeps controller retirement separate", async () => {
+    const controller = new AbortController();
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: controller.signal,
+      }),
+      assembleRunRequest: (params) => ({
+        ...params,
+        messages: [...params.messages, { role: "user", content: "synthetic skill seed" }],
+      }),
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "authority-test",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "authority-test",
+      messages: [
+        { role: "assistant", content: "assistant permission" },
+        { role: "user", content: [{ type: "text", text: "Commit the changes" }] },
+      ],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Commit the changes",
+    ]);
+    expect(captured?.operatorAuthoritySeed?.binding.outcome_id).toBeString();
+    expect(captured?.operatorAuthoritySignal).toBe(controller.signal);
+    expect(captured?.externalSignal).not.toBe(controller.signal);
+    expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");
+    expect(JSON.stringify(captured?.rawBody)).toContain("synthetic skill seed");
+    await handle.closed;
+  });
   it.each([
     { text: "Preserve the user's confirmed database choice.", expected: "compacted" },
     { text: "An ineffective summary. ".repeat(500), expected: "skipped" },

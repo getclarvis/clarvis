@@ -9,6 +9,7 @@ import type {
   ProviderConfig,
 } from "@clarvis/loop";
 import { parseModelRef, resolveProvider, type NamespacedTool } from "@clarvis/capability";
+import { EFFECT_REVIEW_POLICY } from "./reviewer-policy.ts";
 
 /** Fallback per-call timeout for the judge LLM when the config sets none. */
 const DEFAULT_JUDGE_TIMEOUT_MS = 20_000;
@@ -158,7 +159,7 @@ function allowedFromElicit(answer: Awaited<ReturnType<GuardElicit>>): boolean {
  *
  * @param deps - LLM port, providers, default model, and optional logger/signal;
  *   see {@link JudgeDeps}.
- * @param cfg - the judge configuration: model, system prompt, timeout, and the
+ * @param cfg - reviewer overrides: model, additional guidance, timeout, and the
  *   `on_unsure` policy.
  * @param humanElicit - the human fallback invoked on `unsure` when
  *   {@link GuardJudgeConfig.on_unsure} is not `"deny"`; may be `undefined`.
@@ -208,7 +209,8 @@ export function createJudgeElicit(
     req: ElicitRequest,
   ): Promise<{ value: JudgeElicitAnswer; clean: boolean }> => {
     const messages: Message[] = [
-      { role: "system", content: cfg.prompt },
+      { role: "system", content: EFFECT_REVIEW_POLICY },
+      { role: "user", content: JSON.stringify({ workspace_guidance: cfg.guidance ?? cfg.prompt }) },
       { role: "user", content: factsMessage(req) },
     ];
     let verdict: JudgeVerdict | undefined;
@@ -221,12 +223,15 @@ export function createJudgeElicit(
         tools: [DECIDE_TOOL],
         toolChoice: { type: "function", function: { name: DECIDE_TOOL_NAME } },
         timeoutMs: cfg.timeout_ms ?? DEFAULT_JUDGE_TIMEOUT_MS,
+        maxRetries: cfg.max_retries ?? 1,
+        maxOutputTokens: 1024,
+        reasoningEffort: "low",
         ...(deps.signal !== undefined ? { signal: deps.signal } : {}),
       });
       verdict = parseDecision(result.toolCalls);
-    } catch (err) {
+    } catch {
       deps.logger?.warn(
-        { tool: req.tool, error: err instanceof Error ? err.message : String(err) },
+        { tool: req.tool },
         "guard_judge: judge call failed — escalating to the human channel when available",
       );
       return {

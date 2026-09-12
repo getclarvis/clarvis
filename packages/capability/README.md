@@ -382,3 +382,9 @@ The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted 
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+## Operator authority vocabulary
+
+`operator-authority.ts` exports host evidence, binding, effect classes, compiled envelope and
+versioned state, plus `OPERATOR_AUTHORITY_PORT` and its read-only reader. `inheritOperatorAuthority`
+projects a compiled parent intersection without promoting leader briefs. Kernel owns the writer and
+semantic policy; the loop transports this substrate. See [effect review](../../specs/execution/effect-review.md).

@@ -1,3 +1,4 @@
+import type { Logger } from "@clarvis/capability";
 import type { ExecuteRunOutcome, SkillsProvider } from "@clarvis/loop";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { StartRunParams } from "@clarvis/protocol";
@@ -9,6 +10,9 @@ import { CLARVIS_CONFIGURE_SKILL } from "../skills/clarvis-configure.ts";
 import { createConfigurationCapability } from "./capability.ts";
 import { configurationFileOperation, type ConfigurationFileRequest } from "./files.ts";
 import { kernelError } from "../core/errors.ts";
+import { attestConfiguration } from "../guard/effects/configuration.ts";
+import { createGuardEffectRegistry } from "../guard/effects/registry.ts";
+import { effectReviewServiceFor } from "../guard/effect-review-service.ts";
 
 type ConfigurationRunParams = StartRunParams & { execution_id: string };
 type ConfigurationRunArgs = Omit<RunExecutorArgs, "rawBody">;
@@ -42,6 +46,8 @@ export function createNativeConfigurationRuns(options: {
   nativeExecuteRun: RunExecutor;
   /** Publish actual native placement only while an approved configuration run is executing. */
   onActivity?: (active: boolean) => void;
+  /** Sanitized shared effect audit, independent of diagnostic log level. */
+  audit?: Logger;
 }): NativeConfigurationRuns {
   const owners = new Map<string, Map<string, Consent>>();
   let closed = false;
@@ -169,8 +175,25 @@ export function createNativeConfigurationRuns(options: {
         const capability = createConfigurationCapability({
           roots: options.roots,
           assertAuthorized,
-          operate: (request: ConfigurationFileRequest) => {
-            const write = () => configurationFileOperation(options.roots, request);
+          operate: (request: ConfigurationFileRequest, authority, providers) => {
+            const registry = createGuardEffectRegistry();
+            const reviewer = effectReviewServiceFor({
+              llm: args.deps.llm,
+              providers: providers ?? [],
+              defaultModel: model,
+              authority,
+              registry,
+              options: settings.effect_review,
+              audit:
+                options.audit?.child?.({ run_id: params.execution_id, owner: args.owner }) ??
+                options.audit,
+              signal: externalSignal,
+            });
+            const write = () =>
+              configurationFileOperation(options.roots, request, (input) => {
+                const fact = attestConfiguration(input, registry);
+                reviewer.attest(fact, "configure_clarvis");
+              });
             const mutates =
               request.operation === "write" ||
               request.operation === "edit" ||

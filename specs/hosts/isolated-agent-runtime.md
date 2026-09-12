@@ -357,7 +357,7 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 9 requires resolved host loop and tool-policy snapshots, host-owned human
+successful run result. Protocol revision 12 requires resolved host loop and tool-policy snapshots, host-owned human
 command consent, canonical skill disclosure and multipart plan bridge in addition to guest MCP hook execution, host-owned remote MCP with reverse elicitation,
 typed provider failures and incremental host model events;
 older worker images fail admission and must be rebuilt.

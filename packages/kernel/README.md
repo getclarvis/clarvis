@@ -930,7 +930,7 @@ state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
 Invoke `/clarvis-configure <task>` in Code to start a dedicated native configuration run after human
 elicitation. Its `configure_clarvis` tool provides `list`, `read`, `write`, `edit` and `delete` for
-authored files in the four global/workspace Clarvis/shared-agent roots. `edit` replaces exactly one
+authored files in the four global/workspace Clarvis and `.agents` roots. `edit` replaces exactly one
 matching snippet against the last read revision. Keys, subscriptions, auth, trust and private state
 are excluded. The run executes on the host without sandbox/container or extension/shell execution.
 Consent lasts only in the currently open TUI session; resume or reconnect requires approval again.

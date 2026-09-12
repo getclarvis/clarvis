@@ -1141,9 +1141,10 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   composer remains painted but keyboard-inert until the question owns a visible transcript row, so
   there is no intermediate frame containing neither interaction surface. A dirty configuration
   page pauses that transition without polling renderer frames; closing the page restarts it from the
-  retained request. Each physical tail request waits for the virtual tail to become resident, clamps
-  once, and releases native scrollbar and selection scrolling. Resolving or cancelling the question
-  requests the changed tail geometry again before the composer returns.
+  retained request. Each `returnToTail` mounts the newest slice and scrolls to the native bottom;
+  `App` repeats that after the elicitation layout frame. Native sticky-bottom remains the follow
+  authority. Resolving or cancelling the question requests the changed tail geometry again before the
+  composer returns.
 - `/compact [request]` to compact the context used by the next model call, whether a run is active
   or the latest session turn is already settled.
 - Skill slash commands and prompt injection.

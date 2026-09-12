@@ -19,7 +19,7 @@ and user-authored extensions are not a fixed inventory.
 
 | Surface | Declarations | Source owner |
 | --- | ---: | --- |
-| Coding, files, search, shell, host VCS and monitors | 24 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
+| Coding, files, search, shell and monitors | 23 | `toolDescriptors` in [tools/registry.ts](../../packages/tools/src/tools/registry.ts) |
 | Independent and tracked child spawning | 2 | [lead-tools.ts](../../packages/loop/src/runtime/subagents/lead-tools.ts) |
 | Child listing, polling, waiting, steering and stopping | 5 | `buildTools` in [agents.ts](../../packages/loop/src/runtime/capabilities/agents.ts) |
 | Human question and structured completion | 2 | [ask-user-tool.ts](../../packages/loop/src/runtime/tools/ask-user-tool.ts), [submit-result-tool.ts](../../packages/loop/src/runtime/tools/submit-result-tool.ts) |
@@ -27,7 +27,7 @@ and user-authored extensions are not a fixed inventory.
 | Memory | 7 | `MEMORY_TOOL_CONTRACTS` in [tool-contract.ts](../../packages/memory/src/tool-contract.ts) |
 | External tasks | 10 | `TASK_TOOLS` in [toolset.ts](../../packages/tasks/src/toolset.ts) |
 | Workflow spawning and sequence control | 6 | [tool.ts](../../packages/workflows/src/tool.ts), [work-items.ts](../../packages/workflows/src/work-items.ts), [run-round.ts](../../packages/workflows/src/run-round.ts), [run-workflow.ts](../../packages/workflows/src/run-workflow.ts) |
-| Skill loading | 1 | `loadSkillTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
+| Skill loading and resource reads | 2 | `loadSkillTool` and `readSkillResourceTool` in [skills/tool.ts](../../packages/skills/src/tool.ts) |
 | Public MCP run and controls | 4 | [server/mcp/tools.ts](../../packages/server/src/mcp/tools.ts) |
 | MCP resource listing and reading | 2 | [mcp-client/resources.ts](../../packages/mcp-client/src/resources.ts) |
 | Auxiliary guard decision and workflow title | 2 | [guard/judge.ts](../../packages/kernel/src/guard/judge.ts), [workflow-title.ts](../../packages/kernel/src/workflows/workflow-title.ts) |
@@ -85,10 +85,12 @@ refutations: `verify.accepted` meets that threshold; `verify.rejected` means not
 confirmed**. Failed, missing or inconclusive evidence remains uncertain. Failed or cancelled leaders
 may already have written files; workflow failure is not a workspace rollback.
 
-Memory and skills keep their existing scoped/on-demand guidance. Their write-authority, resource
-paths, pagination and bootstrap exceptions are load-bearing rather than removable verbosity. The
-same applies to guard decision isolation, host-VCS approval, resource data limits and human-question
-semantics; their handlers and authority contracts are unchanged by the instruction review.
+Memory keeps its existing scoped/on-demand guidance. Skills load a named or description-matching
+body through `load_skill`, then bundled files through `read_skill_resource`. Their write-authority,
+resource paths, pagination and bootstrap exceptions are load-bearing rather than removable
+verbosity. The same applies to guard decision isolation, Isolation Sandbox `require_escalated` /
+`host_command` review, resource data limits and human-question semantics; their handlers and
+authority contracts are unchanged by the instruction review.
 
 ## 5. Invariants
 

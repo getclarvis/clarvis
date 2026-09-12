@@ -506,9 +506,10 @@ The TUI shell treats a newly visible request as explicit navigation to the live 
 the composer as a painted but keyboard-inert bridge until `active-elicitation` owns a visible
 transcript row, then requests the tail again before removing that bridge. A dirty full-page editor
 pauses this transition without polling renderer frames; the retained request restarts it reactively
-when the overlay closes. Each `TranscriptViewport` request waits until the selected tail has native layout,
-clamps once and releases its latch, while `App` repeats the request across the question's actual
-layout transition. Clearing the request restores the composer and requests the changed tail again.
+when the overlay closes. `TranscriptViewport.returnToTail` mounts the newest row window, waits for
+native layout, scrolls to the native bottom and releases its transaction. `App` repeats the request
+across the question's actual layout transition. Clearing the request restores the composer and
+requests the changed tail again; native sticky-bottom remains the follow authority.
 A confirmation cannot therefore be stranded in an unmounted live tail while the screen remains
 anchored to older history, no transition frame contains neither interaction surface, and native
 scrollbar movement is not captured after the transition settles. Production:

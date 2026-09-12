@@ -1094,6 +1094,8 @@ for render hooks skipped by culling; live-to-history transfer and solo-to-group-
 still recreate tool presenters. That architecture, its staging/measurement machinery and its owner
 handoff APIs are removed. Do not reintroduce them as a fallback. Current rows can change height and
 rewrap; a semantic anchor transaction preserves reading independently of parser ownership.
+There is no handoff spacer or suspended culling path. Explicit return-to-tail waits for the newest
+row window's layout, scrolls to the native bottom and releases its transaction with culling enabled.
 
 Current deterministic evidence covers the native row and internal presenter through composition,
 pending, execution, terminal and the next user message; finalized diff/code parsers through unrelated

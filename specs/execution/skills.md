@@ -10,12 +10,14 @@ that catalog in three tiers: **list** (name + description metadata), **get** (bo
 bundled resources), **resource/readResource** (one confined file)
 and **readResourceChunk** (one byte-addressed UTF-8 page of a larger confined file)
 (`SkillRegistry` in `packages/skills/src/types.ts`). The tiering is the point — the run's system
-prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts`),
-and the model pulls a body on demand through the `load_skill` tool
+prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts`).
+The model loads a body with `load_skill` when the user names the skill or its description clearly
+matches the task, and reads bundled files with `read_skill_resource`
 (`packages/skills/src/tool.ts`).
 
 The package also ships the second half of the feature: the loop **capability** that gates the catalog
 on an env flag and a per-agent grant, renders the system-prompt section, and dispatches `load_skill`
+and `read_skill_resource`
 (`packages/skills/src/capability.ts`). Its `SkillsProvider` port
 (`packages/skills/src/tool.ts`) is the only surface hosts consume, which is what lets the kernel
 adapt a scanned catalog into the protocol `SkillsService` for slash-commands

@@ -193,7 +193,7 @@ function createAgentToolsRunCapability(
         temporary +
         "\n\n## Commands and Isolation\n\n" +
         "Commands follow the run Isolation. When Isolation is Sandbox, `shell` and `monitor_start` run inside the native sandbox.\n\n" +
-        "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` asking the user to allow that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
+        "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` requesting review of that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
         "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox. Isolated container runs cannot reach the host this way."
       );
     },

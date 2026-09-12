@@ -193,7 +193,7 @@ remains below the 32,768-character regression ceiling and is disclosed on demand
 | Workflow slash launcher | A separate `SKILL.md` declares `agent: admiral` | Normal skill discovery; custom Extension Profiles must select the standalone launcher |
 | Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection state, and only carries a prior trusted/inert verdict across its own workspace mutation |
 | Loop scheduling and background runs | User-operated TUI commands; no new settings fields, grants or native configuration file operations | `/loop` creates in-memory conversation jobs; `/background` hands off an eligible run, `/attach` reattaches and explicit controls manage cancellation |
-| Context and policy prompts | Global context plus supported guard/memory prompts | Workspace `CLARVIS.md`/`AGENTS.md` belong at the workspace root, requiring ordinary authorized workspace editing |
+| Context and policy prompts | Global context plus `shared-agent.md`, `guard-judge.md`, and `memory-policy.md` | Workspace `CLARVIS.md`/`AGENTS.md` belong at the workspace root, requiring ordinary authorized workspace editing |
 | Credentials, subscriptions, workspace trust and UI preferences | Trust records stay outside the configuration file tool; an existing trusted/inert verdict is carried across its approved workspace mutation | Operator controls establish or revoke trust; a functioning default model/provider is a prerequisite for this agent mode |
 
 Custom Extension Profiles select installed plugins and standalone skills; they do not contain

@@ -73,7 +73,8 @@ files; filename exclusions cannot detect embedded secrets.
   ROOT, outside these four roots. Use ordinary authorized workspace editing; <workspace>/.clarvis
   context files are not loaded. CLARVIS.md wins over AGENTS.md per scope; neither grants authority.
   guard-judge.md supplies the local Code judge prompt. Global/workspace memory-policy.md editorial
-  policies combine.
+  policies combine. shared-agent.md is the fleet prompt in those Clarvis roots (replace=nonempty,
+  disabled=empty). Last trusted layer wins; untrusted workspace files are withheld.
 - keys.json, subscriptions.json, auth.json, auth-key.json, workspace-trust.json, state/, cache/,
   OAuth records and environment secret values are not ordinary configuration documents. Use the
   operator's credential/login/trust interfaces; never copy credentials into prompts, skills or logs.
@@ -403,30 +404,25 @@ product defaults. Use only qualified images/digests and supported network modes.
 outbound permits public, host and LAN destinations; internet is currently refused. Docker may use
 native Sandbox fallback after an operational startup failure; Podman has no fallback or recipe and
 fails closed. Integrity/policy/recipe failures stay closed. A started run is never replayed on the
-host. Runtime recipes are operator-authored scripts under global runtime-recipes.
-Docker's recipe block uses name, script (the absolute path under that root) and network
-(none|outbound for the build). Save a POSIX-shell script first, then bind it in global settings.
+host. Docker recipes use name, an absolute script under global runtime-recipes, and build network
+none|outbound; save the script then bind it.
 
 ${configurationExample("runtime")}
 
 sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
-guard configures command approval. guard.mode is
-on, off or auto. off disables command guard evaluation. With on or auto, denied_commands wins over
-allowed_commands and an automatic judge cannot override a deny. auto needs a resolved judge;
-absent/unavailable judging follows the documented
-human/deny policy. Never describe guard.off as turning off filesystem or container isolation.
-Environment flags and host builtins switches are startup inputs, not arbitrary settings.json keys.
-Logging uses CLARVIS_LOG and CLARVIS_LOG_LEVEL, not a logging settings block. Relaunch with the desired
-process environment; an existing hosted generation also needs an idle reload. UI preferences,
-session history, provider authentication and plugin selection have their own host services rather
-than new settings.json keys.
+guard.mode is on, off or auto. off skips command review. With on or auto, denied_commands wins
+and a judge cannot override a deny. auto needs a resolved judge; otherwise follow human/deny
+policy. Isolation Sandbox require_escalated is a host_command ask (on=human, auto may judge).
+No allow_session. Containers reject it; Isolation Host is already unsandboxed. Never describe
+guard.off as turning off filesystem or container isolation.
+Environment flags and host builtins are startup inputs, not settings.json keys. Logging uses
+CLARVIS_LOG and CLARVIS_LOG_LEVEL. Relaunch for process environment; a hosted generation also
+needs idle reload. UI, history, auth and plugin selection keep host services.
 
-When a change appears ineffective: inspect settings parse errors and overlay rejection; verify the
-winning scope, workspace trust, pinned Extension Profile, configured provider and current Agent
-Profile; then check grants, host ceilings, run modes and model tool support. A successful save alone
-does not prove activation. Do not repair an invalid document by discarding unrelated fields; use a
-revision-bound host repair or show the minimal correction. Finish with the actual files/fields
-changed and an explicit saved/effective/reload-required status.
+If a change looks inert: check parse/overlay errors, winning scope, trust, Extension Profile,
+provider and Agent Profile, then grants/ceilings/run modes. A save is not activation. Repair with
+revision-bound host repair, not by dropping unrelated fields. Report files/fields and
+saved/effective/reload-required.
 `,
 } as const;

@@ -1299,8 +1299,14 @@ for this resolved renderer defect. The implemented fix has both layers:
 
 Do not apply a broad `untrack` to generic transcript hosts as a shortcut. The workflow-remount entry
 above already records why generic structural owners may legitimately depend on reactive state. The
-durable boundary is publication: freeze group/section/display metadata before append, and keep live
-dependencies out of committed history.
+durable boundary is publication: freeze the tool *record* before append, keep live `ts.toolGroups()`
+out of committed-history `BlockView`, and keep one Solid owner per tool key. Remaining tool-row
+flicker after the native ScrollBox work was not another viewport machine: it was the live-to-history
+remount plus `solo` → `head` unmounting `ToolLine`. That path is closed by in-place tail ownership
+and a grouping wrapper that does not remount the head. Production:
+`selectTailOwnedKeys`, `LiveTranscriptTail`, `PublicationOwner`, `computeToolGroups`, `BlockView`.
+Tests: `transcript-publication-render.test.tsx` (`a tool keeps one live owner from composing through
+terminal settle`, `a second grouping-eligible tool does not remount the first live owner`).
 
 ---
 

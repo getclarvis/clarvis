@@ -351,11 +351,11 @@ export interface TranscriptStoreDeps {
     args?: Record<string, unknown>;
     diff?: string;
   }) => { signature: string; mutation: { added: number; removed: number; lines: number } | null };
-  /** Injectable publication scheduler used by deterministic grouping tests. */
+  /** Injectable publication scheduler retained by tests; tool grouping no longer stages. */
   publicationScheduler?: TranscriptPublicationScheduler;
-  /** Maximum time a terminal same-tool candidate may wait for a grouping sibling. */
+  /** Ignored. Lead tools publish immediately as one-node batches. */
   publicationToolGroupLatencyMs?: number;
-  /** Maximum terminal same-tool candidates retained by one staging group. */
+  /** Ignored. Lead tools publish immediately as one-node batches. */
   publicationToolGroupMaxEntries?: number;
 }
 
@@ -1116,7 +1116,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       };
     };
     /**
-     * Drop tool nodes that never became more than a composing placeholder.
+     * Close or drop tool nodes that never became more than a composing placeholder.
      *
      * @param inScope - which agent's placeholders to consider, by
      *   `subagentOrder` (`undefined` being the lead).
@@ -1128,7 +1128,9 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
      *   spinning forever. An in-flight model call is over by the time the next
      *   iteration starts, so a placeholder still carrying `inputChars` then is
      *   not a running tool call and saying so is a lie the elapsed timer keeps
-     *   telling. Sub-agent/workflow orchestration is excluded before this
+     *   telling. A named composing row stays in the transcript as an error
+     *   rather than disappearing; only nameless placeholders are removed.
+     *   Sub-agent/workflow orchestration is excluded before this
      *   fallback because its lifecycle belongs to the Sidebar/footer instead.
      *
      *   Scoped by agent because a sub-agent runs concurrently with the lead —
@@ -1137,14 +1139,29 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
      */
     const dropComposing = (inScope: (order: number | undefined) => boolean): void => {
       const doomed: string[] = [];
-      for (const n of state.nodes)
+      for (const n of state.nodes) {
         if (
-          n.key.startsWith(`${execId}::`) &&
-          n.kind === "tool_call" &&
-          n.inputChars !== undefined &&
-          inScope(n.subagentOrder)
+          !(
+            n.key.startsWith(`${execId}::`) &&
+            n.kind === "tool_call" &&
+            n.inputChars !== undefined &&
+            inScope(n.subagentOrder)
+          )
         )
-          doomed.push(n.key);
+          continue;
+        if (typeof n.toolName === "string" && n.toolName.length > 0) {
+          const index = indexOfKey.get(n.key);
+          if (index === undefined) continue;
+          patchKind(index, "tool_call", (node) => {
+            node.status = "error";
+            node.inputChars = undefined;
+            node.inputStreamChars = undefined;
+            node.inputComplete = undefined;
+          });
+          continue;
+        }
+        doomed.push(n.key);
+      }
       for (const key of doomed) remove(key);
     };
     const rememberModel = (wid: string | undefined, model: string | undefined): void => {

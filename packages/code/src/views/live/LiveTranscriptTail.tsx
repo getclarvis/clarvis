@@ -30,8 +30,12 @@ export interface LiveTranscriptTailProps {
   elicit: Accessor<ElicitRequestParams | null>;
   resolveElicit: (result: ElicitResult) => void;
   selectedSubagent: Accessor<string | null>;
-  /** Published keys that already have a committed-history owner. */
-  historyOwnedKeys: Accessor<ReadonlySet<string>>;
+  /**
+   * Keys this tail currently owns. Committed snapshots stay here until the
+   * parent releases them; history omits the same keys so one Solid owner paints
+   * each tool from first token until it leaves the index window.
+   */
+  tailOwnedKeys: Accessor<readonly string[]>;
   onFrontierCountChange?: (count: number) => void;
   splitOpen: Accessor<boolean>;
   notify: (message: string) => void;
@@ -73,7 +77,8 @@ function samePresentedNodes(
  *
  * @remarks The tail stays mounted after manual upward scroll. Native sticky
  * state owns follow-the-end behavior; this owner never unmounts while the run
- * is open.
+ * is open. Tool keys this instance presented remain here after publication so
+ * the Solid tree is not rebuilt for settle.
  */
 export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element {
   const active = (): boolean => props.active?.() ?? true;
@@ -100,7 +105,6 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       ),
   );
   const liveGrouped = createMemo(() => computeGroupedNodes(frontier(), subagentStatus()));
-  const liveToolGroups = createMemo(() => computeToolGroups(liveGrouped().ordered));
   const committedByKey = createMemo(() => {
     const nodes = new Map<string, TranscriptNode>();
     for (const publication of props.store.publicationBatches)
@@ -112,28 +116,36 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   const [presentedNodes, setPresentedNodes] = createSignal<readonly PresentedTranscriptNode[]>(
     Object.freeze(liveGrouped().ordered.map((node) => createPresentedNode(node))),
   );
+  const presentedSnapshot = createMemo(() => presentedNodes().map((presented) => presented.node()));
+  const liveToolGroups = createMemo(() => computeToolGroups(presentedSnapshot()));
+  const liveHeaders = createMemo(() => liveGrouped().headers);
 
   createEffect(() => {
     const current = liveGrouped().ordered;
     const currentByKey = new Map(current.map((node) => [node.key, node] as const));
-    const historical = props.historyOwnedKeys();
+    const owned = props.tailOwnedKeys();
     const committed = committedByKey();
-    const next: PresentedTranscriptNode[] = [];
-    const retained = new Set<string>();
+    const retained = new Map<string, PresentedTranscriptNode>();
     for (const previous of untrack(presentedNodes)) {
-      if (historical.has(previous.key)) continue;
+      if (!owned.includes(previous.key)) continue;
       const currentNode = currentByKey.get(previous.key);
       const published = committed.get(previous.key);
       if (currentNode === undefined && published === undefined) continue;
       if (!belongsToSelection(currentNode ?? published!)) continue;
       if (currentNode !== undefined && published === undefined) previous.update(currentNode);
       else if (published !== undefined) previous.update(published);
-      next.push(previous);
-      retained.add(previous.key);
+      retained.set(previous.key, previous);
     }
-    for (const node of current) {
-      if (retained.has(node.key) || historical.has(node.key)) continue;
-      next.push(createPresentedNode(committed.get(node.key) ?? node));
+    const next: PresentedTranscriptNode[] = [];
+    for (const key of owned) {
+      const existing = retained.get(key);
+      if (existing !== undefined) {
+        next.push(existing);
+        continue;
+      }
+      const node = currentByKey.get(key) ?? committed.get(key);
+      if (node === undefined || !belongsToSelection(node)) continue;
+      next.push(createPresentedNode(node));
     }
     const frozen = Object.freeze(next);
     if (!samePresentedNodes(untrack(presentedNodes), frozen)) setPresentedNodes(frozen);
@@ -170,7 +182,7 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
               sectionFolded={() => false}
               group={() => liveToolGroups().get(presented.key)}
               sectionHeader={() => {
-                const liveHeader = liveGrouped().headers.get(presented.key);
+                const liveHeader = liveHeaders().get(presented.key);
                 return liveHeader?.lead ? undefined : liveHeader;
               }}
               overrideOf={() => undefined}

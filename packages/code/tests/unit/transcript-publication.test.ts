@@ -10,8 +10,6 @@ import {
 } from "../../src/adapters/store.ts";
 import {
   TranscriptPublisher,
-  TRANSCRIPT_TOOL_GROUP_LATENCY_MS,
-  TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES,
   snapshotTranscriptNode,
   type TranscriptPublicationScheduler,
   type TranscriptPublisherHost,
@@ -196,24 +194,21 @@ describe("transcript publication", () => {
     expect(publisher.knownKeyCount()).toBe(0);
   });
 
-  test("retention cancels discarded staging and cannot resurrect it on a later scheduler flush", () => {
-    const { store, scheduler, sink } = fixture();
+  test("retention forgets discarded published tools and cannot resurrect them", () => {
+    const { store, sink } = fixture();
     store.appendUserMessage("discarded turn", undefined, "exec");
     event(sink, runStarted());
     event(sink, toolCall("pending", "read_file", "discarded result"));
     const boundary = store.appendUserMessage("retained turn");
 
-    expect(scheduler.pendingJobs).toBe(1);
     expect(store.memory?.().publication_known_keys).toBe(3);
     expect(store.foldPrefixBefore(boundary, "1 earlier turn folded")).toBe(true);
-    expect(scheduler.pendingJobs).toBe(0);
     expect(store.memory?.()).toMatchObject({
       transcript_nodes: 2,
       publication_batches: 2,
       publication_known_keys: 1,
     });
 
-    scheduler.flush();
     expect(
       store.publicationBatches
         .flatMap((publication) => publication.nodes)
@@ -311,35 +306,32 @@ describe("transcript publication", () => {
     expect(mutable?.kind === "tool_call" ? mutable.result : undefined).toBe("changed by replay");
   });
 
-  test("same-tool calls seal as one prepublication group and a different tool closes it", () => {
-    const { store, scheduler, sink } = fixture();
+  test("each Lead tool publishes immediately as its own frozen batch", () => {
+    const { store, sink } = fixture();
     event(sink, runStarted());
     event(sink, toolCall("a", "read_file", "A"));
     event(sink, toolCall("b", "read_file", "B"));
-    expect(store.publicationBatches).toHaveLength(0);
-    expect(scheduler.delays).toEqual([TRANSCRIPT_TOOL_GROUP_LATENCY_MS]);
-
-    event(sink, toolCall("c", "search", "C"));
-    expect(store.publicationBatches).toHaveLength(1);
+    expect(store.publicationBatches).toHaveLength(2);
     expect(store.publicationBatches[0]!.kind).toBe("tool_group");
-    expect(store.publicationBatches[0]!.nodes.map((node) => node.key)).toEqual([
-      "exec::a",
-      "exec::b",
+    expect(store.publicationBatches.map((batch) => batch.nodes.map((node) => node.key))).toEqual([
+      ["exec::a"],
+      ["exec::b"],
     ]);
-    expect(store.publicationBatches[0]!.toolGroups["exec::a"]?.role).toBe("head");
-    expect(store.publicationBatches[0]!.toolGroups["exec::b"]?.role).toBe("member");
-    expect(
-      store.publicationBatches[0]!.toolGroups["exec::a"]?.members?.map((node) => node.key),
-    ).toEqual(store.publicationBatches[0]!.nodes.map((node) => node.key));
-    const firstPublished = store.publicationBatches[0]!.nodes[0];
-    expect(firstPublished?.kind).toBe("tool_call");
-    if (firstPublished?.kind !== "tool_call") throw new Error("tool group head missing");
-    expect(store.publicationBatches[0]!.toolGroups["exec::a"]?.members?.[0]).toBe(firstPublished);
+    expect(store.publicationBatches[0]!.toolGroups["exec::a"]).toEqual({
+      role: "solo",
+      ordinal: 0,
+      size: 1,
+    });
+    expect(store.publicationBatches[1]!.toolGroups["exec::b"]).toEqual({
+      role: "solo",
+      ordinal: 0,
+      size: 1,
+    });
     expect(Object.isFrozen(store.publicationBatches[0]!.toolGroups)).toBe(true);
 
-    scheduler.flush();
-    expect(store.publicationBatches[1]!.nodes.map((node) => node.key)).toEqual(["exec::c"]);
-    expect(store.publicationBatches[1]!.toolGroups["exec::c"]).toEqual({
+    event(sink, toolCall("c", "search", "C"));
+    expect(store.publicationBatches[2]!.nodes.map((node) => node.key)).toEqual(["exec::c"]);
+    expect(store.publicationBatches[2]!.toolGroups["exec::c"]).toEqual({
       role: "solo",
       ordinal: 0,
       size: 1,
@@ -347,7 +339,7 @@ describe("transcript publication", () => {
 
     event(sink, toolCall("d", "read_file", "D"));
     event(sink, iterationStarted(1));
-    expect(store.publicationBatches[2]!.nodes.map((node) => node.key)).toEqual(["exec::d"]);
+    expect(store.publicationBatches[3]!.nodes.map((node) => node.key)).toEqual(["exec::d"]);
   });
 
   test("live publication never groups the same leaf name from different MCP servers", () => {
@@ -356,7 +348,6 @@ describe("transcript publication", () => {
     event(sink, toolCall("alpha-run", "run", "A", undefined, "alpha"));
     event(sink, toolCall("beta-run", "run", "B", undefined, "beta"));
 
-    scheduler.flush();
     expect(store.publicationBatches).toHaveLength(2);
     expect(store.publicationBatches[0]!.nodes.map((node) => node.key)).toEqual(["exec::alpha-run"]);
     expect(store.publicationBatches[0]!.toolGroups["exec::alpha-run"]?.role).toBe("solo");
@@ -405,28 +396,22 @@ describe("transcript publication", () => {
     expect(toolPublications[1]!.toolGroups["exec::beta-run"]?.role).toBe("solo");
   });
 
-  test("continuous same-tool traffic seals at the default pressure ceiling", () => {
-    const scheduler = new ManualPublicationScheduler();
-    const store = createTranscriptStore({
-      publicationScheduler: scheduler,
-      publicationToolGroupLatencyMs: 80,
-    });
+  test("continuous same-tool traffic publishes one batch per call without waiting", () => {
+    const store = createTranscriptStore();
     const sink = store.openRun("exec");
     event(sink, runStarted());
-    for (let index = 0; index < TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES - 1; index += 1)
+    for (let index = 0; index < 8; index += 1)
       event(sink, toolCall(`call-${index}`, "read_file", `result-${index}`));
-    expect(store.publicationBatches).toHaveLength(0);
-    event(
-      sink,
-      toolCall(`call-${TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES - 1}`, "read_file", "ceiling result"),
+    expect(store.publicationBatches).toHaveLength(8);
+    expect(store.publicationBatches.map((batch) => batch.nodes)).toEqual(
+      Array.from({ length: 8 }, (_, index) => [
+        expect.objectContaining({ key: `exec::call-${index}` }),
+      ]),
     );
-    expect(store.publicationBatches).toHaveLength(1);
-    expect(store.publicationBatches[0]!.nodes).toHaveLength(TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES);
 
     event(sink, toolCall("after-ceiling", "read_file", "after"));
-    expect(store.publicationBatches).toHaveLength(1);
-    scheduler.flush();
-    expect(store.publicationBatches[1]!.nodes.map((node) => node.key)).toEqual([
+    expect(store.publicationBatches).toHaveLength(9);
+    expect(store.publicationBatches[8]!.nodes.map((node) => node.key)).toEqual([
       "exec::after-ceiling",
     ]);
   });

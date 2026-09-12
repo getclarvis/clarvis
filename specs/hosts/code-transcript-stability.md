@@ -95,7 +95,7 @@ Publication and viewport selection are internal Code contracts, not public works
 | `CommittedHistoryPublicationStore` | narrow history port exposing frozen batches only |
 | `CommittedHistory` | one native OpenTUI `ScrollBox` owner for Lead and child projections |
 | `TRANSCRIPT_SCROLLBAR_COLUMNS` | reserves one vertical-scrollbar column in every history layout |
-| `LiveTranscriptTail` | content-height mutable tail and view-local live-to-committed handoff rendered as the final child of the history ScrollBox |
+| `LiveTranscriptTail` | content-height mutable tail that keeps presented Solid owners through terminal publication until the suffix is released |
 | `transcriptReadingRunwayRows` | chooses the fixed three-row normal or one-row compact physical runway from terminal height only |
 | `LeadActivityLine` | persistent one-row `thinking`/`working`/`ready` owner immediately above the composer and outside history |
 | native `<scrollbox>` | OpenTUI ScrollBox with `stickyStart="bottom"` and `viewportCulling` always on |
@@ -186,8 +186,6 @@ plan/workflow progress never enter a publication batch. There is no semantic tra
 
 | Bound | Current value | Production symbol |
 | ---------------------------- | ----------------------------------------: | ----------------------------------------------------------------------------------- |
-| same-tool staging latency | 80 ms | `TRANSCRIPT_TOOL_GROUP_LATENCY_MS` |
-| same-tool staging pressure | 8 terminal calls | `TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES` |
 | full-mount ceiling | 80 committed batches | `TRANSCRIPT_FULL_MOUNT_CEILING = 80` |
 | long-session mounted slice | 40 committed batches | `TRANSCRIPT_MOUNTED_BATCH_COUNT = 40` |
 | one edge reveal | 20 committed batches | `TRANSCRIPT_REVEAL_BATCH_COUNT = 20` |
@@ -236,10 +234,10 @@ The full-screen implementation follows the supported components instead:
 | `text_delta` | patch assistant frontier candidate | never directly |
 | `reasoning` | patch settled iteration reasoning candidate | with `iteration_completed` |
 | `iteration_completed` | replace streamed text with authoritative `response` | commentary now; final/unphased answer follows §4.2 |
-| `model_retry` | remove composing placeholders from the failed attempt, then show retry status/countdown in the frontier | never |
+| `model_retry` | settle named composing tools as error (drop only nameless placeholders), then show retry status/countdown in the frontier | never |
 | `model_error` | terminal iteration error candidate | with iteration or final sweep |
 | `tool_input_delta`, `tool_call_started`, `tool_output_delta` for an admitted ordinary tool | one mutable tool candidate/tail; cumulative input stays composing until explicit `complete: true`, then pending until actual start | never directly |
-| `tool_call` for an admitted ordinary tool | reserve bounded terminal snapshot immediately | after group closure |
+| `tool_call` for an admitted ordinary tool | reserve bounded terminal snapshot immediately | append one frozen one-node batch immediately |
 | any composing/started/output/terminal tool event for a Lead-owned supervision or workflow-orchestration identity | suppress before frontier creation/staging | none; no transient or terminal Lead row |
 | `delegation_created` | register child semantics and Sidebar/footer state; the first delegation may open/reveal Agents once for this execution | append one friendly frozen Lead-owned `spawned` marker |
 | `delegation_started` | update child/Sidebar/footer running state | none; it cannot create or mutate a Lead marker |
@@ -310,13 +308,14 @@ After stored reconciliation (or definitive degradation), `completeRun` appends
 already-painted answer row: the outcome appears after it. When admitted physically, both nodes share
 one owner. No post-render movement touches committed history.
 
-Grouping-eligible calls with the same exact `(mcpName, toolName)` pair wait at most 80 ms from the
-first candidate and at most eight terminal entries. A different server, different tool, mutation,
-non-tool boundary, sub-agent terminal event or run close flushes staging. The same pair comparison
-governs live staging, terminal sweep and frozen sub-agent batch metadata; a leaf-only renderer lookup
-identity never groups calls across MCP servers. Frozen `solo`/`head`/`member` metadata never changes.
-Semantic sub-agent sections append in terminal completion order and are visible only in the matching
-isolated transcript; spawn-order navigation remains a Sidebar concern.
+Each Lead `tool_call` publishes immediately as its own frozen one-node batch. Visual grouping of
+consecutive exploration tools is a paint-time wrapper over those keys: identity is
+`(mcpName, toolName, subagentId)`, mutations stay `solo`, and a compact header must not unmount the
+head's `ToolLine`. Frozen per-batch `toolGroups` on a one-node publication are `solo`; consecutive
+mounted keys may still compact without rewriting reserved snapshots. A leaf-only renderer lookup
+identity never groups calls across MCP servers. Semantic sub-agent sections append in terminal
+completion order and are visible only in the matching isolated transcript; spawn-order navigation
+remains a Sidebar concern.
 
 ### 4.3 Direct-child index window
 
@@ -385,8 +384,12 @@ Child frontier nodes are filtered out there; selecting a child instead gives tha
 projection its own matching mutable tail. Provider tool phases for Lead-owned
 supervision/delegation/workflow orchestration are filtered before this tail; workflow leaders never
 enter either tail.
-When one frontier artifact in the active projection commits, publication moves the frozen snapshot
-into committed history and `historyOwnedKeys` removes its mutable duplicate from the tail. Later
+When one frontier artifact in the active projection commits, publication freezes the snapshot but
+does not transfer the Solid owner. `selectTailOwnedKeys` keeps a chronological suffix of already
+presented keys in `LiveTranscriptTail` and `PublicationOwner` omits those keys, so a tool's
+`BlockView` is updated in place from composing through terminal settle. A newer committed key the
+tail never presented, or a key that leaves the mounted index slice, releases the suffix to history.
+Two `BlockView`s with the same `id={key}` must not exist in the ScrollBox. Later
 mutable content in that same projection remains after it throughout the update.
 For streaming Markdown, the mutable tree's row-height high-water mark remains active only until the
 final syntax tree is ready. The preparing final tree keeps its intrinsic height and must not inherit
@@ -399,21 +402,24 @@ height floor after the final tree is ready` and `a tall streaming reply does not
 above the run outcome`).
 
 History ownership extends through every committed publication before the active slice's end while
-following the tail, and through the full semantic projection while reading older history. If several
+following the tail, except keys still presented by the live tail. If several
 stages seal while a full-region view is active, those snapshots remain owned by history navigation;
 retaining them after a newer outcome in the live tail would reverse chronology. Revealing an earlier
 checkpoint or scrolling back loads its original publication without changing the semantic ledger.
-Production: `historyOwnedKeys` in
-[`CommittedHistory`](../../packages/code/src/views/history/CommittedHistory.tsx), propagated by
-[`TranscriptRegion`](../../packages/code/src/views/app/TranscriptRegion.tsx) to
+Production: `selectTailOwnedKeys` in
+[`tail-ownership.ts`](../../packages/code/src/views/history/tail-ownership.ts), used by
+[`CommittedHistory`](../../packages/code/src/views/history/CommittedHistory.tsx) and
 [`LiveTranscriptTail`](../../packages/code/src/views/live/LiveTranscriptTail.tsx).
-Test: `keeps fast checkpoint stages in chronological flow after an inactive goal view` in
+Test: `a tool keeps one live owner from composing through terminal settle` and
+`keeps fast checkpoint stages in chronological flow after an inactive goal view` in
 [`transcript-publication-render.test.tsx`](../../packages/code/tests/integration/transcript-publication-render.test.tsx)
-covers short and virtualized stages, retained checkpoint navigation and return to the final tail.
+cover in-place settle identity, short and virtualized stages, retained checkpoint navigation and
+return to the final tail.
 
-The same handoff remains bounded while the reader is away. Committed frontier artifacts leave the
-mutable tail and enter the frozen batch list; the active index slice decides whether their native
-owners are mounted. No handoff spacer or retained offscreen syntax tree is created.
+The same handoff remains bounded while the reader is away. Committed suffix keys the tail still owns
+stay in the tail; other committed artifacts enter the frozen batch list and the active index slice
+decides whether their native owners are mounted. No handoff spacer or retained offscreen syntax tree
+is created.
 
 The tail always ends with `transcript-reading-runway`: three physical rows normally and one row only
 at terminal height ≤28. Its height depends solely on the height band, never on streaming or activity,
@@ -580,12 +586,14 @@ projections, clocks, spinners, run host or live views. Its store port contains f
 only. Production: `CommittedHistoryPublicationStore`. Test:
 `architecture-boundary.test.ts` (committed-history boundary).
 
-**INV-TP13.** Same-pair staging closes after 80 ms, eight terminal calls or a semantic barrier;
-`mcpName` and `toolName` are compared separately in live staging, terminal sweep and sub-agent batch
-metadata, and frozen group metadata never changes. Production: `publicationToolIdentity`,
-`samePublicationToolIdentity`, `publicationToolGroups`, `TranscriptPublisher.#publishTool` and
-`TranscriptPublisher.#publishRemainingLead`. Test: `transcript-publication.test.ts` (group bounds,
-barriers and equal leaf names from different MCP servers in all three publication paths).
+**INV-TP13.** Each Lead tool publishes immediately as its own frozen one-node batch. Visual grouping
+uses `(mcpName, toolName, subagentId)` over consecutive keys and must not unmount the head
+`ToolLine`; frozen per-batch `toolGroups` on a one-node publication are `solo`. A leaf-only name
+never groups calls across MCP servers. Production: `computeToolGroups`, `publicationToolGroups`,
+`TranscriptPublisher.#publishTool`, `BlockView`. Tests: `transcript-publication.test.ts` (immediate
+one-node batches and equal leaf names from different MCP servers), `tool-groups.test.ts`
+(`subagentId` identity) and `transcript-publication-render.test.tsx` (second grouping-eligible tool
+does not remount the first live owner).
 
 **INV-TP14.** Each delegation has exactly two Lead-owned lifecycle publications: a friendly frozen
 spawned marker at `delegation_created`, then a separate friendly frozen completed/failed marker at its
@@ -636,11 +644,11 @@ not schedule syntax-measurement frames or gate publication on equal dimensions. 
 
 **INV-TP21.** Frozen history, handoff artifacts and the mutable frontier for the active projection
 form one chronological ScrollBox flow. The tail remains the final flow child after upward input so
-OpenTUI can preserve manual-scroll geometry. A Lead frontier artifact's final visible row before
-semantic commitment equals its first visible row as a committed owner; a following Lead
-response/tool remains below it in both frames. A committed handoff moves to frozen history and
-leaves the mutable tail; the active index slice decides whether its native owner stays mounted. No
-measured handoff spacer is retained. Child tools, reasoning and answers cannot enter
+OpenTUI can preserve manual-scroll geometry. A Lead frontier artifact's Solid owner survives terminal publication: the tail updates the presented
+node with the frozen snapshot and history omits that key until the suffix is released or the index
+slice no longer includes it. A following Lead response/tool remains below it in both frames. No
+measured handoff spacer is retained. Two `BlockView`s must not share `id={key}` in the same
+ScrollBox. Child tools, reasoning and answers cannot enter
 this main flow; only the two typed, append-only delegation lifecycle markers may add chronological
 Lead rows. Provider composing, started, output and terminal tool plumbing for
 supervision/delegation/workflow orchestration cannot enter it either. There is no fixed-height live

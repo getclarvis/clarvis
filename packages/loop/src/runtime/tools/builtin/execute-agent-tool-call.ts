@@ -124,18 +124,27 @@ export async function executeAgentToolCall(
 
   const callArgs = call.arguments as Record<string, unknown>;
 
-  trace.record("tool_call_started", {
-    agent,
-    ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
-    iteration_ref: iteration,
-    call_id: callId,
-    started_at: toolStart,
-    name: call.name,
-    arguments: tracedArguments,
-    ...startedControl,
-  });
+  let terminal = false;
+  let started = false;
+  const recordStarted = (): void => {
+    if (terminal || started || signal?.aborted || runSignal?.aborted) return;
+    started = true;
+    trace.record("tool_call_started", {
+      agent,
+      ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
+      iteration_ref: iteration,
+      call_id: callId,
+      started_at: toolStart,
+      name: call.name,
+      arguments: tracedArguments,
+      ...startedControl,
+    });
+  };
+
+  if (control === undefined) recordStarted();
 
   const onOutput = (chunk: string): void => {
+    if (terminal || runSignal?.aborted) return;
     trace.signal("tool_output_delta", {
       agent,
       ...(subagentInstanceId !== undefined ? { subagent_instance_id: subagentInstanceId } : {}),
@@ -144,13 +153,20 @@ export async function executeAgentToolCall(
     });
   };
 
-  const { isError, text, images, diff, guard } = await toolset.dispatch(
-    call.name,
-    callArgs,
-    signal,
-    onOutput,
-  );
-  const interrupted = wasOperatorInterrupted(runSignal ?? signal, signal);
+  const { isError, text, images, diff, guard, abortUnsettled, executionAborted } =
+    await toolset.dispatch(
+      call.name,
+      callArgs,
+      signal,
+      onOutput,
+      control === undefined ? undefined : recordStarted,
+      runSignal,
+    );
+  terminal = true;
+  const interrupted =
+    executionAborted === true &&
+    !abortUnsettled &&
+    wasOperatorInterrupted(runSignal ?? signal, signal);
   const resultText = interrupted ? `Shell interrupted by the operator.\n${text}` : text;
   const errText = interrupted || isError ? resultText : null;
   const productive = !isError && !interrupted;

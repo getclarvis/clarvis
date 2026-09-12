@@ -64,7 +64,12 @@ and [prompt caching](prompt-cache.md). Instruction edits must not reposition non
 
 ## 4. Behavior
 
-The built-in leads choose delegation only when it adds value and give children a self-contained
+The default shared prompt requires agents to work directly unless the user explicitly requests
+delegation or an applicable loaded skill or agent-instruction file (such as `AGENTS.md` or
+`CLARVIS.md`) explicitly instructs it. Tool availability, profile permissions, complexity and
+efficiency gains are not sufficient. The rule covers independent spawning, tracked delegation and
+workflow leaders, within the instruction's scope and existing profile/grant limits. This is prompt
+policy, not a new runtime authorization gate. The built-in leads follow it and give children a self-contained
 brief: necessary context, bounded scope, constraints and expected result. Children do not inherit
 the caller's conversation and share its workspace. Concurrent reads can conflict with writes too.
 Leaves return missing-context or authority blockers; they cannot invent access to a parent question
@@ -93,6 +98,15 @@ verbosity. The same applies to guard decision isolation, Isolation Sandbox `requ
 authority contracts are unchanged by the instruction review.
 
 ## 5. Invariants
+
+**Explicit delegation instruction.** The shared default states the direct-work fallback, accepted
+instruction sources, and prohibition on inferring authorization from usefulness or tool availability.
+Production: `DEFAULT_SHARED_AGENT_PROMPT` in
+[shared-agent-prompt.ts](../../packages/loop/src/runtime/prompts/shared-agent-prompt.ts), `MARSHALL`
+and `ADMIRAL` in `packages/kernel/src/config/builtin-agents/`. Test:
+`requires explicit delegation instructions rather than inferred usefulness` in
+[shared-agent-prompt.test.ts](../../packages/loop/tests/unit/shared-agent-prompt.test.ts) and the lead
+handoff cases in [builtin-agents.test.ts](../../packages/kernel/tests/component/builtin-agents.test.ts).
 
 1. **Small role prompts retain the harness contract.** All five profiles state tool availability,
    delegated context isolation, shared workspace and conditional structured completion; leads keep

@@ -277,7 +277,7 @@ function ToolLine(props: {
   );
   const isCollapsed = (): boolean => !props.showBody && props.node.status !== "running";
   const failureSummary = (): string => {
-    if (props.node.toolPhase === "interrupted") return "Interrupted by operator";
+    if (props.node.interruption?.source === "operator") return "Interrupted by operator";
     const error = display().error ?? "No authoritative result";
     if (toolIdentity(props.node.mcpName, props.node.toolName) === "shell") {
       const shell = parseBash(display().result, error);
@@ -328,7 +328,7 @@ function ToolLine(props: {
       backgroundColor={tokens.bg}
     >
       <box paddingLeft={props.indent ? 3 : 1} flexDirection="row" width="100%" flexShrink={0}>
-        <box flexGrow={1} minWidth={0}>
+        <box flexGrow={1} flexBasis={0} minWidth={0}>
           <text
             onMouseDown={props.indent ? undefined : props.onHeaderClick}
             wrapMode="none"
@@ -393,6 +393,8 @@ function ToolLine(props: {
         </box>
         <Show when={props.showStopShell === true}>
           <text
+            width={13}
+            flexShrink={0}
             wrapMode="none"
             selectable={false}
             fg={props.node.interruptRequest === "pending" ? tokens.muted : tokens.del}

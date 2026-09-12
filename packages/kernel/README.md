@@ -799,6 +799,15 @@ source. If the run closes first, the pending call rejects with `not_found`; a ho
 distinguish applied steering from an accepted-but-undelivered queue entry and restore the user's
 input.
 
+`RunHandle.interruptTool` coalesces pending requests into at most 16 token entries, each with one
+first-call promise and one shared repeat promise. On acceptance, the first receives `accepted` and
+pending repeats receive `already_requested`. A 30-second absolute deadline settles requests still
+awaiting a subscriber as `not_running`, but rejects stalled delivered requests as `unavailable`;
+repeats do not renew it. Closing the run settles pending requests as `not_running`.
+Container delivery failures, malformed receipts and private-channel disconnection instead reject
+with bounded, sanitized errors, without asserting that a shell stopped. Timers and queued deliveries
+are released on settlement; late responses cannot settle a newer request for the same token.
+
 Managed and remote run handles expose their bounded event stream's current item, estimated-byte and
 dropped-event counters through the protocol's optional `buffered()` diagnostic surface. The stream
 maintains these values incrementally, so a memory ledger does not walk or duplicate the queue.
@@ -993,7 +1002,10 @@ the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. 
 value matches the product default instead of shadowing it with the former 50-iteration profile cap.
 
 The builtin bodies define roles and the minimum harness handoff contract, not a generic engineering
-handbook. All five condition instructions on the tools actually exposed, distinguish a delegated
+handbook. Leads act directly unless delegation is explicitly requested under the shared policy:
+by the user, an applicable loaded skill, or an agent-instruction file such as `AGENTS.md` or
+`CLARVIS.md`. Harness availability alone is not authorization; profile and grant limits still apply.
+All five condition instructions on the tools actually exposed, distinguish a delegated
 brief from caller conversation, acknowledge the shared workspace, and select `submit_result` only
 when present. Marshall covers independent versus tracked delegation, background handles, review of
 returned work and live-child finalization. Admiral adds the workflow spawn ladder, revision-matched

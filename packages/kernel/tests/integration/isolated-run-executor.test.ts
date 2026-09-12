@@ -28,6 +28,89 @@ afterEach(async () => {
 });
 
 describe("isolated run executor", () => {
+  it.each(["refused", "sync_throw", "malformed", "wrong_token", "disconnect", "timeout"] as const)(
+    "rejects interrupt delivery without fabricating not_running: %s",
+    async (mode) => {
+      const finish = deferred();
+      const received = deferred();
+      const toolInterrupts = createToolInterruptChannel();
+      let signal: AbortSignal | undefined;
+      const executor = createIsolatedRunExecutor({
+        generation: "generation",
+        workspaceRoot: tmpdir(),
+        router: createRuntimeAuthorityRouter("generation"),
+        pollIntervalMs: 5,
+        session: {
+          closed: false,
+          info: {} as RuntimeInfo,
+          async startRun() {
+            await finish.promise;
+            throw new Error("runtime disconnected");
+          },
+          interruptTool(_runId, _payload, requestSignal) {
+            signal = requestSignal;
+            received.resolve();
+            if (mode === "sync_throw") throw new Error("failed Bearer secret-token");
+            if (mode === "refused") return Promise.reject(new Error("failed Bearer secret-token"));
+            if (mode === "malformed") return Promise.resolve({ status: "invalid" });
+            if (mode === "wrong_token")
+              return Promise.resolve({ status: "accepted", tool_execution_id: "tok_other" });
+            return new Promise((_resolve, reject) => {
+              requestSignal!.addEventListener("abort", () => reject(new Error("disconnected")), {
+                once: true,
+              });
+            });
+          },
+          async steer() {},
+          async callHookMcp() {},
+          async elicitMcp() {},
+          async stop() {},
+          async cancel() {},
+          async exposePort() {
+            throw new Error("not exercised");
+          },
+        },
+        authority: () => ({
+          model: {
+            async execute() {
+              return { events: [], outputBytes: 0 };
+            },
+            revoke() {},
+          },
+          capabilities: { async invoke() {}, revoke() {} },
+          terminalParticipants: () => [],
+        }),
+      });
+      const running = executor({
+        rawBody: { execution_id: "run" },
+        owner: "owner",
+        deps: {} as never,
+        toolInterrupts,
+      });
+      const runFailure = running.catch((error: unknown) => error);
+      const pending = toolInterrupts.interruptTool("tok_shell");
+      const failure = pending.catch((error: unknown) => error);
+      try {
+        await received.promise;
+        if (mode === "disconnect") finish.resolve();
+        const error = await failure;
+        expect(error).toMatchObject({ code: "unavailable" });
+        expect((error as Error).message).not.toContain("secret-token");
+        if (mode === "timeout" && !signal?.aborted) {
+          await new Promise<void>((resolve) =>
+            signal!.addEventListener("abort", () => resolve(), { once: true }),
+          );
+        }
+        if (mode === "disconnect" || mode === "timeout") expect(signal?.aborted).toBe(true);
+      } finally {
+        finish.resolve();
+        await runFailure;
+        toolInterrupts.close();
+      }
+    },
+    60_000,
+  );
+
   it("does not transport operator authority into the guest envelope", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-authority-retirement-"));
     directories.push(root);

@@ -24,6 +24,10 @@ import {
 import { HOME_ENV } from "@clarvis/paths";
 import type { SkillContent, SkillInfo } from "@clarvis/skills";
 import type { TraceStore } from "@clarvis/trace";
+import type { RunEvent, RunHandle } from "@clarvis/protocol";
+import { createManagedRun } from "../../src/runs/managed-run.ts";
+import { engineEventToProto } from "../../src/runs/map-events.ts";
+import { engineResultToProto } from "../../src/runs/map-result.ts";
 import {
   RUNTIME_PROTOCOL_REVISION,
   runtimeSettingsSchema,
@@ -605,4 +609,252 @@ test.skipIf(!enabled)(
     }
   },
   300_000,
+);
+
+test.skipIf(!enabled)(
+  "interrupts a real guest shell through its handle and continues the same run with partial output",
+  async () => {
+    const executable = Bun.which(engine);
+    if (executable === null || imageDigest === undefined || context === undefined)
+      throw new Error(`${engine} shell interruption canary inputs disappeared after admission`);
+    const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
+    await mkdir(buildRoot, { recursive: true });
+    const root = await mkdtemp(join(buildRoot, `${engine}-interrupt-`));
+    const workspaceRoot = join(root, "workspace");
+    const generation = `shell-interrupt-${randomUUID()}`;
+    const executionId = `exec_${randomUUID()}`;
+    const stdoutMarker = `GUEST_STDOUT_${randomUUID()}`;
+    const stderrMarker = `GUEST_STDERR_${randomUUID()}`;
+    const unreachableMarker = `UNINTERRUPTED_TAIL_${randomUUID()}`;
+    const caches = new Set<string>();
+    const engineCommands: string[][] = [];
+    const controlOptions = {
+      executable,
+      context,
+      // The runner supplies a disposable HOME containing only its QA engine connection.
+      environment: Object.fromEntries(
+        ["HOME", "PATH", "XDG_RUNTIME_DIR"].flatMap((name) => {
+          const value = process.env[name];
+          return value === undefined ? [] : [[name, value]];
+        }),
+      ),
+    };
+    const nodeControl =
+      engine === "podman"
+        ? createNodePodmanControl({ ...controlOptions, connection: context })
+        : createNodeDockerControl(controlOptions);
+    const control: DockerControl = {
+      async run(args, signal) {
+        engineCommands.push([...args]);
+        const result = await nodeControl.run(args, signal);
+        if (result.exitCode === 0 && args[0] === "volume" && args[1] === "create")
+          caches.add(args.at(-1)!);
+        return result;
+      },
+      attach: (args) => nodeControl.attach(args),
+    };
+    const events: RunEvent[] = [];
+    let nextModelReady = false;
+    const releaseModel = Promise.withResolvers<void>();
+    let modelCalls = 0;
+    const store = traceStore();
+    const deps = {
+      env: loadEnv({ CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" }),
+      capabilities: [createAgentToolsCapability()],
+      traceStore: store,
+      llm: {
+        async call(params) {
+          modelCalls++;
+          const usage = {
+            input_tokens: 5,
+            output_tokens: 3,
+            cached_tokens: 0,
+            cache_write_tokens: 0,
+          };
+          if (modelCalls === 1) {
+            return {
+              toolCalls: [
+                {
+                  id: "interrupt-shell",
+                  name: "shell",
+                  arguments: {
+                    command: `printf '%s\\n' '${stdoutMarker}'; printf '%s\\n' '${stderrMarker}' >&2; sleep 120; printf '%s\\n' '${unreachableMarker}'`,
+                    timeout_ms: 150_000,
+                  },
+                },
+              ],
+              usage,
+            };
+          }
+          expect(modelCalls).toBe(2);
+          // Inspect tool messages only: assistant arguments already contain all three markers.
+          const results = params.messages.filter((message) => message.role === "tool");
+          expect(results).toHaveLength(1);
+          const result = JSON.stringify(results);
+          expect(result).toContain(stdoutMarker);
+          expect(result).toContain(stderrMarker);
+          expect(result).not.toContain(unreachableMarker);
+          expect(result).toMatch(/interrupt/iu);
+          nextModelReady = true;
+          await releaseModel.promise;
+          return { text: "guest-shell-interrupted-and-continued", usage };
+        },
+      } satisfies LLMProvider,
+    } as ExecuteRunDeps;
+    let runtime: Awaited<ReturnType<typeof createLocalDockerRuntime>> | undefined;
+    let handle: RunHandle | undefined;
+    let consume: Promise<void> | undefined;
+    try {
+      await mkdir(workspaceRoot);
+      const settings = runtimeSettingsSchema.parse({
+        backend: engine,
+        executable,
+        connection: context,
+        image_digest: imageDigest,
+        network: "none",
+      });
+      if (settings.backend === "native") throw new Error("canary requires a container runtime");
+      runtime = await (engine === "podman" ? createLocalPodmanRuntime : createLocalDockerRuntime)(
+        {
+          generation,
+          ownerId: generation,
+          project: { id: generation },
+          workspace: {
+            id: generation,
+            projectId: generation,
+            label: "shell interruption",
+            kind: "primary",
+          },
+          workspaceRoot,
+          configurationRevision: "fixture",
+          extensionRevision: "fixture",
+          deps,
+          settings,
+        },
+        { control, roots: { env: { HOME: join(root, "home"), [HOME_ENV]: join(root, "state") } } },
+      );
+      const activeRuntime = runtime;
+      expect(runtime.info).toMatchObject({
+        engine,
+        imageDigest,
+        lifecycle: "ready",
+        network: "none",
+      });
+      handle = createManagedRun({
+        executionId,
+        async execute(managed) {
+          const outcome = await activeRuntime.executeRun({
+            owner: generation,
+            deps,
+            externalSignal: managed.signal,
+            toolInterrupts: managed.toolInterrupts,
+            onEvent(event) {
+              const mapped = engineEventToProto(event);
+              if (mapped !== null) managed.emit(mapped);
+            },
+            rawBody: {
+              execution_id: executionId,
+              messages: [{ role: "user", content: "Run the interruptible guest shell fixture." }],
+              servers: [],
+              profiles: [
+                {
+                  name: "solo",
+                  model: "anthropic/test",
+                  tools: [],
+                  grants: ["run_commands"],
+                  iteration_limit: 3,
+                },
+              ],
+              entry: "solo",
+              providers: [{ name: "anthropic", kind: "anthropic" }],
+              guard_mode: "off",
+              memory: "off",
+              budget: { on_exceed: "stop", total_token_limit: 1_000 },
+            },
+          });
+          return engineResultToProto(outcome.executionId, outcome.response);
+        },
+      });
+      const activeHandle = handle;
+      consume = (async () => {
+        for await (const event of activeHandle.events) events.push(event);
+      })();
+      const liveOutput = () =>
+        events
+          .flatMap((event) =>
+            event.type === "tool_output_delta" && event.call_id === "interrupt-shell"
+              ? [event.chunk]
+              : [],
+          )
+          .join("");
+      await waitFor(
+        () => liveOutput().includes(stdoutMarker) && liveOutput().includes(stderrMarker),
+        15_000,
+      );
+      const started = events.find(
+        (event) => event.type === "tool_call_started" && event.call_id === "interrupt-shell",
+      );
+      if (started?.type !== "tool_call_started" || started.control === undefined)
+        throw new Error("live guest shell did not advertise its interrupt token");
+      expect(started.control.actions).toEqual(["interrupt"]);
+      expect(
+        events.some((event) => event.type === "tool_call" && event.call_id === "interrupt-shell"),
+      ).toBe(false);
+      const token = started.control.tool_execution_id;
+      const commandCount = engineCommands.length;
+      const first = handle.interruptTool(token);
+      const duplicate = handle.interruptTool(token);
+      await expect(first).resolves.toEqual({ tool_execution_id: token, status: "accepted" });
+      await expect(duplicate).resolves.toEqual({
+        tool_execution_id: token,
+        status: "already_requested",
+      });
+      await waitFor(() => nextModelReady, 15_000);
+      const terminal = events.filter(
+        (event) => event.type === "tool_call" && event.call_id === "interrupt-shell",
+      );
+      expect(terminal).toHaveLength(1);
+      expect(terminal[0]).toMatchObject({ interruption: { source: "operator" } });
+      const finished = terminal[0];
+      if (finished?.type !== "tool_call") throw new Error("missing terminal shell event");
+      expect(finished.result).toContain(stdoutMarker);
+      expect(finished.result).toContain(stderrMarker);
+      expect(finished.result).not.toContain(unreachableMarker);
+      expect(liveOutput()).not.toContain(unreachableMarker);
+      // The next model is still pending in the same run: this probes the guest's retired token,
+      // not the managed handle's closed-channel shortcut.
+      await expect(handle.interruptTool(token)).resolves.toEqual({
+        tool_execution_id: token,
+        status: "not_running",
+      });
+      expect(engineCommands).toHaveLength(commandCount);
+      expect(runtime.closed).toBe(false);
+      releaseModel.resolve();
+      await expect(handle.done).resolves.toMatchObject({
+        execution_id: executionId,
+        status: "completed",
+        result: "guest-shell-interrupted-and-continued",
+      });
+      await consume;
+      expect(modelCalls).toBe(2);
+      expect(store.getById(generation, executionId)).toMatchObject({ status: "completed" });
+    } finally {
+      releaseModel.resolve();
+      try {
+        await handle?.cancel();
+        await runtime?.close();
+      } finally {
+        try {
+          await handle?.done;
+          await consume;
+          for (const cache of caches) {
+            expect((await nodeControl.run(["volume", "rm", cache])).exitCode).toBe(0);
+          }
+        } finally {
+          await rm(root, { recursive: true, force: true });
+        }
+      }
+    }
+  },
+  60_000,
 );

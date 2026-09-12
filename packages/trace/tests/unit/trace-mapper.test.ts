@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { mapTrace, mapEntry, RESULT_MAX } from "@clarvis/trace";
 import { DELEGATE_TASK_MAX_CHARS, type TraceEntry, type TraceEvent } from "@clarvis/capability";
+import { capDetail, ARGS_MAX } from "../../src/cap-detail.ts";
 
 const ANCHOR = 1_700_000_000_000;
 
@@ -12,6 +13,47 @@ function byType<T extends TraceEvent["type"]>(
 }
 
 describe("trace-mapper — tool projection", () => {
+  it("preserves selective control and interruption through caps and JSON replay", () => {
+    const control = { tool_execution_id: "opaque-execution", actions: ["interrupt"] as const };
+    const started = capDetail("tool_call_started", {
+      agent: "lead",
+      call_id: "call",
+      iteration_ref: 1,
+      started_at: 1,
+      name: "shell",
+      arguments: { command: "x".repeat(ARGS_MAX + 1) },
+      control,
+    });
+    const terminal = capDetail("tool_call", {
+      agent: "lead",
+      call_id: "call",
+      iteration_ref: 1,
+      started_at: 1,
+      ended_at: 3,
+      name: "shell",
+      arguments: {},
+      result: "x".repeat(RESULT_MAX + 1),
+      error: "interrupted",
+      interruption: { source: "operator" },
+    });
+    expect(started.control).toEqual(control);
+    expect(terminal.interruption).toEqual({ source: "operator" });
+    const replay = JSON.parse(
+      JSON.stringify(
+        mapTrace(
+          [
+            { at: 1, kind: "tool_call_started", detail: started },
+            { at: 3, kind: "tool_call", detail: terminal },
+          ],
+          ANCHOR,
+        ),
+      ),
+    );
+    expect(replay.events[0].control).toEqual(control);
+    expect(replay.events[1].interruption).toEqual({ source: "operator" });
+    expect(replay.events[1]).not.toHaveProperty("control");
+    expect(Object.keys(replay.events[0].control).sort()).toEqual(["actions", "tool_execution_id"]);
+  });
   it("maps a minimal durable announcement without retaining partial argument bytes", () => {
     const entry: TraceEntry = {
       at: 3,

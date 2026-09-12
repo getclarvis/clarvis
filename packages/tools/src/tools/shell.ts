@@ -203,6 +203,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         finalize,
         hooks?.onOutput,
         forceBare,
+        hooks?.onExecutionStarted,
       );
     },
   };
@@ -241,7 +242,11 @@ function runCommand(
   finalize: typeof finalizeOutput = finalizeOutput,
   onOutput?: (chunk: string) => void,
   forceBare = false,
+  onExecutionStarted?: () => void,
 ): Promise<string> {
+  if (signal?.aborted) {
+    return Promise.reject(new ToolError("aborted", "Command aborted", { stdout: "", stderr: "" }));
+  }
   const startedAt = Date.now();
   const temporarySnapshots = snapshotExplicitTemporaryDirectories(command);
   return new Promise((resolve, reject) => {
@@ -308,6 +313,7 @@ function runCommand(
     };
 
     const onAbort = (): void => {
+      if (settled || child.exitCode !== null || child.signalCode !== null) return;
       aborted = true;
       killAll();
     };
@@ -446,5 +452,8 @@ function runCommand(
     });
 
     child.on("close", (code, signal) => finish(code, signal));
+    child.once("spawn", () => {
+      if (!settled && !signal?.aborted) onExecutionStarted?.();
+    });
   });
 }

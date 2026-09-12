@@ -833,7 +833,8 @@ Each entry: **rule** — production anchor — test anchor.
     Marshall names `spawn_subagent` for independent work, `delegate_task` for an existing plan task
     with its exact id, the three leaf roles, background supervision and the shared workspace. Admiral
     names both child tools as manager-local capabilities. Both condition tool use on availability,
-    require delegation to add value, distinguish handles from results, and retain the live-child
+    require explicit delegation instruction under the shared policy (user, applicable loaded skill,
+    or agent-instruction file), distinguish handles from results, and retain the live-child
     finalization gate. Production:
     `packages/kernel/src/config/builtin-agents/marshall.ts` and
     `packages/kernel/src/config/builtin-agents/admiral.ts` (`body`). Test:

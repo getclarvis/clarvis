@@ -1066,6 +1066,13 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   failed group likewise renders one aggregate failure row rather than repeating each member's error.
   Nonzero local-shell results remain expanded warnings because their partial stdout/stderr is the
   result the user asked to inspect, not a rejected tool call.
+- A live controllable builtin shell exposes `[Stop shell]` without folding its row or cancelling
+  the run. The focused eligible shell also accepts contextual Ctrl+X; elicitation and a rebound
+  protected cancellation shortcut take precedence. `[Stopping…]` waits for the authoritative tool
+  terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
+  renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
+  actual diagnostic instead. See [transcript interruption](../../specs/hosts/code-transcript.md#47-provenance-and-interruption)
+  and [run hosting](../../specs/hosts/code-run-host.md#selective-shell-interruption).
 - Session persistence keeps one physical write and only the newest queued snapshot per session, so
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload

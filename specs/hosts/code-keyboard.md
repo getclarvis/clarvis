@@ -42,6 +42,11 @@ shortcut. Production: `packages/code/src/keys/interaction.ts`. Terminals can del
 `createInteraction` retains a 1-second repeat-metadata window for the current `run.cancel` binding;
 Escape never enters that timing path (`packages/code/src/keys/interaction.ts`).
 
+Test: [interaction.test.ts](../../packages/code/tests/integration/interaction.test.ts),
+`contextual shell interrupt yields to elicitation and protected cancellation` and `Ctrl+X has no
+shell action without an eligible focused target`, pin the contextual suppression and protected
+manual-binding precedence in `createInteraction`.
+
 `ui/patterns/**` is the reusable, content-agnostic half: list navigation, a level's key
 layer (nav + verbs + escape), the footer's action projection and width budget, and a
 generic map editor. `keys/**` is the vocabulary half: what a command *is* (`actions.ts`),

@@ -36,10 +36,17 @@ into small idempotent operations.
 
 A selective operator interrupt of one live builtin `shell` reuses this abort/kill-tree path. The
 builtin reports a generic abort; the engine classifies operator interrupt versus run cancellation
-from the two signals it owns. `monitor_*` processes that outlive a tool call are out of scope for
+from the two signals it owns and the executor's structured aborted result. An abort after process
+exit does not relabel its settled outcome. `ToolCallHooks.onExecutionStarted` fires once on successful
+shell spawn, after abort handling is installed, never during review or failed spawn. An already
+aborted invocation does not spawn. `monitor_*` processes that outlive a tool call are out of scope for
 that control. Production: `createShell` in `packages/tools/src/tools/shell.ts` and
 `packages/loop/src/runtime/tools/tool-interrupt.ts`. Test: `packages/loop/tests/unit/tool-interrupt.test.ts`
-and `packages/loop/tests/unit/toolset.test.ts`.
+and `packages/loop/tests/unit/toolset.test.ts`. The real output/continuation contract is exercised by
+[selective-shell-interrupt.test.ts](../../packages/loop/tests/integration/selective-shell-interrupt.test.ts).
+Test: [shell.test.ts](../../packages/tools/tests/integration/shell.test.ts) covers successful spawn,
+failed spawn, pre-abort and abort during output finalization. Production: `runCommand` in
+[shell.ts](../../packages/tools/src/tools/shell.ts).
 
 Underneath both, `resolveShell`/`shellArgs`/`exitCaptureWrapper` (`packages/tools/src/shell.ts`)
 make "which shell, which syntax" a single derived fact rather than two independently configurable

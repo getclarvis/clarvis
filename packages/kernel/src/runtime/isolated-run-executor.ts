@@ -3,6 +3,7 @@ import type { ExecutionRecord } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import type { RootOptions } from "@clarvis/paths";
 import type { RunExecutor, RunExecutorArgs } from "../runs/run-service.ts";
+import { TOOL_INTERRUPT_TIMEOUT_MS } from "../runs/tool-interrupt-channel.ts";
 import type { ExecutionRequestHandler, GuestExecutionMethod } from "./execution-rpc.ts";
 import {
   createRuntimeHostHandlers,
@@ -217,19 +218,46 @@ export function createIsolatedRunExecutor(options: {
       listeningForAbort = args.externalSignal !== undefined;
       if (args.externalSignal?.aborted === true) abort();
       unsubscribeToolInterrupts = args.toolInterrupts?.subscribe((delivery) => {
-        options.session
-          .interruptTool(runId, { tool_execution_id: delivery.toolExecutionId }, controls.signal)
-          .then((value) => {
-            const receipt = value as { status?: unknown };
-            const status = receipt.status;
-            delivery.settle(
-              status === "accepted" || status === "already_requested" || status === "not_running"
-                ? status
-                : "not_running",
+        const controller = new AbortController();
+        const stop = (): void => {
+          clearTimeout(timer);
+          controls.signal.removeEventListener("abort", stop);
+          delivery.fail(new Error("runtime tool interrupt channel closed"));
+          controller.abort();
+        };
+        const timer = setTimeout(() => {
+          controls.signal.removeEventListener("abort", stop);
+          delivery.fail(new Error("runtime tool interrupt delivery timed out"));
+          controller.abort();
+        }, TOOL_INTERRUPT_TIMEOUT_MS);
+        timer.unref?.();
+        controls.signal.addEventListener("abort", stop, { once: true });
+        if (controls.signal.aborted) stop();
+        void Promise.resolve()
+          .then(() => {
+            controller.signal.throwIfAborted();
+            return options.session.interruptTool(
+              runId,
+              { tool_execution_id: delivery.toolExecutionId },
+              controller.signal,
             );
           })
-          .catch(() => {
-            delivery.settle("not_running");
+          .then((value) => {
+            const receipt = value as { status?: unknown; tool_execution_id?: unknown } | null;
+            const status = receipt?.status;
+            if (
+              receipt?.tool_execution_id !== delivery.toolExecutionId ||
+              (status !== "accepted" && status !== "already_requested" && status !== "not_running")
+            )
+              throw new Error("runtime returned an invalid tool interrupt receipt");
+            delivery.settle(status);
+          })
+          .catch((error: unknown) => {
+            delivery.fail(error);
+          })
+          .finally(() => {
+            clearTimeout(timer);
+            controls.signal.removeEventListener("abort", stop);
           });
       });
       pumpTask = pump().catch(() => {

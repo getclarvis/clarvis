@@ -349,7 +349,23 @@ Test: shared waiter cancellation and shutdown cleanup in
 lease cancellation in [local-lease.test.ts](../../packages/paths/tests/contract/local-lease.test.ts).
 
 The worker also routes the closed `runtime.steer` and `runtime.interrupt_tool` control operations to the active guest executor. `runtime.interrupt_tool` delivers a token-only payload `{ tool_execution_id }`; the guest validates the token against its run-local registry and aborts the matching child controller. The host never kills a guest PID.
-The payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
+The host validates the interrupt receipt's token and status. A failed request or malformed receipt
+uses `ToolInterruptDelivery.fail` rather than fabricating `not_running`. The channel rejects the
+handle's pending promise with a sanitized, bounded `unavailable` error. A separate 30-second RPC
+deadline aborts the pending transport request; executor teardown likewise aborts pending delivery
+and rejects it even if the session has not yet rejected its own promise. Timers and control-abort
+listeners are removed on settlement, timeout and teardown. An interrupt failure does not replace
+the run's outcome. Production: `createIsolatedRunExecutor` in
+[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts).
+Test: refusal, synchronous throw, malformed receipt, disconnect and timeout cases in
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
+The opt-in test `interrupts a real guest shell through its handle and continues the same run with partial output`
+in [local-docker-runtime.e2e.test.ts](../../packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts)
+exercises the real guest for either selected engine: both partial streams, one operator terminal,
+repeated and expired receipts, no extra engine command for interruption, and a subsequent synthetic
+model call completing the same run. A skipped canary establishes no engine qualification.
+
+The steering payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
 fields, malformed message content and inactive run IDs are refused. `createGuestLoopExecutor`
 registers the two run-scoped queues before its first asynchronous preparation step, passes them to
 the real `executeRun`, and closes them when that run settles. Steering retains native delivery
@@ -983,7 +999,8 @@ an outbound guest can transmit readable workspace content or reach host/LAN serv
 Operator evidence, bindings, epochs, compiled envelopes and reviewer receipts remain in the native
 Host/Sandbox composition. `createIsolatedRunExecutor` neither sends authority in `runtime.start` nor
 persists a host authority mirror for a guest record, and the private control vocabulary remains
-limited to steer and compaction. Container does not add a protocol revision for effect review.
+limited to run controls, including steer, compaction and token-scoped tool interruption, not operator
+authority. Container does not add a protocol revision for effect review.
 Production: [isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts) and
 [guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
 [isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts)

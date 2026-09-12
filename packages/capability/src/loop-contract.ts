@@ -99,8 +99,8 @@ export type HandlerVerdict =
  *
  * @remarks A structural projection of the protocol `ToolExecutionControl`
  * envelope, not a shared type. This package must not depend on
- * `@clarvis/protocol`. The trace mapper converts camelCase to the public
- * snake_case envelope.
+ * `@clarvis/protocol`. The dispatch lifecycle converts camelCase to the
+ * snake_case trace envelope, which the trace mapper preserves.
  */
 export interface ToolInvocationControl {
   readonly toolExecutionId: string;

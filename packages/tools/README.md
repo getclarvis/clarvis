@@ -37,6 +37,12 @@ a 21,000-character regression ceiling; that is not a provider token count.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.
 
+`ToolCallHooks.onExecutionStarted` is shell's successful-spawn notification, after review and
+abort-listener installation. Failed spawn and pre-aborted dispatch do not announce execution.
+An abort after process exit does not turn its completed output into an aborted result. The engine
+waits for cooperative selective settlement to preserve stdout/stderr; the tools layer reports only
+its structured generic `aborted` code, never the operator's intent.
+
 Spill names and their 24-hour collector are owned by `@clarvis/paths`; this
 package writes those paths at owner-only `0600` permissions but does not export the collector. Monitor cleanup
 remains tools-specific and runs when the tools capability is installed, even if

@@ -169,6 +169,13 @@ mechanical eviction.
 
 ## The on-disk format is a contract
 
+`tool_call_started.control` preserves the opaque execution token and its `interrupt` action through
+detail caps, mapping and persistence. It is historical data on replay, never authority to control a
+new run. A confirmed selective terminal carries `tool_call.interruption: { source: "operator" }`;
+the terminal closes the live control. Old events omit both fields. Orphan repair synthesizes an
+operational failure without attributing it to the operator. See the
+[trace contract](../../specs/foundations/trace.md).
+
 The stored response retains an accepted checkpoint's `disposition` and bounded handoff independently
 of execution status. Its metadata is separate from the final result value. Reopening the store must
 preserve that distinction; orphan recovery still reports `interrupted` and does not invent an accepted
@@ -198,6 +205,7 @@ deletion can race the rewrite and resurrect stale context.
 Terminal `tool_call` rows may include the final command-guard review. The mapper
 preserves that small structured fact so restored sessions can show whether an
 automatic review approved or denied the command and who supplied the answer.
+
 ## Authority state
 
 `buildRecord` and trace stores preserve sanitized, versioned `operator_authority_state` as transversal

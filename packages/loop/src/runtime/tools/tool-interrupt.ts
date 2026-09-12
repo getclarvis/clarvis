@@ -26,6 +26,8 @@ export type ToolInterruptSettleStatus = "accepted" | "already_requested" | "not_
 export interface ToolInterruptDelivery {
   readonly toolExecutionId: string;
   settle(status: ToolInterruptSettleStatus): void;
+  /** Reject delivery without claiming the invocation is no longer running. */
+  fail(error: unknown): void;
 }
 
 /** Push source of operator interrupt requests for one execution. */

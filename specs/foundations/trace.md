@@ -155,6 +155,22 @@ an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
 `packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
 `packages/trace/tests/unit/trace-mapper.test.ts`.
 
+`ToolCallStartedDetail.control` is the optional `{ tool_execution_id, actions: ["interrupt"] }`
+capability for one live builtin shell invocation. `ToolCallDetail.interruption` is the optional
+`{ source: "operator" }` cause on a selectively interrupted terminal with a non-null error
+(`ok: false` in the public run event). Caps and mapping preserve these fields without deriving
+identity from arguments. The terminal closes the live capability; persisted tokens cannot authorize
+another run. Old events omit both fields and retain their previous semantics. Recovery of an open
+call synthesizes an operational failure without `interruption` or a new control.
+Production: [trace-kinds.ts](../../packages/capability/src/trace-kinds.ts), `ToolCallStartedDetail` and
+`ToolCallDetail`; [trace-mapper.ts](../../packages/trace/src/trace-mapper.ts), `mapEntry`;
+[cap-detail.ts](../../packages/trace/src/cap-detail.ts), `capDetail`; and
+[journal-recovery.ts](../../packages/trace/src/journal-recovery.ts), `repairUnsettledToolCalls`.
+Test: [trace-mapper.test.ts](../../packages/trace/tests/unit/trace-mapper.test.ts),
+`preserves selective control and interruption through caps and JSON replay`, and
+[journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.test.ts),
+`repairs a controlled call without inventing operator interruption`.
+
 The table above is anchored to `BUILTIN_TRACE_KINDS` in
 `packages/capability/src/trace-kinds.ts`. These kinds have no wire projection at all (§4c step 3,
 T-13): `init`, `terminate`, `agent_registered`,

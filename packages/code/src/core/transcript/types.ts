@@ -83,6 +83,8 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
   control?: ToolExecutionControl;
   /** Operator interrupt requested; waiting for receipt or the tool terminal. */
   interruptRequest?: "pending";
+  /** Authoritative terminal cause; scope closure and composition cleanup never infer an operator. */
+  interruption?: { source: "operator" };
   liveOutput?: string;
   /**
    * Size, in characters, of the argument payload the model has streamed so far

@@ -103,6 +103,15 @@ Production: `renderSkillsSection`. Test: `packages/skills/tests/unit/tool.test.t
 
 ## 5. Invariants
 
+The built-in shared policy defaults to direct work. Sub-agents require an explicit user request or
+an explicit instruction from an applicable loaded skill or agent-instruction file such as `AGENTS.md`
+or `CLARVIS.md`. Tool availability, profile permissions, complexity and efficiency gains do not
+constitute such a request. Independent spawning, tracked delegation and workflow leaders all follow
+this rule; existing profile/grant limits remain necessary. This is model guidance, not an added
+runtime gate, and authored shared-prompt replacement/disable semantics remain unchanged.
+Production: `DEFAULT_SHARED_AGENT_PROMPT`. Test: `requires explicit delegation instructions rather
+than inferred usefulness` in `packages/loop/tests/unit/shared-agent-prompt.test.ts`.
+
 1. The system head order is Environment → sharedPrompt → profilePrompt → capabilitySections for entry and subagents.
    - Production: `buildSystemSections`
    - Test: `packages/loop/tests/unit/environment-section.test.ts`

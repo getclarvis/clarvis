@@ -147,6 +147,16 @@ describe("repairUnsettledToolCalls", () => {
     expect(repair.result).toContain("fs.read");
   });
 
+  it("repairs a controlled call without inventing operator interruption", () => {
+    const controlled = {
+      ...started,
+      control: { tool_execution_id: "opaque-execution", actions: ["interrupt"] as const },
+    };
+    const repaired = repairUnsettledToolCalls([controlled]);
+    expect(repaired[1]).not.toHaveProperty("interruption");
+    expect(repaired[1]).not.toHaveProperty("control");
+  });
+
   it("leaves a settled call alone", () => {
     const settled: TraceEvent = {
       type: "tool_call",

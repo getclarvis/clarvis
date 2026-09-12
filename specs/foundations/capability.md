@@ -367,7 +367,17 @@ contract: prefer a port over exposing an engine type".
 `{kind:"finalize", attempt, ...HandlerResult}` (a checkpoint request through the gates), `{kind:"terminal",
 result: AgentResult}`, or `{kind:"cancelled"}`. `ToolHandler` is `matches(call)` plus an
 optional `canonicalName(call)` for a stable identity when the model-facing wire name is a projection,
-and `handle(call, iteration)`. `FinalizeAttempt` is an agent's bid to finish (`mode: "text" |
+optional `interruptible(call)`, and `handle(call, iteration, context?)`. The engine supplies
+`ToolInvocationContext.signal` as the effective invocation signal; its optional `control` is a
+`ToolInvocationControl` with opaque `toolExecutionId` and `actions: ["interrupt"]`. Only the builtin
+shell handler opts in. Controllers and the run-scoped registry belong to the loop, not this leaf;
+the public protocol envelope is a separate structural projection without a dependency edge.
+Production: [loop-contract.ts](../../packages/capability/src/loop-contract.ts), `ToolHandler` and
+`ToolInvocationContext`. Test: [tool-interrupt.test.ts](../../packages/loop/tests/unit/tool-interrupt.test.ts)
+pins registry addressing and signal classification; integrated dispatch behavior belongs to
+[tool dispatch](../engine/tool-dispatch.md).
+
+`FinalizeAttempt` is an agent's bid to finish (`mode: "text" |
 "submit"`, optional `value`/`text`, final disposition by default) or a `CheckpointAttempt`
 (`mode: "checkpoint"`, `disposition: "checkpoint"`, bounded `checkpoint` metadata).
 `GateOutcome` is a finalize gate's ruling:

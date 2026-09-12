@@ -888,8 +888,17 @@ replace the first handle.
 Production: `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
-**INV-221.** `steer`/`compact`/`cancel`/`respond` each forward with the handle's own `execution_id`
+**INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond` each forward with the handle's own `execution_id`
 under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`.
+
+Interrupt receipt statuses describe registry outcomes, not transport health. Container RPC failures,
+invalid receipts and timeout after delivery reject the handle's request as sanitized `unavailable`
+rather than returning `not_running`. Expiry before delivery to a subscriber instead returns
+`not_running`; the bounded channel contract is owned by
+[kernel runs](kernel-runs.md). Production: `createIsolatedRunExecutor` in
+[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts).
+Test: `rejects interrupt delivery without fabricating not_running` in
+[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
 Production: `packages/kernel/src/transport/client.ts`, names bound at `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 

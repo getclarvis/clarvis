@@ -45,6 +45,19 @@ whether a late callback still owns the surface it wants to write to
 
 ## 2. Surface
 
+### Selective shell interruption
+
+`RunHost.interruptTool` requests one live invocation through the current controlled handle without
+cancelling the run. A receipt is not a tool terminal: `accepted` keeps the pending projection;
+`not_running` or a failed request clears pending without inventing an outcome or operator cause.
+A current-owner failure adds a warning, while a late response from retired run ownership cannot
+mutate the current UI. Production: `createRunHost.interruptTool` in
+[run-host.ts](../../packages/code/src/run-host.ts) and `setToolInterruptRequest` in
+[store.ts](../../packages/code/src/adapters/store.ts). Test:
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), `interrupt receipts preserve
+running state and clear pending only on not_running or error` and `a late interrupt failure cannot
+add a notice after run ownership changes`.
+
 ### Hosted backend adapter
 
 `KernelRunClient.hosting` exposes the connected service only when the kernel provides it.

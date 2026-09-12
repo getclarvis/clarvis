@@ -14,6 +14,9 @@ describe("tool interrupt registry", () => {
 
     let first: string | undefined;
     registry.deliver({
+      fail(error) {
+        throw error;
+      },
       toolExecutionId: "tok_1",
       settle(status) {
         first = status;
@@ -24,6 +27,9 @@ describe("tool interrupt registry", () => {
 
     let second: string | undefined;
     registry.deliver({
+      fail(error) {
+        throw error;
+      },
       toolExecutionId: "tok_1",
       settle(status) {
         second = status;
@@ -33,6 +39,9 @@ describe("tool interrupt registry", () => {
 
     let missing: string | undefined;
     registry.deliver({
+      fail(error) {
+        throw error;
+      },
       toolExecutionId: "tok_missing",
       settle(status) {
         missing = status;
@@ -48,6 +57,9 @@ describe("tool interrupt registry", () => {
     registry.unregister("tok_1");
     let status: string | undefined;
     registry.deliver({
+      fail(error) {
+        throw error;
+      },
       toolExecutionId: "tok_1",
       settle(next) {
         status = next;
@@ -59,6 +71,9 @@ describe("tool interrupt registry", () => {
     registry.register({ toolExecutionId: "tok_2", callId: "call", controller });
     registry.close();
     registry.deliver({
+      fail(error) {
+        throw error;
+      },
       toolExecutionId: "tok_2",
       settle(next) {
         status = next;

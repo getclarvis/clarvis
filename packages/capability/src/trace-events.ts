@@ -21,10 +21,10 @@ import type { CommandGuardReview } from "./trace-kinds.ts";
  *   run-relative offsets and a nested `{ at, kind, detail }` envelope);
  *   `mapEntry` in `persistence/trace-mapper.ts` flattens and rebases entries into
  *   these events, splitting the tool `name` into `mcp_name`/`tool_name` and
- *   truncating free-text fields. The two `*_started` and `*_delta` variants are
- *   live-only progress signals and are not persisted — the corresponding
- *   completed variant (`lead_iteration`, `subagent_iteration`, `tool_call`,
- *   `model_reasoning`) is the authoritative record. `iteration_ref` on tool and
+ *   truncating free-text fields. Iteration-start and delta variants are live-only
+ *   progress signals. Tool announcement/start and terminal events are durable
+ *   lifecycle records; the terminal carries the authoritative execution result.
+ *   `iteration_ref` on tool and
  *   user events points back at the iteration that produced them; a defined
  *   `subagent_instance_id` scopes the event to a sub-agent, otherwise it belongs
  *   to the lead.

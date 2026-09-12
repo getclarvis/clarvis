@@ -34,6 +34,22 @@ describe("DEFAULT_SHARED_AGENT_PROMPT", () => {
     }
   });
 
+  it("requires explicit delegation instructions rather than inferred usefulness", () => {
+    for (const rule of [
+      "Work directly by default",
+      "Do not use sub-agents unless explicitly requested by the user",
+      "explicitly instructed by an applicable loaded skill or agent-instruction file",
+      "AGENTS.md or CLARVIS.md",
+      "Tool availability, profile permissions, task complexity, and potential efficiency gains are not a request to delegate",
+      "independent spawning, tracked task delegation, and workflow leaders",
+      "do not use another orchestration path to bypass it",
+      "If no such instruction applies, continue the work yourself",
+      "within that instruction's scope and the active Agent Profile and grants",
+    ]) {
+      expect(DEFAULT_SHARED_AGENT_PROMPT).toContain(rule);
+    }
+  });
+
   it("is a static how-you-work policy without interpolating run state", () => {
     expect(DEFAULT_SHARED_AGENT_PROMPT.startsWith("# Working in Clarvis")).toBe(true);
     expect(DEFAULT_SHARED_AGENT_PROMPT).not.toMatch(/\$\{/);

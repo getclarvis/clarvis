@@ -1,6 +1,7 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
+import { OPERATOR_AUTHORITY_PORT, type OperatorAuthorityState } from "@clarvis/capability";
 import type { Capability, TraceEvent } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import { ConflictError, PersistenceError } from "@clarvis/capability";
@@ -39,6 +40,84 @@ function insertThrows(thrown: unknown): TraceStore {
 }
 
 describe("executeRun (shared engine)", () => {
+  it("rejects authority-shaped public request fields before host runtime creation", async () => {
+    for (const key of [
+      "operator_evidence",
+      "operatorAuthoritySeed",
+      "controller_epoch",
+      "operator_authority_state",
+    ]) {
+      let created = false;
+      await expect(
+        executeRun({
+          rawBody: { ...BODY, [key]: {} },
+          owner: "o",
+          deps: makeDeps({
+            operatorAuthority: () => {
+              created = true;
+              throw new Error("not admitted");
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "invalid_message_format" });
+      expect(created).toBe(false);
+    }
+  });
+  it("prepublishes one authority reader and revokes intent without cancelling background execution", async () => {
+    const retirement = new AbortController();
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "operator", source: "start", text: "Inspect", execution_id: "run" }],
+    };
+    const reader = { snapshot: () => structuredClone(state) };
+    const traceStore = makeTestTraceStore();
+    let creations = 0;
+    const observers: Capability[] = ["first", "second"].map((name) => ({
+      name,
+      forRun(ctx) {
+        expect(ctx.services.get(OPERATOR_AUTHORITY_PORT)).toBe(reader);
+        return { name, forAgent: () => null };
+      },
+    }));
+    const result = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      operatorAuthoritySignal: retirement.signal,
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      deps: makeDeps({
+        traceStore,
+        capabilities: observers,
+        operatorAuthority(input) {
+          creations++;
+          expect(input.seed?.evidence).toEqual(state.evidence);
+          input.signal?.addEventListener("abort", () => {
+            state.status = "revoked";
+            state.revision++;
+          });
+          return { reader, onSteer: () => {}, finalize: () => structuredClone(state) };
+        },
+        llm: {
+          async call() {
+            retirement.abort();
+            return {
+              text: "done",
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+      }),
+    });
+    expect(creations).toBe(1);
+    expect(result.response).toMatchObject({ status: "completed" });
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state).toMatchObject({
+      version: 1,
+      status: "revoked",
+      revision: 2,
+    });
+  });
   it("runs a subagent-only request to completion and returns an execution id + response", async () => {
     const { executionId, response } = await executeRun({
       rawBody: BODY,

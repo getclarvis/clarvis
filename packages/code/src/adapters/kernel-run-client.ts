@@ -172,9 +172,13 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
       ? {
           guard_judge: {
             prompt: input.guardJudge.prompt,
+            guidance: input.guardJudge.guidance,
             ...(input.guardJudge.model ? { model: input.guardJudge.model } : {}),
             ...(input.guardJudge.onUnsure ? { on_unsure: input.guardJudge.onUnsure } : {}),
             ...(input.guardJudge.timeoutMs ? { timeout_ms: input.guardJudge.timeoutMs } : {}),
+            ...(input.guardJudge.maxRetries === undefined
+              ? {}
+              : { max_retries: input.guardJudge.maxRetries }),
           },
         }
       : {}),

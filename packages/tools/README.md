@@ -257,6 +257,12 @@ compatibility while keeping tool definitions and dispatch code outside kernel bo
 
 ## Guards
 
+`ShellFacts.analysisIssues` aggregates each segment's structured syntax causes with zero-based
+segment indices and affected positions. `undecidable` remains the conservative nonempty-issues
+fold. A dynamic value is not proof of a safe effect: `GuardReviewability` reserves `judgeable`
+for host attestation. POSIX and PowerShell provide their own issue analysis. Environment assignment
+values participate in path extraction; the assignment name is not part of a filesystem path.
+
 ```ts
 import { analyzeShell, buildGuardContext, touchesOutside, type Guard } from "@clarvis/tools/guard";
 ```
@@ -461,3 +467,9 @@ bun --filter @clarvis/tools format:check
 commands exist for targeted development and do not replace the full suite.
 
 The package requires Bun 1.4.0 or newer.
+### Effect facts and authoring
+
+The standalone guard DTO can carry host-attested effect facts and review receipts without importing
+capability. Canonical agent, skill and workflow Markdown may pass native mutation protection only
+after an explicit host effect review; operational configuration retains its restricted writer.
+An absent/off guard does not authorize authoring writes. See [effect review](../../specs/execution/effect-review.md).

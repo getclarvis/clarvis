@@ -118,6 +118,53 @@ describe("createAgentTools (library API)", () => {
     );
   });
 
+  it("requires complete authoring review and never admits operational settings through it", async () => {
+    const roots = configurationRoots({ workspaceRoot: root });
+    const authored = join(roots.workspace_clarvis, "agents/helper.md");
+    let complete = false;
+    let reviews = 0;
+    const t = createAgentTools({
+      workspaceRoot: root,
+      probeRipgrep: () => false,
+      guard: () => ({
+        verdict: "ask",
+        effects: [
+          {
+            id: "clarvis.authoring.write",
+            class: "local_mutation",
+            inference: "bounded",
+            constraints: {},
+            attestation: complete ? "complete" : "partial",
+            reviewability: "static",
+            analysis_issues: [],
+          },
+        ],
+      }),
+      elicit: () => {
+        reviews++;
+        return true;
+      },
+    });
+    expect((await t.callTool("write_file", { path: authored, content: "bounded" })).isError).toBe(
+      true,
+    );
+    complete = true;
+    expect((await t.callTool("write_file", { path: authored, content: "bounded" })).isError).toBe(
+      false,
+    );
+    expect(readFileSync(authored, "utf8")).toBe("bounded");
+    const before = reviews;
+    expect(
+      (
+        await t.callTool("write_file", {
+          path: join(roots.workspace_clarvis, "settings.json"),
+          content: "{}",
+        })
+      ).isError,
+    ).toBe(true);
+    expect(reviews).toBe(before);
+  });
+
   it("lets native tools read scratch created by shell inside the run-owned temporary root", async () => {
     const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-run-owned-")));
     try {

@@ -714,3 +714,12 @@ their own:**
 - **The kernel-side half of settings/capability registration** (which specs the kernel actually
   registers, in what order, and how `settingsSchemaFor`'s registry is populated at boot) is not
   covered here; it belongs to [kernel-config-and-agents](../hosts/kernel-config.md).
+## Host authority substrate
+
+The operator ledger is transversal, not owned by tools. `executeRun` creates it through a host
+factory, and `runOrchestrator` prepublishes its reader before concurrent capability activation.
+Capabilities cannot obtain the writer. Persistence and inheritance are owned by
+[effect review](../execution/effect-review.md). Production:
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts) and
+[orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts). Test:
+[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).

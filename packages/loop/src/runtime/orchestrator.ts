@@ -92,6 +92,10 @@ import {
  *   `executeRun` builds this and hands the orchestrator the promptcache-keyed LLM.
  */
 export interface OrchestratorDeps {
+  /** Read projection published before activation. */
+  operatorAuthority?: OperatorAuthorityReader;
+  /** Private loop-owned steer observer; not passed to capability contexts. */
+  onOperatorSteer?: (context: UserSteerContext) => void;
   env: EnvConfig;
   llm: LLMProvider;
   connections: ConnectionManager;
@@ -227,6 +231,8 @@ export async function runOrchestrator(
     : undefined;
 
   const services = createCapabilityServices();
+  if (deps.operatorAuthority !== undefined)
+    services.provide(OPERATOR_AUTHORITY_PORT, deps.operatorAuthority);
   if (agents !== undefined) services.provide(AGENT_REGISTRY_PORT, agents);
   const capabilityCtx: RunCapabilityContext = {
     owner: deps.owner,
@@ -327,7 +333,19 @@ export async function runOrchestrator(
       )
     ).filter((capability): capability is RunCapability => capability !== null),
   );
-  const hooks: LifecycleHook[] = runCapabilities.flatMap((c) => c.lifecycle ?? []);
+  const hooks: LifecycleHook[] = [
+    ...(deps.onOperatorSteer === undefined
+      ? []
+      : [
+          {
+            onUserSteer: (context: UserSteerContext) => {
+              deps.onOperatorSteer!(context);
+              return Promise.resolve();
+            },
+          },
+        ]),
+    ...runCapabilities.flatMap((c) => c.lifecycle ?? []),
+  ];
   const seedBlocks = (
     await Promise.all(
       runCapabilities.map(async (capability) => {
@@ -700,3 +718,8 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     ...(finalContext !== undefined && finalContext.length > 0 ? { finalContext } : {}),
   };
 }
+import {
+  OPERATOR_AUTHORITY_PORT,
+  type OperatorAuthorityReader,
+  type UserSteerContext,
+} from "@clarvis/capability";

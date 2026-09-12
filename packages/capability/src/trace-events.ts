@@ -1,3 +1,4 @@
+import type { OperatorAuthorityState } from "./operator-authority.ts";
 import type { RunRequest, AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
 import type {
   ContextSnapshotEntry,
@@ -531,6 +532,8 @@ export interface ExecutionRecovery {
 }
 
 export interface ExecutionRecord {
+  /** Host-owned intent state, never reconstructed from final_context. */
+  operator_authority_state?: OperatorAuthorityState;
   id: string;
   owner_key_name: string;
   status: ExecutionStatus;

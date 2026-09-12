@@ -278,15 +278,14 @@ receives a fresh scope. At most 64 conversation scopes are retained per connecti
 revocation callback fails, a disconnected peer and its controls become unusable before that error is
 reported; all scopes are attempted. The concrete guard/configuration policy supplies this callback.
 
-Native and guest command approval consult the same live scope. `runtime.guard_approval` derives shell
-facts on the host from the displayed command; callers cannot submit an allowlist scope or forged
-parsed segments. Every coverage check resolves the current scope, and answers received after that
-scope retires deny even when the old dialog selected one-time approval. Human fallback answers are
-not cached by the judge or capability broker. Production: `createGuardHumanApproval` in
-[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts) and `createHostGuardApprovalGrant`
-in [guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts). Test:
-[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
-and [runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts).
+Native Host/Sandbox command approval consults the live scope on every check. Answers received after
+that scope retires deny even when the old dialog selected one-time approval. Human fallback answers
+are not cached by effect review. Container guests receive no guard or approval bridge. Production:
+`createGuardHumanApproval` in [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts)
+and `createLocalContainerRuntime` in
+[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts). Test:
+[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
+[runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,

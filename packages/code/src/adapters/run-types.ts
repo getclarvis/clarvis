@@ -30,10 +30,12 @@ export interface ProfileInfo {
 }
 
 interface GuardJudgeInput {
-  prompt: string;
+  prompt?: string;
+  guidance?: string;
   model?: string;
   onUnsure?: "ask" | "deny";
   timeoutMs?: number;
+  maxRetries?: number;
 }
 
 /** Parameters accepted by the adapter's `startRun` entry point. */

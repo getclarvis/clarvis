@@ -72,7 +72,7 @@ files; filename exclusions cannot detect embedded secrets.
 - Global CLARVIS.md/AGENTS.md live in the global Clarvis root; project context belongs at the WORKSPACE
   ROOT, outside these four roots. Use ordinary authorized workspace editing; <workspace>/.clarvis
   context files are not loaded. CLARVIS.md wins over AGENTS.md per scope; neither grants authority.
-  guard-judge.md supplies the local Code judge prompt. Global/workspace memory-policy.md editorial
+  guard-judge.md supplies optional reviewer guidance below the kernel safety policy. Global/workspace memory-policy.md editorial
   policies combine. shared-agent.md is the fleet prompt in those Clarvis roots (replace=nonempty,
   disabled=empty). Last trusted layer wins; untrusted workspace files are withheld.
 - keys.json, subscriptions.json, auth.json, auth-key.json, workspace-trust.json, state/, cache/,
@@ -416,6 +416,9 @@ and a judge cannot override a deny. auto needs a resolved judge; otherwise follo
 policy. Isolation Sandbox require_escalated is a host_command ask (on=human, auto may judge).
 No allow_session. Containers reject it; Isolation Host is already unsandboxed. Never describe
 guard.off as turning off filesystem or container isolation.
+effect_review sets model, timeout_ms, max_retries and on_unsure. Only operator/global settings
+choose model or rollout (shadow|local|ci_retry). Workspace guidance grants no authority.
+Auto needs no prompt; unknown effects and incomplete or mismatched targets stay closed.
 Environment flags and host builtins are startup inputs, not settings.json keys. Logging uses
 CLARVIS_LOG and CLARVIS_LOG_LEVEL. Relaunch for process environment; a hosted generation also
 needs idle reload. UI, history, auth and plugin selection keep host services.

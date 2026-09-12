@@ -1,3 +1,4 @@
+import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
 import { withBuiltinSkills } from "./skills/builtin-skills.ts";
 import { configurationRoots, workspaceScopeKey } from "@clarvis/paths";
@@ -127,6 +128,8 @@ export type { FileKernelRuntimeFactory, RuntimePlacementNotice } from "./runtime
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
  */
 export interface CreateFileKernelOptions {
+  /** Live controller identity supplied by process-owned hosting admission. */
+  operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
   /** Absolute workspace root the kernel operates over. */
   workspaceRoot: string;
   /** Pre-loaded environment config; defaults to {@link loadEnv} over `process.env`. */
@@ -527,8 +530,12 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   );
 
   const loadGuardSettings = (): GuardSettings => {
-    const merged = configStore.readSettings().merged as Record<string, unknown>;
+    const snapshot = configStore.readSettings();
+    const merged = snapshot.merged as Record<string, unknown>;
+    const operatorReview = snapshot.scopes.global?.effect_review ?? {};
+    const workspaceReview = snapshot.scopes.workspace?.effect_review;
     return {
+      effect_review: resolveEffectReviewSettings(operatorReview, workspaceReview),
       ...(merged.guard !== undefined ? { guard: merged.guard as GuardConfig } : {}),
       ...(merged.runtime !== undefined
         ? { runtime: merged.runtime as GuardSettings["runtime"] }
@@ -785,6 +792,13 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     skillBootstraps: pluginSkillBootstraps,
     resolveGuard: createGuardResolver({
       loadSettings: loadGuardSettings,
+      effectRunner: createNodeProcessRunner(componentLogger("guard")),
+      effectEnvironment: Object.fromEntries(
+        ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
+          key,
+          environment.values[key],
+        ]),
+      ),
       logger: componentLogger("guard"),
       audit: auditLogger,
       sessionAllowlistFor,
@@ -917,6 +931,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
   const deps: ExecuteRunDeps = {
     ...built.deps,
+    operatorAuthority: createOperatorAuthorityRuntime,
     capabilityRegistry: composeKernelCapabilityRegistry(built.deps.capabilityRegistry),
     hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
     capabilities: [
@@ -980,6 +995,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const currentRuntime = (): RuntimeStatus =>
     activeConfigurations > 0 ? configurationRuntime : runtimeCoordinator.current();
   const nativeConfiguration = createNativeConfigurationRuns({
+    audit: auditLogger,
     ...(built.skills === undefined ? {} : { skills: built.skills }),
     roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
     store: configStore,
@@ -1032,6 +1048,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   });
   try {
     kernel = createInProcessKernel({
+      ...(opts.operatorAuthorityFor === undefined
+        ? {}
+        : { operatorAuthorityFor: opts.operatorAuthorityFor }),
       nativeConfiguration,
       deps,
       logger: componentLogger("kernel"),
@@ -1142,3 +1161,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
   ) as FileKernel;
 }
+import { createOperatorAuthorityRuntime } from "./guard/operator-authority.ts";
+import { createNodeProcessRunner } from "./adapters/process/node-process-runner.ts";
+import { resolveEffectReviewSettings } from "./config/effect-review-settings.ts";

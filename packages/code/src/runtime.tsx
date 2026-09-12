@@ -690,9 +690,10 @@ async function runApp(
   function judgePayloadFor(
     runtimeDirs: ClarvisDirs,
     mode: GuardMode,
-  ): { guardJudge?: { prompt: string } } {
+  ): { guardJudge?: { guidance: string } } {
     if (mode !== "auto") return {};
-    return { guardJudge: { prompt: loadGuardJudgePrompt(runtimeDirs).prompt } };
+    const guidance = loadGuardJudgePrompt(runtimeDirs).prompt;
+    return guidance.length === 0 ? {} : { guardJudge: { guidance } };
   }
 
   const createRunClientCallbacks = (

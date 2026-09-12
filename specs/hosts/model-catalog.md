@@ -763,7 +763,7 @@ catalog case).
 | TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
 | TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`); `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts` (doc-comment) |
-| `guard_judge` has no model (neither `cfg.model` nor `deps.defaultModel`) | Warns and degrades the judge to mode `"on"` (asks a human) rather than failing the run | `packages/kernel/src/guard/judge.ts` (outside this document's scope; cited only as a `parseModelRef`/`resolveProvider` consumer) |
+| Effect review has no model or its provider cannot resolve | Returns a structured admission failure and follows `on_unsure` (`ask` by default) | `packages/kernel/src/guard/effect-review-service.ts` |
 
 ## 7. Coupling
 
@@ -817,9 +817,8 @@ catalog case).
   `packages/loop/src/runtime/vision-prepass.ts`,
   `packages/loop/src/runtime/subagents/subagent-profiles.ts` all call `resolveProvider` — request
   validation and per-agent provider resolution inside the loop, outside this document's scope.
-- `packages/kernel/src/guard/judge.ts` calls both `parseModelRef` and `resolveProvider` to
-  resolve the guard-judge's own model — outside this document's scope (guard/judge subsystem), cited
-  only as a coupling point.
+- `packages/kernel/src/guard/effect-review-service.ts` calls both `parseModelRef` and
+  `resolveProvider` to resolve the shared reviewer's model and report a typed admission failure.
 - Container model calls also use the same resolver on the host's captured provider registry, after
   exact provider/model admission, so raw snake-case settings never masquerade as the adapter's
   resolved configuration. Production: `hostModelBroker` in

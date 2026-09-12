@@ -55,8 +55,8 @@ subsystem.
 | --- | --- | --- | --- |
 | `Verdict` | type | `packages/tools/src/guard/types.ts` | `"allow" \| "deny" \| "ask"` |
 | `GuardDecision` | iface | `packages/tools/src/guard/types.ts` | `{ verdict; reason?: string; escalate?: "human" }` |
-| `Segment` | iface | `packages/tools/src/guard/types.ts` | `{ command; argv; normalized; envAssignments; decidable }` |
-| `ShellFacts` | iface | `packages/tools/src/guard/types.ts` | `{ paths: string[]; segments: Segment[]; undecidable: boolean }` |
+| `Segment` | iface | `packages/tools/src/guard/types.ts` | `{ command; argv; normalized; envAssignments; decidable; analysisIssues }` |
+| `ShellFacts` | iface | `packages/tools/src/guard/types.ts` | `{ paths: string[]; segments: Segment[]; undecidable: boolean; analysisIssues }` |
 | `PathFact` | iface | `packages/tools/src/guard/types.ts` | `{ raw; resolved; withinWorkspace }` |
 | `GuardContext` | iface | `packages/tools/src/guard/types.ts` | `{ tool; args; config; paths: PathFact[]; shell?: ShellFacts }` |
 | `Guard` | type | `packages/tools/src/guard/types.ts` | `(ctx: GuardContext) => GuardDecision \| Promise<GuardDecision>` |
@@ -100,8 +100,6 @@ reports forced `rm` and `sudo` from normalized argv (`packages/tools/src/guard/h
 | `createGuardElicit` | fn | `packages/kernel/src/guard/guard-elicit.ts` | `(elicit: Elicit, opts?) => GuardElicit` |
 | `createGuardSessionAllowlist` | fn | `packages/kernel/src/guard/guard-elicit.ts` | `() => GuardSessionAllowlist` |
 | `GuardElicitParams` | type | `packages/kernel/src/guard/guard-elicit.ts` | `ElicitParams & { detail?: ElicitationCommandDetail }` |
-| `createJudgeElicit` | fn | `packages/kernel/src/guard/judge.ts` | `(deps, cfg, humanElicit) => JudgeElicit \| undefined` (`JudgeElicitAnswer` carries `allowed` + final `answerer`) |
-| `JudgeDeps` | iface | `packages/kernel/src/guard/judge.ts` | `{ llm; providers; defaultModel; logger?; signal?; operatorMessage? }` |
 | `globToRegExp` | fn (re-export) | `packages/kernel/src/guard/glob.ts` | from `@clarvis/capability` (`packages/capability/src/glob.ts`) |
 
 `./policy` exports only `createGuardResolver`, `resolveGuardMode`, `createShellGuard` and the three
@@ -137,7 +135,7 @@ a `z.undefined()` field that exists solely "so that trying it explains why".
 | Param | Schema |
 | --- | --- |
 | `guard_mode` | `z.enum(["off","on","auto"])` |
-| `guard_judge` | `.strict()` object : `prompt` (1..32768 chars, required), `model?` (min 1), `on_unsure?: "ask"\|"deny"`, default `"ask"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
+| `guard_judge` | `.strict()` object : `guidance?` and deprecated `prompt?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"ask"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
 
 Both reach the request schema through `capabilityRequestParamFields`
 (`packages/loop/src/runtime/capabilities/settings-specs.ts`) and the spec's
@@ -151,10 +149,10 @@ capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts` a
 | Symbol | File | Purpose |
 | --- | --- | --- |
 | `GuardMode` | `packages/code/src/adapters/guard-mode.ts` | local restatement of the three modes |
-| `guardAutoResolves` | `packages/code/src/adapters/guard-mode.ts` | `auto` is usable only with a `default_model` that `validateProviders` accepts |
+| `guardAutoResolves` | `packages/code/src/adapters/guard-mode.ts` | `auto` needs a resolvable `effect_review.model` or `default_model` |
 | `GuardModeStore` | `packages/code/src/adapters/guard-mode.ts` | `{ mode; setMode; cycle }` |
 | `createGuardModeStore` | `packages/code/src/adapters/guard-mode.ts` | seeds from `code.json` default, else `defaultGuardMode(settings.guard)` |
-| `DEFAULT_GUARD_JUDGE_PROMPT` | `packages/code/src/adapters/guard-judge-prompt.ts` | the built-in judge system prompt |
+| `DEFAULT_GUARD_JUDGE_PROMPT` | `packages/code/src/adapters/guard-judge-prompt.ts` | empty compatibility value when no guidance exists |
 | `GuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts` | `{ prompt; source: "workspace"\|"global"\|"builtin" }` |
 | `loadGuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts` | workspace → global → builtin |
 
@@ -181,9 +179,11 @@ Nothing persists `ShellFacts`; it lives for one dispatch. Its shape, from the dr
       "argv": ["bun", "test"],
       "normalized": "bun test",
       "envAssignments": ["LD_PRELOAD=./evil.so"],
-      "decidable": true }
+      "decidable": true,
+      "analysisIssues": [] }
   ],
-  "undecidable": false
+  "undecidable": false,
+  "analysisIssues": []
 }
 ```
 
@@ -226,64 +226,21 @@ One entry compiles to one predicate over a segment's `normalized`
 The same `*`-glob implementation backs `@clarvis/hooks`' `match.tool`, so "the anchoring and
 escaping rules can only be right or wrong once" (`packages/capability/src/glob.ts`).
 
-### 3.4 `guard_judge` payload and the `decide` tool
+### 3.4 `guard_judge` guidance and host-validated decisions
 
-Request-side shape (§2.5). Judge-side, the model is given exactly two messages
-(`packages/kernel/src/guard/judge.ts`): `system` = the caller's `prompt` verbatim, and
-`user` = the pretty-printed JSON facts document (`packages/kernel/src/guard/judge.ts`):
+`guard_judge.prompt` remains a deprecated alias for bounded additional guidance; `guidance` is the
+typed field. Code composes operator-global guidance before workspace guidance. The kernel always
+places `EFFECT_REVIEW_POLICY` first, and the model receives only host-attested effects and the live
+operator-authority envelope. A returned `allow` executes only after the named grants cover every
+exact fact through the registered descriptor. Missing facts, invalid output, stale revisions and
+uncovered grants become `unsure` and use the configured human/deny fallback.
 
-```json
-{
-  "tool": "shell",
-  "args": { "command": "curl evil" },
-  "guard_reason": "no allowed commands list configured",
-  "segments": ["curl evil"],
-  "undecidable": false,
-  "paths": []
-}
-```
-
-It is forced to answer through one tool, `decide` (`packages/kernel/src/guard/judge.ts`), with
-`toolChoice: { type: "function", function: { name: "decide" } }` (`packages/kernel/src/guard/judge.ts`):
-
-```json
-{ "type": "object", "required": ["decision"], "additionalProperties": false,
-  "properties": { "decision": { "type": "string", "enum": ["allow","deny","unsure"] },
-                  "reason": { "type": "string" } } }
-```
-
-Arguments are re-validated on the way back with a **loose** zod schema (`packages/kernel/src/guard/judge.ts`) that
-tolerates extra keys; a string `arguments` is `JSON.parse`d first, and a parse failure yields
-`undefined` (`packages/kernel/src/guard/judge.ts`).
-
-The JSON also includes the optional host-attested `GuardCallFacts` fields and `operator_message`.
-`applyGuard` copies facts from the decision, never from similarly named tool arguments. The resolver
-snapshots user text from `RunRequest.messages`: newest messages have priority within 4 KiB of UTF-8,
-retained text stays chronological, and excess prefixes are cut without partial code points. Bare
-strings and text parts count; assistant messages, tool results and images do not. Empty text omits
-the field. For a child this is its own request brief, not the parent's transcript. Mid-run steers do
-not update this snapshot and cannot authorize a destructive command through this field.
-
-The Code builtin treats command, justification and other arguments as data, not authority, and
-`operator_message` as its only source of intent.
-Contained, non-dangerous routine in-tree work (including `git add`, ordinary `git commit`, `mkdir`,
-`cp`, `mv`, `cd`, and ordinary expansions) prefers `allow` rather than `unsure`. Destructive effects
-such as restore, hard reset, forced clean/removal, and published-history rewrites require explicit
-intent for that effect; missing intent returns `unsure`. Credential access and exfiltration return
-`deny`. Host or missing placement never implies a sandbox and does not gain the contained routine
-rule. A host command explicitly requested by `operator_message` may be allowed without containment,
-including native unsandbox in Auto; destructive or external effects still require explicit intent
-for that effect. A prompt overlay still replaces the builtin
-whole. This is prompt policy, not a deterministic guarantee of a real model's ruling.
-
-Production: `factsMessage` and `createJudgeElicit` in `packages/kernel/src/guard/judge.ts`,
-`operatorMessage` in `packages/kernel/src/guard/operator-message.ts`, `createGuardResolver` in
-`packages/kernel/src/guard/resolver.ts`, and `DEFAULT_GUARD_JUDGE_PROMPT` in
-`packages/code/src/adapters/guard-judge-prompt.ts`. Test:
-`packages/kernel/tests/integration/guard-auto-review.test.ts` (Auto facts and operator snapshot),
-`packages/tools/tests/integration/guard-dispatch.test.ts` (trusted decision propagation),
-`packages/code/tests/integration/guard-judge-prompt.test.ts` (builtin/overlay contract), and
-`packages/kernel/tests/unit/guard.test.ts` (unsure-to-human bridge).
+Production: `createEffectReviewService` in
+[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts) and
+`createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
+[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts), and
+[guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ### 3.5 Elicitation payload for a `guard_confirm`
 
@@ -343,26 +300,19 @@ production call site. So a host operator flipping `CLARVIS_LOG_AUDIT` off silent
 in the table above, with no trace of the omission. Pinned:
 `packages/kernel/tests/unit/guard-audit.test.ts` ("is silent when CLARVIS_LOG_AUDIT is off") ("stamps audit: true on every record").
 
-### 3.8 The default guard-judge policy
+### 3.8 The nonreplaceable reviewer policy
 
-`DEFAULT_GUARD_JUDGE_PROMPT` (`packages/code/src/adapters/guard-judge-prompt.ts`) is the
-operative policy any workspace gets under `guard_mode: "auto"` with no custom `guard-judge.md`; when
-`code` resolves it as the fallback (§4.11), it reaches the judge model verbatim as the `system`
-message (§3.4; `packages/kernel/src/guard/judge.ts`). Its three decision categories:
+`EFFECT_REVIEW_POLICY` in
+[reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts) is always the first system
+message. Workspace and global guidance are additional data and never replace it. Only admitted
+operator evidence supplies semantic authority. The enabled rollout requires host validation of
+registered effect, target, evidence and grant coverage after the model responds; uncertain or
+noninferable effects stay human-only. Review on remains human review, and containment alone grants
+no semantic authority.
 
-- **`allow`** — routine inspection/build/test; contained non-dangerous in-tree development, including
-  ordinary Git commits and expansions, follows the low-interruption rule in §3.4.
-- **`deny`** — credential access and exfiltration, regardless of placement.
-- **`unsure`** — unassessable effects, missing intent for destructive or external effects, and Host
-  operations beyond routine inspection/build/test without explicit authorization in
-  `operator_message`, the only intent source. Explicitly requested host commands may be allowed
-  without containment, subject to the destructive/external-effect and credential rules.
-
-The prompt asserts a sandbox/container boundary only for explicit `placement: "contained"` and
-never equates it with denied networking or complete path analysis. Explicit unsandbox under
-Isolation Sandbox reaches the judge in Auto as a host effect; `on` remains human-only. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
-(`DEFAULT_GUARD_JUDGE_PROMPT`). Test:
-`packages/code/tests/integration/guard-judge-prompt.test.ts`.
+Production: `createEffectReviewService` and `createGuardResolver`.
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts)
+and [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ---
 
@@ -428,11 +378,24 @@ delegates everything syntactic:
 
 1. `dialect.split(command)` → `{ segments, balanced }`.
 2. For each source segment: `dialect.tokenize` → `dialect.normalize(tokens.map(t => t.text))` →
-   push a `Segment` with `decidable: dialect.decidable(source)`.
-3. For each token: `dialect.pathCandidate(token)`. `opaque` sets `tokenUndecidable` and
+   collect `dialect.analysisIssues` with zero-based segment indices. Legacy dialects that report
+   undecidability without causes receive `tokenizer_gap`; unbalanced syntax and empty tokenization
+   receive their own causes. `decidable` means the segment has no issues.
+3. For each token: `dialect.pathCandidate(token)`. `opaque` adds `opaque_path` and
    contributes **no** path; `none` contributes nothing; otherwise the value is pushed once,
    deduplicated by a `Set`, first-seen order.
-4. `undecidable = !balanced || tokenUndecidable || emptySegment || some(!decidable)`, where `emptySegment` means some segment reduced to `argv.length === 0` **and** recorded no `envAssignments`. A `NAME=value` assignment-only segment is not a tokenizer failure.
+4. Aggregate segment issues; `undecidable = analysisIssues.length > 0`. Empty tokenization means
+   `argv.length === 0` **and** no `envAssignments`. An assignment-only segment is not a tokenizer failure.
+
+`ShellAnalysisIssueKind` distinguishes parameter, command and process substitution, dynamic
+command/subcommand/path, opaque command/path, unbalanced syntax and tokenizer gaps.
+`ShellAnalysisImpact` distinguishes value, executable, subcommand, path, environment and control
+flow. These are syntax facts, never permission. `GuardReviewability` reserves `judgeable` for a
+host effect attestor; this analyzer change enables no new Auto approval. POSIX assignment values
+are classified as paths separately from their variable names. Production:
+[analyzer](../../packages/tools/src/guard/analyze-shell.ts) (`analyzeShell`) and
+[dialects](../../packages/tools/src/guard/dialects/index.ts). Test:
+[issue corpus](../../packages/tools/tests/unit/analysis-issues.test.ts).
 
 The `emptySegment` term is the one with a stated reason: the guard matches its deny list against
 `normalized` **before** consulting `undecidable`, so a tokenizer that came up empty would produce a
@@ -574,33 +537,30 @@ The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/gu
 Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
 `packages/kernel/tests/integration/guard-auto-review.test.ts`.
 
-There is no contained silent-allow rule: unmatched contained commands still ask, and only Auto
-changes who may answer. Placement is resolved once per run from host settings. An enabled native
-policy is contained-or-fail-closed (`sandboxWouldApply`); even legacy `availability: "optional"`
-never falls back to bare execution. A Docker/Podman guest is also contained, while an absent or
-disabled native policy on Host is not. `loadGuardSettings` uses the same effective native policy
-resolver as tool execution, including Docker's required-Sandbox fallback. Container launch captures
-its actual backend/network for the guest rather than relying on later settings edits. Native network
-uses `"host" | "none"`; container `none` maps to `none`, while `internet`/`outbound` are omitted rather
-than misrepresented as native host networking. Per-call unsandbox overrides placement to Host and
-omits the no-longer-applicable native network restriction. Its `host_command` ask precedes generic
-undecidability, but never deny-list enforcement. `createGuardResolver` passes `allowHostJudge: true`
-only for Auto: `allow` executes and `deny` refuses; unsure, errors and malformed responses use
-normal `on_unsure` fallback (default `ask`, configured `deny` respected). No usable model routes to
-a human. Mode `on` retains `escalate: "human"`; `off` is unchanged. Docker/Podman still reject
-escalation, and on Host the field is a no-op under normal command policy.
+There is no contained silent-allow rule: unmatched Sandbox commands still ask, and only Auto
+changes who may answer. Placement is resolved once per Host/Sandbox run from host settings. An
+enabled native policy is contained-or-fail-closed (`sandboxWouldApply`); even legacy
+`availability: "optional"` never falls back to bare execution. `loadGuardSettings` uses the same
+effective native policy resolver as tool execution. Container placement is outside Command Guard:
+an explicit `on`/`auto` request is rejected before guest launch, while absent/`off` runs receive no
+guard policy, authority ledger or reviewer. Per-call unsandbox overrides placement to Host and
+omits the native network restriction. Its `host_command` ask precedes generic undecidability, but
+never deny-list enforcement. Auto uses the host-validated effect reviewer; unsure, operational
+failures and malformed responses use the normal `on_unsure` fallback. Mode `on` remains human and
+`off` is unchanged. Docker/Podman reject escalation structurally because no host-exec channel exists.
 
 Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
 `packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and
-`guestGuardSettings` in `packages/kernel/src/runtime/guest-loop-executor.ts`. Test:
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
 `packages/kernel/tests/integration/guard-auto-review.test.ts`,
 `packages/tools/tests/unit/sandbox-placement.test.ts`, and
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (container Auto expansions).
+`packages/kernel/tests/integration/runtime-capability-composition.test.ts`.
 
 POSIX normalization removes consecutive leading Git `--no-pager`/`--no-color` presentation flags.
 `commandComparison` in `packages/kernel/src/guard/command-comparison.ts` additionally validates bare
-`cd <path>` and leading `git -C <path>` operands, and skips assignment-only `NAME=value` segments
-for allow-list comparison so `QA=/tmp/foo; git status` can match `git status`. In a straight `&&` chain, an in-workspace `cd`
+`cd <path>` and leading `git -C <path>` operands. Assignment-only `NAME=value` segments and
+command environment prefixes prevent static allowlist approval, even with wildcard entries.
+Unattested bindings ask a human on Host and require explicit review when contained. In a straight `&&` chain, an in-workspace `cd`
 segment needs no allowlist entry; in-workspace Git `-C` is removed only from comparison, leaving
 normalized session keys untouched. Directory paths still participate in outside-path denial.
 Unsupported control flow, `cd` options and PowerShell retain ordinary matching. Original analyzer
@@ -630,12 +590,11 @@ Notes the code states about specific rules:
   commands list"` when an allow list exists but the command's segments did not fully match it
   (`packages/kernel/src/guard/shell-guard.ts`). §3.4's example JSON uses the first string without stating which
   condition produces it.
-- **Neither `commandsAllowed` nor `commandDenied` inspects `Segment.envAssignments`** — both match
-  only `normalized`, which is already env-assignment-stripped (§3.1, invariant 7). So an allow-list
-  entry like `git status` is satisfied by `LD_PRELOAD=/evil.so git status` as readily as by the bare
-  command; nothing in `shell-guard.ts` re-checks the stripped prefix against the list
-  (`packages/kernel/src/guard/shell-guard.ts`). This is the same normalization that lets the *session*
-  allow-list key include `envAssignments` (§3.6) — the settings-configured allow/deny lists do not.
+- **Environment bindings never inherit static approval from bare argv.** `commandsAllowed`
+  rejects any segment carrying `envAssignments`. `commandDenied` retains bare normalized matching
+  so an environment prefix cannot hide a denial. Session approval retains exact environment keys.
+  Production: `createShellGuard` in [shell-guard.ts](../../packages/kernel/src/guard/shell-guard.ts).
+  Test: [guard contrasts](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
 
 Credential patterns (`packages/kernel/src/guard/shell-guard.ts`): `.env` (with a following `.` or end), `*.pem`,
 `*.key`, `id_rsa`, `id_ed25519`, `.npmrc`, `.netrc`, `.git-credentials`, `.aws/credentials`,
@@ -651,100 +610,36 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 
 ### 4.6 Resolving a run's guard
 
-By default, `createGuardResolver` creates one allowlist shared by its runs. A host with independent
-interactive lifetimes supplies `sessionAllowlistFor`, resolving the current list on each command by
-owner/execution identity. Returning `undefined` disables session approval for that command. Human
-questions capture the list present when they open; revocation permanently clears that instance, so
-an old pending response cannot authorize a new controller. Judge fallback uses the same lookup.
+`createGuardResolver` resolves the effective mode and native Host/Sandbox placement, builds the
+immutable effect registry, and creates the shared `EffectReviewService` over the run's authority
+reader. Review `off` returns no guard. Review `on` preserves the human channel. Review `auto`
+attests every nondeterministic call and sends it to the shared reviewer; absence of a model/provider
+is a structured admission failure and follows `on_unsure`. Deterministic denies and exact static
+allows finish before any model call. Shadow mode computes review evidence but preserves the current
+human result.
 
-The list retains at most 1,024 normalized segment keys and 1 MiB of key bytes. An accepted command
-that would exceed either budget remains approved once but is not cached; later calls ask again.
-There is no partial insertion or silent eviction of a different approved command.
-
-Production: `createGuardResolver` and `GuardResolverDeps.sessionAllowlistFor` in
-[resolver.ts](../../packages/kernel/src/guard/resolver.ts), `createGuardSessionAllowlist` in
-[guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts). Test: `revalidates the live
-controller's allowlist inside an already resolved run`, `cannot seed a new controller's consent
-with an older pending answer`, and `bounds retained command approvals and never revives a revoked
-list` in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
-
-Per run:
-
-1. `settings = deps.loadSettings()` — re-read every time.
-2. `guardMode = ctx.request.guard_mode ?? defaultGuardMode(settings.guard)`
-   (`resolveGuardMode`).
-3. `audit = auditRoot.child({ run_id: ctx.executionId, owner: ctx.owner })`.
-4. `buildGuard` returns `undefined` for mode `off` → the resolver returns
-   `undefined` and the run is unguarded.
-5. Human consent uses `humanApprovalFor` when supplied by the guest adapter, otherwise
-   `createGuardHumanApproval` over `ctx.elicit` and the current `sessionAllowlistFor` lookup.
-   Both paths consult the same host scope and reject stale answers.
-6. `judgeElicit` = `createJudgeElicit(…)` only when `guardMode === "auto"` **and**
-   `ctx.request.guard_judge !== undefined`. The judge's model falls back to
-   `settings.defaultModel`, then `ctx.env.CLARVIS_DEFAULT_MODEL`.
-7. `chosenHuman` = `humanElicit` for `on`, and for `auto` only when no judge resolved. A resolved
-   judge returns both `allowed` and the final `answerer`, so an internal human fallback is audited
-   as human rather than judge.
-8. Emit `guard.resolved`.
-
-| (mode, judge param, judge model resolves, human channel) | `guard` | answering channel |
-| --- | --- | --- |
-| `off`, * | `undefined` | none (unguarded) |
-| `on`, *, *, yes | built | human |
-| `on`, *, *, no | built | none — every `ask` fails closed |
-| `auto`, absent, *, yes | built | human (`packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard.test.ts`) |
-| `auto`, present, no, yes | built | human (`packages/kernel/tests/unit/guard.test.ts`) |
-| `auto`, present, yes, yes | built | judge for `allow`/`deny`; `on_unsure` fallback for unsure, judge failure, or malformed response (`ask` by default, configured `deny` respected) |
-| `auto`, present, yes, no | built | judge; an `escalate:"human"` ask denies with a warn (`packages/kernel/tests/unit/guard-audit.test.ts`) |
+Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
+[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
+[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 
 ### 4.7 Answering an `ask`
 
-The composed elicit (`packages/kernel/src/guard/resolver.ts`):
+The composed elicit applies session coverage only to the exact analyzable non-host command. Auto
+then calls `EffectReviewService.review`; an `allow` or `deny` is accepted only after the service
+validates the live revision and exact descriptor coverage. `unsure` goes to the human channel when
+`on_unsure` is `ask`, otherwise it denies. Human answers and operational failures are not cached as
+clean verdicts. `matched: "host_command"` never receives sticky session consent.
 
-| Event | Effect | File |
-| --- | --- | --- |
-| `req.escalate === "human"`, human channel exists | route to the human, bypassing both automatic answerers | — |
-| `req.escalate === "human"`, no human channel | `noHumanChannel` → warn `guard.escalation.no_channel`, return `false` | — |
-| `matched !== "host_command"` and session allow list already `covers(req.shell)` | record `answerer: "session_allowlist"`, return `true` **without** consulting the judge or the human | — |
-| judge exists | call it and record the returned final `answerer`; a judge fallback is attributed to `human` | `createGuardResolver` |
-| no judge, human fallback exists | call the human and record `answerer: "human"` | `createGuardResolver` |
+`createGuardHumanApproval` reads the current allowlist before and after the question. It refuses late
+answers after the controller or scope is retired. `humanApprovalFor` is available only to native
+Host/Sandbox runs; Container guests receive no approval port.
 
-Host-command review is per call, never volatile session consent: `matched: "host_command"` bypasses
-session coverage and never offers `allow_session`, even when Auto falls back to a human. Clean judge
-`allow`/`deny` answers still use the exact-facts memo; this is separate from session approval and
-does not cache human fallback answers. Production: `createGuardResolver` in
-`packages/kernel/src/guard/resolver.ts`, `createGuardElicit` in
-`packages/kernel/src/guard/guard-elicit.ts`, and `memoKey` in `packages/kernel/src/guard/judge.ts`.
-Test: `packages/kernel/tests/integration/guard-auto-review.test.ts` and
-`packages/kernel/tests/unit/guard.test.ts`.
-
-`createGuardHumanApproval` reads the current allowlist before and after the question to distinguish
-`allow_session` from `allow`. It captures the scope before awaiting the answer, then refuses approval
-if the signal aborted or the scope retired, including a late one-time approval. `humanApprovalFor`
-lets the guest use that same host decision through `runtime.guard_approval`; the guest has no local
-human allowlist or memoized fallback answer. The host reconstructs shell facts from displayed argv
-text and never accepts guest-supplied segments or scope identifiers.
-Production: [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts),
-[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and
-[guard-approval-bridge.ts](../../packages/kernel/src/runtime/guard-approval-bridge.ts).
-Test: [runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts)
-checks native/guest detach, takeover, disconnect, conversation close and late answers;
-[runtime-guard-revocation.test.ts](../../packages/kernel/tests/integration/runtime-guard-revocation.test.ts)
-executes the guest loop and refuses a repeated command after detach without fresh approval.
-
-`createGuardElicit`'s own mapping (`packages/kernel/src/guard/guard-elicit.ts`):
-
-| Elicitation result | Returns | Side effect |
-| --- | --- | --- |
-| `action !== "accept"` (decline / cancel) | `false` | none |
-| `accept` + `decision: "allow"` | `true` | none |
-| `accept` + `decision: "allow_session"` **and** the option was offered | `true` | `allowlist.record(shell)` |
-| `accept` + `decision: "allow_session"` when it was **not** offered | `false` | none (`packages/kernel/tests/unit/guard.test.ts`) |
-| anything else | `false` | none |
-
-The prompt waits `ELICIT_NO_TIMEOUT_MS = 2_147_483_647` ms unless the run's signal aborts
-(`packages/kernel/src/guard/guard-elicit.ts`) — the wait bound that actually applies is imposed one layer
-up, in the loop (§4.8).
+Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
+[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts), and
+[human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
+[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), and
+[runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 ### 4.8 The engine's wiring
 
@@ -771,45 +666,18 @@ discarded rather than racing or double-firing.
 Because the guard is resolved per **run** and threaded into every agent's toolset, it applies to
 lead-spawned subagents too (`packages/loop/tests/integration/command-guard-wiring.test.ts`).
 
-### 4.9 The judge
+### 4.9 Host-validated automatic review
 
-`createJudgeElicit` (`packages/kernel/src/guard/judge.ts`):
+Review `auto` uses the shared effect-review service for every nondeterministic decision. The service
+compiles authority lazily, validates effect IDs, evidence IDs, targets, constraints and inference
+ceilings, then validates every decision through `descriptor.covers`. Its cache key includes the
+ledger revision and exact facts; a steer invalidates an in-flight result. Shadow mode records the
+same analysis while preserving the current human outcome. There is no compatibility judge that can
+turn model text directly into execution authority.
 
-- **Construction.** No model token (neither `cfg.model` nor `deps.defaultModel`) → `warn` +
-  `undefined`. An unresolvable provider → `warn` + `undefined`.
-  Both warnings end with the literal `"— degrading to mode 'on'"`.
-- **Per call.** `memoKey` uses the exact `factsMessage` JSON supplied to the judge, including raw
-  args/cwd and attested facts. Normalized equality alone cannot reuse a ruling across changed raw
-  expansions, environment prefixes, placement or dangerous flags. Production: `memoKey` in
-  `packages/kernel/src/guard/judge.ts`. Test:
-  `packages/kernel/tests/integration/guard-auto-review.test.ts` (judge verdict identity).
-
-State table for one `judgeOnce` :
-
-| Outcome | Returns | Memoized? | File |
-| --- | --- | --- | --- |
-| `llm.call` throws, human fallback permitted/present | human answer, `answerer:"human"` | **no** (`clean:false`) | `createJudgeElicit` |
-| `llm.call` throws, no permitted human fallback | deny, `answerer:"judge"` | **no** | `createJudgeElicit` |
-| `decide` → `allow` | allow, `answerer:"judge"` | yes | `createJudgeElicit` |
-| `decide` → `deny` | deny, `answerer:"judge"` | yes | `createJudgeElicit` |
-| unparsable / wrong tool / schema mismatch, human fallback permitted/present | human answer, `answerer:"human"` | **no** | `createJudgeElicit` |
-| unparsable / wrong tool / schema mismatch, no permitted human fallback | deny, `answerer:"judge"` | **no** | `createJudgeElicit` |
-| `unsure`, `on_unsure !== "deny"`, human channel present | human answer, `answerer:"human"` | **no** | `createJudgeElicit` |
-| `unsure`, otherwise | deny, `answerer:"judge"` | yes | `createJudgeElicit` |
-| the escalated human elicit **rejects** | rethrows | **evicted** | — |
-
-An `unsure` escalation appends `"The automated reviewer was unsure and escalated this to you"` plus
-the judge's own reason to the request's existing reason; pinned at
-`packages/kernel/tests/unit/guard.test.ts`.
-
-The judge call uses `cfg.timeout_ms ?? 20_000` and forwards the run's
-abort signal.
-
-When the resolved provider kind is `openai-codex`, `AiSdkAdapter.call` streams even though the judge
-does not install `onStreamDelta`; ChatGPT's pinned Codex Responses endpoint rejects non-streaming
-requests. Production: `providerRequiresStream` in `packages/llm/src/ai-sdk-adapter.ts`. Test:
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (`"streams ChatGPT subscription
-calls even without a delta consumer"`).
+Production: `createGuardResolver` and `createEffectReviewService`. Test:
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
+[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 
 ### 4.10 Prompt-cache TTL side effect
 
@@ -841,18 +709,16 @@ itself because guard mode is resolved from host settings it never sees"
   policy when the workspace has no list of its own. Pinned by
   `packages/code/tests/integration/run-controls-render.test.tsx` and
   `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-- **Judge prompt** resolution is workspace `guard-judge.md` → global → built-in, with a blank or
-  unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts`) and a >1 MiB file rejected without reading its body; pinned at
+- **Judge guidance** resolution is workspace `guard-judge.md` → global → absent, with a blank or
+  unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts`) and a >32 KiB file rejected without reading its body; pinned at
   `packages/code/tests/integration/guard-judge-prompt.test.ts`. The prompt is sent only
   when the mode is `auto` (`packages/code/src/runtime.tsx`, `judgePayloadFor`). `judgePayloadFor`
   (called by `buildRunHost` in `packages/code/src/runtime.tsx`) is the only production path that attaches `guard_judge` to a
-  run request, and its return type is `{ guardJudge?: { prompt: string } }`
+  run request, and its return type is `{ guardJudge?: { guidance: string } }`
   (`packages/code/src/run-host.ts`) — it never sets `model`, `on_unsure` or `timeout_ms`, even
   though `toStartParams` forwards all three when present (`packages/code/src/adapters/kernel-run-client.ts`)
-  and `GuardJudgeInput` declares them (`packages/code/src/adapters/run-types.ts`). Through
-  `code`, the judge therefore always falls back to `settings.defaultModel`/`CLARVIS_DEFAULT_MODEL`
-  (§4.6) and `on_unsure`'s omitted-field behavior (§2.5, invariant 43); the wider fields are wired
-  end-to-end but dead on this client's path.
+  and `GuardJudgeInput` declares them (`packages/code/src/adapters/run-types.ts`). The kernel resolves
+  shared `effect_review` settings without requiring Code to duplicate those values in each request.
 - **Isolation is separate.** Host/Sandbox/Docker/Podman selection writes no guard field, and a Review write
   writes no runtime or Sandbox field. The header and Run Controls therefore report both axes rather
   than naming a combined posture (`packages/code/src/features/run/isolation.ts`,
@@ -1095,27 +961,24 @@ broken.
     `packages/tools/src/core.ts`. Test: `packages/kernel/tests/unit/guard.test.ts` and
     `packages/tools/tests/integration/shell-escalation.test.ts`.
 
-40. **Mode `auto` builds the judge only when `guard_judge` is present *and* a model resolves;
-    otherwise it falls back to the human prompt.** `packages/kernel/src/guard/resolver.ts`. Pinned: `packages/kernel/tests/unit/guard.test.ts`.
+40. **Mode `auto` builds a reviewer when a model resolves; `guard_judge` is optional guidance and
+    overrides.** Unavailable models fall back to the human channel. Production:
+    `packages/kernel/src/guard/resolver.ts`. Test: `packages/kernel/tests/unit/guard.test.ts`.
 
 41. **A judge failure or malformed response is not memoized and escalates to the human when the
     default `on_unsure: "ask"` policy and a human channel permit it; otherwise it denies.** The
     final audit answerer is `human` when that fallback answers, never incorrectly `judge`.
-    Production: `fallback`/`judgeOnce` in `packages/kernel/src/guard/judge.ts` and the judge branch
     in `createGuardResolver`. Tests: `packages/kernel/tests/unit/guard.test.ts` (`"routes call
     failures and malformed responses to the human channel"`) and
     `packages/kernel/tests/unit/guard-audit.test.ts` (`"attributes a judge failure fallback to the
     human who answered it"`).
 
 42. **A judge that cannot be constructed degrades the run to mode `on`, it does not disarm the
-    guard.** `packages/kernel/src/guard/judge.ts` returns `undefined`;
     `packages/kernel/src/guard/resolver.ts` falls back to `humanElicit`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
 43. **`on_unsure: "deny"` never reaches the human, even when a human channel exists; an omitted
-    `on_unsure` behaves as its documented default `"ask"` — `packages/kernel/src/guard/judge.ts`'s
     `cfg.on_unsure !== "deny"` treats `undefined` the same as `"ask"`.**
-    `packages/kernel/src/guard/judge.ts`;
     `packages/loop/src/runtime/capabilities/tools-settings.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
@@ -1253,21 +1116,13 @@ broken.
     `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
     complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
 
-61. **Container placement preserves command-guard decisions without trusting guest execution or
-    audit identity.** The host sends only the guard/default-model settings needed to reconstruct
-    `createGuardResolver`; provider secrets remain behind the model broker. The guest caps its
-    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. The guest
-    has no host-exec channel: `require_escalated` fails closed there. The host
-    rejects malformed audit events and overwrites guest-claimed `run_id`/`owner` with the
-    authenticated route before writing. The OCI policy is the guest containment boundary; no missing
-    nested native sandbox is treated as a guard bypass. Production: `guestGuardSettings` and
-    `createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`;
-    `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
-    `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/isolated-run-executor.ts`. Test:
-    `packages/tools/tests/integration/shell-escalation.test.ts`;
-    `runtime guard audit bridge` in
-    `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`; `runtime guest loop` in
-    `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
+61. **Container placement is core-only and does not execute Command Guard or effect review.**
+    An explicit `guard_mode: "on" | "auto"` is rejected before guest launch. With the field absent or
+    `off`, the guest receives no guard settings, reviewer model, operator evidence, authority envelope,
+    approval capability or guard-audit channel. `require_escalated` still fails structurally because
+    the guest has no host-exec channel. Production: `createLocalContainerRuntime` and
+    `createGuestLoopExecutor`. Test: `runtime capability composition` and `runtime guest loop` in
+    `packages/kernel/tests/integration/`.
 
 ---
 
@@ -1282,18 +1137,13 @@ broken.
 | Run cancelled mid-prompt | `onAbort: () => false` at the loop layer; `signal` also passed into the elicitation itself | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/kernel/src/guard/guard-elicit.ts` |
 | Client declines or cancels the elicitation | `false` (deny) | `packages/kernel/src/guard/guard-elicit.ts` |
 | No human channel on an escalated ask | `false` + warn `guard.escalation.no_channel` — the code calls this "the one denial a user can neither see nor answer" | `packages/kernel/src/guard/resolver.ts` |
-| No judge model / unresolvable provider | judge is not built; run degrades to the human prompt; `warn` ending `"degrading to mode 'on'"` | `packages/kernel/src/guard/judge.ts` |
-| Judge LLM call throws (incl. a non-`Error` throw) | ask the human when policy/channel permit, otherwise deny; warn and do not memoize | `fallback` and `judgeOnce` in `packages/kernel/src/guard/judge.ts` |
-| Judge returns a non-`decide` call, unparsable JSON, or a schema mismatch | ask the human when policy/channel permit, otherwise deny; warn and do not memoize | `parseDecision`, `fallback`, and `judgeOnce` in `packages/kernel/src/guard/judge.ts` |
-| Judge times out | governed by `cfg.timeout_ms ?? 20_000` passed to `llm.call`; surfaces as the throw path above | `packages/kernel/src/guard/judge.ts` |
-| Escalated human elicit rejects inside the judge | memo evicted and the rejection rethrown | `packages/kernel/src/guard/judge.ts` |
 | Analyzer cannot parse the command | deny with a nonempty deny list; otherwise explicit unsandbox reaches `host_command`, then generic Host human-escalated or contained reviewable ask | `packages/kernel/src/guard/shell-guard.ts` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts`, `packages/kernel/src/guard/shell-guard.ts` |
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
 | Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `require_escalated` shell | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
-| Guest sends a malformed or open-ended guard-audit event | the host throws `invalid_request`; no record is written with guest-controlled fields | `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`; `runtime guard audit bridge` in `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts` |
-| `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |
+| Container request explicitly selects Review `on` or `auto` | reject as `unsupported_policy` before guest launch | `createLocalContainerRuntime`; `runtime-capability-composition.test.ts` |
+| `guard-judge.md` unreadable / blank / >32 KiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 
 An unappealable static `deny` carries the guard's reason. When an `ask` reaches a reviewer but is not
@@ -1343,8 +1193,7 @@ accumulate as execution failures`).
 | `packages/kernel/src/guard/shell-guard.ts` | `@clarvis/tools/guard` (`withinWorkspace`, `touchesOutside` + types) | the policy reasons over the analyzer's facts |
 | `packages/kernel/src/guard/shell-guard.ts` → `packages/kernel/src/guard/glob.ts` | `@clarvis/capability`'s `globToRegExp` | one shared glob dialect with `@clarvis/hooks` |
 | `packages/kernel/src/guard/resolver.ts` | `@clarvis/loop/host`'s `defaultGuardMode` + `GuardConfig` | the settings shape is the engine's, not the kernel's |
-| `packages/kernel/src/guard/judge.ts` | `@clarvis/capability`'s `parseModelRef`, `resolveProvider` | judge model resolution reuses the shared provider registry |
-| `packages/kernel/src/file-kernel.ts` and `packages/kernel/src/runtime/guest-loop-executor.ts` | `createGuardResolver` | native and isolated guest construction sites; the latter receives stripped host settings and returns validated audit events |
+| `packages/kernel/src/file-kernel.ts` | `createGuardResolver` | Host/Sandbox construction site; Container guests do not construct a guard |
 | `packages/loop/src/runtime/capabilities/tools.ts` | `opts.resolveGuard` | the engine's single call into host guard policy |
 | `packages/loop/src/runtime/tools/builtin/index.ts` | `@clarvis/tools/guard` values | re-export barrel under the tools capability subpath |
 | `packages/code/src/onboarding/seed-default-allowlist.ts` | `@clarvis/kernel/local`'s two default lists | the seed is the analyzer's own list, not a copy |
@@ -1456,3 +1305,12 @@ separately postures guard confirmations per principal
   independent Isolation control ([sandbox-and-toolchains](sandbox.md) and
   [isolated-agent-runtime](../hosts/isolated-agent-runtime.md)); and the prompt-cache economics
   behind the `1h` TTL ([prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md)).
+## Host-attested rollout
+
+The host-validated path above is the only automatic reviewer. With operator-owned
+`effect_review.rollout` set to `local` or `ci_retry`, complete effect attestation may
+refine the global undecidable route into a judgeable ask; it never overrides a deterministic deny.
+Syntax issues remain available for presentation and do not themselves prove confinement. The
+compiler, ledger, composition, target checks, exact grants and structured failures are owned by
+[effect review](effect-review.md). Production: `createGuardResolver` and `attestShell`. Test:
+[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).

@@ -10,6 +10,8 @@ export interface ProcessRunRequest {
   readonly environment: Readonly<Record<string, string | undefined>>;
   /** Hard timeout in milliseconds. */
   readonly timeoutMs?: number;
+  /** Combined UTF-8 output ceiling; exceeding it rejects and terminates the process. */
+  readonly maxOutputBytes?: number;
   /** Host cancellation signal. */
   readonly signal?: AbortSignal;
 }

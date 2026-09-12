@@ -34,11 +34,7 @@ import type { Logger } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type {
-  GuardResolver,
-  SandboxResolver,
-  SecretNamesResolver,
-} from "./capabilities/tools.ts";
+import type { GuardResolver, SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 

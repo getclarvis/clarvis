@@ -194,7 +194,16 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
 
       await statDirectory(cwd, cwdArg ?? cwd);
 
-      return runCommand(command, cwd, timeoutMs, config, signal, finalize, hooks?.onOutput, forceBare);
+      return runCommand(
+        command,
+        cwd,
+        timeoutMs,
+        config,
+        signal,
+        finalize,
+        hooks?.onOutput,
+        forceBare,
+      );
     },
   };
 }

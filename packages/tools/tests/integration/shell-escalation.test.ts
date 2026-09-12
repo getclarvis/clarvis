@@ -109,7 +109,10 @@ describe("shell sandbox_permissions", () => {
   });
 
   it("denies git helper execution options on sandboxed and unsandboxed shell", async () => {
-    for (const sandbox of [undefined, { type: "native" as const, availability: "required" as const }]) {
+    for (const sandbox of [
+      undefined,
+      { type: "native" as const, availability: "required" as const },
+    ]) {
       const result = await callTool(
         "shell",
         { command: "git ls-remote --upload-pack=printf SHOULD_NOT_RUN ." },

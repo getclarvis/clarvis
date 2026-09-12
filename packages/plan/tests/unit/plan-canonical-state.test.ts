@@ -8,7 +8,7 @@ import { PlanSession } from "../../src/capability/session.ts";
 import { createPlanStore } from "../../src/index.ts";
 import { createInMemoryPlanRepository } from "../../src/testing.ts";
 
-async function planned(): Promise<PlanSession> {
+async function planned(taskCount = 2): Promise<PlanSession> {
   const session = new PlanSession({
     store: createPlanStore({ repository: createInMemoryPlanRepository() }),
     executionId: "run-1",
@@ -18,7 +18,9 @@ async function planned(): Promise<PlanSession> {
     title: "Anchor",
     objective: "Keep the plan in context",
     context: "the file is the authority",
-    tasks: [{ title: "First", detail: "do it" }, { title: "Second" }],
+    tasks: Array.from({ length: taskCount }, (_, index) =>
+      index === 0 ? { title: "First", detail: "do it" } : { title: `Task ${index + 1}` },
+    ),
     validation: ["tests pass"],
   });
   return session;
@@ -45,6 +47,55 @@ describe("plan canonical state", () => {
     await session.transitionCurrent({ taskId: "t1", status: "done", result: "did it" });
     await session.transitionCurrent({ taskId: "t2", status: "abandoned", reason: "not needed" });
     expect(planCanonicalState(session.cached()!, false)).toContain("Open tasks: none");
+  });
+
+  test("renders no active task without implicitly selecting a pending task", async () => {
+    const session = await planned();
+
+    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
+  });
+
+  test("renders no active task for a plan with no tasks", async () => {
+    const session = await planned(0);
+    const header = planCasHeader(session.cached()!, false);
+
+    expect(header).toContain("Active task: none.");
+    expect(header).toContain("Task status: (no tasks yet)");
+  });
+
+  test("renders one in-progress task and removes it once it closes", async () => {
+    const session = await planned();
+    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
+
+    expect(planCasHeader(session.cached()!, false)).toContain(
+      "Active task: t1 (in_progress). Record its outcome with transition_plan_task when its exit criterion is satisfied.",
+    );
+
+    await session.transitionCurrent({ taskId: "t1", status: "done", result: "did it" });
+    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
+  });
+
+  test("renders multiple active tasks in document order", async () => {
+    const session = await planned();
+    await session.transitionCurrent({ taskId: "t2", status: "in_progress" });
+    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
+
+    expect(planCasHeader(session.cached()!, false)).toContain(
+      "Active tasks: t1, t2 (in_progress). Record each outcome with transition_plan_task when its exit criterion is satisfied.",
+    );
+  });
+
+  test("does not classify returned, failed, done, or abandoned tasks as active", async () => {
+    const session = await planned(5);
+    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
+    await session.transitionCurrent({ taskId: "t1", status: "returned", result: "review it" });
+    await session.transitionCurrent({ taskId: "t2", status: "in_progress" });
+    await session.transitionCurrent({ taskId: "t2", status: "failed", error: "try again" });
+    await session.transitionCurrent({ taskId: "t3", status: "in_progress" });
+    await session.transitionCurrent({ taskId: "t3", status: "done", result: "did it" });
+    await session.transitionCurrent({ taskId: "t4", status: "abandoned", reason: "not needed" });
+
+    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
   });
 
   test("embeds the whole document so the model reads the real Markdown", async () => {
@@ -133,6 +184,7 @@ describe("plan canonical state", () => {
       expect(header).toContain(`expected_spec_digest: ${document.spec_digest}`);
       expect(header).toContain("Task status: t1 (done), t2 (pending)");
       expect(header).toContain("Open tasks: t2 (pending)");
+      expect(header).toContain("Active task: none.");
       expect(header).not.toContain("## Objective");
       expect(header).not.toContain("- [x] (t1)");
       // It is re-sent uncached every iteration, so its size is the running cost.

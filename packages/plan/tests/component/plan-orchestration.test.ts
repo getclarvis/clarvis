@@ -964,4 +964,21 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     expect(canonical).toHaveLength(1);
     expect(canonical[0]).toContain("expected_spec_digest");
   });
+
+  it("republishes active work on the next iteration without rewriting the prior header", async () => {
+    const { ctx, canonical } = recordingCtx();
+    const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
+    await createPlan(orch);
+
+    await orch.contribution.hooks!.beforeIteration!();
+    const first = canonical[0]!;
+    expect(first).toContain("Active task: none.");
+
+    await transitionTaskTo(orch, "t1", { status: "in_progress" });
+    await orch.contribution.hooks!.beforeIteration!();
+
+    expect(canonical).toHaveLength(2);
+    expect(canonical[1]).toContain("Active task: t1 (in_progress).");
+    expect(canonical[0]).toBe(first);
+  });
 });

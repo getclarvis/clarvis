@@ -285,7 +285,7 @@ The package requires Bun 1.4.0 or newer.
 
 ## Prompt-cache continuity
 
-Plan headers remain per-iteration reminders and append after prior history, including identical reminders. Changed plan bodies append; unchanged bodies stay in place. The newest reminder describes current state, while the store continues to enforce CAS and human approval against historical references.
+Plan headers remain per-iteration reminders and append after prior history, including identical reminders. They explicitly highlight every `in_progress` task as active: none use `Active task: none.`, one uses the singular form, and concurrent work uses the plural form in document order. This is a reminder to record an outcome through `transition_plan_task` after its exit criterion is satisfied, not automation or an implicit task selection. Changed plan bodies append; unchanged bodies stay in place. The newest reminder describes current state, while the store continues to enforce CAS and human approval against historical references.
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.

@@ -559,7 +559,7 @@ Two halves, deliberately separated by cost:
 
 | Half | Function | Contents | Republished |
 | --- | --- | --- | --- |
-| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, open tasks, **all** task statuses | end of transcript, every iteration |
+| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, active `in_progress` tasks, open tasks, **all** task statuses | end of transcript, every iteration |
 | stable spec block | `planSpecBlock(document)` (`packages/plan/src/capability/canonical-state.ts`) | objective, context, per-task `id`/`title`/`detail`/`exit`, validation | appended only when the substance changes |
 
 The block's field set "deliberately mirrors `@clarvis/plan`'s `specDigest` … so these bytes change if
@@ -572,6 +572,15 @@ transitions while `revision` grows.
 status alone "can state the exact opposite of what the runtime enforces"
 (`packages/plan/src/capability/canonical-state.ts`); the four cases are pinned at
 `packages/plan/tests/unit/plan-canonical-state.test.ts`.
+
+The header derives its active-task reminder solely from task status. With no `in_progress` task it
+renders `Active task: none.`; with one it names that task in the singular; with several it names all
+their IDs in document order using the plural form. The latter two forms remind the model to record an
+outcome with `transition_plan_task` when the exit criterion is satisfied. They do not select pending
+work, assert completion, or trigger a transition. Production: `activeTaskLine` and `planCasHeader`
+in `packages/plan/src/capability/canonical-state.ts`. Test:
+`packages/plan/tests/unit/plan-canonical-state.test.ts` and
+`packages/plan/tests/component/plan-orchestration.test.ts`.
 
 The tombstone case has its own parallel pair, `missingPlanHeader`/`missingPlanSpecBlock`
 (composed by `missingPlanCanonicalState`, `packages/plan/src/capability/canonical-state.ts`), which
@@ -1011,7 +1020,7 @@ Numbered; each carries production evidence and the pinning test.
     `planSpecBlock`'s field set mirrors `specDigest` — `packages/plan/src/capability/canonical-state.ts`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
-43. **The latest appended reminder carries every task's status; older reminders remain history.**
+43. **The latest appended reminder carries every task's status and a status-derived active-task reminder; older reminders remain history.**
     `packages/plan/src/capability/canonical-state.ts`; the test also caps it: `header.length < 1000`.
     Pinned: `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 

@@ -32,7 +32,7 @@ import {
   type ToolCallView,
 } from "./tools/registry.tsx";
 import { isLeadMutation, mutationStats, type DiffStats } from "./tools/mutation-gate.ts";
-import { formatToolCall } from "./tools/signature.ts";
+import { resolveToolCallSignature } from "./tools/signature.ts";
 import { aggregateStatus, failureCount, type ToolGroupInfo } from "./tool-groups.ts";
 import type { SectionHeader } from "./subagent-sections.ts";
 import type { BlockOverride } from "./block-focus.ts";
@@ -332,12 +332,7 @@ function ToolLine(props: {
             when={props.node.inputChars !== undefined}
             fallback={
               <span style={{ fg: tokens.muted }}>
-                {props.node.signature ??
-                  formatToolCall(
-                    props.node.mcpName ?? "",
-                    props.node.toolName ?? "",
-                    display().arguments,
-                  )}
+                {resolveToolCallSignature(props.node, display().arguments)}
               </span>
             }
           >
@@ -849,11 +844,7 @@ export function BlockView(props: {
                                 <box paddingLeft={3}>
                                   <text wrapMode="none" truncate>
                                     <span style={{ fg: tokens.muted }}>
-                                      {formatToolCall(
-                                        m.mcpName ?? "",
-                                        m.toolName ?? "",
-                                        m.args ?? {},
-                                      )}
+                                      {resolveToolCallSignature(m, rawToolArguments(m))}
                                     </span>
                                     <Show when={review().length > 0}>
                                       <span style={{ fg: tokens.muted }}>

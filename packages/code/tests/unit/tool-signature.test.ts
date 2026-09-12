@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { formatToolCall } from "../../src/views/tools/signature.ts";
+import { formatToolCall, resolveToolCallSignature } from "../../src/views/tools/signature.ts";
 
 const sig = (name: string, args: Record<string, unknown>) => formatToolCall(name, "", args);
 
@@ -37,6 +37,31 @@ test("a long path truncates from the START so the basename survives", () => {
 test("an arg-less list_dir shows its implicit default instead of bare parens", () => {
   expect(sig("list_dir", {})).toBe("(.)");
   expect(sig("list_dir", { path: "src" })).toBe("(src)");
+});
+
+test("a resident signature wins over live args, including when args were dropped", () => {
+  expect(
+    resolveToolCallSignature(
+      {
+        mcpName: "read_file",
+        toolName: "",
+        args: { path: "stale.ts" },
+        signature: "(src/live.ts)",
+      },
+      { path: "ignored.ts" },
+    ),
+  ).toBe("(src/live.ts)");
+  expect(
+    resolveToolCallSignature({ mcpName: "read_file", toolName: "", signature: "(src/kept.ts)" }),
+  ).toBe("(src/kept.ts)");
+});
+
+test("without a resident signature, live args still format, and missing args stay honest", () => {
+  expect(resolveToolCallSignature({ mcpName: "read_file", toolName: "" }, { path: "a.ts" })).toBe(
+    "(a.ts)",
+  );
+  expect(resolveToolCallSignature({ mcpName: "read_file", toolName: "" })).toBe("()");
+  expect(resolveToolCallSignature({ mcpName: "list_dir", toolName: "" })).toBe("(.)");
 });
 
 test("read_files joins its paths without JSON noise", () => {

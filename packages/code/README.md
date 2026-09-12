@@ -1093,7 +1093,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   ceiling stays persisted and gives an explicit `/export` route instead of defeating the bound.
   Expanded live rendering separately caps each arguments/result/diff/error field at 64 KiB before
   any parser or native renderable sees it; immutable publication freezes that bounded projection plus
-  its header signature. Markdown export includes the bounded, renderer-safe argument projection even
+  its header signature. Collapsed live headers and grouped member lists keep that resident signature
+  after the body is dropped, so a still-running sub-agent's finished tools still name their paths.
+  Markdown export includes the bounded, renderer-safe argument projection even
   though the live transcript intentionally mounts no raw argument panel.
 - File and memory mutations from the run lead open by default and show their bounded mutation body
   even beyond the ordinary 40-line inline gate. Delegated mutations keep the compact default, and

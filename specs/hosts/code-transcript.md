@@ -154,6 +154,7 @@ never create composing, started, or terminal nodes").
 | `mutationStats(node)` | `DiffStats \| null` | `packages/code/src/views/tools/mutation-gate.ts` |
 | `isOversizeMutation(node)` | `boolean` | `packages/code/src/views/tools/mutation-gate.ts` |
 | `formatToolCall(mcpName, toolName, args)` | `string`, always parenthesised | `packages/code/src/views/tools/signature.ts` |
+| `resolveToolCallSignature(node, args?)` | resident `signature` or `formatToolCall` | `packages/code/src/views/tools/signature.ts` |
 | `VALUE_MAX` / `SIGNATURE_MAX` | `56` / `72` | `packages/code/src/views/tools/signature.ts` |
 
 ### 2.5 `views/blocks.tsx` and `ui/patterns/stable-syntax.tsx`
@@ -771,8 +772,13 @@ glyph, the display label, `×N`, one cumulative composing count while any quiet 
 open arguments (or `arguments ready` when all composing members have closed), the maximum available
 attempt-wide stream count rather than a duplicated sum, and `N failed` when
 any member errored. It lists up to `MAX_GROUP_SIGNATURES = 6` member signatures with a `moreChip`
-for the rest. Denied guard members are selected before ordinary members, preserving their original
-relative order, and remaining slots then take ordinary members in order. A grouped shell signature
+for the rest. Each listed signature is `resolveToolCallSignature(member, rawToolArguments(member))`:
+the resident `node.signature` when present, otherwise a freshly formatted header from the member's
+raw arguments. That is the same preference `ToolLine` and Markdown export use, so a dehydrated live
+member — the usual case for a still-running sub-agent that has already moved on — still names its
+path instead of rendering empty `()` / `list_dir`'s `(.)` placeholder. Denied guard members are
+selected before ordinary members, preserving their original relative order, and remaining slots then
+take ordinary members in order. A grouped shell signature
 appends its own `guardReviewLabel`, so an individual denial and its answerer cannot disappear beyond
 the cap or behind the group's folded error body. A `warn` head additionally renders its own indented `ToolLine`. Pinned by
 `packages/code/tests/integration/tool-groups-render.test.tsx`.
@@ -922,6 +928,10 @@ raw result's lines. Blank-only text counts as `0`.
 `placeholder` stands in when every primary is absent, and each present secondary renders as
 `key=value`. Without a spec: every argument renders as `key=value`. The joined parts
 are wrapped in parentheses and capped at `SIGNATURE_MAX = 72`.
+Collapsed headers, group-member lists and Markdown export call `resolveToolCallSignature` in the
+same file, which prefers a resident `node.signature` and only formats live args when that string is
+absent. The store writes that resident string from `tool_call_started` arguments and refreshes it
+on the terminal `tool_call`. Pinned by `packages/code/tests/unit/store-hydration.test.ts`.
 
 Value formatting : strings collapse whitespace to single spaces and truncate at
 `VALUE_MAX = 56` — from the **start** when the key is in
@@ -932,7 +942,8 @@ The 37-entry `SIGNATURES` table is at `packages/code/src/views/tools/signature.t
 `tests/unit/tool-signature.test.ts` — bare command, secondaries, non-whitelisted
 argument suppression, start-truncation of a long path, `list_dir`'s `"."`
 placeholder, the uncurated-MCP `key=value` fallback, mutation tools showing only
-the path, and `apply_patch` rendering as bare `()`.
+the path, `apply_patch` rendering as bare `()`, and `resolveToolCallSignature`
+preferring a resident header over live args (including after args were dropped).
 
 ### 4.12 Projections consumed by, but not owned by, the transcript block
 
@@ -1532,10 +1543,14 @@ errored member is hidden too. Production `packages/code/src/views/blocks.tsx`. T
 `packages/code/tests/integration/tool-groups-render.test.tsx`.
 
 **INV-T33.** A collapsed group head lists at most 6 member signatures, then a `moreChip`. Each shown
-shell signature retains its own guard verdict and answerer; guarded failures remain identifiable even
-though their error body stays folded. Production: `packages/code/src/views/blocks.tsx`
-(`signatureMembers`, grouped signature render). Test:
-`packages/code/tests/integration/tool-groups-render.test.tsx`.
+signature prefers the member's resident `signature` over live `args`, so a dehydrated grouped
+`read_file` still names its path. Each shown shell signature retains its own guard verdict and
+answerer; guarded failures remain identifiable even though their error body stays folded. Production:
+`packages/code/src/views/blocks.tsx` (`signatureMembers`, grouped signature render) and
+`packages/code/src/views/tools/signature.ts` (`resolveToolCallSignature`). Tests:
+`packages/code/tests/integration/tool-groups-render.test.tsx`,
+`packages/code/tests/unit/tool-signature.test.ts`, and
+`packages/code/tests/unit/store-hydration.test.ts`.
 
 **INV-T34.** A finished tool shows an elapsed chip only at or above `SLOW_TOOL_MS` (2000 ms).
 Production `packages/code/src/views/blocks.tsx`. Tests
@@ -1825,7 +1840,7 @@ inert and live output keeps its settled text column").
 | A single node's text exceeds 512 KiB | truncated with `TRANSCRIPT_MOUNTED_TEXT_SHORTENED_NOTICE` appended | `packages/code/src/core/transcript/presenters.ts` |
 | A streamed reply outgrows the segmenter's bounds | forced plain, `simplified: true`, with an explanatory line above a settled reply | `packages/code/src/core/transcript/segment.ts`; `packages/code/src/views/blocks.tsx` |
 | A tool block's body was dropped by the retention window | `dehydrated` is set; expanding calls `deps.rehydrate` and, if the refill fails, `hydrationNotice` is shown | `packages/code/src/views/blocks.tsx`; `packages/code/src/views/transcript-state.ts` |
-| A dehydrated node still needs a header | the resident `signature` and `mutation` fields carry the collapsed header and chip; the type docs state this is "tens of bytes against the tens of kilobytes" | `packages/code/src/core/transcript/types.ts`; `packages/code/src/views/blocks.tsx` |
+| A dehydrated node still needs a header | the resident `signature` and `mutation` fields carry the collapsed header, group-member list and chip; the type docs state this is "tens of bytes against the tens of kilobytes" | `packages/code/src/core/transcript/types.ts`; `packages/code/src/views/blocks.tsx`; `packages/code/src/views/tools/signature.ts` (`resolveToolCallSignature`) |
 | A stale plan event arrives after a newer one | dropped by the revision guard | `packages/code/src/adapters/plan-projection.ts` |
 | A plan removal arrives for a plan never seen | an explicit "Plan unavailable / failed / removed" projection is synthesized rather than nothing | `packages/code/src/adapters/plan-projection.ts` |
 | Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts`; `PlanSummary` in `packages/code/src/views/Sidebar.tsx` |
@@ -1876,7 +1891,8 @@ document. Four concrete couplings matter here:
 3. **`describeToolCall`** (`packages/code/src/adapters/store.ts`, implemented in
    `packages/code/src/runtime.tsx`) is the injection that
    lets the store keep a resident `signature` and `mutation` on each tool node without importing
-   `views/`. It is called on `tool_call` close (`packages/code/src/adapters/store.ts`).
+   `views/`. It is called on `tool_call_started` (signature only) and on `tool_call` close
+   (signature and mutation) (`packages/code/src/adapters/store.ts`).
 4. **`defaultFolded`** (backed by `foldDefaults`) supplies `toggleOverride` and is captured into each
    immutable publication batch before history renders it. It is set on tool close from the call's
    success and on local shell close.

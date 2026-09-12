@@ -1,9 +1,16 @@
 import { expect, test } from "bun:test";
-import { For } from "solid-js";
+import { For, createRoot } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
+import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
+import {
+  createTranscriptStore,
+  type NodeStatus,
+  type TranscriptNode,
+  type TranscriptToolNode,
+} from "../../src/adapters/store.ts";
 import { BlockView } from "../../src/views/blocks.tsx";
 import { computeToolGroups } from "../../src/views/tool-groups.ts";
-import type { NodeStatus, TranscriptNode } from "../../src/adapters/store.ts";
+import { formatToolCall } from "../../src/views/tools/signature.ts";
 import type { LegacyCollapsibleNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;
@@ -71,6 +78,62 @@ test("collapsed: a batch folds to one `tool xN` head listing each member's signa
   expect(out).toContain("(d.ts)");
   expect(out.split("clarvis:glob").length - 1).toBe(1);
   expect(out).not.toContain("(no matches)");
+});
+
+test("collapsed: dehydrated members still list their resident signatures", async () => {
+  const nodes = [
+    { ...glob("a.ts"), args: undefined, dehydrated: true as const, signature: "(a.ts)" },
+    { ...glob("b.ts"), args: undefined, dehydrated: true as const, signature: "(b.ts)" },
+    { ...glob("c.ts"), args: undefined, dehydrated: true as const, signature: "(c.ts)" },
+  ];
+  const out = await frame(nodes, false);
+  expect(out).toContain("x3");
+  expect(out).toContain("(a.ts)");
+  expect(out).toContain("(b.ts)");
+  expect(out).toContain("(c.ts)");
+  expect(out).not.toContain("()\n");
+});
+
+test("collapsed: a live sub-agent's dehydrated grouped members still name their paths", async () => {
+  const store = createRoot(() =>
+    createTranscriptStore({
+      hydratedToolLimit: 1,
+      describeToolCall: (input) => ({
+        signature: formatToolCall(input.mcpName ?? "", input.toolName ?? "", input.args ?? {}),
+        mutation: null,
+      }),
+    }),
+  );
+  const sink = store.openRun("exec_1");
+  const paths = ["src/a.ts", "src/b.ts", "src/c.ts"];
+  for (const [index, path] of paths.entries()) {
+    applyRunEvent(
+      sink,
+      runEvent({
+        type: "tool_call",
+        agent: "subagent",
+        subagent_id: "w1",
+        call_id: `c${index}`,
+        at: index + 1,
+        server: "fs",
+        tool: "read_file",
+        arguments: { path },
+        result: "ok",
+        ok: true,
+      }),
+      "live",
+    );
+  }
+  const tools = store.nodes.filter((node): node is TranscriptToolNode => node.kind === "tool_call");
+  expect(tools.map((node) => node.dehydrated)).toEqual([true, true, undefined]);
+  expect(tools.slice(0, 2).every((node) => node.args === undefined)).toBe(true);
+
+  const out = await frame(tools, false);
+  expect(out).toContain("x3");
+  expect(out).toContain("(src/a.ts)");
+  expect(out).toContain("(src/b.ts)");
+  expect(out).toContain("(src/c.ts)");
+  expect(out).not.toContain("()\n");
 });
 
 test("collapsed: a long batch elides signature lines past the cap", async () => {

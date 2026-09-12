@@ -9,6 +9,7 @@ const DECISION_MATCHES = new Set([
   "outside_workspace",
   "credential_file",
   "host_command",
+  "dangerous",
   "non_bash",
   "default",
 ]);

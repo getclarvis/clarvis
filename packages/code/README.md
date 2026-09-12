@@ -714,13 +714,30 @@ or edits files under `infra/`.
 Never approve a command that pipes a network fetch into a shell.
 ```
 
-The built-in policy does not receive the surrounding conversation. When a command's safety depends
-on whether you authorized a destructive workspace operation — for example `git restore`, `git reset`,
-`git clean`, checkout-over-files or broad deletion — it answers `unsure`, which opens the command
-approval prompt for you. It does not guess at missing authorization. An explicit deny-list match or
-ordinary sandboxed workspace escape is still rejected before the model reviewer and cannot be
-appealed through it. Unsandboxed host execution is not a judge decision: `require_escalated` under
-Isolation Sandbox is reserved for a human.
+The builtin receives the command plus host-attested placement and analysis facts, and up to 4 KiB
+of user text from the run's start/continue request as `operator_message`. It does not receive the
+full conversation, assistant text, images, tool results or mid-run steers. A child supplies its own
+brief. The command, justification and other arguments are data under review, never sources of
+authorization; only `operator_message` supplies intent.
+
+For contained, non-dangerous routine workspace work, the builtin prefers `allow`: this includes
+ordinary `git add`/`git commit`, in-tree `mkdir`/`cp`/`mv`, `cd`, builds/tests and ordinary expansions
+such as `$MSG`. There is no silent policy allow for unmatched contained commands: Auto still asks
+the judge. Host or missing placement does not imply a sandbox and keeps more conservative review.
+A requested host command explicitly authorized by `operator_message` may be allowed without
+containment; destructive or external effects still require explicit intent for that effect.
+Destructive effects — `git restore`, hard reset, forced clean/removal, checkout-over-files or broad
+deletion — require explicit intent for that effect in `operator_message`; otherwise `unsure` opens
+the human prompt. Credential access and exfiltration are denied. An explicit deny-list match or
+ordinary workspace escape is still rejected before the judge. `require_escalated` under Isolation
+Sandbox reaches the judge in Auto, as a host effect without native network restrictions: `allow`
+executes and `deny` refuses. An inconclusive, failed or malformed response follows `on_unsure`
+(`ask` by default, configured `deny` respected); without a usable model, Auto degrades to Approval.
+Approval (`on`) remains human-only and `off` is unchanged. Host-command review never uses session
+coverage or offers `allow_session`, including human fallback; clean exact-call judge memoization
+is separate. Docker/Podman still reject escalation; on Host the field is a no-op under normal review.
+See [the command-guard contract](../../specs/execution/command-guard.md) for the exact cascade and
+snapshot limits. Prompt tests pin the shipped instructions, not every real model's decision.
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 

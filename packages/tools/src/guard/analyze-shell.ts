@@ -17,8 +17,8 @@ import type { ShellFacts, Segment } from "./types.ts";
  * @remarks
  * This is the shared driver: it owns path deduplication, `Segment` assembly and
  * the `undecidable` fold, so those invariants cannot be reimplemented per
- * dialect. Everything syntactic - splitting, tokenizing, the undecidable
- * pattern table, path shapes - comes from the {@link ShellDialect}.
+ * dialect. Everything syntactic - splitting, tokenizing, expansions, opaque
+ * commands, path shapes - comes from the {@link ShellDialect}.
  *
  * `undecidable` is `true` when the string is unbalanced, any segment is not
  * decidable, or a token is {@link PathCandidate} `opaque` - a `~user`
@@ -27,35 +27,41 @@ import type { ShellFacts, Segment } from "./types.ts";
  * undecidable result as "unknown", never as workspace-confined. This is a
  * best-effort heuristic for approval decisions, not a shell parser.
  *
- * It is also `true` when a segment reduces to an empty `argv`. Since
- * {@link ShellDialect.split} drops whitespace-only segments, that means exactly
- * "the source said something and the front end produced no command" - a
- * tokenizer failure. This matters because a guard matches its deny list against
- * `Segment.normalized`, and does so before consulting `undecidable`: an empty
- * `normalized` matches no deny entry, so without this the deny list would
- * silently stop biting wherever a dialect's tokenizer came up empty. Degrading
- * `allow` to `ask` is acceptable; degrading `deny` to `ask` is not.
+ * It is also `true` when a segment reduces to an empty `argv` *and* recorded no
+ * env assignments. Since {@link ShellDialect.split} drops whitespace-only
+ * segments, that means exactly "the source said something and the front end
+ * produced no command" — a tokenizer failure. A `NAME=value` assignment-only
+ * segment is not a failure: `normalize` recorded the bindings. This matters
+ * because a guard matches its deny list against `Segment.normalized`, and does
+ * so before consulting `undecidable`: an empty `normalized` matches no deny
+ * entry, so without this the deny list would silently stop biting wherever a
+ * dialect's tokenizer came up empty. Degrading `allow` to `ask` is acceptable;
+ * degrading `deny` to `ask` is not.
  */
 export function analyzeShell(
   command: string,
   dialect: ShellDialect = currentDialect(),
 ): ShellFacts {
   const { segments: sources, balanced } = dialect.split(command);
+  const rewritten = dialect.analyzeSources?.(command, sources);
+  const views =
+    rewritten !== undefined && rewritten.length === sources.length ? rewritten : sources;
 
   const segments: Segment[] = [];
   const paths: string[] = [];
   const seen = new Set<string>();
   let tokenUndecidable = false;
 
-  for (const source of sources) {
-    const tokens = dialect.tokenize(source);
+  for (const [index, source] of sources.entries()) {
+    const view = views[index] ?? source;
+    const tokens = dialect.tokenize(view);
     const { argv, envAssignments } = dialect.normalize(tokens.map((t) => t.text));
     segments.push({
       command: source,
       argv,
       normalized: argv.join(" "),
       envAssignments,
-      decidable: dialect.decidable(source),
+      decidable: dialect.decidable(view),
     });
     for (const token of tokens) {
       const candidate = dialect.pathCandidate(token);
@@ -70,7 +76,7 @@ export function analyzeShell(
     }
   }
 
-  const emptySegment = segments.some((s) => s.argv.length === 0);
+  const emptySegment = segments.some((s) => s.argv.length === 0 && s.envAssignments.length === 0);
   const undecidable =
     !balanced || tokenUndecidable || emptySegment || segments.some((s) => !s.decidable);
   return { paths, undecidable, segments };

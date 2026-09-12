@@ -173,7 +173,7 @@ describe("createShellGuard onDecision", () => {
   it("stays a pure value when no observer is supplied", async () => {
     const guard = createShellGuard({ deniedCommands: ["rm"] });
     const decision = await guard(ctx("shell", { command: "rm -rf x" }, shellFacts("rm -rf x")));
-    expect(decision).toEqual({
+    expect(decision).toMatchObject({
       verdict: "deny",
       reason: "command matches the denied commands list",
     });
@@ -381,7 +381,7 @@ describe("guard audit records", () => {
   it("writes nothing when no audit logger is supplied", async () => {
     const resolver = createGuardResolver({ loadSettings: () => ({}) });
     const resolution = await resolver(runCtx({ request: { guard_mode: "on" } as never }));
-    expect(await resolution!.guard!(ctx("read_file", { path: "a.ts" }))).toEqual({
+    expect(await resolution!.guard!(ctx("read_file", { path: "a.ts" }))).toMatchObject({
       verdict: "allow",
       mode: "on",
     });

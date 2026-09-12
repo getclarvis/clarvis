@@ -61,6 +61,7 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 | `probeSandbox(deps?)` | Platform dispatcher and production probe |
 | `probeBubblewrap(deps?)` / `probeSeatbelt(deps?)` | Backend probes, also exported for host diagnostics and tests |
 | `sandboxCommand(args)` | Builds a bare, Bubblewrap, or Seatbelt spawn specification without executing it |
+| `sandboxWouldApply(sandbox, forceBare?)` | Probe-free containment-or-failure commitment shared with command construction; false for absent/disabled policies or explicit bare execution |
 | `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | Discovers existing host temp roots: environment-selected plus `/tmp` on POSIX, environment-selected only on Windows; never conveys lifecycle ownership |
 | `discoverLinkedGitMetadataPaths(workspaceRoot)` | Pins a valid linked worktree's common Git metadata root |
 | `discoverToolchains(include?)` | Resolves requested toolchain executables, install roots, and managers without executing them |
@@ -69,6 +70,15 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 Production: `packages/tools/src/sandbox.ts` (`NativeSandbox`, `SandboxProbe`, `probeSandbox`,
 `sandboxCommand`, `systemTemporaryRoots`, `discoverLinkedGitMetadataPaths`, `discoverToolchains`) and
 `packages/tools/src/sandbox-entry.ts`.
+
+`sandboxWouldApply` accepts the tools policy with an optional settings-level `enabled` field. Both
+required and legacy optional availability commit to native containment or failure; the predicate
+does not claim a successful backend launch and does not repeat the probe. `sandboxCommand` uses
+the same predicate before selecting its backend, so a disabled policy can never be reported as
+contained while producing a bare spawn. No approval verdict follows from this placement fact.
+Production: `sandboxWouldApply` and `sandboxCommand` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts). Test: the commitment and disabled/bare cases in
+[sandbox-placement.test.ts](../../packages/tools/tests/unit/sandbox-placement.test.ts).
 
 `packages/tools/src/index.ts` re-exports `SandboxConfig` and the lightweight
 `systemTemporaryRoots` discovery helper from the package root. Hosts that need backend probes,
@@ -487,7 +497,18 @@ Bubblewrap only on Linux and Seatbelt only on macOS; unsupported hosts never gue
 
 **INV-S2 — Required isolation fails closed before the command.** An unavailable sandbox throws,
 including stored `availability: "optional"`. Per-call `forceBare` is the only remaining unsandbox
-path and is gated by command review.
+path and is gated by command review. For native Sandbox `require_escalated`, Review `on` requires
+a human; Auto may judge the host effect after deny-list enforcement (`allow` executes, `deny`
+refuses). Unsure, failed or malformed review follows `on_unsure` (default `ask`, configured `deny`
+respected); no usable model asks a human. The call's judge facts use Host placement and omit native
+network restrictions. Host-command asks bypass session coverage and never offer `allow_session`,
+including human fallback; clean exact-call judge memoization remains separate. Review `off` is
+unchanged. Docker/Podman reject escalation; on Host the field is a no-op under normal review.
+
+Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver`
+in `packages/kernel/src/guard/resolver.ts`. Test:
+`packages/kernel/tests/integration/guard-auto-review.test.ts` and
+`packages/kernel/tests/unit/guard.test.ts`.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`fails closed when the native sandbox is

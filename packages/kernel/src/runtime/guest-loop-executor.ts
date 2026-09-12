@@ -293,6 +293,9 @@ function guestGuardSettings(envelope: GuestRunEnvelope): GuardSettings {
     ...(envelope.guardSettings?.defaultModel === undefined
       ? {}
       : { defaultModel: envelope.guardSettings.defaultModel }),
+    ...(envelope.guardSettings?.runtime === undefined
+      ? {}
+      : { runtime: envelope.guardSettings.runtime }),
     ...(Array.isArray(raw.providers) ? { providers: raw.providers } : {}),
   };
 }

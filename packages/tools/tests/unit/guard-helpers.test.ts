@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { withinWorkspace, touchesOutside } from "../../src/guard/helpers.ts";
+import { withinWorkspace, touchesOutside, isDangerousCommand } from "../../src/guard/index.ts";
 import { analyzeShell } from "../../src/guard/analyze-shell.ts";
 import { posixDialect } from "../../src/guard/dialects/posix.ts";
 import { makeConfig } from "../helpers/fixtures.ts";
@@ -15,6 +15,46 @@ const ctx = (paths: PathFact[], shell?: ShellFacts): GuardContext => ({
   config: cfg,
   paths,
   shell,
+});
+
+describe("isDangerousCommand", () => {
+  it.each([
+    "sudo",
+    "sudo echo hi",
+    "timeout 5 sudo -n true",
+    "rm -f file",
+    "rm --force file",
+    "rm -rf directory",
+    "rm -fr directory",
+    "rm file -f",
+    "echo hi; rm -f file",
+    "FOO=1 timeout 5 nice rm -rf directory",
+  ])("flags %s", (command) => {
+    expect(isDangerousCommand(analyzeBash(command))).toBe(true);
+  });
+
+  it.each([
+    "git push --force",
+    "curl -f https://example.test",
+    "npm install",
+    "rm file",
+    "rm -r directory",
+    "rm -- --force",
+    "rm -- -rf",
+    "rm --foo file",
+    "rm --preserve-root file",
+    "echo sudo rm -rf",
+    "rm --forceful file",
+  ])("does not overclassify %s", (command) => {
+    expect(isDangerousCommand(analyzeBash(command))).toBe(false);
+  });
+
+  it("uses the trusted normalized head without changing absolute executable argv", () => {
+    const shell = analyzeBash("/usr/bin/rm -rf directory");
+    shell.segments[0]!.normalized = "rm -rf directory";
+    expect(isDangerousCommand(shell)).toBe(true);
+    expect(shell.segments[0]!.argv[0]).toBe("/usr/bin/rm");
+  });
 });
 
 describe("withinWorkspace", () => {

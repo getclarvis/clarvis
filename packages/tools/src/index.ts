@@ -88,12 +88,16 @@ export {
   POSIX_DEFAULT_ALLOWED_COMMANDS,
   WINDOWS_DEFAULT_ALLOWED_COMMANDS,
   buildGuardContext,
+  resolveCandidate,
   withinWorkspace,
   touchesOutside,
+  isDangerousCommand,
 } from "./guard/index.ts";
 export type {
   Verdict,
   GuardDecision,
+  GuardPlacement,
+  GuardCallFacts,
   GuardAnswerer,
   GuardElicitAnswer,
   GuardReview,

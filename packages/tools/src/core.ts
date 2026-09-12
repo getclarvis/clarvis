@@ -190,6 +190,16 @@ async function applyGuard(
       args: ctx.args,
       reason: decision.reason,
       shell: ctx.shell,
+      ...(decision.matched !== undefined ? { matched: decision.matched } : {}),
+      ...(decision.placement !== undefined ? { placement: decision.placement } : {}),
+      ...(decision.network !== undefined ? { network: decision.network } : {}),
+      ...(decision.dangerous !== undefined ? { dangerous: decision.dangerous } : {}),
+      ...(decision.within_workspace !== undefined
+        ? { within_workspace: decision.within_workspace }
+        : {}),
+      ...(decision.touches_outside !== undefined
+        ? { touches_outside: decision.touches_outside }
+        : {}),
       ...(decision.escalate !== undefined ? { escalate: decision.escalate } : {}),
     };
     const answer = await config.elicit(req);

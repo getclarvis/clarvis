@@ -1,11 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { isAbsolute, relative, resolve } from "node:path";
-import {
-  analyzeShell,
-  type ShellFacts,
-  type GuardContext,
-  type GuardDecision,
-} from "@clarvis/tools/guard";
+import { analyzeShell, type ShellFacts, type GuardContext } from "@clarvis/tools/guard";
 import type {
   Elicit,
   ElicitRequest,
@@ -93,7 +88,7 @@ describe("createShellGuard (kernel copy)", () => {
       sandbox: { type: "native" },
     } as GuardContext["config"];
     const decision = await createShellGuard({ allowedCommands: ["*"] })(context);
-    expect(decision).toEqual<GuardDecision>({
+    expect(decision).toMatchObject({
       verdict: "ask",
       escalate: "human",
       reason: "need host docker.sock",
@@ -108,7 +103,7 @@ describe("createShellGuard (kernel copy)", () => {
         justification: "already on the host",
       }),
     );
-    expect(decision).toEqual<GuardDecision>({ verdict: "allow" });
+    expect(decision).toMatchObject({ verdict: "allow" });
   });
 
   it("keeps the operator deny list above require_escalated approval", async () => {
@@ -160,7 +155,7 @@ describe("createShellGuard (kernel copy)", () => {
 
   it("allows a command in the allowlist and asks for one that is not", async () => {
     const guard = createShellGuard({ allowedCommands: ["echo"] });
-    expect(await guard(makeCtx("shell", { command: "echo hi > out.txt" }))).toEqual<GuardDecision>({
+    expect(await guard(makeCtx("shell", { command: "echo hi > out.txt" }))).toMatchObject({
       verdict: "allow",
     });
     expect(await guard(makeCtx("shell", { command: "rm -rf out.txt" }))).toMatchObject({
@@ -174,7 +169,27 @@ describe("createShellGuard (kernel copy)", () => {
     expect(facts.undecidable).toBe(false);
     expect(
       await createShellGuard({ allowedCommands: ["mise x"] })(makeCtx("shell", { command }, facts)),
-    ).toEqual<GuardDecision>({ verdict: "allow" });
+    ).toMatchObject({ verdict: "allow" });
+  });
+
+  it("allows an assignment-only prefix in front of an allow-listed command", async () => {
+    const command = "QA=/tmp/foo; git status";
+    const facts = analyzeShell(command);
+    expect(facts.undecidable).toBe(false);
+    expect(
+      await createShellGuard({ allowedCommands: ["git status"] })(
+        makeCtx("shell", { command }, facts),
+      ),
+    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
+  });
+
+  it("inlines a sequential literal assignment before allow-list matching", async () => {
+    const command = 'QA=src; cat "$QA/a.ts"';
+    const facts = analyzeShell(command);
+    expect(facts.undecidable).toBe(false);
+    expect(
+      await createShellGuard({ allowedCommands: ["cat"] })(makeCtx("shell", { command }, facts)),
+    ).toMatchObject({ verdict: "allow", matched: "allow_list" });
   });
 
   it("treats a blank allow-list entry as matching no command", async () => {
@@ -256,7 +271,7 @@ describe("createShellGuard — precedence order", () => {
 
   it("allows a call carrying no shell facts at all", async () => {
     const guard = createShellGuard({ allowedCommands: ["echo"] });
-    expect(await guard(makeCtx("read_file", { path: "a.ts" }))).toEqual<GuardDecision>({
+    expect(await guard(makeCtx("read_file", { path: "a.ts" }))).toMatchObject({
       verdict: "allow",
     });
   });
@@ -970,7 +985,7 @@ describe("createGuardResolver", () => {
     expect(asked).toBe(false);
   });
 
-  it("in mode auto, sends require_escalated host execution to a human, not the judge", async () => {
+  it("in mode auto, honors an explicit human-only restriction supplied by a guard", async () => {
     let asked = false;
     let judged = false;
     const humanElicit: Elicit = async () => {

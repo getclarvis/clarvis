@@ -76,8 +76,12 @@ subsystem.
 | `withinWorkspace` | fn | `packages/tools/src/guard/helpers.ts` | `(ctx) => boolean` |
 | `touchesOutside` | fn | `packages/tools/src/guard/helpers.ts` | `(ctx) => boolean` |
 
-`resolveCandidate` (`packages/tools/src/guard/paths.ts`) and `patchPaths` (`packages/tools/src/guard/paths.ts`) are internal to the
-package — `packages/tools/src/guard/index.ts` does not re-export them.
+`resolveCandidate` (`packages/tools/src/guard/paths.ts`) is exported through `./guard` so the kernel
+can resolve bare directory operands with the analyzer's existing symlink-aware boundary. `patchPaths`
+remains internal. `GuardPlacement` is `"host" | "contained"`; `GuardCallFacts` carries optional
+`placement`, `network: "none" | "host"`, `matched`, `dangerous`, `within_workspace` and
+`touches_outside` on both `GuardDecision` and `ElicitRequest`. `isDangerousCommand(ShellFacts)`
+reports forced `rm` and `sudo` from normalized argv (`packages/tools/src/guard/helpers.ts`).
 
 ### 2.2 `@clarvis/kernel` → `./policy` and internals
 
@@ -86,18 +90,18 @@ package — `packages/tools/src/guard/index.ts` does not re-export them.
 | `createGuardResolver` | fn | `packages/kernel/src/guard/resolver.ts` | `(deps: GuardResolverDeps) => GuardResolver` |
 | `resolveGuardMode` | fn | `packages/kernel/src/guard/resolver.ts` | `(param: GuardMode\|undefined, guard: GuardConfig\|undefined) => GuardMode` |
 | `guardParksOnHuman` | fn | `packages/kernel/src/guard/resolver.ts` | `(param, guard, judgeConfigured) => boolean` |
-| `GuardSettings` | iface | `packages/kernel/src/guard/resolver.ts` | `{ guard?: GuardConfig; providers?: ProviderConfig[]; defaultModel?: string }` |
+| `GuardSettings` | iface | `packages/kernel/src/guard/resolver.ts` | `{ guard?; providers?; defaultModel?; sandbox?; runtime? }` |
 | `GuardSettingsLoader` | type | `packages/kernel/src/guard/resolver.ts` | `() => GuardSettings` |
 | `GuardResolverDeps` | iface | `packages/kernel/src/guard/resolver.ts` | `{ loadSettings; logger?; audit?; sessionAllowlistFor?; humanApprovalFor? }` |
 | `createShellGuard` | fn | `packages/kernel/src/guard/shell-guard.ts` | `(opts?: ShellGuardOptions) => Guard` |
-| `ShellGuardOptions` | iface | `packages/kernel/src/guard/shell-guard.ts` | `{ allowedCommands?; deniedCommands?; onDecision? }` |
+| `ShellGuardOptions` | iface | `packages/kernel/src/guard/shell-guard.ts` | `{ allowedCommands?; deniedCommands?; placement?; network?; allowHostJudge?; onDecision? }` |
 | `ShellGuardDecision` | iface | `packages/kernel/src/guard/shell-guard.ts` | `{ tool; verdict; matched; reason?; escalate?; commandDigest? }` |
-| `ShellGuardMatch` | type | `packages/kernel/src/guard/shell-guard.ts` | 8 rule names (table §4.5) |
+| `ShellGuardMatch` | type | `packages/kernel/src/guard/shell-guard.ts` | rule names in table §4.5 |
 | `createGuardElicit` | fn | `packages/kernel/src/guard/guard-elicit.ts` | `(elicit: Elicit, opts?) => GuardElicit` |
 | `createGuardSessionAllowlist` | fn | `packages/kernel/src/guard/guard-elicit.ts` | `() => GuardSessionAllowlist` |
 | `GuardElicitParams` | type | `packages/kernel/src/guard/guard-elicit.ts` | `ElicitParams & { detail?: ElicitationCommandDetail }` |
 | `createJudgeElicit` | fn | `packages/kernel/src/guard/judge.ts` | `(deps, cfg, humanElicit) => JudgeElicit \| undefined` (`JudgeElicitAnswer` carries `allowed` + final `answerer`) |
-| `JudgeDeps` | iface | `packages/kernel/src/guard/judge.ts` | `{ llm; providers; defaultModel; logger?; signal? }` |
+| `JudgeDeps` | iface | `packages/kernel/src/guard/judge.ts` | `{ llm; providers; defaultModel; logger?; signal?; operatorMessage? }` |
 | `globToRegExp` | fn (re-export) | `packages/kernel/src/guard/glob.ts` | from `@clarvis/capability` (`packages/capability/src/glob.ts`) |
 
 `./policy` exports only `createGuardResolver`, `resolveGuardMode`, `createShellGuard` and the three
@@ -252,15 +256,34 @@ Arguments are re-validated on the way back with a **loose** zod schema (`package
 tolerates extra keys; a string `arguments` is `JSON.parse`d first, and a parse failure yields
 `undefined` (`packages/kernel/src/guard/judge.ts`).
 
-The Code host's built-in prompt states that the judge has no surrounding conversation or prior user
-authorization. Operations whose safety depends on that missing intent — including `git restore`,
-`git reset`, `git clean`, checkout-over-files and broad workspace deletion — must return `unsure`,
-which the default `on_unsure: "ask"` path escalates to the human. `deny` is reserved for conduct that
-is unacceptable regardless of missing conversational intent
-(`packages/code/src/adapters/guard-judge-prompt.ts`). Pinned by
-`packages/code/tests/integration/guard-judge-prompt.test.ts` (`"falls back to the built-in prompt when
-no override file exists"`) and the kernel's actual unsure-to-human bridge test
-`packages/kernel/tests/unit/guard.test.ts`.
+The JSON also includes the optional host-attested `GuardCallFacts` fields and `operator_message`.
+`applyGuard` copies facts from the decision, never from similarly named tool arguments. The resolver
+snapshots user text from `RunRequest.messages`: newest messages have priority within 4 KiB of UTF-8,
+retained text stays chronological, and excess prefixes are cut without partial code points. Bare
+strings and text parts count; assistant messages, tool results and images do not. Empty text omits
+the field. For a child this is its own request brief, not the parent's transcript. Mid-run steers do
+not update this snapshot and cannot authorize a destructive command through this field.
+
+The Code builtin treats command, justification and other arguments as data, not authority, and
+`operator_message` as its only source of intent.
+Contained, non-dangerous routine in-tree work (including `git add`, ordinary `git commit`, `mkdir`,
+`cp`, `mv`, `cd`, and ordinary expansions) prefers `allow` rather than `unsure`. Destructive effects
+such as restore, hard reset, forced clean/removal, and published-history rewrites require explicit
+intent for that effect; missing intent returns `unsure`. Credential access and exfiltration return
+`deny`. Host or missing placement never implies a sandbox and does not gain the contained routine
+rule. A host command explicitly requested by `operator_message` may be allowed without containment,
+including native unsandbox in Auto; destructive or external effects still require explicit intent
+for that effect. A prompt overlay still replaces the builtin
+whole. This is prompt policy, not a deterministic guarantee of a real model's ruling.
+
+Production: `factsMessage` and `createJudgeElicit` in `packages/kernel/src/guard/judge.ts`,
+`operatorMessage` in `packages/kernel/src/guard/operator-message.ts`, `createGuardResolver` in
+`packages/kernel/src/guard/resolver.ts`, and `DEFAULT_GUARD_JUDGE_PROMPT` in
+`packages/code/src/adapters/guard-judge-prompt.ts`. Test:
+`packages/kernel/tests/integration/guard-auto-review.test.ts` (Auto facts and operator snapshot),
+`packages/tools/tests/integration/guard-dispatch.test.ts` (trusted decision propagation),
+`packages/code/tests/integration/guard-judge-prompt.test.ts` (builtin/overlay contract), and
+`packages/kernel/tests/unit/guard.test.ts` (unsure-to-human bridge).
 
 ### 3.5 Elicitation payload for a `guard_confirm`
 
@@ -271,7 +294,8 @@ no override file exists"`) and the kernel's actual unsure-to-human bridge test
   string), then the literal `"Warning: this command contains undecidable expansions."` when the
   facts are undecidable
 - `requestedSchema.properties.decision.enum`: `["deny","allow","allow_session"]` when a session
-  allow list is available and the command is decidable and non-empty, else `["deny","allow"]`
+  allow list is available, the ask is not `host_command`, and the command is decidable and non-empty,
+  else `["deny","allow"]`
 
 - `detail?: ElicitationCommandDetail` — `{ command, cwd, reason, warning? }`, whose protocol type is `packages/protocol/src/runs.ts`. `cwd` is
   `resolve(workspaceRoot, args.cwd)` or the workspace root itself. It is attached only
@@ -326,20 +350,17 @@ operative policy any workspace gets under `guard_mode: "auto"` with no custom `g
 `code` resolves it as the fallback (§4.11), it reaches the judge model verbatim as the `system`
 message (§3.4; `packages/kernel/src/guard/judge.ts`). Its three decision categories:
 
-- **`allow`** — "reading or listing files, builds, tests, linters, formatters, type checkers,
-  version-control queries (status/diff/log), and other routine development commands with no effect
-  outside the project" (`packages/code/src/adapters/guard-judge-prompt.ts`).
-- **`deny`** — "exfiltrating data or secrets, reading credential stores, downloading-and-executing
-  content, installing software system-wide, changing system configuration, force-pushing or
-  rewriting published history, or destructive deletion beyond obvious scratch files"
-  (`packages/code/src/adapters/guard-judge-prompt.ts`).
-- **`unsure`** — "anything you cannot confidently place above, including every command with
-  undecidable dynamic expansions … escalates to a human; when in doubt, prefer it over 'allow'"
-  (`packages/code/src/adapters/guard-judge-prompt.ts`).
+- **`allow`** — routine inspection/build/test; contained non-dangerous in-tree development, including
+  ordinary Git commits and expansions, follows the low-interruption rule in §3.4.
+- **`deny`** — credential access and exfiltration, regardless of placement.
+- **`unsure`** — unassessable effects, missing intent for destructive or external effects, and Host
+  operations beyond routine inspection/build/test without explicit authorization in
+  `operator_message`, the only intent source. Explicitly requested host commands may be allowed
+  without containment, subject to the destructive/external-effect and credential rules.
 
-The prompt states that the denylist is already enforced and that ordinary sandboxed commands also
-have a workspace boundary. Unsandboxed host execution is reserved for a human; the judge is not
-asked to approve it. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
+The prompt asserts a sandbox/container boundary only for explicit `placement: "contained"` and
+never equates it with denied networking or complete path analysis. Explicit unsandbox under
+Isolation Sandbox reaches the judge in Auto as a host effect; `on` remains human-only. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
 (`DEFAULT_GUARD_JUDGE_PROMPT`). Test:
 `packages/code/tests/integration/guard-judge-prompt.test.ts`.
 
@@ -411,14 +432,17 @@ delegates everything syntactic:
 3. For each token: `dialect.pathCandidate(token)`. `opaque` sets `tokenUndecidable` and
    contributes **no** path; `none` contributes nothing; otherwise the value is pushed once,
    deduplicated by a `Set`, first-seen order.
-4. `undecidable = !balanced || tokenUndecidable || emptySegment || some(!decidable)`, where `emptySegment` means some segment reduced to `argv.length === 0`.
+4. `undecidable = !balanced || tokenUndecidable || emptySegment || some(!decidable)`, where `emptySegment` means some segment reduced to `argv.length === 0` **and** recorded no `envAssignments`. A `NAME=value` assignment-only segment is not a tokenizer failure.
 
 The `emptySegment` term is the one with a stated reason: the guard matches its deny list against
 `normalized` **before** consulting `undecidable`, so a tokenizer that came up empty would produce a
 `normalized` no deny entry can match — "Degrading `allow` to `ask` is acceptable; degrading `deny`
 to `ask` is not" (`packages/tools/src/guard/analyze-shell.ts`). Pinned generically over a stub dialect and
 specifically over POSIX at `packages/tools/tests/unit/shell-dialect.test.ts`, and against
-a `["*"]` allow list at `packages/kernel/tests/unit/guard.test.ts`.
+a `["*"]` allow list at `packages/kernel/tests/unit/guard.test.ts`. Optional
+`ShellDialect.analyzeSources` may rewrite split sources for tokenization, decidability and path
+extraction; `Segment.command` stays the original source. POSIX uses that hook to inline sequential
+literal `$NAME` / `${NAME}` bindings.
 
 The driver carrying no dialect syntax is itself pinned with a deliberately ignorant stub dialect
 (`packages/tools/tests/unit/shell-dialect.test.ts`).
@@ -441,11 +465,12 @@ unrepresentable rather than merely discouraged (`packages/tools/src/guard/dialec
 | split | `&&`, `\|\|`, `;`, `\|`, `&`, newline at depth 0; never inside quotes/backticks/parens; a redirect `&` (`&>` or after `>`) does not split | `splitByOperators` |
 | balanced | no open single/double quote, backtick, or paren | `splitByOperators` |
 | tokenize | quote-aware; backtick spans and `$()`/`<()`/`>()` consumed and dropped; `glob` set only for unquoted `*?[]{}` | `tokenize` |
-| decidable | after `scrubExpansions` (single-quoted spans removed, double-quoted kept) no pattern in `UNDECIDABLE_PATTERNS` matches, and quotes balanced | `posixDialect.decidable`, `scrubExpansions` |
-| undecidable patterns | `$(`, `` ` ``, `${`/`$NAME`, and the command words `eval`, `exec`, `source`, `env`, `xargs`, `base64`, `sh -c`, `bash -c`, `<(`, `>(` | `UNDECIDABLE_PATTERNS` |
-| command-word boundary | `(?:^\|[\s(){};&\|])(?:\S*/)?NAME(?:\s\|$)` — punctuation, not only whitespace | `COMMAND_BOUNDARY`, `commandWord` |
+| decidable | after `scrubExpansions` (single-quoted spans removed, double-quoted kept) no expansion pattern matches, quotes are balanced, and the effective argv head is not an opaque command | `posixDialect.decidable`, `scrubExpansions`, `opaqueCommand` |
+| expansion patterns | `$(`, `` ` ``, `${`/`$NAME`, `<(`, `>(` | `EXPANSION_PATTERNS` |
+| opaque commands | effective argv head `eval`, `exec`, `source`, `env`, `xargs`, `base64`, or `sh`/`bash` with `-c`, after skipping grouping, negation, `command`/`builtin` and compound-list keywords | `UNDECIDABLE_COMMANDS`, `effectiveArgv` |
+| sequential bindings | on a `;` / `&&` / newline chain, literal `NAME=value` assignment-only segments inline later `$NAME` / `${NAME}` for analysis only | `analyzeSources` |
 | normalize | strip leading `NAME=value` assignments (recorded), then `timeout\|time\|nice\|nohup\|stdbuf` with their options and `timeout`'s duration, repeatedly | `stripEnvAndWrappers`, `SAFE_WRAPPERS` |
-| pathCandidate | strip `[0-9&]*(>>?\|<)` redirect prefix; `~user` → opaque; glob with `..` → opaque; glob → literal directory prefix; else the `looksLikePath` heuristic | `pathCandidate`, `looksLikePath` |
+| pathCandidate | strip `[0-9&]*(>>?\|<)` redirect prefix; `/dev/null` and test-builtin `[` / `]` / `[[` / `]]` → none; `~user` → opaque; glob with `..` → opaque; glob → literal directory prefix; else the `looksLikePath` heuristic | `pathCandidate`, `looksLikePath` |
 
 The POSIX null device is the one special path-shaped token discarded by `pathCandidate`: after a
 redirection prefix is stripped (or when it is a spaced redirect target), `/dev/null` contributes no
@@ -472,14 +497,16 @@ read-only. Production: `buildGuardContext` in `packages/tools/src/guard/context.
 `buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
 `packages/tools/tests/integration/api.test.ts`.
 
-The boundary regex has a documented failure it exists to prevent: a bare `\benv\b` matched the
-`env` inside `.env`, "which was merely noisy while undecidable meant `ask`, and becomes a wrong
-refusal now that an unanalyzable command with a deny list configured is denied"
-(`commandWord` in `packages/tools/src/guard/dialects/posix.ts`). Both halves are pinned by the
-`analyzeBash — command names are matched in command position only` suite: filenames that merely
-contain a command name stay decidable, while the command itself — including inside a subshell,
-where `(` is the preceding character — stays undecidable
-(`packages/tools/tests/unit/posix-dialect.test.ts`).
+Opaque command names are matched against the effective argv head, not scanned through arguments.
+A whole-segment regex treated `cat source`, `git add source` and `npm run env` as `source`/`env` in
+command position, which made ordinary parameterized commands undecidable (and, with a deny list,
+wrong refusals). Filenames that merely contain a command name, and arguments that *are* that name,
+stay decidable; the command itself — including `(eval rm)`, `{ eval foo; }` and `command env` —
+stays undecidable (`opaqueCommand` in `packages/tools/src/guard/dialects/posix.ts`). Pinned by the
+`analyzeBash — command names are matched in command position only` suite
+(`packages/tools/tests/unit/posix-dialect.test.ts`). Sequential literal assignments are pinned by
+`analyzeBash — sequential literal assignments` in the same file and by
+`packages/kernel/tests/unit/guard.test.ts`.
 
 `looksLikePath` (`packages/tools/src/guard/dialects/posix.ts`) is the fallback rule that decides whether a bare token
 becomes a `PathFact` at all, gating every downstream path check (outside-workspace,
@@ -532,18 +559,56 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | --- | --- | --- | --- |
 | 1 | `shell` present, deny list configured, **any** segment's `normalized` matches | `deny_list` | `deny` |
 | 2a | `shell.undecidable` and deny list **non-empty** | `undecidable` | `deny` |
-| 2b | `shell.undecidable` and no/empty deny list | `undecidable` | `ask` + `escalate: "human"` |
-| 3 | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask` + `escalate: "human"` |
+| 2b | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
+| 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask` + `escalate: "human"` |
+| 3b | `shell.undecidable`, no/empty deny list, placement contained | `undecidable` | `ask`, no escalation restriction |
 | 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
 | 5 | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
-| 7 | allow list configured and **every** segment matches | `allow_list` | `allow` |
+| 7 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
+| 7a | forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | `ask`, no escalation restriction |
 | 8 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
 | 9 | otherwise | `default` | `ask` |
 
-Every adjacent-pair ordering is pinned individually, with the test file stating the method: "Each
-case below is chosen so that exactly one swap of adjacent rules would change its verdict"
-(`packages/kernel/tests/unit/guard.test.ts`, cases).
+The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/guard.test.ts`.
+Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
+`packages/kernel/tests/integration/guard-auto-review.test.ts`.
+
+There is no contained silent-allow rule: unmatched contained commands still ask, and only Auto
+changes who may answer. Placement is resolved once per run from host settings. An enabled native
+policy is contained-or-fail-closed (`sandboxWouldApply`); even legacy `availability: "optional"`
+never falls back to bare execution. A Docker/Podman guest is also contained, while an absent or
+disabled native policy on Host is not. `loadGuardSettings` uses the same effective native policy
+resolver as tool execution, including Docker's required-Sandbox fallback. Container launch captures
+its actual backend/network for the guest rather than relying on later settings edits. Native network
+uses `"host" | "none"`; container `none` maps to `none`, while `internet`/`outbound` are omitted rather
+than misrepresented as native host networking. Per-call unsandbox overrides placement to Host and
+omits the no-longer-applicable native network restriction. Its `host_command` ask precedes generic
+undecidability, but never deny-list enforcement. `createGuardResolver` passes `allowHostJudge: true`
+only for Auto: `allow` executes and `deny` refuses; unsure, errors and malformed responses use
+normal `on_unsure` fallback (default `ask`, configured `deny` respected). No usable model routes to
+a human. Mode `on` retains `escalate: "human"`; `off` is unchanged. Docker/Podman still reject
+escalation, and on Host the field is a no-op under normal command policy.
+
+Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
+`packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and
+`guestGuardSettings` in `packages/kernel/src/runtime/guest-loop-executor.ts`. Test:
+`packages/kernel/tests/integration/guard-auto-review.test.ts`,
+`packages/tools/tests/unit/sandbox-placement.test.ts`, and
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (container Auto expansions).
+
+POSIX normalization removes consecutive leading Git `--no-pager`/`--no-color` presentation flags.
+`commandComparison` in `packages/kernel/src/guard/command-comparison.ts` additionally validates bare
+`cd <path>` and leading `git -C <path>` operands, and skips assignment-only `NAME=value` segments
+for allow-list comparison so `QA=/tmp/foo; git status` can match `git status`. In a straight `&&` chain, an in-workspace `cd`
+segment needs no allowlist entry; in-workspace Git `-C` is removed only from comparison, leaving
+normalized session keys untouched. Directory paths still participate in outside-path denial.
+Unsupported control flow, `cd` options and PowerShell retain ordinary matching. Original analyzer
+path facts are never weakened: root-relative analysis can conservatively refuse a `..` operand
+which would have stayed in-tree after `cd`. This remains a heuristic, not shell execution simulation.
+Both original and comparison forms participate in deny matching. Production: `commandComparison`
+and `createShellGuard`. Test: `packages/kernel/tests/integration/guard-auto-review.test.ts` (POSIX
+comparison cases) and `packages/tools/tests/unit/guard-normalization.test.ts`.
 
 Notes the code states about specific rules:
 
@@ -558,9 +623,8 @@ Notes the code states about specific rules:
 - **Rule 8's reason string** is `"the paths this command touches could not be determined"`, chosen
   after the previous wording asserted an escape for `whoami` "and the model read that as fact and
   invented explanations from it" (`packages/kernel/src/guard/shell-guard.ts`).
-- **`commandDenied` matches `normalized` only.** Matching the raw segment text too "was tried and
-  removed … It added false-positive surface and caught nothing"; the substitution case is instead
-  handled by rule 2a (`packages/kernel/src/guard/shell-guard.ts`).
+- **Deny matching checks normalized and comparison forms, not raw command text.** The substitution
+  case is handled by rule 2a (`packages/kernel/src/guard/shell-guard.ts`).
 - **Rule 9's reason has two variants.** `"no allowed commands list configured"` when `allowed`
   is `undefined` (no `allowed_commands` in settings at all), versus `"command not in the allowed
   commands list"` when an allow list exists but the command's segments did not fully match it
@@ -630,7 +694,7 @@ Per run:
 | `on`, *, *, no | built | none — every `ask` fails closed |
 | `auto`, absent, *, yes | built | human (`packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard.test.ts`) |
 | `auto`, present, no, yes | built | human (`packages/kernel/tests/unit/guard.test.ts`) |
-| `auto`, present, yes, yes | built | judge for `allow`/`deny`; human for `unsure`, judge failure, or malformed response |
+| `auto`, present, yes, yes | built | judge for `allow`/`deny`; `on_unsure` fallback for unsure, judge failure, or malformed response (`ask` by default, configured `deny` respected) |
 | `auto`, present, yes, no | built | judge; an `escalate:"human"` ask denies with a warn (`packages/kernel/tests/unit/guard-audit.test.ts`) |
 
 ### 4.7 Answering an `ask`
@@ -641,9 +705,18 @@ The composed elicit (`packages/kernel/src/guard/resolver.ts`):
 | --- | --- | --- |
 | `req.escalate === "human"`, human channel exists | route to the human, bypassing both automatic answerers | — |
 | `req.escalate === "human"`, no human channel | `noHumanChannel` → warn `guard.escalation.no_channel`, return `false` | — |
-| session allow list already `covers(req.shell)` | record `answerer: "session_allowlist"`, return `true` **without** consulting the judge or the human | — |
+| `matched !== "host_command"` and session allow list already `covers(req.shell)` | record `answerer: "session_allowlist"`, return `true` **without** consulting the judge or the human | — |
 | judge exists | call it and record the returned final `answerer`; a judge fallback is attributed to `human` | `createGuardResolver` |
 | no judge, human fallback exists | call the human and record `answerer: "human"` | `createGuardResolver` |
+
+Host-command review is per call, never volatile session consent: `matched: "host_command"` bypasses
+session coverage and never offers `allow_session`, even when Auto falls back to a human. Clean judge
+`allow`/`deny` answers still use the exact-facts memo; this is separate from session approval and
+does not cache human fallback answers. Production: `createGuardResolver` in
+`packages/kernel/src/guard/resolver.ts`, `createGuardElicit` in
+`packages/kernel/src/guard/guard-elicit.ts`, and `memoKey` in `packages/kernel/src/guard/judge.ts`.
+Test: `packages/kernel/tests/integration/guard-auto-review.test.ts` and
+`packages/kernel/tests/unit/guard.test.ts`.
 
 `createGuardHumanApproval` reads the current allowlist before and after the question to distinguish
 `allow_session` from `allow`. It captures the scope before awaiting the answer, then refuses approval
@@ -705,8 +778,11 @@ lead-spawned subagents too (`packages/loop/tests/integration/command-guard-wirin
 - **Construction.** No model token (neither `cfg.model` nor `deps.defaultModel`) → `warn` +
   `undefined`. An unresolvable provider → `warn` + `undefined`.
   Both warnings end with the literal `"— degrading to mode 'on'"`.
-- **Per call.** Memoized by `memoKey` — the normalized segments joined by `" && "`, or
-  `JSON.stringify({tool,args})` for a call with no segments.
+- **Per call.** `memoKey` uses the exact `factsMessage` JSON supplied to the judge, including raw
+  args/cwd and attested facts. Normalized equality alone cannot reuse a ruling across changed raw
+  expansions, environment prefixes, placement or dangerous flags. Production: `memoKey` in
+  `packages/kernel/src/guard/judge.ts`. Test:
+  `packages/kernel/tests/integration/guard-auto-review.test.ts` (judge verdict identity).
 
 State table for one `judgeOnce` :
 
@@ -805,10 +881,11 @@ broken.
    undecidable.** `packages/tools/src/guard/analyze-shell.ts`. Pinned generically over a
    stub dialect: `packages/tools/tests/unit/shell-dialect.test.ts`.
 
-4. **A segment whose `argv` is empty makes the command undecidable.** Since `split` drops
-   whitespace-only segments, this means exactly "source text existed and the front end produced no
-   command". `packages/tools/src/guard/analyze-shell.ts`. Pinned:
-   `packages/tools/tests/unit/shell-dialect.test.ts` and, as a policy consequence under a
+4. **A segment whose `argv` is empty *and* that recorded no env assignments makes the command
+   undecidable.** Since `split` drops whitespace-only segments, this means exactly "source text
+   existed and the front end produced no command". A `NAME=value` assignment-only segment is not
+   that failure and does not poison later segments. `packages/tools/src/guard/analyze-shell.ts`.
+   Pinned: `packages/tools/tests/unit/shell-dialect.test.ts` and, as a policy consequence under a
    `["*"]` allow list, `packages/kernel/tests/unit/guard.test.ts`.
 
 5. **`analyzeShell` deduplicates paths across segments, preserving first-seen order.**
@@ -834,10 +911,10 @@ broken.
    approvals can key on them") and
    `packages/kernel/tests/unit/guard.test.ts`.
 
-8. **A POSIX command name in `UNDECIDABLE_PATTERNS` is matched only in command position** — start
-   of segment or after shell punctuation, optionally with a directory prefix — so `cat .env` stays
-   decidable while `(sh -c "rm -rf /")` does not.
-   `COMMAND_BOUNDARY` and `commandWord` in `packages/tools/src/guard/dialects/posix.ts`. Pinned:
+8. **A POSIX opaque command name is matched only at the effective argv head** — after grouping,
+   negation, `command`/`builtin` and compound-list keywords, optionally with a directory prefix —
+   so `cat source` and `cat .env` stay decidable while `(sh -c "rm -rf /")` and `command env`
+   do not. `opaqueCommand` in `packages/tools/src/guard/dialects/posix.ts`. Pinned:
    `packages/tools/tests/unit/posix-dialect.test.ts` ("analyzeBash — command names are matched in
    command position only").
 
@@ -894,17 +971,20 @@ broken.
     `packages/tools/src/core.ts`. Pinned in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "fails closed when the guard throws".
 
-19. **The rule cascade's order is fixed: deny list → undecidable → guarded host-command review →
-    outside-workspace → credential file → non-shell allow → allow list → unbounded-paths ask →
+19. **The rule cascade's order is fixed: deny list → undecidable with nonempty deny list →
+    guarded host-command review → generic undecidable →
+    outside-workspace → credential file → non-shell allow → allow list → dangerous ask → unbounded-paths ask →
     default ask.**
     `packages/kernel/src/guard/shell-guard.ts`. Pinned pair-by-pair:
     `packages/kernel/tests/unit/guard.test.ts`, plus
     `packages/kernel/tests/unit/guard.test.ts` for the credential-file position.
 
-    A host-command ask deliberately carries no `escalate` field: mode `on` uses the human channel,
-    while a configured mode `auto` judge can answer it. Production:
+    An explicit unsandbox host-command ask carries `escalate: "human"` in `on`; Auto alone passes
+    `allowHostJudge: true` and can send it to the judge, without session coverage or session approval.
+    Production:
     `packages/kernel/src/guard/shell-guard.ts` (`createShellGuard`). Test:
-    `packages/kernel/tests/unit/guard.test.ts` (host reviewer and auto-judge cases).
+    `packages/kernel/tests/integration/guard-auto-review.test.ts` (Auto explicit unsandbox review,
+    including real shell dispatch, judge denial, human fallback and session-coverage exclusion).
 
 20. **The guard only ever narrows.** The sole `allow` verdicts are `non_bash` (rule 6) and
     `allow_list` (rule 7). `packages/kernel/src/guard/shell-guard.ts`.
@@ -920,10 +1000,12 @@ broken.
     `packages/kernel/src/guard/shell-guard.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`, and as a property over six commands.
 
-23. **An `undecidable` ask always carries `escalate: "human"`.**
-    `packages/kernel/src/guard/shell-guard.ts`. Pinned:
-    `packages/kernel/tests/unit/guard.test.ts` and
-    `packages/kernel/tests/unit/guard-audit.test.ts`.
+23. **An `undecidable` ask carries `escalate: "human"` only on Host.** Contained undecidability
+    remains an ordinary ask, never a silent policy allow. Explicit unsandbox matches `host_command`
+    first and is reviewable by Auto, unless a deny-list rule already refused it.
+    Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts`. Test:
+    `packages/kernel/tests/integration/guard-auto-review.test.ts` (placement and dangerous cascade)
+    and `packages/kernel/tests/unit/guard-audit.test.ts`.
 
 24. **An `escalate: "human"` request bypasses both automatic answerers — the LLM judge and the
     session allow list.** `packages/kernel/src/guard/resolver.ts` (the escalate arm
@@ -934,8 +1016,9 @@ broken.
     in silence. `packages/kernel/src/guard/resolver.ts`. Pinned:
     `packages/kernel/tests/unit/guard-audit.test.ts`.
 
-26. **Allow/deny entries are matched against `Segment.normalized` only**, never against raw segment
-    text — and `normalized` is already stripped of env-assignment prefixes, so neither list can
+26. **Allow/deny entries use normalized/comparison forms**, never raw segment
+    text. In-workspace POSIX directory handling follows §4.5. Normalization strips env-assignment
+    prefixes, so neither list can
     see them: an allow entry `git status` is satisfied by `LD_PRELOAD=/evil.so git status` exactly
     as it is by the bare command. `packages/kernel/src/guard/shell-guard.ts`.
     Pinned indirectly by the substitution case, which now resolves through the undecidable rule
@@ -948,7 +1031,8 @@ broken.
     Unpinned — the shell-guard's own `compileCommandEntry("")` arm has no test, and the
     `@clarvis/tools` helper that used to pin the same blank-entry rule no longer exists.
 
-28. **The allow list requires *every* segment to match; the deny list requires only one.**
+28. **The allow list requires every non-skipped comparison segment to match; the deny list requires
+    only one original or comparison match.** Validated POSIX `cd` segments may be skipped (§4.5).
     `packages/kernel/src/guard/shell-guard.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
@@ -1039,8 +1123,8 @@ broken.
     `Set.has` on the full key. Pinned: `packages/kernel/tests/unit/guard.test.ts`
     (`git diff` covered, `git diff --stat` and `git` not).
 
-45. **`allow_session` is offered only when the command is decidable and non-empty and an allow list
-    object exists**, and an `allow_session` answer that was not offered records nothing and denies.
+45. **`allow_session` is offered only when the ask is not `host_command`, the command is decidable
+    and non-empty and an allow list object exists**, and an `allow_session` answer that was not offered records nothing and denies.
     `packages/kernel/src/guard/guard-elicit.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
@@ -1203,7 +1287,7 @@ broken.
 | Judge returns a non-`decide` call, unparsable JSON, or a schema mismatch | ask the human when policy/channel permit, otherwise deny; warn and do not memoize | `parseDecision`, `fallback`, and `judgeOnce` in `packages/kernel/src/guard/judge.ts` |
 | Judge times out | governed by `cfg.timeout_ms ?? 20_000` passed to `llm.call`; surfaces as the throw path above | `packages/kernel/src/guard/judge.ts` |
 | Escalated human elicit rejects inside the judge | memo evicted and the rejection rethrown | `packages/kernel/src/guard/judge.ts` |
-| Analyzer cannot parse the command | `undecidable` → rule 2a/2b (deny with a deny list, human-escalated ask without) | `packages/kernel/src/guard/shell-guard.ts` |
+| Analyzer cannot parse the command | deny with a nonempty deny list; otherwise explicit unsandbox reaches `host_command`, then generic Host human-escalated or contained reviewable ask | `packages/kernel/src/guard/shell-guard.ts` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts`, `packages/kernel/src/guard/shell-guard.ts` |
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
 | Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `require_escalated` shell | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
@@ -1358,16 +1442,13 @@ separately postures guard confirmations per principal
   dialect suites assert every entry is statically decidable and canonical, sample the supported
   ecosystem breadth, and keep generic runners plus install/publish commands out
   (`packages/tools/tests/unit/{posix,powershell}-dialect.test.ts`).
-- **`escalate` has exactly one producer and one value.** Only rule 2b sets it
-  (`packages/kernel/src/guard/shell-guard.ts`) and the type admits only `"human"`
-  (`packages/tools/src/guard/types.ts`). **Resolved by derivation:** it is one value
-  because the resolver implements one restriction — *bar every automatic answerer*. A second spelling
-  would have to name a **partial** restriction (bar the session allow list but keep the judge, say),
-  and there is no branch that could act on one: `escalate === "human"` takes the human channel or
-  fails closed (`packages/kernel/src/guard/resolver.ts`), and everything else takes the ordinary
-  path. So it is not a placeholder awaiting siblings; widening it means writing that branch first,
-  and the type now says so. Whether a second producer is *planned* remains undetermined — but the
-  field is read, not dead, which is the part that was in question.
+- **`escalate` admits only `"human"`.** `createShellGuard` sets it for generic Host undecidability
+  and explicit unsandbox without `allowHostJudge` (`packages/kernel/src/guard/shell-guard.ts`).
+  It bars both the judge and session coverage. Auto host-command asks instead omit this field and
+  bypass session coverage by `matched: "host_command"` in `packages/kernel/src/guard/resolver.ts`;
+  they may use the judge but never session approval. Test:
+  `packages/kernel/tests/integration/guard-auto-review.test.ts` and
+  `packages/kernel/tests/unit/guard.test.ts`.
 - **Handed to siblings, not covered here:** the elicitation transport, buffering and the
   `auto_decline` posture ([elicitation-and-user-interaction](../cross-cutting/elicitation.md)); how `ElicitBlock` renders a
   `guard_confirm` (`packages/code/src/views/ElicitBlock.tsx`, [code-transcript-and-tool-rendering](../hosts/code-transcript.md));

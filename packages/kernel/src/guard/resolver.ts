@@ -8,7 +8,10 @@ import type {
   Logger,
   ProviderConfig,
 } from "@clarvis/loop";
-import { defaultGuardMode, type GuardConfig } from "@clarvis/loop/host";
+import { defaultGuardMode, type GuardConfig, type SandboxSettings } from "@clarvis/loop/host";
+import { sandboxWouldApply } from "@clarvis/tools/sandbox";
+import type { GuardPlacement } from "@clarvis/tools/guard";
+import { operatorMessage } from "./operator-message.ts";
 import { createShellGuard, type ShellGuardDecision } from "./shell-guard.ts";
 import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "./guard-elicit.ts";
 import { createJudgeElicit } from "./judge.ts";
@@ -22,6 +25,10 @@ export interface GuardSettings {
   providers?: ProviderConfig[];
   /** Settings-level default model, the judge's fallback when it names none. */
   defaultModel?: string;
+  /** Effective native policy, including any host-resolved fail-closed fallback. */
+  sandbox?: SandboxSettings;
+  /** Host-selected container placement; never read from tool arguments. */
+  runtime?: { backend: "native" | "docker" | "podman"; network?: "none" | "internet" | "outbound" };
 }
 
 /** Loads current {@link GuardSettings} (typically from merged config). */
@@ -122,6 +129,8 @@ function buildGuard(
   guardConfig: GuardConfig | undefined,
   mode: GuardMode,
   onDecision: (decision: ShellGuardDecision) => void,
+  placement: GuardPlacement,
+  network: "none" | "host" | undefined,
 ): Guard | undefined {
   if (mode === "off") return undefined;
   const guard = createShellGuard({
@@ -132,6 +141,9 @@ function buildGuard(
       ? { deniedCommands: guardConfig.denied_commands }
       : {}),
     onDecision,
+    allowHostJudge: mode === "auto",
+    placement,
+    ...(network !== undefined ? { network } : {}),
   });
   return async (ctx) => ({ ...(await guard(ctx)), mode });
 }
@@ -193,7 +205,7 @@ function recordAnswer(
  * @param runId - the run whose command was refused.
  * @returns `false`, always — `applyGuard` reads that as a denial.
  * @remarks This is the one denial a user can neither see nor answer: the
- * command was unanalyzable, so no automatic answerer may rule on it, and this
+ * command needed host-only human authority, and this
  * host configured no human channel. Failing closed is right; failing closed in
  * silence is what this removes.
  */
@@ -234,8 +246,23 @@ function createGuardRuntimeResolver(
     const settings = deps.loadSettings();
     const guardMode = resolveGuardMode(ctx.request.guard_mode, settings.guard);
     const audit = auditRoot.child?.({ run_id: ctx.executionId, owner: ctx.owner }) ?? auditRoot;
-    const guard = buildGuard(settings.guard, guardMode, (decision) =>
-      recordDecision(audit, guardMode, decision),
+    const container =
+      settings.runtime?.backend === "docker" || settings.runtime?.backend === "podman";
+    const placement: GuardPlacement =
+      container || sandboxWouldApply(settings.sandbox) ? "contained" : "host";
+    const network = container
+      ? settings.runtime?.network === "none"
+        ? "none"
+        : undefined
+      : sandboxWouldApply(settings.sandbox)
+        ? settings.sandbox?.network
+        : undefined;
+    const guard = buildGuard(
+      settings.guard,
+      guardMode,
+      (decision) => recordDecision(audit, guardMode, decision),
+      placement,
+      network,
     );
     if (guard === undefined) return undefined;
     const sessionAllowlist = (): GuardSessionAllowlist | undefined =>
@@ -255,7 +282,9 @@ function createGuardRuntimeResolver(
       approval === undefined
         ? undefined
         : async (req) => {
-            const answer = await approval.ask(req);
+            const answer = await approval.ask(
+              req.matched === "host_command" ? { ...req, escalate: "human" } : req,
+            );
             recordAnswer(audit, "human", answer.allowed, answer.persisted);
             return { allowed: answer.allowed, answerer: "human" };
           };
@@ -270,6 +299,7 @@ function createGuardRuntimeResolver(
                 (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
               logger: deps.logger ?? ctx.logger,
               signal: ctx.signal,
+              operatorMessage: operatorMessage(ctx.request.messages ?? []),
             },
             ctx.request.guard_judge,
             humanElicit,
@@ -292,10 +322,8 @@ function createGuardRuntimeResolver(
     /**
      * A request the guard marked `escalate: "human"` bypasses both automatic
      * answerers: the LLM judge, and the session allow list. It reached `ask`
-     * because the command could not be analyzed, and neither of those can answer
-     * a question of that shape — the judge would be guessing at text the static
-     * analyzer already refused to bound, and a session approval keyed on an
-     * opaque command extends to whatever that command turns out to mean. With
+     * because ordinary Host execution could not be analyzed or Review on requires unsandbox approval.
+     * Auto unsandbox asks go to the judge, never a session grant; its human fallback is single-call. With
      * no human channel configured it resolves to no elicit at all, which
      * `applyGuard` treats as a denial.
      */
@@ -321,7 +349,8 @@ function createGuardRuntimeResolver(
               if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
               return chosenHuman(req);
             };
-            const covered = approval?.covers(req) ?? false;
+            const covered =
+              req.matched === "host_command" ? false : (approval?.covers(req) ?? false);
             return typeof covered === "boolean"
               ? afterCoverage(covered)
               : covered.then(afterCoverage);

@@ -1,46 +1,43 @@
 import type { PathCandidate, ShellDialect, Token } from "../dialect.ts";
 
 /**
- * Build a pattern matching `name` only where a command word can appear: at the
- * start of a segment or after whitespace, optionally with a directory prefix.
- *
- * @param name - the command name, as a regex-safe literal.
- * @returns a {@link RegExp} that ignores the name inside a longer token.
- * @remarks
- * A bare `\benv\b` reads as "the `env` command" and in fact matches the `env` in
- * `.env` — a word boundary sits after the dot. That made `cat .env` undecidable,
- * which was merely noisy while undecidable meant `ask`, and becomes a wrong
- * refusal now that an unanalyzable command with a deny list configured is
- * denied. `source.txt`, `base64.py` and `my-app/exec.log` had the same problem.
- * A directory prefix is still honoured, so `/usr/bin/env FOO=1 sh` remains
- * undecidable.
- *
- * The leading boundary must accept shell punctuation, not only whitespace:
- * `splitByOperators` does not split inside parentheses, so `(sh -c "rm -rf /")`
- * arrives as one segment whose `sh` is preceded by `(`. Requiring `\s` there
- * made that subshell decidable and let it past the undecidable check entirely.
+ * Expansions whose effect cannot be read off the text. Command names are not
+ * here: a scan of the whole segment treats `cat source` and `npm run env` as
+ * `env`/`source` in command position, which is how parameterized commands became
+ * undecidable. Those names are matched against the effective argv head instead.
  */
-const COMMAND_BOUNDARY = String.raw`(?:^|[\s(){};&|])`;
+const EXPANSION_PATTERNS: RegExp[] = [/\$\(/, /`/, /\$\{?[A-Za-z_]/, /<\(/, />\(/];
 
-function commandWord(name: string): RegExp {
-  return new RegExp(String.raw`${COMMAND_BOUNDARY}(?:\S*/)?${name}(?:\s|$)`);
-}
+const UNDECIDABLE_COMMANDS = new Set(["eval", "exec", "source", "env", "xargs", "base64"]);
 
-const UNDECIDABLE_PATTERNS: RegExp[] = [
-  /\$\(/,
-  /`/,
-  /\$\{?[A-Za-z_]/,
-  commandWord("eval"),
-  commandWord("exec"),
-  commandWord("source"),
-  commandWord("env"),
-  commandWord("xargs"),
-  commandWord("base64"),
-  new RegExp(String.raw`${COMMAND_BOUNDARY}(?:\S*/)?sh\s+-c`),
-  new RegExp(String.raw`${COMMAND_BOUNDARY}(?:\S*/)?bash\s+-c`),
-  /<\(/,
-  />\(/,
-];
+/**
+ * Tokens that introduce a command without being the command: grouping, negation,
+ * POSIX `command`/`builtin`, and compound-list keywords. Skipping them is how
+ * `(eval rm)` and `{ eval foo; }` stay undecidable after the whole-segment
+ * regex is gone, without flagging `echo eval`.
+ */
+const COMMAND_PREFIX_TOKENS = new Set([
+  "{",
+  "}",
+  "(",
+  ")",
+  "!",
+  "command",
+  "builtin",
+  "if",
+  "then",
+  "else",
+  "elif",
+  "fi",
+  "for",
+  "while",
+  "until",
+  "do",
+  "done",
+  "case",
+  "esac",
+  "in",
+]);
 
 /**
  * A starter allow list for a POSIX host: conventional inspection, build, test,
@@ -515,7 +512,8 @@ function splitByOperators(command: string): { segments: string[]; balanced: bool
  * Assignments are recorded, not discarded, because a grant keyed on the bare
  * command must still account for a prefix like `LD_PRELOAD=...` (see
  * {@link Segment.envAssignments}). Wrappers are unwound repeatedly, so
- * `timeout 5 nice cmd` reduces to `cmd`.
+ * `timeout 5 nice cmd` reduces to `cmd`. Then peel consecutive `git --no-pager`
+ * and `--no-color` global prefixes only; subcommand arguments and `-C` remain.
  */
 function stripEnvAndWrappers(tokens: string[]): { argv: string[]; envAssignments: string[] } {
   const envAssignments: string[] = [];
@@ -543,7 +541,171 @@ function stripEnvAndWrappers(tokens: string[]): { argv: string[]; envAssignments
     skipEnv();
     head = tokens[i];
   }
-  return { argv: tokens.slice(i), envAssignments };
+  const argv = tokens.slice(i);
+  if (argv[0] === "git") {
+    while (argv[1] === "--no-pager" || argv[1] === "--no-color") argv.splice(1, 1);
+  }
+  return { argv, envAssignments };
+}
+
+function posixBasename(command: string): string {
+  const slash = command.lastIndexOf("/");
+  return slash === -1 ? command : command.slice(slash + 1);
+}
+
+function effectiveArgv(argv: string[]): string[] {
+  let i = 0;
+  while (i < argv.length && COMMAND_PREFIX_TOKENS.has(argv[i]!)) {
+    i++;
+    while (i < argv.length && argv[i]!.startsWith("-") && argv[i] !== "--") i++;
+    if (argv[i] === "--") i++;
+  }
+  return argv.slice(i);
+}
+
+function hasDashC(argv: string[]): boolean {
+  for (const arg of argv) {
+    if (arg === "--") return false;
+    if (arg === "-c" || arg.startsWith("-c")) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether the segment's real command is one whose effect cannot be bounded:
+ * `eval`/`exec`/`source`/`env`/`xargs`/`base64`, or `sh`/`bash` invoked with `-c`.
+ */
+function opaqueCommand(argv: string[]): boolean {
+  const effective = effectiveArgv(argv);
+  const head = effective[0];
+  if (head === undefined) return false;
+  const name = posixBasename(head);
+  if (UNDECIDABLE_COMMANDS.has(name)) return true;
+  return (name === "sh" || name === "bash") && hasDashC(effective.slice(1));
+}
+
+const UNSAFE_LITERAL = /[`$\\*?[\](){}|<>!;&\s]/;
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function isSafeLiteral(value: string): boolean {
+  return value.length > 0 && !UNSAFE_LITERAL.test(value);
+}
+
+function updateBindings(bindings: Map<string, string>, envAssignments: string[]): void {
+  for (const assignment of envAssignments) {
+    const eq = assignment.indexOf("=");
+    if (eq <= 0) continue;
+    const name = assignment.slice(0, eq);
+    const value = assignment.slice(eq + 1);
+    if (VAR_NAME.test(name) && isSafeLiteral(value)) bindings.set(name, value);
+    else bindings.delete(name);
+  }
+}
+
+/**
+ * Replace `$NAME` / `${NAME}` in unquoted and double-quoted text when `NAME` is
+ * a bound literal. Single-quoted spans stay literal, matching
+ * {@link scrubExpansions}.
+ */
+function applyBindings(source: string, bindings: Map<string, string>): string {
+  if (bindings.size === 0) return source;
+  let out = "";
+  let quote: "'" | '"' | null = null;
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i]!;
+    if (quote === "'") {
+      out += ch;
+      if (ch === "'") quote = null;
+      i++;
+      continue;
+    }
+    if (quote === '"' && ch === '"') {
+      quote = null;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (quote === null && (ch === "'" || ch === '"')) {
+      quote = ch;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === "$") {
+      let name: string | undefined;
+      let consumed = 1;
+      if (source[i + 1] === "{") {
+        const end = source.indexOf("}", i + 2);
+        if (end !== -1) {
+          const inner = source.slice(i + 2, end);
+          if (VAR_NAME.test(inner)) {
+            name = inner;
+            consumed = end - i + 1;
+          }
+        }
+      } else {
+        const rest = source.slice(i + 1);
+        const match = /^[A-Za-z_][A-Za-z0-9_]*/.exec(rest);
+        if (match !== null) {
+          name = match[0];
+          consumed = 1 + name.length;
+        }
+      }
+      if (name !== undefined && bindings.has(name)) {
+        out += bindings.get(name)!;
+        i += consumed;
+        continue;
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * True when every top-level separator is `;`, `&&`, or a newline, so a
+ * `NAME=value` assignment in an earlier segment is in the same shell as later
+ * ones. Pipelines, `||`, and `&` keep their expansions opaque.
+ */
+function isSequentialChain(command: string, sources: string[]): boolean {
+  let rest = command.trim();
+  for (const [index, source] of sources.entries()) {
+    if (index > 0) {
+      if (rest.startsWith("&&")) rest = rest.slice(2).trimStart();
+      else if (rest.startsWith(";")) rest = rest.slice(1).trimStart();
+      else if (rest.startsWith("\n")) rest = rest.slice(1).trimStart();
+      else return false;
+    }
+    if (!rest.startsWith(source)) return false;
+    rest = rest.slice(source.length).trimStart();
+  }
+  return rest.length === 0;
+}
+
+/**
+ * Inline sequential literal assignments so `QA=/tmp/foo; cat "$QA/x"` is the
+ * same analysis as `QA=/tmp/foo; cat /tmp/foo/x`. Bindings do not leak across
+ * `|` / `||` / `&`.
+ */
+function analyzeSources(command: string, sources: string[]): string[] {
+  if (!isSequentialChain(command, sources)) return sources;
+  const bindings = new Map<string, string>();
+  return sources.map((source) => {
+    const expanded = applyBindings(source, bindings);
+    const tokens = tokenize(expanded);
+    const { argv, envAssignments } = stripEnvAndWrappers(tokens.map((t) => t.text));
+    const effective = effectiveArgv(argv);
+    if (effective.length === 0) {
+      updateBindings(bindings, envAssignments);
+      return expanded;
+    }
+    if (posixBasename(effective[0]!) === "unset") {
+      for (const name of effective.slice(1)) bindings.delete(name);
+    }
+    return expanded;
+  });
 }
 
 /**
@@ -571,6 +733,7 @@ function pathCandidate(token: Token): PathCandidate {
     text = text.slice(redirect[0].length);
   }
   if (text === "/dev/null") return { kind: "none" };
+  if (text === "[" || text === "]" || text === "[[" || text === "]]") return { kind: "none" };
   const glob = redirect !== null ? GLOB_METACHARS.test(text) : token.glob;
 
   if (TILDE_USER.test(text)) return { kind: "opaque" };
@@ -586,9 +749,9 @@ function pathCandidate(token: Token): PathCandidate {
  * through.
  *
  * @remarks
- * `decidable` is `true` only when quotes are balanced and none of the
- * substitution / `eval` / `exec` / `source` / `sh -c` patterns survive
- * {@link scrubExpansions}.
+ * `decidable` is `true` only when quotes are balanced, no expansion pattern
+ * survives {@link scrubExpansions}, and the effective command is not `eval` /
+ * `exec` / `source` / `env` / `xargs` / `base64` / `sh -c` / `bash -c`.
  */
 export const posixDialect: ShellDialect = {
   flavor: "posix",
@@ -596,8 +759,12 @@ export const posixDialect: ShellDialect = {
   tokenize,
   decidable(segment: string): boolean {
     const { scrubbed, unbalanced } = scrubExpansions(segment);
-    return !unbalanced && !UNDECIDABLE_PATTERNS.some((re) => re.test(scrubbed));
+    if (unbalanced || EXPANSION_PATTERNS.some((re) => re.test(scrubbed))) return false;
+    const tokens = tokenize(segment);
+    const { argv } = stripEnvAndWrappers(tokens.map((t) => t.text));
+    return !opaqueCommand(argv);
   },
   normalize: stripEnvAndWrappers,
+  analyzeSources,
   pathCandidate,
 };

@@ -530,6 +530,10 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     const merged = configStore.readSettings().merged as Record<string, unknown>;
     return {
       ...(merged.guard !== undefined ? { guard: merged.guard as GuardConfig } : {}),
+      ...(merged.runtime !== undefined
+        ? { runtime: merged.runtime as GuardSettings["runtime"] }
+        : {}),
+      sandbox: sandboxPolicy.resolve(),
       ...(Array.isArray(merged.providers)
         ? { providers: merged.providers as ProviderConfig[] }
         : {}),

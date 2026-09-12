@@ -558,6 +558,24 @@ claimed run and owner identities with the authenticated host values before loggi
 policy is the containment boundary; this profile does not pretend to run a second Bubblewrap or
 Seatbelt sandbox inside the container.
 
+The guard settings envelope captures the selected container's backend and network from the launch
+input, not from a later live settings read or a model argument. `guestGuardSettings` preserves that
+projection while omitting a nested native sandbox. Auto therefore sees `placement: "contained"`
+for undecidable guest commands; they remain reviewable asks, never silent policy approvals.
+Container network `none` is reported as `none`; outbound/internet modes are omitted from the native
+`network: "host" | "none"` vocabulary. The judge also receives the run's bounded start/continue user
+text, not host conversation history or live steers. Human-consent RPC still reconstructs its own
+shell facts and does not accept new placement authority from the guest.
+
+Production: `guardRuntime` in
+[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts),
+`guestGuardSettings` in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts),
+and `createGuardResolver` in [`resolver.ts`](../../packages/kernel/src/guard/resolver.ts).
+Test: [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts)
+(`passes %s placement and operator brief to Auto for guest expansions`) and
+[`guard-auto-review.test.ts`](../../packages/kernel/tests/integration/guard-auto-review.test.ts).
+These deterministic bridge tests do not qualify a real Docker/Podman engine or real-model ruling.
+
 The guest has no host-exec channel. `shell` and `monitor_start` with
 `sandbox_permissions: "require_escalated"` fail closed inside the container: Isolation Docker/Podman
 is the sandbox, and the machine host is not available from that placement. Git and SSH credentials

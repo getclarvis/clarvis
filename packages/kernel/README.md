@@ -840,6 +840,29 @@ bug. `@clarvis/code` is what resolves that prompt from `guard-judge.md`
 README. `@clarvis/server` deliberately does not accept `guard_mode` at all, so a
 caller cannot switch off the operator's guard.
 
+The resolver snapshots host-owned placement once per run: enabled native sandbox means
+contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
+as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
+Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
+Undecidable contained commands remain ordinary asks that Auto may judge; ordinary Host
+undecidable commands still require a human, and a nonempty deny list rejects either. No unmatched
+contained silent-allow rule is installed. Forced `rm` and `sudo` ask after allowlist checks.
+
+POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
+Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
+Assignment-only `NAME=value` segments are skipped for allow-list comparison, and sequential
+literal `$NAME` bindings are inlined by the POSIX analyzer before that match. Session
+approval keys keep their original normalized identities; unsupported control flow and PowerShell
+retain ordinary matching. Paths still participate in denial.
+
+Judge JSON contains trusted per-call analysis facts plus `operator_message`: at most 4 KiB of
+start/continue user text, selected newest-first and retained chronologically with a UTF-8-safe
+prefix cut. Assistant text, images, tool results and mid-run steers are absent. Child runs supply
+their own brief. The memo key is the actual reviewed JSON, so changed raw commands, cwd or facts
+cannot reuse a normalized-only ruling. Native `network` stays `host | none`; container `none` is
+reported as `none`, and outbound/internet modes are omitted rather than mislabeled as host network.
+See [command guard](../../specs/execution/command-guard.md) for the tools/kernel/Code contract.
+
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
 the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when
 the default `on_unsure: "ask"` policy and an interactive host permit it. Without that channel — or
@@ -848,8 +871,13 @@ attempts are not memoized, so fixing a transient provider problem restores autom
 restarting the session.
 
 A `shell` or `monitor_start` call with `sandbox_permissions: "require_escalated"` under Isolation
-Sandbox is an `ask` with `escalate: "human"`. Mode `on` and `auto` therefore send it to a human; the
-judge does not decide unsandbox. Isolation Host already runs unsandboxed, so the field does not add
+Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
+list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
+otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;
+unsure, failed and malformed responses follow `on_unsure` (`ask` by default, configured `deny`
+respected). An absent usable model routes to a human. Host-command asks bypass volatile session
+coverage and never offer `allow_session`, even on human fallback; clean exact-call judge memoization
+remains separate. Isolation Host already runs unsandboxed, so the field does not add
 a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
 operator's explicit choice. Isolated container guests reject the field instead of forwarding it to
 the host.

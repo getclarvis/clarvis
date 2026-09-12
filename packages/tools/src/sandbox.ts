@@ -751,6 +751,20 @@ function appendBubblewrapMounts(args: string[], mounts: readonly BubblewrapMount
 }
 
 /**
+ * Whether this call commits to native containment or failure, without probing.
+ *
+ * Both required and legacy optional availability fail closed. Disabled settings,
+ * an absent policy, and an explicitly reviewed bare spawn are not contained.
+ * A true result promises no host fallback, not successful backend availability.
+ */
+export function sandboxWouldApply(
+  sandbox: (SandboxConfig & { enabled?: boolean }) | undefined,
+  forceBare = false,
+): sandbox is SandboxConfig {
+  return sandbox !== undefined && sandbox.enabled !== false && !forceBare;
+}
+
+/**
  * Turn a shell command into a {@link SandboxedCommand}, either bare or wrapped
  * in the locked-down native backend selected for this host.
  *
@@ -802,7 +816,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
       sandboxed: false,
     };
   };
-  if (forceBare || sandbox === undefined) return bare();
+  if (!sandboxWouldApply(sandbox, forceBare)) return bare();
   const support = probe();
   if (support.mode === "unavailable") {
     throw new ToolError("io_error", `Native sandbox is required: ${support.reason}`);

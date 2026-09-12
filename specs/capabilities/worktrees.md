@@ -105,7 +105,11 @@ It does not mount the operator's home directory, credential files, or keyring.
 When the sandbox lacks a required host environment variable, credential channel, runtime, or
 service, the model retries the same `shell` or `monitor_start` command with
 `sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
-spawns that one command on the host after a human `ask`. Isolation Host already runs unsandboxed.
+spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
+`allow` executing and `deny` refusing. Unsure, failed or malformed review follows `on_unsure`
+(default `ask`, configured `deny` respected); no usable model asks a human. Host-command asks never
+use session coverage or offer `allow_session`, including fallback; clean exact-call judge memoization
+remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
 Isolated container runs reject the field. Mode `off` proceeds without a reviewer. Executable Git
 options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs,
 `git credential`, and `gh auth token` remain denied independently of command review.
@@ -147,11 +151,13 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 
 5. **Host fallback is the same command text with `sandbox_permissions: "require_escalated"` and
    follows the operator-selected command-review mode.** Mode `off` proceeds without review; Isolation
-   Sandbox with mode `on` or `auto` asks a human. Isolated containers refuse the field.
+   Sandbox with mode `on` asks a human, while Auto may judge the host effect with ordinary
+   `on_unsure` fallback and no session approval. Isolated containers refuse the field.
    Production: `packages/tools/src/lib/sandbox-permissions.ts`;
    `packages/kernel/src/guard/shell-guard.ts`.
    Test: `packages/tools/tests/integration/shell-escalation.test.ts`;
    `packages/kernel/tests/unit/guard-audit.test.ts`;
+   `packages/kernel/tests/integration/guard-auto-review.test.ts`;
    `packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
 
 6. **Every newly created checkout is nested under the primary worktree's ignored

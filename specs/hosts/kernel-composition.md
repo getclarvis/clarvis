@@ -152,9 +152,17 @@ opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile 
 The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
 environment names. It creates the run-owned scratch and appends host system temporary access inside
 the optional tools capability. The kernel guard makes Isolation Sandbox `require_escalated` an `ask`
-with `escalate: "human"`: mode `on` and `auto` use the human channel, and the judge does not decide
-unsandbox. Mode `off` returns no guard, so that one command proceeds without command review.
+matched `host_command`: mode `on` uses `escalate: "human"`, while Auto may use the judge to allow
+or deny. Inconclusive, failed or malformed review follows `on_unsure` (default `ask`, configured
+`deny` respected); no usable model routes to a human. Host-command asks bypass session coverage
+and never offer `allow_session`, including human fallback; clean exact-call judge memoization is
+separate. Mode `off` returns no guard, so that one command proceeds without command review.
 Isolated container guests reject the field instead of forwarding it to the host.
+
+Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `createShellGuard`
+in `packages/kernel/src/guard/shell-guard.ts`. Test:
+`packages/kernel/tests/integration/guard-auto-review.test.ts` and
+`packages/kernel/tests/unit/guard.test.ts`.
 
 `CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
 interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The

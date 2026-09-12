@@ -1,4 +1,24 @@
-import type { GuardContext } from "./types.ts";
+import type { GuardContext, ShellFacts } from "./types.ts";
+
+/**
+ * Identify narrow high-risk command forms in already-normalized argv.
+ *
+ * `sudo` with any arguments and `rm` with a force option require special review.
+ * Only options before `--` count; long options merely containing `f` do not.
+ * This is a review fact, not a complete danger detector or an approval policy.
+ */
+export function isDangerousCommand(shell: ShellFacts): boolean {
+  return shell.segments.some(({ argv, normalized }) => {
+    const head = normalized.split(" ", 1)[0];
+    if (head === "sudo") return true;
+    if (head !== "rm") return false;
+    for (const arg of argv.slice(1)) {
+      if (arg === "--") break;
+      if (arg === "--force" || /^-[^-]*f[^-]*$/.test(arg)) return true;
+    }
+    return false;
+  });
+}
 
 /**
  * Whether every path the call touches is provably inside the workspace.

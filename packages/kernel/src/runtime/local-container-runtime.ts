@@ -356,6 +356,10 @@ export async function createLocalContainerRuntime(
   router: RuntimeAuthorityRouter,
   options: LocalContainerRuntimeOptions = {},
 ): Promise<RuntimeHost> {
+  const guardRuntime = {
+    backend: input.settings.backend,
+    network: input.settings.network,
+  };
   const protectedPaths = await readOnlyWorkspacePaths(input);
   const controller = await launchIsolatedRuntime({
     ...input,
@@ -516,6 +520,7 @@ export async function createLocalContainerRuntime(
       const loadedGuardSettings = structuredClone(input.loadGuardSettings?.() ?? {});
       const guardSettings: GuardSettings = structuredClone({
         ...(loadedGuardSettings.guard === undefined ? {} : { guard: loadedGuardSettings.guard }),
+        runtime: guardRuntime,
         defaultModel:
           loadedGuardSettings.defaultModel ??
           (args.deps.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,

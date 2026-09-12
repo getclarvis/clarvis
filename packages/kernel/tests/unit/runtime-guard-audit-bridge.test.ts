@@ -60,6 +60,23 @@ describe("runtime guard audit bridge", () => {
     ]);
   });
 
+  it("accepts dangerous asks without transmitting commands or operator intent", () => {
+    const events: unknown[] = [];
+    createGuestGuardAuditLogger((event) => events.push(event)).info({
+      event: "guard.decision",
+      verdict: "ask",
+      matched: "dangerous",
+      mode: "auto",
+      tool: "shell",
+      operator_message: "private intent",
+      command: "private command",
+    });
+    const records: Array<{ level: string; value: unknown; message?: string }> = [];
+    expect(forwardGuestGuardAudit(events[0], captureLogger(records), "run", "owner")).toBe(true);
+    expect(records[0]?.value).toMatchObject({ matched: "dangerous", verdict: "ask" });
+    expect(JSON.stringify(records)).not.toContain("private");
+  });
+
   it("accepts only the closed guard audit vocabulary", () => {
     const records: Array<{ level: string; value: unknown; message?: string }> = [];
     const logger = captureLogger(records);

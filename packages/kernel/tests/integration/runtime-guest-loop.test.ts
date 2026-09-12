@@ -719,6 +719,106 @@ describe("runtime guest loop", () => {
     });
   });
 
+  it.each(["docker", "podman"])(
+    "passes %s placement and operator brief to Auto for guest expansions",
+    async (backend) => {
+      const root = await mkdtemp(join(tmpdir(), "clarvis-guest-auto-"));
+      directories.push(root);
+      const workspaceRoot = join(root, "workspace");
+      await mkdir(workspaceRoot);
+      let leadCalls = 0;
+      let judged: Record<string, unknown> | undefined;
+      const bridge: GuestExecutionBridge = {
+        async model(_id, request) {
+          const body = request.body as {
+            tools?: Array<{ fullName: string }>;
+            messages: Array<{ content: string }>;
+          };
+          const judge = body.tools?.some((tool) => tool.fullName === "decide");
+          if (judge) judged = JSON.parse(body.messages[1]!.content);
+          else leadCalls++;
+          const result = judge
+            ? { toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "deny" } }] }
+            : leadCalls === 1
+              ? {
+                  toolCalls: [
+                    { id: "shell", name: "shell", arguments: { command: 'printf "$MSG"' } },
+                  ],
+                }
+              : { text: "reviewed" };
+          return {
+            events: [
+              {
+                type: "result",
+                result: {
+                  ...result,
+                  usage: {
+                    input_tokens: 1,
+                    output_tokens: 1,
+                    cached_tokens: 0,
+                    cache_write_tokens: 0,
+                  },
+                },
+              },
+            ],
+            outputBytes: 128,
+          };
+        },
+        async capability(_id, request) {
+          expect(request.method).toBe("runtime.guard_approval");
+          expect(request.arguments).toMatchObject({ operation: "covers" });
+          return false;
+        },
+        async event() {},
+        async checkpoint() {},
+      };
+      const result = await createGuestLoopExecutor({
+        workspaceRoot,
+        scratchRoot: join(root, "scratch"),
+      }).execute(
+        "exec_guest_auto",
+        {
+          owner: "owner",
+          modelLeaseId: "lease",
+          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
+          guardSettings: {
+            guard: { type: "shell", mode: "auto" },
+            defaultModel: "anthropic/x",
+            runtime: { backend, network: "none" },
+          },
+          rawBody: {
+            execution_id: "exec_guest_auto",
+            messages: [{ role: "user", content: "inspect this workspace" }],
+            guard_judge: { prompt: "judge" },
+            servers: [],
+            profiles: [
+              {
+                name: "solo",
+                model: "anthropic/x",
+                tools: [],
+                grants: ["run_commands"],
+                iteration_limit: 5,
+              },
+            ],
+            entry: "solo",
+            providers: [{ name: "anthropic", kind: "anthropic" }],
+            budget: { on_exceed: "stop", total_token_limit: 1000 },
+          },
+        },
+        bridge,
+        new AbortController().signal,
+      );
+      expect(result).toMatchObject({ response: { status: "completed", result: "reviewed" } });
+      expect(judged).toMatchObject({
+        placement: "contained",
+        network: "none",
+        undecidable: true,
+        operator_message: "inspect this workspace",
+      });
+    },
+  );
+
   it("guards guest shell execution and exposes a granted service through host authority", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-preview-"));
     directories.push(root);

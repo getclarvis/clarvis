@@ -58,6 +58,8 @@ export interface JudgeDeps {
   logger?: Logger | undefined;
   /** Aborts the judge call when the run is cancelled. */
   signal?: AbortSignal | undefined;
+  /** Host-captured start/continue user text, bounded by the resolver to 4 KiB. */
+  operatorMessage?: string | undefined;
 }
 
 /**
@@ -74,6 +76,13 @@ function factsMessage(req: ElicitRequest): string {
       segments: req.shell?.segments.map((s) => s.normalized),
       undecidable: req.shell?.undecidable,
       paths: req.shell?.paths,
+      placement: req.placement,
+      network: req.network,
+      matched: req.matched,
+      within_workspace: req.within_workspace,
+      touches_outside: req.touches_outside,
+      dangerous: req.dangerous,
+      operator_message: req.operator_message || undefined,
     },
     null,
     2,
@@ -81,16 +90,11 @@ function factsMessage(req: ElicitRequest): string {
 }
 
 /**
- * Derives the memoization key for a request: the normalized bash segments joined
- * by `&&`, or `{tool,args}` JSON for a non-bash call, so identical commands
- * reuse one in-flight verdict.
+ * Key the exact reviewed facts, not merely normalized argv: cwd, raw expansions,
+ * environment prefixes and host-attested policy facts can change a ruling.
  */
 function memoKey(req: ElicitRequest): string {
-  const segments = req.shell?.segments;
-  if (segments !== undefined && segments.length > 0) {
-    return segments.map((s) => s.normalized).join(" && ");
-  }
-  return JSON.stringify({ tool: req.tool, args: req.args });
+  return factsMessage(req);
 }
 
 /** A parsed judge verdict: the decision plus an optional free-text reason. */
@@ -264,7 +268,11 @@ export function createJudgeElicit(
     return { value: { allowed: false, answerer: "judge" }, clean: true };
   };
 
-  return (req) => {
+  return (request) => {
+    const req = {
+      ...request,
+      ...(deps.operatorMessage !== undefined ? { operator_message: deps.operatorMessage } : {}),
+    };
     const key = memoKey(req);
     const cached = verdicts.get(key);
     if (cached !== undefined) return cached;

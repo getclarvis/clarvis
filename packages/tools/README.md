@@ -58,6 +58,9 @@ regular, non-link spill directly under this workspace's machine-local state dire
 history, monitor controls, other state files and another workspace's spills remain outside
 confinement. POSIX `/dev/null` is treated as the null device,
 not as an escaping host file, so ordinary output-discard redirections do not create false denials.
+The POSIX command analyzer matches `eval`/`env`/`source` and friends at the effective command head
+so arguments such as `cat source` stay decidable, does not treat `NAME=value` assignment-only
+segments as tokenizer failures, and inlines sequential literal `$NAME` bindings for analysis.
 
 Text reads open one descriptor non-blocking, reject non-regular files from that descriptor, and
 read at most `MAX_FILE_BYTES + 1`. The extra byte detects a file that grows after its initial stat;
@@ -140,8 +143,12 @@ latency while preserving the real npm/Homebrew/runtime path.
 the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
 field is a no-op. Isolated container guests reject it: the guest has no channel to the machine host.
-Mode `on` and `auto` send that unsandbox ask to a human; the auto-judge does not decide it. Mode
-`off` proceeds without a reviewer. Git credential output, `gh auth token`, Git `--exec` helpers, and
+Mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
+`deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`ask` by default,
+or configured `deny`). Without a usable judge model it asks a human. Host-command review bypasses
+session coverage and never offers `allow_session`, including human fallback; clean judge decisions
+retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
+`gh auth token`, Git `--exec` helpers, and
 `scheme::` transport URLs are denied on every command tool. Direct Git/GitHub token output remains
 unavailable. The ordinary sandbox remains the default; the model should request escalation only after
 the sandboxed command cannot complete the user's request.
@@ -271,6 +278,27 @@ runners, so those calls still require review. Every seeded entry is asserted to
 be decidable and canonical in its host dialect. These lists express approval
 policy, not containment: builds and tests may run repository-controlled code, so
 hosts that require isolation must also enable the native sandbox.
+
+`GuardPlacement` (`"host" | "contained"`) and `GuardCallFacts` describe optional trusted per-call
+review facts: `matched`, `placement`, `network`, `dangerous`, `within_workspace`, and
+`touches_outside`. `GuardDecision` and `ElicitRequest` share those fields; dispatch copies only
+decision-supplied facts, never same-named model arguments. `ElicitRequest.operator_message` is an
+optional host-reviewer message separate from the policy reason. These facts do not themselves
+authorize execution.
+
+`isDangerousCommand(shell: ShellFacts)` inspects the normalized command identity and argv options
+for `sudo` or forceful `rm` (`-f`, `--force`, or a short option cluster containing `f` before `--`).
+It is deliberately not a general danger classifier. POSIX normalization removes consecutive Git
+`--no-pager`/`--no-color` global prefixes after environment assignments and wrappers; it preserves
+subcommand flags and `-C` for host policy analysis. PowerShell normalization is unchanged.
+`resolveCandidate(raw, workspaceRoot, opts?)` exposes the same symlink-aware path facts used by
+the context builder, with optional shell tilde expansion and explicitly admitted roots. These
+helpers and types are exported from both the root and `@clarvis/tools/guard`.
+
+`sandboxWouldApply(sandbox, forceBare?)`, exported by `@clarvis/tools/sandbox`, is the probe-free
+predicate shared with command construction. It reports the commitment to native containment or
+failure for required and legacy optional policies, not backend readiness. Absent policies,
+`enabled: false` settings, and explicitly bare calls return false; there is no optional host fallback.
 
 ## Process groups
 

@@ -263,6 +263,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
   const [slice, setSlice] = createSignal(controller.snapshot());
   let frameQueued = false;
   let pendingRevealKey: string | null = null;
+  let lastNativeScrollTop = 0;
 
   const semanticKeys = createMemo(
     () => new Set(props.transcript.semanticNodes().map((node) => node.key)),
@@ -344,7 +345,10 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     pendingRevealKey = null;
     const changed = controller.returnToTail();
     const element = scrollbox();
-    if (element !== undefined) scrollToBottom(element);
+    if (element !== undefined) {
+      scrollToBottom(element);
+      lastNativeScrollTop = element.scrollTop;
+    }
     requestRender();
     return changed;
   };
@@ -367,26 +371,34 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     synchronizeScrollbar(element);
     let changed = synchronize();
     revealPending();
+    const maxScrollTop = Math.max(0, element.scrollHeight - element.viewport.height);
+    const canScroll = maxScrollTop > 1;
     const atBottom = atScrollBottom(element);
     const atTop = element.scrollTop <= 1;
-    const previousTop = controller.snapshot().scrollTop;
+    const previousNativeTop = lastNativeScrollTop;
+    const following = controller.snapshot().followingTail;
     if (
+      following &&
       !atBottom &&
-      (element.scrollTop < previousTop ||
-        (controller.snapshot().followingTail && !element.stickyScroll))
+      canScroll &&
+      (element.scrollTop < previousNativeTop || !element.stickyScroll)
     )
       changed = controller.pauseFollowing() || changed;
-    if (atTop && controller.snapshot().earlierUnknown > 0)
+    const followingNow = controller.snapshot().followingTail;
+    const arrivedAtTop = atTop && previousNativeTop > 1;
+    const arrivedAtBottom = atBottom && previousNativeTop < Math.max(0, maxScrollTop - 1);
+    if (!followingNow && canScroll && arrivedAtTop && controller.snapshot().earlierUnknown > 0)
       changed = controller.revealOlder() || changed;
-    else if (atBottom && controller.snapshot().laterUnknown > 0)
+    else if (canScroll && arrivedAtBottom && controller.snapshot().laterUnknown > 0)
       changed = controller.revealNewer() || changed;
     else
       changed =
         controller.observe({
           scrollTop: element.scrollTop,
           viewportRows: element.viewport.height,
-          atBottom,
+          atBottom: atBottom && (followingNow || canScroll),
         }) || changed;
+    lastNativeScrollTop = element.scrollTop;
     if (changed) {
       publish();
       renderer.requestRender();
@@ -410,6 +422,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     const target = element.scrollTop + rows;
     if (rows < 0 && target <= 0) {
       if (element.scrollTop !== 0) element.scrollTo({ x: 0, y: 0 });
+      lastNativeScrollTop = element.scrollTop;
       const accepted = controller.revealOlder();
       if (accepted) requestRender();
       return accepted ? "preparing" : "start";
@@ -433,6 +446,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       pendingRevealKey = null;
       controller.pauseFollowing();
       const accepted = controller.revealOlder();
+      lastNativeScrollTop = scrollbox()?.scrollTop ?? lastNativeScrollTop;
       if (accepted) requestRender();
       return accepted;
     },
@@ -461,7 +475,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       laterEntries: laterEntries(),
       tailEntries: props.tailEntries?.() ?? 0,
       newerEntries: newerEntries(),
-      stickyScroll: !controller.snapshot().navigating,
+      stickyScroll: controller.snapshot().followingTail && !controller.snapshot().navigating,
     }),
   };
 
@@ -509,7 +523,10 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
         if (element === undefined || (direction !== "up" && direction !== "down")) return;
         if (direction === "up") {
           controller.pauseFollowing();
-          if (element.scrollTop <= 1) controller.revealOlder();
+          if (element.scrollTop <= 1) {
+            controller.revealOlder();
+            lastNativeScrollTop = element.scrollTop;
+          }
         } else if (atScrollBottom(element)) {
           if (controller.snapshot().laterUnknown > 0) controller.revealNewer();
           else controller.returnToTail();

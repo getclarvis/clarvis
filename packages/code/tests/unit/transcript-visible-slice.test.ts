@@ -71,6 +71,12 @@ describe("transcript visible slice", () => {
     expect(controller.snapshot().activeBatchIds).toContain("b0");
     expect(controller.snapshot().activeBatchIds).not.toContain("b119");
 
+    expect(controller.pauseFollowing()).toBe(false);
+    expect(controller.snapshot()).toMatchObject({
+      followingTail: false,
+      navigating: true,
+    });
+
     expect(controller.ensureBatch("b119")).toBe(true);
     expect(controller.snapshot()).toMatchObject({
       followingTail: true,

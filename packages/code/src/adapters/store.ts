@@ -338,8 +338,8 @@ export interface TranscriptStoreDeps {
   proseTotalLimitBytes?: number;
   /**
    * Renders the small, always-resident projection of a tool call: the signature
-   * its collapsed header and the Markdown export show, and the mutation chip's
-   * counts.
+   * its collapsed header, group-member list and Markdown export show, and the
+   * mutation chip's counts.
    *
    * @remarks Injected rather than imported because both renderers live under
    *   `views/`, which this layer must not reach into. Omitted, a dehydrated
@@ -433,6 +433,18 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     },
   );
   const metrics = streamMetrics();
+  const describeCall = (
+    mcpName: string | undefined,
+    toolName: string | undefined,
+    args: Record<string, unknown>,
+    diff?: string,
+  ): ReturnType<NonNullable<TranscriptStoreDeps["describeToolCall"]>> | undefined =>
+    deps.describeToolCall?.({
+      mcpName,
+      toolName,
+      args,
+      ...(diff !== undefined ? { diff } : {}),
+    });
   const hydratedToolLimit = Math.max(
     0,
     Math.floor(deps.hydratedToolLimit ?? DEFAULT_HYDRATED_TOOL_LIMIT),
@@ -1228,6 +1240,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.inputChars = undefined;
               n.inputStreamChars = undefined;
               n.inputComplete = undefined;
+              const described = describeCall(event.server, event.tool, asArgs(event.arguments));
+              if (described !== undefined) n.signature = described.signature;
             });
           }
         } else if (span.kind === "subagent" && event.type === "delegation_created") {
@@ -1639,12 +1653,12 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.warn = bashFailed;
             n.dehydrated = undefined;
             n.hydrationNotice = undefined;
-            const described = deps.describeToolCall?.({
-              mcpName: event.server,
-              toolName: event.tool,
-              args: asArgs(event.arguments),
-              ...(event.diff !== undefined ? { diff: event.diff } : {}),
-            });
+            const described = describeCall(
+              event.server,
+              event.tool,
+              asArgs(event.arguments),
+              event.diff,
+            );
             if (described !== undefined) {
               n.signature = described.signature;
               n.mutation = described.mutation;

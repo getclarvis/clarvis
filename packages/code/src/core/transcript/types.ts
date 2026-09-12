@@ -94,15 +94,16 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
   /** Why an explicitly requested persisted body could not be made resident. */
   hydrationNotice?: string;
   /**
-   * The call's rendered signature, kept resident so a dehydrated block still
-   * identifies itself.
+   * The call's rendered signature, kept resident so a dehydrated or still-live
+   * grouped header can name the call after `args` leave the node.
    *
-   * @remarks A tool block's *collapsed* header is derived from `args` — the file
-   *   path or command that says which call this is — and so is the Markdown
-   *   export. Dropping `args` without this left a scrolled-back transcript
-   *   showing a column of bare tool names, repaired only by expanding each one.
-   *   This is tens of bytes against the tens of kilobytes the window exists to
-   *   reclaim, so retaining it costs nothing that matters.
+   * @remarks Written from `tool_call_started` arguments and refreshed on the
+   *   terminal `tool_call`. A tool block's collapsed header, group-member list
+   *   and Markdown export all prefer this string over live `args` — the file
+   *   path or command that says which call this is. Dropping `args` without it
+   *   left a live sub-agent transcript showing `read_file x3 ()()()` until
+   *   publication replaced the nodes with frozen snapshots. This is tens of
+   *   bytes against the tens of kilobytes the window exists to reclaim.
    */
   signature?: string;
   /** The mutation chip's counts, kept resident for the same reason as {@link signature}. */

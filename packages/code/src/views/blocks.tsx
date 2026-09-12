@@ -788,18 +788,8 @@ export function BlockView(props: {
                   </Match>
 
                   <Match when={props.node.kind === "tool_call"}>
-                    <Switch>
-                      <Match when={role() === "solo" || groupExpanded()}>
-                        <ToolLine
-                          node={toolNode()}
-                          showBody={groupExpanded() || !collapsed()}
-                          full={fullBody()}
-                          ungatedMutationBody={leadMutation()}
-                          onHeaderClick={onToggle}
-                        />
-                      </Match>
-
-                      <Match when={role() === "head"}>
+                    <box flexDirection="column" width="100%" minWidth={0}>
+                      <Show when={role() === "head" && !groupExpanded()}>
                         <box flexDirection="column" paddingTop={1} overflow="hidden">
                           <box paddingLeft={1}>
                             <text
@@ -877,12 +867,28 @@ export function BlockView(props: {
                             <ToolLine node={toolNode()} showBody={false} indent />
                           </Show>
                         </box>
-                      </Match>
-
-                      <Match when={role() === "member"}>
-                        <ToolLine node={toolNode()} showBody={false} indent />
-                      </Match>
-                    </Switch>
+                      </Show>
+                      <box
+                        height={role() === "head" && !groupExpanded() ? 0 : undefined}
+                        overflow="hidden"
+                        flexShrink={0}
+                      >
+                        <Show when={role() !== "member" || groupExpanded() || !!toolNode().warn}>
+                          <ToolLine
+                            node={toolNode()}
+                            showBody={
+                              (role() === "head" && !groupExpanded()) ||
+                              groupExpanded() ||
+                              (role() !== "head" && !collapsed())
+                            }
+                            full={fullBody()}
+                            ungatedMutationBody={leadMutation()}
+                            indent={role() === "member" && !groupExpanded()}
+                            onHeaderClick={onToggle}
+                          />
+                        </Show>
+                      </box>
+                    </box>
                   </Match>
 
                   <Match when={props.node.kind === "subagent"}>

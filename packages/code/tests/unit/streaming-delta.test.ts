@@ -552,16 +552,19 @@ test("a call closed without ever having started drops its composing label", () =
   expect((nodes[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
-test("a placeholder the trace never confirms does not outlive the model call", () => {
+test("a placeholder the trace never confirms settles instead of vanishing", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 512));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(1);
 
   apply(leadIterationStarted(2));
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
-test("a retry drops composing placeholders from the failed provider attempt", () => {
+test("a retry settles named composing tools from the failed provider attempt", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 48_147));
 
@@ -578,7 +581,10 @@ test("a retry drops composing placeholders from the failed provider attempt", ()
     }),
   );
 
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
   expect(store.nodes).toContainEqual(
     expect.objectContaining({ kind: "annotation", text: expect.stringContaining("retrying") }),
   );
@@ -716,16 +722,26 @@ test("the lead's next iteration leaves a subagent's live placeholder alone", () 
 
   apply(leadIterationStarted(2));
   const left = store.nodes.filter((n) => n.kind === "tool_call");
-  expect(left).toHaveLength(1);
-  expect(left[0]!.subagentOrder).toBe(0);
+  expect(left).toHaveLength(2);
+  expect(left.find((node) => node.subagentOrder === 0)).toMatchObject({
+    toolName: "read_file",
+    status: "running",
+  });
+  expect(left.find((node) => node.subagentOrder === undefined)).toMatchObject({
+    toolName: "write_file",
+    status: "error",
+  });
 });
 
-test("a placeholder left by the final model call does not survive the run", () => {
+test("a placeholder left by the final model call settles instead of vanishing", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 300));
   apply(ev({ type: "run_ended", status: "completed", at: 9, reason: "completed" }));
 
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
 test("two calls composed in one completion stay separate nodes", () => {

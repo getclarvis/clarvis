@@ -933,3 +933,42 @@ test("foldPrefixBefore removes queued hydration work owned by the folded prefix"
     dispose();
   });
 });
+
+test("dropComposing settles a named composing tool instead of removing it", () => {
+  const nodes = replay([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_input_delta",
+      agent: "lead",
+      call_id: "read-1",
+      at: 2,
+      tool: "read_file",
+      chars: 12,
+    }),
+    ev({ type: "iteration_started", agent: "lead", iteration: 2, at: 3, model: "m" }),
+  ]);
+  const tool = nodes.find((node) => node.kind === "tool_call");
+  expect(tool).toMatchObject({
+    key: "exec_1::read-1",
+    kind: "tool_call",
+    toolName: "read_file",
+    status: "error",
+  });
+  expect(tool?.kind === "tool_call" ? tool.inputChars : "not-tool").toBeUndefined();
+});
+
+test("dropComposing still removes a nameless composing placeholder", () => {
+  const nodes = replay([
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "tool_input_delta",
+      agent: "lead",
+      call_id: "anon",
+      at: 2,
+      tool: "",
+      chars: 4,
+    }),
+    ev({ type: "iteration_started", agent: "lead", iteration: 2, at: 3, model: "m" }),
+  ]);
+  expect(nodes.some((node) => node.key === "exec_1::anon")).toBe(false);
+});

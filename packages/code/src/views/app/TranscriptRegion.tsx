@@ -31,6 +31,7 @@ import {
   type CommittedHistoryState,
 } from "../history/CommittedHistory.tsx";
 import { LiveTranscriptTail } from "../live/LiveTranscriptTail.tsx";
+import { selectLiveFrontierNodes } from "../live/tail-ownership.ts";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;
@@ -143,6 +144,11 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
     );
     return agent === undefined ? undefined : `Viewing A${agent.order + 1} ${agentTitle(agent)}`;
   });
+  const frontierKeys = createMemo(() =>
+    selectLiveFrontierNodes(props.store.frontierNodes(), ts.selectedSubagent()).map(
+      (node) => node.key,
+    ),
+  );
   const [tailEntries, setTailEntries] = createSignal(0);
   const [historyHandle, setHistoryHandle] = createSignal<CommittedHistoryHandle>();
   const scrollTopByProjection = new Map<string | null, number>();
@@ -225,7 +231,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
           }}
           onHandle={publishHandle}
           tailEntries={tailEntries}
-          tail={(historyOwnedKeys) => (
+          frontierKeys={frontierKeys}
+          tail={(tailOwnedKeys) => (
             <LiveTranscriptTail
               store={props.store}
               activity={props.activity}
@@ -234,7 +241,7 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
               elicit={() => (regionActive() ? props.run.elicit() : null)}
               resolveElicit={props.run.resolveElicit}
               selectedSubagent={ts.selectedSubagent}
-              historyOwnedKeys={historyOwnedKeys}
+              tailOwnedKeys={tailOwnedKeys}
               onFrontierCountChange={setTailEntries}
               splitOpen={splitOpen}
               notify={props.notify}

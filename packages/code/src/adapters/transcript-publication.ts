@@ -143,7 +143,7 @@ export type PreparedTranscriptPublicationBatch = Omit<
   "phase" | "ready"
 >;
 
-/** Scheduler seam for the bounded same-tool grouping latency. */
+/** @deprecated Grouping no longer waits for siblings; kept for existing test fixtures. */
 export interface TranscriptPublicationScheduler {
   schedule(callback: () => void, delayMs: number): unknown;
   cancel(handle: unknown): void;
@@ -163,30 +163,16 @@ export interface TranscriptRunPublicationCompletion {
 }
 
 interface RunPublicationState {
-  pendingToolIdentity?: PublicationToolIdentity;
-  pendingTools: ReservedPublicationNode[];
-  groupFlushHandle?: unknown;
   heldUnknownAnswer?: string;
   heldFinalAnswer?: string;
   completedSubagents: string[];
   reservedSubagents: Map<string, Map<string, ReservedPublicationNode>>;
 }
 
-interface PublicationToolIdentity {
-  readonly mcpName: string | undefined;
-  readonly toolName: string | undefined;
-}
-
 interface ReservedPublicationNode {
   readonly node: TranscriptNode;
   readonly defaultFolded: boolean;
 }
-
-/** Longest a terminal tool may wait for another grouping-eligible sibling. */
-export const TRANSCRIPT_TOOL_GROUP_LATENCY_MS = 80;
-
-/** Pressure ceiling that seals a same-tool group even while terminal calls keep arriving. */
-export const TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES = 8;
 
 /** Stable semantic identity for one immutable Lead-side delegation lifecycle marker. */
 export function delegationLeadMarkerKey(
@@ -251,13 +237,6 @@ export function snapshotTranscriptNode(
   return deepFreeze({ ...node, text: transcriptDisplayText(node) });
 }
 
-function defaultScheduler(): TranscriptPublicationScheduler {
-  return {
-    schedule: (callback, delayMs) => setTimeout(callback, delayMs),
-    cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-  };
-}
-
 function publicationToolGroups(
   nodes: readonly TranscriptNode[],
 ): Readonly<Record<string, TranscriptPublicationToolGroup>> {
@@ -316,17 +295,6 @@ function publicationToolGroups(
   return Object.freeze(groups);
 }
 
-function publicationToolIdentity(node: TranscriptToolNode): PublicationToolIdentity {
-  return { mcpName: node.mcpName, toolName: node.toolName };
-}
-
-function samePublicationToolIdentity(
-  identity: PublicationToolIdentity,
-  node: TranscriptToolNode,
-): boolean {
-  return identity.mcpName === node.mcpName && identity.toolName === node.toolName;
-}
-
 function publicationSection(
   kind: TranscriptPublicationKind,
   nodes: readonly TranscriptNode[],
@@ -379,31 +347,19 @@ function publicationSection(
  */
 export class TranscriptPublisher {
   readonly #host: TranscriptPublisherHost;
-  readonly #scheduler: TranscriptPublicationScheduler;
-  readonly #toolGroupLatencyMs: number;
-  readonly #toolGroupMaxEntries: number;
   readonly #knownKeys = new Set<string>();
   readonly #runs = new Map<string, RunPublicationState>();
   #batchSequence = 0;
 
   constructor(
     host: TranscriptPublisherHost,
-    options: {
+    _options: {
       scheduler?: TranscriptPublicationScheduler;
       toolGroupLatencyMs?: number;
       toolGroupMaxEntries?: number;
     } = {},
   ) {
     this.#host = host;
-    this.#scheduler = options.scheduler ?? defaultScheduler();
-    this.#toolGroupLatencyMs = Math.max(
-      0,
-      Math.floor(options.toolGroupLatencyMs ?? TRANSCRIPT_TOOL_GROUP_LATENCY_MS),
-    );
-    this.#toolGroupMaxEntries = Math.max(
-      1,
-      Math.floor(options.toolGroupMaxEntries ?? TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES),
-    );
   }
 
   /** Publish a client-owned terminal node such as a user turn or local command. */
@@ -431,7 +387,6 @@ export class TranscriptPublisher {
     switch (event.type) {
       case "iteration_started":
         if (event.agent === "lead") {
-          this.#flushLeadTools(executionId, state);
           if (state.heldUnknownAnswer !== undefined) {
             this.#appendKeys("iteration", [state.heldUnknownAnswer], executionId);
             state.heldUnknownAnswer = undefined;
@@ -447,7 +402,6 @@ export class TranscriptPublisher {
       case "delegation_completed":
       case "delegation_failed":
         this.#rememberSubagentCompletion(state, event.delegation_id);
-        this.#flushLeadTools(executionId, state);
         this.#publishSubagent(executionId, state, event.delegation_id);
         this.#appendKeys(
           "annotation",
@@ -456,7 +410,6 @@ export class TranscriptPublisher {
         );
         return;
       case "delegation_created":
-        this.#flushLeadTools(executionId, state);
         this.#appendKeys(
           "annotation",
           [`${executionId}::${delegationLeadMarkerKey(event.delegation_id, "spawned")}`],
@@ -472,11 +425,9 @@ export class TranscriptPublisher {
       case "capability_event":
       case "events_dropped":
       case "mcp_degraded":
-        this.#flushLeadTools(executionId, state);
         this.#publishTerminalPoints(executionId);
         return;
       case "run_ended":
-        this.#flushLeadTools(executionId, state);
         this.#captureTerminalAnswer(executionId, state);
         return;
       case "run_started":
@@ -517,7 +468,6 @@ export class TranscriptPublisher {
    */
   completeRun(executionId: string, completion: TranscriptRunPublicationCompletion = {}): void {
     const state = this.#run(executionId);
-    this.#flushLeadTools(executionId, state);
     this.#publishRemainingSubagents(executionId, state);
     this.#captureTerminalAnswer(executionId, state);
     const finalKey = state.heldFinalAnswer ?? state.heldUnknownAnswer;
@@ -542,13 +492,11 @@ export class TranscriptPublisher {
     const run = this.#node(`${executionId}::run`);
     if (run !== undefined && !this.#knownKeys.has(run.key)) terminal.push(run);
     this.#append("run_terminal", terminal, executionId);
-    this.#cancelToolFlush(state);
     this.#runs.delete(executionId);
   }
 
   /** Reset all publication bookkeeping after `/clear` or session replacement. */
   clear(): void {
-    for (const state of this.#runs.values()) this.#cancelToolFlush(state);
     this.#runs.clear();
     this.#knownKeys.clear();
     this.#batchSequence = 0;
@@ -561,11 +509,6 @@ export class TranscriptPublisher {
     if (discarded.size === 0) return;
 
     for (const state of this.#runs.values()) {
-      state.pendingTools = state.pendingTools.filter((entry) => !discarded.has(entry.node.key));
-      if (state.pendingTools.length === 0) {
-        state.pendingToolIdentity = undefined;
-        this.#cancelToolFlush(state);
-      }
       if (state.heldUnknownAnswer !== undefined && discarded.has(state.heldUnknownAnswer))
         state.heldUnknownAnswer = undefined;
       if (state.heldFinalAnswer !== undefined && discarded.has(state.heldFinalAnswer))
@@ -588,7 +531,6 @@ export class TranscriptPublisher {
     let state = this.#runs.get(executionId);
     if (state === undefined) {
       state = {
-        pendingTools: [],
         completedSubagents: [],
         reservedSubagents: new Map(),
       };
@@ -681,7 +623,6 @@ export class TranscriptPublisher {
         );
       return;
     }
-    this.#flushLeadTools(executionId, state);
     const immediate = [reasoning, error].filter((key) => this.#node(key) !== undefined);
     if (event.response_phase === "commentary") {
       if (this.#node(message) !== undefined) immediate.push(message);
@@ -700,7 +641,6 @@ export class TranscriptPublisher {
     event: Extract<RunEvent, { type: "tool_call" }>,
   ): void {
     if (event.agent === "lead" && isTranscriptExternalOrchestrationTool(event.server, event.tool)) {
-      this.#flushLeadTools(executionId, state);
       return;
     }
     const key = `${executionId}::${span.span_id}`;
@@ -710,44 +650,7 @@ export class TranscriptPublisher {
       if (node.subagentId !== undefined) this.#reserveSubagent(state, node.subagentId, [node]);
       return;
     }
-    if (isMutationTool(node.mcpName, node.toolName)) {
-      this.#flushLeadTools(executionId, state);
-      this.#append("tool_group", [node], executionId);
-      return;
-    }
-    const reserved = this.#reserve([node]);
-    if (reserved.length === 0) return;
-    if (
-      state.pendingToolIdentity !== undefined &&
-      !samePublicationToolIdentity(state.pendingToolIdentity, node)
-    )
-      this.#flushLeadTools(executionId, state);
-    state.pendingToolIdentity = publicationToolIdentity(node);
-    state.pendingTools.push(...reserved);
-    if (state.pendingTools.length >= this.#toolGroupMaxEntries)
-      this.#flushLeadTools(executionId, state);
-    else this.#scheduleToolFlush(executionId, state);
-  }
-
-  #scheduleToolFlush(executionId: string, state: RunPublicationState): void {
-    if (state.groupFlushHandle !== undefined) return;
-    state.groupFlushHandle = this.#scheduler.schedule(
-      () => this.#flushLeadTools(executionId, state),
-      this.#toolGroupLatencyMs,
-    );
-  }
-
-  #cancelToolFlush(state: RunPublicationState): void {
-    if (state.groupFlushHandle === undefined) return;
-    this.#scheduler.cancel(state.groupFlushHandle);
-    state.groupFlushHandle = undefined;
-  }
-
-  #flushLeadTools(executionId: string, state: RunPublicationState): void {
-    this.#cancelToolFlush(state);
-    const reserved = state.pendingTools.splice(0);
-    state.pendingToolIdentity = undefined;
-    this.#appendReserved("tool_group", reserved, executionId);
+    this.#append("tool_group", [node], executionId);
   }
 
   #rememberSubagentCompletion(state: RunPublicationState, delegationId: string): void {
@@ -835,7 +738,6 @@ export class TranscriptPublisher {
   }
 
   #publishRemainingLead(executionId: string, finalKey: string | undefined): void {
-    const state = this.#run(executionId);
     for (const node of this.#nodes(executionId)) {
       if (
         this.#knownKeys.has(node.key) ||
@@ -851,27 +753,14 @@ export class TranscriptPublisher {
       )
         continue;
       if (node.kind === "tool_call") {
-        if (isMutationTool(node.mcpName, node.toolName)) {
-          this.#flushLeadTools(executionId, state);
-          this.#append("tool_group", [node], executionId);
-        } else {
-          if (
-            state.pendingToolIdentity !== undefined &&
-            !samePublicationToolIdentity(state.pendingToolIdentity, node)
-          )
-            this.#flushLeadTools(executionId, state);
-          state.pendingToolIdentity = publicationToolIdentity(node);
-          state.pendingTools.push(...this.#reserve([node]));
-        }
+        this.#append("tool_group", [node], executionId);
         continue;
       }
-      this.#flushLeadTools(executionId, state);
       this.#append(
         node.kind === "assistant" || node.kind === "reasoning" ? "iteration" : "annotation",
         [node],
         executionId,
       );
     }
-    this.#flushLeadTools(executionId, state);
   }
 }

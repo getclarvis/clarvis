@@ -55,11 +55,11 @@ test("same tool name from different mcp servers does not merge", () => {
 });
 
 test("same tool from different source agents does not merge (subagent A vs subagent B)", () => {
-  const a = { ...tool("grep"), subagentOrder: 0 };
-  const b = { ...tool("grep"), subagentOrder: 1 };
+  const a = { ...tool("grep"), subagentId: "a", subagentOrder: 0 };
+  const b = { ...tool("grep"), subagentId: "b", subagentOrder: 1 };
   expect(roles([a, b])).toEqual(["solo", "solo"]);
-  const c = { ...tool("grep"), subagentOrder: 0 };
-  const d = { ...tool("grep"), subagentOrder: 0 };
+  const c = { ...tool("grep"), subagentId: "a", subagentOrder: 0 };
+  const d = { ...tool("grep"), subagentId: "a", subagentOrder: 0 };
   expect(roles([c, d])).toEqual(["head", "member"]);
 });
 

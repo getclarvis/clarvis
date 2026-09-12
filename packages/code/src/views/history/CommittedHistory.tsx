@@ -21,6 +21,7 @@ import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.t
 import type { ActivityDetail } from "../activity-detail.ts";
 import type { BlockOverride } from "../block-focus.ts";
 import { BlockView } from "../blocks.tsx";
+import { selectTailOwnedKeys } from "./tail-ownership.ts";
 import { createVisibleSliceController, type TranscriptVisibleSlice } from "./visible-slice.ts";
 
 /** One permanently reserved column keeps scrollbar visibility out of content width. */
@@ -73,11 +74,14 @@ export interface CommittedHistoryProps {
   onHandle?: (handle: CommittedHistoryHandle | undefined) => void;
   /** Mutable frontier artifacts included in the off-tail newer-entry overlay. */
   tailEntries?: Accessor<number>;
+  /** Live frontier keys for the active Lead/child projection, in arrival order. */
+  frontierKeys?: Accessor<readonly string[]>;
   /**
    * Chronological final flow owner. The live tail stays mounted whether or not
-   * native sticky following is currently paused.
+   * native sticky following is currently paused. `tailOwnedKeys` is the suffix
+   * this tail currently paints, including committed snapshots it still owns.
    */
-  tail?: (historyOwnedKeys: Accessor<ReadonlySet<string>>) => JSX.Element;
+  tail?: (tailOwnedKeys: Accessor<readonly string[]>) => JSX.Element;
 }
 
 function sectionFolded(
@@ -189,8 +193,14 @@ function PublicationOwner(props: {
   transcript: CommittedHistoryState;
   splitOpen: Accessor<boolean>;
   interactive: Accessor<boolean>;
+  omitKeys: Accessor<ReadonlySet<string>>;
   onOpenDetail?: (detail: ActivityDetail) => void;
 }): JSX.Element {
+  const nodes = createMemo(() => {
+    const omit = props.omitKeys();
+    if (omit.size === 0) return props.batch.nodes;
+    return props.batch.nodes.filter((node) => !omit.has(node.key));
+  });
   const group = (key: string): TranscriptPublicationToolGroup | undefined =>
     props.batch.toolGroups[key];
   const header = (key: string): TranscriptPublicationSectionHeader | undefined =>
@@ -203,7 +213,7 @@ function PublicationOwner(props: {
       minWidth={0}
       flexShrink={0}
     >
-      <For each={props.batch.nodes}>
+      <For each={nodes()}>
         {(node) => (
           <BlockView
             node={node}
@@ -271,13 +281,35 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     const ids = new Set(slice().activeBatchIds);
     return semanticBatches().filter((batch) => ids.has(batch.id));
   });
-  const historyOwnedKeys = createMemo<ReadonlySet<string>>(() => {
-    const snapshot = slice();
-    const batches = snapshot.followingTail
-      ? semanticBatches().slice(0, snapshot.end)
-      : semanticBatches();
-    return new Set(batches.flatMap((publication) => publication.nodes.map((node) => node.key)));
+  const mountedKeysInOrder = createMemo(() =>
+    mountedBatches().flatMap((batch) => batch.nodes.map((node) => node.key)),
+  );
+  const committedKeysInOrder = createMemo(() =>
+    semanticBatches().flatMap((batch) => batch.nodes.map((node) => node.key)),
+  );
+  let previousTailOwned: ReadonlySet<string> = new Set();
+  const tailOwnedKeys = createMemo(() => {
+    const frontier = props.frontierKeys?.() ?? [];
+    if (!active()) {
+      previousTailOwned = new Set(frontier);
+      return frontier;
+    }
+    const mounted = mountedKeysInOrder();
+    const following = slice().followingTail;
+    const next = selectTailOwnedKeys(
+      previousTailOwned,
+      mounted,
+      frontier,
+      committedKeysInOrder(),
+      following,
+    );
+    if (following && mounted.length === 0 && next.length === 0 && previousTailOwned.size > 0) {
+      return [...previousTailOwned];
+    }
+    previousTailOwned = new Set(next);
+    return next;
   });
+  const tailOwnedSet = createMemo(() => new Set(tailOwnedKeys()));
   const laterEntries = createMemo(() => slice().laterUnknown);
   const newerEntries = createMemo(() => Math.max(0, laterEntries() + (props.tailEntries?.() ?? 0)));
 
@@ -500,6 +532,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
             transcript={props.transcript}
             splitOpen={props.splitOpen}
             interactive={active}
+            omitKeys={tailOwnedSet}
             onOpenDetail={props.onOpenDetail}
           />
         )}
@@ -511,7 +544,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
           </text>
         </box>
       </Show>
-      {props.tail?.(historyOwnedKeys)}
+      {props.tail?.(tailOwnedKeys)}
       <Show when={!slice().followingTail}>
         <box
           id="history-newer-indicator"

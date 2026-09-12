@@ -33,6 +33,8 @@ export interface ToolGroupInfo {
  * stays `"solo"` — because collapsing edits/writes would hide which files
  * changed. A run shorter than {@link MIN_GROUP} also stays `"solo"`; longer
  * runs get one `"head"` (carrying `members`) followed by `"member"` entries.
+ * Identity is `mcpName` + `toolName` + `subagentId` so live grouping matches
+ * frozen publication metadata.
  */
 export function computeToolGroups(nodes: readonly TranscriptNode[]): Map<string, ToolGroupInfo> {
   const info = new Map<string, ToolGroupInfo>();
@@ -51,7 +53,7 @@ export function computeToolGroups(nodes: readonly TranscriptNode[]): Map<string,
         candidate.kind !== "tool_call" ||
         candidate.mcpName !== head.mcpName ||
         candidate.toolName !== head.toolName ||
-        candidate.subagentOrder !== head.subagentOrder
+        candidate.subagentId !== head.subagentId
       )
         break;
       j += 1;

@@ -1046,3 +1046,138 @@ test("the live tail stays mounted after the reader leaves the sticky edge", asyn
     rendered.renderer.destroy();
   }
 });
+
+function toolInputDelta(callId: string, tool: string, chars: number): RunEvent {
+  return {
+    type: "tool_input_delta",
+    at: 2,
+    agent: "lead",
+    call_id: callId,
+    tool,
+    chars,
+  };
+}
+
+function toolCallStarted(callId: string, tool: string, args: Record<string, unknown>): RunEvent {
+  return {
+    type: "tool_call_started",
+    at: 3,
+    agent: "lead",
+    call_id: callId,
+    server: "builtin",
+    tool,
+    arguments: args,
+  };
+}
+
+function historyOwnsKey(root: Renderable, key: string): boolean {
+  return descendants(root, (renderable): renderable is Renderable =>
+    renderable.id.startsWith("history:publication:"),
+  ).some(
+    (owner) => descendants(owner, (child): child is Renderable => child.id === key).length > 0,
+  );
+}
+
+async function mountLiveTranscript(store: ReturnType<typeof createTranscriptStore>) {
+  const activity = createMutable({
+    subagents: [],
+    plan: null,
+    usage: null,
+    context: null,
+  }) as unknown as ActivityStore;
+  const transcript = createTranscriptState({
+    nodes: () => store.committedNodes(),
+    preserveOrder: true,
+    subagents: () => [],
+    notify: () => {},
+    defaultFolded: (key) => store.defaultFolded(key),
+  });
+  const rendered = await openRender(
+    () => (
+      <TranscriptRegion
+        store={store}
+        transcript={transcript}
+        activity={activity}
+        interaction={
+          {
+            keymap: createFakeKeymap().keymap,
+            pushOverlayContext: () => {},
+            popOverlayContext: () => {},
+            syncContext: () => {},
+          } as unknown as Interaction
+        }
+        run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
+        layout={{
+          mode: () => "wide",
+          sidebarVisible: () => false,
+          sidebarWidth: () => 28,
+          drawerOpen: () => false,
+          contentInset: () => 0,
+          width: () => 100,
+          height: () => 30,
+        }}
+        contextWindow={() => 1_024_000}
+        agent={() => "coder"}
+        model={() => "openai/gpt-5"}
+        notify={() => {}}
+        openPlan={() => {}}
+        onScrollbox={() => {}}
+      />
+    ),
+    { width: 100, height: 30 },
+  );
+  return rendered;
+}
+
+test("a tool keeps one live owner from composing through terminal settle", async () => {
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec");
+  applyEvent(sink, runStarted(), "live");
+  const rendered = await mountLiveTranscript(store);
+  try {
+    applyEvent(sink, toolInputDelta("read-1", "read_file", 8), "live");
+    await rendered.renderOnce();
+    const composing = byId(rendered.renderer.root, "live-transcript-owner:exec::read-1");
+    expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);
+
+    applyEvent(sink, toolCallStarted("read-1", "read_file", { path: "src/a.ts" }), "live");
+    await rendered.renderOnce();
+    expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-1")).toBe(composing);
+    expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);
+
+    applyEvent(sink, toolCall("read-1", "read_file", { path: "src/a.ts" }, "file body"), "live");
+    await rendered.renderOnce();
+    expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-1")).toBe(composing);
+    expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);
+    expect(rendered.captureCharFrame()).toContain("read_file");
+  } finally {
+    rendered.renderer.destroy();
+  }
+});
+
+test("a second grouping-eligible tool does not remount the first live owner", async () => {
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec");
+  applyEvent(sink, runStarted(), "live");
+  const rendered = await mountLiveTranscript(store);
+  try {
+    applyEvent(sink, toolInputDelta("read-1", "read_file", 8), "live");
+    await rendered.renderOnce();
+    const first = byId(rendered.renderer.root, "live-transcript-owner:exec::read-1");
+    applyEvent(sink, toolCall("read-1", "read_file", { path: "a.ts" }, "A"), "live");
+    await rendered.renderOnce();
+    expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-1")).toBe(first);
+    applyEvent(sink, toolInputDelta("read-2", "read_file", 8), "live");
+    applyEvent(sink, toolCall("read-2", "read_file", { path: "b.ts" }, "B"), "live");
+    await rendered.renderOnce();
+    expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-1")).toBe(first);
+    expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-2")).toBeDefined();
+    expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);
+    expect(historyOwnsKey(rendered.renderer.root, "exec::read-2")).toBe(false);
+    const frame = rendered.captureCharFrame();
+    expect(frame).toContain("read_file");
+    expect(frame).toContain("x2");
+  } finally {
+    rendered.renderer.destroy();
+  }
+});

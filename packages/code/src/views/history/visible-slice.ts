@@ -180,11 +180,10 @@ export class TranscriptVisibleSliceController {
     return !this.#sameSlice(previous);
   }
 
-  /** Pause tail following after explicit upward movement. */
+  /** Pause tail following after explicit upward movement without cancelling key navigation. */
   pauseFollowing(): boolean {
-    if (!this.#followingTail && !this.#navigating) return false;
+    if (!this.#followingTail) return false;
     this.#followingTail = false;
-    this.#navigating = false;
     return true;
   }
 

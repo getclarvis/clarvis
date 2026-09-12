@@ -271,6 +271,36 @@ describe("the index transcript window", () => {
     }
   });
 
+  test("resting at the top of a long window does not rewind to the first message", async () => {
+    const nodes = transcript(120, 0);
+    const { rendered, scrollbox, history } = await renderFixture(nodes);
+    try {
+      const followed = history.snapshot();
+      expect(followed.followingTail).toBe(true);
+      expect(followed.start).toBe(nodes.length - TRANSCRIPT_MOUNTED_BATCH_COUNT);
+      expect(scrollbox.scrollTop).toBeGreaterThan(1);
+
+      scrollbox.scrollTo({ x: 0, y: 0 });
+      await rendered.renderOnce();
+      await rendered.renderOnce();
+      expect(history.snapshot().followingTail).toBe(false);
+      const startAfterJump = history.snapshot().start;
+
+      for (let pass = 0; pass < 40; pass += 1) await rendered.renderOnce();
+      expect(history.snapshot().start).toBe(startAfterJump);
+      expect(history.snapshot().start).toBeGreaterThan(0);
+      expect(rendered.captureCharFrame()).not.toContain("ask 0");
+
+      const mid = Math.max(2, Math.min(scrollbox.viewport.height, scrollbox.scrollTop + 8));
+      scrollbox.scrollTo({ x: 0, y: mid });
+      for (let pass = 0; pass < 20; pass += 1) await rendered.renderOnce();
+      expect(scrollbox.scrollTop).toBeGreaterThanOrEqual(mid);
+      expect(history.snapshot().start).toBe(startAfterJump);
+    } finally {
+      rendered.renderer.destroy();
+    }
+  });
+
   test("wheel-up over a long stream does not clamp back to the tail", async () => {
     const { rendered, scrollbox, history } = await renderFixture(transcript(40, 1));
     try {
@@ -302,6 +332,11 @@ describe("the index transcript window", () => {
       expect(history.scrollBy(-10_000)).toBe("preparing");
       for (let pass = 0; pass < 10; pass += 1) await rendered.renderOnce();
       expect(history.snapshot().laterUnknown).toBeGreaterThan(0);
+      while (history.requestEarlier()) {
+        /* walk to the oldest mounted window */
+      }
+      expect(history.snapshot().start).toBe(0);
+      expect(history.scrollBy(10_000)).toBe("preparing");
       expect(history.scrollBy(10_000)).toBe("preparing");
 
       let laterRequests = 0;

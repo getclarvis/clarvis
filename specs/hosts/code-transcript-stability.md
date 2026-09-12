@@ -343,10 +343,19 @@ append whose intersection is unchanged therefore returns the same projected batc
 
 Native OpenTUI wheel and trackpad handling remains authoritative. `CommittedHistory` observes
 `scrollTop`, viewport height and whether the reader is at the bottom after frames. Upward movement
-pauses follow-the-tail. Reaching the top with hidden earlier batches slides the index window older;
-reaching the bottom with hidden later batches slides it newer. Page Up/Down uses the same handle, and
-focus navigation recentres the slice around the target batch before calling
-`scrollChildIntoView`.
+pauses follow-the-tail. A newly reached top with hidden earlier batches slides the index window
+older once; a newly reached bottom with hidden later batches slides it newer once. Remaining at
+that edge, or a frame whose content does not yet overflow the viewport, must not keep sliding the
+window or treat a vacuous bottom as follow-the-tail — otherwise a remount that resets `scrollTop`
+rewinds residency to the first message, or a non-overflowing layout frame jumps back to the newest
+slice and fights every later downward scroll. Page Up/Down and wheel gestures at those edges still request
+another window explicitly through the same handle, and focus navigation recentres the slice around
+the target batch before calling `scrollChildIntoView`. `pauseFollowing` only clears follow-the-tail;
+it must not cancel an in-flight `ensureBatch` navigation. Production: `observeFrame` and
+`pauseFollowing` in `packages/code/src/views/history/CommittedHistory.tsx` and
+`packages/code/src/views/history/visible-slice.ts`. Test: `resting at the top of a long window
+does not rewind to the first message` in
+`packages/code/tests/integration/transcript-window-render.test.tsx`.
 
 While following, newly appended batches keep the slice fitted to its newest edge and the native
 ScrollBox stays sticky at the bottom. While the reader is away, frozen or mutable additions do not

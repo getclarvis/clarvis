@@ -50,7 +50,7 @@ export const BUILTIN_WIRE_NAMES: readonly string[] = [
 
 /**
  * The wire names of the built-in coding toolset (@clarvis/tools) — file
- * read/write/edit, search, shell and monitors, approved host VCS, and the filesystem tools —
+ * read/write/edit, search, shell and monitors, and the filesystem tools —
  * mirrored here so the loop can reason about them without importing the package.
  */
 export const AGENT_TOOL_WIRE_NAMES: readonly string[] = [
@@ -67,7 +67,6 @@ export const AGENT_TOOL_WIRE_NAMES: readonly string[] = [
   "grep",
   "diff",
   "shell",
-  "host_vcs",
   "monitor_start",
   "monitor_poll",
   "monitor_stop",

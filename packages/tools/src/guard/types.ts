@@ -124,6 +124,10 @@ export interface GuardContext {
   config: RuntimeConfig;
   paths: PathFact[];
   shell?: ShellFacts;
+  /** Per-call sandbox posture for `shell` and `monitor_start`. */
+  sandboxPermissions?: "use_default" | "require_escalated";
+  /** Operator-facing reason supplied with `require_escalated`. */
+  justification?: string;
 }
 
 /**

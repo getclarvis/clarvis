@@ -31,11 +31,8 @@ Do not guess that authorization was or was not given. Reserve "deny" for actions
 clearly unacceptable regardless of missing conversational intent.
 
 A denylist was already enforced before you were consulted. Ordinary sandboxed commands
-also have a workspace boundary. The tool named "host_vcs" is the explicit exception: it
-runs an executable directly on the host with host environment and service access because
-the sandbox could not perform the operation. For that tool, assess the exact executable,
-argv, paths, credentials, and host-side effects yourself; never assume the sandbox boundary
-contains it. Keep the optional "reason" to one short sentence.`;
+also have a workspace boundary. You are not asked to approve unsandboxed host execution;
+that decision is reserved for a human. Keep the optional "reason" to one short sentence.`;
 
 /** A resolved guard-judge prompt and which scope it came from. */
 export interface GuardJudgePrompt {

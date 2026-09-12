@@ -155,19 +155,18 @@ verified equal to the production registry by
 | 11 | `grep` | yes |
 | 12 | `diff` | yes |
 | 13 | `shell` | no |
-| 14 | `host_vcs` | no |
-| 15 | `monitor_start` | no |
-| 16 | `monitor_poll` | no |
-| 17 | `monitor_stop` | no |
-| 18 | `monitor_list` | no |
-| 19 | `move` | no |
-| 20 | `copy` | no |
-| 21 | `mkdir` | no |
-| 22 | `remove` | no |
-| 23 | `file_stat` | yes |
-| 24 | `tree` | yes |
+| 14 | `monitor_start` | no |
+| 15 | `monitor_poll` | no |
+| 16 | `monitor_stop` | no |
+| 17 | `monitor_list` | no |
+| 18 | `move` | no |
+| 19 | `copy` | no |
+| 20 | `mkdir` | no |
+| 21 | `remove` | no |
+| 22 | `file_stat` | yes |
+| 23 | `tree` | yes |
 
-24 tools total, 9 read-only (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`,
+23 tools total, 9 read-only (`read_file`, `read_image`, `read_files`, `list_dir`, `glob`, `grep`,
 `diff`, `file_stat`, `tree`). Individual tool argument schemas and handler behaviour belong to the
 three sibling `tools-*` documents; this document covers only that the table exists, is single-owned, and
 is what `dispatch`/`listTools` consume.
@@ -383,13 +382,10 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    contains a protected root. This applies even when that package is nested beneath the otherwise
    writable workspace (`packages/tools/src/core.ts`; pinned by
    `packages/tools/tests/integration/api.test.ts`).
-4. **Isolated host dispatch.** When `name === "host_vcs"` and `hostVcsDispatcher` is present,
-   return that port's result. The host endpoint revalidates the schema and owns command review and
-   execution; the guest does not run either step locally.
-5. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
+4. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
    its `denied` member short-circuits dispatch and its `review` member is retained
    on the eventual result.
-6. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
+5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
    value, split `content` into parts if it was a bare string, and return
    `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
    (`packages/tools/src/core.ts`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
@@ -399,7 +395,7 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 
 | Input state | Outcome |
 | --- | --- |
-| `config.guard` unset | empty gate (proceed), including for the bounded `host_vcs` fallback |
+| `config.guard` unset | empty gate (proceed), including for `require_escalated` shell |
 | guard throws | caught, `errorResult(err)` — `packages/tools/src/core.ts` |
 | `decision.verdict === "allow"` | proceed; when mode is known, review is `allowed/policy` |
 | `decision.verdict === "deny"` | `errorResult(new ToolError("denied", reason))` — `packages/tools/src/core.ts` |
@@ -413,11 +409,10 @@ args, config)` (`packages/tools/src/core.ts`), which is owned by the sibling [co
 `core.ts` only calls it and interprets the three-way `Verdict` (`"allow" | "deny" | "ask"`) it
 produces.
 
-`HostVcsDispatcher` is an optional resolved-config port for isolated runtimes. Its result uses the
-same content, metadata and review shape as `DispatchResult`. Native callers omit it and retain the
-local handler. Production: `HostVcsDispatcher` in `packages/tools/src/config.ts` and `dispatch` in
-`packages/tools/src/core.ts`. Test: `packages/tools/tests/integration/host-vcs.test.ts` (`delegates
-isolated execution to the host port without running the guest guard`).
+Isolated container guests set `allowHostEscalation: false` on the toolset so `require_escalated`
+fails closed in the handler. Production: `packages/tools/src/lib/sandbox-permissions.ts`
+(`resolveSandboxEscalation`) and `packages/loop/src/runtime/capabilities/tools.ts`. Test:
+`packages/tools/tests/integration/shell-escalation.test.ts`.
 
 ### Output bounding
 
@@ -445,7 +440,7 @@ no validation, guard or bounding logic runs here.
 | INV-038 | `@clarvis/tools` contains no source-code parser: no mention of tree-sitter (any spelling), the removed tool names (`outline`, `check_syntax`), the removed capability-flag identifiers (`treeSitterAvailable`, `probeTreeSitter`, `requiresTreeSitter`, `TREE_SITTER`), or the removed syntax annotation (`syntaxWarnings`, `surface_degraded`) anywhere in its `src/`, `tests/`, `README.md` or `package.json`. | n/a (absence) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (`it.each(FORBIDDEN)`), scanning >80 files |
 | INV-039 | No workspace manifest or `bun.lock` entry names `@vscode/tree-sitter-wasm`; no package's production `src/` names the removed `check_syntax` tool. | n/a (absence, repo-wide) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (manifests, lockfile, and repo-wide `check_syntax` scan) |
 | INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts` (substring check) (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant) (still declared/installed) |
-| INV-042 | The advertised tool surface is exactly 24 coding tools, 9 of them read-only, and the same set (in the same order) is advertised on every config. | `packages/tools/src/tools/registry.ts` (`toolDescriptors`, `tools`, `readOnlyTools`) | `packages/tools/tests/component/tool-surface.test.ts` |
+| INV-042 | The advertised tool surface is exactly 23 coding tools, 9 of them read-only, and the same set (in the same order) is advertised on every config. | `packages/tools/src/tools/registry.ts` (`toolDescriptors`, `tools`, `readOnlyTools`) | `packages/tools/tests/component/tool-surface.test.ts` |
 | INV-043 | Neither the full nor the read-only tool surface advertises `outline` or `check_syntax`. | `packages/tools/src/tools/registry.ts` (absent from `toolDescriptors`) | `packages/tools/tests/component/tool-surface.test.ts` |
 | INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts` |
 | INV-045 | The refusal for dispatching `outline` never leaks why the tool was removed or hints at a runtime the model could try to install: it contains none of `tree`, `sitter`, `unavailable`, `disabled`, `install`, `degraded` (case-insensitive). | `packages/tools/src/core.ts` (`Unknown tool: ${name}` is the entire message — no code path appends anything else for a `not_found`) | `packages/tools/tests/component/tool-surface.test.ts` |

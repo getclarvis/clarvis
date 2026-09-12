@@ -512,8 +512,7 @@ uses the canonical goal capability and awaits earlier trace publications before 
 Host operations revalidate persisted state and cancellation inside the mutation. User controls,
 ownership, automatic admission and limits remain host-only. Malformed, missing or contradictory
 descriptors, forged capability names, duplicate goals and workflow combinations fail closed.
-Private protocol revision 12 prevents older guests from silently ignoring required host capabilities,
-including the host-owned `host_vcs` dispatcher.
+Private protocol revision 12 prevents older guests from silently ignoring required host capabilities.
 The bounded current record and evidence catalog may cross; private session archives and receipts do
 not. A goal run has a 1152 KiB capability request/result allowance with the existing call-count,
 aggregate replay and RPC bounds. These contracts do not attest a real engine journey by themselves.
@@ -559,20 +558,18 @@ claimed run and owner identities with the authenticated host values before loggi
 policy is the containment boundary; this profile does not pretend to run a second Bubblewrap or
 Seatbelt sandbox inside the container.
 
-`host_vcs` is the exception to guest process execution. An exec-enabled run with `run_commands`
-receives a dispatcher backed by the non-idempotent, generation/run/call-fenced `runtime.host_vcs`
-grant. The guest does not spawn the argv or decide its review. The host repeats schema validation,
-restricted Git/GitHub credential and helper checks, workspace cwd confinement, timeout/output
-bounds, current secret-name filtering, and the selected guard policy before spawning. Mode `off`
-therefore proceeds without a reviewer by operator choice, while direct guest capability calls cannot
-bypass modes `on` or `auto`.
+The guest has no host-exec channel. `shell` and `monitor_start` with
+`sandbox_permissions: "require_escalated"` fail closed inside the container: Isolation Docker/Podman
+is the sandbox, and the machine host is not available from that placement. Git and SSH credentials
+for container runs come from the recipe and mounts (`SSH_AUTH_SOCK`, a read-only `~/.gitconfig`, or a
+credential helper in the image), not from a tool. Operators who need host Git should choose Isolation
+Sandbox.
 
-Production: `createHostVcsGrant` and `createGuestHostVcsDispatcher` in
-[`host-vcs-bridge.ts`](../../packages/kernel/src/runtime/host-vcs-bridge.ts), composed by
-[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts) and
-[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
-[`runtime-host-vcs-bridge.test.ts`](../../packages/kernel/tests/integration/runtime-host-vcs-bridge.test.ts)
-and the host-only executable fixture in
+Production: `allowHostEscalation: false` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts) and
+`resolveSandboxEscalation` in [`sandbox-permissions.ts`](../../packages/tools/src/lib/sandbox-permissions.ts).
+Test: [`shell-escalation.test.ts`](../../packages/tools/tests/integration/shell-escalation.test.ts)
+and the refused-escalation fixture in
 [`local-docker-runtime.e2e.test.ts`](../../packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts).
 
 The required non-secret `toolPolicy` envelope also captures whether the host composed the `tools`

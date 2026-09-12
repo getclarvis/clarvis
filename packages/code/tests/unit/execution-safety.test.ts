@@ -106,7 +106,7 @@ describe("execution safety", () => {
       ),
     };
     expect(safetyDescription(sandbox)).toEqual([
-      "Commands use the native sandbox when available and may fall back to the host.",
+      "Commands stay contained; a blocked command can ask to run that one command on the host.",
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);

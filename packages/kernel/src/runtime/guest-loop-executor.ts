@@ -15,7 +15,6 @@ import { executeRun, type ExecuteRunArgs } from "@clarvis/loop";
 import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
 import { createGuardResolver, type GuardSettings } from "../guard/resolver.ts";
-import { createGuestHostVcsDispatcher } from "./host-vcs-bridge.ts";
 import { createGuestGuardAuditLogger } from "./guard-audit-bridge.ts";
 import { createGuestGuardApproval } from "./guard-approval-bridge.ts";
 import { createRuntimePreviewCapability } from "./preview-capability.ts";
@@ -376,9 +375,7 @@ export function createGuestLoopExecutor(
             audit: createGuestGuardAuditLogger(enqueueEvent),
           }),
           resolveSecretNames: () => [],
-          ...(envelope.hostCapabilities?.includes("host_vcs") === true
-            ? { resolveHostVcsDispatcher: () => createGuestHostVcsDispatcher(bridge, signal) }
-            : {}),
+          allowHostEscalation: false,
           capabilities: [
             ...(envelope.toolPolicy.enabled && envelope.toolPolicy.maxGrant === "exec"
               ? [createRuntimePreviewCapability(bridge)]

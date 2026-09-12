@@ -141,7 +141,7 @@ export function deriveRunControls(
   return {
     isolation,
     sandboxEnabled,
-    sandboxRequired: (sandbox?.availability ?? "required") === "required",
+    sandboxRequired: sandboxEnabled,
     filesystem: sandbox?.filesystem ?? "workspace-write",
     network: runtimeNetwork ?? sandbox?.network ?? "host",
     guardMode,
@@ -176,13 +176,11 @@ export function safetyDescription(state: RunControlsState): string[] {
   }
   if (state.sandboxEnabled) {
     lines.push(
-      !state.sandboxRequired
-        ? "Commands use the native sandbox when available and may fall back to the host."
-        : state.guardMode === "off"
-          ? "Commands run autonomously inside the native sandbox."
-          : state.guardMode === "auto"
-            ? "Commands stay contained; the model escalates actions it judges risky."
-            : "Risky actions ask first; approved commands remain contained.",
+      state.guardMode === "off"
+        ? "Commands run autonomously inside the native sandbox."
+        : state.guardMode === "auto"
+          ? "Commands stay contained; a blocked command can ask to run that one command on the host."
+          : "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
     );
     lines.push(
       state.filesystem === "workspace-read-only"

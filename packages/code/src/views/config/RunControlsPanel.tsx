@@ -118,24 +118,14 @@ export function RunControlsPanel(
         fg: tokens.muted,
       };
     if (!avail.available) {
-      return s.sandboxRequired
-        ? {
-            text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); required sandbox fails every run.`,
-            fg: tokens.del,
-          }
-        : {
-            text: `Native sandbox unavailable here (${avail.reason}); optional sandbox runs directly on the host.`,
-            fg: tokens.warn,
-          };
+      return {
+        text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); sandbox fails every run.`,
+        fg: tokens.del,
+      };
     }
     if (avail.degraded)
       return {
         text: `${avail.type === "bubblewrap" ? "Bubblewrap" : "Native sandbox"} runs in degraded mode (${avail.reason ?? "reduced isolation"}).`,
-        fg: tokens.warn,
-      };
-    if (!s.sandboxRequired)
-      return {
-        text: "Optional sandbox may execute directly on an incompatible host.",
         fg: tokens.warn,
       };
     return {

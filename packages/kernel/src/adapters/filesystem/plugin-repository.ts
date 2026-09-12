@@ -176,15 +176,28 @@ export interface FilePluginRepositoryOptions {
   workspaceRoot?: string;
 }
 
+/**
+ * Resolve `.agents/plugins` from the constructed home and workspace, not process
+ * `CLARVIS_HOME` / `CLARVIS_WORKSPACE_ROOT`. Those overrides belong to the host
+ * process root, not to a repository built with explicit fixture or session paths.
+ */
+function agentsInventoryDirs(options: FilePluginRepositoryOptions): {
+  user: string;
+  workspace: string;
+} {
+  return agentsPluginsDirs({
+    env: {},
+    ...(options.home === undefined ? {} : { home: options.home }),
+    ...(options.workspaceRoot === undefined ? {} : { cwd: options.workspaceRoot }),
+  });
+}
+
 /** Inspect one exact installed plugin without traversing the other inventory entries. */
 export function getInstalledPlugin(
   options: FilePluginRepositoryOptions,
   ref: PluginRef,
 ): InstalledPlugin | undefined {
-  const agents = agentsPluginsDirs({
-    ...(options.home === undefined ? {} : { home: options.home }),
-    ...(options.workspaceRoot === undefined ? {} : { cwd: options.workspaceRoot }),
-  });
+  const agents = agentsInventoryDirs(options);
   const root =
     ref.scope === "global"
       ? ref.source === "agents"
@@ -212,10 +225,7 @@ export function getInstalledPlugin(
  * the same name. Selection is always by exact qualified reference.
  */
 export function listInstalledPlugins(options: FilePluginRepositoryOptions): InstalledPlugin[] {
-  const agents = agentsPluginsDirs({
-    ...(options.home === undefined ? {} : { home: options.home }),
-    ...(options.workspaceRoot === undefined ? {} : { cwd: options.workspaceRoot }),
-  });
+  const agents = agentsInventoryDirs(options);
   const roots: { scope: Scope; source: PluginSource; root: string }[] = [
     { scope: "global", source: "clarvis", root: globalPaths(options.globalDir).pluginsDir },
     { scope: "global", source: "agents", root: agents.user },
@@ -257,10 +267,7 @@ export function listInstalledPlugins(options: FilePluginRepositoryOptions): Inst
  * @returns a repository preserving every exact scope/source inventory identity.
  */
 export function createFilePluginRepository(options: FilePluginRepositoryOptions): PluginRepository {
-  const agents = agentsPluginsDirs({
-    ...(options.home === undefined ? {} : { home: options.home }),
-    ...(options.workspaceRoot === undefined ? {} : { cwd: options.workspaceRoot }),
-  });
+  const agents = agentsInventoryDirs(options);
   const installRoot = (source: PluginSource): string =>
     source === "agents" ? agents.user : globalPaths(options.globalDir).pluginsDir;
   const rootFor = (ref: PluginRef): string | undefined => {

@@ -18,7 +18,6 @@ export type {
   GuardConfig,
   GuardResolution,
   GuardResolver,
-  HostVcsDispatcherResolver,
 } from "./runtime/capabilities/tools.ts";
 export {
   analyzeShell,

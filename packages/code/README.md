@@ -678,9 +678,9 @@ Denied signatures are prioritized ahead of ordinary signatures when the six-row 
 Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
 workspace choice inherits the global policy. Changing Isolation leaves Review and its command
 policy untouched. Selecting Host requires an explicit danger confirmation because it removes the
-containment boundary; turning Review off does not itself change isolation. With Review off, the
-bounded `host_vcs` fallback also executes without a reviewer when a sandboxed run needs host-side
-environment or credentials. The safety explanation always states the selected Review consequence
+containment boundary; turning Review off does not itself change isolation. With Review off, a sandboxed run that requests `sandbox_permissions: "require_escalated"` also
+executes that one command on the host without a reviewer. Isolated container runs still cannot reach
+the host this way. The safety explanation always states the selected Review consequence
 for Host, native Sandbox, Docker and Podman placements.
 
 A **deny** is enforced before any of this, in every mode; `denied_commands` wins
@@ -719,10 +719,8 @@ on whether you authorized a destructive workspace operation — for example `git
 `git clean`, checkout-over-files or broad deletion — it answers `unsure`, which opens the command
 approval prompt for you. It does not guess at missing authorization. An explicit deny-list match or
 ordinary sandboxed workspace escape is still rejected before the model reviewer and cannot be
-appealed through it. The argv-only `host_vcs` fallback is deliberately different: it exists for an
-operation the sandbox cannot perform and may name any host executable. The built-in judge therefore
-treats it as privileged host execution and evaluates its exact executable, arguments, paths,
-credentials, and host-side effects instead of assuming sandbox containment.
+appealed through it. Unsandboxed host execution is not a judge decision: `require_escalated` under
+Isolation Sandbox is reserved for a human.
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 

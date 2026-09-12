@@ -32,8 +32,11 @@ test("falls back to the built-in prompt when no override file exists", () => {
   expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain("not given the user's current request");
   expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain("git restore");
   expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain('choose "unsure" so the user decides');
-  expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain('tool named "host_vcs"');
-  expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain("never assume the sandbox boundary");
+  expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain(
+    "You are not asked to approve unsandboxed host execution",
+  );
+  expect(DEFAULT_GUARD_JUDGE_PROMPT).not.toContain("host_vcs");
+  expect(DEFAULT_GUARD_JUDGE_PROMPT).toContain("that decision is reserved for a human");
 });
 
 test("workspace override wins over global; global wins over builtin", () => {

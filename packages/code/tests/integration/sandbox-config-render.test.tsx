@@ -478,24 +478,24 @@ test("host warning: required + unavailable says runs will fail", async () => {
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("unavailable here (not installed)");
-  expect(frame).toContain("runs will fail; set availability to optional or disable");
+  expect(frame).toContain("runs will fail; switch Isolation to Host or install the native sandbox");
   t.renderer.destroy();
 });
 
-test("host warning: optional + unavailable says commands run directly", async () => {
+test("host warning: optional + unavailable still fails closed", async () => {
   const { host, deps } = mount({
     readSandbox: { ...SANDBOX, availability: "optional" },
     effectiveSandbox: { ...SANDBOX, availability: "optional" },
     inspect: () => Promise.resolve(UNAVAILABLE_INSPECTION),
   });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
-    width: 110,
+    width: 160,
     height: 30,
   });
   await tick();
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("commands run directly");
+  expect(frame).toContain("runs will fail; switch Isolation to Host or install the native sandbox");
   t.renderer.destroy();
 });
 
@@ -537,7 +537,7 @@ test("effective status: explicitly disabled reads as off", async () => {
   t.renderer.destroy();
 });
 
-test("effective status: optional availability notes the fallback", async () => {
+test("effective status: optional availability is treated as required", async () => {
   const { host, deps } = mount({ effectiveSandbox: { ...SANDBOX, availability: "optional" } });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
@@ -545,7 +545,7 @@ test("effective status: optional availability notes the fallback", async () => {
   });
   await tick();
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("(falls back to direct)");
+  expect(t.captureCharFrame()).toContain("(optional is treated as required)");
   t.renderer.destroy();
 });
 

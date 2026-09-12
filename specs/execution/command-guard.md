@@ -110,7 +110,7 @@ only by `packages/kernel/src/runs/settings-assembler.ts`.
 | --- | --- |
 | `GuardResolution` | `{ guard?: Guard; elicit?: GuardElicit }` |
 | `GuardResolver` | `(ctx: RunCapabilityContext) => Promise<GuardResolution\|undefined> \| GuardResolution \| undefined` |
-| `AgentToolsCapabilityOptions.resolveGuard` | optional; omitting it passes no policy guard, so dispatch proceeds without command review, including for `host_vcs` (`packages/tools/src/core.ts`) |
+| `AgentToolsCapabilityOptions.resolveGuard` | optional; omitting it passes no policy guard, so dispatch proceeds without command review, including for `require_escalated` shell (`packages/tools/src/core.ts`) |
 | `withGuardElicitWaitBound` | `(elicit, waitMs, signal) => GuardElicit` |
 | `AGENT_TOOLS_CAPABILITY_NAME` | `"tools"` |
 
@@ -338,9 +338,8 @@ message (§3.4; `packages/kernel/src/guard/judge.ts`). Its three decision catego
   (`packages/code/src/adapters/guard-judge-prompt.ts`).
 
 The prompt states that the denylist is already enforced and that ordinary sandboxed commands also
-have a workspace boundary. It names `host_vcs` as the explicit exception: the judge must assess its
-exact executable, argv, paths, credentials, and host-side effects rather than assuming sandbox
-containment. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
+have a workspace boundary. Unsandboxed host execution is reserved for a human; the judge is not
+asked to approve it. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
 (`DEFAULT_GUARD_JUDGE_PROMPT`). Test:
 `packages/code/tests/integration/guard-judge-prompt.test.ts`.
 
@@ -366,7 +365,7 @@ never entered when the gate returns a result.
 
 | Condition | Result |
 | --- | --- |
-| `config.guard` absent | proceed with `{}` for every tool, including `host_vcs` |
+| `config.guard` absent | proceed with `{}` for every tool, including `require_escalated` shell |
 | `verdict === "allow"` | proceed, carrying review metadata when the policy named a mode |
 | `verdict === "deny"` | `ToolError("denied", reason)` plus review metadata |
 | `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` with answerer `unavailable` |
@@ -387,8 +386,7 @@ tool family, and an unrecognized tool yields no paths and no shell facts :
 
 | Family | Members | Extraction | File |
 | --- | --- | --- | --- |
-| guarded host fallback | `host_vcs` | render `program` plus each string argv member with display-safe quoting into `args.command`, analyze that display command, and resolve `args.cwd` with plain fs semantics | `packages/tools/src/guard/context.ts` |
-| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each path occurrence resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that segment occurrence and normalized to its basename for allow/deny matching, with Windows `PATHEXT` suffixes removed; duplicate absolute operands remain outside even when their string equals an admitted head; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
+| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each path occurrence resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that segment occurrence and normalized to its basename for allow/deny matching, with Windows `PATHEXT` suffixes removed; duplicate absolute operands remain outside even when their string equals an admitted head; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots; `sandbox_permissions` and `justification` are copied onto the context | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | src/dest | `move`, `copy` | `args.source`, `args.destination` | `packages/tools/src/guard/paths.ts` |
 | list | `read_files` | every string in `args.paths` | `packages/tools/src/guard/paths.ts` |
@@ -535,7 +533,7 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 1 | `shell` present, deny list configured, **any** segment's `normalized` matches | `deny_list` | `deny` |
 | 2a | `shell.undecidable` and deny list **non-empty** | `undecidable` | `deny` |
 | 2b | `shell.undecidable` and no/empty deny list | `undecidable` | `ask` + `escalate: "human"` |
-| 3 | `tool === "host_vcs"` | `host_command` | `ask`; the configured human or judge answers |
+| 3 | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask` + `escalate: "human"` |
 | 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
 | 5 | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
@@ -1008,11 +1006,10 @@ broken.
     manifest).
 
 39. **`guard_mode: "off"` yields no guard object at all**, not a permissive one; tool dispatch then
-    proceeds without command review, including for `host_vcs`.
+    proceeds without command review, including for `require_escalated` shell.
     Production: `createGuardResolver` in `packages/kernel/src/guard/resolver.ts` and `applyGuard` in
     `packages/tools/src/core.ts`. Test: `packages/kernel/tests/unit/guard.test.ts` and
-    `packages/tools/tests/integration/host-vcs.test.ts` (`honors disabled command review when no
-    guard is installed`).
+    `packages/tools/tests/integration/shell-escalation.test.ts`.
 
 40. **Mode `auto` builds the judge only when `guard_judge` is present *and* a model resolves;
     otherwise it falls back to the human prompt.** `packages/kernel/src/guard/resolver.ts`. Pinned: `packages/kernel/tests/unit/guard.test.ts`.
@@ -1175,17 +1172,15 @@ broken.
 61. **Container placement preserves command-guard decisions without trusting guest execution or
     audit identity.** The host sends only the guard/default-model settings needed to reconstruct
     `createGuardResolver`; provider secrets remain behind the model broker. The guest caps its
-    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. For
-    `host_vcs`, the guest forwards arguments through `runtime.host_vcs`; the host repeats schema and
-    restricted-form validation, resolves the guard from its run snapshot and performs the process
-    spawn. The host
+    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. The guest
+    has no host-exec channel: `require_escalated` fails closed there. The host
     rejects malformed audit events and overwrites guest-claimed `run_id`/`owner` with the
     authenticated route before writing. The OCI policy is the guest containment boundary; no missing
     nested native sandbox is treated as a guard bypass. Production: `guestGuardSettings` and
     `createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`;
     `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
     `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/isolated-run-executor.ts`. Test:
-    `packages/kernel/tests/integration/runtime-host-vcs-bridge.test.ts`;
+    `packages/tools/tests/integration/shell-escalation.test.ts`;
     `runtime guard audit bridge` in
     `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`; `runtime guest loop` in
     `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
@@ -1211,7 +1206,7 @@ broken.
 | Analyzer cannot parse the command | `undecidable` → rule 2a/2b (deny with a deny list, human-escalated ask without) | `packages/kernel/src/guard/shell-guard.ts` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts`, `packages/kernel/src/guard/shell-guard.ts` |
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
-| Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `host_vcs` | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
+| Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `require_escalated` shell | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
 | Guest sends a malformed or open-ended guard-audit event | the host throws `invalid_request`; no record is written with guest-controlled fields | `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`; `runtime guard audit bridge` in `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts` |
 | `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |

@@ -59,34 +59,65 @@ function bashReq(command: string, shell: ShellFacts = shellFacts(command)): Elic
 function makeCtx(tool: string, args: Record<string, unknown>, supplied?: ShellFacts): GuardContext {
   const paths: GuardContext["paths"] = [];
   let shell: GuardContext["shell"];
-  if (tool === "shell" && typeof args.command === "string") {
+  if ((tool === "shell" || tool === "monitor_start") && typeof args.command === "string") {
     shell = supplied ?? shellFacts(args.command);
     for (const raw of shell.paths) {
       paths.push({ raw, resolved: resolve(ROOT, raw), withinWorkspace: isWithinRoot(raw) });
     }
   }
+  const sandboxPermissions =
+    args.sandbox_permissions === "require_escalated" || args.sandbox_permissions === "use_default"
+      ? args.sandbox_permissions
+      : undefined;
+  const justification = typeof args.justification === "string" ? args.justification : undefined;
   return {
     tool,
     args,
     config: { workspaceRoot: ROOT } as unknown as GuardContext["config"],
     paths,
     shell,
+    ...(sandboxPermissions !== undefined ? { sandboxPermissions } : {}),
+    ...(justification !== undefined ? { justification } : {}),
   };
 }
 
 describe("createShellGuard (kernel copy)", () => {
-  it("sends host commands to the configured reviewer without forcing a human", async () => {
-    const decision = await createShellGuard({ allowedCommands: ["*"] })(
-      makeCtx("host_vcs", { command: "bun test" }),
-    );
+  it("forces a human for require_escalated when Isolation is Sandbox", async () => {
+    const context = makeCtx("shell", {
+      command: "bun test",
+      sandbox_permissions: "require_escalated",
+      justification: "need host docker.sock",
+    });
+    context.config = {
+      ...context.config,
+      sandbox: { type: "native" },
+    } as GuardContext["config"];
+    const decision = await createShellGuard({ allowedCommands: ["*"] })(context);
     expect(decision).toEqual<GuardDecision>({
       verdict: "ask",
-      reason: "this command will run outside the sandbox using the host executable environment",
+      escalate: "human",
+      reason: "need host docker.sock",
     });
   });
 
-  it("keeps the operator deny list above host VCS approval", async () => {
-    const context = makeCtx("host_vcs", { command: "git push origin main" });
+  it("does not extra-review require_escalated on Isolation Host", async () => {
+    const decision = await createShellGuard({ allowedCommands: ["*"] })(
+      makeCtx("shell", {
+        command: "bun test",
+        sandbox_permissions: "require_escalated",
+        justification: "already on the host",
+      }),
+    );
+    expect(decision).toEqual<GuardDecision>({ verdict: "allow" });
+  });
+
+  it("keeps the operator deny list above require_escalated approval", async () => {
+    const context = makeCtx("shell", {
+      command: "git push origin main",
+      sandbox_permissions: "require_escalated",
+      justification: "need host git",
+    });
+    context.config = { ...context.config, sandbox: { type: "native" } } as GuardContext["config"];
     context.shell = shellFacts("git push origin main");
     const decision = await createShellGuard({ deniedCommands: ["git push"] })(context);
     expect(decision).toMatchObject({ verdict: "deny" });
@@ -931,12 +962,54 @@ describe("createGuardResolver", () => {
     });
     expect(
       await resolution!.elicit!({
-        tool: "host_vcs",
-        args: { program: "bun", args: ["test"], command: "bun test" },
+        tool: "shell",
+        args: { command: "bun test" },
         shell: shellFacts("bun test"),
       }),
     ).toEqual({ allowed: true, answerer: "judge" });
     expect(asked).toBe(false);
+  });
+
+  it("in mode auto, sends require_escalated host execution to a human, not the judge", async () => {
+    let asked = false;
+    let judged = false;
+    const humanElicit: Elicit = async () => {
+      asked = true;
+      return { action: "accept", content: { decision: "allow" } };
+    };
+    const llm = {
+      call: async () => {
+        judged = true;
+        return { toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] };
+      },
+    } as unknown as RunCapabilityContext["llm"];
+    const resolver = createGuardResolver({
+      loadSettings: () => ({
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/claude-x",
+      }),
+    });
+    const resolution = await resolver(
+      ctx({
+        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        elicit: humanElicit,
+        llm,
+      }),
+    );
+    expect(
+      await resolution!.elicit!({
+        tool: "shell",
+        args: {
+          command: "bun test",
+          sandbox_permissions: "require_escalated",
+          justification: "need host bun",
+        },
+        shell: shellFacts("bun test"),
+        escalate: "human",
+      }),
+    ).toEqual({ allowed: true, answerer: "human" });
+    expect(asked).toBe(true);
+    expect(judged).toBe(false);
   });
 
   it("in mode auto, falls back to the human elicit when no judge model resolves", async () => {

@@ -78,7 +78,6 @@ test("MUTATION_TOOLS pins the registry-derived members — a registry change mus
       "edit_file",
       "multi_edit",
       "apply_patch",
-      "host_vcs",
       "replace",
       "move",
       "copy",

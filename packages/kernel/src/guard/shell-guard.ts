@@ -272,11 +272,15 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         reason: "command contains dynamic expansions that cannot be analyzed",
       };
     }
-    if (ctx.tool === "host_vcs") {
+    if (ctx.sandboxPermissions === "require_escalated" && ctx.config.sandbox !== undefined) {
       return {
         matched: "host_command",
         verdict: "ask",
-        reason: "this command will run outside the sandbox using the host executable environment",
+        escalate: "human",
+        reason:
+          ctx.justification !== undefined && ctx.justification.length > 0
+            ? ctx.justification
+            : "this command will run outside the sandbox on the host",
       };
     }
     if (touchesOutside(ctx)) {

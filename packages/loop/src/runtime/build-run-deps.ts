@@ -34,12 +34,7 @@ import type { Logger } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
-import type {
-  GuardResolver,
-  HostVcsDispatcherResolver,
-  SandboxResolver,
-  SecretNamesResolver,
-} from "./capabilities/tools.ts";
+import type { GuardResolver, SandboxResolver, SecretNamesResolver } from "./capabilities/tools.ts";
 import type { PluginBootstrapSkill } from "./capabilities/skills-settings.ts";
 import { createAskUserCapability } from "./capabilities/ask-user.ts";
 
@@ -170,8 +165,8 @@ export interface BuildRunDepsOptions {
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
-  /** Host-owned `host_vcs` dispatcher used by isolated runtime guests. */
-  resolveHostVcsDispatcher?: HostVcsDispatcherResolver;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
   /** Opt out of built-in capabilities to run leaner (and to allow the
    * corresponding optional package to be absent). Omitted = all on. */
   builtins?: BuiltinCapabilityToggles;
@@ -514,7 +509,7 @@ export async function buildExecuteRunDeps({
   resolveGuard,
   resolveSandbox,
   resolveSecretNames,
-  resolveHostVcsDispatcher,
+  allowHostEscalation,
   resolveHooks,
   hookCredentialNames,
   builtins,
@@ -738,7 +733,7 @@ export async function buildExecuteRunDeps({
         ...(resolveGuard !== undefined ? { resolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
-        ...(resolveHostVcsDispatcher !== undefined ? { resolveHostVcsDispatcher } : {}),
+        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(selectedSkills === undefined
           ? {}
           : {

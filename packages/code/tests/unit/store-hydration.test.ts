@@ -207,6 +207,31 @@ test("a dehydrated node still renders its collapsed header and export signature"
   });
 });
 
+test("tool_call_started writes the resident signature from the live arguments", () => {
+  withStore({}, (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(
+      sink,
+      runEvent({
+        type: "tool_call_started",
+        agent: "subagent",
+        subagent_id: "w1",
+        call_id: "c0",
+        at: 1,
+        server: "fs",
+        tool: "read_file",
+        arguments: { path: "src/live.ts" },
+      }),
+      "live",
+    );
+
+    const node = toolNodes(store)[0]!;
+    expect(node.status).toBe("running");
+    expect(node.signature).toContain("src/live.ts");
+    expect(node.mutation).toBeUndefined();
+  });
+});
+
 test("a dehydrated node keeps its identity, key, status and tool name", () => {
   withStore({ hydratedToolLimit: 1 }, (store) => {
     const sink = store.openRun("exec_1");

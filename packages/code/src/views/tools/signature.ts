@@ -81,6 +81,15 @@ function formatValue(key: string, v: unknown): string {
   }
 }
 
+/** Fields {@link resolveToolCallSignature} needs to pick a header string. */
+export interface ToolCallSignatureSource {
+  mcpName?: string;
+  toolName?: string;
+  args?: Record<string, unknown>;
+  /** Resident header kept after `args` are dropped. */
+  signature?: string;
+}
+
 /**
  * Renders a compact, single-line "signature" of a tool call's arguments for
  * display next to its name, e.g. `(path.ts, offset=10)`.
@@ -114,4 +123,27 @@ export function formatToolCall(
     for (const [k, v] of Object.entries(args)) parts.push(`${k}=${formatValue(k, v)}`);
   }
   return `(${truncateEnd(parts.join(", "), SIGNATURE_MAX)})`;
+}
+
+/**
+ * The collapsed header a tool row or group member should show.
+ *
+ * @param node - identity plus any already-rendered resident signature.
+ * @param args - live arguments to format when `node.signature` is absent.
+ *   Callers that read a Solid store node must pass `rawToolArguments` here:
+ *   the projector treats store accessors as hostile, and a dehydrated node
+ *   has no `args` left.
+ * @returns the resident signature, or a freshly formatted one from `args`.
+ *
+ * @remarks Group heads used to call {@link formatToolCall} on `node.args`
+ * directly. That ignored the resident header the store keeps precisely so a
+ * dehydrated or still-running live node can name its path, and produced the
+ * empty `()` / `(.)` rows a busy sub-agent showed until publication replaced
+ * the live nodes with frozen snapshots.
+ */
+export function resolveToolCallSignature(
+  node: ToolCallSignatureSource,
+  args: Record<string, unknown> | undefined = node.args,
+): string {
+  return node.signature ?? formatToolCall(node.mcpName ?? "", node.toolName ?? "", args ?? {});
 }

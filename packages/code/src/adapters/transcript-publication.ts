@@ -174,8 +174,6 @@ interface ReservedPublicationNode {
   readonly defaultFolded: boolean;
 }
 
-
-
 /** Stable semantic identity for one immutable Lead-side delegation lifecycle marker. */
 export function delegationLeadMarkerKey(
   delegationId: string,

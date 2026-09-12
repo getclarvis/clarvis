@@ -343,7 +343,7 @@ describe("transcript publication", () => {
   });
 
   test("live publication never groups the same leaf name from different MCP servers", () => {
-    const { store, scheduler, sink } = fixture();
+    const { store, sink } = fixture();
     event(sink, runStarted());
     event(sink, toolCall("alpha-run", "run", "A", undefined, "alpha"));
     event(sink, toolCall("beta-run", "run", "B", undefined, "beta"));

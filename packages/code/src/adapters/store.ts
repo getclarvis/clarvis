@@ -1140,14 +1140,12 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     const dropComposing = (inScope: (order: number | undefined) => boolean): void => {
       const doomed: string[] = [];
       for (const n of state.nodes) {
-        if (
-          !(
-            n.key.startsWith(`${execId}::`) &&
-            n.kind === "tool_call" &&
-            n.inputChars !== undefined &&
-            inScope(n.subagentOrder)
-          )
-        )
+        if (!(
+          n.key.startsWith(`${execId}::`) &&
+          n.kind === "tool_call" &&
+          n.inputChars !== undefined &&
+          inScope(n.subagentOrder)
+        ))
           continue;
         if (typeof n.toolName === "string" && n.toolName.length > 0) {
           const index = indexOfKey.get(n.key);

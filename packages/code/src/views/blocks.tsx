@@ -789,7 +789,7 @@ export function BlockView(props: {
 
                   <Match when={props.node.kind === "tool_call"}>
                     <box flexDirection="column" width="100%" minWidth={0}>
-                    <Show when={role() === "head" && !groupExpanded()}>
+                      <Show when={role() === "head" && !groupExpanded()}>
                         <box flexDirection="column" paddingTop={1} overflow="hidden">
                           <box paddingLeft={1}>
                             <text
@@ -867,27 +867,27 @@ export function BlockView(props: {
                             <ToolLine node={toolNode()} showBody={false} indent />
                           </Show>
                         </box>
-                    </Show>
-                    <box
-                      height={role() === "head" && !groupExpanded() ? 0 : undefined}
-                      overflow="hidden"
-                      flexShrink={0}
-                    >
-                      <Show when={role() !== "member" || groupExpanded() || !!toolNode().warn}>
-                        <ToolLine
-                          node={toolNode()}
-                          showBody={
-                            (role() === "head" && !groupExpanded()) ||
-                            groupExpanded() ||
-                            (role() !== "head" && !collapsed())
-                          }
-                          full={fullBody()}
-                          ungatedMutationBody={leadMutation()}
-                          indent={role() === "member" && !groupExpanded()}
-                          onHeaderClick={onToggle}
-                        />
                       </Show>
-                    </box>
+                      <box
+                        height={role() === "head" && !groupExpanded() ? 0 : undefined}
+                        overflow="hidden"
+                        flexShrink={0}
+                      >
+                        <Show when={role() !== "member" || groupExpanded() || !!toolNode().warn}>
+                          <ToolLine
+                            node={toolNode()}
+                            showBody={
+                              (role() === "head" && !groupExpanded()) ||
+                              groupExpanded() ||
+                              (role() !== "head" && !collapsed())
+                            }
+                            full={fullBody()}
+                            ungatedMutationBody={leadMutation()}
+                            indent={role() === "member" && !groupExpanded()}
+                            onHeaderClick={onToggle}
+                          />
+                        </Show>
+                      </box>
                     </box>
                   </Match>
 

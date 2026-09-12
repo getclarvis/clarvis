@@ -228,7 +228,7 @@ function PublicationOwner(props: {
                   sectionFolded(props.batch, key, props.transcript),
               )
             }
-              group={() => group(node.key)}
+            group={() => group(node.key)}
             sectionHeader={() => header(node.key)}
             overrideOf={(key) => props.transcript.overrideOf(key)}
             focused={() => props.transcript.focusedKey() === node.key}

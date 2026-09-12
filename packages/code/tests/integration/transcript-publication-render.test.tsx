@@ -1071,12 +1071,10 @@ function toolCallStarted(callId: string, tool: string, args: Record<string, unkn
 }
 
 function historyOwnsKey(root: Renderable, key: string): boolean {
-  return descendants(
-    root,
-    (renderable): renderable is Renderable => renderable.id.startsWith("history:publication:"),
+  return descendants(root, (renderable): renderable is Renderable =>
+    renderable.id.startsWith("history:publication:"),
   ).some(
-    (owner) =>
-      descendants(owner, (child): child is Renderable => child.id === key).length > 0,
+    (owner) => descendants(owner, (child): child is Renderable => child.id === key).length > 0,
   );
 }
 
@@ -1142,11 +1140,7 @@ test("a tool keeps one live owner from composing through terminal settle", async
     const composing = byId(rendered.renderer.root, "live-transcript-owner:exec::read-1");
     expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);
 
-    applyEvent(
-      sink,
-      toolCallStarted("read-1", "read_file", { path: "src/a.ts" }),
-      "live",
-    );
+    applyEvent(sink, toolCallStarted("read-1", "read_file", { path: "src/a.ts" }), "live");
     await rendered.renderOnce();
     expect(byId(rendered.renderer.root, "live-transcript-owner:exec::read-1")).toBe(composing);
     expect(historyOwnsKey(rendered.renderer.root, "exec::read-1")).toBe(false);

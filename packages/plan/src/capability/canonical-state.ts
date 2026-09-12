@@ -60,7 +60,7 @@ export function missingPlanSpecBlock(missing: MissingPlanState): string {
 /**
  * The recurring reminder: the plan's location, the
  * compare-and-swap triple, the approval posture, and every task's current
- * status.
+ * status, including an explicit reminder of any active work.
  *
  * @param document - the plan being published as canonical state.
  * @param reviewRequired - whether *this run* carries the review gate.
@@ -84,6 +84,7 @@ export function planCasHeader(document: PlanDocument, reviewRequired: boolean): 
     `  expected_digest: ${document.digest}`,
     `  expected_spec_digest: ${document.spec_digest}`,
     approvalLine(document, reviewRequired),
+    activeTaskLine(document),
     open.length === 0
       ? "Open tasks: none"
       : `Open tasks: ${open.map((task) => `${task.id} (${task.status})`).join(", ")}`,
@@ -91,6 +92,16 @@ export function planCasHeader(document: PlanDocument, reviewRequired: boolean): 
       ? "Task status: (no tasks yet)"
       : `Task status: ${document.tasks.map((task) => `${task.id} (${task.status})`).join(", ")}`,
   ].join("\n");
+}
+
+/** Render the model-facing reminder for tasks currently being worked. */
+function activeTaskLine(document: PlanDocument): string {
+  const active = document.tasks.filter((task) => task.status === "in_progress");
+  if (active.length === 0) return "Active task: none.";
+  const ids = active.map((task) => task.id).join(", ");
+  return active.length === 1
+    ? `Active task: ${ids} (in_progress). Record its outcome with transition_plan_task when its exit criterion is satisfied.`
+    : `Active tasks: ${ids} (in_progress). Record each outcome with transition_plan_task when its exit criterion is satisfied.`;
 }
 
 /**

@@ -29,8 +29,8 @@ describe("the advertised tool surface", () => {
   });
   afterEach(() => cleanup(root));
 
-  it("is 24 coding tools, 9 of them read-only, on every config", () => {
-    expect(EXPECTED_TOOL_DESCRIPTORS).toHaveLength(24);
+  it("is 23 coding tools, 9 of them read-only, on every config", () => {
+    expect(EXPECTED_TOOL_DESCRIPTORS).toHaveLength(23);
     expect(expectedToolNames({ readOnly: true })).toHaveLength(9);
     expect(listTools(makeConfig(root)).map(({ name }) => name)).toEqual(
       expectedToolNames({ readOnly: false }),

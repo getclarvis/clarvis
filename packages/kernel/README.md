@@ -348,11 +348,10 @@ failures retain native run behavior, and remote elicitation returns through `run
 the live guest's serialized input port. Run teardown releases the leases. Stdio remains guest-local,
 and HTTP/SSE still has remote effects even with container network `none`.
 
-The exec-gated `host_vcs` fallback uses the non-idempotent `runtime.host_vcs` grant. The guest never
-spawns this argv: the host revalidates its arguments and restricted credential/helper forms,
-resolves command review from the run snapshot, withholds current secret names, and executes it in the
-host workspace under the same time, output, cwd and prompt bounds as native placement. The grant and
-dispatcher exist only for a run that admits tools with an exec ceiling and `run_commands`.
+Isolated container guests have no host-exec channel. `shell` and `monitor_start` with
+`sandbox_permissions: "require_escalated"` fail closed in the guest: Isolation Docker/Podman is the
+sandbox, and the machine host is not available from that placement. Git credentials for container
+runs come from the recipe and mounts, not from a tool.
 
 Before each admitted provider/model pair reaches the adapter, the host uses the shared
 `resolveProvider` on its captured registry, including model overrides, and reconstructs the model's
@@ -848,12 +847,12 @@ with `on_unsure: "deny"` — the same inconclusive outcomes still fail closed. F
 attempts are not memoized, so fixing a transient provider problem restores automatic review without
 restarting the session.
 
-The argv-only `host_vcs` fallback is an ordinary `ask`, not a forced human escalation. Mode `on`
-therefore sends it to the human, while a configured mode `auto` judge may allow or deny it under the
-same audited answerer rules. Mode `off` supplies no guard and executes the bounded fallback without
-command review, honoring the operator's explicit choice. Container placement resolves and enforces
-that decision on the host side of `runtime.host_vcs`; the guest cannot bypass it by calling the
-bridge directly.
+A `shell` or `monitor_start` call with `sandbox_permissions: "require_escalated"` under Isolation
+Sandbox is an `ask` with `escalate: "human"`. Mode `on` and `auto` therefore send it to a human; the
+judge does not decide unsandbox. Isolation Host already runs unsandboxed, so the field does not add
+a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
+operator's explicit choice. Isolated container guests reject the field instead of forwarding it to
+the host.
 
 The resolver returns the final answer together with its answerer, and the kernel
 projects the resulting `tool_call.guard` unchanged to `RunEvent`. This makes the

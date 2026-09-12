@@ -270,6 +270,13 @@ copied only when defined, via a spread guard.
 | `<plugin>/skills/` | default skills root | `packages/kernel/src/plugins/plugin-manifest.ts` |
 | `<plugin>/agents/**/*.md` | agent surface | `packages/kernel/src/plugins/plugin-contributions.ts` |
 | `<plugin>/install-record.json` | install provenance sidecar, mode `0o600` | `packages/kernel/src/plugins/plugin-install-record.ts`, `packages/kernel/src/adapters/filesystem/plugin-repository.ts` |
+
+A `PluginService` or contributions loader constructed with explicit `home` and `workspaceRoot`
+resolves the four inventories from those roots. Process `CLARVIS_HOME` / `CLARVIS_WORKSPACE_ROOT`
+do not redirect that listing. Production: `agentsInventoryDirs` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts` and `createPluginContributions` in
+`packages/kernel/src/plugins/plugin-contributions.ts`. Test: `packages/kernel/tests/integration/plugin-service.test.ts`
+(`lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree`).
 | `<root>/marketplace.json` | a source's own catalog | `packages/paths/src/constants.ts` |
 | `<root>/.agents/plugins/marketplace.json` | cross-runtime catalog | `packages/paths/src/workspace.ts` |
 

@@ -45,8 +45,8 @@ this command started" work identically (in effect, not in mechanism) on POSIX an
 
 | Tool | File | `bounded` | Required args | Optional args |
 | --- | --- | --- | --- | --- |
-| `shell` | `packages/tools/src/tools/shell.ts` | `true` | `command` | `cwd`, `timeout_ms` |
-| `monitor_start` | `packages/tools/src/tools/monitor.ts` | `true` | `command` | `cwd`, `ready_when`, `ready_timeout_ms` |
+| `shell` | `packages/tools/src/tools/shell.ts` | `true` | `command` | `cwd`, `timeout_ms`, `sandbox_permissions`, `justification` |
+| `monitor_start` | `packages/tools/src/tools/monitor.ts` | `true` | `command` | `cwd`, `ready_when`, `ready_timeout_ms`, `sandbox_permissions`, `justification` |
 | `monitor_poll` | `packages/tools/src/tools/monitor.ts` | `true` | `id` | `offset`, `match` |
 | `monitor_stop` | `packages/tools/src/tools/monitor.ts` | `true` | `id` | — |
 | `monitor_list` | `packages/tools/src/tools/monitor.ts` | `true` | — | — |
@@ -60,7 +60,12 @@ independently pins that `shell` and `monitor_start` specifically are never class
 
 `shell`'s and every `monitor_*` tool's `inputSchema` is a plain JSON Schema object compiled once by
 Ajv (`packages/tools/src/core.ts`); `dispatch` validates, defaults and coerces caller arguments
-against it before the handler runs (`packages/tools/src/core.ts`).
+against it before the handler runs (`packages/tools/src/core.ts`). `sandbox_permissions` is omitted
+or `use_default` unless the model requests `require_escalated` with a `justification`; that path
+spawns the same command text on the host after review when Isolation is Sandbox, is a no-op on
+Isolation Host, and is refused in isolated containers. Production:
+`packages/tools/src/lib/sandbox-permissions.ts`. Test:
+`packages/tools/tests/integration/shell-escalation.test.ts`.
 
 ### Exported functions and types (reachable from `.`, `./shell`, or both)
 

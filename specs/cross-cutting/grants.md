@@ -216,13 +216,13 @@ interface AgentToolCaps { canRead: boolean; canMutate: boolean; canExec: boolean
 (`packages/tools/src/tools/registry.ts`); the loop derives everything
 else from it:
 
-| Set | Derivation | Content (24 total tools) | File |
+| Set | Derivation | Content (23 total tools) | File |
 | --- | --- | --- | --- |
-| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 24 | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `AGENT_TOOL_NAMES` | `tools.map(t => t.name)` | all 23 | `packages/loop/src/runtime/tools/builtin/names.ts` |
 | `READ_ONLY_TOOL_NAMES` | `readOnlyTools.map(t => t.name)` | `read_file, read_image, read_files, list_dir, glob, grep, diff, file_stat, tree` (9) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags at `packages/tools/src/tools/registry.ts` |
-| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, multi_edit, apply_patch, replace, shell, host_vcs, monitor_start, monitor_poll, monitor_stop, monitor_list, move, copy, mkdir, remove` (15) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
-| `EXEC_TOOL_NAMES` | hardcoded literal list, **not** derived from the tools package's own flags | `shell, host_vcs, monitor_start, monitor_poll, monitor_stop, monitor_list` (6) | `packages/loop/src/runtime/tools/builtin/names.ts` |
-| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus sandbox command runners, retaining `host_vcs` for mutation presentation even though it is also exec-gated | `write_file, edit_file, multi_edit, apply_patch, replace, host_vcs, move, copy, mkdir, remove` (10) | `packages/loop/src/runtime/tools/builtin/names.ts` (`FILE_MUTATING_TOOL_NAMES`) |
+| `EDIT_TOOL_NAMES` | `AGENT_TOOL_NAMES` minus `READ_ONLY_TOOL_NAMES` | `write_file, edit_file, multi_edit, apply_patch, replace, shell, monitor_start, monitor_poll, monitor_stop, monitor_list, move, copy, mkdir, remove` (14) | `packages/loop/src/runtime/tools/builtin/names.ts`; source flags `packages/tools/src/tools/registry.ts` |
+| `EXEC_TOOL_NAMES` | hardcoded literal list, **not** derived from the tools package's own flags | `shell, monitor_start, monitor_poll, monitor_stop, monitor_list` (5) | `packages/loop/src/runtime/tools/builtin/names.ts` |
+| `FILE_MUTATING_TOOL_NAMES` | `EDIT_TOOL_NAMES` minus command runners | `write_file, edit_file, multi_edit, apply_patch, replace, move, copy, mkdir, remove` (9) | `packages/loop/src/runtime/tools/builtin/names.ts` (`FILE_MUTATING_TOOL_NAMES`) |
 
 Tool name strings verified individually at their definitions: `read_file`
 (`packages/tools/src/tools/read-file.ts`), `read_image`
@@ -230,7 +230,7 @@ Tool name strings verified individually at their definitions: `read_file`
 (`packages/tools/src/tools/write-file.ts`), `edit_file` (`packages/tools/src/tools/edit-file.ts`), `multi_edit`
 (`packages/tools/src/tools/multi-edit.ts`), `apply_patch` (`packages/tools/src/tools/apply-patch.ts`), `replace`
 (`packages/tools/src/tools/replace.ts`), `list_dir` (`packages/tools/src/tools/list-dir.ts`), `glob` (`packages/tools/src/tools/glob.ts`), `grep`
-(`packages/tools/src/tools/grep.ts`), `diff` (`packages/tools/src/tools/diff.ts`), `shell` (`packages/tools/src/tools/shell.ts`), `host_vcs` (`packages/tools/src/tools/host-vcs.ts`), `monitor_start`
+(`packages/tools/src/tools/grep.ts`), `diff` (`packages/tools/src/tools/diff.ts`), `shell` (`packages/tools/src/tools/shell.ts`), `monitor_start`
 (`packages/tools/src/tools/monitor.ts`), `monitor_poll` (`packages/tools/src/tools/monitor.ts`), `monitor_stop`
 (`packages/tools/src/tools/monitor.ts`), `monitor_list` (`packages/tools/src/tools/monitor.ts`), `move` (`packages/tools/src/tools/move.ts`),
 `copy` (`packages/tools/src/tools/copy.ts`), `mkdir` (`packages/tools/src/tools/mkdir.ts`), `remove` (`packages/tools/src/tools/remove.ts`),
@@ -297,10 +297,9 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
      otherwise-full (`canMutate: true`) definition list
      (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
    - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
-     read-only + the 9 non-exec members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`, `host_vcs`,
-     or `monitor_*`; `exec` → all 24. `host_vcs` stays in the mutation-presentation set but is also an
-     exec tool because it crosses the sandbox boundary to run one guard-reviewed host executable
-     (`packages/tools/src/tools/host-vcs.ts`).
+     read-only + the 9 members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`
+     or `monitor_*`; `exec` → all 23. Per-call host escalation is a `shell`/`monitor_start` field, not a
+     separate tool (`packages/tools/src/lib/sandbox-permissions.ts`).
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
    not in the filtered `names` set with `{ isError: true, text: "Tool '<name>'
    is not available to this agent." }`
@@ -480,13 +479,12 @@ except for this one filtered field — carried `workflow`.
 
 6. **`createAgentToolset`'s `dispatch` refuses any tool name outside its own
    ceiling-filtered `names` set, independent of whatever `@clarvis/tools`
-   itself would allow; the exec partition includes both sandboxed `shell` and
-   host-boundary `host_vcs`.**
+   itself would allow; the exec partition is `shell` and the `monitor_*` family.**
    Production: `packages/loop/src/runtime/tools/builtin/toolset.ts`
    (the `!names.has(name)` branch returns an error result rather than
    forwarding to `resolved.dispatch`).
    Test: `packages/loop/tests/unit/toolset.test.ts`
-   (`it.each(["shell","host_vcs","unknown"])("refuses unavailable tool %s without
+   (`it.each(["shell","monitor_start","unknown"])("refuses unavailable tool %s without
    dispatching", …)` asserts `dispatch` resolves to `{ isError: true, text:
    "Tool '<name>' is not available to this agent." }` for both a
    ceiling-filtered tool and an unknown name, and that the underlying adapter

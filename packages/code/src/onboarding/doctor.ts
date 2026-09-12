@@ -390,19 +390,11 @@ export const GATES: Gate[] = [
             detail: `${posture} ${glyph("emDash")} starts on first run; Sandbox fallback ready`,
           };
         }
-        const required = (eff.sandbox?.availability ?? "required") === "required";
-        if (!a.available && required) {
-          return {
-            status: "warn",
-            detail: `${posture} ${glyph("emDash")} Sandbox unavailable here`,
-            hint: `Native sandbox ${a.reason}; runs will fail. Set availability to optional or disable the sandbox.`,
-          };
-        }
         if (!a.available) {
           return {
             status: "warn",
-            detail: `${posture} ${glyph("emDash")} Sandbox unavailable, running directly`,
-            hint: `Native sandbox ${a.reason}; commands fall back to the host.`,
+            detail: `${posture} ${glyph("emDash")} Sandbox unavailable here`,
+            hint: `Native sandbox ${a.reason}; runs will fail. Switch Isolation to Host or install the native sandbox.`,
           };
         }
       }

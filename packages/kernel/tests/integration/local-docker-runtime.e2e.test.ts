@@ -97,8 +97,8 @@ test.skipIf(!enabled)(
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, "docker-"));
-    const hostOnlyProgram = join(root, "host-vcs-fixture");
-    await writeFile(hostOnlyProgram, '#!/bin/sh\nprintf "HOST_VCS_EXECUTED_ON_HOST:%s\\n" "$1"\n');
+    const hostOnlyProgram = join(root, "host-escalate-fixture");
+    await writeFile(hostOnlyProgram, '#!/bin/sh\nprintf "HOST_ESCALATE_EXECUTED:%s\\n" "$1"\n');
     await chmod(hostOnlyProgram, 0o700);
     const repositoryRoot = join(root, "repository");
     const workspaceRoot = join(root, "workspace");
@@ -328,9 +328,13 @@ test.skipIf(!enabled)(
           return {
             toolCalls: [
               {
-                id: "host-vcs-review-off",
-                name: "host_vcs",
-                arguments: { program: hostOnlyProgram, args: ["deterministic-fixture"] },
+                id: "host-escalate-rejected",
+                name: "shell",
+                arguments: {
+                  command: `${hostOnlyProgram} deterministic-fixture`,
+                  sandbox_permissions: "require_escalated",
+                  justification: "need host fixture",
+                },
               },
               { id: "prepare-skill-helpers", name: "shell", arguments: { command: prepareHelper } },
               {
@@ -347,8 +351,8 @@ test.skipIf(!enabled)(
           };
         }
         if (workloadModelCall === 4) {
-          expect(transcript).toContain("HOST_VCS_EXECUTED_ON_HOST:deterministic-fixture");
-          expect(transcript).not.toContain("host_vcs requires command review");
+          expect(transcript).toContain("Isolated container runs cannot reach the host");
+          expect(transcript).not.toContain("HOST_ESCALATE_EXECUTED");
           expect(await readFile(join(workspaceRoot, "skill-helper.txt"), "utf8")).toBe(
             "SKILL_HELPER_PREPARED\n",
           );

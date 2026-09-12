@@ -324,7 +324,7 @@ test("workspace Auto review carries forward the global command policy", async ()
   t.renderer.destroy();
 });
 
-test("the isolation status distinguishes checking, unavailable, degraded and optional hosts", async () => {
+test("the isolation status distinguishes checking, unavailable, and degraded hosts", async () => {
   const cases = [
     {
       inspection: new Error("probe failed"),
@@ -332,7 +332,7 @@ test("the isolation status distinguishes checking, unavailable, degraded and opt
     },
     {
       inspection: { available: false, degraded: false, reason: "missing" },
-      expected: "optional sandbox runs directly on the host",
+      expected: "sandbox fails every run",
     },
     {
       inspection: { available: true, degraded: true },

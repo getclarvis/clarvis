@@ -99,8 +99,7 @@ Exported from their modules but **not** re-exported through the barrel:
 (`MEMORY_MUTATING_TOOL_NAMES` in `packages/code/src/adapters/tool-identity.ts`). `FILE_MUTATING_TOOL_NAMES` is itself derived —
 `packages/kernel/src/policy.ts` re-exports
 `packages/loop/src/runtime/tools/builtin/names.ts`'s `FILE_MUTATING_TOOL_NAMES`: every explicit file
-mutation plus `host_vcs`. The host fallback deliberately remains mutation-presented even though the
-exec ceiling independently classifies and filters it as a command runner.
+mutation. Command runners, including per-call host escalation on `shell`, stay in the exec set.
 
 `toolDisplayLabel` is distinct from `toolLabel`: when both `mcpName` and `toolName` are present it
 returns the raw `server:tool` unchanged, otherwise it resolves `toolIdentity` through
@@ -1338,7 +1337,7 @@ grouping pass: a memory write must not fold into a run of reads —
 `packages/code/tests/unit/tool-groups.test.ts`.
 
 **INV-263.** `MUTATION_TOOLS` has an exact, exhaustive membership: `write_file`, `edit_file`,
-`multi_edit`, `apply_patch`, `host_vcs`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
+`multi_edit`, `apply_patch`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
 `edit_memory`, `delete_memory`. Because the file half is derived from
 `@clarvis/loop`'s registry (`packages/loop/src/runtime/tools/builtin/names.ts`), a registry change
 alters this set — and must therefore be a visible diff to the pinning test. Production:

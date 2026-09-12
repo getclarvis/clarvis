@@ -36,7 +36,6 @@ import {
   type Guard,
   type Elicit as GuardElicit,
   type GuardElicitAnswer,
-  type HostVcsDispatcher,
 } from "../tools/builtin/index.ts";
 
 export { agentToolsActive };
@@ -77,10 +76,6 @@ export type SandboxResolver = (ctx: RunCapabilityContext) => ResolvedSandboxSett
 export type SecretNamesResolver = (ctx: RunCapabilityContext) => readonly string[];
 /** Host port returning package roots required by the run's selected skills. */
 export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonly string[];
-/** Host port resolving the isolated-runtime dispatcher for `host_vcs`. */
-export type HostVcsDispatcherResolver = (
-  ctx: RunCapabilityContext,
-) => HostVcsDispatcher | undefined;
 
 /** Host-supplied ports for the tools capability: how it resolves the run's
  * guard, sandbox and credential names. All optional; omitting one runs
@@ -90,7 +85,8 @@ export interface AgentToolsCapabilityOptions {
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
-  resolveHostVcsDispatcher?: HostVcsDispatcherResolver;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
 }
 
 /**
@@ -142,14 +138,13 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       const temporaryRoot = statePaths.runTempDir(ctx.executionId);
       mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
-      const hostVcsDispatcher = opts?.resolveHostVcsDispatcher?.(ctx);
       return createAgentToolsRunCapability(
         ctx,
         resolution,
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
-        hostVcsDispatcher,
+        opts?.allowHostEscalation,
         temporaryRoot,
         () => {
           for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
@@ -177,7 +172,7 @@ function createAgentToolsRunCapability(
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
-  hostVcsDispatcher: HostVcsDispatcher | undefined,
+  allowHostEscalation: boolean | undefined,
   temporaryRoot: string,
   removeEmptyRunDirs: () => void,
 ): RunCapability {
@@ -189,10 +184,17 @@ function createAgentToolsRunCapability(
     systemSection(id) {
       const caps = agentToolCaps(id.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT);
       if (!caps.canRead) return undefined;
-      return (
+      const temporary =
         "## Temporary work\n\n" +
         "`TMPDIR` names scratch space owned by this run. Shell commands and native coding tools " +
-        "can also reuse paths created by host-native temporary-file APIs."
+        "can also reuse paths created by host-native temporary-file APIs.";
+      if (!caps.canExec) return temporary;
+      return (
+        temporary +
+        "\n\n## Commands and Isolation\n\n" +
+        "Commands follow the run Isolation. When Isolation is Sandbox, `shell` and `monitor_start` run inside the native sandbox.\n\n" +
+        "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` asking the user to allow that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
+        "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox. Isolated container runs cannot reach the host this way."
       );
     },
     onRunEnd() {
@@ -231,7 +233,7 @@ function createAgentToolsRunCapability(
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
         ...(guardElicit !== undefined ? { elicit: guardElicit } : {}),
-        ...(hostVcsDispatcher !== undefined ? { hostVcsDispatcher } : {}),
+        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(sandbox !== undefined
           ? {
               sandbox: {

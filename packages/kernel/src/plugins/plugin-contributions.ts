@@ -301,6 +301,7 @@ export function createPluginContributions(opts: {
     );
   };
   const agents = agentsPluginsDirs({
+    env: {},
     ...(opts.home === undefined ? {} : { home: opts.home }),
     ...(opts.workspaceRoot === undefined ? {} : { cwd: opts.workspaceRoot }),
   });

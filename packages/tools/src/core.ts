@@ -6,7 +6,7 @@ import { textPart, type ContentPart, type ToolResult } from "./tools/content.ts"
 import type { ToolCallHooks } from "./tools/types.ts";
 import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
-import type { HostVcsDispatchResult, RuntimeConfig } from "./config.ts";
+import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
 import { configurationRoots } from "@clarvis/paths";
 
@@ -67,7 +67,12 @@ for (const tool of tools) {
  * return, and any tool-supplied metadata. An error is reported in-band (as
  * `isError: true` with a serialized error text part), not by throwing.
  */
-export type DispatchResult = HostVcsDispatchResult;
+export interface DispatchResult {
+  isError: boolean;
+  content: ContentPart[];
+  meta?: Record<string, unknown>;
+  guard?: GuardReview;
+}
 
 function normalizeOutput(out: string | ToolResult): ToolResult {
   return typeof out === "string" ? { content: out } : out;
@@ -244,14 +249,6 @@ export async function dispatch(
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
-  }
-
-  if (name === "host_vcs" && config.hostVcsDispatcher !== undefined) {
-    try {
-      return await config.hostVcsDispatcher(filled, signal);
-    } catch (error) {
-      return errorResult(error);
-    }
   }
 
   const gate = await applyGuard(name, filled, config);

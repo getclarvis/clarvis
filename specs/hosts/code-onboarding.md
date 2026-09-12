@@ -450,7 +450,7 @@ gate's result.
   `packages/code/tests/integration/app-commands.test.tsx`, "sandbox inspection is deferred until an
   explicit Doctor recheck", and `packages/code/tests/integration/app-shell-render.test.tsx`,
   "Tab opens a child and rapid Escape steps back through its hub to the transcript"). Only a completed inspection reporting unavailability warns, distinguishing
-  `availability:"required"` (blocks runs) from optional (falls back to host).
+  `availability:"required"` and stored `optional` (both block runs; optional is treated as required).
 - **`workspace_trust`** is keyed on the trust verdict (`inert`/`trusted`/other), never solely on
   `withheldWorkspaceFields()`, because an untrusted workspace whose only executable surface is agent
   `.md` files would otherwise report "nothing withheld" (`packages/code/src/onboarding/doctor.ts`).

@@ -23,7 +23,7 @@ The compact model-facing surface follows
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md): local argument rules and
 recovery details live beside each tool. Shell commands block; persistent work uses `monitor_start`.
 Descriptions retain truncation direction and continuation guidance, distinguish grep's regex engines,
-and provide an executable multiline `apply_patch` example. The complete 24-tool descriptor JSON has
+and provide an executable multiline `apply_patch` example. The complete 23-tool descriptor JSON has
 a 21,000-character regression ceiling; that is not a provider token count.
 
 ## What it provides
@@ -32,8 +32,7 @@ a 21,000-character regression ceiling; that is not a provider token count.
   copy, move, mkdir, remove and stat.
 - Discovery: directory listing, tree, glob, grep and diff.
 - Project-wide regular-expression replacement.
-- Shell execution and background-process monitors.
-- Guard-reviewed, argv-only host execution when the sandbox lacks required host capabilities.
+- Shell execution and background-process monitors, including a per-call host escalation field when Isolation is Sandbox.
 - Read-only and workspace-confined surfaces.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.
@@ -112,8 +111,8 @@ default. Use `readOnly: true` to expose only non-mutating tools.
 `sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends apply
 the configured workspace read/write posture, read-only runtime roots, minimal environment, writable
 run scratch, and host/denied networking; their kernel primitives are not identical. Required
-isolation fails closed when the selected backend cannot apply its policy. Only
-`availability: "optional"` permits a logged, secret-scrubbed direct-host fallback. Other platforms
+isolation fails closed when the selected backend cannot apply its policy.
+`availability: "optional"` is accepted on stored settings and treated as required. Other platforms
 currently have no native backend. Toolchain inventory is passive: it resolves executable paths and
 install roots but never launches discovered entrypoints for version probes, so merely opening host
 diagnostics cannot trigger an operating-system installer or tool initialization.
@@ -137,22 +136,15 @@ separate canary packs a local fixture outside Seatbelt, then requires npm to ins
 offline inside a denied-network profile; this isolates package execution from public-registry
 latency while preserving the real npm/Homebrew/runtime path.
 
-`host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
-host environment variable, credential channel, runtime, or service. The historical name remains for
-compatibility, but `program` may name any host executable. This is not a host shell: arguments are an
-argv array, cwd remains inside the workspace, output and time are bounded, prompts are disabled, and
-Clarvis-managed secret variables are withheld. Guard mode `off` executes it without command review,
-honoring the operator's explicit choice. In mode `on`, a human answers; in `auto`, the configured
-judge answers and may fall back to the human under its normal unsure policy. Git additionally loses
-inherited repository-routing state, hooks, external protocol helpers, known direct executable
-options, and custom transport-helper URLs. Direct Git/GitHub token output remains unavailable. The
-ordinary sandbox remains the default; the model should use this fallback only after the sandboxed
-command cannot complete the operation.
-
-When tools run in an isolated guest, the optional `hostVcsDispatcher` port replaces the local
-handler for this tool. The host endpoint must validate the schema and restricted Git/GitHub forms
-again, apply the selected command-review policy, scrub credentials, and execute the argv. Other
-tools and native in-process `host_vcs` calls keep the ordinary dispatcher path.
+`shell` and `monitor_start` accept optional `sandbox_permissions`. Omitted or `use_default` follows
+the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
+the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
+field is a no-op. Isolated container guests reject it: the guest has no channel to the machine host.
+Mode `on` and `auto` send that unsandbox ask to a human; the auto-judge does not decide it. Mode
+`off` proceeds without a reviewer. Git credential output, `gh auth token`, Git `--exec` helpers, and
+`scheme::` transport URLs are denied on every command tool. Direct Git/GitHub token output remains
+unavailable. The ordinary sandbox remains the default; the model should request escalation only after
+the sandboxed command cannot complete the user's request.
 
 For a linked worktree, Clarvis validates the `.git` pointer, its `<common>/worktrees/<name>` target,
 and the reciprocal backlink once while creating the toolset. The resulting canonical common Git

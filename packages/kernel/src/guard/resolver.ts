@@ -222,7 +222,7 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   judge's default model falls back to `CLARVIS_DEFAULT_MODEL` from the run
  *   env when settings name none.
  */
-export function createGuardRuntimeResolver(
+function createGuardRuntimeResolver(
   deps: GuardResolverDeps,
 ): (ctx: GuardRuntimeContext) => GuardResolution | undefined {
   const defaultAllowlist =

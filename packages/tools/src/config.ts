@@ -2,29 +2,9 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
-import type { Guard, Elicit, GuardReview } from "./guard/types.ts";
-import type { ContentPart } from "./tools/content.ts";
+import type { Guard, Elicit } from "./guard/types.ts";
 import { discoverLinkedGitMetadataPaths, type SandboxConfig } from "./sandbox.ts";
 import { resolveCommand, workspaceStatePaths } from "@clarvis/paths";
-
-/** Result returned by a host-owned `host_vcs` execution boundary. */
-export interface HostVcsDispatchResult {
-  isError: boolean;
-  content: ContentPart[];
-  meta?: Record<string, unknown>;
-  guard?: GuardReview;
-}
-
-/**
- * Host port used when the tool loop runs outside the process that owns VCS credentials.
- *
- * @remarks The implementation must revalidate the arguments and apply the host's command-review
- * policy before execution. The guest-side dispatcher deliberately does neither on its behalf.
- */
-export type HostVcsDispatcher = (
-  args: Record<string, unknown>,
-  signal?: AbortSignal,
-) => Promise<HostVcsDispatchResult>;
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -140,8 +120,11 @@ export interface RuntimeConfig {
   elicit?: Elicit;
   /** Optional sandbox settings for isolating spawned commands. */
   sandbox?: SandboxConfig;
-  /** Host-owned execution port for `host_vcs`; absent for native in-process tools. */
-  hostVcsDispatcher?: HostVcsDispatcher;
+  /**
+   * Isolated container guests set this to false so `require_escalated` fails closed.
+   * Native Host and Sandbox placements leave it true (the default).
+   */
+  allowHostEscalation?: boolean;
   /**
    * Environment variable names holding credentials, withheld from every command
    * this toolset spawns.
@@ -331,8 +314,8 @@ export interface AgentToolsOptions {
   elicit?: Elicit;
   /** Sandbox settings passed through to {@link RuntimeConfig.sandbox}. */
   sandbox?: SandboxConfig;
-  /** Host-owned execution port for `host_vcs`; absent for native in-process tools. */
-  hostVcsDispatcher?: HostVcsDispatcher;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
   /** Secret names passed through to {@link RuntimeConfig.secretEnvNames}. */
   secretEnvNames?: readonly string[];
 }
@@ -533,7 +516,7 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     guard: options.guard,
     elicit: options.elicit,
     sandbox,
-    hostVcsDispatcher: options.hostVcsDispatcher,
+    allowHostEscalation: options.allowHostEscalation ?? true,
     secretEnvNames: options.secretEnvNames,
   };
 }

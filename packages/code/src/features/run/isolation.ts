@@ -11,7 +11,11 @@ export interface IsolationChoice {
 
 export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
   { value: "host", label: "Host", detail: "direct host execution; fastest and least isolated" },
-  { value: "sandbox", label: "Sandbox", detail: "native Seatbelt or Bubblewrap boundary" },
+  {
+    value: "sandbox",
+    label: "Sandbox",
+    detail: "native Seatbelt or Bubblewrap; host access is requested per command",
+  },
   { value: "docker", label: "Docker", detail: "lazy Linux container with outbound access" },
   {
     value: "podman",
@@ -78,7 +82,8 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
       ];
     case "sandbox":
       return [
-        "Uses the native Seatbelt or Bubblewrap boundary.",
+        "Uses the native Seatbelt or Bubblewrap boundary as the default for commands.",
+        "A blocked command can ask to run that one command on the host; Isolation Host is the whole session.",
         "Open Sandbox settings for filesystem, network and toolchains.",
       ];
     case "docker":

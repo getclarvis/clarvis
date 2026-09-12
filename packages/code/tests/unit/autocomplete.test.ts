@@ -10,6 +10,7 @@ import {
   slashCompletion,
   splitSlashArgs,
 } from "../../src/views/input/autocomplete.ts";
+import { createSkillMentionProvider } from "../../src/views/input/skill-completion.ts";
 import { windowGroupedRows, windowRows } from "../../src/ui/patterns/windowed-list.tsx";
 
 test("parseSlashCommand: splits a slash command into name and trailing args", () => {
@@ -81,6 +82,7 @@ test("detectTrigger: fires on a leading trigger char and captures the term", () 
   expect(detectTrigger("/cl", ["/"])).toEqual({ trigger: "/", term: "cl" });
   expect(detectTrigger("/", ["/"])).toEqual({ trigger: "/", term: "" });
   expect(detectTrigger("@src", ["/", "@"])).toEqual({ trigger: "@", term: "src" });
+  expect(detectTrigger("$op", ["/", "@", "$"])).toEqual({ trigger: "$", term: "op" });
 });
 
 test("detectTrigger: no trigger, empty text, or non-leading trigger → null", () => {
@@ -279,10 +281,41 @@ test("acceptMention replaces the current word using detectTrigger's boundary rul
   expect(acceptMention("see @re", "@", "src/x.ts")).toBe("see @src/x.ts ");
   expect(acceptMention("@re", "@", "a.png")).toBe("@a.png ");
   expect(acceptMention("line one\n@re", "@", "b.ts")).toBe("line one\n@b.ts ");
+  expect(acceptMention("use $op", "$", "opentui")).toBe("use $opentui ");
 });
 
 test("acceptMention: a TAB boundary preserves the draft prefix (the lastIndexOf-space bug)", () => {
   expect(acceptMention("before\t@re", "@", "c.ts")).toBe("before\t@c.ts ");
+});
+
+test("the $ skill provider fuzzy-filters by name and inserts the bare skill name", () => {
+  const provider = createSkillMentionProvider({
+    skills: () => [
+      { name: "opentui", description: "Build terminal UIs", shortDescription: "OpenTUI" },
+      { name: "clarvis-configure", description: "Configure Clarvis itself" },
+      { name: "tui-driver", description: "Drive a TUI from the shell" },
+    ],
+  });
+  expect(provider.id).toBe("skill");
+  expect(provider.trigger).toBe("$");
+  expect(provider.query("")).toEqual([
+    { label: "opentui", detail: "OpenTUI", value: "opentui", insert: "opentui" },
+    {
+      label: "clarvis-configure",
+      detail: "Configure Clarvis itself",
+      value: "clarvis-configure",
+      insert: "clarvis-configure",
+    },
+    {
+      label: "tui-driver",
+      detail: "Drive a TUI from the shell",
+      value: "tui-driver",
+      insert: "tui-driver",
+    },
+  ]);
+  expect(provider.query("open")).toEqual([
+    { label: "opentui", detail: "OpenTUI", value: "opentui", insert: "opentui" },
+  ]);
 });
 
 describe("slashTokenMatches", () => {

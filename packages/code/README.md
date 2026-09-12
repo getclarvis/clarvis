@@ -239,6 +239,9 @@ another project, start the binary from that directory or use the installed
 ## Configuration
 
 `/clarvis-configure <task>` opens the shipped configuration skill on a dedicated native agent.
+Typing `$clarvis-configure` in an already-open turn does not start that run and does not dump the
+guide; `$` in the composer lists skills and inserts a `$name` token, which the kernel expands only
+for skills that do not name an `agent`.
 After approving its elicitation, that agent can list, read, write, edit and delete authored files in
 `~/.clarvis`, `<workspace>/.clarvis`, `~/.agents` and `<workspace>/.agents`, with credentials and
 private state excluded. It executes on the host without sandbox or container, using only the

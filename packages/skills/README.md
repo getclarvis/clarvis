@@ -25,11 +25,13 @@ The API separates skill discovery from loading:
 2. load a selected skill's body;
 3. resolve its scripts, references, assets and other resources only when needed.
 
-`renderSkillsSection` tells the model to load a named skill before acting, to apply an unnamed
-skill only when it would materially improve the outcome, and to let the user's current
-instructions take precedence. If a skill is why the run must pause, it identifies the relevant
-`SKILL.md` rule. Fleet-wide precedence lives in the shared prompt; this section owns discovery
-and loading.
+`renderSkillsSection` treats the catalog as routing, not decoration. A skill the user names is
+loaded before acting. Otherwise a listed skill is loaded when its one-line `description` clearly
+matches the current task, and skipped only with a short reason. Presence in the catalog is not
+itself a reason to load. The user's current instructions take precedence over the skill. If a
+skill is why the run must pause, the section identifies the relevant `SKILL.md` rule. Authors
+should write `description` as that router ("Use when X. Not for Y."), not as a summary of the
+body. Fleet-wide precedence lives in the shared prompt; this section owns discovery and loading.
 
 Discovery reads only a bounded manifest prefix and retains metadata plus a lazy
 body loader. It does not keep every `SKILL.md` body in the catalog. The first

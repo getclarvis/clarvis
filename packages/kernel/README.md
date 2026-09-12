@@ -949,10 +949,12 @@ The file kernel includes `clarvis-configure`, a user-invocable skill with its bo
 [`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts). It ships in the executable,
 requires no `SKILL.md` or first-run scaffolding, and remains available with an empty custom
 Extension Profile. Agents carrying `use_skills` can load it through `load_skill`; clients can invoke
-it through the ordinary skills service. Loading it during an ordinary turn grants no configuration
-authority: the guide directs changes to `/clarvis-configure`, and native file-mutation tools reject
-workspace `.clarvis` and `.agents` targets before guard review. Disabling skills through the host or
-environment also disables this builtin.
+it through the ordinary skills service. `/clarvis-configure` is the only path that starts the
+privileged configure run. A `$clarvis-configure` mention in an already-open turn stays literal text:
+it does not dump the guide and does not request `configuration_access`. Loading it during an ordinary
+turn grants no configuration authority: the guide directs changes to `/clarvis-configure`, and native
+file-mutation tools reject workspace `.clarvis` and `.agents` targets before guard review. Disabling
+skills through the host or environment also disables this builtin.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
 models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,

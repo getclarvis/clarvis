@@ -651,7 +651,12 @@ scans, zero loads, zero warnings).
 `renderSkillsSection` emits, in order: each bootstrap body wrapped as
 `# Plugin instructions … <plugin_instructions>…</plugin_instructions>`
 (`renderBootstrapSection` in `packages/skills/src/tool.ts`), then the catalog block, then the
-instructions for `load_skill` and `read_skill_resource` (`renderSkillsSection`). The catalog block is
+instructions for `load_skill` and `read_skill_resource` (`renderSkillsSection`). Those instructions
+tell the model to load a named skill before acting, to load an unnamed listed skill when its
+description clearly matches the current task (skipping only with a short reason), not to load a
+skill merely because it is in the list, to let the user's current instructions take precedence, and
+to identify the relevant `SKILL.md` rule when a skill is why the run must pause. Test:
+`packages/skills/tests/unit/tool.test.ts`. The catalog block is
 `# Available skills` plus one
 `- **name** — description (path: /absolute/SKILL.md)` line per non-suppressed filesystem skill.
 Host-embedded `source: "builtin"` entries instead render `(builtin; load by name)` and precede
@@ -846,8 +851,14 @@ its own run or is injected into the current turn. It **does not govern the
 model-facing `load_skill` tool**, which serves a skill's body into whichever run/agent called it and
 never consults this field at all — "a skill naming an agent therefore runs on it when a user types
 `/name`, and in the caller's own turn when an agent loads it mid-run"
-(`packages/kernel/src/skills/render-skill-prompt.ts`). The run-request side of that decision
-is `resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts`; skill-driven agent
+(`packages/kernel/src/skills/render-skill-prompt.ts`). A `$name` mention in already-open user text
+is a third path: `extractDollarSkillMentions` / `dollarSkillSeeds` in
+`packages/kernel/src/skills/dollar-mentions.ts` inject one `renderSkillPrompt` user message per
+expandable skill (exactly one user-invocable match, no `agent` field) after the current turn's
+messages, in appearance order, skipping a name already seeded by the `skill` start param. Agent-backed
+skills including `clarvis-configure`, denylisted `$PATH`-style tokens, and unknown names stay
+literal and never fork a run. The run-request side of `/name` remains
+`resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts`; skill-driven agent
 routing itself belongs to [`specs/capabilities/workflows-service.md`](../capabilities/workflows-service.md).
 
 The one `SkillsProvider` the host builds is threaded three ways by `createInProcessKernel`: into

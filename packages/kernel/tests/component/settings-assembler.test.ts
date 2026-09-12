@@ -617,6 +617,70 @@ describe("settings run assembler — skill runs", () => {
       assemble({ agent: "coder", messages: [], skill: { name: "spec" }, execution_id: "e" }),
     ).toThrow(/is not defined/);
   });
+
+  it("injects a $name mention of a skill without an agent into the current turn", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$alpha fix the dialog" }],
+      execution_id: "e",
+    }) as RawBody;
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]).toEqual({ role: "user", content: "$alpha fix the dialog" });
+    const seed = body.messages[1] as { role: string; content: string };
+    expect(seed.role).toBe("user");
+    expect(seed.content).toContain("--- SKILL ---");
+    expect(seed.content).toContain("ALPHA BODY");
+    expect(body).not.toHaveProperty("hook_user_prompt_expansion");
+    expect(() => validateBody(body, ENV())).not.toThrow();
+  });
+
+  it("does not expand $clarvis-configure, $PATH, or an unknown name", async () => {
+    const assemble = await assembleWithSkills([
+      skill({ name: "clarvis-configure", metadata: { agent: "clarvis-configure" }, body: "GUIDE" }),
+    ]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$clarvis-configure and $PATH and $nope" }],
+      execution_id: "e",
+    }) as RawBody;
+    expect(body.messages).toEqual([
+      { role: "user", content: "$clarvis-configure and $PATH and $nope" },
+    ]);
+  });
+
+  it("keeps a single seed when start already carries skill and the text repeats $name", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$alpha again" }],
+      skill: { name: "alpha" },
+      execution_id: "e",
+    }) as RawBody;
+    const seeds = body.messages.filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        "content" in message &&
+        typeof message.content === "string" &&
+        message.content.includes("--- SKILL ---"),
+    );
+    expect(seeds).toHaveLength(1);
+    expect((seeds[0] as { content: string }).content).toContain("ALPHA BODY");
+  });
+
+  it("injects $name mentions on continue as well as start", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "please $alpha now" }],
+      continue_from: "exec_previous",
+      execution_id: "e",
+    }) as RawBody & { continue_from?: string };
+    expect(body.continue_from).toBe("exec_previous");
+    expect(body.messages).toHaveLength(2);
+    expect((body.messages[1] as { content: string }).content).toContain("ALPHA BODY");
+  });
 });
 
 /**

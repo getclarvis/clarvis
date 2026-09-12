@@ -884,7 +884,6 @@ Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 | debug | `run.close.failed`                                                                                                  | `execution_id`, `error`                                        |
 | warn  | `elicit.handler.failed`                                                                                             | `error`                                                        |
 | warn  | `transcript.rehydrate.failed`                                                                                       | `error`                                                        |
-| debug | `transcript.syntax.pending`, `transcript.syntax.started`, `transcript.syntax.painted`, `transcript.syntax.measured` | `batch_id`, registration counts, dimensions, `duration_ms`     |
 | warn  | `mcp.list.failed`                                                                                                   | `surface` (`tools` \| `prompts`), `error`                      |
 | debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested`                              | sampled counters                                               |
 
@@ -1042,59 +1041,27 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   band while it is open. Transient activity therefore never enters history or changes transcript
   height, and run-local timing never competes with Context or cumulative Session usage in the
   footer.
-- Index-windowed transcript history with incremental Markdown; live tails use OpenTUI's
-  streaming mode and preserve an identity-stable committed prefix. Within one response geometry
-  epoch, a streaming Markdown tail retains a row-height high-water mark: syntax concealment may
-  reduce the native tail's intrinsic height, but cannot give rows back while the tree remains
-  mutable. The reservation is released atomically with the ready final tree, so settlement cannot
-  leave blank rows after a compact final rendering; a new epoch also clears it. This does not
-  disable Markdown parsing or concealment; formatted output such as bold text remains native
-  OpenTUI Markdown. Terminal nodes
-  commit immediately as frozen semantic batches. Sessions with at most 80 committed batches mount
-  every owner; longer sessions mount a sliding 40-batch index slice. Hidden history contributes one
-  passive boundary row on each side rather than estimated or measured spacer geometry. Frozen
-  batches remain direct children of one native OpenTUI ScrollBox with viewport culling enabled.
-  Native sticky-bottom behavior is the sole follow-the-tail authority: upward input pauses it, and
-  downward input or explicit return-to-tail resumes it at the real bottom. The mutable tail remains
-  the final ScrollBox child even while the reader is away, so appends cannot remove the flow owner or
-  impose a one-shot clamp. Lead and explicitly selected child content swap inside that same
-  ScrollBox; selection does not create another transcript surface. Focus navigation slides the index
-  slice to include its frozen batch, while ordinary background Plan, Workflow and delegation events
-  never move the reader.
-  Its final child is a fixed three-row physical reading runway, reduced to one row only in the compact
-  height band, so new content never starts against the composer and streaming cannot grow or shrink
-  that gap. The `thinking`/`working`/`ready` activity row is a sibling immediately above the composer,
-  outside the ScrollBox; there is no second transcript scroll area. While the reader is away from
-  the tail, a non-interactive newer-entry count includes both hidden committed batches and the
-  current mutable frontier; repeated deltas for the same frontier artifact do not grow that count.
-  Downward wheel, Page Down and `Alt+Down` admit those entries and return to the real content bottom,
-  including the mounted live tail, before re-enabling tail-following. The event, replay,
-  ordering, native-scroll and retention rules are in
-  [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
-  still fall back to plain text with an explicit formatting-simplified notice instead of starting
-  unbounded highlighting. Process-owned plain output is projected through one terminal-safe text
-  boundary before it reaches OpenTUI: cursor/device escapes are removed, carriage-return and
-  backspace updates become stable text, C1 `ST` closes terminal control strings without consuming
-  following output, and a running tool's last lines start in the same column as its settled result
-  card.
-- The semantic transcript itself retains only the latest 20 complete turns, both while a session is
-  live and after resume. Retention evicts complete sealed publication batches with the matching
-  semantic prefix, replaces the previous folded-prefix publication with one frozen notice, and
-  releases publisher `knownKeys` only after neither the semantic store nor a retained publication
-  references them. Discarded staging is cancelled, so a later timer cannot resurrect an evicted
-  tool; repeated folds plateau instead of accumulating tombstones. Fold overrides are pruned with
-  their evicted semantic keys. `/export` reloads folded turns one trace at a time, so complete
-  persisted history remains available without a second resident copy.
-- Semantic grouping, folding, focus and detail lookup retain the complete resident projection for
-  the current Lead or selected-child view; only native owners are lazy. OpenTUI keeps vertical wheel
-  and trackpad scrolling native. Reaching an edge slides the bounded batch slice; Page Up/Down and
-  focused navigation use the same controller. Recomputing an unchanged publication intersection
-  preserves its projected owner identity.
-  Immutable tool grouping compares the exact `(mcpName, toolName)` pair in live staging, terminal
-  sweep and sub-agent batch metadata; equal leaf names from different MCP servers remain separate.
-- One prose node carries at most 512 Ki semantic text characters into OpenTUI, and each immutable
-  tool snapshot uses the same aggregate mounted-text ceiling after its per-field caps. A single tall
-  batch may exceed the row target, but it cannot bypass those artifact-level display ceilings.
+- End returns to the latest bounded transcript window and resumes follow; the off-tail reading
+  indicator provides the same pointer action.
+- One transcript projection renders stable row IDs for composing, pending, running and terminal
+  records. Results are sealed into bounded immutable content, not moved between live/history owners.
+  Explicit exploration groups exist from their first allowlisted read/search call; shell, mutations
+  and unknown MCP tools stay individual. Each open group mounts one page of 20 members.
+- One native ScrollBox owns sticky follow, culling and semantic row anchors. Short projections mount
+  at most 80 rows; long projections normally mount 40 with 20-row paging and an 80-row transition
+  ceiling. Resident-list changes are coalesced to native frames. The reader can leave the tail while
+  data continues; prepend, folds and width changes preserve the row reference after native layout.
+  End explicitly restores tail follow. Lead and children share this viewport, never hidden trees.
+  Each projection retains independent reading and expansion state. The contract is in
+  [code-transcript-stability.md](../../specs/hosts/code-transcript-stability.md).
+- The transcript retains the latest 20 complete turns, live and after resume. Retention replaces
+  discarded records with one frozen folded-prefix notice and releases associated identity/UI state.
+  `/export` reloads folded turns one trace at a time; the viewport does not invent infinite backfill.
+- Markdown keeps incremental segmentation and bounded native syntax settlement. Oversized bodies
+  use the existing plain-text recovery notice. Terminal controls and ANSI are stripped before native
+  rendering. Per-field tool caps and the 512 Ki-character aggregate mounted-text cap remain in force.
+  The three-row reading runway (one row at compact height) remains inside the ScrollBox; Lead
+  activity, composer and footer remain outside it.
 - Individual user/assistant/reasoning prose nodes retain at most 2 million characters and append an explicit
   truncation notice. This cap is applied before the value enters Solid/OpenTUI state, including the
   authoritative iteration-complete replacement, so one extreme provider response cannot dominate
@@ -1115,9 +1082,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   after the body is dropped, so a still-running sub-agent's finished tools still name their paths.
   Markdown export includes the bounded, renderer-safe argument projection even
   though the live transcript intentionally mounts no raw argument panel.
-- File and memory mutations from the run lead open by default and show their bounded mutation body
-  even beyond the ordinary 40-line inline gate. Delegated mutations keep the compact default, and
-  an explicit user fold still wins.
+- Successful mutations start folded. Explicit expansion wins over defaults across settlement,
+  window disposal and child navigation. Their bounded native diff remains available on demand.
 - Failed tool calls are folded by default: their red failure mark and call identity remain visible,
   while validation payloads and error text appear only after the user expands the call. A collapsed
   failed group likewise renders one aggregate failure row rather than repeating each member's error.

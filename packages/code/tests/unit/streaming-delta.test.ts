@@ -379,14 +379,17 @@ test("a delta arriving after the call closed does not resurrect the tail", () =>
   expect(closed.liveOutput).toBeUndefined();
 });
 
-test("an unattributable subagent delta is dropped rather than spliced into another span", () => {
+test("an unattributable child delta is isolated rather than spliced into Lead prose", () => {
   const { store, apply } = driver();
   apply(delta("text", "lead words", true));
   apply(subDelta(undefined, " and stolen sub words", false));
 
   const asst = store.nodes.filter((n) => n.kind === "assistant");
-  expect(asst).toHaveLength(1);
-  expect(asst[0]!.text).toBe("lead words");
+  expect(asst.filter((node) => node.subagentId === undefined)).toHaveLength(1);
+  expect(asst.find((node) => node.subagentId === undefined)!.text).toBe("lead words");
+  expect(asst.find((node) => node.attributionIncomplete)).toMatchObject({
+    text: " and stolen sub words",
+  });
 });
 
 const inputDelta = (callId: string, tool: string, chars: number, complete = false): RunEvent =>
@@ -690,7 +693,12 @@ test("a subagent tool lifecycle without its required id cannot leak into Lead hi
 
   for (const event of events) {
     apply(event);
-    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+    expect(
+      store.nodes.filter((node) => node.kind === "tool_call" && node.subagentId === undefined),
+    ).toHaveLength(0);
+    expect(
+      store.nodes.filter((node) => node.kind === "tool_call" && node.attributionIncomplete),
+    ).toHaveLength(1);
   }
 });
 
@@ -762,8 +770,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 1,
     transcript_prose_bytes: "ledger payload".length * 2,
-    publication_batches: 1,
-    publication_known_keys: 1,
+
+    sealed_records: 1,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });
@@ -772,8 +780,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 0,
     transcript_prose_bytes: 0,
-    publication_batches: 0,
-    publication_known_keys: 0,
+
+    sealed_records: 0,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });

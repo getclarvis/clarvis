@@ -16,9 +16,19 @@ export interface TranscriptPlanTask {
 /** Runtime status shared by semantic transcript variants. */
 export type NodeStatus = "running" | "ok" | "error" | "pending";
 
+/** Tool lifecycle is distinct from a run result and from an approval interaction. */
+export type ToolPhase =
+  "composing" | "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+
 /** Attribution and identity shared by every semantic node. */
 interface TranscriptNodeBase {
   key: string;
+  /** Execution/actor iteration boundary used by first-admission exploration membership. */
+  transcriptScope?: string;
+  /** Navigation target of a Lead-side delegation marker; not transcript attribution. */
+  delegationTarget?: string;
+  /** Missing host attribution is isolated and cannot authorize cross-record correlation. */
+  attributionIncomplete?: true;
   status: NodeStatus;
   agentLabel?: string;
   subagentOrder?: number;
@@ -55,6 +65,7 @@ export interface TranscriptMessageNode extends TranscriptNodeBase {
 /** Tool invocation and its current semantic result. */
 export interface TranscriptToolNode extends TranscriptNodeBase {
   kind: "tool_call";
+  toolPhase?: ToolPhase;
   text: string;
   mcpName?: string;
   toolName?: string;

@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Renderable } from "@opentui/core";
-import {
-  waitForStableDimensions,
-  waitForSyntaxFrame,
-} from "../../src/ui/patterns/stable-syntax.tsx";
+import { waitForSyntaxFrame } from "../../src/ui/patterns/stable-syntax.tsx";
 
 interface FrameRenderer {
   isDestroyed: boolean;
@@ -39,21 +36,15 @@ test("syntax settlement requests and observes consecutive empty frames", async (
   ).resolves.toBeUndefined();
 });
 
-test("dimension settlement requires the same positive geometry twice", async () => {
-  await expect(
-    waitForStableDimensions(root(), () => true, frameRenderer() as never),
-  ).resolves.toEqual({ columns: 80, rows: 12 });
-});
-
-test("dimension settlement stops when its publication is superseded", async () => {
+test("syntax settlement stops when its owner is superseded", async () => {
   let current = true;
   await expect(
-    waitForStableDimensions(
+    waitForSyntaxFrame(
       root(),
       () => current,
       frameRenderer(() => {
         current = false;
       }) as never,
     ),
-  ).resolves.toBeNull();
+  ).resolves.toBeUndefined();
 });

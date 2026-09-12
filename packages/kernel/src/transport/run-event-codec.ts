@@ -123,6 +123,16 @@ const RUN_EVENT_SCHEMAS = {
       cached_tokens: finite.optional(),
     })
     .strict(),
+  tool_call_announced: z
+    .object({
+      type: z.literal("tool_call_announced"),
+      ...attributed,
+      call_id: text,
+      tool: text,
+      iteration: nonnegativeInteger,
+      attempt: positiveInteger,
+    })
+    .strict(),
   tool_call_started: z
     .object({
       type: z.literal("tool_call_started"),

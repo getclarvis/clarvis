@@ -1,23 +1,12 @@
 import {
   CodeRenderable,
-  DiffRenderable,
+  type DiffRenderable,
   type MarkdownRenderable,
   type Renderable,
 } from "@opentui/core";
 import { useRenderer } from "@opentui/solid";
-import {
-  batch,
-  createContext,
-  createEffect,
-  createSignal,
-  on,
-  onCleanup,
-  Show,
-  untrack,
-  useContext,
-} from "solid-js";
+import { batch, createEffect, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import type { Accessor, JSX } from "solid-js";
-import { diagnosticEvent } from "../../core/diagnostic-events.ts";
 import { diffColorProps, syntaxStyle } from "../../theme/syntax.ts";
 
 interface SyntaxSnapshot {
@@ -28,24 +17,7 @@ interface SyntaxSnapshot {
   readonly streaming: boolean;
 }
 
-interface SyntaxPublicationRegistration {
-  ready(): void;
-  dispose(): void;
-}
-
-interface SyntaxPublicationCoordinator {
-  allowUnsettled(): boolean;
-  register(): SyntaxPublicationRegistration;
-}
-
-const SyntaxPublicationContext = createContext<SyntaxPublicationCoordinator>();
 const pendingRendererFrames = new WeakMap<object, Promise<void>>();
-
-/** Settled OpenTUI dimensions observed identically across two completed frames. */
-export interface SyntaxPublicationMeasurement {
-  readonly columns: number;
-  readonly rows: number;
-}
 
 function codeDescendants(root: Renderable): CodeRenderable[] {
   const found: CodeRenderable[] = [];
@@ -74,10 +46,12 @@ function nextFrame(renderer: ReturnType<typeof useRenderer>): Promise<void> {
     const done = (): void => {
       observed = true;
       renderer.off("frame", done);
+      renderer.off("destroy", done);
       pendingRendererFrames.delete(renderer);
       resolve();
     };
     renderer.on("frame", done);
+    renderer.on("destroy", done);
     queueMicrotask(() => {
       if (!observed && !renderer.isDestroyed) renderer.requestRender();
     });
@@ -100,208 +74,30 @@ export async function waitForSyntaxFrame(
   renderer: ReturnType<typeof useRenderer>,
 ): Promise<void> {
   await nextFrame(renderer);
-  while (current() && !renderer.isDestroyed && !root.isDestroyed) {
+  for (
+    let attempt = 0;
+    attempt < 3 && current() && !renderer.isDestroyed && !root.isDestroyed;
+    attempt++
+  ) {
     const pending = codeDescendants(root).filter((renderable) => renderable.isHighlighting);
     if (pending.length === 0) {
       await nextFrame(renderer);
       return;
     }
-    await Promise.all(pending.map((renderable) => renderable.highlightingDone));
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.all(pending.map((renderable) => renderable.highlightingDone)),
+        new Promise<void>((resolve) => {
+          timeout = setTimeout(resolve, 250);
+        }),
+      ]);
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout);
+    }
     if (!current() || renderer.isDestroyed || root.isDestroyed) return;
     await nextFrame(renderer);
   }
-}
-
-export async function waitForStableDimensions(
-  root: Renderable,
-  current: () => boolean,
-  renderer: ReturnType<typeof useRenderer>,
-): Promise<SyntaxPublicationMeasurement | null> {
-  let previous: SyntaxPublicationMeasurement | null = null;
-  while (current() && !renderer.isDestroyed && !root.isDestroyed) {
-    await nextFrame(renderer);
-    if (!current() || renderer.isDestroyed || root.isDestroyed) return null;
-    const observed = {
-      columns: Math.max(0, Math.trunc(root.width)),
-      rows: Math.max(0, Math.trunc(root.height)),
-    } satisfies SyntaxPublicationMeasurement;
-    if (
-      observed.columns > 0 &&
-      observed.rows > 0 &&
-      previous?.columns === observed.columns &&
-      previous.rows === observed.rows
-    )
-      return observed;
-    previous = observed;
-  }
-  return null;
-}
-
-/**
- * Disables parser work on a still-hidden recovery candidate before its first publication.
- *
- * @remarks This uses only OpenTUI's public `filetype` setters. A visible owner never takes this
- * path: it retains its painted renderables and waits on the public `highlightingDone` contract.
- */
-async function freezeUnsettledSyntax(
-  root: Renderable,
-  current: () => boolean,
-  renderer: ReturnType<typeof useRenderer>,
-): Promise<void> {
-  await nextFrame(renderer);
-  if (!current()) return;
-  const diffs: DiffRenderable[] = [];
-  const visitDiffs = (node: Renderable): void => {
-    if (node instanceof DiffRenderable) diffs.push(node);
-    for (const child of node.getChildren()) visitDiffs(child);
-  };
-  visitDiffs(root);
-  for (const diff of diffs) diff.filetype = undefined;
-  for (const code of codeDescendants(root)) code.filetype = undefined;
-  await nextFrame(renderer);
-  if (!current()) return;
-  for (const code of codeDescendants(root)) code.filetype = undefined;
-  await nextFrame(renderer);
-}
-
-/**
- * Holds an owner invisible until all syntax descendants have highlighted and painted a ready frame.
- *
- * @remarks Descendants register synchronously while the owner mounts. The boundary then waits for
- * every registered surface plus its own final frame before notifying the append-only history owner.
- */
-export function SyntaxPublicationBoundary(props: {
-  allowUnsettled?: boolean;
-  children: JSX.Element;
-  diagnosticId?: string;
-  measurementRevision?: number;
-  onReady: (
-    measurement: SyntaxPublicationMeasurement,
-    measurementRevision: number | undefined,
-  ) => void;
-}): JSX.Element {
-  const renderer = useRenderer();
-  const [root, setRoot] = createSignal<Renderable>();
-  const [revision, setRevision] = createSignal(0);
-  let registrations = 0;
-  let readyRegistrations = 0;
-  let completionRevision = 0;
-  let completed = false;
-  let disposed = false;
-  let hasObservedMeasurementRevision = false;
-  let observedMeasurementRevision: number | undefined;
-  let pendingSignature = "";
-
-  const coordinator: SyntaxPublicationCoordinator = {
-    allowUnsettled: () => props.allowUnsettled === true,
-    register() {
-      registrations += 1;
-      setRevision((value) => value + 1);
-      let ready = false;
-      let active = true;
-      return {
-        ready() {
-          if (!active || ready) return;
-          ready = true;
-          readyRegistrations += 1;
-          setRevision((value) => value + 1);
-        },
-        dispose() {
-          if (!active) return;
-          active = false;
-          registrations -= 1;
-          if (ready) readyRegistrations -= 1;
-          setRevision((value) => value + 1);
-        },
-      };
-    },
-  };
-
-  createEffect(() => {
-    const measurementRevision = props.measurementRevision;
-    if (hasObservedMeasurementRevision && measurementRevision !== observedMeasurementRevision) {
-      completed = false;
-      completionRevision += 1;
-    }
-    hasObservedMeasurementRevision = true;
-    observedMeasurementRevision = measurementRevision;
-    revision();
-    const owner = root();
-    if (
-      measurementRevision === undefined ||
-      owner === undefined ||
-      completed ||
-      renderer.isDestroyed
-    )
-      return;
-    if (readyRegistrations !== registrations) {
-      const signature = `${readyRegistrations}:${registrations}`;
-      if (signature !== pendingSignature) {
-        pendingSignature = signature;
-        diagnosticEvent("transcript.syntax.pending", {
-          batch_id: props.diagnosticId,
-          ready_registrations: readyRegistrations,
-          registrations,
-          columns: owner.width,
-          rows: owner.height,
-        });
-      }
-      return;
-    }
-    pendingSignature = "";
-    const captured = ++completionRevision;
-    const measuredRevision = observedMeasurementRevision;
-    const current = (): boolean =>
-      !disposed &&
-      !completed &&
-      captured === completionRevision &&
-      readyRegistrations === registrations;
-    const finish = async (): Promise<void> => {
-      const startedAt = performance.now();
-      diagnosticEvent("transcript.syntax.started", {
-        batch_id: props.diagnosticId,
-        registrations,
-        columns: owner.width,
-        rows: owner.height,
-      });
-      try {
-        if (props.allowUnsettled === true) await freezeUnsettledSyntax(owner, current, renderer);
-        else await waitForSyntaxFrame(owner, current, renderer);
-      } catch {
-        if (!current()) return;
-      }
-      diagnosticEvent("transcript.syntax.painted", {
-        batch_id: props.diagnosticId,
-        duration_ms: Math.round(performance.now() - startedAt),
-        columns: owner.width,
-        rows: owner.height,
-      });
-      const measurement = await waitForStableDimensions(owner, current, renderer);
-      if (!current() || measurement === null) return;
-      completed = true;
-      diagnosticEvent("transcript.syntax.measured", {
-        batch_id: props.diagnosticId,
-        duration_ms: Math.round(performance.now() - startedAt),
-        columns: measurement.columns,
-        rows: measurement.rows,
-      });
-      props.onReady(measurement, measuredRevision);
-    };
-    finish().catch(() => undefined);
-  });
-
-  onCleanup(() => {
-    disposed = true;
-    completionRevision += 1;
-  });
-
-  return (
-    <SyntaxPublicationContext.Provider value={coordinator}>
-      <box ref={setRoot} flexDirection="column" width="100%" minWidth={0}>
-        {props.children}
-      </box>
-    </SyntaxPublicationContext.Provider>
-  );
 }
 
 function snapshot(
@@ -337,7 +133,6 @@ export function StableMarkdown(props: {
   streaming: boolean;
 }): JSX.Element {
   const renderer = useRenderer();
-  const publication = useContext(SyntaxPublicationContext);
   let nextId = 1;
   const initialStreaming = untrack(() => props.streaming);
   const initialContent = untrack(() => props.content);
@@ -357,7 +152,6 @@ export function StableMarkdown(props: {
   const [liveHeightFloor, setLiveHeightFloor] = createSignal(0);
   let observedGeometryEpoch = untrack(() => props.geometryEpoch);
   let disposed = false;
-  const publicationRegistration = initialStreaming ? undefined : publication?.register();
 
   const slots = [slot0, slot1] as const;
   const setters = [setSlot0, setSlot1] as const;
@@ -386,12 +180,8 @@ export function StableMarkdown(props: {
           renderer.requestRender();
         });
       }
-      publicationRegistration?.ready();
     };
-    const pending =
-      publication?.allowUnsettled() === true
-        ? nextFrame(renderer)
-        : waitForSyntaxFrame(root, current, renderer);
+    const pending = waitForSyntaxFrame(root, current, renderer);
     void pending.then(commit, commit);
   };
 
@@ -446,7 +236,6 @@ export function StableMarkdown(props: {
 
   onCleanup(() => {
     disposed = true;
-    publicationRegistration?.dispose();
   });
 
   const layer = (slot: 0 | 1, value: Accessor<SyntaxSnapshot>): JSX.Element => (
@@ -507,8 +296,6 @@ export function StableDiff(props: {
   wrapMode?: "word" | "char" | "none";
 }): JSX.Element {
   const renderer = useRenderer();
-  const publication = useContext(SyntaxPublicationContext);
-  const publicationRegistration = publication?.register();
   const normalized = (): string => props.diff.replace(/\r\n/g, "\n").replace(/\r/g, "");
   const [ready, setReady] = createSignal(false);
   const [root, setRoot] = createSignal<DiffRenderable>();
@@ -524,14 +311,10 @@ export function StableDiff(props: {
       const reveal = (): void => {
         if (!disposed && captured === revision) {
           setReady(true);
-          publicationRegistration?.ready();
         }
       };
       const current = (): boolean => !disposed && captured === revision;
-      const pending =
-        publicationRegistration === undefined || publication?.allowUnsettled() !== true
-          ? waitForSyntaxFrame(renderable, current, renderer)
-          : nextFrame(renderer);
+      const pending = waitForSyntaxFrame(renderable, current, renderer);
       void pending.then(reveal, reveal);
     }),
   );
@@ -539,7 +322,6 @@ export function StableDiff(props: {
   onCleanup(() => {
     disposed = true;
     revision += 1;
-    publicationRegistration?.dispose();
   });
 
   return (

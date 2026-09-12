@@ -2251,7 +2251,8 @@ test("getRun failure after a completed run keeps the turn done and settles spinn
   expect(meta.turns[0]!.status).toBe("done");
   expect(meta.totals).toEqual({ input: 100, output: 10, cached: 0 });
   const tool = store.nodes.find((n) => n.kind === "tool_call")!;
-  expect(tool.status).toBe("ok");
+  expect(tool.toolPhase).toBe("interrupted");
+  expect(tool.status).toBe("error");
   dispose();
 });
 

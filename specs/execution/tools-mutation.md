@@ -615,10 +615,11 @@ including `lib/atomic.ts`. A host (`@clarvis/loop`, `@clarvis/kernel`) reaches t
 their wire names through dispatch; which of those names a host UI renders as a "mutation" is
 `@clarvis/code`'s `MUTATION_TOOLS` set (`packages/code/src/adapters/tool-identity.ts`, whose
 twelve members are pinned name by name at `packages/code/tests/unit/tool-identity.test.ts`).
-That set is a transcript-rendering concern and not a grant boundary — its only two readers collapse
-an oversize diff behind a chip (`packages/code/src/views/tools/mutation-gate.ts`) and stop a
-mutation call folding into a run of reads (`packages/code/src/views/tool-groups.ts`) — so the
-consuming set is owned by [code-transcript](../hosts/code-transcript.md), not here.
+That set is a transcript-rendering concern, not a grant boundary. It controls bounded mutation
+presentation in `packages/code/src/views/tools/mutation-gate.ts`. Exploration admission separately
+requires an explicit read/search allowlist in `packages/code/src/core/transcript/rows.ts`; absence
+from the mutation set never proves a tool is read-only. The presentation policy is owned by
+[code-transcript](../hosts/code-transcript.md), not here.
 
 **Depends on this (nothing further downstream):** no other package in the monorepo
 imports `packages/tools/src/lib/atomic.ts` or the individual tool modules directly — they are reached

@@ -12,6 +12,32 @@ function byType<T extends TraceEvent["type"]>(
 }
 
 describe("trace-mapper — tool projection", () => {
+  it("maps a minimal durable announcement without retaining partial argument bytes", () => {
+    const entry: TraceEntry = {
+      at: 3,
+      kind: "tool_call_announced",
+      detail: {
+        agent: "subagent",
+        subagent_instance_id: "child",
+        call_id: "call",
+        tool_name: "read_file",
+        iteration: 2,
+        attempt: 1,
+      },
+    };
+    expect(byType(mapTrace([entry], ANCHOR).events, "tool_call_announced")).toEqual([
+      {
+        type: "tool_call_announced",
+        occurred_at: ANCHOR + 3,
+        agent: "subagent",
+        subagent_instance_id: "child",
+        call_id: "call",
+        tool_name: "read_file",
+        iteration: 2,
+        attempt: 1,
+      },
+    ]);
+  });
   it("carries a tool_call diff onto the persisted event", () => {
     const entries: TraceEntry[] = [
       {

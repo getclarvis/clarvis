@@ -39,6 +39,22 @@ const HELLO = {
   },
 } satisfies HelloResult;
 
+it("decodes minimal durable announcement identity and rejects partial arguments or invalid attempts", () => {
+  const event: RunEvent = {
+    type: "tool_call_announced",
+    agent: "subagent",
+    subagent_id: "child",
+    call_id: "call",
+    tool: "read_file",
+    iteration: 1,
+    attempt: 2,
+    at: 3,
+  };
+  expect(decodeRunEvent(event)).toEqual(event);
+  expect(decodeRunEvent({ ...event, arguments: "{partial" })).toBeNull();
+  expect(decodeRunEvent({ ...event, attempt: 0 })).toBeNull();
+});
+
 interface RequestRecord {
   method: string;
   params: unknown;
@@ -248,6 +264,7 @@ describe("wire handshake", () => {
     for (const helloResult of [
       null,
       { ...HELLO, wire_version: 1 },
+      { ...HELLO, wire_version: 7 },
       { ...HELLO, unexpected: true },
       { ...HELLO, workspace: { ...HELLO.workspace, kind: "unknown" } },
       {

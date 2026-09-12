@@ -2,6 +2,7 @@ import { batch, createSignal } from "solid-js";
 import { $RAW, createStore, produce } from "solid-js/store";
 import { createHash } from "node:crypto";
 import type { MessageContent, RunDetail, RunEvent } from "@clarvis/protocol";
+import { reduceToolLifecycle } from "../core/transcript/tool-lifecycle.ts";
 import { deriveEventSpan, type EventSpan, type EventSource } from "./event-span.ts";
 import { createSubagentRegistry, iterationTokens, subagentCompletedOk } from "./run-reducers.ts";
 import {
@@ -27,13 +28,12 @@ import {
   type TranscriptNode as CoreTranscriptNode,
 } from "../core/transcript/index.ts";
 import { TRANSCRIPT_PROSE_RELEASED_DISPLAY } from "../core/transcript/presenters.ts";
+import { TranscriptEventIdentity } from "../core/transcript/identity.ts";
 import {
   delegationLeadMarkerKey,
-  TranscriptPublisher,
-  type TranscriptPublicationBatch,
-  type TranscriptPublicationScheduler,
-  type TranscriptRunPublicationCompletion,
-} from "./transcript-publication.ts";
+  TranscriptContent,
+  type TranscriptRunCompletion,
+} from "./transcript-content.ts";
 
 export type { NodeStatus } from "../core/transcript/index.ts";
 
@@ -214,9 +214,9 @@ export interface QueuedSteerReceipt {
   fail(): void;
 }
 
-/** Run sink whose transcript publisher is closed only after host reconciliation completes. */
+/** Run sink whose terminal content is sealed only after host reconciliation completes. */
 export interface TranscriptRunSink extends RunSink {
-  complete(completion?: TranscriptRunPublicationCompletion): void;
+  complete(completion?: TranscriptRunCompletion): void;
 }
 
 /** The fields of a local (`!bash`) shell result the transcript needs to render it. */
@@ -235,31 +235,15 @@ export type LocalBashDisplay = Pick<
 /** The reactive transcript the UI renders, and the reducers that populate it from runs and local commands. */
 export interface TranscriptStore {
   nodes: TranscriptNode[];
-  /**
-   * Immutable history batches, append-only during ordinary publication.
-   *
-   * @remarks Explicit host retention may replace an evicted whole-batch prefix
-   *   with one immutable folded-prefix batch; individual published nodes are
-   *   never patched in place.
-   */
-  readonly publicationBatches: readonly TranscriptPublicationBatch[];
-  /** Mutable candidates not yet visible as committed history. */
+  /** Mutable execution records whose content has not been sealed. */
   frontierNodes(): readonly TranscriptNode[];
-  /** Immutable nodes from every semantically sealed publication batch. */
+  /** Bounded terminal content, keyed independently of row residence and projection. */
   committedNodes(): readonly TranscriptNode[];
-  /**
-   * Compatibility acknowledgement for callers predating physical viewport ownership.
-   *
-   * @remarks Physical readiness now belongs to `CommittedHistory`; semantic publication is sealed
-   * immediately and this method deliberately performs no state transition.
-   */
-  markPublicationReady(batchId: string): void;
   /** O(1) retained-memory counters for the process-level diagnostic ledger. */
   memory?(): {
     transcript_nodes: number;
     transcript_prose_bytes: number;
-    publication_batches: number;
-    publication_known_keys: number;
+    sealed_records: number;
     hydrated_tool_nodes: number;
     hydrated_tool_bytes: number;
     active_rehydrates: number;
@@ -351,12 +335,6 @@ export interface TranscriptStoreDeps {
     args?: Record<string, unknown>;
     diff?: string;
   }) => { signature: string; mutation: { added: number; removed: number; lines: number } | null };
-  /** Injectable publication scheduler retained by tests; tool grouping no longer stages. */
-  publicationScheduler?: TranscriptPublicationScheduler;
-  /** Ignored. Lead tools publish immediately as one-node batches. */
-  publicationToolGroupLatencyMs?: number;
-  /** Ignored. Lead tools publish immediately as one-node batches. */
-  publicationToolGroupMaxEntries?: number;
 }
 
 /**
@@ -390,48 +368,31 @@ const TOOL_BODY_REHYDRATE_FAILED_NOTICE =
   "Tool body could not be reloaded from persistence. Use /export to inspect the available transcript.";
 
 /**
- * Build the {@link TranscriptStore} with a mutable semantic ledger and a
- * separate immutable publication ledger. User messages, local shell commands,
- * and each run's live events (via {@link TranscriptStore.openRun}) upsert the
- * semantic `nodes` array so reconciliation can repair detail state in place;
- * the publisher snapshots terminal candidates into frozen batches that the
- * committed-history owner mounts without later semantic updates.
+ * Build execution records with bounded sealed inline content. Live and replay upsert the
+ * same identities; authoritative reconciliation revises content without replacing row owners.
+ * UI projection, expansion and residence remain separate from execution facts.
  */
 export function createTranscriptStore(deps: TranscriptStoreDeps = {}): TranscriptStore {
   const [state, setState] = createStore<{ nodes: TranscriptNode[] }>({ nodes: [] });
-  const [publicationBatches, setPublicationBatches] = createSignal<
-    readonly TranscriptPublicationBatch[]
-  >(Object.freeze([]));
+  const [sealedRecords, setSealedRecords] = createSignal<ReadonlyMap<string, TranscriptNode>>(
+    new Map(),
+  );
   const indexOfKey = new Map<string, number>();
   const foldDefaults = new Map<string, boolean>();
-  const publisher = new TranscriptPublisher(
-    {
-      nodes: () => state.nodes,
-      defaultFolded: (key) => foldDefaults.get(key) ?? false,
-      toolArguments: rawToolArguments,
-      append: (prepared) => {
-        setPublicationBatches((current) =>
-          Object.freeze([
-            ...current,
-            Object.freeze({
-              ...prepared,
-              phase: "committed" as const,
-              ready: true,
-            }),
-          ]),
-        );
-      },
+  const terminalContent = new TranscriptContent({
+    nodes: () => state.nodes,
+    node: (key) => {
+      const index = indexOfKey.get(key);
+      return index === undefined ? undefined : state.nodes[index];
     },
-    {
-      ...(deps.publicationScheduler === undefined ? {} : { scheduler: deps.publicationScheduler }),
-      ...(deps.publicationToolGroupLatencyMs === undefined
-        ? {}
-        : { toolGroupLatencyMs: deps.publicationToolGroupLatencyMs }),
-      ...(deps.publicationToolGroupMaxEntries === undefined
-        ? {}
-        : { toolGroupMaxEntries: deps.publicationToolGroupMaxEntries }),
-    },
-  );
+    toolArguments: rawToolArguments,
+    seal: (nodes) =>
+      setSealedRecords((current) => {
+        const next = new Map(current);
+        for (const node of nodes) next.set(node.key, node);
+        return next;
+      }),
+  });
   const metrics = streamMetrics();
   const describeCall = (
     mcpName: string | undefined,
@@ -754,9 +715,16 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
    * Locate a run event's tool node key, mirroring the span id
    * `deriveEventSpan` assigns a `tool_call`.
    */
-  function toolKeyOf(execId: string, event: RunEvent): string | null {
-    if (event.type !== "tool_call") return null;
-    return `${execId}::${event.call_id ?? `${event.agent}:tool`}`;
+  function toolEventForKey(
+    execId: string,
+    events: readonly RunEvent[],
+    key: string,
+  ): RunEvent | undefined {
+    const identity = new TranscriptEventIdentity();
+    return events.find((event) => {
+      const span = identity.resolve(event);
+      return event.type === "tool_call" && `${execId}::${span}` === key;
+    });
   }
 
   /**
@@ -833,7 +801,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           return;
         }
         if (requestedEpoch !== hydrationEpoch) return;
-        const event = detail?.events.find((e) => toolKeyOf(execId, e) === key);
+        const event = detail === null ? undefined : toolEventForKey(execId, detail.events, key);
         if (event === undefined || event.type !== "tool_call") {
           const at = indexOfKey.get(key);
           if (at !== undefined)
@@ -895,7 +863,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       ...(sourceExecutionId === undefined ? {} : { sourceExecutionId }),
       ...(bounded.truncated ? { textTruncated: true } : {}),
     }));
-    publisher.publishImmediate(key, "user");
+    terminalContent.publishImmediate(key);
     return key;
   }
 
@@ -936,11 +904,10 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       tone,
       text: bounded.text,
     }));
-    publisher.publishImmediate(key, "annotation");
+    terminalContent.publishImmediate(key);
   }
 
   const FOLDED_PREFIX_KEY = "transcript:folded-prefix";
-  let foldedPrefixPublicationSequence = 0;
 
   function foldPrefixBefore(beforeKey: string, notice: string): boolean {
     const boundary = indexOfKey.get(beforeKey);
@@ -955,34 +922,17 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       text: notice,
     };
 
-    const foldedPublication: TranscriptPublicationBatch = Object.freeze({
-      id: `publication:folded-prefix:${foldedPrefixPublicationSequence++}`,
-      kind: "annotation",
-      nodes: Object.freeze([Object.freeze({ ...foldedNotice })]),
-      defaultFolded: Object.freeze({ [FOLDED_PREFIX_KEY]: false }),
-      toolGroups: Object.freeze({}),
-      sectionHeaders: Object.freeze({}),
-      sectionAnchors: Object.freeze({}),
-      sectionFoldedKeys: Object.freeze([]),
-      phase: "committed",
-      ready: true,
-    });
-
-    const retainedPublications = publicationBatches().filter(
-      (publication) =>
-        !publication.id.startsWith("publication:folded-prefix:") &&
-        !publication.nodes.every((node) => removed.has(node.key)),
-    );
-    const retainedPublicationKeys = new Set(
-      retainedPublications.flatMap((publication) => publication.nodes.map((node) => node.key)),
-    );
-
     batch(() => {
       setState("nodes", [foldedNotice, ...state.nodes.slice(boundary)]);
-      setPublicationBatches(Object.freeze([foldedPublication, ...retainedPublications]));
+      setSealedRecords(
+        (current) =>
+          new Map([
+            [FOLDED_PREFIX_KEY, Object.freeze({ ...foldedNotice })],
+            ...[...current].filter(([key]) => key !== FOLDED_PREFIX_KEY && !removed.has(key)),
+          ]),
+      );
     });
-
-    publisher.forgetDiscarded([...removed].filter((key) => !retainedPublicationKeys.has(key)));
+    terminalContent.forgetDiscarded(removed);
 
     for (const key of removed) foldDefaults.delete(key);
     const retainedHydrated = hydratedTools.filter((key) => !removed.has(key));
@@ -1039,7 +989,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         foldDefaults.set(n.key, !failed);
       });
       noteHydrated(key);
-      publisher.publishImmediate(key, "local");
+      terminalContent.publishImmediate(key);
     };
   }
 
@@ -1049,9 +999,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
    * @remarks The whole body is one `batch` because it is the transcript's widest
    *   burst of writes: a stale-`thinking` sweep that can replace the node array
    *   outright, then one `patch` per still-running node. Each of those writes
-   *   `status`, which `computeGroupedNodes` reads, so unbatched they re-run the
-   *   `grouped → toolGroups → focusables` chain and the transcript's `<For>`
-   *   diff once per node instead of once per run.
+   *   status; batching publishes one coherent projection revision per run instead of
+   *   exposing intermediate combinations to row admission and focus navigation.
    */
   function settleRun(execId: string, ok = false): void {
     batch(() => {
@@ -1083,9 +1032,11 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             m.status = failed ? "error" : "ok";
             if (!failed) foldDefaults.set(m.key, true);
           });
-        } else if (n.kind === "tool_call" && n.status === "running") {
+        } else if (n.kind === "tool_call" && (n.status === "running" || n.status === "pending")) {
           patchKind(i, "tool_call", (m) => {
-            m.status = ok ? "ok" : "error";
+            m.status = "error";
+            m.toolPhase = "interrupted";
+            m.error = "Execution scope closed without an authoritative tool result.";
             m.liveOutput = undefined;
             foldDefaults.set(m.key, true);
           });
@@ -1099,19 +1050,37 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
   }
 
   function openRun(execId: string): TranscriptRunSink {
+    const identity = new TranscriptEventIdentity();
+    const iterations = new Map<string | undefined, number>();
+    const identify = (span: EventSpan, event: RunEvent): EventSpan => {
+      if (event.type === "iteration_started" || event.type === "tool_call_announced")
+        iterations.set(event.subagent_id, event.iteration);
+      const id = identity.resolve(event);
+      return id === undefined ? span : { ...span, span_id: id };
+    };
     const ns = (k: string): string => `${execId}::${k}`;
     const subagents = createSubagentRegistry();
     let plan: PlanActivity | null = null;
     let leadModel: string | undefined;
     const attrOf = (
       wid: string | undefined,
-    ): { agentLabel?: string; subagentOrder?: number; subagentId?: string; model?: string } => {
-      if (wid === undefined) return leadModel ? { model: leadModel } : {};
+    ): {
+      agentLabel?: string;
+      subagentOrder?: number;
+      subagentId?: string;
+      model?: string;
+      transcriptScope: string;
+      attributionIncomplete?: true;
+    } => {
+      const transcriptScope = JSON.stringify([execId, wid ?? "lead", iterations.get(wid) ?? 0]);
+      if (wid === undefined) return { transcriptScope, ...(leadModel ? { model: leadModel } : {}) };
       const w = subagents.resolve(wid);
       return {
         agentLabel: w.title,
         subagentOrder: w.order,
         subagentId: wid,
+        transcriptScope,
+        ...(wid === `unattributed:${execId}` ? { attributionIncomplete: true as const } : {}),
         ...(w.model ? { model: w.model } : {}),
       };
     };
@@ -1137,7 +1106,11 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
      *   an unscoped sweep on the lead's next iteration would delete a
      *   placeholder that is genuinely still being composed.
      */
-    const dropComposing = (inScope: (order: number | undefined) => boolean): void => {
+    const dropComposing = (
+      inScope: (order: number | undefined) => boolean,
+      phase: "interrupted" | "cancelled" = "interrupted",
+      reason = "Argument composition ended without execution.",
+    ): void => {
       const doomed: string[] = [];
       for (const n of state.nodes) {
         if (!(
@@ -1152,6 +1125,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           if (index === undefined) continue;
           patchKind(index, "tool_call", (node) => {
             node.status = "error";
+            node.toolPhase = phase;
+            node.error = reason;
             node.inputChars = undefined;
             node.inputStreamChars = undefined;
             node.inputComplete = undefined;
@@ -1182,8 +1157,21 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     let leadInput = 0;
     let leadOutput = 0;
     let completed = false;
-    const missingSubagentAttribution = (event: RunEvent): boolean =>
-      "agent" in event && event.agent === "subagent" && event.subagent_id === undefined;
+    const attribute = (event: RunEvent): RunEvent => {
+      if (!("agent" in event) || event.agent !== "subagent" || event.subagent_id !== undefined)
+        return event;
+      const target = `unattributed:${execId}`;
+      const key = ns("unattributed-activity");
+      upsert(key, () => ({
+        kind: "annotation",
+        status: "error",
+        tone: "warn",
+        text: "Child activity has incomplete attribution · open isolated transcript",
+        delegationTarget: target,
+      }));
+      terminalContent.publishImmediate(key);
+      return { ...event, subagent_id: target };
+    };
     const markSteerUndelivered = (key: string, message: string): void => {
       const steerIndex = indexOfKey.get(key);
       if (steerIndex === undefined) return;
@@ -1222,11 +1210,20 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       },
 
       open(span, event, source) {
-        if (completed || missingSubagentAttribution(event)) return;
+        if (completed) return;
+        event = attribute(event);
+        span = identify(span, event);
         if (span.kind === "run" && event.type === "run_started") {
           runStartedAt = event.at;
           rememberModel(undefined, event.lead_model);
         } else if (span.kind === "tool" && event.type === "tool_call_started") {
+          const existing = state.nodes[indexOfKey.get(ns(span.span_id)) ?? -1];
+          if (
+            source === "live" &&
+            existing?.kind === "tool_call" &&
+            (existing.status === "ok" || existing.status === "error")
+          )
+            return;
           if (
             event.agent === "lead" &&
             isTranscriptExternalOrchestrationTool(event.server, event.tool)
@@ -1252,9 +1249,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.toolName = event.tool;
               n.args = asArgs(event.arguments);
               n.status = "running";
-              n.inputChars = undefined;
-              n.inputStreamChars = undefined;
-              n.inputComplete = undefined;
+              Object.assign(n, reduceToolLifecycle(n, { type: "start" }));
               const described = describeCall(event.server, event.tool, asArgs(event.arguments));
               if (described !== undefined) n.signature = described.signature;
             });
@@ -1267,6 +1262,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           );
           upsert(ns(delegationLeadMarkerKey(event.delegation_id, "spawned")), () => ({
             kind: "annotation",
+            delegationTarget: event.delegation_id,
             status: "ok",
             tone: "accent",
             text: marker.text,
@@ -1290,12 +1286,15 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             ...attrOf(wid),
           }));
         }
-        publisher.observe(execId, span, event, source);
+        terminalContent.observe(execId, span, event, source);
       },
 
       point(span, event, source) {
-        if (completed || missingSubagentAttribution(event)) return;
+        if (completed) return;
+        event = attribute(event);
+        span = identify(span, event);
         if (span.kind === "iteration" && event.type === "text_delta" && event.channel === "text") {
+          if (closedIterations.has(span.span_id)) return;
           remove(ns(`${span.span_id}#retry`));
           metrics.count("store_text_delta");
           remove(ns(`${span.span_id}#thinking`));
@@ -1342,7 +1341,10 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             if (n.status !== "running") return;
             n.liveOutput = appendLiveOutput(n.liveOutput, event.chunk);
           });
-        } else if (span.kind === "tool" && event.type === "tool_input_delta") {
+        } else if (
+          span.kind === "tool" &&
+          (event.type === "tool_input_delta" || event.type === "tool_call_announced")
+        ) {
           // Unlike its output sibling this one `upsert`s rather than bailing on
           // a missing node: the call it describes has not started, so nothing
           // has created the node yet, and creating it here is the entire point.
@@ -1365,11 +1367,25 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             }));
             patchKind(index, "tool_call", (n) => {
               if (n.status !== "running") return;
-              n.inputChars = event.chars;
-              n.inputStreamChars = event.stream_chars;
-              if (event.complete === true) {
+              if (n.toolPhase === "running") return;
+              Object.assign(
+                n,
+                reduceToolLifecycle(
+                  n,
+                  event.type === "tool_input_delta"
+                    ? {
+                        type: "input",
+                        chars: event.chars,
+                        streamChars: event.stream_chars,
+                        complete: event.complete,
+                      }
+                    : { type: "announce" },
+                ),
+              );
+              if (event.type === "tool_input_delta" && event.complete === true) {
                 n.inputComplete = true;
                 n.status = "pending";
+                n.toolPhase = "pending";
               }
             });
           }
@@ -1385,7 +1401,11 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           });
         } else if (span.kind === "iteration" && event.type === "model_retry") {
           const order = attrOf(event.subagent_id).subagentOrder;
-          dropComposing((candidate) => candidate === order);
+          dropComposing(
+            (candidate) => candidate === order,
+            "interrupted",
+            "Argument composition interrupted by a model retry.",
+          );
           const index = upsert(ns(`${span.span_id}#retry`), () => ({
             kind: "annotation",
             status: "running",
@@ -1549,11 +1569,13 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             text: `${event.dropped} incremental live event${event.dropped === 1 ? " was" : "s were"} dropped; terminal tool results and assistant responses remain authoritative.`,
           }));
         }
-        publisher.observe(execId, span, event, source);
+        terminalContent.observe(execId, span, event, source);
       },
 
       close(span, event, source) {
-        if (completed || missingSubagentAttribution(event)) return;
+        if (completed) return;
+        event = attribute(event);
+        span = identify(span, event);
         if (
           span.kind === "subagent" &&
           (event.type === "delegation_completed" || event.type === "delegation_failed")
@@ -1566,6 +1588,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             title: subagents.peek(event.delegation_id)?.title ?? "subagent",
             ...attrOf(event.delegation_id),
           }));
+          dropComposing((order) => order === subagent.order);
           patchKind(index, "subagent", (n) => {
             n.status = subagentCompletedOk(event.status) ? "ok" : "error";
             foldDefaults.set(n.key, n.status === "ok");
@@ -1576,6 +1599,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           );
           upsert(ns(delegationLeadMarkerKey(event.delegation_id, "settled")), () => ({
             kind: "annotation",
+            delegationTarget: event.delegation_id,
             status: succeeded ? "ok" : "error",
             tone: succeeded ? "info" : "warn",
             text: marker.text,
@@ -1658,7 +1682,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.diff = event.diff;
             n.error = event.error;
             n.guard = event.guard;
-            n.status = event.error ? "error" : "ok";
+            n.status = event.ok ? "ok" : "error";
+            n.toolPhase = event.ok ? "completed" : "failed";
             n.liveOutput = undefined;
             n.inputChars = undefined;
             n.inputStreamChars = undefined;
@@ -1681,9 +1706,16 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             Object.assign(n, attrOf(event.subagent_id));
             foldDefaults.set(n.key, event.error ? true : !bashFailed);
           });
+          terminalContent.observe(execId, span, event, source);
           noteHydrated(ns(span.span_id));
         } else if (span.kind === "run" && event.type === "run_ended") {
-          dropComposing(() => true);
+          dropComposing(
+            () => true,
+            event.status === "cancelled" ? "cancelled" : "interrupted",
+            event.status === "cancelled"
+              ? "Cancelled before execution."
+              : "Execution scope closed before this call started.",
+          );
           // A queued steer is promoted only by a later `steering_applied`. The
           // run ending is the last moment one can arrive, so anything still
           // pending was accepted by the kernel and never delivered; left alone
@@ -1737,12 +1769,14 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             if (leadOutput > 0) n.outputTokens = leadOutput;
           });
         }
-        publisher.observe(execId, span, event, source);
+        terminalContent.observe(execId, span, event, source);
       },
 
       beginReconcile() {
         if (completed) return;
-        publisher.beginReconcile(execId);
+        identity.reset();
+        iterations.clear();
+        terminalContent.beginReconcile(execId);
         replayed = { keys: [], seen: new Set() };
         leadInput = 0;
         leadOutput = 0;
@@ -1760,7 +1794,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         const pass = replayed;
         replayed = null;
         if (pass === null) {
-          publisher.endReconcile(execId);
+          terminalContent.endReconcile(execId);
           return;
         }
         const prefix = `${execId}::`;
@@ -1804,7 +1838,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         }
         if (next.length === state.nodes.length && next.every((n, i) => n === state.nodes[i])) {
           rebuildProseAccounting();
-          publisher.endReconcile(execId);
+          terminalContent.endReconcile(execId);
           return;
         }
         setState("nodes", next);
@@ -1814,35 +1848,22 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         for (const key of [...hydratedTools]) if (!survivingKeys.has(key)) forgetHydrated(key);
         reindex();
         rebuildProseAccounting();
-        publisher.endReconcile(execId);
+        terminalContent.endReconcile(execId);
       },
 
       complete(completion) {
         if (completed) return;
         completed = true;
-        publisher.completeRun(execId, completion);
+        terminalContent.completeRun(execId, completion);
       },
     };
     return sink;
   }
 
-  function committedPublicationKeys(): Set<string> {
-    return new Set(
-      publicationBatches().flatMap((publication) =>
-        publication.phase === "committed" ? publication.nodes.map((node) => node.key) : [],
-      ),
-    );
-  }
-
-  function markPublicationReady(batchId: string): void {
-    void batchId;
-  }
-
   function clear(): void {
     setState("nodes", []);
-    setPublicationBatches(Object.freeze([]));
-    publisher.clear();
-    foldedPrefixPublicationSequence = 0;
+    setSealedRecords(new Map());
+    terminalContent.clear();
     indexOfKey.clear();
     foldDefaults.clear();
     hydratedTools.length = 0;
@@ -1863,23 +1884,12 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     get nodes() {
       return state.nodes;
     },
-    get publicationBatches() {
-      return publicationBatches();
-    },
-    frontierNodes: () => {
-      const committed = committedPublicationKeys();
-      return state.nodes.filter((node) => !committed.has(node.key));
-    },
-    committedNodes: () =>
-      publicationBatches().flatMap((publication) =>
-        publication.phase === "committed" ? publication.nodes : [],
-      ),
-    markPublicationReady,
+    frontierNodes: () => state.nodes.filter((node) => !sealedRecords().has(node.key)),
+    committedNodes: () => [...sealedRecords().values()],
     memory: () => ({
       transcript_nodes: state.nodes.length,
       transcript_prose_bytes: proseBytes,
-      publication_batches: publicationBatches().length,
-      publication_known_keys: publisher.knownKeyCount(),
+      sealed_records: sealedRecords().size,
       hydrated_tool_nodes: hydratedTools.length,
       hydrated_tool_bytes: hydratedToolBytes,
       active_rehydrates: activeRehydrates,

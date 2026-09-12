@@ -3,15 +3,7 @@ import { createEffect, createMemo, createSignal } from "solid-js";
 import type { NodeStatus, TranscriptNode, TranscriptToolNode } from "../adapters/store.ts";
 import { subagentFocusToast } from "../core/transcript/index.ts";
 import { toolIdentity } from "../adapters/tool-identity.ts";
-import { computeGroupedNodes, type GroupedTranscript } from "./subagent-sections.ts";
-import { computeToolGroups, type ToolGroupInfo } from "./tool-groups.ts";
-import {
-  computeFocusables,
-  isFoldedAway,
-  nextFocus,
-  toggleOverride,
-  type BlockOverride,
-} from "./block-focus.ts";
+import { nextFocus, type BlockOverride } from "./block-focus.ts";
 
 const DIFF_TOOLS = new Set([
   "apply_patch",
@@ -30,8 +22,6 @@ export interface TranscriptStateDeps {
   nodes: () => readonly TranscriptNode[];
   /** Mutable/detail source used only by explicit overlays, never by committed history rendering. */
   detailNodes?: () => readonly TranscriptNode[];
-  /** Preserve publisher order instead of applying the legacy mutable-run terminal projection. */
-  preserveOrder?: boolean;
   subagents: () => readonly { id: string; order: number; title: string; status?: NodeStatus }[];
   notify: (message: string) => void;
   defaultFolded?: (key: string) => boolean;
@@ -51,14 +41,17 @@ export interface TranscriptStateDeps {
  * isolation, as produced by {@link createTranscriptState}.
  */
 export interface TranscriptState {
-  grouped: Accessor<GroupedTranscript>;
-  toolGroups: Accessor<Map<string, ToolGroupInfo>>;
+  /** Connect the production row projection to keyboard focus and explicit expansion. */
+  bindRows(rows: {
+    ids: Accessor<readonly string[]>;
+    destination: (key: string) => string | undefined;
+    defaultFolded: (key: string) => boolean;
+  }): void;
   /** Lead-only main projection, or one explicitly selected sub-agent transcript. */
   semanticNodes: Accessor<readonly TranscriptNode[]>;
   expandAll: Accessor<boolean>;
   selectedSubagent: Accessor<string | null>;
   focusedKey: Accessor<string | null>;
-  folded(key: string): boolean;
   overrideOf(key: string): BlockOverride | undefined;
   toggleAt(key: string): void;
   reset(): void;
@@ -71,66 +64,23 @@ export interface TranscriptState {
   pickDiffNode(): TranscriptToolNode | null;
 }
 
-/**
- * Builds the transcript's reactive view-state: node grouping, tool-call
- * grouping, fold/expand overrides, block focus and sub-agent isolation.
- *
- * @param deps - {@link TranscriptStateDeps} the state derives from and
- * reports through.
- * @returns The {@link TranscriptState} handle exposing derived accessors and
- * the actions that mutate them.
- */
-/**
- * Moves each run's terminal marker after the last node belonging to that run.
- *
- * @param nodes - the transcript in arrival order.
- * @returns the same nodes, with every `<exec>::run` node placed after the last
- *   node sharing its `<exec>` prefix. Returns the input untouched when nothing
- *   moves, so the common case allocates nothing.
- * @remarks A run's `run` node is created when `run_ended` arrives, but events
- * for work that had *already finished* can still land after it — most visibly
- * on a cancellation, where a tool call proven by the engine's own trace
- * timestamps to have completed *before* the cancel rendered *below* the
- * `Canceled` marker. A run's outcome is the last thing that happened to it and
- * must read last.
- *
- * This is done as a projection rather than in the store on purpose: the store
- * guarantees node identity across a reconcile so the renderer never remounts a
- * run (`run-end-reconcile.test.ts` asserts it with `toBe`), and moving nodes
- * there breaks that guarantee. Reordering a read-only view costs nothing and
- * risks nothing.
- */
-export function withRunMarkersLast(nodes: readonly TranscriptNode[]): readonly TranscriptNode[] {
-  const lastOfRun = new Map<string, number>();
-  const markerAt = new Map<string, number>();
-  for (const [index, node] of nodes.entries()) {
-    const separator = node.key.indexOf("::");
-    if (separator <= 0) continue;
-    const exec = node.key.slice(0, separator);
-    lastOfRun.set(exec, index);
-    if (node.key === `${exec}::run`) markerAt.set(exec, index);
-  }
-  const moving = [...markerAt].filter(([exec, at]) => (lastOfRun.get(exec) ?? at) > at);
-  if (moving.length === 0) return nodes;
-  const displaced = new Set(moving.map(([, at]) => at));
-  const insertAfter = new Map<number, TranscriptNode>();
-  for (const [exec, at] of moving) insertAfter.set(lastOfRun.get(exec)!, nodes[at]!);
-  const out: TranscriptNode[] = [];
-  for (const [index, node] of nodes.entries()) {
-    if (!displaced.has(index)) out.push(node);
-    const trailing = insertAfter.get(index);
-    if (trailing !== undefined) out.push(trailing);
-  }
-  return out;
-}
-
+/** External row-keyed expansion and focus survive unmounting and projection navigation. */
 export function createTranscriptState(deps: TranscriptStateDeps): TranscriptState {
+  const [rowBinding, setRowBinding] = createSignal<{
+    ids: Accessor<readonly string[]>;
+    destination: (key: string) => string | undefined;
+    defaultFolded: (key: string) => boolean;
+  }>();
   const [expandAll, setExpandAll] = createSignal(false);
   const [selectedSubagent, setSelectedSubagent] = createSignal<string | null>(null);
   const [focusedKey, setFocusedKey] = createSignal<string | null>(null);
+  const focusedByProjection = new Map<string | null, string | null>();
+  const selectProjection = (next: string | null): void => {
+    focusedByProjection.set(selectedSubagent(), focusedKey());
+    setSelectedSubagent(next);
+    setFocusedKey(focusedByProjection.get(next) ?? null);
+  };
   const [overrides, setOverrides] = createSignal<ReadonlyMap<string, BlockOverride>>(new Map());
-  /** Section anchors that already consumed their one automatic first-selection expansion. */
-  const firstSelectionExpandedAnchors = new Set<string>();
 
   const visibleNodes = createMemo(() => {
     const sel = selectedSubagent();
@@ -141,13 +91,16 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
           ? base.filter((node) => node.subagentId === undefined && node.subagentOrder === undefined)
           : base
         : base.filter((node) => node.subagentId === sel);
-    return deps.preserveOrder ? scoped : withRunMarkersLast(scoped);
+    return scoped;
   });
 
   createEffect(() => {
-    const semanticKeys = new Set(deps.nodes().map((node) => node.key));
-    for (const key of firstSelectionExpandedAnchors)
-      if (!semanticKeys.has(key)) firstSelectionExpandedAnchors.delete(key);
+    const semanticKeys = new Set([
+      ...deps.nodes().flatMap((node) => [node.key, `exploration:${node.key}`]),
+      ...(rowBinding()?.ids() ?? []),
+    ]);
+    for (const [projection, key] of focusedByProjection)
+      if (key !== null && !semanticKeys.has(key)) focusedByProjection.delete(projection);
 
     const current = overrides();
     if (current.size === 0) return;
@@ -155,42 +108,16 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
     setOverrides(new Map([...current].filter(([key]) => semanticKeys.has(key))));
   });
 
-  const grouped = createMemo(() =>
-    computeGroupedNodes(
-      visibleNodes(),
-      new Map(
-        deps
-          .subagents()
-          .filter((agent) => agent.status !== undefined)
-          .map((agent) => [agent.id, agent.status!] as const),
-      ),
-    ),
-  );
-  const toolGroups = createMemo(() => computeToolGroups(grouped().ordered));
-  const focusables = createMemo(() => computeFocusables(grouped(), toolGroups(), overrides()));
-
-  createEffect(() => {
-    if (selectedSubagent() === null) return;
-    const anchors = [...grouped().headers].filter(
-      ([key, header]) =>
-        !header.lead && (header.hiddenEntries ?? 0) > 0 && !firstSelectionExpandedAnchors.has(key),
-    );
-    if (anchors.length === 0) return;
-
-    const next = new Map(overrides());
-    let changed = false;
-    for (const [key] of anchors) {
-      firstSelectionExpandedAnchors.add(key);
-      if (next.has(key)) continue;
-      next.set(key, "expanded");
-      changed = true;
-    }
-    if (changed) setOverrides(next);
-  });
+  const focusables = createMemo(() => [...(rowBinding()?.ids() ?? [])]);
 
   createEffect(() => {
     const sel = selectedSubagent();
-    if (sel !== null && !deps.subagents().some((w) => w.id === sel)) setSelectedSubagent(null);
+    if (
+      sel !== null &&
+      !deps.subagents().some((w) => w.id === sel) &&
+      !deps.nodes().some((node) => node.subagentId === sel)
+    )
+      selectProjection(null);
   });
 
   createEffect(() => {
@@ -199,45 +126,42 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
   });
 
   function toggleBlock(key: string): void {
+    const target = deps.nodes().find((node) => node.key === key)?.delegationTarget;
+    if (target !== undefined) {
+      selectProjection(target);
+      return;
+    }
     deps.rehydrate?.(key);
-    setOverrides(
-      toggleOverride({
-        key,
-        g: grouped(),
-        groups: toolGroups(),
-        node: deps.nodes().find((n) => n.key === key),
-        defaultFolded: deps.defaultFolded ?? (() => false),
-        expandAll: expandAll(),
-        overrides: overrides(),
-      }),
-    );
+    const rows = rowBinding();
+    const own = overrides().get(key);
+    const defaultFolded = rows?.defaultFolded(key) ?? deps.defaultFolded?.(key) ?? false;
+    const expanded = own === "expanded" || (own !== "collapsed" && (expandAll() || !defaultFolded));
+    setOverrides(new Map(overrides()).set(key, expanded ? "collapsed" : "expanded"));
   }
 
   return {
-    grouped,
-    toolGroups,
+    bindRows: setRowBinding,
     semanticNodes: visibleNodes,
     expandAll,
     selectedSubagent,
     focusedKey,
-    folded: (key) => isFoldedAway(grouped(), key, overrides()),
     overrideOf: (key) => overrides().get(key),
     toggleAt: (key) => {
       setFocusedKey(key);
       toggleBlock(key);
     },
     reset: () => {
+      focusedByProjection.clear();
       setFocusedKey(null);
       setOverrides(new Map());
-      firstSelectionExpandedAnchors.clear();
     },
     toggleSubagent: (id) => {
       if (selectedSubagent() === id) {
-        setSelectedSubagent(null);
+        selectProjection(null);
         deps.notify("showing Lead transcript");
         return;
       }
-      setSelectedSubagent(id);
+      selectProjection(id);
       const w = deps.subagents().find((x) => x.id === id);
       deps.notify(subagentFocusToast(w ? w.title : id));
     },
@@ -251,7 +175,7 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
       const cur = selectedSubagent();
       const idx = cur === null ? -1 : subagents.findIndex((w) => w.id === cur);
       const next = idx + 1 >= subagents.length ? null : subagents[idx + 1]!.id;
-      setSelectedSubagent(next);
+      selectProjection(next);
       if (next === null) deps.notify("showing Lead transcript");
       else {
         const w = subagents.find((x) => x.id === next);

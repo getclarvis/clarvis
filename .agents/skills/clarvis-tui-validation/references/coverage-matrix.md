@@ -113,6 +113,7 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `SET-08` | Keyboard         |
 | `SET-09` | Updates          |
 | `SET-10` | Run controls     |
+| `SET-11` | Isolation        |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return
@@ -126,12 +127,12 @@ routes.
 | `RUN-02` | Model and effort changes          | Provider-native IDs, default authority, limits, cost/cache metadata and active-run restrictions persist correctly         |
 | `RUN-03` | Agent selection and customization | Built-ins, partial customization, reset, invalid files, fork/rename rules and delegated defaults are represented honestly |
 | `RUN-04` | Basic streamed run                | Unique submission, text/reasoning stream, usage, settlement and a subsequent turn occur exactly once                      |
-| `RUN-05` | Tool-rich run                     | Tool call/result, shell group, file write/diff, plan and budget blocks remain legible live and settled                    |
+| `RUN-05` | Tool-rich run | Composing/pending/running/terminal retain the same row and tool owner; read/search groups begin at one member, shell/MCP/mutations stay individual; results and diff details are bounded |
 | `RUN-06` | Elicitation                       | Prompt, focus, answer, cancel, handler failure and transcript outcome are correct                                         |
 | `RUN-07` | Interrupted stream                | Visible recoverable error, preserved transcript/session, no false success and usable next turn                            |
 | `RUN-08` | Cancellation race                 | Cancellation before handle, during stream, during tool work and at settlement has one terminal outcome                    |
-| `RUN-09` | Transcript continuity             | Painted history keeps row/style while live content grows; Markdown settlement does not flicker or downgrade               |
-| `RUN-10` | Scroll and tail ownership         | History admission, wheel/keyboard scroll, return to tail and new-submit tail selection preserve reader state              |
+| `RUN-09` | Transcript continuity | Native row and parser identities survive terminal, next message and reconciliation; intermediate frames show no unrequested disappearance |
+| `RUN-10` | Semantic viewport | Wheel/PageUp/drag/End, prepend with concurrent append, 80→81 rows, selection and folds preserve row/screen offset; explicit tail resumes native sticky follow |
 | `RUN-11` | Responsive transcript             | Full width without inspector, split width with activity, folded groups and narrow drawers avoid clipping or overlap       |
 
 ## Sessions, context, telemetry, and persistence
@@ -156,7 +157,7 @@ routes.
 | -------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `CAP-01` | Plans                     | Create/update/review/retain/delete paths, full-screen detail, conflicts and active-run projection are coherent                 |
 | `CAP-02` | Execution memory          | Enable/disable, policy, review/curation, indexing after run, failure, recovery and persistence are coherent                    |
-| `CAP-03` | Subagents                 | Parallel children, isolated transcript, activity detail, cancellation, failure and bounded summaries settle correctly          |
+| `CAP-03` | Subagents | Three concurrent children share no transcript owners; Lead keeps two navigable markers; A→B→Lead invalidates stale restores and preserves independent anchors; background interactions remain accessible |
 | `CAP-04` | Workflows                 | Built-in/custom precedence, manager tree, concurrency, cancellation, budget exhaustion, deletion and resume are correct        |
 | `CAP-05` | Tasks board               | Availability, health, filters, detail, refresh, normalized/native state and claim semantics are honest                         |
 | `CAP-06` | Task mutations            | Supported write, conflict, provider failure and unknown outcome never render as a successful empty board                       |

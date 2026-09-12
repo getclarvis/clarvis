@@ -387,6 +387,15 @@ export type RunEvent =
       cached_tokens?: number;
     })
   | (Attributed & {
+      /** Durable named admission; never includes partial arguments. */
+      type: "tool_call_announced";
+      call_id: string;
+      tool: string;
+      iteration: number;
+      /** One-based physical model attempt within the iteration. */
+      attempt: number;
+    })
+  | (Attributed & {
       type: "tool_call_started";
       call_id: string;
       tool: string;

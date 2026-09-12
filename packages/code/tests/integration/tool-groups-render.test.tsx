@@ -1,232 +1,103 @@
 import { expect, test } from "bun:test";
-import { For, createRoot } from "solid-js";
-import { openRender } from "../helpers/tracked-render.ts";
-import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
-import {
-  createTranscriptStore,
-  type NodeStatus,
-  type TranscriptNode,
-  type TranscriptToolNode,
-} from "../../src/adapters/store.ts";
-import { BlockView } from "../../src/views/blocks.tsx";
-import { computeToolGroups } from "../../src/views/tool-groups.ts";
-import { formatToolCall } from "../../src/views/tools/signature.ts";
-import type { LegacyCollapsibleNode } from "../helpers/transcript-fixtures.ts";
+import { applyEvent } from "../../src/adapters/store.ts";
+import { transcriptToolEvents } from "../helpers/transcript-fixtures.ts";
+import { openTranscript, transcriptRenderables } from "../helpers/transcript-render.tsx";
 
-let seq = 0;
-function glob(pattern: string, status: NodeStatus = "ok"): LegacyCollapsibleNode {
-  return {
-    key: `n${seq++}`,
-    kind: "tool_call",
-    status,
-    text: "",
-    mcpName: "clarvis",
-    toolName: "glob",
-    args: { pattern },
-    result: "(no matches)",
-    error: status === "error" ? "boom" : null,
-    collapsed: status !== "running",
-  };
-}
-function reasoning(text: string): LegacyCollapsibleNode {
-  return { key: `a${seq++}`, kind: "reasoning", status: "ok", text };
-}
-function shell(
-  command: string,
-  outcome: "allowed" | "denied",
-  answerer: "policy" | "judge",
-): LegacyCollapsibleNode {
-  return {
-    key: `s${seq++}`,
-    kind: "tool_call",
-    status: outcome === "allowed" ? "ok" : "error",
-    text: "",
-    toolName: "shell",
-    args: { command, cwd: "/workspace" },
-    error: outcome === "denied" ? "denied" : null,
-    collapsed: true,
-    guard: { mode: "auto", outcome, answerer },
-  };
-}
-
-async function frame(nodes: TranscriptNode[], expand: boolean): Promise<string> {
-  const groups = computeToolGroups(nodes);
-  const t = await openRender(
-    () => (
-      <box flexDirection="column">
-        <For each={nodes}>
-          {(node) => (
-            <BlockView node={node} forceExpand={() => expand} group={() => groups.get(node.key)} />
-          )}
-        </For>
-      </box>
-    ),
-    { width: 100, height: 60 },
-  );
-  await t.renderOnce();
-  const out = t.captureCharFrame();
-  t.renderer.destroy();
-  return out;
-}
-
-test("collapsed: a batch folds to one `tool xN` head listing each member's signature", async () => {
-  const nodes = [glob("a.ts"), glob("b.ts"), glob("c.ts"), glob("d.ts")];
-  const out = await frame(nodes, false);
-  expect(out).toContain("clarvis:glob");
-  expect(out).toContain("x4");
-  expect(out).toContain("(b.ts)");
-  expect(out).toContain("(d.ts)");
-  expect(out.split("clarvis:glob").length - 1).toBe(1);
-  expect(out).not.toContain("(no matches)");
-});
-
-test("collapsed: dehydrated members still list their resident signatures", async () => {
-  const nodes = [
-    { ...glob("a.ts"), args: undefined, dehydrated: true as const, signature: "(a.ts)" },
-    { ...glob("b.ts"), args: undefined, dehydrated: true as const, signature: "(b.ts)" },
-    { ...glob("c.ts"), args: undefined, dehydrated: true as const, signature: "(c.ts)" },
-  ];
-  const out = await frame(nodes, false);
-  expect(out).toContain("x3");
-  expect(out).toContain("(a.ts)");
-  expect(out).toContain("(b.ts)");
-  expect(out).toContain("(c.ts)");
-  expect(out).not.toContain("()\n");
-});
-
-test("collapsed: a live sub-agent's dehydrated grouped members still name their paths", async () => {
-  const store = createRoot(() =>
-    createTranscriptStore({
-      hydratedToolLimit: 1,
-      describeToolCall: (input) => ({
-        signature: formatToolCall(input.mcpName ?? "", input.toolName ?? "", input.args ?? {}),
-        mutation: null,
-      }),
-    }),
-  );
-  const sink = store.openRun("exec_1");
-  const paths = ["src/a.ts", "src/b.ts", "src/c.ts"];
-  for (const [index, path] of paths.entries()) {
-    applyRunEvent(
-      sink,
-      runEvent({
-        type: "tool_call",
-        agent: "subagent",
-        subagent_id: "w1",
-        call_id: `c${index}`,
-        at: index + 1,
-        server: "fs",
-        tool: "read_file",
-        arguments: { path },
-        result: "ok",
-        ok: true,
-      }),
-      "live",
-    );
+test("shell calls and unknown MCP leaves remain individually accessible instead of joining exploration", async () => {
+  const fixture = await openTranscript();
+  const sink = fixture.store.openRun("individual");
+  try {
+    for (const id of ["a", "b"])
+      for (const event of transcriptToolEvents(id, "shell")) applyEvent(sink, event, "live");
+    for (const server of ["alpha", "beta"])
+      applyEvent(
+        sink,
+        {
+          type: "tool_call",
+          at: 7,
+          agent: "lead",
+          call_id: server,
+          server,
+          tool: "read_file",
+          arguments: {},
+          result: "result",
+          ok: false,
+          error: "DENIED",
+        },
+        "live",
+      );
+    await fixture.frames();
+    expect(fixture.history().snapshot().rowIds).toHaveLength(4);
+    expect(
+      fixture
+        .history()
+        .snapshot()
+        .rowIds.some((id) => id.startsWith("exploration:")),
+    ).toBe(false);
+    expect(fixture.rendered.captureCharFrame()).toContain("alpha");
+    expect(fixture.rendered.captureCharFrame()).toContain("beta");
+  } finally {
+    fixture.rendered.renderer.destroy();
   }
-  const tools = store.nodes.filter((node): node is TranscriptToolNode => node.kind === "tool_call");
-  expect(tools.map((node) => node.dehydrated)).toEqual([true, true, undefined]);
-  expect(tools.slice(0, 2).every((node) => node.args === undefined)).toBe(true);
-
-  const out = await frame(tools, false);
-  expect(out).toContain("x3");
-  expect(out).toContain("(src/a.ts)");
-  expect(out).toContain("(src/b.ts)");
-  expect(out).toContain("(src/c.ts)");
-  expect(out).not.toContain("()\n");
 });
 
-test("collapsed: a long batch elides signature lines past the cap", async () => {
-  const nodes = Array.from({ length: 9 }, (_, i) => glob(`f${i}.ts`));
-  const out = await frame(nodes, false);
-  expect(out).toContain("x9");
-  expect(out).toContain("(f5.ts)");
-  expect(out).not.toContain("(f6.ts)");
-  expect(out).toContain("… +3 lines");
-});
-
-test("collapsed: grouped shell signatures retain each auto-guard verdict", async () => {
-  const nodes = [
-    shell("git diff --check", "allowed", "policy"),
-    shell("git restore --worktree -- .", "denied", "judge"),
-  ];
-  const out = await frame(nodes, false);
-  expect(out).toContain("shell x2 · 1 failed");
-  expect(out).toContain("git diff --check");
-  expect(out).toContain("auto-guard approved · policy");
-  expect(out).toContain("git restore --worktree -- .");
-  expect(out).toContain("auto-guard denied · judge");
-  expect(out).not.toContain("denied\n");
-});
-
-test("collapsed: a guarded failure survives after the ordinary signature cap", async () => {
-  const nodes = [
-    ...Array.from({ length: 6 }, (_, index) => shell(`echo ${index}`, "allowed", "policy")),
-    shell("git reset --hard", "denied", "judge"),
-  ];
-  const out = await frame(nodes, false);
-
-  expect(out).toContain("git reset --hard");
-  expect(out).toContain("auto-guard denied · judge");
-  expect(out).toContain("… +1 line");
-});
-
-test("expanded (Ctrl+O): the `xN` count header is dropped and each call renders in full", async () => {
-  const nodes = [glob("a.ts"), glob("b.ts"), glob("c.ts")];
-  const out = await frame(nodes, true);
-  expect(out).not.toContain("x3");
-  expect(out.split("clarvis:glob").length - 1).toBe(3);
-  expect(out).toContain("a.ts");
-  expect(out).toContain("b.ts");
-  expect(out).toContain("c.ts");
-});
-
-test("a model message splits the batch, and failed members stay hidden until expansion", async () => {
-  const nodes = [
-    glob("a.ts"),
-    glob("b.ts", "error"),
-    reasoning("let me look closer"),
-    glob("c.ts"),
-    glob("d.ts"),
-  ];
-  const out = await frame(nodes, false);
-  expect(out).toContain("x2 · 1 failed");
-  expect(out).toContain("x2");
-  expect(out).not.toContain("x4");
-  expect(out).toContain("let me look closer");
-  expect(out).not.toContain("b.ts");
-  expect(out).not.toContain("boom");
-  expect(out).toContain("(a.ts)");
-  expect(out.split("clarvis:glob").length - 1).toBe(2);
-
-  const expanded = await frame(nodes, true);
-  expect(expanded).toContain("b.ts");
-  expect(expanded).toContain("boom");
-});
-
-test("a generic composing batch has one compact progress row and no empty signatures", async () => {
-  const nodes: TranscriptNode[] = [
-    {
-      key: "read-1",
-      kind: "tool_call",
-      status: "running",
-      text: "",
-      toolName: "read_file",
-      inputChars: 120,
-    },
-    {
-      key: "read-2",
-      kind: "tool_call",
-      status: "running",
-      text: "",
-      toolName: "read_file",
-      inputChars: 240,
-    },
-  ];
-
-  const out = await frame(nodes, false);
-  expect(out).toContain("read_file");
-  expect(out).toContain("x2");
-  expect(out).toContain("receiving arguments… 360 chars");
-  expect(out).not.toContain("()\n");
+test("a failed exploration member remains discoverable while folded and expansion is paginated", async () => {
+  const fixture = await openTranscript();
+  const sink = fixture.store.openRun("issues");
+  try {
+    for (let i = 0; i < 45; i++) {
+      const events = transcriptToolEvents(`call-${i}`);
+      for (const event of events)
+        applyEvent(
+          sink,
+          event.type === "tool_call" && i === 44
+            ? { ...event, ok: false, error: "READ_FAILED" }
+            : event,
+          "live",
+        );
+    }
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain("1 failed/interrupted");
+    expect(fixture.rendered.captureCharFrame()).toContain("Open first issue");
+    const id = fixture.history().snapshot().rowIds[0]!;
+    fixture.transcript.toggleAt(id);
+    await fixture.frames();
+    expect(
+      transcriptRenderables(fixture.rendered.renderer.root).filter((node) =>
+        node.id.startsWith("transcript-member:"),
+      ),
+    ).toHaveLength(20);
+    fixture.transcript.clearFocus();
+    expect(fixture.transcript.focusBlock(-1)).toContain("call-19");
+    fixture.transcript.toggleAt(id);
+    await fixture.frames();
+    const click = async (label: string) => {
+      const lines = fixture.rendered.captureCharFrame().split("\n");
+      const y = lines.findIndex((line) => line.includes(label));
+      expect(y).toBeGreaterThanOrEqual(0);
+      await fixture.rendered.mockMouse.click(lines[y]!.indexOf(label) + 1, y);
+      await fixture.frames(5);
+    };
+    await click("Open first issue");
+    expect(fixture.rendered.captureCharFrame()).toContain("READ_FAILED");
+    expect(fixture.rendered.captureCharFrame()).toContain("41–45 / 45");
+    expect(
+      transcriptRenderables(fixture.rendered.renderer.root).filter((node) =>
+        node.id.startsWith("transcript-member:"),
+      ).length,
+    ).toBe(5);
+    await click("Previous");
+    fixture.history().scrollBy(1000);
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain("21–40 / 45");
+    expect(
+      transcriptRenderables(fixture.rendered.renderer.root).filter((node) =>
+        node.id.startsWith("transcript-member:"),
+      ).length,
+    ).toBe(20);
+    await click("Next");
+    expect(fixture.rendered.captureCharFrame()).toContain("41–45 / 45");
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
 });

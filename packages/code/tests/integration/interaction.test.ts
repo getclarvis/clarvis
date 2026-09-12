@@ -714,6 +714,10 @@ test("createInteraction: the four transcript.scroll* bindings pass the documente
   await settle();
   expect(effects.calls.at(-1)).toBe("scrollTranscript:3");
 
+  press(t.renderer, "end");
+  await settle();
+  expect(effects.calls.at(-1)).toBe("scrollTranscript:Infinity");
+
   t.renderer.destroy();
 });
 

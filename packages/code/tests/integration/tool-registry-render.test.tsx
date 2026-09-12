@@ -7,10 +7,10 @@ import {
   resolveErrorRenderer,
 } from "../../src/views/tools/registry.tsx";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
-import type { LegacyCollapsibleToolNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;
-function toolNode(over: Partial<LegacyCollapsibleToolNode>): LegacyCollapsibleToolNode {
+function toolNode(over: Partial<FoldFixtureToolNode>): FoldFixtureToolNode {
   return {
     key: `n${seq++}`,
     kind: "tool_call",

@@ -510,6 +510,7 @@ in `packages/protocol/src/runs.ts` and `commandGuardReview` in
 `packages/kernel/src/transport/run-event-codec.ts`. Test: `"preserves the
 terminal shell auto-guard verdict"` in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
+| `tool_call_announced` | `call_id`, `tool`, non-negative `iteration`, positive `attempt`; no arguments | `RunEvent` in `packages/protocol/src/runs.ts` |
 | `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts` |
 | `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts` |

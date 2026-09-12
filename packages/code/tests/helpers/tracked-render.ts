@@ -27,7 +27,7 @@ export async function settleSyntaxSurfaces(rendered: RenderHandle): Promise<void
     await rendered.renderOnce();
     const surfaces: Renderable[] = [];
     const codeSurfaces: CodeRenderable[] = [];
-    const historyOwners: Renderable[] = [];
+    const rowOwners: Renderable[] = [];
     const visit = (node: Renderable): void => {
       if (
         node instanceof CodeRenderable ||
@@ -36,24 +36,24 @@ export async function settleSyntaxSurfaces(rendered: RenderHandle): Promise<void
       )
         surfaces.push(node);
       if (node instanceof CodeRenderable) codeSurfaces.push(node);
-      if (
-        node.id.startsWith("history:publication:") ||
-        node.id.startsWith("history:fixture:") ||
-        node.id === "history:fixture-publication"
-      )
-        historyOwners.push(node);
+      if (node.id.startsWith("transcript-row:")) rowOwners.push(node);
       for (const child of node.getChildren()) visit(child);
     };
     visit(rendered.renderer.root);
-    if (surfaces.length === 0 && historyOwners.length === 0) return;
-    const historyReady =
-      historyOwners.length === 0 ||
-      historyOwners.every((owner) => owner.opacity === 1 && owner.width > 0 && owner.height > 0);
+    const rowsReady =
+      rowOwners.length === 0 ||
+      rowOwners.every((owner) => owner.opacity === 1 && owner.width > 0 && owner.height > 0);
     const syntaxReady =
-      surfaces.every((surface) => surface.opacity === 1) &&
-      codeSurfaces.every((surface) => !surface.isHighlighting);
+      surfaces.every((surface) => {
+        let owner: Renderable | null = surface;
+        while (owner !== null) {
+          if (owner.opacity !== 1) return false;
+          owner = owner.parent;
+        }
+        return true;
+      }) && codeSurfaces.every((surface) => !surface.isHighlighting);
     const visuallyIdle = rendered.getNativeStats().cellsUpdated === 0;
-    idleFrames = syntaxReady && historyReady && visuallyIdle ? idleFrames + 1 : 0;
+    idleFrames = syntaxReady && rowsReady && visuallyIdle ? idleFrames + 1 : 0;
     if (idleFrames >= 2) return;
   }
   const pending: Array<{
@@ -70,9 +70,7 @@ export async function settleSyntaxSurfaces(rendered: RenderHandle): Promise<void
       node instanceof CodeRenderable ||
       node instanceof DiffRenderable ||
       node instanceof MarkdownRenderable ||
-      node.id.startsWith("history:publication:") ||
-      node.id.startsWith("history:fixture:") ||
-      node.id === "history:fixture-publication"
+      node.id.startsWith("transcript-row:")
     )
       pending.push({
         id: node.id,

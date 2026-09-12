@@ -1051,8 +1051,9 @@ Both land as protocol `RunEvent`s: the engine trace, mapped by
 `engineEventToProto` preserves cumulative argument `tool_input_delta.chars`, the optional distinct
 provider-liveness total `stream_chars`, and optional `complete: true`. The latter ends argument
 composition only; it does not synthesize
-`tool_call_started` or a terminal result. Initial announcements may be durable for diagnosis while
-later progress remains governed by the run-event stream's live-only policy.
+`tool_call_started` or a terminal result. The separate minimal `tool_call_announced` is persisted,
+non-coalescible and non-droppable. `engineEventToProto` preserves its iteration and attempt in both
+live delivery and `RunDetail` replay; all input deltas remain live-only.
 
 The engine trace is an open event vocabulary. `engineEventToProto` recognizes a capability-owned
 persisted event through that package's public structural guard before narrowing the remaining event

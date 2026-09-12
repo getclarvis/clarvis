@@ -32,9 +32,9 @@ stores. It does not decide when a rendered candidate becomes immutable or where 
 that publication/layout contract is
 [code-transcript-stability.md](code-transcript-stability.md). `onEvent` applies the transcript and
 activity sinks inside one Solid batch. `runManaged` releases interactive ownership, fetches and
-reconciles the stored run, then closes publication through `TranscriptRunSink.complete`; a failed
+reconciles the stored run, then seals terminal content through `TranscriptRunSink.complete`; a failed
 stored read or exceptional settlement supplies an explicit degraded completion instead of leaving
-the terminal batch pending. Session restore closes each replayed sink through the same boundary.
+a terminal record pending. Session restore closes each replayed sink through the same boundary.
 
 The recurring problem the code solves is **ownership across asynchrony**. A run's events, its
 `done` envelope, its stream close, its persisted trace, its post-run memory-ingest notice, a user's
@@ -656,23 +656,15 @@ so `residentTurns` itself never grows beyond 20. Production: `packages/code/src/
 `packages/code/tests/component/run-host-export.test.ts` (incremental-fold fallback and double-refusal
 cases).
 
-`foldPrefixBefore` (`packages/code/src/adapters/store.ts`) refuses an absent or index-`0` boundary,
-then performs one batched semantic replacement `[foldedNotice, ...nodes.slice(boundary)]` and one
-resident-publication replacement. The latter drops only complete sealed batches whose nodes all
-belong to the removed prefix, replaces the previous folded-prefix publication and prepends one new
-frozen committed notice. It passes only removed keys absent from every retained publication to
-`TranscriptPublisher.forgetDiscarded`; that method rechecks semantic residency, cancels discarded
-tool staging and releases the matching `knownKeys`, held-answer and reserved-sub-agent bookkeeping.
-A pending staging timer therefore cannot republish folded content, and repeated folds keep the
-publication identity ledger bounded. The bookkeeping it also performs on `foldDefaults`,
-hydrated-tool byte accounting and queued rehydration jobs is the tool-body hydration window's own
-internal state and is described by
-[hosts/code-transcript.md](code-transcript.md); the immutable publication consequence is owned by
-[hosts/code-transcript-stability.md](code-transcript-stability.md). Production:
-`packages/code/src/adapters/store.ts` (`foldPrefixBefore`) and
-`packages/code/src/adapters/transcript-publication.ts` (`forgetDiscarded`). Tests:
-`packages/code/tests/unit/transcript-publication.test.ts` (discard-release and staged-flush
-retention cases) and `packages/code/tests/unit/store-status.test.ts` (repeated 20-turn plateau).
+`foldPrefixBefore` removes discarded semantic records and their sealed inline snapshots in one
+Solid batch, prepending one stable-ID frozen notice. `TranscriptContent.forgetDiscarded` prunes
+sealed/reconciliation bookkeeping; there are no staged publication timers or owner batches.
+Fold defaults, hydration accounting and queued hydration jobs are pruned at the same boundary.
+Production: `foldPrefixBefore` in [store.ts](../../packages/code/src/adapters/store.ts) and
+`forgetDiscarded` in [transcript-content.ts](../../packages/code/src/adapters/transcript-content.ts).
+Test: [transcript-content.test.ts](../../packages/code/tests/unit/transcript-content.test.ts)
+and [store-status.test.ts](../../packages/code/tests/unit/store-status.test.ts), including the
+repeated 20-turn plateau.
 
 ### 4.10 `exportNodeBatches` (`packages/code/src/run-host.ts`)
 

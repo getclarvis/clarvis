@@ -1,17 +1,8 @@
-import {
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-  type Accessor,
-  type JSX,
-} from "solid-js";
+import { Show, createMemo, onCleanup, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ElicitRequestParams, ElicitResult } from "../../adapters/elicit-types.ts";
 import type { ActivityStore } from "../../adapters/activity-store.ts";
-import type { TranscriptNode, TranscriptStore } from "../../adapters/store.ts";
+import type { TranscriptStore } from "../../adapters/store.ts";
 import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
 import type { MemoryPressureSnapshot } from "../../adapters/memory-pressure.ts";
 import type { LayoutMode, SecondarySurfaceMode } from "../../app/layout.ts";
@@ -26,12 +17,11 @@ import type { HintTone } from "../hint.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import { SurfaceBoundary, SurfaceOverlay } from "../../ui/patterns/surface-lifecycle.tsx";
 import {
-  CommittedHistory,
-  type CommittedHistoryHandle,
-  type CommittedHistoryState,
-} from "../history/CommittedHistory.tsx";
-import { LiveTranscriptTail } from "../live/LiveTranscriptTail.tsx";
-import { selectLiveFrontierNodes } from "../live/tail-ownership.ts";
+  TranscriptViewport,
+  type TranscriptViewportHandle,
+} from "../transcript/TranscriptViewport.tsx";
+import { ElicitBlock } from "../ElicitBlock.tsx";
+import { MemoryPressureBanner } from "../MemoryPressureBanner.tsx";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;
@@ -84,8 +74,7 @@ export interface TranscriptRegionProps {
   sidebarReveal?: Accessor<SidebarRevealIntent | null>;
   onOpenDetail?: (detail: ActivityDetail) => void;
   onScrollbox: (scrollbox: ScrollBoxRenderable) => void;
-  onHistoryHandle?: (handle: CommittedHistoryHandle | undefined) => void;
-  onLeadHistoryHandle?: (handle: CommittedHistoryHandle | undefined) => void;
+  onHistoryHandle?: (handle: TranscriptViewportHandle | undefined) => void;
   draftNonEmpty?: Accessor<boolean>;
   memoryPressure?: {
     state: Accessor<MemoryPressureSnapshot>;
@@ -128,74 +117,27 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
       .find((line) => line.trim().length > 0)
       ?.trim() ?? "sub-agent";
   const projectionId = (): string | null => ts.selectedSubagent();
-  const semanticNodes = createMemo((): readonly TranscriptNode[] => {
-    const selected = projectionId();
-    const nodes = props.store.committedNodes();
-    if (selected !== null) return nodes.filter((node) => node.subagentId === selected);
-    return nodes.some((node) => node.subagentId !== undefined || node.subagentOrder !== undefined)
-      ? nodes.filter((node) => node.subagentId === undefined && node.subagentOrder === undefined)
-      : nodes;
-  });
   const childTitle = createMemo((): string | undefined => {
     const selected = projectionId();
-    if (selected === null || secondaryMode() !== "closed") return undefined;
+    if (selected === null) return undefined;
     const agent = props.activity.subagents.find(
       (candidate: ActivityStore["subagents"][number]) => candidate.id === selected,
     );
-    return agent === undefined ? undefined : `Viewing A${agent.order + 1} ${agentTitle(agent)}`;
+    if (agent !== undefined)
+      return secondaryMode() === "closed"
+        ? `Viewing A${agent.order + 1} ${agentTitle(agent)} · Back to Lead`
+        : undefined;
+    const marker = props.store.nodes.find((node) => node.delegationTarget === selected);
+    const title =
+      marker?.kind === "annotation" ? marker.text.replace(/^Spawned sub-agent /, "") : selected;
+    return `Viewing ${title} · Back to Lead`;
   });
-  const frontierKeys = createMemo(() =>
-    selectLiveFrontierNodes(props.store.frontierNodes(), ts.selectedSubagent()).map(
-      (node) => node.key,
-    ),
-  );
-  const [tailEntries, setTailEntries] = createSignal(0);
-  const [historyHandle, setHistoryHandle] = createSignal<CommittedHistoryHandle>();
-  const scrollTopByProjection = new Map<string | null, number>();
-  let scrollbox: ScrollBoxRenderable | undefined;
-  const transcript: CommittedHistoryState = {
-    semanticNodes,
-    expandAll: ts.expandAll,
-    selectedSubagent: ts.selectedSubagent,
-    focusedKey: ts.focusedKey,
-    overrideOf: (key) => ts.overrideOf(key),
-    toggleAt: (key) => ts.toggleAt(key),
-  };
-
-  const publishHandle = (handle: CommittedHistoryHandle | undefined): void => {
-    setHistoryHandle(handle);
+  const publishHandle = (handle: TranscriptViewportHandle | undefined): void => {
     props.onHistoryHandle?.(handle);
-    props.onLeadHistoryHandle?.(handle);
   };
-
-  createEffect((previous: string | null | undefined) => {
-    const selected = projectionId();
-    const element = scrollbox;
-    if (previous !== undefined && previous !== selected && element !== undefined)
-      scrollTopByProjection.set(previous, element.scrollTop);
-    if (previous === undefined || previous === selected) return selected;
-    queueMicrotask(() => {
-      const current = scrollbox;
-      const handle = untrack(historyHandle);
-      if (current === undefined || handle === undefined) return;
-      const restored = scrollTopByProjection.get(selected);
-      if (restored === undefined) {
-        if (selected === null) handle.returnToTail();
-        else {
-          handle.requestEarlier();
-          current.scrollTo({ x: 0, y: 0 });
-        }
-        return;
-      }
-      const maxScrollTop = Math.max(0, current.scrollHeight - current.viewport.height);
-      current.scrollTo({ x: 0, y: Math.min(restored, maxScrollTop) });
-    });
-    return selected;
-  });
 
   onCleanup(() => {
     props.onHistoryHandle?.(undefined);
-    props.onLeadHistoryHandle?.(undefined);
   });
 
   return (
@@ -204,11 +146,16 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
         <Show when={childTitle()}>
           {(title: Accessor<string>) => (
             <box
+              id="transcript-child-navigation"
               height={1}
               flexShrink={0}
               paddingLeft={1}
               paddingRight={1}
               backgroundColor={tokens.bgElev}
+              onMouseDown={() => {
+                const selected = projectionId();
+                if (selected !== null && regionActive()) ts.toggleSubagent(selected);
+              }}
             >
               <text wrapMode="none" truncate selectable={false}>
                 <span style={{ fg: tokens.accent }}>
@@ -218,40 +165,43 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
             </box>
           )}
         </Show>
-        <CommittedHistory
+        <TranscriptViewport
           store={props.store}
-          transcript={transcript}
+          transcript={ts}
           active={regionActive}
-          splitOpen={splitOpen}
+          width={() => props.layout.width() - (splitOpen() ? props.layout.sidebarWidth() : 0)}
           notify={props.notify}
           onOpenDetail={props.onOpenDetail}
-          onScrollbox={(value) => {
-            scrollbox = value;
-            props.onScrollbox(value);
-          }}
+          onScrollbox={props.onScrollbox}
           onHandle={publishHandle}
-          tailEntries={tailEntries}
-          frontierKeys={frontierKeys}
-          tail={(tailOwnedKeys) => (
-            <LiveTranscriptTail
-              store={props.store}
-              activity={props.activity}
-              interaction={props.interaction}
-              active={regionActive}
-              elicit={() => (regionActive() ? props.run.elicit() : null)}
-              resolveElicit={props.run.resolveElicit}
-              selectedSubagent={ts.selectedSubagent}
-              tailOwnedKeys={tailOwnedKeys}
-              onFrontierCountChange={setTailEntries}
-              splitOpen={splitOpen}
-              notify={props.notify}
-              openPlan={props.openPlan}
-              onOpenDetail={props.onOpenDetail}
-              memoryPressure={props.memoryPressure}
-              readingRunwayRows={() => transcriptReadingRunwayRows(props.layout.height())}
+        >
+          <Show when={props.memoryPressure !== undefined}>
+            <MemoryPressureBanner
+              state={() => props.memoryPressure!.state()}
+              onRecover={() => {
+                if (regionActive()) props.memoryPressure!.onRecover();
+              }}
             />
-          )}
-        />
+          </Show>
+          <Show when={regionActive() ? props.run.elicit() : null} keyed>
+            {(request: ElicitRequestParams) => (
+              <ElicitBlock
+                interaction={props.interaction}
+                request={request}
+                onResolve={props.run.resolveElicit}
+                onNotify={props.notify}
+                plan={() => props.activity.plan}
+                onOpenPlan={props.openPlan}
+                fillAvailableWidth={splitOpen}
+              />
+            )}
+          </Show>
+          <box
+            id="transcript-reading-runway"
+            height={transcriptReadingRunwayRows(props.layout.height())}
+            flexShrink={0}
+          />
+        </TranscriptViewport>
       </box>
       <Show when={splitOpen()}>
         <Sidebar

@@ -477,6 +477,17 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         call_id: ev.call_id,
         chunk: ev.chunk,
       };
+    case "tool_call_announced":
+      return {
+        type: "tool_call_announced",
+        at: ev.occurred_at,
+        agent: ev.agent,
+        ...sub(ev.subagent_instance_id),
+        call_id: ev.call_id,
+        tool: ev.tool_name,
+        iteration: ev.iteration,
+        attempt: ev.attempt,
+      };
     case "tool_input_delta":
       return {
         type: "tool_input_delta",

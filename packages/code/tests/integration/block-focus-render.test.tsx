@@ -3,14 +3,13 @@ import { For } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
 import { BlockView } from "../../src/views/blocks.tsx";
-import { computeToolGroups } from "../../src/views/tool-groups.ts";
 import type { BlockOverride } from "../../src/views/block-focus.ts";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
 import { focusBg, selectionBg } from "../../src/theme/surfaces.ts";
-import type { LegacyCollapsibleNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;
-function bash(result: string, collapsed = true): LegacyCollapsibleNode {
+function bash(result: string, collapsed = true): FoldFixtureNode {
   return {
     key: `b${seq++}`,
     kind: "tool_call",
@@ -29,7 +28,6 @@ async function frame(
   nodes: TranscriptNode[],
   overrides: ReadonlyMap<string, BlockOverride>,
 ): Promise<string> {
-  const groups = computeToolGroups(nodes);
   const t = await openRender(
     () => (
       <box flexDirection="column">
@@ -38,7 +36,7 @@ async function frame(
             <BlockView
               node={node}
               forceExpand={() => false}
-              group={() => groups.get(node.key)}
+              defaultFolded={() => (node as FoldFixtureNode).collapsed ?? false}
               overrideOf={(key) => overrides.get(key)}
             />
           )}
@@ -70,7 +68,7 @@ test("the explicit expand lifts the 10-line clamp (full body, no '+N more lines'
 });
 
 test("a focused block paints the shared focus wash at selection weight", async () => {
-  const node: LegacyCollapsibleNode = {
+  const node: FoldFixtureNode = {
     key: "a1",
     kind: "annotation",
     status: "ok",
@@ -87,17 +85,4 @@ test("a focused block paints the shared focus wash at selection weight", async (
   expect(span).toBeDefined();
   expect(rgbToHex(span!.bg).toLowerCase()).toBe(focusBg().toLowerCase());
   expect(focusBg()).toBe(selectionBg());
-});
-
-test("a head 'expanded' override explodes the group and lifts members' clamps", async () => {
-  const a = bash("alpha-body");
-  const b = bash("beta-body");
-  const collapsed = await frame([a, b], new Map());
-  expect(collapsed).toContain("x2");
-  expect(collapsed.includes("alpha-body")).toBe(false);
-  const open = new Map<string, BlockOverride>([[a.key, "expanded"]]);
-  const out = await frame([a, b], open);
-  expect(out).not.toContain("x2");
-  expect(out).toContain("alpha-body");
-  expect(out).toContain("beta-body");
 });

@@ -381,11 +381,11 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 7; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 7`
+`HelloParams` = `{ wire_version: 8; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 8`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 7; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 8; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.

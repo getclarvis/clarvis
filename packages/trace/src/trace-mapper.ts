@@ -190,6 +190,21 @@ function mapEntryRaw(
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
       return event;
     }
+    case "tool_call_announced": {
+      const d = capDetail(entry.kind, entry.detail);
+      return {
+        type: "tool_call_announced",
+        agent: d.agent,
+        ...(d.subagent_instance_id === undefined
+          ? {}
+          : { subagent_instance_id: d.subagent_instance_id }),
+        call_id: d.call_id,
+        occurred_at: abs(entry.at),
+        tool_name: d.tool_name,
+        iteration: d.iteration,
+        attempt: d.attempt,
+      };
+    }
     case "tool_input_delta": {
       const d = capDetail(entry.kind, entry.detail);
       const event: Extract<TraceEvent, { type: "tool_input_delta" }> = {

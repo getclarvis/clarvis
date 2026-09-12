@@ -447,7 +447,7 @@ async function moveReaderAwayFromTail(t: Awaited<ReturnType<typeof openRender>>)
   for (let pass = 0; pass < 600; pass += 1) {
     press(t, "pageup");
     await t.renderOnce();
-    if (t.renderer.root.findDescendantById("history-newer-indicator") !== undefined) return;
+    if (t.renderer.root.findDescendantById("transcript-reader-indicator") !== undefined) return;
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
   throw new Error(`reader never left the tail:\n${t.captureCharFrame()}`);
@@ -1364,7 +1364,7 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   const thinking = await captureUntil(t, "thinking");
   const line = t.renderer.root.findDescendantById("lead-activity-line");
   const input = t.renderer.root.findDescendantById("input-dock");
-  const history = t.renderer.root.findDescendantById("committed-history");
+  const history = t.renderer.root.findDescendantById("transcript-viewport");
   expect(line).toBeDefined();
   expect(input).toBeDefined();
   expect(line!.y + line!.height).toBe(input!.y);
@@ -1387,7 +1387,8 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
     ],
     "live",
   );
-  const working = await captureUntil(t, "working");
+  const working = await captureUntil(t, "VISIBLE LEAD ANSWER");
+  expect(working).toContain("working");
   expect(working).toContain("VISIBLE LEAD ANSWER");
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
   expect(line!.y).toBe(fixedY);
@@ -2107,7 +2108,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   applyRunEvents(activitySink, initial, "live");
   const t = await mountApp(defaultProps({ store, activity }));
   await captureUntil(t, "WIDTH ANCHOR");
-  const historyBefore = t.renderer.root.findDescendantById("committed-history");
+  const historyBefore = t.renderer.root.findDescendantById("transcript-viewport");
   const historyWidthBefore = historyBefore?.width;
 
   const delegation: RunEvent[] = [
@@ -2124,7 +2125,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   applyRunEvents(sink, delegation, "live");
   applyRunEvents(activitySink, delegation, "live");
   const out = await captureUntil(t, "Lead transcript");
-  const historyOpen = t.renderer.root.findDescendantById("committed-history");
+  const historyOpen = t.renderer.root.findDescendantById("transcript-viewport");
   expect(out).toContain("explorer");
   expect(out).toContain("Running");
   expect(out).not.toContain("tokens");
@@ -2137,7 +2138,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   press(t, "escape");
   await t.renderOnce();
   await t.renderOnce();
-  const historyExplicitlyClosed = t.renderer.root.findDescendantById("committed-history");
+  const historyExplicitlyClosed = t.renderer.root.findDescendantById("transcript-viewport");
   expect(historyExplicitlyClosed?.width).toBe(historyWidthBefore);
 
   const laterDelegation: RunEvent[] = [
@@ -2155,7 +2156,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   applyRunEvents(activitySink, laterDelegation, "live");
   const stillClosed = await captureUntil(t, "Agents 2");
   expect(stillClosed).not.toContain("│ Agents");
-  expect(t.renderer.root.findDescendantById("committed-history")?.width).toBe(historyWidthBefore);
+  expect(t.renderer.root.findDescendantById("transcript-viewport")?.width).toBe(historyWidthBefore);
 
   const nextSink = store.openRun("exec_2");
   const nextActivitySink = activity.openRun();
@@ -2515,14 +2516,14 @@ test("normal submit and steer return an old reader to the Lead tail while backgr
   applyRunEvents(sink, background, "live");
   applyRunEvents(activitySink, background, "live");
   for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeDefined();
   expect(t.captureCharFrame()).not.toContain("BACKGROUND APPEND MUST NOT JUMP");
 
   await t.mockInput.typeText("normal explicit submit");
   t.mockInput.pressEnter();
   const afterSubmit = await captureUntil(t, "BACKGROUND APPEND MUST NOT JUMP");
   expect(afterSubmit).toContain("BACKGROUND APPEND MUST NOT JUMP");
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeUndefined();
   expect(submissions).toEqual(["normal explicit submit"]);
 
   setActive(true);
@@ -2559,7 +2560,7 @@ test("an elicitation returns an old reader to the live tail before hiding the co
 
   await captureUntil(t, "ELICIT HISTORY 40");
   await moveReaderAwayFromTail(t);
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeDefined();
   const readerFrame = t.captureCharFrame();
   const readerRows = readerFrame.split("\n");
   const readerAnchorRow = readerRows.findIndex((row) => row.includes("ELICIT HISTORY"));
@@ -2587,7 +2588,7 @@ test("an elicitation returns an old reader to the live tail before hiding the co
   recorder.stop();
   expect(question).toContain("Command approval");
   expect(question).not.toContain("Steer this run");
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeUndefined();
   expect(recorder.recordedFrames.length).toBeGreaterThan(0);
   for (const recorded of recorder.recordedFrames) {
     const frame = recorded.frame;
@@ -3005,16 +3006,12 @@ test("the main transcript omits workers and sidebar selection opens one isolated
   expect(isolated).toContain("SCOUT BODY OPENS READABLE");
   expect(isolated).not.toContain("REVIEWER BODY OPENS READABLE");
 
-  await clickText(t, isolated, "Scout");
-  const collapsed = await captureUntil(t, "hidden");
-  expect(collapsed).not.toContain("SCOUT BODY OPENS READABLE");
-  await clickText(t, collapsed, "Lead transcript");
+  await clickText(t, isolated, "Lead transcript");
   const leadAgain = await captureUntil(t, "Reviewer");
   await clickLastText(t, leadAgain, "Scout");
   press(t, "pageup");
-  const reselected = await captureUntil(t, "hidden");
-  expect(reselected).toContain("hidden");
-  expect(reselected).not.toContain("SCOUT BODY OPENS READABLE");
+  const reselected = await captureUntil(t, "SCOUT BODY OPENS READABLE");
+  expect(reselected).not.toContain("REVIEWER BODY OPENS READABLE");
   t.renderer.destroy();
 });
 

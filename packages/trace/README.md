@@ -38,13 +38,11 @@ this package; nothing here may depend on the engine.
 the engine passes the handle straight through, exactly as `LiveContext` satisfies
 `ContextPort`.
 
-For a provider-composed tool call, the engine records one durable `tool_input_delta` announcement
-per attempt and sends later cumulative character counts plus `complete: true` through `signal` only.
-The record may carry both call-scoped argument `chars` and the provider attempt's separate
-`stream_chars` liveness total; neither carries content.
-The announcement makes an interrupted run diagnosable while keeping the journal constant-size with
-respect to argument length. A durable `model_call_retry` retains its bounded failure message; neither
-event retains argument contents.
+The minimal durable `tool_call_announced` contains actor, call identity, tool name, iteration and
+attempt, never partial arguments or progress counters. All `tool_input_delta` reports are live
+signals. Replay can therefore restore an announced call interrupted before execution without
+persisting every delta. A durable `model_call_retry` retains its bounded failure message and closes
+the prior attempt in clients; a client disconnect alone is not an execution outcome.
 
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares

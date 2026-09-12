@@ -429,11 +429,11 @@ behaviour are pinned by `packages/trace/tests/unit/in-memory-trace.test.ts`.
 
 The engine's sink is `traceBridge` (`packages/loop/src/runtime/run-trace.ts`): poke the clock,
 feed the supervision registry with the *raw* entry, then map **once** and share the result between
-the journal and the host's `onEvent`. `journal` is taken only when `durable` is true. Text, reasoning, tool-output and later tool-input progress stay off disk. The engine records
-only the first tool-input announcement per `call_id` in each physical provider attempt, then signals
-later cumulative argument and provider-stream counts and `complete: true`; its retry callback clears the attempt-local identity
-set. This retains one diagnostic breadcrumb per attempted tool call rather than one row per provider
-delta. Production: `announcedToolCalls` and `onToolInputDelta` in
+the journal and the host's `onEvent`. `journal` is taken only when `durable` is true. All text,
+reasoning, tool-output and tool-input progress stay off disk. The engine records one separate minimal
+`tool_call_announced` per call and physical provider attempt, with actor, tool, iteration and attempt.
+All counts and completion use `signal`; retry increments the attempt and clears the announcement
+set. No argument content is needed for replay. Production: `announcedToolCalls` and `onToolInputDelta` in
 `packages/loop/src/runtime/loop/loop.ts`. Test:
 `packages/loop/tests/unit/stream-delta-attribution.test.ts`.
 
@@ -1121,9 +1121,10 @@ material. Production: `JournalHeader.host_metadata`, `journalToRecord`,
 `packages/trace/tests/integration/json-trace-store.test.ts`.
 
 **T-51.** Provider tool-argument observability is bounded independently of argument size: one first
-`tool_input_delta` announcement is durable per `call_id` per physical attempt; later cumulative
-argument and provider-stream progress plus the explicit completion are live signals. A retry clears
-the announcement set. The durable row contains identity and counts, never content. Production:
+`tool_call_announced` is durable per `call_id` per physical attempt; all cumulative argument and
+provider-stream progress plus completion are live signals. Retry advances the attempt and clears
+the announcement set. The durable row contains identity, iteration and attempt, never argument
+contents or progress counters. Production:
 `announcedToolCalls`,
 `buildModelCall.onRetry`, and `withStreaming.onToolInputDelta` in
 `packages/loop/src/runtime/loop/loop.ts`. Test:

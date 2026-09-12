@@ -37,9 +37,9 @@ four distinct jobs:
    (`packages/kernel/src/runs/map-message.ts`), and the declarative per-event policy table that says which of those
    two paths owns each event and whether it survives a restart (`RUN_EVENT_POLICY`).
 
-`RUN_EVENT_POLICY` is a transport/durability policy, not a TUI publication policy. Code classifies
-the resulting closed `RunEvent` union again for live-frontier versus committed-history ownership in
-[code-transcript-stability.md](code-transcript-stability.md#41-exhaustive-event-disposition); it may
+`RUN_EVENT_POLICY` is a transport/durability policy, not a UI residence policy. Code derives
+records, rows and terminal content according to
+[code-transcript-stability.md](code-transcript-stability.md); it may
 not change which mapper emits an event or whether that event survives restart.
 
 The subsystem is the only place where the engine's vocabulary (`TraceEvent`, `RunResponse`,
@@ -246,6 +246,7 @@ Complete table, transcribed :
 | `run_ended` | engine_trace | persisted | engine | false | false |
 | `iteration_started` | engine_trace | persisted | engine | false | false |
 | `iteration_completed` | engine_trace | persisted | engine | false | false |
+| `tool_call_announced` | engine_trace | persisted | engine | false | false |
 | `tool_call_started` | engine_trace | persisted | engine | false | false |
 | `tool_call` | engine_trace | persisted | engine | false | false |
 | `tool_output_delta` | engine_trace | **live_only** | engine | `tool_output_delta` | **true** |
@@ -285,12 +286,14 @@ Complete table, transcribed :
 Read as a client live-versus-rehydration matrix: fifteen types are `live_only` and therefore absent
 from restored `RunDetail.events` — the three deltas, three workflow state/metadata/progress events,
 five plan events, `compaction_started`, `memory_ingest`, `capability_event`, and `events_dropped`.
-The latest workflow sequence state remains separately durable in the workflow store. The engine may
-still record one first `tool_input_delta` announcement per provider attempt in its raw trace as a
-bounded diagnostic breadcrumb; `rehydrateEvents` maps stored entries and then filters them through
-this policy, so that breadcrumb cannot revive a stale composing tool in a restored client. This is
-consistent with the integration assertion that a stored run has no client `tool_output_delta` but
-does have the closing `tool_call` (`packages/kernel/tests/integration/run-service.smoke.test.ts`).
+The latest workflow sequence state remains separately durable in the workflow store. The separate
+minimal `tool_call_announced` is persisted, non-droppable and non-coalescible. It restores named
+composition before start, using iteration/attempt identity; authoritative retry or scope termination
+closes that attempt, not a client disconnect. Production: `RUN_EVENT_POLICY`, `engineEventToProto`
+and `rehydrateEvents` in `packages/kernel/src/runs/event-policy.ts` and
+`packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/event-policy.test.ts`,
+`packages/kernel/tests/unit/map-events.test.ts` and
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 ### 3.4 The `events_dropped` notice
 
@@ -345,8 +348,8 @@ ignored.
 present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`. That last step
 maps only recognized events and retains only entries whose mapped protocol type is `persisted` in
 `RUN_EVENT_POLICY`; its debug summary reports total, mapped and dropped counts. The filter is needed
-even though ordinary deltas are signals because the loop deliberately records the first tool-input
-announcement for post-mortem diagnosis.
+even when direct stored inputs contain signal-only event kinds. The separate minimal
+`tool_call_announced` passes the persisted policy; `tool_input_delta` never does.
 
 `extensionProfileFromHostMetadata` accepts only a qualified Extension Profile id and a lowercase SHA-256
 fingerprint, then projects exactly those two strings (`packages/kernel/src/runs/map-result.ts`).

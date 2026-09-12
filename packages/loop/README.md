@@ -36,12 +36,13 @@ MCP itself. What remains of the last two is engine _policy_ — when to record a
 when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
-That trace policy records the first `tool_input_delta` announcement for each provider attempt, then
-emits only live cumulative progress and the explicit argument-stream completion. Each report keeps
-call-scoped argument `chars` separate from the physical attempt's optional `stream_chars` liveness
-total. A retry clears the attempt-local announcement set, so even a provider that reuses a `call_id`
-leaves one new durable breadcrumb. `model_call_retry` also retains the bounded provider failure
-message. This is bounded observability: no argument content and no per-delta journal growth.
+The engine records one minimal `tool_call_announced` per call in each physical provider attempt:
+actor, call identity, tool name, iteration and attempt. Every cumulative `tool_input_delta`, including
+`complete: true`, is a live signal. Argument `chars` and optional provider `stream_chars` remain
+separate counters. Retry advances the attempt and clears the announcement set, preserving identity
+even when a provider reuses its call ID. No partial arguments or per-delta journal growth are needed.
+The durable vocabulary and replay contract are owned by
+[`foundations/trace.md`](../../specs/foundations/trace.md).
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.

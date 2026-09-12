@@ -213,6 +213,10 @@ instruction but does not confirm the requested work completed. Tool guidance kee
 session scope and elicitation posture explicit; see
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
+A minimal `tool_call_announced` maps to a `debug` composing notification. Its structured identity
+contains no partial arguments and does not imply execution or approval. Existing elicitation
+postures and control authority are unchanged.
+
 Long context compaction is visible as an `info` progress notification when it starts. Its terminal
 event reports whether the context was summarized or mechanically evicted, including the fallback
 reason when summarization failed or did not reduce the context enough.

@@ -157,6 +157,10 @@ configuration, plans, memory and credentials outside the deletion vocabulary.
 phase (`commentary` or `final_answer`). The response text remains authoritative; clients must not
 invent prose when the field is absent.
 
+`tool_call_announced` supplies durable actor/call/tool identity with iteration and physical attempt,
+without argument contents. The kernel's exact-version transport includes this discriminator;
+announcement is neither execution nor approval. UI state never enters this DTO.
+
 `tool_input_delta` is cumulative, not one event per provider fragment. `chars` is call-scoped
 argument progress; optional `stream_chars` is the distinct physical provider-stream character
 total and may advance while arguments remain unavailable. Its optional `complete: true` closes only

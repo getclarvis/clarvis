@@ -100,7 +100,7 @@ test("MCP degradation is retained as run telemetry but never becomes transcript 
   ]);
 
   expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
-  expect(store.publicationBatches).toHaveLength(0);
+  expect(store.committedNodes()).toHaveLength(0);
 });
 
 test("settleRun sweeps leftover running nodes when a run is cancelled or lost", () => {
@@ -392,8 +392,8 @@ test("the delegation capability mirror never creates Lead transcript rows", () =
       .map((node) => node.text),
   ).toEqual(["audit.checkpoint: ready"]);
   expect(
-    store.publicationBatches
-      .flatMap((publication) => publication.nodes)
+    store
+      .committedNodes()
       .filter((node) => node.kind === "annotation" && node.subagentId === undefined)
       .map((node) => node.text),
   ).toEqual(["audit.checkpoint: ready"]);
@@ -474,7 +474,7 @@ test("Lead orchestration tools remain absent across live replay while child tool
     for (const event of stream) applyRunEvent(sink, event, "live");
     expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
       expect.objectContaining({
-        key: "exec_orchestration::child-read",
+        key: 'exec_orchestration::tool:["subagent:worker","child-read"]',
         status: "ok",
         mcpName: "read_file",
         toolName: "",
@@ -487,7 +487,7 @@ test("Lead orchestration tools remain absent across live replay while child tool
     sink.endReconcile();
     expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
       expect.objectContaining({
-        key: "exec_orchestration::child-read",
+        key: 'exec_orchestration::tool:["subagent:worker","child-read"]',
         status: "ok",
         mcpName: "read_file",
         toolName: "",
@@ -498,7 +498,7 @@ test("Lead orchestration tools remain absent across live replay while child tool
   });
 });
 
-test("an MCP leaf collision survives replay while a child lifecycle missing its id fails closed", () => {
+test("an MCP leaf collision survives replay while a child lifecycle missing its id stays isolated", () => {
   createRoot((dispose) => {
     const store = createTranscriptStore();
     const sink = store.openRun("exec_collision");
@@ -561,25 +561,30 @@ test("an MCP leaf collision survives replay while a child lifecycle missing its 
     sink.endReconcile();
     sink.complete();
 
-    expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+    expect(
+      store.nodes.filter((node) => node.kind === "tool_call" && node.subagentId === undefined),
+    ).toEqual([
       expect.objectContaining({
-        key: "exec_collision::mcp",
+        key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
         toolName: "await_agents",
         result: "visible downstream result",
       }),
     ]);
     expect(
-      store.publicationBatches
-        .flatMap((publication) => publication.nodes)
-        .filter((node) => node.kind === "tool_call"),
+      store
+        .committedNodes()
+        .filter((node) => node.kind === "tool_call" && node.subagentId === undefined),
     ).toEqual([
       expect.objectContaining({
-        key: "exec_collision::mcp",
+        key: 'exec_collision::tool:["lead","mcp"]',
         mcpName: "server",
         toolName: "await_agents",
       }),
     ]);
+    expect(
+      store.nodes.some((node) => node.kind === "tool_call" && node.attributionIncomplete),
+    ).toBe(true);
     dispose();
   });
 });
@@ -734,17 +739,9 @@ test("foldPrefixBefore replaces an arbitrarily large semantic prefix with one no
     expect(store.nodes.slice(1)).toEqual(keptNodes);
     expect(store.nodes.filter((node) => node.kind === "annotation")).toHaveLength(1);
     expect(store.nodes.some((node) => node.key.startsWith("exec_old::"))).toBe(false);
-    expect(
-      store.publicationBatches
-        .flatMap((publication) => publication.nodes)
-        .some((node) => node.key.startsWith("exec_old::")),
-    ).toBe(false);
-    expect(store.publicationBatches[0]).toMatchObject({
-      id: "publication:folded-prefix:0",
-      phase: "committed",
-      ready: true,
-    });
-    expect(Object.isFrozen(store.publicationBatches[0]?.nodes[0])).toBe(true);
+    expect(store.committedNodes().some((node) => node.key.startsWith("exec_old::"))).toBe(false);
+    expect(store.committedNodes()[0]).toMatchObject({ key: "transcript:folded-prefix" });
+    expect(Object.isFrozen(store.committedNodes()[0])).toBe(true);
     dispose();
   });
 });
@@ -754,8 +751,8 @@ test("repeated 20-turn retention folds keep semantic and publication ledgers at 
     const store = createTranscriptStore();
     const residentTurnLimit = 20;
     const residentUserKeys: string[] = [];
-    const foldedPublicationIds = new Set<string>();
-    let previousFoldedPublication = store.publicationBatches[0];
+    const foldedRevisions = new Set<TranscriptNode>();
+    let previousFoldedPublication = store.committedNodes()[0];
 
     for (let turn = 1; turn <= 80; turn += 1) {
       const executionId = `retention_${turn}`;
@@ -805,38 +802,25 @@ test("repeated 20-turn retention folds keep semantic and publication ledgers at 
       expect(store.foldPrefixBefore(residentUserKeys[1]!, notice)).toBe(true);
       residentUserKeys.shift();
 
-      const foldedPublication = store.publicationBatches[0]!;
-      expect(foldedPublication.id).toStartWith("publication:folded-prefix:");
-      expect(foldedPublication.id).not.toBe(previousFoldedPublication?.id);
+      const foldedPublication = store.committedNodes()[0]!;
+      expect(foldedPublication.key).toBe("transcript:folded-prefix");
       expect(foldedPublication).not.toBe(previousFoldedPublication);
-      expect(foldedPublication.nodes).toEqual([
-        expect.objectContaining({
-          key: "transcript:folded-prefix",
-          text: notice,
-        }),
-      ]);
-      if (previousFoldedPublication !== undefined)
-        expect(
-          store.publicationBatches.some(
-            (publication) => publication.id === previousFoldedPublication?.id,
-          ),
-        ).toBe(false);
-      foldedPublicationIds.add(foldedPublication.id);
+      expect(foldedPublication.text).toBe(notice);
+      foldedRevisions.add(foldedPublication);
       previousFoldedPublication = foldedPublication;
 
       expect(store.nodes).toHaveLength(residentTurnLimit * 3 + 1);
-      expect(store.publicationBatches).toHaveLength(residentTurnLimit * 2 + 1);
-      expect(new Set(store.publicationBatches.map((publication) => publication.id)).size).toBe(
-        residentTurnLimit * 2 + 1,
+      expect(store.committedNodes()).toHaveLength(residentTurnLimit * 3 + 1);
+      expect(new Set(store.committedNodes().map((publication) => publication.key)).size).toBe(
+        residentTurnLimit * 3 + 1,
       );
       expect(store.memory?.()).toMatchObject({
         transcript_nodes: residentTurnLimit * 3 + 1,
-        publication_batches: residentTurnLimit * 2 + 1,
-        publication_known_keys: residentTurnLimit * 3,
+        sealed_records: residentTurnLimit * 3 + 1,
       });
     }
 
-    expect(foldedPublicationIds.size).toBe(80 - residentTurnLimit);
+    expect(foldedRevisions.size).toBe(80 - residentTurnLimit);
     expect(store.nodes.filter((node) => node.kind === "user").map((node) => node.key)).toEqual(
       residentUserKeys,
     );
@@ -949,7 +933,7 @@ test("dropComposing settles a named composing tool instead of removing it", () =
   ]);
   const tool = nodes.find((node) => node.kind === "tool_call");
   expect(tool).toMatchObject({
-    key: "exec_1::read-1",
+    key: 'exec_1::tool:["lead","read-1"]',
     kind: "tool_call",
     toolName: "read_file",
     status: "error",

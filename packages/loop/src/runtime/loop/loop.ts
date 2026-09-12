@@ -949,6 +949,7 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
       await d.drainSteer?.(iteration);
 
       const announcedToolCalls = new Set<string>();
+      let toolAttempt = 1;
 
       const withStreaming = (call: LLMCallParams): LLMCallParams =>
         target.stream === false
@@ -985,18 +986,27 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
                   ...(delta.stream_chars !== undefined ? { stream_chars: delta.stream_chars } : {}),
                   ...(delta.complete === true ? { complete: true as const } : {}),
                 };
-                if (announcedToolCalls.has(delta.call_id)) {
-                  trace.signal("tool_input_delta", detail);
-                } else {
+                if (!announcedToolCalls.has(delta.call_id)) {
                   announcedToolCalls.add(delta.call_id);
-                  trace.record("tool_input_delta", detail);
+                  trace.record("tool_call_announced", {
+                    agent: core.agent,
+                    ...traceIdFields,
+                    call_id: delta.call_id,
+                    tool_name: delta.tool_name,
+                    iteration,
+                    attempt: toolAttempt,
+                  });
                 }
+                trace.signal("tool_input_delta", detail);
               },
             };
       const retryCtx = {
         iteration,
         traceIdFields,
-        onRetry: (): void => announcedToolCalls.clear(),
+        onRetry: (): void => {
+          announcedToolCalls.clear();
+          toolAttempt++;
+        },
       };
       const baseCall = buildModelCall(core, d, retryCtx);
       const streamingCall = withStreaming(baseCall);
@@ -1011,7 +1021,10 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
             reachWatch.observeOverflow(ctx.estimateTokens());
             return ctx.forceEvictOldest();
           },
-          rebuild: () => withStreaming(buildModelCall(core, d, retryCtx)),
+          rebuild: () => {
+            retryCtx.onRetry();
+            return withStreaming(buildModelCall(core, d, retryCtx));
+          },
           overflowDiagnostic: (original) =>
             `context does not fit: ${core.agent}'s non-evictable context (~${ctx.estimateTokens()} tokens) ` +
             `exceeds the model context window (${core.compaction.windowTokens} tokens); ` +

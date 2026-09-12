@@ -17,6 +17,7 @@ export const BUILTIN_TRACE_KINDS = [
   "subagent_iteration_started",
   "tool_call",
   "tool_call_started",
+  "tool_call_announced",
   "tool_output_delta",
   "tool_input_delta",
   "budget_check",
@@ -209,6 +210,17 @@ export interface ToolInputDeltaDetail {
   stream_chars?: number;
   /** Present only after the provider closed this argument stream. */
   complete?: true;
+}
+
+/** Durable admission of a named call, without argument content or progress counters. */
+export interface ToolCallAnnouncedDetail {
+  agent: AgentRole;
+  subagent_instance_id?: string;
+  call_id: string;
+  tool_name: string;
+  iteration: number;
+  /** One-based physical model attempt within this iteration. */
+  attempt: number;
 }
 
 /**
@@ -665,6 +677,7 @@ export interface TraceDetailMap {
   subagent_iteration_started: SubagentIterationStartedDetail;
   tool_call: ToolCallDetail;
   tool_call_started: ToolCallStartedDetail;
+  tool_call_announced: ToolCallAnnouncedDetail;
   tool_output_delta: ToolOutputDeltaDetail;
   tool_input_delta: ToolInputDeltaDetail;
   budget_check: BudgetCheckDetail;

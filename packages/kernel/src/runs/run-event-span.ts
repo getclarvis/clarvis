@@ -90,6 +90,7 @@ export function deriveRunEventSpan(ev: RunEvent): RunEventSpan {
       return { span_id: ev.call_id, phase: "start", kind: "tool" };
     case "tool_output_delta":
     case "tool_input_delta":
+    case "tool_call_announced":
       return { span_id: ev.call_id, phase: "point", kind: "tool" };
     case "tool_call":
       return { span_id: ev.call_id ?? `${ev.agent}:tool`, phase: "end", kind: "tool" };

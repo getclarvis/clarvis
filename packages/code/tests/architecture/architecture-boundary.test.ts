@@ -207,17 +207,23 @@ describe("code's internal architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps committed history independent from mutable run projections", () => {
-    const root = join(SRC, "views", "history");
+  it("keeps transcript content and projection independent from activity surfaces", () => {
+    const files = [
+      ...sourceFiles(join(SRC, "core", "transcript")),
+      join(SRC, "adapters", "transcript-content.ts"),
+      join(SRC, "adapters", "transcript-projection.ts"),
+    ];
     const forbiddenImports = [
       "activity-store",
       "workflow-projection",
       "spinner",
       "run-host",
-      "views/live",
-      "adapters/store",
+      "views/",
+      "ui/",
+      "@opentui/",
     ];
-    const offenders = sourceFiles(root).flatMap((file) =>
+    expect(files.length).toBeGreaterThan(2);
+    const offenders = files.flatMap((file) =>
       specifiersIn(file)
         .filter((specifier) => forbiddenImports.some((token) => specifier.includes(token)))
         .map((specifier) => ({ file: relative(SRC, file).split(sep).join("/"), specifier })),
@@ -227,7 +233,10 @@ describe("code's internal architecture", () => {
 
   it("keeps estimated semantic paging out of the production transcript path", () => {
     const state = readFileSync(join(SRC, "views", "transcript-state.ts"), "utf8");
-    const history = readFileSync(join(SRC, "views", "history", "CommittedHistory.tsx"), "utf8");
+    const history = readFileSync(
+      join(SRC, "views", "transcript", "TranscriptViewport.tsx"),
+      "utf8",
+    );
     expect(state).not.toContain("windowTranscript");
     expect(state).not.toContain("WINDOW_RENDER_BUDGET");
     expect(history).not.toContain("history-page");

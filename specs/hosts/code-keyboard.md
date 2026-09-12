@@ -8,6 +8,15 @@
 
 ## 1. Purpose
 
+`transcript.followTail` binds End to explicit tail navigation when no overlay is open. It mounts
+the latest bounded window and resumes native sticky follow; the reader indicator offers the same
+pointer action. Production: `createInteraction` in
+[interaction.ts](../../packages/code/src/keys/interaction.ts) and `TranscriptViewport` in
+[TranscriptViewport.tsx](../../packages/code/src/views/transcript/TranscriptViewport.tsx).
+Test: [interaction.test.ts](../../packages/code/tests/integration/interaction.test.ts), transcript
+scroll bindings, and [transcript-window-render.test.tsx](../../packages/code/tests/integration/transcript-window-render.test.tsx),
+wheel navigation followed by explicit tail return.
+
 This subsystem is `@clarvis/code`'s keybinding layer built on top of `@opentui/keymap`:
 it declares what a key does, decides which of several possible key spellings a given
 terminal actually gets, and — the property the four owned invariants are about —
@@ -339,13 +348,12 @@ composer with a sidebar open and never selects an agent" and "the split sidebar 
 textual agent roster, including after expand all").
 
 The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
-to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle scrolls the native
+to `TranscriptViewport.scrollBy` for the selected projection. That handle scrolls the native
 ScrollBox and reveals older or newer index slices at the edges. Vertical wheel and trackpad packets
 remain on OpenTUI's native ScrollBox path; leaving the bottom pauses follow-the-tail.
 Production: `packages/code/src/views/App.tsx` and
-`packages/code/src/views/history/CommittedHistory.tsx` (`scrollBy`). Test:
-`packages/code/tests/integration/transcript-window-render.test.tsx` ("wheel-up over a long stream
-does not clamp back to the tail").
+`packages/code/src/views/transcript/TranscriptViewport.tsx` (`scrollBy`). Test:
+`packages/code/tests/integration/transcript-window-render.test.tsx` ("wheel-up reveals one page on user intent and idle frames never rewind repeatedly").
 
 ### 3.4 Vital-command bindings example — `resolvedVitalBindings` output
 

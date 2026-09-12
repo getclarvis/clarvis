@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
-import { computeGroupedNodes } from "../../src/views/subagent-sections.ts";
-import { computeToolGroups } from "../../src/views/tool-groups.ts";
-import { computeFocusables } from "../../src/views/block-focus.ts";
+import { createRoot } from "solid-js";
+import type { TranscriptStore } from "../../src/adapters/store.ts";
+import { createTranscriptProjection } from "../../src/adapters/transcript-projection.ts";
 
 /**
  * Fields whose value changes on the streaming hot path — a `text_delta` per
@@ -79,49 +79,44 @@ function fixture(): TranscriptNode[] {
   ] as TranscriptNode[];
 }
 
-test("computeGroupedNodes reads no field that changes on the streaming hot path", () => {
+function project(nodes: TranscriptNode[]) {
+  return createRoot((dispose) => {
+    try {
+      const projection = createTranscriptProjection(
+        { nodes, committedNodes: () => [] } as unknown as TranscriptStore,
+        () => null,
+      );
+      return [...projection.ids()];
+    } finally {
+      dispose();
+    }
+  });
+}
+test("row grouping reads none of the streaming payload fields", () => {
   const seen = new Set<string>();
-  const nodes = fixture().map((n) => watched(n, seen));
-
-  computeGroupedNodes(nodes);
-
+  project(fixture().map((node) => watched(node, seen)));
   expect([...seen]).toEqual([]);
 });
-
-test("computeToolGroups and computeFocusables read no hot-path field either", () => {
+test("the hot-field guard detects a payload read", () => {
   const seen = new Set<string>();
-  const nodes = fixture().map((n) => watched(n, seen));
-
-  const grouped = computeGroupedNodes(nodes);
-  const groups = computeToolGroups(grouped.ordered);
-  computeFocusables(grouped, groups, new Map());
-
-  expect([...seen]).toEqual([]);
-});
-
-test("the guard itself catches a read, so a green run means something", () => {
-  const seen = new Set<string>();
-  const nodes = fixture().map((n) => watched(n, seen));
-
-  for (const n of nodes) if (n.kind === "tool_call") void n.result;
-
+  for (const node of fixture().map((node) => watched(node, seen)))
+    if (node.kind === "tool_call") void node.result;
   expect([...seen]).toEqual(["result"]);
 });
-
-test("grouping is unaffected by dehydrating a block", () => {
-  const hydrated = fixture();
-  const dehydrated = fixture().map((n) =>
-    n.kind === "tool_call"
-      ? ({ ...n, args: undefined, result: undefined, diff: undefined, dehydrated: true } as
-          TranscriptNode | typeof n)
-      : n,
-  ) as TranscriptNode[];
-
-  const a = computeGroupedNodes(hydrated);
-  const b = computeGroupedNodes(dehydrated);
-
-  expect(b.ordered.map((n) => n.key)).toEqual(a.ordered.map((n) => n.key));
-  expect([...b.folded]).toEqual([...a.folded]);
-  expect([...b.anchors]).toEqual([...a.anchors]);
-  expect([...b.headers.keys()]).toEqual([...a.headers.keys()]);
+test("dehydrating content cannot alter row IDs or order", () => {
+  expect(
+    project(
+      fixture().map((node) =>
+        node.kind === "tool_call"
+          ? {
+              ...node,
+              result: undefined,
+              args: undefined,
+              diff: undefined,
+              dehydrated: true as const,
+            }
+          : node,
+      ),
+    ),
+  ).toEqual(project(fixture()));
 });

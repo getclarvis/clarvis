@@ -1072,241 +1072,58 @@ eager restart sweep would read the same absent evidence, so what is genuinely un
 that does not depend on the trace, and no such source of truth exists today.
 
 ---
-
 ## Settled transcript blocks can remount and flicker under unrelated live activity
 
-**Resolved under OpenTUI 0.5.9 by removing the physical-window machine.** Code freezes
-terminal candidates into immutable publication batches and mounts history through one native
-OpenTUI `<scrollbox>` with `stickyStart="bottom"` and `viewportCulling` always on. The live tail
-stays mounted as the final chronological child. Long sessions keep an index slice of frozen
-batches plus one-row hints, never Yoga-measured spacers or hidden geometry clones. Native sticky
-scrolling is the only follow-the-tail authority. The normative contract is
-[`hosts/code-transcript-stability.md`](hosts/code-transcript-stability.md).
+**The production ownership path is replaced; row-architecture product qualification is separate.**
+Code uses one projection of stable row IDs and one bounded native viewport under OpenTUI 0.5.9.
+Terminal sealing revises record content, not membership in live/history trees. Exploration groups
+exist from their first explicitly classified member; shell, mutation and unknown tools stay
+individual. The normative contract is
+[code-transcript-stability.md](hosts/code-transcript-stability.md).
 
-The quoted `later batch` wording below is retained only as the exact historical symptom. That
-superseded bottom boundary is not current UI: newer work is now admitted by downward native scroll,
-with a non-interactive count overlaid at the top only while the reader is away from the tail.
+The original native experiment on OpenTUI 0.5.7 isolated a real structural invalidation defect:
+539 later assistant characters caused 188 distinct Code renderables and 187 replacements for a
+settled 1,226-character Markdown result. Removing the reactive grouping prop kept one renderable.
+A synthetic diff driven through 40 unrelated grouping updates created 41 diff renderables and 72
+invisible samples; the control kept one diff and zero invisible samples. These were ad hoc causal
+experiments, not product rates or comparable performance baselines for the current architecture.
 
-**A follow-on scroll regression was resolved under OpenTUI 0.5.9.** An upward wheel
-intent changed `followingTail` to false and the Solid `<Show>` around `LiveTranscriptTail` removed
-the complete final flow child. A large expanded tool or streaming response could therefore subtract
-dozens of rows from `scrollHeight`; OpenTUI correctly clamped the now-invalid `scrollTop`, which
-looked like the transcript had rolled back. Later tool settlement and model deltas continued in the
-store but remained below an unmounted tail, so the visible frame appeared frozen. This was not a
-store rollback or dropped SDK delta.
+Subsequent batch-based publication work exposed distinct problems: deleting the live flow child on
+wheel-up changed scroll height and clamped reading; offscreen syntax candidates could wait forever
+for render hooks skipped by culling; live-to-history transfer and solo-to-group-head conversion could
+still recreate tool presenters. That architecture, its staging/measurement machinery and its owner
+handoff APIs are removed. Do not reintroduce them as a fallback. Current rows can change height and
+rewrap; a semantic anchor transaction preserves reading independently of parser ownership.
 
-The same reproduction also exposed a distinct stalled-candidate path. A hidden absolute owner was
-first measured against the ScrollBox's outer content width, while the resident owner was laid out
-inside the left padding and table gutter. Expanding a 120-row tool then produced a stable 96-column
-owner against a 99-column controller epoch. Both observations were correctly rejected, but the
-already-painted-owner recovery kept retrying that impossible width and blocked every newer batch.
-The controller and both owner forms now share the inner transcript width, so expanded remeasurement
-settles without a resize or parser downgrade.
+Current deterministic evidence covers the native row and internal presenter through composition,
+pending, execution, terminal and the next user message; finalized diff/code parsers through unrelated
+deltas; group admission at 10/90/500 ms without a grouping timer; 500 members with bounded expansion;
+80/81/1,001 rows; prepend plus concurrent append; sidebar width changes; and 100 Lead/child and
+100 expansion cycles. Rapid projection requests are coalesced before admission so intermediate
+unpainted destinations do not allocate whole native trees. The full Code coverage rerun passes
+2,791 functional tests and 50 architecture tests, including these cycles, without the earlier
+native allocation failure. That result is distinct from focused-test evidence.
 
-The corrected composition leaves the tail in chronological flow and lets OpenTUI's own manual-scroll
-state pause sticky-bottom behavior. Unmounting the live tail is not a valid way to pause follow, and
-Clarvis no longer latches a one-shot `scrollTop` clamp after that pause. The regression drives native
-wheel input and a streaming response; the live tail remains in the tree while the reader is away
-from the bottom (`packages/code/tests/integration/transcript-publication-render.test.tsx`,
-"scrolling above a live tail preserves the reader while terminal updates stay physically bounded"
-and "the live tail stays mounted after the reader leaves the sticky edge").
+Production: `TranscriptRows`, `TranscriptContent`, `TranscriptViewport` and `TranscriptRowView` in
+[rows.ts](../packages/code/src/core/transcript/rows.ts),
+[transcript-content.ts](../packages/code/src/adapters/transcript-content.ts),
+[TranscriptViewport.tsx](../packages/code/src/views/transcript/TranscriptViewport.tsx), and
+[TranscriptRowView.tsx](../packages/code/src/views/transcript/TranscriptRowView.tsx).
+Test: [transcript-rows-render.test.tsx](../packages/code/tests/integration/transcript-rows-render.test.tsx),
+[transcript-content-render.test.tsx](../packages/code/tests/integration/transcript-content-render.test.tsx),
+[transcript-window-render.test.tsx](../packages/code/tests/integration/transcript-window-render.test.tsx),
+and [transcript-records.test.ts](../packages/code/tests/unit/transcript-records.test.ts).
 
-**Two presentation follow-ons were resolved under OpenTUI 0.5.9.** Elicitation used a
-one-frame `scrollBy` after replacing the composer. With a long physical history, the virtual tail or
-question could change `scrollHeight` after that one clamp, leaving a frame with neither the old
-composer nor the blocking controls; a manual scroll recomputed the correct maximum. The shell live
-tail also passed Prisma/npm cursor-control sequences directly into `<text>` and began one column to
-the left of its settled result card, so cursor updates polluted/truncated rows and settlement looked
-like a partial recovery. Elicitation now retains an inert composer bridge until the question owns a
-visible transcript row and keeps an explicit tail clamp while the controller follows the tail. Process output now
-passes through the shared terminal-safe plain-text projection in both live and settled renderers,
-and both phases share the same text column. The regressions are pinned by the frame-recording
-elicitation case in `app-shell-render.test.tsx`, the exact Prisma control stream in
-`tool-live-tail-render.test.tsx`, and `terminal-text.test.ts`.
-
-A follow-up review found that the first clamp remained latched after the transition and could capture
-native scrollbar dragging or selection autoscroll. It also found that retrying visibility while a
-dirty full-page editor covered the transcript formed an unbounded renderer loop, and that C1 `ST`
-did not terminate OSC/DCS-family strings. The clamp now waits for a resident physical tail, applies
-once and releases; dirty overlays pause the transition until their state changes; and the terminal
-projection retains printable text after C1 `ST`. The direct regressions live in
-`transcript-window-render.test.tsx`, `app-shell-render.test.tsx`, and `terminal-text.test.ts`.
-
-The review then found two edge paths in that same repair. The aggregate handoff spacer was always
-inserted before every retained live owner, so a later offscreen tool completing before an earlier
-visible frontier could move the earlier owner backward. The spacer now occupies the earliest
-released owner's actual chronological boundary. Separately, keyboard Page Down/`Alt+Down` computed
-its last position from frozen `activeRows` only; with the live tail permanently mounted, it could
-re-enable following before reaching the real content bottom and strand repeated keypresses above the
-frontier. Downward keyboard navigation now routes its terminal edge through `returnToTail()`. The
-regressions are pinned by `packages/code/tests/integration/transcript-publication-render.test.tsx`
-(`an out-of-order offscreen handoff keeps its spacer after every earlier live owner`) and
-`packages/code/tests/integration/transcript-window-render.test.tsx` (`keyboard downward navigation
-reaches the mounted live tail after the newest frozen batch`).
-
-A controlled same-renderer soak under Bun 1.4.0 and OpenTUI 0.5.9 at 100x30
-extended that regression to 30 batches of 64 offscreen terminal tools: 1,920 calls in 35.99 seconds.
-Each post-batch sample forced three synchronous collections. The live tree remained exactly 258
-renderables and 25 physical publication owners in every batch. RSS rose from 263,802,880 to
-389,718,016 bytes across the complete warm-up and soak, with native allocator steps at 256 and 1,024
-tools; over the final 640 tools after the largest step it rose by 17.92 MiB, or 2.80 MiB/100. The
-post-GC JavaScript heap rose by 1.50 MiB/100 over that same retained-semantic interval, while external
-memory was effectively flat. The checked-in 64-call case remains the deterministic gate; this
-instrumented extension measured the same code without retaining diagnostic sampling in the test.
-It proves bounded physical ownership in one renderer, not the separate real-model multi-run soak.
-
-The first real-model run exposed one further OpenTUI interaction before closure: the final outcome
-and long answer stayed behind a `1 later batch` boundary until a one-column resize created a new
-layout epoch. The semantic terminal batch was intact. OpenTUI 0.5.9 documents that viewport culling
-skips offscreen render hooks, so `CommittedHistory` suspends culling only during its single candidate
-and restores it after the marker commit.
-
-That change was necessary but not sufficient. A second real subscription run still retained `1
-later batch` for more than 30 seconds, and Page Down did not release it. During that stable failure,
-the event queue and run-handle count were zero, renderer lifecycle passes stopped at 29, native
-renderables stayed at 204, and RSS stayed near 332 MiB; this was one abandoned syntax candidate, not
-continuing transcript accumulation. OpenTUI's own `ScrollbackSurface.settle` uses a 2-second bound
-while waiting for `CodeRenderable.highlightingDone`, so Clarvis gave the hidden candidate one
-2-second lease and one fresh syntax subtree. The original recovery then switched the whole batch to
-a plain text owner. That advanced the physical window, but it was not visually safe: the generic
-projection did not include `args.content`, so it could remove a `write_memory`/`write_file` body.
-
-An installed `clarvis-release-003-final3` capture exposed that remaining defect directly. Frames
-132-160 retained the parsed `write_memory` frontmatter, then lost its body and painted `Syntax
-formatting was simplified because highlighting did not settle.`; ordinary write presentation
-degraded later. The trigger was a second bug in `SyntaxPublicationBoundary`: optional
-`measurementRevision` used `undefined` both as a real inactive value and as the not-yet-observed
-sentinel. After `number -> undefined -> number`, the later token could inherit `completed=true`, no
-new syntax measurement started, and the leases expired into the destructive fallback.
-
-The correction separates revision initialization from its value. A later numeric token always
-re-arms measurement. Recovery no longer constructs a warning/text dump: a never-published candidate
-keeps the same `BlockView` and native Markdown/diff/code renderers, disables parser work through
-their public `filetype` setters and bypasses only unfinished syntax work after the bounded retry. If
-the owner already painted, its
-identity is retained while it waits for public syntax completion, then its marker commits only after
-two equal positive observations. If the parser stays pending, that owner remains visible and
-unchanged instead of being remounted or degraded. The
-deterministic regression records every handoff frame of a real `write_memory` body across more than
-two forced lease intervals and a resize, then resolves a deliberately pending highlight to prove
-there is no late mutation. `CommittedHistory` also retains the monotonic `rich` or `plain-semantic`
-decision by batch id and purges it with the source publication; the eviction regression proves a
-parser-independent owner remounts without restarting highlighting or changing variant.
-
-The follow-on visual regression was closed with an installed `0.0.3-beta` artifact in a real PTY.
-The captured subscription run exercised parsed `write_memory`, an ordinary write diff, long Markdown,
-native scroll in both directions, return-to-tail submission and terminal settlement. The settled
-memory and diff bodies retained their native presentation throughout later tools and assistant output;
-no simplified-format warning, raw/parsed oscillation or transparent owner was observed.
-
-The deterministic navigation regression then exposed a separate 120-to-119-column feedback loop:
-admitting overscan made OpenTUI's vertical bar visible, reduced content width, invalidated every
-marker, removed overscan, and hid the bar again. History now reserves the bar's one column
-permanently and changes only indicator opacity. The navigation case asserts that loading and
-remounting both edges retain one layout epoch; the forced short-lease terminal case reaches zero
-unmeasured newer entries with fewer than ten frame listeners.
-
-Checked-in evidence covers the originally reported `write_memory`, a real diff, ordinary
-`write_file`, long later assistant output, same-tool regrouping, isolation of child tools/content from
-the Lead transcript with exactly two typed delegation markers, explicit selection of one isolated
-child transcript, recorded history cells, atomic outcome/final publication,
-replay/session/degraded equivalence, hydration, whole-owner eviction/remount, exact marker height,
-bounded row residency and the import boundary. Workflow activity is likewise pinned to the footer
-strip/Sidebar rather than a transcript row. A later installed-artifact capture exposed a separate
-Lead-projection leak: the provider's `await_agents` composing phase briefly rendered
-`Wait for agents starting…`. The Lead contract now suppresses every composing, started, output and
-terminal row for the closed supervision/spawn/delegation/workflow-orchestration tool set; typed
-delegation events remain the only owners of the two friendly lifecycle markers, and ordinary Lead
-`thinking`/`working` may remain visible. The same installed-artifact validation spawned two real
-sub-agents: the Sidebar revealed automatically, the Lead projection showed only the typed lifecycle
-markers, and selecting a child opened its isolated transcript without collapsing it. Escape plus
-`/activity agents` reopened the Sidebar, and returning to Lead preserved the main transcript. The
-primary tests are
-`packages/code/tests/integration/transcript-publication-render.test.tsx` and
-`packages/code/tests/integration/transcript-window-render.test.tsx`; the pure publication and marker
-ledgers are covered by `packages/code/tests/unit/{transcript-publication,transcript-visible-slice}.test.ts`,
-and the architecture guard is in
-`packages/code/tests/architecture/architecture-boundary.test.ts`.
-
-The visible symptom is an already-settled Markdown or diff body briefly returning to an unparsed or
-transparent state while the run has moved on to later tools or the model's answer. The report that
-started the investigation named `write_memory`; the same behavior had been observed in ordinary
-writes and diffs. The exact instrumented capture below proves `write_memory` and a synthetic diff,
-not every anecdotal surface.
-
-The pre-fix ownership path made the symptom possible. In that historical snapshot,
-`TranscriptRegion` mounted every historical block and the live elicitation control inside one
-sticky-bottom ScrollBox (`packages/code/src/views/app/TranscriptRegion.tsx`, former
-`TranscriptRegion` history loop). Each production `BlockView` received a reactive
-`group={() => ts.toolGroups().get(node.key)}` accessor. That map belonged to the live
-`visibleNodes -> window -> grouped -> toolGroups -> focusables` chain
-(`packages/code/src/views/transcript-state.ts`, `createTranscriptState`), and `BlockView` read the
-group through a memo that controls structural head/member/solo rendering
-(`packages/code/src/views/blocks.tsx`, `BlockView`). An event did not need to patch the old
-diff/content itself to invalidate the owner that mounted it.
-
-The local renderer harness used the then-current OpenTUI 0.5.7 dependency and a production-shaped group
-accessor. It was deliberately instrumented at native-renderable identity, not inferred from terminal
-screenshots:
-
-- A settled `write_memory` without a real diff carried 1,226 Markdown characters over 44 lines.
-  While 539 later assistant-response characters arrived, the capture observed **188 distinct
-  `CodeRenderable` instances and 187 replacements**; visible samples repeatedly alternated between
-  raw and parsed Markdown.
-- Removing only the production-shaped reactive `group` prop from the same harness produced **one
-  `CodeRenderable` and zero visible-mode transitions**.
-- A settled synthetic diff driven through 40 otherwise unrelated group updates produced **41
-  distinct `DiffRenderable` instances and 72 invisible samples**. Its control retained one diff
-  renderable with zero invisible samples.
-
-These are local ad hoc measurements, not a checked-in benchmark, and the counts should not be read
-as a product rate. Their value is causal narrowing: content, parser setup and later activity stayed
-the same while the production group dependency was the only controlled difference.
-
-The old `StableDiff` and `StableMarkdown` boundary did not contradict the result. It hid a candidate
-until descendant `CodeRenderable.highlightingDone` promises had painted
-(`packages/code/src/ui/patterns/stable-syntax.tsx`, `waitForSyntaxFrame`, `StableMarkdown` and
-`StableDiff`). That protects one continuous mount. Cleanup abandons the old revision, and a
-reconstructed ancestor starts a new hidden/raw-to-parsed lifecycle. The existing test called "a
-finalized diff keeps one renderable while an active sibling updates" mounts the sibling **outside**
-an isolated `BlockView` and never supplies the production group accessor
-(`packages/code/tests/integration/tool-diff-render.test.tsx`). It proves the local component boundary
-and missed the old production composition.
-
-A separate OpenTUI layout harness isolated the second mechanism. With settled history and a growing
-live tail in the same `stickyScroll` / `stickyStart="bottom"` ScrollBox, expanding the tail from one
-to three rows changed which settled history rows occupied the captured viewport. An experimental
-separate two-row sibling kept that capture byte-identical. That result proved the distinction between
-owner stability and viewport translation; it did **not** establish a separate panel as acceptable
-product UX. A fixed sibling reserves dead space and makes the same answer change regions when it
-commits. The final contract therefore keeps one chronological ScrollBox: while explicitly following
-the tail, the whole native viewport may translate upward exactly as normal scrolling does, but an
-older owner cannot reflow, remount or change identity, and the live-to-committed handoff preserves
-the artifact's content row.
-
-The original experiment did **not** validate those acceptance surfaces. The later installed-artifact
-run covered the built release, measured lazy navigation, retention/remount while moving between Lead
-and child projections, and a real-model multi-agent run in a PTY. A physical iTerm session, theme
-change and platform canaries remain separate environment-specific evidence rather than prerequisites
-for this resolved renderer defect. The implemented fix has both layers:
-
-1. a production `TranscriptRegion` regression that asserts
-   native renderable identity and never-visible raw/transparent frames; and
-2. Lead loaders, tools, retries, pending elicitation and future same-agent live motion are
-   content-height state after the frozen owners in the same ScrollBox. Child and workflow lifecycle
-   motion stays in the footer/explicit Sidebar; child transcript content becomes eligible only after
-   explicit isolated selection — never as a row inserted into the Lead history.
-
-Do not apply a broad `untrack` to generic transcript hosts as a shortcut. The workflow-remount entry
-above already records why generic structural owners may legitimately depend on reactive state. The
-durable boundary is publication: freeze the tool *record* before append, keep live `ts.toolGroups()`
-out of committed-history `BlockView`, and keep one Solid owner per tool key. Remaining tool-row
-flicker after the native ScrollBox work was not another viewport machine: it was the live-to-history
-remount plus `solo` → `head` unmounting `ToolLine`. That path is closed by in-place tail ownership
-and a grouping wrapper that does not remount the head. Production:
-`selectTailOwnedKeys`, `LiveTranscriptTail`, `PublicationOwner`, `computeToolGroups`, `BlockView`.
-Tests: `transcript-publication-render.test.tsx` (`a tool keeps one live owner from composing through
-terminal settle`, `a second grouping-eligible tool does not remount the first live owner`).
+Historical PTY captures and batch-owner memory measurements do not qualify the new implementation.
+Linux PTY validation with an authorized Grok subscription exercises three concurrent children,
+read exploration, continuous shell output, native mutation diff, missing-file error/recovery,
+projection navigation and resize. A narrow-terminal Agents drawer deliberately obscures the
+transcript; closing it restores the selected reading position. The final artifact's automated smoke
+passes, and its restart restores the durable failure and recovered result. Recorded intermediate
+frames and native identity assertions complement screenshots; none establishes every possible
+terminal interleaving. The numerical historical benchmark exited 137, so a comparable 10% RSS
+regression verdict remains unavailable. Windows/macOS runtime qualification is not established by
+these Linux results.
 
 ---
 

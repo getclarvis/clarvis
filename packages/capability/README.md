@@ -217,6 +217,11 @@ only over the kinds the engine actually owns.
 runtime guard tests against it, so the two cannot drift. A compile-time lock additionally pins
 `TraceDetailMap`'s keys to that same set.
 
+`ToolCallAnnouncedDetail` and the flat `tool_call_announced` event carry minimal durable call,
+actor and tool identity, iteration and physical attempt, without partial arguments. The engine
+records this fact once per attempt and signals all input progress. The persistence contract is
+[`foundations/trace.md`](../../specs/foundations/trace.md).
+
 A capability that wants its contributed entry to persist as a typed flat event declares static
 `Capability.persistedTraceProjectors`. The engine composes one immutable registry per run and the
 trace mapper consults it before the generic contributed-event fallback. The owning capability must

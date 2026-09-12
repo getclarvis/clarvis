@@ -97,7 +97,7 @@ import { AgentProfilePicker, type AgentDefaults } from "./overlays/AgentProfileP
 import { createLayoutController, FLOOR_MIN_COLUMNS, FLOOR_MIN_ROWS } from "../app/layout.ts";
 import { OverlayRegion, overlayFallbackActive } from "./app/OverlayRegion.tsx";
 import { TranscriptRegion } from "./app/TranscriptRegion.tsx";
-import type { CommittedHistoryHandle } from "./history/CommittedHistory.tsx";
+import type { TranscriptViewportHandle } from "./transcript/TranscriptViewport.tsx";
 import { NavigationBar } from "../ui/patterns/navigation-bar.tsx";
 import { isAvailablePlan, isLivePlan } from "../adapters/plan-projection.ts";
 import { bindSyntaxStyleRenderer } from "../theme/syntax.ts";
@@ -479,9 +479,8 @@ export function App(props: AppProps): JSX.Element {
   const secondaryMode = layout.secondaryMode;
   const contentInset = layout.contentInset;
   const ts = createTranscriptState({
-    nodes: () => props.store.committedNodes(),
+    nodes: () => props.store.nodes,
     detailNodes: () => props.store.nodes,
-    preserveOrder: true,
     subagents: () =>
       props.activity.subagents.map((w) => ({
         id: w.id,
@@ -517,13 +516,10 @@ export function App(props: AppProps): JSX.Element {
   const [transientOverlay, setTransientOverlay] = createSignal<TransientOverlay>("none");
   const [activityDetail, setActivityDetail] = createSignal<ActivityDetailValue | null>(null);
   let scrollEl: ScrollBoxRenderable | undefined;
-  let historyHandle: CommittedHistoryHandle | undefined;
-  let leadHistoryHandle: CommittedHistoryHandle | undefined;
+  let historyHandle: TranscriptViewportHandle | undefined;
   const submitFromLeadTail = (submit: () => void): void => {
     if (refuseModelAction()) return;
-    const selected = ts.selectedSubagent();
-    if (selected !== null) ts.toggleSubagent(selected);
-    leadHistoryHandle?.returnToTail();
+    historyHandle?.returnToLeadTail();
     submit();
   };
   type AutoSidebarIntent = "plan" | "workflow" | "agents";
@@ -727,7 +723,7 @@ export function App(props: AppProps): JSX.Element {
       const result = historyHandle?.scrollBy(rows);
       if (result !== undefined) {
         if (result === "start") notify("start of transcript");
-        if (result === "end") notify("latest transcript batch");
+        if (result === "end") notify("latest transcript row");
         return;
       }
       scrollEl?.scrollBy({ x: 0, y: rows });
@@ -1527,7 +1523,6 @@ export function App(props: AppProps): JSX.Element {
                 onOpenDetail={openActivityDetail}
                 onScrollbox={(el) => (scrollEl = el)}
                 onHistoryHandle={(handle) => (historyHandle = handle)}
-                onLeadHistoryHandle={(handle) => (leadHistoryHandle = handle)}
                 draftNonEmpty={draftNonEmpty}
                 memoryPressure={{ state: pressure, onRecover: recoverMemory }}
               />

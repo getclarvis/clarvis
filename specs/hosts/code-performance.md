@@ -99,7 +99,7 @@ or other process trees (`packages/code/README.md`).
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | one mutable transcript prose node | 2 Mi characters | `packages/code/src/adapters/store.ts` |
 | aggregate mutable transcript prose | 64 MiB estimated UTF-16 | `packages/code/src/adapters/store.ts` |
-| one immutable publication node's mounted prose | 512 Ki characters | `packages/code/src/adapters/transcript-publication.ts` (`snapshotTranscriptNode`), `packages/code/src/core/transcript/presenters.ts` (`TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS`) |
+| one sealed record's mounted prose | 512 Ki characters | `packages/code/src/core/transcript/records.ts` (`snapshotTranscriptNode`), `packages/code/src/core/transcript/presenters.ts` (`TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS`) |
 | one immutable publication tool field | 64 Ki characters; arguments additionally use a 40 Ki character/value and 512-node projection | `packages/code/src/core/transcript/tool-display.ts` (`TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `projectTranscriptToolDisplay`) |
 | hydrated tool bodies | 200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts` |
 | one hydrated tool body | 32 MiB estimated | `packages/code/src/adapters/store.ts` |
@@ -253,40 +253,44 @@ well as Diff and Plan (`packages/code/tooling/artifact/contract.ts`).
 
 ### 4.4 Transcript and session retention
 
-Mutable settled prose is charged against one aggregate budget and old prose is replaced with a
-release notice. Mutable settled tool bodies are charged by both count and estimated bytes and are
-dehydrated oldest first (`packages/code/src/adapters/store.ts`). An immutable
-publication keeps only the already-bounded inline projection: at most 512 Ki characters of prose and
-the independently bounded tool fields, never the raw hydration payload. The live host also folds
-semantic turns beyond its 20-turn resident history; that same action evicts complete immutable
-publication batches for the removed prefix and installs one frozen notice.
+The execution store retains bounded mutable facts and sealed inline snapshots independently of
+native residence. Tool payload hydration and mounted text limits remain separate budgets. Folding
+beyond 20 retained turns removes discarded records and their sealed snapshots, leaving one stable
+folded-prefix notice; it does not retain rendering batches or staging timers.
 
-Within that semantic bound, `CommittedHistory` mounts every owner through 80 committed batches and
-a sliding 40-batch index slice for longer sessions. Direct publication owners stay native ScrollBox
-children with viewport culling enabled; each non-empty hidden prefix or suffix costs one passive row,
-not estimated or measured spacer geometry. After settlement, owner count is therefore independent of
-completed-turn count. The vertical scrollbar permanently owns one layout column and changes opacity
-only. Boundary-aware Page Up and native wheel input slide the index window at its edges. Repeated
-old/new navigation must leave every registered lifecycle pass reachable from the live renderer root;
-detached or destroyed entries are forbidden. `LiveTranscriptTail` is the
-content-height final child of that same ScrollBox. There is no second scroll area or fixed live-row
-reservation: while tail-following, live growth uses the native bottom-following flow; while the user
-reads older history, the tail stays mounted below the viewport and a bounded top overlay notes that
-the reader is off the tail. This keeps one chronological surface
-(`packages/code/src/views/history/{CommittedHistory.tsx,visible-slice.ts}`,
-`packages/code/src/views/live/LiveTranscriptTail.tsx`, and
-[`code-transcript-stability.md`](code-transcript-stability.md)). Renderer regressions are pinned by
-`packages/code/tests/integration/{transcript-publication-render,transcript-window-render}.test.tsx`.
-The application keeps one native ScrollBox and swaps Lead versus child children. Returning to Lead
-restores a numeric `scrollTop` when that still maps; otherwise it follows the tail rather than
-duplicating the tree. Child and workflow activity therefore cannot grow a second owner window; their
-lifecycle summaries stay in the bounded footer/Sidebar projections. Production:
-`packages/code/src/views/app/TranscriptRegion.tsx` and
-`packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistory`). Test:
-`packages/code/tests/integration/transcript-region-render.test.tsx` ("Lead keeps its physical reader
-state while one bounded child projection is visited").
+One `TranscriptViewport` mounts the selected Lead or child projection. Sessions through 80 rows
+mount that bounded set; longer projections use 40 rows and pages of 20, with an 80-row transition
+ceiling. An expanded exploration mounts at most 20 members at a time, independently of the number
+of calls ingested. Active off-window tools remain data, not native owners. Rows are direct native
+ScrollBox children, retaining culling and a stable scrollbar gutter. No spacer-height cache, hidden
+measurement tree, or second live tree exists.
 
-An ordinary or manager session releases its reconstructible full message chain after the stored
+Reading state is a semantic row and viewport-relative offset, retained for the current projection
+and at most 63 inactive projections. Post-layout transactions validate their projection and token,
+retry missing geometry at most three frames, and preserve native sticky follow only for tail intent.
+Selection delays eviction within the 80-row ceiling; an explicit notice reports a blocked reveal.
+Production: `TranscriptWindow` in
+[window.ts](../../packages/code/src/core/transcript/window.ts), `TranscriptViewport` in
+[TranscriptViewport.tsx](../../packages/code/src/views/transcript/TranscriptViewport.tsx), and
+`TranscriptContent` in [transcript-content.ts](../../packages/code/src/adapters/transcript-content.ts).
+Test: [transcript-window-render.test.tsx](../../packages/code/tests/integration/transcript-window-render.test.tsx),
+[transcript-rows-render.test.tsx](../../packages/code/tests/integration/transcript-rows-render.test.tsx),
+and [transcript-content.test.ts](../../packages/code/tests/unit/transcript-content.test.ts).
+
+The deterministic benchmark uses 120 rows, 500 exploration members and 90 streaming frames at
+120x32, with warm-up and three samples in
+[transcript-budget-render.test.tsx](../../packages/code/tests/integration/transcript-budget-render.test.tsx).
+A p95 of 33 ms and no comparable stabilized-RSS or interaction regression above 10% are engineering
+targets, not results implied by passing assertions. Artifact, environment, dimensions, owner counts
+and sampled frames must accompany measurements; historical batch-architecture measurements below
+are not a baseline for the row architecture.
+
+With `CLARVIS_TRANSCRIPT_MEASURE=1`, the fixture spaces streaming updates at 30 FPS and collects
+before each sample. A Linux/Bun 1.4.0/OpenTUI 0.5.9 run measured p95 update/layout durations of
+2.979, 3.005 and 3.139 ms; RSS was 244,109,312, 253,657,088 and 257,298,432 bytes, with 261 native
+renderables and 44 direct content children in each sample. This is renderer-fixture evidence, not
+real-provider latency or a stabilized RSS verdict. The historical architecture benchmark exited
+137 without a valid numerical baseline, so these samples do not establish the 10% regression budget.
 trace is available. Manager turns still never use `continue_from`: immediately before the next
 manager request, `fullRequestMessages` reconstructs the complete chain from persisted traces and
 refuses an incomplete rebuild (`packages/code/src/run-host.ts`, `fullRequestMessages`,

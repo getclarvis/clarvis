@@ -122,6 +122,7 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "transcript.focusNext": [{ key: "ctrl+down" }],
   "transcript.scrollPageUp": [{ key: "pageup" }],
   "transcript.scrollPageDown": [{ key: "pagedown" }],
+  "transcript.followTail": [{ key: "end" }],
   "transcript.scrollLineUp": [{ key: "alt+up", minimumProfile: "enhanced", requires: ["meta"] }],
   "transcript.scrollLineDown": [
     { key: "alt+down", minimumProfile: "enhanced", requires: ["meta"] },
@@ -138,6 +139,7 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "plan.open": "overlay in (none, plan)",
   "transcript.scrollPageUp": "overlay==none",
   "transcript.scrollPageDown": "overlay==none",
+  "transcript.followTail": "overlay==none",
   "transcript.scrollLineUp": "overlay==none",
   "transcript.scrollLineDown": "overlay==none",
   "transcript.toggleCollapse": "overlay==none",
@@ -277,6 +279,10 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
     hintGroup: "navigation",
   },
   "transcript.scrollPageDown": {
+    uiSurfaces: ["full-help"],
+    hintGroup: "navigation",
+  },
+  "transcript.followTail": {
     uiSurfaces: ["full-help"],
     hintGroup: "navigation",
   },
@@ -617,6 +623,11 @@ export function createInteraction(
     command("transcript.scrollPageDown", () => effects.scrollTranscript(12), {
       title: "Scroll down a page",
       desc: "Scroll the transcript down one page",
+      category: "view",
+    }),
+    command("transcript.followTail", () => effects.scrollTranscript(Infinity), {
+      title: "Follow latest transcript",
+      desc: "Return to the conversation tail and follow new rows",
       category: "view",
     }),
     command("transcript.scrollLineUp", () => effects.scrollTranscript(-3), {

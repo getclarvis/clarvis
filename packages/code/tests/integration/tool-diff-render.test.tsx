@@ -5,7 +5,7 @@ import { openRender } from "../helpers/tracked-render.ts";
 import { BlockView } from "../../src/views/blocks.tsx";
 import { diffHeaderPath } from "../../src/views/tools/registry.tsx";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
-import type { LegacyCollapsibleToolNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 
 const REAL_DIFF = [
   "--- a.ts",
@@ -28,7 +28,7 @@ function diffRenderables(root: Renderable): DiffRenderable[] {
   visit(root);
   return found;
 }
-function toolNode(over: Partial<LegacyCollapsibleToolNode>): LegacyCollapsibleToolNode {
+function toolNode(over: Partial<FoldFixtureToolNode>): FoldFixtureToolNode {
   return {
     key: `n${seq++}`,
     kind: "tool_call",

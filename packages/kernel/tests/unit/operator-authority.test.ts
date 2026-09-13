@@ -4,6 +4,7 @@ import { inheritOperatorAuthority } from "@clarvis/capability";
 import {
   createOperatorAuthorityRuntime,
   installAuthorityEnvelope,
+  denyAuthorityEffect,
 } from "../../src/guard/operator-authority.ts";
 
 const seed = (text = "Open a PR"): OperatorAuthoritySeed => ({
@@ -145,4 +146,20 @@ describe("host operator ledger", () => {
     expect(ledger.finalize({ status: "cancelled" }).status).toBe("revoked");
     expect(runtime().finalize({ status: "completed" }).status).toBe("settled");
   });
+});
+
+test("refusal storage is bounded, revision-fenced and cannot be supplied as seed evidence", () => {
+  const ledger = runtime();
+  const revision = ledger.reader.snapshot().revision;
+  expect(denyAuthorityEffect(ledger.reader, revision - 1, "a".repeat(64))).toBe(false);
+  for (let i = 0; i < 32; i++)
+    expect(denyAuthorityEffect(ledger.reader, revision, i.toString(16).padStart(64, "0"))).toBe(
+      true,
+    );
+  expect(denyAuthorityEffect(ledger.reader, revision, "f".repeat(64))).toBe(false);
+  expect(ledger.reader.snapshot().status).toBe("revoked");
+  const invalid = runtime(seed(), { ...runtime().reader.snapshot(), denied_effects: ["invalid"] });
+  expect(invalid.reader.snapshot().status).toBe("revoked");
+  const forged = { ...seed(), denied_effects: ["a".repeat(64)] };
+  expect(runtime(forged).reader.snapshot().status).toBe("revoked");
 });

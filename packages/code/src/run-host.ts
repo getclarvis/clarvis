@@ -409,15 +409,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
-  const configurationSessions = new WeakMap<Session, string>();
-  const configurationSessionId = (active: Session): string => {
-    let id = configurationSessions.get(active);
-    if (id === undefined) {
-      id = crypto.randomUUID();
-      configurationSessions.set(active, id);
-    }
-    return id;
-  };
   let sessionTask: ActiveTaskRequestDto | undefined;
   const [runActive, setRunActive] = createSignal(false);
   const [interactiveControl, setInteractiveControl] = createSignal(true);
@@ -1359,7 +1350,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             }
           : {}),
         ...(sessionId ? { sessionId } : {}),
-        configurationSessionId: configurationSessionId(sess),
         ...(sessionTask === undefined ? {} : { task: sessionTask }),
         ...guardArgs,
       });
@@ -1401,7 +1391,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
                     }
                   : {}),
                 ...(sessionId ? { sessionId } : {}),
-                configurationSessionId: configurationSessionId(sess),
                 ...(sessionTask === undefined ? {} : { task: sessionTask }),
                 ...guardArgs,
               })
@@ -1516,7 +1505,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           profile,
           ...(sessionId ? { sessionId } : {}),
-          configurationSessionId: configurationSessionId(sess),
           guardMode: skillGuardMode,
           ...deps.judgePayload(skillGuardMode),
           ...(skillMemoryMode === "off" ? { memory: skillMemoryMode } : {}),
@@ -1590,7 +1578,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           executionId,
           task: sessionTask,
           ...(sessionId ? { sessionId } : {}),
-          configurationSessionId: configurationSessionId(sess),
           guardMode,
           ...deps.judgePayload(guardMode),
           ...(memoryMode === "off" ? { memory: memoryMode } : {}),

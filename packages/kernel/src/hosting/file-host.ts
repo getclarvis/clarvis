@@ -76,6 +76,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
   let registry: HostedRegistry | undefined;
   let runtimeNotice: LocalHostStatus["runtime_notice"];
   let extensionDrift: LocalHostStatus["extension_drift"];
+  let skillsRevision = 0;
   let sequence = 0;
   let restartRequested = false;
   let operator: ReturnType<typeof createLocalHostOperator> | undefined;
@@ -107,6 +108,10 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           kernelError("unavailable", "interactive browser handoff is not ready"),
         );
       return operator.openAuthorizationUrl(url);
+    },
+    onSkillsChanged() {
+      options.kernel.onSkillsChanged?.();
+      skillsRevision++;
     },
   });
   const prices = new Map<string, ModelCost>();
@@ -202,7 +207,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
       owner: workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
       prepare: sessions.prepare,
       archiveRecovery: sessions.archiveRecovery,
-      retireConfigurationSession: (scope) => kernel.nativeConfiguration.retireSession(owner, scope),
       logger,
       assertStartAllowed: assertWritable,
       executionChanged: (sessionId) => goalChanges.notify(sessionId),
@@ -231,6 +235,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
     operator = createLocalHostOperator({
       inspect: () => ({
         host_generation: options.hostGeneration,
+        skills_revision: skillsRevision,
         runtime: kernel.runtime,
         ...(runtimeNotice === undefined ? {} : { runtime_notice: runtimeNotice }),
         ...(extensionDrift === undefined ? {} : { extension_drift: extensionDrift }),

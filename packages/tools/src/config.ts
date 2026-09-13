@@ -1,3 +1,4 @@
+import type { MutationReview } from "./lib/atomic.ts";
 import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
@@ -115,6 +116,8 @@ export interface RuntimeConfig {
 
   /** Optional command-approval hook consulted before a gated tool runs. */
   guard?: Guard;
+  /** Host-only review of final authoring bytes, before the atomic mutation commits. */
+  reviewMutation?: MutationReview;
 
   /** Optional interactive prompt invoked when the {@link Guard} returns `ask`. */
   elicit?: Elicit;
@@ -309,6 +312,8 @@ export interface AgentToolsOptions {
 
   /** Command-approval hook passed through to {@link RuntimeConfig.guard}. */
   guard?: Guard;
+  /** Host-only review of final authoring bytes, before the atomic mutation commits. */
+  reviewMutation?: MutationReview;
 
   /** Interactive approval prompt passed through to {@link RuntimeConfig.elicit}. */
   elicit?: Elicit;
@@ -514,6 +519,7 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     gitMetadataPaths,
     registerTemporaryRoot,
     guard: options.guard,
+    reviewMutation: options.reviewMutation,
     elicit: options.elicit,
     sandbox,
     allowHostEscalation: options.allowHostEscalation ?? true,

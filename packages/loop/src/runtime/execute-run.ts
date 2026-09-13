@@ -460,13 +460,32 @@ export async function executeRun({
           : AbortSignal.any([controller.signal, operatorAuthoritySignal]),
     });
     const admittedSteers = new Map<string, string>();
+    const steerIds = new WeakMap<object, string>();
+    const identifySteer = (message: object & { id?: string }): string => {
+      const id = message.id ?? steerIds.get(message) ?? randomUUID();
+      steerIds.set(message, id);
+      return id;
+    };
+    const stopPendingSteers =
+      authority !== undefined &&
+      operatorAuthoritySeed !== undefined &&
+      operatorAuthoritySeed.parent_run_id === undefined
+        ? steer?.onPending?.((message) => {
+            authority.onSteer({
+              id: identifySteer(message),
+              agent: "lead",
+              iteration: 0,
+              message: contentToText(message.content),
+            });
+          })
+        : undefined;
     const authoritySteer: SteerSource | undefined =
       steer === undefined
         ? undefined
         : {
             drain() {
               return steer.drain().map((message) => {
-                const id = message.id ?? randomUUID();
+                const id = identifySteer(message);
                 if (
                   operatorAuthoritySeed !== undefined &&
                   operatorAuthoritySeed.parent_run_id === undefined
@@ -476,6 +495,7 @@ export async function executeRun({
                 return { ...message, id };
               });
             },
+            close: () => steer.close?.(),
           };
     try {
       const { response, trace, wallStartedAt, finalContext, runCapabilities } =
@@ -615,6 +635,7 @@ export async function executeRun({
 
       return { executionId, response };
     } finally {
+      stopPendingSteers?.();
       authority?.finalize({ status: "cancelled" });
       externalSignal?.removeEventListener("abort", onExternalAbort);
       unsubscribeToolInterrupts?.();

@@ -145,7 +145,6 @@ async function fixture(kind: "loopback" | "local") {
       await rm(paths.projectionFile("generation", executionId));
     },
     async commit() {},
-    retireConfigurationSession() {},
   });
   const closures: Promise<void>[] = [];
   const server = createKernelServer(kernel, {

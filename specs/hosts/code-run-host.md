@@ -109,25 +109,15 @@ Production: `SessionMeta`, `metaToSession`, `sessionToMeta` and `createSessionSt
 confirmed queued revision advancement, uncertainty without replay and canonical terminal refresh in
 [session-store.test.ts](../../packages/code/tests/component/session-store.test.ts).
 
-Configuration authorization uses a volatile identity associated with the current `Session` object.
-`createRunHost` passes it as `configurationSessionId`; `toStartParams` maps it to the protocol's
-`configuration_session_id`. Neither metadata nor trace continuations store it. A resumed session
-gets a fresh identity, while successive turns in the same live object reuse it. The existing
-standalone skill path invokes `/clarvis-configure` and renders its host elicitation.
-For that reserved native route, the kernel exposes the leaf execution as one standalone lead and
-omits its synthetic delegation lifecycle. Its `configure_clarvis` operations consequently follow
-the ordinary lead tool publication path in both the live stream and stored reconciliation, rather
-than disappearing into a subagent section. Code derives the row label and scoped authored path from
-the safe operation/root/path projection; configuration content and CAS/edit material do not cross
-that presentation boundary.
-Production: `configurationSessions` in [run-host.ts](../../packages/code/src/run-host.ts),
-`toStartParams` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts), and
-the native projection in [map-events.ts](../../packages/kernel/src/runs/map-events.ts) and
-[map-result.ts](../../packages/kernel/src/runs/map-result.ts).
-Test: `configuration consent identity lives only in the open TUI session, never in resume` in
-[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts). Native admission and
-file authority and its live/replay projection are owned by
-[self-configuration.md](self-configuration.md).
+Configuration requests use ordinary conversation submission, continuation and resume. The host
+owns authority independently of the transcript; Code supplies no configuration consent nonce.
+`configure_clarvis` operations use the ordinary tool publication path in live and stored views.
+Code derives the row label and scoped authored path from the safe operation/root/path projection;
+configuration content and CAS/edit material do not cross that presentation boundary.
+Production: `createRunHost` in [run-host.ts](../../packages/code/src/run-host.ts),
+`toStartParams` in [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
+Test: [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+Authority and mutation review are owned by [self-configuration.md](self-configuration.md).
 
 ### 2.1 `RunHost` (`packages/code/src/run-host.ts`)
 

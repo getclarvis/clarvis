@@ -74,7 +74,7 @@ outside world reaches them only through the narrower `@clarvis/loop/host` subpat
 | `mergeProviders` | `(...lists: (ProviderConfig[] \| undefined)[]) => ProviderConfig[] \| undefined` | `packages/loop/src/settings/settings-merge.ts` |
 | `SETTINGS_MERGE_STRATEGY_KEYS` | `(keyof SettingsFile)[]` | `packages/loop/src/settings/settings-merge.ts` |
 | `settingsServerToEngine` | `(name: string, entry: McpServerSettings) => McpServerConfig` | `packages/loop/src/settings/engine-server.ts` |
-| `agentFrontmatterSchema` | `agentProfileSchema.omit(...).extend(...).loose()` | `packages/loop/src/settings/agent-frontmatter.ts` |
+| `agentFrontmatterSchema` | `agentProfileSchema.omit(...).extend(...).strict()` | `packages/loop/src/settings/agent-frontmatter.ts` |
 | `splitAgentFrontmatter` | `(raw: string, mode?: "strict" \| "lenient") => RawAgentFrontmatter` | `packages/loop/src/settings/agent-frontmatter.ts` |
 | `normalizeTools` | `(tools: string[] \| string \| undefined) => string[]` | `packages/loop/src/settings/agent-frontmatter.ts` |
 | `agentPromptOf` | `(basePrompt?: string, body: string) => string \| undefined` | `packages/loop/src/settings/agent-frontmatter.ts` |
@@ -264,9 +264,8 @@ storing an approval.
 
 `mcpServerBase` (`packages/loop/src/settings/settings-schema.ts`) is itself built with
 `.strip()`, not `.strict()`. `mcpServerSettingsSchema` re-adds `.strict()` for `settings.json`
-but `mcpServerPluginSchema` inherits the base's `.strip()` — a **third** tolerance
-mode for an unrecognized key, distinct from both `agentFrontmatterSchema`'s "carried through" (§3.3)
-and `settingsSchema`'s "rejected": a plugin-manifest MCP entry silently **drops** a key this host
+but `mcpServerPluginSchema` inherits the base's `.strip()`. Unlike the rejection used by
+`agentFrontmatterSchema` (§3.3) and `settingsSchema`, a plugin-manifest MCP entry silently **drops** a key this host
 gives no meaning to, rather than carrying or rejecting it. The schema's own doc comment
  states the reason: an operator's own `settings.json` typo is best rejected outright, but
 a plugin manifest written for another agent host arrives with configuration keys this host does not
@@ -293,7 +292,7 @@ stripped before fence detection (proven at
 `agentFrontmatterSchema` (`packages/loop/src/settings/agent-frontmatter.ts`) is
 `agentProfileSchema` with `name`/`model`/`tools` re-specified (`model` and `tools` become optional;
 `tools` accepts a YAML list *or* a comma-separated string) and `base_prompt`/`budget`/`output_schema`
-added, then made `.loose()` — unknown keys are **carried through**, not stripped or rejected
+added, then made `.strict()` — unknown keys are rejected
 (`packages/loop/src/settings/agent-frontmatter.ts`).
 
 The frontmatter's own `budget` field (`packages/loop/src/settings/agent-frontmatter.ts`)
@@ -655,12 +654,13 @@ the whole-workspace `providers[]` registry may carry an unsupported `body` freel
 Production: `packages/loop/src/validation/request/provider-rules.ts`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts`.
 
-**C.** `agentFrontmatterSchema` is `.loose()`: an unrecognized top-level key is carried through
-verbatim, not stripped or rejected, while every key the schema *does* name is still validated exactly
-as strictly as `agentProfileSchema` (a nested `retry`/`compaction` block remains `.strict()` — an
-unknown key nested *inside* one of those still fails).
-Production: `packages/loop/src/settings/agent-frontmatter.ts`. Test:
-`packages/loop/tests/unit/agent-frontmatter.test.ts`.
+**C.** `agentFrontmatterSchema` is `.strict()`: unknown top-level fields fail validation,
+including attempted sandbox, guard, endpoint, credential or capability overrides. Valid customization
+and delegated profiles continue through their normal host-admitted ceilings; schema validation does
+not grant new authority. Nested retry/compaction blocks also reject unknown keys.
+Production: `agentFrontmatterSchema` in `packages/loop/src/settings/agent-frontmatter.ts`.
+Test: `rejects unknown metadata and executor authority overrides` and `validates owned fields and
+preserves valid customization` in `packages/loop/tests/unit/agent-frontmatter.test.ts`.
 
 **D.** `settingsSchemaFor` and `readCapabilitySettings` refuse, at registration time, three distinct
 misuses that would otherwise fail *silently*: a registered spec's `key` shadowing a built-in block

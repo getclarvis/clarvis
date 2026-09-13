@@ -9,7 +9,7 @@ import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
 import { configurationRoots } from "@clarvis/paths";
-import { isCanonicalAuthoringPath } from "./guard/authoring-path.ts";
+import { isAuthoringSearchScope, isCanonicalAuthoringPath } from "./guard/authoring-path.ts";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -51,11 +51,16 @@ function protectWorkspaceConfiguration(
   const context = buildGuardContext(name, args, config);
   const targets = name === "copy" ? context.paths.slice(1) : context.paths;
   for (const fact of targets) {
-    if (authoringReviewed && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
+    if (
+      (name === "replace" &&
+        config.reviewMutation !== undefined &&
+        isAuthoringSearchScope(fact.resolved, config.workspaceRoot)) ||
+      (authoringReviewed && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
+    )
       continue;
     assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
       code: "denied",
-      message: `Workspace Clarvis configuration can only be changed through /clarvis-configure <change>, which requests operator approval: ${fact.raw}.`,
+      message: `Use the restricted configure_clarvis writer in this conversation for this configuration change: ${fact.raw}.`,
     });
   }
 }
@@ -279,7 +284,17 @@ export async function dispatch(
     return errorResult(error);
   }
 
-  const gate = await applyGuard(name, filled, config);
+  const deferredAuthoring =
+    tool.atomicMutation === true &&
+    config.reviewMutation !== undefined &&
+    buildGuardContext(name, filled, config).paths.some(
+      (fact) =>
+        isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot) ||
+        (name === "replace" && isAuthoringSearchScope(fact.resolved, config.workspaceRoot)),
+    );
+  const gate: GuardGate = deferredAuthoring
+    ? { authoringReviewed: true }
+    : await applyGuard(name, filled, config);
   if (gate.denied) return { ...gate.denied, ...(gate.review ? { guard: gate.review } : {}) };
 
   try {

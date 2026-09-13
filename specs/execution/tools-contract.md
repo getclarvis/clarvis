@@ -644,3 +644,11 @@ completed host review; other operational configuration remains excluded before r
 with guard off. Production: [core.ts](../../packages/tools/src/core.ts) and
 [authoring-path.ts](../../packages/tools/src/guard/authoring-path.ts).
 The cross-package contract is [effect review](effect-review.md).
+
+Host-bound entry-agent mutations may use the prepared batch review port described in [direct self configuration](../hosts/self-configuration.md#prepared-file-tool-batches). `atomicMutation` marks only handlers whose writes reach that port before staging; it is internal tool metadata, not a caller grant. Binary-safe ordinary copy remains unchanged; authored copies commit captured UTF-8 content after review.
+Production: `dispatch` in [core.ts](../../packages/tools/src/core.ts), `MutationReview` in [atomic.ts](../../packages/tools/src/lib/atomic.ts), and the copy/move handlers.
+Test: complete file-tool journeys and mixed-batch review in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+
+Explicit configuration-directory replacement bypasses default ignore filtering only for discovery; the shared path classification removes operational/private leaves before reads, and the host reviews all remaining mutations as one batch. Generic workspace traversal keeps its ignore semantics.
+Production: `scopeFiles` in [replace.ts](../../packages/tools/src/tools/replace.ts) and `isAuthoringSearchScope` in [authoring-path.ts](../../packages/tools/src/guard/authoring-path.ts).
+Test: copy/rename/recursive-replace/remove journey preserving settings bytes in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).

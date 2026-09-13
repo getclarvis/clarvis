@@ -799,7 +799,9 @@ try again, not stopped; `fastAcceptOk` reports `true` only when no hook defines 
 
 ### 4.15 Steering
 
-`SteerSource` is pull-only. `createSteerInbox` (`packages/loop/src/runtime/loop/steer-inbox.ts`)
+`SteerSource` delivers messages by pull. Its optional `onPending` subscription separately reports
+host-admitted arrivals so the private authority writer can invalidate open effect decisions before
+the next drain. It neither delivers nor acknowledges those messages to the model. `createSteerInbox` (`packages/loop/src/runtime/loop/steer-inbox.ts`)
 splits arrival-detection from consumption: `probe()` pulls into a local buffer and reports
 non-emptiness without consuming; `take()` pulls, hands the buffer over and clears it; a throwing `drain()` is logged and treated as empty. The whole surface is
 pinned by `packages/loop/tests/unit/steer-inbox.test.ts`.

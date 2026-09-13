@@ -13,10 +13,14 @@ import {
 } from "@clarvis/capability";
 import type { GuardEffectRegistry } from "./effects/registry.ts";
 import type { GuardEffectBatch, GuardEffectFact } from "./effects/types.ts";
-import { installAuthorityEnvelope, consumeAuthorityEffects } from "./operator-authority.ts";
+import {
+  installAuthorityEnvelope,
+  consumeAuthorityEffects,
+  denyAuthorityEffect,
+} from "./operator-authority.ts";
 import { effectDigest } from "./effects/facts.ts";
 import { authorityEnvelopeSchema as envelopeSchema } from "./authority-schema.ts";
-import { EFFECT_REVIEW_POLICY } from "./reviewer-policy.ts";
+import { EFFECT_REVIEW_POLICY, GUARD_REVIEW_AGENT_INSTANCE_ID } from "./reviewer-policy.ts";
 
 /** Operational failures remain distinguishable from an uncertain policy verdict. */
 export type ReviewerFailureKind =
@@ -145,6 +149,29 @@ export function validateAuthorityEnvelope(
   return envelope;
 }
 
+/** Equivalent prepared file mutations keep their identity when a caller switches edit and write. */
+function refusalKey(batch: GuardEffectBatch): string {
+  return effectDigest(
+    ...batch.facts
+      .map((fact) => {
+        const constraints = { ...fact.constraints };
+        if (
+          typeof constraints.diff_digest === "string" &&
+          typeof constraints.expected_revision === "string" &&
+          typeof constraints.next_revision === "string"
+        )
+          delete constraints.operation;
+        return JSON.stringify([
+          fact.id,
+          fact.target?.digest,
+          fact.target?.state_digest,
+          Object.entries(constraints).sort(([left], [right]) => left.localeCompare(right)),
+        ]);
+      })
+      .sort(),
+  );
+}
+
 /** Prefer provider-classified errors; never extract secrets or classify raw error prose. */
 function failureKind(error: unknown, timedOut: boolean, signal?: AbortSignal): ReviewerFailureKind {
   if (signal?.aborted) return "cancelled";
@@ -171,7 +198,24 @@ export function createEffectReviewService(deps: {
   const audit = deps.audit ?? NOOP_LOGGER;
   const config = deps.options ?? {};
   const cache = new Map<string, EffectReviewReceipt>();
+  const unboundRefusals = new Set<string>();
+  const wasRefused = (batch: GuardEffectBatch): boolean => {
+    const key = refusalKey(batch);
+    return (
+      deps.authority?.snapshot().denied_effects?.includes(key) === true || unboundRefusals.has(key)
+    );
+  };
   return Object.freeze({
+    wasRefused,
+    refuse(batch: GuardEffectBatch, revision: number): void {
+      const key = refusalKey(batch);
+      if (deps.authority !== undefined) {
+        denyAuthorityEffect(deps.authority, revision, key);
+        return;
+      }
+      if (unboundRefusals.size >= 32) throw new Error("Configuration refusal budget exhausted.");
+      unboundRefusals.add(key);
+    },
     attest(fact: GuardEffectFact, consumer: "command_guard" | "configure_clarvis"): void {
       audit.info(
         {
@@ -208,6 +252,7 @@ export function createEffectReviewService(deps: {
         attempts,
         ...(failure_kind === undefined ? {} : { failure_kind }),
       });
+      if (wasRefused(batch)) return receipt("deny");
       if (
         state?.status !== "active" ||
         state.evidence.length === 0 ||
@@ -330,6 +375,8 @@ export function createEffectReviewService(deps: {
               maxRetries: config.max_retries ?? 1,
               maxOutputTokens: 2048,
               reasoningEffort: "low",
+              agentInstanceId: GUARD_REVIEW_AGENT_INSTANCE_ID,
+              cacheBreakpoints: [],
               onRetry: () => {
                 attempts++;
               },
@@ -457,7 +504,7 @@ export function createEffectReviewService(deps: {
               item.target_digests.includes(fact.target!.digest)),
         ),
       );
-      if (blocked) return receipt("deny");
+      if (blocked || wasRefused(batch)) return receipt("deny");
       const output = await invoke(
         "decide",
         { call, effects: batch.facts, envelope },
@@ -465,6 +512,7 @@ export function createEffectReviewService(deps: {
       );
       const decision = decisionSchema.safeParse(output);
       const current = deps.authority.snapshot();
+      if (wasRefused(batch)) return receipt("deny");
       if (current.status !== "active" || current.revision !== revision) {
         completeStage("unsure", "none");
         return receipt("unsure");

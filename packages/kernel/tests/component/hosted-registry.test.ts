@@ -412,11 +412,11 @@ describe("hosted registry", () => {
     await f.registry.close();
   });
 
-  it("rejects native configuration handoff and discards consent when its conversation closes", async () => {
+  it("rejects non-detachable handoff and discards consent when its conversation closes", async () => {
     const f = fixture({ detachable: false });
     const peer = f.registry.connect("operator");
     const view = await peer.service.start(input());
-    await expect(peer.service.detach(f.handoff(view))).rejects.toThrow("native configuration");
+    await expect(peer.service.detach(f.handoff(view))).rejects.toThrow("non-detachable");
     await peer.service.closeSession("session-1");
     expect(f.retired).toEqual(f.scopes);
     expect(f.contexts.get("run-1")!.signal.aborted).toBe(true);

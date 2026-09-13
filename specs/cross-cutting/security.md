@@ -650,7 +650,7 @@ Transitions:
 | any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts`) |
 | any | `revokeWorkspace()` | `unapproved` | `delete workspaces[key]` |
 | `trusted` | the surface changes | `changed` | withheld again (`packages/kernel/tests/integration/workspace-trust.test.ts`) |
-| `trusted`/`inert` | operator write through `ConfigService` or the approved native configuration capability | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/native-configuration.ts`) |
+| `trusted`/`inert` | operator write through `ConfigService` or the reviewed direct configuration capability | re-recorded over the new surface | `ConfigStore.withOperatorWrite` (`packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`, `packages/kernel/src/configuration/direct-configuration.ts`) |
 | `unapproved`/`changed` | the same operator-authorized write surfaces | unchanged | `if (!carried) return out` |
 
 Ordinary native file-mutation tools cannot write workspace-authored `.clarvis` or `.agents`
@@ -923,10 +923,10 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     the authorized file has its expected revision and every other executable input is unchanged.
     Concurrent drift or a different target revision leaves the resulting surface withheld. When
     the pre-write verdict is `unapproved` or `changed`, the write does not approve it. Both
-    `ConfigService` mutations and approved native `configure_clarvis` workspace mutations use this
+    `ConfigService` mutations and reviewed `configure_clarvis` workspace mutations use this
     boundary. Production:
     `packages/kernel/src/config/config-store.ts`, `packages/kernel/src/config/file-config-store.ts`
-    and `packages/kernel/src/configuration/native-configuration.ts`; pinned by
+    and `packages/kernel/src/configuration/direct-configuration.ts`; pinned by
     `packages/kernel/tests/integration/workspace-trust.test.ts` and
     `packages/kernel/tests/integration/native-configuration.test.ts`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
@@ -1296,18 +1296,16 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 ## 6. Failure modes and degradation
 
-The builtin [native self-configuration flow](../hosts/self-configuration.md) is explicitly admitted
-through live-session human elicitation before leaving configured isolation. It exposes only mediated
-authored-file operations and questions, with no shell, MCP, extension execution or continuation.
-Private credential/state paths, stable symlinks and hardlinked leaves are excluded. Consent and its
-nonce are not persisted or restored by TUI resume. This is native access with a file policy;
-parent-directory TOCTOU and secret literals embedded in allowed documents remain explicit limits.
-Production: `createNativeConfigurationRuns` and `configurationFileOperation` in
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts) and
+The [direct self-configuration flow](../hosts/self-configuration.md) uses a host-installed restricted
+writer within ordinary Host/Sandbox runs. Concrete effects consume shared authority review before
+mutation. Private credential/state paths, stable symlinks and hardlinked leaves are excluded.
+Authority is never inferred from skill content or a client consent nonce. Parent-directory TOCTOU
+and secret literals embedded in otherwise allowed documents remain explicit limits.
+Production: `createDirectConfigurationCapability` and `configurationFileOperation` in
+[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts) and
 [files.ts](../../packages/kernel/src/configuration/files.ts). Test:
-[native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts),
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts), and
-the live-session/resume test in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts),
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |

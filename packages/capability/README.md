@@ -45,6 +45,10 @@ after a server connects, every tool it advertised joins every agent's effective 
 that run without changing the persisted profile. `MCPConnection.instructions`
 carries bounded initialization guidance back across the same leaf contract.
 
+`SteerSource.onPending` optionally reports host-admitted arrivals without draining or acknowledging
+them. The engine can invalidate an open effect decision immediately while preserving one normal
+model delivery. This is a host input port, not evidence accepted from run JSON or capability text.
+
 ## Test ownership
 
 `LLMUsage` keeps numeric tallies and separate `usage_unknown` / `cache_unknown` flags. Missing
@@ -396,3 +400,5 @@ validation and separate deterministic, live-provider and installed-artifact qual
 versioned state, plus `OPERATOR_AUTHORITY_PORT` and its read-only reader. `inheritOperatorAuthority`
 projects a compiled parent intersection without promoting leader briefs. Kernel owns the writer and
 semantic policy; the loop transports this substrate. See [effect review](../../specs/execution/effect-review.md).
+
+`OperatorAuthorityState.denied_effects` carries bounded identities of concrete refused batches at the current evidence revision. It grants no authority; the kernel owns recording and validation, and fresh host-admitted evidence invalidates these exact-review identities. See [self-configuration](../../specs/hosts/self-configuration.md).

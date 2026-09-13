@@ -26,7 +26,7 @@ const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
 describe("execution safety", () => {
-  it("shows active native configuration without replacing the idle next-run preference", () => {
+  it("shows active host placement without replacing the idle next-run preference", () => {
     const host = {
       kind: "native",
       host_platform: "linux",

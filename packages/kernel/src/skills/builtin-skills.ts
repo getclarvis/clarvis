@@ -12,7 +12,6 @@ export function withBuiltinSkills(discovered: SkillsProvider | undefined): Skill
     metadata: {
       name: CLARVIS_CONFIGURE_SKILL.name,
       description: CLARVIS_CONFIGURE_SKILL.description,
-      agent: CLARVIS_CONFIGURE_SKILL.name,
     },
     userInvocable: true,
     scope: "user",

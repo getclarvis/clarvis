@@ -123,9 +123,8 @@ export const guardModeSchema = z.enum(["off", "on", "auto"], {
 });
 
 /**
- * Schema for the per-run `guard_judge` config that drives `guard_mode: "auto"`:
- * the caller-supplied judge `prompt` (relayed verbatim), an optional `model`,
- * `on_unsure` escalation policy, and a `timeout_ms`.
+ * Schema for per-run Auto-review guidance, model selection, unsure policy, and timeout.
+ * The kernel owns the effect and exact-call reviewer policies; caller text is bounded guidance.
  */
 export const guardJudgeSchema = z
   .object({
@@ -160,16 +159,17 @@ export const AGENT_TOOLS_REQUEST_PARAMS = {
     .describe(
       "Per-run guard mode. 'off': no permission checks. 'on': the workspace guard runs and " +
         "'ask' verdicts are relayed to the user via MCP elicitation (fails closed if the " +
-        "client cannot elicit). 'auto': an LLM answers each ask using the caller-supplied " +
-        "guard_judge prompt — deny verdicts are still enforced first, and there is no blind " +
+        "client cannot elicit). 'auto': the kernel reviews asks under its fixed policies with " +
+        "host-owned operator evidence and optional guard_judge guidance — deny verdicts are " +
+        "still enforced first, and there is no blind " +
         "auto-approve. Default: settings guard.mode when set, else 'on'.",
     ),
   guard_judge: guardJudgeSchema
     .optional()
     .describe(
-      "Judge configuration for guard_mode 'auto'. The caller supplies the judge's entire " +
-        "system prompt; the server relays it verbatim and appends only a JSON facts message " +
-        "(tool, command, normalized segments, paths, undecidable flag). 'on_unsure' " +
+      "Review configuration for guard_mode 'auto'. The kernel supplies the reviewer policy; " +
+        "caller prompt/guidance is bounded untrusted context, while the host supplies " +
+        "authenticated operator evidence and guard facts. 'on_unsure' " +
         "(default 'ask') escalates unsure verdicts to the user via elicitation when the " +
         "client supports it, else denies. Requires guard_mode 'auto'.",
     ),

@@ -1214,7 +1214,7 @@ describe("Extension Profile manager", () => {
     expect(afterProcess.fingerprint).not.toBe(afterSkill.fingerprint);
   });
 
-  it("withdraws a drifted standalone skill asynchronously without changing run admission", () => {
+  it("refreshes a drifted standalone skill without withdrawing the captured execution revision", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "research");
     const resource = join(root, "research", "reference.md");
@@ -1240,14 +1240,70 @@ describe("Extension Profile manager", () => {
     expect(target.skillRoots()).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: root })]),
     );
-    expect(target.skillAvailable(catalog[0]!)).toBeFalse();
-    expect(notices).toEqual([
-      expect.objectContaining({ name: "research", source: "clarvis", path: expect.any(String) }),
-    ]);
+    expect(target.skillAvailable(catalog[0]!)).toBeTrue();
+    expect(notices).toEqual([]);
+    target.flushSkillRefresh();
     expect(watcherClosed).toBeTrue();
-    const after = manager().resolveActive([], TRUSTED);
+    const after = target.resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
     target.close();
+  });
+
+  it("observes initially absent skill roots and coalesces their creation into one generation", () => {
+    const callbacks = new Map<string, () => void>();
+    const target = manager(undefined, undefined, {
+      watchSkillPath: (path, callback) => {
+        callbacks.set(path, callback);
+        return { close() {} };
+      },
+    });
+    target.resolveActive([], TRUSTED);
+    target.observeSkillCatalog([]);
+    const root = workspacePaths(workspaceRoot).skillsDir;
+    expect(callbacks.has(root)).toBeTrue();
+    let generations = 0;
+    target.onSkillRootsChanged(() => {
+      generations++;
+    });
+    writeSkill(root, "created");
+    callbacks.get(root)!();
+    callbacks.get(root)!();
+    target.flushSkillRefresh();
+    target.flushSkillRefresh();
+    expect(generations).toBe(1);
+    expect(target.skillRoots()).toContainEqual(
+      expect.objectContaining({ path: root, include: ["created"] }),
+    );
+    target.close();
+  });
+
+  it("observes a newly created empty directory before its manifest arrives", () => {
+    const callbacks = new Map<string, () => void>();
+    const target = manager(undefined, undefined, {
+      watchSkillPath: (path, callback) => {
+        callbacks.set(path, callback);
+        return {
+          close() {
+            callbacks.delete(path);
+          },
+        };
+      },
+    });
+    target.resolveActive([], TRUSTED);
+    target.observeSkillCatalog([]);
+    const root = workspacePaths(workspaceRoot).skillsDir;
+    mkdirSync(join(root, "delayed"), { recursive: true });
+    callbacks.get(root)!();
+    target.flushSkillRefresh();
+    expect(callbacks.has(join(root, "delayed"))).toBeTrue();
+    writeSkill(root, "delayed");
+    callbacks.get(join(root, "delayed"))!();
+    target.flushSkillRefresh();
+    expect(target.skillRoots()).toContainEqual(
+      expect.objectContaining({ path: root, include: ["delayed"] }),
+    );
+    target.close();
+    expect(callbacks.size).toBe(0);
   });
 
   it("verifies pinned skill bytes after arming their asynchronous monitors", () => {
@@ -1281,7 +1337,7 @@ describe("Extension Profile manager", () => {
     expect(armed).toBeTrue();
     target.verifySkillCatalog(captured);
     expect(target.skillAvailable(captured[0]!)).toBeFalse();
-    expect(notices).toEqual([expect.objectContaining({ name: "research", path: manifest })]);
+    expect(notices).toEqual([]);
     target.close();
   });
 
@@ -1320,7 +1376,7 @@ describe("Extension Profile manager", () => {
     target.close();
   });
 
-  it("contains a failing host drift notice after withdrawing the changed skill", () => {
+  it("refreshes standalone skills without invoking the obsolete withdrawal notice", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "research");
     let signalDrift!: () => void;
@@ -1340,10 +1396,8 @@ describe("Extension Profile manager", () => {
     target.observeSkillCatalog(catalog.flatMap((skill) => skills.loadSkill(skill.name) ?? []));
 
     expect(() => signalDrift()).not.toThrow();
-    expect(target.skillAvailable(catalog[0]!)).toBeFalse();
-    expect(logger.events("kernel.extension_profile.skill_drift_notice_failed")).toEqual([
-      expect.objectContaining({ skill: "research", cause: "notice transport closed" }),
-    ]);
+    expect(target.skillAvailable(catalog[0]!)).toBeTrue();
+    expect(logger.events("kernel.extension_profile.skill_drift_notice_failed")).toEqual([]);
     target.close();
   });
 

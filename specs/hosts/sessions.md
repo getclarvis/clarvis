@@ -462,7 +462,7 @@ Test: goal creation, checkpoint continuation and paused ordinary-input refusal i
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
 
 Only the latest conversational execution may be an explicit continuation; transcript-only turns
-cannot supply that continuation. The host replaces caller configuration consent with its live scope,
+cannot supply that continuation. The host admits authority through its private live control scope,
 captures an immutable execution binding without starting inference, and rechecks the full conversation
 after that asynchronous preparation. `commitIntent` rechecks again, then writes the running turn and
 increments the revision before `start` can run. Conversational turns consume pending observations

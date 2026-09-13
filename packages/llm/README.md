@@ -141,6 +141,10 @@ Models are not selected by a hard-coded name: models.dev cache pricing can ident
 exists, while provider kind decides whether a marker protocol is safe. Grok's Responses transport gets the run's stable
 `prompt_cache_key`; its subscription authority separately sends the same stable conversation
 identity as `x-grok-conv-id`, matching Grok's implicit append-only cache contract.
+An auxiliary caller may pass an empty `cacheBreakpoints` list to cache only its stable system prefix:
+Anthropic and explicitly cached OpenAI-compatible models mark that system block while leaving every
+variable user payload unmarked. Key-based providers continue to use `promptCacheKey`; Google keeps
+its provider-native behavior.
 
 ## What it tells an operator
 

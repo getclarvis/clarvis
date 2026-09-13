@@ -1,3 +1,4 @@
+import type { MutationReview } from "../lib/atomic.ts";
 import { promises as fs } from "node:fs";
 import { applyPatch, parsePatch, type StructuredPatch } from "diff";
 import { ToolError, fsError } from "../errors.ts";
@@ -314,6 +315,7 @@ function firstFailingHunk(source: string, p: ParsedPatch): number | undefined {
  * {@link firstFailingHunk}) the hunk number, and nothing is written.
  */
 export const applyPatchTool: ToolDef = {
+  atomicMutation: true,
   name: "apply_patch",
   description:
     "Atomically create, update, delete or move one or more files with a Codex-style patch " +
@@ -409,6 +411,7 @@ async function applyParsed(
   config: {
     workspaceRoot: string;
     maxFileBytes: number;
+    reviewMutation?: MutationReview;
     confineToWorkspace: boolean;
     temporaryRoots: readonly string[];
     logger: ToolsLogger;
@@ -571,7 +574,7 @@ async function applyParsed(
   }
 
   try {
-    await applyOpsAtomic(ops);
+    await applyOpsAtomic(ops, config.reviewMutation);
   } catch (err) {
     if (err instanceof ToolError) throw err;
     throw new ToolError("io_error", `Failed to apply patch: ${(err as Error).message}`);

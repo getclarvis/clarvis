@@ -30,7 +30,6 @@ export interface PrepareKernelRunOptions {
   assemblerOptions?: SettingsAssemblerOptions;
   assembleRunRequest?: RunRequestAssembler;
   skills?: SkillsProvider;
-  nativeConfigurationRequested(params: StartRunParams): boolean;
   workflowSettings(source: Pick<RunConfigurationSource, "readSettings">): WorkflowsRuntimeSettings;
   start: KernelRunService["start"];
   startWorkflow: KernelWorkflowsService["runManagerWorkflow"];
@@ -51,60 +50,49 @@ export function prepareKernelRun(
     ...params,
     execution_id: params.execution_id ?? generateExecutionId(),
   });
-  const configuration = options.nativeConfigurationRequested(request);
-  let agent: string;
-  let model: string | undefined;
-  let tokenLimit: number | undefined;
   let execution: PreparedRunExecution | undefined;
-  if (configuration) {
-    if (goal !== undefined)
-      throw kernelError("unsupported", "Goals cannot run a configuration skill");
-    agent = request.skill!.name;
-  } else {
-    const snapshot = snapshotRunConfiguration(options.configStore);
-    const pluginNames = [...(options.assemblerOptions?.pluginMcpServerNames?.() ?? [])];
-    const assemble =
-      options.assembleRunRequest ??
-      createSettingsRunAssembler(snapshot, {
-        ...options.assemblerOptions,
-        ...(options.skills === undefined ? {} : { skills: options.skills }),
-        pluginMcpServerNames: () => pluginNames,
-      });
-    const assembled = structuredClone(assemble(request));
-    const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
-    if (rawBody === null || typeof rawBody !== "object")
-      throw kernelError("invalid_request", "prepared run assembler returned no request object");
-    const body = rawBody as {
-      entry?: unknown;
-      profiles?: Array<{ name?: unknown; model?: unknown; grants?: unknown }>;
-      budget?: { total_token_limit?: number };
+  const snapshot = snapshotRunConfiguration(options.configStore);
+  const pluginNames = [...(options.assemblerOptions?.pluginMcpServerNames?.() ?? [])];
+  const assemble =
+    options.assembleRunRequest ??
+    createSettingsRunAssembler(snapshot, {
+      ...options.assemblerOptions,
+      ...(options.skills === undefined ? {} : { skills: options.skills }),
+      pluginMcpServerNames: () => pluginNames,
+    });
+  const assembled = structuredClone(assemble(request));
+  const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
+  if (rawBody === null || typeof rawBody !== "object")
+    throw kernelError("invalid_request", "prepared run assembler returned no request object");
+  const body = rawBody as {
+    entry?: unknown;
+    profiles?: Array<{ name?: unknown; model?: unknown; grants?: unknown }>;
+    budget?: { total_token_limit?: number };
+  };
+  const tokenLimit = body.budget?.total_token_limit;
+  if (typeof body.entry !== "string" || !Array.isArray(body.profiles))
+    throw kernelError("invalid_request", "prepared run has no entry profile");
+  const agent = body.entry;
+  const profile = body.profiles.find((item) => item.name === agent);
+  if (typeof profile?.model !== "string")
+    throw kernelError("invalid_request", "prepared run has no entry model");
+  const model = profile.model;
+  if (Array.isArray(profile.grants) && profile.grants.includes("workflow")) {
+    const policy = createAgentWorkflowPolicy(snapshot);
+    const defaultLeader = policy.resolveLeaderDefault(agent);
+    const prepared = {
+      managerBody: rawBody,
+      assembleRunRequest: assemble,
+      settings: options.workflowSettings(snapshot),
+      leaderProfiles: policy.leaderProfiles(),
+      ...(defaultLeader === undefined ? {} : { defaultLeader }),
     };
-    tokenLimit = body.budget?.total_token_limit;
-    if (typeof body.entry !== "string" || !Array.isArray(body.profiles))
-      throw kernelError("invalid_request", "prepared run has no entry profile");
-    agent = body.entry;
-    const profile = body.profiles.find((item) => item.name === agent);
-    if (typeof profile?.model !== "string")
-      throw kernelError("invalid_request", "prepared run has no entry model");
-    model = profile.model;
-    if (Array.isArray(profile.grants) && profile.grants.includes("workflow")) {
-      const policy = createAgentWorkflowPolicy(snapshot);
-      const defaultLeader = policy.resolveLeaderDefault(agent);
-      const prepared = {
-        managerBody: rawBody,
-        assembleRunRequest: assemble,
-        settings: options.workflowSettings(snapshot),
-        leaderProfiles: policy.leaderProfiles(),
-        ...(defaultLeader === undefined ? {} : { defaultLeader }),
-      };
-      execution = {
-        kind: "workflow",
-        start: (seed, signal) =>
-          options.startWorkflow({ ...request, agent }, prepared, seed, signal),
-      };
-    } else {
-      execution = { kind: "ordinary", rawBody, ...(goal === undefined ? {} : { goal }) };
-    }
+    execution = {
+      kind: "workflow",
+      start: (seed, signal) => options.startWorkflow({ ...request, agent }, prepared, seed, signal),
+    };
+  } else {
+    execution = { kind: "ordinary", rawBody, ...(goal === undefined ? {} : { goal }) };
   }
   let started = false;
   return {
@@ -112,7 +100,7 @@ export function prepareKernelRun(
     agent,
     ...(model === undefined ? {} : { model }),
     ...(tokenLimit === undefined ? {} : { tokenLimit }),
-    detachable: !configuration,
+    detachable: true,
     async start() {
       if (started) throw kernelError("conflict", "prepared run start was already attempted");
       started = true;

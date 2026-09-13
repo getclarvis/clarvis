@@ -38,7 +38,7 @@ describe("createAgentTools (library API)", () => {
     expect(JSON.parse(resultText(b.content))).toMatchObject({ exit_code: 0 });
   });
 
-  it("requires /clarvis-configure for authored workspace configuration mutations", async () => {
+  it("routes protected configuration mutations to the restricted writer in the same conversation", async () => {
     const roots = configurationRoots({ workspaceRoot: root });
     write(roots.workspace_clarvis, "skills/existing/SKILL.md", "existing");
     write(roots.workspace_agents, "skills/shared/SKILL.md", "shared");
@@ -54,7 +54,9 @@ describe("createAgentTools (library API)", () => {
         error: "denied",
         path,
       });
-      expect(resultText(attempt.content)).toContain("/clarvis-configure <change>");
+      expect(resultText(attempt.content)).toContain(
+        "configure_clarvis writer in this conversation",
+      );
     }
 
     const read = await t.callTool("read_file", {
@@ -98,7 +100,9 @@ describe("createAgentTools (library API)", () => {
       dry_run: false,
     });
     expect(replaceConfiguration.isError).toBe(true);
-    expect(resultText(replaceConfiguration.content)).toContain("/clarvis-configure <change>");
+    expect(resultText(replaceConfiguration.content)).toContain(
+      "restricted configure_clarvis writer",
+    );
 
     write(root, "ordinary.txt", "shared");
     const replaceWorkspace = await t.callTool("replace", {

@@ -60,7 +60,7 @@ export interface ShellGuardDecision {
 export interface ShellGuardOptions {
   /** Complete host proof may refine syntactic uncertainty, never a deterministic denial. */
   attestedReviewable?: (ctx: GuardContext) => boolean;
-  /** Auto review lets the judge answer explicit unsandbox asks; ordinary Host opacity stays human-only. */
+  /** Auto review lets the judge answer non-sensitive Host asks after deterministic rules. */
   allowHostJudge?: boolean;
   /** Host-attested run placement; omitted means ordinary host execution. */
   placement?: GuardPlacement;
@@ -240,11 +240,12 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  * @param opts - optional allow/deny command lists; see {@link ShellGuardOptions}.
  * @returns a {@link Guard} evaluated in fixed precedence for each call: a denied
  *   segment → `deny`; an undecidable command → `deny` when a deny list is
- *   configured, else `ask` (human-only on Host, reviewable when contained); a host command → `ask` through
+ *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
  *   the configured reviewer; any path outside the workspace → `deny`; a
- *   credential file → `ask`; a non-bash call → `allow`; a fully
- *   allow-listed command → `allow`; forced removal or sudo → `ask`; a command that may leave the workspace →
- *   `ask`; otherwise `ask` (noting whether an allow list was configured at all).
+ *   credential file → `ask`; a non-bash call → `allow`; an environment-prefixed
+ *   dangerous command → `ask`; other environment changes → review; a fully allow-listed command →
+ *   `allow`; forced removal or sudo → `ask`; a command that may leave the workspace → `ask`;
+ *   otherwise `ask` (noting whether an allow list was configured at all).
  * @remarks
  * The guard only ever narrows toward asking or denying — it allows solely for
  * non-bash calls and commands matched in full by the allow list.
@@ -306,7 +307,9 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
       return {
         matched: "undecidable",
         verdict: "ask",
-        ...(placement === "host" ? { escalate: "human" as const } : {}),
+        ...(placement === "host" && opts?.allowHostJudge !== true
+          ? { escalate: "human" as const }
+          : {}),
         reason: "command contains dynamic expansions that cannot be analyzed",
       };
     }
@@ -317,14 +320,8 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         reason: "command touches paths outside the workspace",
       };
     }
-    if (ctx.shell?.segments.some((segment) => segment.envAssignments.length > 0)) {
-      return {
-        matched: "default",
-        verdict: "ask",
-        ...(placement === "host" ? { escalate: "human" as const } : {}),
-        reason: "command changes an environment binding that has not been attested",
-      };
-    }
+    const changesEnvironment =
+      ctx.shell?.segments.some((segment) => segment.envAssignments.length > 0) === true;
     const sensitive = sensitivePath(ctx);
     if (sensitive !== undefined) {
       return {
@@ -335,6 +332,23 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     }
     if (ctx.shell === undefined) {
       return { matched: "non_bash", verdict: "allow" };
+    }
+    if (changesEnvironment && isDangerousCommand(ctx.shell)) {
+      return {
+        matched: "dangerous",
+        verdict: "ask",
+        reason: "command uses forced removal or elevated privileges",
+      };
+    }
+    if (changesEnvironment) {
+      return {
+        matched: "default",
+        verdict: "ask",
+        ...(placement === "host" && opts?.allowHostJudge !== true
+          ? { escalate: "human" as const }
+          : {}),
+        reason: "command changes an environment binding that requires review",
+      };
     }
     if (allowed !== undefined && commandsAllowed(ctx.shell, commands, allowed)) {
       return { matched: "allow_list", verdict: "allow" };

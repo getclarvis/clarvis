@@ -46,6 +46,8 @@ export interface SteerMessage {
  */
 export interface SteerSource {
   drain(): SteerMessage[];
+  /** Observe admitted arrivals without acknowledging delivery; includes pending messages on subscribe. */
+  onPending?(listener: (message: SteerMessage) => void): () => void;
   /** Optional signal that the consuming loop has finished and will not drain
    * again. A source may use it to reject further input (e.g. re-route a late
    * steer to a fresh run) instead of enqueuing onto a queue no one will read. */

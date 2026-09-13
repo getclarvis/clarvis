@@ -28,9 +28,9 @@ export function isShippedAgent(name: string): boolean {
  * blank body whose frontmatter carries `base_prompt` promotes that field back
  * into the body (the inverse of {@link normalizeAgentWrite}'s demotion).
  *
- * A key the schema does not name is not an error and is not dropped: it is
- * carried into the editor's `frontmatter` so {@link normalizeAgentWrite} can
- * write it back out unchanged.
+ * Unknown keys fail the same closed schema as execution admission. Their
+ * document remains listable with an invalid marker; unchecked metadata never
+ * promotes an instruction or an executor override.
  */
 export function docToAgentFile(doc: AgentDoc, overlay?: AgentOverlay): AgentFile {
   const scope = doc.scope;
@@ -68,7 +68,7 @@ export function docToAgentFile(doc: AgentDoc, overlay?: AgentOverlay): AgentFile
  *
  * @throws {@link Error} when `file.frontmatter` fails {@link agentFrontmatterSchema}.
  * @remarks A non-empty body drops any `base_prompt` frontmatter key, since the
- *   body itself is now the prompt. Every other key survives, including one the
+ *   body itself is now the prompt. Every other validated key survives, including one the
  *   schema does not name — an editor save must not be the thing that strips a
  *   field the file was authored with.
  */

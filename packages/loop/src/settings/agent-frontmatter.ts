@@ -76,23 +76,9 @@ const toolsFrontmatter = z
  * inheritable `model`, list-or-CSV `tools`, a `base_prompt` seed message, a
  * per-entry `budget`, and a default `output_schema`.
  *
- * @remarks `.loose()` — an unrecognized key is **carried** into the parsed
- *   result rather than rejected or stripped. Every key this schema names is
- *   still validated exactly as before; only the unknown ones are tolerated.
- *
- *   This follows the `orchestration` precedent in
- *   `validation/request/profile-schemas.ts`: an agent definition is a file a
- *   person wrote by hand and this object reaches the schema verbatim from its
- *   frontmatter, so `.strict()` turned any key the engine does not own into a
- *   hard failure. The asymmetry it produced was worse than a missing check —
- *   the read path is lenient and keeps the raw map, so such a file lists and
- *   runs, and only *saving* it from an editor failed. Carrying rather than
- *   stripping is what makes that round-trip lossless: a write built from the
- *   parsed result would otherwise silently drop the keys it did not recognize.
- *
- *   Nothing downstream is widened by this. A run profile is assembled by
- *   picking named fields out of the frontmatter, never by spreading it, so a
- *   carried key never reaches the strict `agentProfileSchema`.
+ * @remarks Unknown fields fail validation. Profile metadata cannot select executor policy,
+ * sandbox, endpoints or credentials. Run assembly still picks named fields rather than
+ * spreading authored frontmatter into the execution request.
  */
 export const agentFrontmatterSchema = agentProfileSchema
   .omit({ name: true, model: true, tools: true })
@@ -125,7 +111,7 @@ export const agentFrontmatterSchema = agentProfileSchema
           "output_schema overrides it.",
       }),
   })
-  .loose();
+  .strict();
 
 /** The inferred type of a validated agent frontmatter; see {@link agentFrontmatterSchema}. */
 export type AgentFrontmatter = z.infer<typeof agentFrontmatterSchema>;

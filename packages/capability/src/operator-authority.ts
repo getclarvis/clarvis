@@ -96,6 +96,8 @@ export interface OperatorAuthorityState {
   parent_run_id?: string;
   /** Stable one-attempt identities, retained across continuation and recompilation. */
   consumed_effects?: string[];
+  /** Exact refused batches at the current evidence revision; these never grant authority. */
+  denied_effects?: string[];
 }
 
 /** Detached read projection; mutating a snapshot cannot change host authority. */

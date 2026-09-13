@@ -626,13 +626,19 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
   const verifiedOperatorSurface = (
     before: OperatorSurfaceSnapshot,
     after: OperatorSurfaceSnapshot,
-    target: OperatorWriteTarget,
+    target: OperatorWriteTarget | readonly OperatorWriteTarget[],
   ): boolean => {
     if (before.extensionFingerprint !== after.extensionFingerprint) return false;
-    const targetPath = resolve(target.path);
+    const targets = "path" in target ? [target] : target;
+    const expectedTargets = new Map(
+      targets.map((item) => [resolve(item.path), item.expectedRevision]),
+    );
+    if (expectedTargets.size !== targets.length) return false;
     const paths = new Set([...before.documents.keys(), ...after.documents.keys()]);
     for (const path of paths) {
-      const expected = path === targetPath ? target.expectedRevision : before.documents.get(path);
+      const expected = expectedTargets.has(path)
+        ? expectedTargets.get(path)
+        : before.documents.get(path);
       if ((after.documents.get(path) ?? null) !== (expected ?? null)) return false;
     }
     return true;
@@ -654,9 +660,10 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * `unapproved` does not become approved because the operator changed one
    * unrelated setting inside it.
    *
-   * What this deliberately does not cover is the case trust exists for: content
-   * that arrived with a clone, or that an agent wrote into `.clarvis/` using its
-   * file tools. Neither passes through this API, so neither can self-approve.
+   * Only host-reviewed writers, including prepared file-tool batches, use this
+   * API. External changes and unreviewed tool writes cannot self-approve. Async
+   * batches carry trust only after settlement, checking every expected target
+   * and every previously captured document against concurrent drift.
    *
    * A failure to record the carried approval is swallowed rather than thrown.
    * By that point the settings or agent file has already been written, so
@@ -670,7 +677,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
   const withOperatorWrite = <T>(
     scope: Scope,
     write: () => T,
-    target: (result: T) => OperatorWriteTarget,
+    target: (result: Awaited<T>) => OperatorWriteTarget | readonly OperatorWriteTarget[],
   ): T => {
     if (scope !== "workspace") return write();
     let before: OperatorSurfaceSnapshot | undefined;
@@ -679,16 +686,19 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     } catch {
       before = undefined;
     }
+    const finish = (out: Awaited<T>): Awaited<T> => {
+      if (before?.carried !== true) return out;
+      try {
+        const after = operatorSurfaceSnapshot();
+        if (!verifiedOperatorSurface(before, after, target(out))) return out;
+        writeWorkspaceTrust(globalDir, trustKey(), after.fingerprint);
+      } catch {
+        /* the mutation already landed; trust remains withheld on verification failure */
+      }
+      return out;
+    };
     const out = write();
-    if (before?.carried !== true) return out;
-    try {
-      const after = operatorSurfaceSnapshot();
-      if (!verifiedOperatorSurface(before, after, target(out))) return out;
-      writeWorkspaceTrust(globalDir, trustKey(), after.fingerprint);
-    } catch {
-      /* see @remarks: the write already landed, so this must not throw */
-    }
-    return out;
+    return out instanceof Promise ? (out.then(finish) as T) : finish(out as Awaited<T>);
   };
 
   const asEngine = (s: SettingsData): SettingsScope["settings"] =>

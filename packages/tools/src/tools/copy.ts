@@ -1,3 +1,4 @@
+import { isCanonicalAuthoringPath } from "../guard/authoring-path.ts";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fsyncDir, renameWithRetry, tmpPathFor } from "@clarvis/paths";
@@ -23,6 +24,7 @@ import type { ToolDef } from "./types.ts";
  * an existing file was overwritten.
  */
 export const copy: ToolDef = {
+  atomicMutation: true,
   name: "copy",
   description:
     "Copy ONE file (atomic, binary-safe). Operates on regular files only — a directory source is " +
@@ -112,18 +114,46 @@ export const copy: ToolDef = {
         );
       }
 
-      const dstDir = path.dirname(absDst);
-      const tmp = tmpPathFor(absDst);
-      try {
-        await fs.mkdir(dstDir, { recursive: true });
-        await fs.copyFile(absSrc, tmp);
-        await fs.chmod(tmp, srcStat.mode & 0o777);
-        await renameWithRetry(tmp, absDst);
-      } catch (err) {
-        await fs.rm(tmp, { force: true, ...RM_RETRY });
-        throw fsError(err as NodeJS.ErrnoException, dstRel);
-      }
-      await fsyncDir(dstDir);
+      if (
+        config.reviewMutation !== undefined &&
+        isCanonicalAuthoringPath(absDst, config.workspaceRoot) &&
+        srcStat.size > config.maxFileBytes
+      )
+        throw new ToolError("too_large", "Authoring copy source exceeds the file budget");
+      const captured =
+        config.reviewMutation !== undefined &&
+        isCanonicalAuthoringPath(absDst, config.workspaceRoot)
+          ? await fs.readFile(absSrc)
+          : undefined;
+      if (captured !== undefined && !Buffer.from(captured.toString("utf8")).equals(captured))
+        throw new ToolError("invalid_input", "Authoring requires UTF-8 text");
+      const commit = async (): Promise<void> => {
+        const dstDir = path.dirname(absDst);
+        const tmp = tmpPathFor(absDst);
+        try {
+          await fs.mkdir(dstDir, { recursive: true });
+          if (captured === undefined) await fs.copyFile(absSrc, tmp);
+          else await fs.writeFile(tmp, captured);
+          await fs.chmod(tmp, srcStat.mode & 0o777);
+          await renameWithRetry(tmp, absDst);
+        } catch (err) {
+          await fs.rm(tmp, { force: true, ...RM_RETRY });
+          throw fsError(err as NodeJS.ErrnoException, dstRel);
+        }
+        await fsyncDir(dstDir);
+      };
+      if (captured !== undefined && config.reviewMutation !== undefined)
+        await config.reviewMutation(
+          [
+            {
+              type: dstExists ? "modify" : "create",
+              path: absDst,
+              content: captured.toString("utf8"),
+            },
+          ],
+          commit,
+        );
+      else await commit();
 
       const from = displayPath(absSrc, config.workspaceRoot);
       const to = displayPath(absDst, config.workspaceRoot);

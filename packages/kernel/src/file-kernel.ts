@@ -1,11 +1,9 @@
+import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
 import { withBuiltinSkills } from "./skills/builtin-skills.ts";
-import { configurationRoots, workspaceScopeKey } from "@clarvis/paths";
-import {
-  createNativeConfigurationRuns,
-  type NativeConfigurationRuns,
-} from "./configuration/native-configuration.ts";
+import { createDirectConfigurationCapability } from "./configuration/direct-configuration.ts";
+import { configurationRoots } from "@clarvis/paths";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
@@ -203,6 +201,8 @@ export interface CreateFileKernelOptions {
   };
   /** Reports an extension contribution withdrawn by asynchronous drift monitoring. */
   onExtensionProfileDrift?: (notice: ExtensionProfileDriftNotice) => void;
+  /** Notify clients after an idle skill catalog replacement. */
+  onSkillsChanged?: () => void;
   /** Explicit host-selected execution placement; absence is lazy native execution. */
   executeRun?: RunExecutor;
   /** Constructs container execution only when trusted effective settings select an engine. */
@@ -226,8 +226,6 @@ export type ExtensionProfileDriftNotice =
  * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
-  /** Host-only routing and revocation; native execution itself is not exposed through this surface. */
-  readonly nativeConfiguration: Pick<NativeConfigurationRuns, "requested" | "retireSession">;
   readonly workspaceHooks: {
     /** The current verdict for this workspace's declared hooks. */
     trust(): WorkspaceHooksTrust;
@@ -466,6 +464,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       if (released) return;
       released = true;
       extensionProfileRunRefs = Math.max(0, extensionProfileRunRefs - 1);
+      extensionProfileManager.flushSkillRefresh();
     };
   };
   const executeExtensionProfileRun = (args: ExecuteRunArgs): Promise<ExecuteRunOutcome> =>
@@ -790,19 +789,40 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     skillRoots: pluginSkillRoots,
     composeSkills: withBuiltinSkills,
     skillBootstraps: pluginSkillBootstraps,
-    resolveGuard: createGuardResolver({
-      loadSettings: loadGuardSettings,
-      effectRunner: createNodeProcessRunner(componentLogger("guard")),
-      effectEnvironment: Object.fromEntries(
-        ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
-          key,
-          environment.values[key],
-        ]),
-      ),
-      logger: componentLogger("guard"),
-      audit: auditLogger,
-      sessionAllowlistFor,
-    }),
+    resolveGuard: async (ctx) => {
+      const resolution = await createGuardResolver({
+        loadSettings: loadGuardSettings,
+        effectRunner: createNodeProcessRunner(componentLogger("guard")),
+        effectEnvironment: Object.fromEntries(
+          ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
+            key,
+            environment.values[key],
+          ]),
+        ),
+        logger: componentLogger("guard"),
+        audit: auditLogger,
+        sessionAllowlistFor,
+      })(ctx);
+      const ceiling = ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT;
+      const backend = configStore.readSettings().merged.runtime?.backend;
+      if (
+        opts.builtins?.tools === false ||
+        (ceiling !== "edit" && ceiling !== "exec") ||
+        backend === "docker" ||
+        backend === "podman"
+      )
+        return resolution;
+      return {
+        ...resolution,
+        reviewMutation: createAuthoringMutationReview(ctx, {
+          roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+          store: configStore,
+          audit: auditLogger,
+          changed: () => extensionProfileManager.requestSkillRefresh(),
+          prepareSkillInclusion: (refs) => extensionProfileManager.prepareSkillInclusion(refs),
+        }),
+      };
+    },
     resolveSandbox: () => sandboxPolicy.resolve(),
     resolveSecretNames: loadSecretNames,
     resolveHooks: loadHooks,
@@ -929,6 +949,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     opts.memory === true ? "host_enabled" : "host_disabled",
   );
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
+  extensionProfileManager.onSkillRootsChanged(() => opts.onSkillsChanged?.());
   const deps: ExecuteRunDeps = {
     ...built.deps,
     operatorAuthority: createOperatorAuthorityRuntime,
@@ -936,6 +957,14 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
     capabilities: [
       ...(built.deps.capabilities ?? []),
+      createDirectConfigurationCapability({
+        roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+        store: configStore,
+        enabled: opts.builtins?.tools !== false,
+        audit: auditLogger,
+        changed: () => extensionProfileManager.requestSkillRefresh(),
+        prepareSkillInclusion: (ref) => extensionProfileManager.prepareSkillInclusion(ref),
+      }),
       createMemoryCapability(memoryFactory),
       createTasksCapability({
         resolver: taskProviderFactory,
@@ -985,29 +1014,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
   const nativeExecuteRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
-  let activeConfigurations = 0;
-  const configurationRuntime: RuntimeStatus = {
-    kind: "native",
-    host_platform: process.platform,
-    isolation: "host",
-    lifecycle: "ready",
-  };
-  const currentRuntime = (): RuntimeStatus =>
-    activeConfigurations > 0 ? configurationRuntime : runtimeCoordinator.current();
-  const nativeConfiguration = createNativeConfigurationRuns({
-    audit: auditLogger,
-    ...(built.skills === undefined ? {} : { skills: built.skills }),
-    roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
-    store: configStore,
-    ...(defaultModel === undefined ? {} : { defaultModel }),
-    nativeExecuteRun,
-    onActivity: (active) => {
-      activeConfigurations += active ? 1 : -1;
-      const status = currentRuntime();
-      kernel.capabilities.runtime = status;
-      opts.onRuntimePlacement?.({ status });
-    },
-  });
   const runtimeCoordinator = createLazyRuntimeCoordinator({
     selection: runtimeSelection,
     nativeIsolation,
@@ -1041,7 +1047,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       }
     },
     onPlacement: (notice) => {
-      if (activeConfigurations > 0) return;
       if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
       opts.onRuntimePlacement?.(notice);
     },
@@ -1051,7 +1056,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       ...(opts.operatorAuthorityFor === undefined
         ? {}
         : { operatorAuthorityFor: opts.operatorAuthorityFor }),
-      nativeConfiguration,
       deps,
       logger: componentLogger("kernel"),
       workspaceRoot: opts.workspaceRoot,
@@ -1097,7 +1101,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         runtime: runtimeCoordinator.current(),
       },
       dispose: async (): Promise<void> => {
-        nativeConfiguration.close();
         cleanup.stop();
         await housekeeping.stop();
         try {
@@ -1118,7 +1121,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       },
     });
   } catch (error) {
-    nativeConfiguration.close();
     cleanup.stop();
     await housekeeping.stop();
     extensionProfileManager.close();
@@ -1144,20 +1146,11 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   return Object.defineProperties(
     Object.assign(kernel, {
       workspaceHooks,
-      nativeConfiguration: {
-        requested: (params: Parameters<NativeConfigurationRuns["requested"]>[0]) =>
-          nativeConfiguration.requested(params),
-        retireSession: (owner: string, session: string) =>
-          nativeConfiguration.retireSession(
-            workspaceScopeKey(owner, kernel.project.id, kernel.workspace.id),
-            session,
-          ),
-      },
       retryRuntime: () => runtimeCoordinator.retry(),
       activeExecutionLeases: () => extensionProfileRunRefs,
     }),
     {
-      runtime: { enumerable: true, get: currentRuntime },
+      runtime: { enumerable: true, get: () => runtimeCoordinator.current() },
     },
   ) as FileKernel;
 }

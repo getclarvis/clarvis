@@ -127,3 +127,5 @@ export { sweepMonitors } from "./lib/monitor.ts";
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";
 export type { GuardEffectCallFact, EffectReviewDetail } from "./guard/effect-review.ts";
+
+export type { MutationReview, FileOp } from "./lib/atomic.ts";

@@ -75,6 +75,13 @@ export function fixture(
         },
         async start() {
           starts++;
+          const admitted = registry.operatorAuthorityFor({
+            owner: "owner",
+            executionId: value.params.execution_id,
+          });
+          admitted?.signal?.addEventListener("abort", () => retired.push(authority.scope), {
+            once: true,
+          });
           const handle = createManagedRun({
             executionId: value.params.execution_id,
             execute(context) {
@@ -121,7 +128,6 @@ export function fixture(
     async removeProjection(id) {
       removed.push(id);
     },
-    retireConfigurationSession: (scope) => retired.push(scope),
   });
   const handoff = (view: HostedRunAttachment, operationId = "detach-1") => ({
     execution_id: view.run.execution_id,

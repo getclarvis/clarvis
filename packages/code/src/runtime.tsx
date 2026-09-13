@@ -558,6 +558,8 @@ async function runApp(
         openMcpAuthorizationUrl: openPublicUrl,
       }),
   );
+  const [skillsRevision, setSkillsRevision] = createSignal(0);
+  platform.onShutdown(workspaceManager.subscribeSkillsChanged(setSkillsRevision));
   const unsubscribeExtensionProfileDrift = workspaceManager.subscribeExtensionProfileDrift(
     (notice) => {
       setExtensionProfileDriftNotice({
@@ -1562,6 +1564,7 @@ async function runApp(
   };
   const backendConn: AppBackend = {
     connection: conn.state,
+    skillsRevision,
     probe: backend,
     get client() {
       return capabilities;

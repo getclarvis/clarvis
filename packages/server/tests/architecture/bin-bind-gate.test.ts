@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +46,19 @@ function binEnv(): NodeJS.ProcessEnv {
 /** A fresh, empty directory for `--workspace`/`--config`. */
 function freshDir(): string {
   return mkdtempSync(join(tmpdir(), "clarvis-server-bin-gate-"));
+}
+
+async function withFreshDirs(
+  run: (workspace: string, config: string) => Promise<void>,
+): Promise<void> {
+  const workspace = freshDir();
+  const config = freshDir();
+  try {
+    await run(workspace, config);
+  } finally {
+    rmSync(config, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -154,39 +167,43 @@ describe("clarvis-server bin: fail-closed bind-address gate", () => {
   });
 
   it("does not refuse the default loopback bind with no flags at all", async () => {
-    const proc = spawnBin([
-      "--host",
-      "127.0.0.1",
-      "--port",
-      "0",
-      "--workspace",
-      freshDir(),
-      "--config",
-      freshDir(),
-    ]);
-    const { stderr, code } = await readUntilSettled(proc, 8_000);
-    expect(stderr).not.toContain("refusing a non-private bind address");
-    expect(stderr).not.toContain("refusing a local-network bind address");
-    expect(stderr).toContain("listening");
-    expect(code).not.toBe(1);
+    await withFreshDirs(async (workspace, config) => {
+      const proc = spawnBin([
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "0",
+        "--workspace",
+        workspace,
+        "--config",
+        config,
+      ]);
+      const { stderr, code } = await readUntilSettled(proc, 8_000);
+      expect(stderr).not.toContain("refusing a non-private bind address");
+      expect(stderr).not.toContain("refusing a local-network bind address");
+      expect(stderr).toContain("listening");
+      expect(code).not.toBe(1);
+    });
   });
 
   it("passes the public-bind gate once --allow-public-bind is set, and starts listening", async () => {
-    const proc = spawnBin([
-      "--host",
-      "0.0.0.0",
-      "--port",
-      "0",
-      "--allow-public-bind",
-      "--workspace",
-      freshDir(),
-      "--config",
-      freshDir(),
-    ]);
-    const { stderr, code } = await readUntilSettled(proc, 8_000);
-    expect(stderr).not.toContain("refusing a non-private bind address");
-    expect(stderr).toContain("listening");
-    expect(code).not.toBe(1);
+    await withFreshDirs(async (workspace, config) => {
+      const proc = spawnBin([
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "0",
+        "--allow-public-bind",
+        "--workspace",
+        workspace,
+        "--config",
+        config,
+      ]);
+      const { stderr, code } = await readUntilSettled(proc, 8_000);
+      expect(stderr).not.toContain("refusing a non-private bind address");
+      expect(stderr).toContain("listening");
+      expect(code).not.toBe(1);
+    });
   });
 
   // Binding actually requires an address this machine owns (bin.ts binds the
@@ -197,21 +214,23 @@ describe("clarvis-server bin: fail-closed bind-address gate", () => {
   it.skipIf(lanAddress === undefined)(
     "passes the LAN-bind gate once --allow-lan-bind is set, and starts listening",
     async () => {
-      const proc = spawnBin([
-        "--host",
-        lanAddress ?? "0.0.0.0",
-        "--port",
-        "0",
-        "--allow-lan-bind",
-        "--workspace",
-        freshDir(),
-        "--config",
-        freshDir(),
-      ]);
-      const { stderr, code } = await readUntilSettled(proc, 8_000);
-      expect(stderr).not.toContain("refusing a local-network bind address");
-      expect(stderr).toContain("listening");
-      expect(code).not.toBe(1);
+      await withFreshDirs(async (workspace, config) => {
+        const proc = spawnBin([
+          "--host",
+          lanAddress ?? "0.0.0.0",
+          "--port",
+          "0",
+          "--allow-lan-bind",
+          "--workspace",
+          workspace,
+          "--config",
+          config,
+        ]);
+        const { stderr, code } = await readUntilSettled(proc, 8_000);
+        expect(stderr).not.toContain("refusing a local-network bind address");
+        expect(stderr).toContain("listening");
+        expect(code).not.toBe(1);
+      });
     },
   );
 });

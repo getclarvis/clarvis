@@ -202,84 +202,28 @@
       "reason": "the diagnostic test proves the real slow-operation timer emits its pending event"
     },
     {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:a subagent's delta leaves the lead's thinking spinner alone|spawn(\"w1\", \"explorer\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:a subagent's stream lands on its own attributed node, not the lead's|spawn(\"w1\", \"explorer\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:lead and subagent streaming the same iteration number never share a node|spawn(\"w1\", \"explorer\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:the lead's next iteration leaves a subagent's live placeholder alone|spawn(\"w1\", \"explorer\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:two subagents streaming the same iteration number keep separate nodes|spawn(\"w1\", \"explorer\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "subprocess",
-      "file": "packages/code/tests/unit/streaming-delta.test.ts",
-      "identity": "subprocess|test:two subagents streaming the same iteration number keep separate nodes|spawn(\"w2\", \"coder\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "before-all-mutation",
+      "mechanism": "positive-wait",
       "file": "packages/hooks/tests/integration/bun-spawn.test.ts",
-      "identity": "before-all-mutation|module|beforeAll(async () => { workspace = await mkdtemp(join(tmpdir(), \"clarvis-hooks-bunspawn-\")); })|0",
+      "identity": "positive-wait|waitGone|Bun.sleep(10)|0",
       "package_owner": "@clarvis/hooks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "before-all-mutation",
-      "file": "packages/hooks/tests/integration/real-subprocess.test.ts",
-      "identity": "before-all-mutation|module|beforeAll(async () => { workspace = await mkdtemp(join(tmpdir(), \"clarvis-hooks-\")); runner = createHookRunner({ workspaceRoot: workspace, baseEnv: { PATH: process.env.PATH ?? \"\" }, }); })|0",
-      "package_owner": "@clarvis/hooks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+      "classification": "boundary-canary",
+      "reason": "bounded polling observes physical grandchild exit before temporary-root removal"
     },
     {
       "mechanism": "positive-wait",
       "file": "packages/hooks/tests/integration/real-subprocess.test.ts",
       "identity": "positive-wait|waitForText|Bun.sleep(25)|0",
       "package_owner": "@clarvis/hooks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+      "classification": "boundary-canary",
+      "reason": "bounded polling observes a physical child-written readiness marker"
     },
     {
       "mechanism": "positive-wait",
       "file": "packages/hooks/tests/integration/real-subprocess.test.ts",
       "identity": "positive-wait|waitGone|Bun.sleep(25)|0",
       "package_owner": "@clarvis/hooks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+      "classification": "boundary-canary",
+      "reason": "bounded polling observes physical grandchild exit before temporary-root removal"
     },
     {
       "mechanism": "timer",
@@ -328,14 +272,6 @@
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "before-all-mutation",
-      "file": "packages/kernel/tests/integration/node-container-control.test.ts",
-      "identity": "before-all-mutation|module|beforeAll(async () => { if (process.platform === \"win32\") return; root = await mkdtemp(join(tmpdir(), \"clarvis-container-control-\")); executable = join(root, \"engine-fixture\"); await writeFile( executable, `#!/bin/sh case \"$*\" in *stubborn*) trap '' TERM printf '%s' \"$$\" > \"$PID_FILE\" while :; do :; done ;; *overflow*) index=0 while [ \"$index\" -lt 2048 ]; do printf x index=$((index + 1)) done ;; *wait*) sleep 10 ;; *attach*) printf 'ready:' cat ;; *) printf 'out:%s:%s' \"$*\" \"$VISIBLE\" printf 'problem' >&2 exit 7 ;; esac `, ); await chmod(executable, 0o755); })|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "positive-wait",
@@ -428,7 +364,7 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/settings-concurrent-writes.test.ts",
-      "identity": "subprocess|runWorker|Bun.spawn( [ process.execPath, WORKER_ENTRY, globalDir, coordinationDir, String(index), String(ITERATIONS_PER_WORKER), ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "identity": "subprocess|startWorker|Bun.spawn( [ process.execPath, WORKER_ENTRY, globalDir, coordinationDir, String(index), String(ITERATIONS_PER_WORKER), ], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"

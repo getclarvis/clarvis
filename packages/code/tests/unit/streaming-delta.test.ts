@@ -36,7 +36,7 @@ const subDelta = (wid: string | undefined, text: string, reset: boolean): RunEve
     reset,
   });
 
-const spawn = (wid: string, title: string): RunEvent =>
+const delegationCreated = (wid: string, title: string): RunEvent =>
   ev({
     type: "delegation_created",
     delegation_id: wid,
@@ -236,7 +236,7 @@ test("reasoning deltas are NOT streamed to a live node (avoids flicker); text st
 
 test("a subagent's stream lands on its own attributed node, not the lead's", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(subDelta("w1", "sub says hi", true));
 
@@ -249,7 +249,7 @@ test("a subagent's stream lands on its own attributed node, not the lead's", () 
 
 test("lead and subagent streaming the same iteration number never share a node", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(delta("text", "lead words", true));
   apply(subDelta("w1", "sub words", true));
@@ -264,8 +264,8 @@ test("lead and subagent streaming the same iteration number never share a node",
 
 test("two subagents streaming the same iteration number keep separate nodes", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
-  apply(spawn("w2", "coder"));
+  apply(delegationCreated("w1", "explorer"));
+  apply(delegationCreated("w2", "coder"));
   apply(subIterationStarted("w1"));
   apply(subIterationStarted("w2"));
   apply(subDelta("w1", "from ", true));
@@ -281,7 +281,7 @@ test("two subagents streaming the same iteration number keep separate nodes", ()
 
 test("a subagent's delta leaves the lead's thinking spinner alone", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(subDelta("w1", "working", true));
 
@@ -712,7 +712,7 @@ test("a real call is never swept, however long it runs across iterations", () =>
 
 test("the lead's next iteration leaves a subagent's live placeholder alone", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(
     ev({

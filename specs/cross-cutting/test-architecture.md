@@ -302,10 +302,30 @@ use `flush`, bounded `until` diagnostics and `disposeRender`
 Physical boundaries wait on their own ready/close milestone and may use a labelled timeout only as a
 fuse.
 
+Test-owned physical resources follow one lifecycle: acquire a case-local temporary root, register
+children, transports, clients, listeners, watchers, streams and file handles as they become live,
+then close them in awaited LIFO order before removing the root. Requesting `kill`, `abort`, `stop` or
+`close` is not settlement by itself; the fixture waits for the process `exited`/stream `close` or the
+server callback and drains child pipes concurrently with execution. A setup or assertion failure
+still attempts every registered cleanup and reports the accumulated failures. Windows removal may
+retry only `EBUSY`, `ENOTEMPTY` and `EPERM`, with a short bound and diagnostics; test assertions are
+never retried. Real process and network canaries keep explicit cwd/environment, dynamic port `0` and
+the bound URL. The package-local `tempRoot` fixtures do not create a runtime package or a production
+dependency.
+
 Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
 `packages/paths/tests/contract/local-lease.test.ts`, `packages/server/tests/unit/sessions.test.ts`,
 `tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
 mtimes and observable settling without changing production defaults.
+
+Production: process, transport and listener contracts remain owned by the unchanged package runtime
+implementations. Test: `packages/hooks/tests/helpers/temp-root.ts` and
+`packages/hooks/tests/unit/temp-root.test.ts` pin confinement, awaited LIFO cleanup, idempotence,
+partial setup, late child settlement and bounded Windows retry;
+`packages/hooks/tests/integration/real-subprocess.test.ts`,
+`packages/kernel/tests/integration/settings-concurrent-writes.test.ts`,
+`packages/code/tests/integration/remote-kernel-process.test.ts` and the MCP Client live-HTTP suites
+exercise the physical boundaries and await teardown before directory removal.
 
 Environment, platform, cwd and random matrices use test-owned frozen snapshots and getter spies,
 restored after the awaited callback; they do not assign to `process.env`, redefine
@@ -914,6 +934,13 @@ only the owner-specific default").
 7. **INV-316 — importing the checker performs no census, file write or CLI exit.** Rule:
    `if (import.meta.main)` in `tooling/checks/test-determinism.ts`. Test:
    `tooling/tests/unit/test-determinism.test.ts` (checker import).
+
+8. **INV-317 — every test-owned physical resource settles before its temporary root is removed.**
+   Cleanup is awaited in LIFO order, continues after individual cleanup failures, and process pipes
+   are drained while the child runs; Windows directory-removal retries are bounded and limited to
+   `EBUSY`, `ENOTEMPTY` and `EPERM`. Production: package runtime lifecycle semantics remain
+   unchanged. Test: `packages/hooks/tests/unit/temp-root.test.ts` and the physical boundary suites
+   named in section 3.1.1.
 
 3. **INV-305 — `packages/capability/src/tasks.ts` is the only production file permitted an empty
    promise catch, and it is permitted exactly one.** Rule: `tooling/checks/source-policy.ts` (baseline map)

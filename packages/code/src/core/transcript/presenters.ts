@@ -40,6 +40,21 @@ export function transcriptDisplayText(node: TranscriptNode): string {
 }
 
 /**
+ * Plain-text projection for reasoning rows labelled `thinking` in the TUI.
+ *
+ * @remarks Removes only Markdown presentation delimiters and link destinations.
+ * Callers for user and assistant prose continue to use {@link transcriptDisplayText}.
+ */
+export function thinkingDisplayText(node: TranscriptNode): string {
+  return transcriptDisplayText(node)
+    .replace(/!?(?:\[([^\]]*)\])\([^)]*\)/g, "$1")
+    .replace(/\*{2,}|_{2,}|~{2,}|`{1,3}/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/^ +| +$/gm, "")
+    .trim();
+}
+
+/**
  * Plan-event summary. Proposed tasks and executed completion are deliberately different concepts.
  */
 export function planMetaText(
@@ -72,7 +87,7 @@ export function planMetaText(
   return sep + bits.join(sep);
 }
 
-/** Compaction annotation one-liner (store projection / export-friendly text). */
+/** Context-maintenance annotation one-liner (store projection / export-friendly text). */
 export function compactionNoticeText(
   operation: string,
   freedChars?: number,
@@ -92,6 +107,7 @@ export function compactionNoticeText(
   const fallback = opts.fallbackReason
     ? ` ${glyph("separator")} ${opts.fallbackReason.replace(/_/g, " ")}`
     : "";
+  if (operation === "truncation") return `tool output shortened${freed}`;
   return `${manual}compaction (${operation})${freed}${contributed}${fallback}`;
 }
 
@@ -124,7 +140,8 @@ export function softLimitNoticeText(
   limit: number | string,
   outcome: string,
 ): string {
-  return `soft ${dimension} ${used}/${limit} ${glyph("arrowRight")} ${outcome}`;
+  const label = dimension.toLowerCase() === "iterations" ? "iteration limit" : `soft ${dimension}`;
+  return `${label} ${used}/${limit} ${glyph("arrowRight")} ${outcome}`;
 }
 
 /** Steer-applied annotation line. */

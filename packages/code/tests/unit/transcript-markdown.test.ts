@@ -35,7 +35,7 @@ test("renderTranscriptMarkdown: prose, quoted reasoning, tool signature (builtin
   );
 });
 
-test("renderTranscriptMarkdown: records auto-guard approval and denial with the answerer", () => {
+test("renderTranscriptMarkdown: records guard verdict and answerer without review internals", () => {
   const shell = (outcome: "allowed" | "denied"): TranscriptNode => ({
     key: outcome,
     kind: "tool_call",
@@ -53,9 +53,10 @@ test("renderTranscriptMarkdown: records auto-guard approval and denial with the 
     },
   });
   const md = renderTranscriptMarkdown([shell("allowed"), shell("denied")]);
-  expect(md).toContain("auto-guard approved · judge");
-  expect(md).toContain("auto-guard denied · judge");
-  expect(md).toContain("git.commit · direct · timeout");
+  expect(md).toContain("approved by judge");
+  expect(md).toContain("denied by judge");
+  expect(md).not.toContain("auto-guard");
+  expect(md).not.toContain("git.commit · direct · timeout");
 });
 
 test("effect receipt presentation uses closed facts, one-based segments and bounded diagnostics", () => {

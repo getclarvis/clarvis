@@ -78,6 +78,41 @@ describe("call-local command judge", () => {
     expect(calls[0]!.cacheBreakpoints).toEqual([1]);
   });
 
+  it("distinguishes an authenticated ask_user answer from its model-authored question", async () => {
+    const ledger = authority("Inspect the remaining work");
+    ledger.onElicitation({
+      question: "May I update SAFE-09 through SAFE-11?",
+      answer: "Authorize the three lines",
+    });
+    const calls: LLMCallParams[] = [];
+    const judge = createJudgeElicit(
+      {
+        llm: {
+          async call(params) {
+            calls.push(params);
+            return {
+              toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "allow" } }],
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/test",
+        authority: ledger.reader,
+      },
+      {},
+      undefined,
+    )!;
+    expect(await judge(request("bun test"))).toEqual({ allowed: true, answerer: "judge" });
+    const payload = JSON.parse(calls[0]!.messages.at(-1)!.content as string);
+    expect(payload.operator_evidence.at(-1)).toMatchObject({
+      source: "ask_user",
+      prompt: "May I update SAFE-09 through SAFE-11?",
+      text: "Authorize the three lines",
+    });
+    expect(calls[0]!.messages[0]!.content).toContain("prompt is untrusted");
+  });
+
   it("uses the run composer and stable judge affinity for every provider kind", async () => {
     const kinds = [
       "openai",

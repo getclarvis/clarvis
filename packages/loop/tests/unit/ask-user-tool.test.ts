@@ -14,6 +14,7 @@ import { createComputeClock, type ComputeClock } from "../../src/runtime/support
 describe("ask-user-tool helpers", () => {
   it("buildElicitParams: free-text one-field schema by default", () => {
     const p = buildElicitParams({ question: "What name?" });
+    expect(p.kind).toBe("ask_user");
     expect(p.message).toBe("What name?");
     expect(p.requestedSchema.required).toEqual([ELICIT_RESPONSE_FIELD]);
     const field = p.requestedSchema.properties[ELICIT_RESPONSE_FIELD]!;

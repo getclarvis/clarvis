@@ -5,7 +5,7 @@ import { borderChars, glyph } from "../theme/glyphs.ts";
 import { tone, type ToneStyle } from "../theme/tone.ts";
 import { focusBg, userBandBg } from "../theme/surfaces.ts";
 import { terminalPlainText } from "../core/terminal-text.ts";
-import { parseBash } from "../adapters/tool-parsers.ts";
+import { parseBash, toolErrorSummaryText } from "../adapters/tool-parsers.ts";
 import type {
   NodeStatus,
   TranscriptAnnotationNode,
@@ -21,6 +21,7 @@ import {
   planMetaText,
   projectTranscriptToolDisplay,
   TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE,
+  thinkingDisplayText,
   transcriptDisplayText,
   type TranscriptToolDisplayProjection,
 } from "../core/transcript/index.ts";
@@ -259,8 +260,9 @@ function nodeTone(node: TranscriptNode): ToneStyle {
  * One tool call's header line, plus its live tail and/or body when shown.
  *
  * @remarks
- * The header truncates instead of wrapping so a collapsed call is always
- * exactly one row, whatever the terminal width.
+ * The header truncates instead of wrapping so identity remains exactly one row.
+ * A collapsed failure adds one bounded diagnostic row below it rather than
+ * squeezing the signature and error into the same horizontal measure.
  */
 function ToolLine(props: {
   node: TranscriptToolNode;
@@ -276,17 +278,22 @@ function ToolLine(props: {
     projectTranscriptToolDisplay(props.node, rawToolArguments(props.node)),
   );
   const isCollapsed = (): boolean => !props.showBody && props.node.status !== "running";
+  const hasDiagnostic = (): boolean =>
+    isCollapsed() &&
+    (props.node.status === "error" ||
+      (props.node.warn === true &&
+        toolIdentity(props.node.mcpName, props.node.toolName) === "shell"));
+  const firstErrorLine = (error: string): string =>
+    terminalPlainText(toolErrorSummaryText(error)).split("\n")[0]!.slice(0, 160);
   const failureSummary = (): string => {
     if (props.node.interruption?.source === "operator") return "Interrupted by operator";
     const error = display().error ?? "No authoritative result";
     if (toolIdentity(props.node.mcpName, props.node.toolName) === "shell") {
       const shell = parseBash(display().result, error);
       if (shell.exitCode !== null) return `exit ${shell.exitCode}`;
-      return terminalPlainText(shell.stderr || error)
-        .split("\n")[0]!
-        .slice(0, 160);
+      return firstErrorLine(shell.stderr || error);
     }
-    return `${props.node.toolPhase ?? "failed"}: ${terminalPlainText(error).split("\n")[0]!.slice(0, 160)}`;
+    return firstErrorLine(error);
   };
   const diffChip = createMemo<DiffStats | null>(() =>
     isCollapsed() && props.node.status !== "error" ? (trueMutationStats(props.node) ?? null) : null,
@@ -328,7 +335,7 @@ function ToolLine(props: {
       backgroundColor={tokens.bg}
     >
       <box paddingLeft={props.indent ? 3 : 1} flexDirection="row" width="100%" flexShrink={0}>
-        <box flexGrow={1} flexBasis={0} minWidth={0}>
+        <box flexShrink={1} minWidth={0}>
           <text
             onMouseDown={props.indent ? undefined : props.onHeaderClick}
             wrapMode="none"
@@ -386,14 +393,11 @@ function ToolLine(props: {
                 {guardLabel()}
               </span>
             </Show>
-            <Show when={props.node.status === "error" && isCollapsed()}>
-              <span style={{ fg: tokens.del }}>{` · ${failureSummary()}`}</span>
-            </Show>
           </text>
         </box>
         <Show when={props.showStopShell === true}>
           <text
-            width={13}
+            width={4}
             flexShrink={0}
             wrapMode="none"
             selectable={false}
@@ -403,10 +407,17 @@ function ToolLine(props: {
               props.onInterruptShell?.();
             }}
           >
-            {props.node.interruptRequest === "pending" ? " [Stopping…]" : " [Stop shell]"}
+            {" [X]"}
           </text>
         </Show>
       </box>
+      <Show when={hasDiagnostic()}>
+        <box paddingLeft={props.indent ? 6 : 4} paddingRight={1}>
+          <text fg={tokens.del} wrapMode="none" truncate selectable={false}>
+            {failureSummary()}
+          </text>
+        </box>
+      </Show>
       <Show when={tail().length > 0}>
         <box flexDirection="column" paddingLeft={props.indent ? 6 : 4} overflow="hidden">
           <For each={tail()}>
@@ -638,7 +649,7 @@ export function BlockView(props: {
                           </span>
                           <span style={{ fg: tokens.muted }}>thinking</span>
                         </text>
-                        <text fg={tokens.muted}>{transcriptDisplayText(props.node)}</text>
+                        <text fg={tokens.muted}>{thinkingDisplayText(props.node)}</text>
                       </box>
                     </Show>
                   </Match>

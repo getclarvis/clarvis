@@ -75,7 +75,7 @@ test("success resolves to ok, auto-collapsed, parseable by parseBash", () => {
   });
 });
 
-test("nonzero exit stays expanded with the warn flag", () => {
+test("nonzero exit defaults folded with the warn flag", () => {
   createRoot(() => {
     const store = createTranscriptStore();
     const finish = store.beginLocalBash("false");
@@ -83,7 +83,7 @@ test("nonzero exit stays expanded with the warn flag", () => {
     const n = toolNode(store.nodes[0]);
     expect(n.status).toBe("ok");
     expect(n.warn).toBe(true);
-    expect(store.defaultFolded(n.key)).toBe(false);
+    expect(store.defaultFolded(n.key)).toBe(true);
     expect(parseBash(n.result ?? "", null).stderr).toBe("nope");
   });
 });
@@ -95,7 +95,7 @@ test("timeout and cancellation surface signal/timed_out and warn", () => {
     finish(display({ exitCode: null, signal: "SIGTERM", timedOut: true }));
     const n = toolNode(store.nodes[0]);
     expect(n.warn).toBe(true);
-    expect(store.defaultFolded(n.key)).toBe(false);
+    expect(store.defaultFolded(n.key)).toBe(true);
     const parsed = parseBash(n.result ?? "", null);
     expect(parsed.timedOut).toBe(true);
     expect(parsed.signal).toBe("SIGTERM");

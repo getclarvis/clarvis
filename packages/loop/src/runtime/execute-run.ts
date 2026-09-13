@@ -43,6 +43,7 @@ import { boundPromise } from "./support/bounded.ts";
 import type { ExtensionAdmissionController } from "@clarvis/capability";
 import type {
   OperatorAuthorityReader,
+  OperatorElicitationContext,
   OperatorAuthoritySeed,
   OperatorAuthorityState,
   UserSteerContext,
@@ -70,6 +71,7 @@ export interface ExecuteRunDeps {
   }) => {
     reader: OperatorAuthorityReader;
     onSteer(context: UserSteerContext): void;
+    onElicitation(context: OperatorElicitationContext): void;
     finalize(outcome: {
       status: string;
       disposition?: "final" | "checkpoint";
@@ -497,6 +499,21 @@ export async function executeRun({
             },
             close: () => steer.close?.(),
           };
+    const authorityElicit: Elicit | undefined =
+      elicit === undefined
+        ? undefined
+        : async (params, options) => {
+            const result = await elicit(params, options);
+            const answer = result.content?.response;
+            if (
+              authority !== undefined &&
+              params.kind === "ask_user" &&
+              result.action === "accept" &&
+              typeof answer === "string"
+            )
+              authority.onElicitation({ question: params.message, answer });
+            return result;
+          };
     try {
       const { response, trace, wallStartedAt, finalContext, runCapabilities } =
         await runOrchestrator(parsed, {
@@ -533,7 +550,7 @@ export async function executeRun({
           onEvent,
           resultContract,
           signal: controller.signal,
-          elicit,
+          elicit: authorityElicit,
           ...(authoritySteer !== undefined ? { steer: authoritySteer } : {}),
           ...(compaction !== undefined ? { compaction } : {}),
           toolInterruptRegistry,

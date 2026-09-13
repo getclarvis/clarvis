@@ -553,12 +553,14 @@ validation and separate deterministic, live-provider and installed-artifact qual
 
 `ExecuteRunArgs.operatorAuthoritySeed` is private host input, separate from `rawBody`.
 `ExecuteRunDeps.operatorAuthority` creates one runtime before capability activation. The loop
-prepublishes its reader, admits steers through its private hook, and persists
+prepublishes its reader, admits root steers and accepted entry-agent `ask_user` answers through
+private hooks, and persists
 `operator_authority_state` separately from capability slots. It never reconstructs evidence from
 `final_context`. The host evidence validator reuses this package's exported request message ceilings,
 so accepted user input does not encounter a smaller authority-only text limit. A later host-admitted
 turn may carry settled evidence only through that separately persisted ledger; it never treats model
-context as authority. See
+context as authority. An `ask_user` question is retained separately as untrusted context for the
+authenticated answer; other elicitation kinds and non-accepted outcomes create no evidence. See
 [effect review](../../specs/execution/effect-review.md).
 
 The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.

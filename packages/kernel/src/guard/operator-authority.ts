@@ -14,6 +14,7 @@ import {
   type OperatorAuthorityReader,
   type OperatorAuthoritySeed,
   type OperatorAuthorityState,
+  type OperatorElicitationContext,
   type OperatorEvidence,
   type UserSteerContext,
 } from "@clarvis/capability";
@@ -34,18 +35,24 @@ const bindingSchema = z
 const evidenceSchema = z
   .object({
     id: identifier,
-    source: z.enum(["start", "continue", "steer", "inherited"]),
+    source: z.enum(["start", "continue", "steer", "ask_user", "inherited"]),
+    prompt: z.string().max(EVIDENCE_ENTRY_MAX_CHARS).optional(),
     text: z.string().max(EVIDENCE_ENTRY_MAX_CHARS),
     execution_id: identifier,
     agent: z.enum(["lead", "subagent"]).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (entry) => (entry.source === "ask_user") === (entry.prompt !== undefined),
+    "Only ask_user evidence carries its model-authored prompt",
+  );
 const evidenceList = z
   .array(evidenceSchema)
   .max(MESSAGES_MAX_ENTRIES)
   .refine(
     (entries) =>
-      entries.reduce((sum, entry) => sum + entry.text.length, 0) <= EVIDENCE_TOTAL_MAX_CHARS &&
+      entries.reduce((sum, entry) => sum + entry.text.length + (entry.prompt?.length ?? 0), 0) <=
+        EVIDENCE_TOTAL_MAX_CHARS &&
       new Set(entries.map((entry) => entry.id)).size === entries.length,
   );
 const consumedSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);
@@ -281,11 +288,24 @@ export function createOperatorAuthorityRuntime(input: {
       },
     ]);
   };
+  const onElicitation = (context: OperatorElicitationContext): void => {
+    append([
+      {
+        id: randomUUID(),
+        source: "ask_user",
+        prompt: context.question,
+        text: context.answer,
+        execution_id: input.executionId,
+        agent: "lead",
+      },
+    ]);
+  };
   if (input.signal?.aborted) revoke();
   else input.signal?.addEventListener("abort", revoke, { once: true });
   return {
     reader,
     onSteer,
+    onElicitation,
     finalize(outcome: {
       status: string;
       disposition?: "final" | "checkpoint";

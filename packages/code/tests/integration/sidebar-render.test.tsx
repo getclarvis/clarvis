@@ -18,6 +18,8 @@ import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts
 import { runEvent } from "../helpers/run-events.ts";
 import { tokens } from "../../src/theme/tokens.ts";
 import { selectionBg } from "../../src/theme/surfaces.ts";
+import { glyph } from "../../src/theme/glyphs.ts";
+import { taskTone } from "../../src/views/blocks.tsx";
 
 function fgOf(frame: { lines: { spans: { text: string; fg: RGBA }[] }[] }, needle: string): string {
   for (const line of frame.lines) {
@@ -411,7 +413,7 @@ test("plan section shows every task and highlights the current one", async () =>
   expect(joined).toContain("Running");
 });
 
-test("plan hierarchy remains visible without relying on color alone", async () => {
+test("plan tasks render compactly in status priority order", async () => {
   const a = activity({
     plan: {
       path: ".clarvis/plans/hierarchy.md",
@@ -422,8 +424,14 @@ test("plan hierarchy remains visible without relying on color alone", async () =
       spec_revision: 1,
       tasks: [
         { title: "Finished task", status: "done", result: "ready" },
-        { title: "Current task", status: "in_progress", exit_condition: "Checks pass" },
+        { title: "Failed task", status: "failed", error: "not ready" },
         { title: "Future task", status: "pending" },
+        {
+          title: "Current task",
+          status: "in_progress",
+          exit_condition: "Checks pass",
+          assignee: "marshall",
+        },
       ],
     } as ActivityStore["plan"],
   });
@@ -433,11 +441,26 @@ test("plan hierarchy remains visible without relying on color alone", async () =
   const activeTitle = spans.lines
     .flatMap((line) => line.spans)
     .find((span) => span.text.includes("Current task"));
-  expect(frame).toContain("Done  Finished task");
-  expect(frame).toContain("Running  Current task");
-  expect(frame).toContain("Next  Future task");
-  expect(frame).toContain("Last result");
-  expect(frame).toContain("Ctrl+P full plan");
+  const current = frame.indexOf("Current task");
+  const future = frame.indexOf("Future task");
+  const finished = frame.indexOf("Finished task");
+  const failed = frame.indexOf("Failed task");
+  expect(current).toBeGreaterThanOrEqual(0);
+  expect(current).toBeLessThan(future);
+  expect(future).toBeLessThan(finished);
+  expect(finished).toBeLessThan(failed);
+  expect(frame).toContain(`${glyph("chevronRight")} Current task`);
+  expect(frame).toContain(`${taskTone("pending").glyph} Future task`);
+  expect(frame).toContain(`${taskTone("done").glyph} Finished task`);
+  expect(frame).toContain(`${taskTone("failed").glyph} Failed task`);
+  expect(frame).not.toMatch(
+    /(?:Done|Running|Next|Failed) {2}(?:Finished|Current|Future|Failed) task/,
+  );
+  expect(frame).not.toContain("marshall");
+  expect(frame).not.toContain("Exit");
+  expect(frame).not.toContain("Checks pass");
+  expect(frame).not.toContain("Last result");
+  expect(frame).toContain("[^p]");
   expect(fgOf(spans, "Hierarchy plan")).toBe(tokens.accent2.toLowerCase());
   expect(rgbToHex(activeTitle!.bg).toLowerCase()).toBe(selectionBg().toLowerCase());
   t.renderer.destroy();
@@ -460,9 +483,13 @@ test("plan section keeps the full task list visible without review detail", asyn
       ],
     } as ActivityStore["plan"],
   });
-  const rows = await frame(a);
+  const rows = await frame(a, 44);
   const joined = rows.join(" ");
-  expect(rows.some((r) => r.includes("Running") && r.includes("2/3 completed"))).toBe(true);
+  expect(
+    rows.some(
+      (r) => r.includes("Running") && r.includes("2/3 completed") && r.includes("[^p] full plan"),
+    ),
+  ).toBe(true);
   expect(joined).toContain("Init the repo");
   expect(joined).toContain("Implement the");
   expect(joined).not.toContain("review: approved");
@@ -509,8 +536,9 @@ test("a long plan scrolls the current task into view and keeps full-plan navigat
   const rows = await frame(a, 40);
   const joined = rows.join(" ");
   expect(joined).toContain("Plan task 19");
-  expect(joined).toMatch(/Exit\s+The focused task is visible/);
-  expect(joined).toContain("Ctrl+P full plan");
+  expect(joined).not.toContain("The focused task is visible");
+  expect(joined).not.toContain("Exit");
+  expect(joined).toContain("[^p]");
 });
 
 test("a completed plan does not leave its final task looking active", async () => {
@@ -578,8 +606,9 @@ test("a live plan transition updates the already-mounted sidebar task list", asy
   const updated = t.captureCharFrame();
   expect(updated).toContain("1/2 completed");
   expect(updated).toContain("Second task");
-  expect(updated).toContain("Last result");
-  expect(updated).toContain("finished");
+  expect(updated).toContain("[^p]");
+  expect(updated).not.toContain("Last result");
+  expect(updated).not.toContain("finished");
   t.renderer.destroy();
 });
 
@@ -602,7 +631,7 @@ test("a removed active plan becomes an explicit unavailable state, not stale pro
   expect(joined).toContain("Restore the plan file or create a");
   expect(joined).toContain("replacement");
   expect(joined).not.toContain("Running");
-  expect(joined).not.toContain("Ctrl+P full plan");
+  expect(joined).not.toContain("[^p] full plan");
 });
 
 test("retention discard ends as completed history instead of a red unavailable warning", async () => {
@@ -693,7 +722,7 @@ test("an orphan plan removal keeps an unavailable sidebar across continuation", 
   expect(joined).toContain("Restore the plan file");
 });
 
-test("a long plan mounts a bounded task window centered on current work", async () => {
+test("a long plan mounts a bounded status-prioritized task window", async () => {
   const tasks = Array.from({ length: 50 }, (_, index) => ({
     id: `t${index + 1}`,
     title: `Task ${index + 1}`,
@@ -710,15 +739,16 @@ test("a long plan mounts a bounded task window centered on current work", async 
   };
   const window = planTaskWindow(plan);
   expect(window.entries).toHaveLength(PLAN_SIDEBAR_TASK_LIMIT);
-  expect(window.entries.some((entry) => entry.task.id === "t30")).toBe(true);
-  expect(window.hiddenBefore).toBeGreaterThan(0);
+  expect(window.entries[0]?.task.id).toBe("t30");
+  expect(window.entries.slice(1).every((entry) => entry.task.status === "pending")).toBe(true);
+  expect(window.hiddenBefore).toBe(0);
   expect(window.hiddenAfter).toBeGreaterThan(0);
 
   const rows = await frame(activity({ plan }), 44);
   const joined = rows.join(" ");
   expect(joined).toContain("Task 30");
-  expect(joined).toContain("earlier tasks");
   expect(joined).toContain("later tasks");
+  expect(joined).not.toContain("earlier tasks");
   expect(joined).not.toContain("Task 1 ");
 });
 
@@ -741,7 +771,7 @@ test("pathless plan section renders its title once and never an implementation i
   expect(rows.join("\n")).not.toContain("undefined");
 });
 
-test("plan section shows the most recent terminal outcome without hiding the next task", async () => {
+test("plan section omits terminal outcome detail without hiding the next task", async () => {
   const a = activity({
     plan: {
       path: ".clarvis/plans/judge.md",
@@ -758,7 +788,8 @@ test("plan section shows the most recent terminal outcome without hiding the nex
   });
   const rows = await frame(a, 40);
   expect(rows.join("\n")).toContain("Wire it");
-  expect(rows.join("\n")).toContain("Last result");
-  expect(rows.join("\n")).toContain("adapter wired");
   expect(rows.join("\n")).toContain("Verify it");
+  expect(rows.join("\n")).toContain("[^p]");
+  expect(rows.join("\n")).not.toContain("Last result");
+  expect(rows.join("\n")).not.toContain("adapter wired");
 });

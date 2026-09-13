@@ -52,7 +52,7 @@ async function frame(
   return out;
 }
 
-test("a live shell control paints Stop shell", async () => {
+test("a live shell control paints a compact close target", async () => {
   const node: TranscriptNode = {
     key: "sh1",
     kind: "tool_call",
@@ -68,7 +68,7 @@ test("a live shell control paints Stop shell", async () => {
     height: 8,
   });
   await t.renderOnce();
-  expect(t.captureCharFrame()).toMatch(/Stop shell|Stopping/);
+  expect(t.captureCharFrame()).toContain("[X]");
   t.renderer.destroy();
 });
 
@@ -79,7 +79,7 @@ test("a per-block 'expanded' override opens a collapsed tool body", async () => 
   expect((await frame([node], open)).includes("hello-from-stdout")).toBe(true);
 });
 
-test("narrow shell headers reserve the stop target without folding or growing while pending", async () => {
+test("narrow shell headers place the stable close target immediately after elapsed time", async () => {
   const [node, setNode] = createStore<Extract<TranscriptNode, { kind: "tool_call" }>>({
     key: "shell-click",
     kind: "tool_call",
@@ -120,28 +120,28 @@ test("narrow shell headers reserve the stop target without folding or growing wh
     await t.renderOnce();
     const action = texts(t.renderer.root).find((text) => text.plainText.includes(label))!;
     expect(action).toBeDefined();
-    expect(action.width).toBe(13);
+    expect(action.width).toBe(4);
     expect(action.height).toBe(1);
     expect(action.x + action.width).toBeLessThanOrEqual(52);
     const identity = texts(t.renderer.root).find((text) => text.plainText.includes("shell("))!;
     expect(identity.y).toBe(action.y);
     expect(identity.height).toBe(1);
-    expect(identity.x + identity.width).toBeLessThanOrEqual(action.x);
+    expect(identity.x + identity.width).toBe(action.x);
     const lines = t.captureCharFrame().split("\n");
     const actionSpan = t
       .captureSpans()
       .lines[action.y]!.spans.find((span) => span.text.includes(label));
-    expect(actionSpan?.text.trimEnd().endsWith(` ${label}`)).toBe(true);
+    expect(actionSpan?.text.endsWith(` ${label}`)).toBe(true);
     expect(lines.filter((line) => line.trim().length > 0)).toHaveLength(1);
     expect(lines[action.y]).not.toContain("before the action");
     await t.mockMouse.click(action.x + 2, action.y);
     await t.renderOnce();
   };
-  await click("[Stop shell]");
+  await click("[X]");
   expect(stops).toBe(1);
   expect(folds).toBe(0);
-  expect(t.captureCharFrame()).toContain("Stopping");
-  await click("[Stopping…]");
+  expect(t.captureCharFrame()).toContain("[X]");
+  await click("[X]");
   expect(stops).toBe(1);
   expect(folds).toBe(0);
   setNode({
@@ -152,8 +152,7 @@ test("narrow shell headers reserve the stop target without folding or growing wh
     interruptRequest: undefined,
   });
   await t.renderOnce();
-  expect(t.captureCharFrame()).not.toContain("Stop shell");
-  expect(t.captureCharFrame()).not.toContain("Stopping");
+  expect(t.captureCharFrame()).not.toContain("[X]");
   expect(t.captureCharFrame()).toContain("Interrupted by operator");
 });
 

@@ -62,7 +62,7 @@ owned by [code-transcript-stability.md](code-transcript-stability.md).
 | --- | --- | --- |
 | `NodeStatus`, `TranscriptMessageNode`, `TranscriptNode`, `TranscriptPlanTask` | types | `packages/code/src/core/transcript/types.ts` |
 | `guardReviewLabel(node): string` | fn | `packages/code/src/core/transcript/guard-review.ts` |
-| `transcriptDisplayText(node): string` | fn | `packages/code/src/core/transcript/presenters.ts` |
+| `transcriptDisplayText(node): string`, `thinkingDisplayText(node): string`                                                                               | fn            | `packages/code/src/core/transcript/presenters.ts`   |
 | `planMetaText(node): string` | fn | `packages/code/src/core/transcript/presenters.ts` |
 | `compactionNoticeText`, `compactionSkippedNoticeText` | fn | `packages/code/src/core/transcript/presenters.ts` |
 | `visionNoticeText`, `softLimitNoticeText` | fn | `packages/code/src/core/transcript/presenters.ts` |
@@ -378,7 +378,9 @@ Only allowlisted observing identities form exploration groups. A group starts wi
 eligible read/search names may differ. Shell, mutations and unknown/namespaced MCP calls remain
 individual. Prose, notices, delegation and iteration changes close the execution/actor segment.
 Late results update counts without reopening membership. Group IDs derive from the first member,
-not a temporary painting role. Folded errors retain indication and an action opening the first issue.
+not a temporary painting role. Folded errors retain indication. A paginated group also exposes an
+action showing the first failure without describing it as an external issue; a small group relies
+on ordinary expansion because every member is already on its single bounded page.
 
 ### 4.4 Fold, focus and detail
 
@@ -386,7 +388,9 @@ Explicit row/member expansion overrides defaults across settlement, window dispo
 navigation. Successful mutations start folded; native diff is available on demand. An expanded group
 mounts one page of 20 members, with previous/next controls. Existing field, mounted-text and explicit
 hydration limits still apply. Focus navigates row/member IDs, not batch positions. Retention prunes
-discarded UI identities.
+discarded UI identities. Terminal shell warnings and errors start folded like other terminal tool
+failures; their compact diagnostic remains visible below the header, and explicit expansion still
+opens the bounded output body.
 
 ### 4.5 Lead and children
 
@@ -423,12 +427,13 @@ terminals attribute interruption across live, replay and reconciliation`, and
 [block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx),
 `interrupted scope and composition rows do not blame the operator`.
 
-The shell's stop target is separate from header folding; a pending request paints `[Stopping…]`
-and repeated clicks issue no further request. The action reserves its full width, including a leading
-space, at narrow terminal widths; the identity truncates instead of clipping the action or adding a
-header row. The pending label keeps the same reservation. Terminal settlement removes the control.
+The shell's stop target is separate from header folding. A compact `[X]` appears immediately after
+the running elapsed time; while an interrupt request is pending it stays visible but muted and repeated
+clicks issue no further request. The action reserves its four columns, including a leading space, at
+narrow terminal widths; the identity truncates instead of clipping the action or adding a header row.
+Terminal settlement removes the control.
 Production: `ToolLine` and `BlockView` in [blocks.tsx](../../packages/code/src/views/blocks.tsx). Test:
-`narrow shell headers reserve the stop target without folding or growing while pending` in
+`narrow shell headers place the stable close target immediately after elapsed time` in
 [block-focus-render.test.tsx](../../packages/code/tests/integration/block-focus-render.test.tsx).
 
 ### 4.8 Assistant Markdown segmentation
@@ -527,19 +532,22 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | --- | --- | --- |
 | `display()` | `projectTranscriptToolDisplay(node, rawToolArguments(node))` | — |
 | `isCollapsed()` | `!showBody && status !== "running"` | — |
+| `hasDiagnostic()` | collapsed errors, plus a collapsed shell with `warn === true`                                                     | —                                                 |
 | `diffChip()` | `trueMutationStats(node)` when collapsed and not errored | — |
 | `hiddenLines()` | `hiddenBodyLines(...)` only when collapsed, not errored, and there is no diff chip | — |
 | `hasBody()` | `showBody && status !== "running"` | — |
 | `tail()` | last 5 lines of `liveOutput`, only while running | — |
 | `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
-The header renders as one truncated, non-wrapping row; its TSDoc states this is so a
-collapsed call is always exactly one row whatever the terminal width. Its parts, in
+The header renders as one truncated, non-wrapping row so tool identity remains stable whatever the
+terminal width. A collapsed error or non-zero shell warning adds one separately truncated diagnostic
+row below the header instead of competing with its signature and metadata for horizontal space. Its header parts, in
 order: status glyph, `toolDisplayLabel` in accent, then **either** the composing label **or** the signature — never both,
 the signature preferring resident `node.signature` over live `formatToolCall`. Then
 elapsed time while running, or elapsed time when settled and
-`elapsedMs >= SLOW_TOOL_MS` (2000ms). Then either the mutation chip
- or the hidden-line chip.
+`elapsedMs >= SLOW_TOOL_MS` (2000ms). A running interruptible shell places its compact `[X]`
+immediately after that elapsed time. Settled calls then show either the mutation chip
+or the hidden-line chip.
 
 Below the header, in order: the live tail, the hydration notice when expanded and
 dehydrated, the curated result/error body card on `tokens.bgElev`,
@@ -554,9 +562,11 @@ computing `mutationStats` from the raw args/diff — never from `display()`, whi
 diff exceeding 64 KiB must still chip as `+4000`.
 
 Exploration chrome is owned by `ExplorationRow`, not by an individual tool's role.
-Its folded header reports member, active and issue counts from the first call onward.
-Opening the first issue selects its bounded member page. Shell guards remain individually visible
-because shell calls never group. Members retain their own header, bounded detail and explicit fold.
+Its folded header says `Exploring` while any member is pending or running, then `Explored` once every
+member is terminal; it reports member and failure counts without a separate active count.
+For a paginated group, showing the first failure selects its bounded member page; a single-page group
+does not render that redundant shortcut. Shell guards remain individually visible because shell calls
+never group. Members retain their own header, bounded detail and explicit fold.
 Production: [ExplorationRow.tsx](../../packages/code/src/views/transcript/ExplorationRow.tsx).
 Test: [tool-groups-render.test.tsx](../../packages/code/tests/integration/tool-groups-render.test.tsx).
 
@@ -574,7 +584,7 @@ split without crossing it. The split gives the same rule to the inline `ElicitBl
 color plus one column of padding; a focused block paints `focusBg()` and a `run` node
 paints no background at all. Sub-agent content keeps its actor-colored left rail without synthesized section chrome.
 
-Per-kind bodies (`packages/code/src/views/blocks.tsx`): `user` gets a `userBandBg()` band with a rail glyph; `reasoning` renders nothing at all when collapsed — pinned at
+Per-kind bodies (`packages/code/src/views/blocks.tsx`): `user` gets a `userBandBg()` band with a rail glyph; `reasoning` renders nothing at all when collapsed and, when visible beneath its `thinking` label, passes through `thinkingDisplayText`, which removes Markdown presentation delimiters without changing ordinary transcript prose — pinned at
 `packages/code/tests/integration/reasoning-hidden-render.test.tsx`; `thinking` is a spinner plus animated dots; `assistant` uses one static bullet plus segmented Markdown in both running and terminal
 states, and preserves a provider-declared `commentary` phase without synthesizing a visible label or
 changing its body; `subagent` is a bounded one-line plain-text
@@ -631,6 +641,9 @@ rewriting the call's `output_mode` argument to `"content"`, falling back to `ren
 not `For` — an explicit remark in source states `Object.entries()` yields fresh `[k,
 v]` tuples with no stable identity every render, so rows must key by position instead.
 
+Collapsed generic errors parse a serialized `{error, message}` envelope through
+`toolErrorSummaryText`: the snake-case code becomes a sentence-case label followed by its message;
+plain text remains plain text. Expanded error bodies retain the original full diagnostic.
 `resolveErrorRenderer` returns the *normal* renderer for a tool in
 `ERROR_AWARE = {shell, monitor_start, monitor_poll, monitor_stop}`, and `renderErrorGeneric`
 otherwise. `renderErrorGeneric` respects `full`/`wrap` so an error's stack trace can be
@@ -702,6 +715,8 @@ raw result's lines. Blank-only text counts as `0`.
 `placeholder` stands in when every primary is absent, and each present secondary renders as
 `key=value`. Without a spec: every argument renders as `key=value`. The joined parts
 are wrapped in parentheses and capped at `SIGNATURE_MAX = 72`.
+The curated shell signature includes only its command; its execution `cwd` is deliberately omitted
+from transcript chrome. Other curated tools retain their declared secondary fields.
 Collapsed headers, group-member lists and Markdown export call `resolveToolCallSignature` in the
 same file, which prefers a resident `node.signature` and only formats live args when that string is
 absent. The store writes that resident string from `tool_call_started` arguments and refreshes it
@@ -784,7 +799,7 @@ of them are still `running`, for the header chip.
 `renderTranscriptMarkdownChunks` (`packages/code/src/views/transcript-markdown.ts`) is a generator, so export memory is
 proportional to the largest node rather than the session. Per kind: `user` →
 `## You`, `assistant` → `## Assistant`, `reasoning` → a `>` blockquote with every newline re-prefixed,
-`tool_call` → `` - `label(signature)` — status `` plus its guard review label when present and a
+`tool_call` → ``- `label(signature)` — status`` plus its guard review label when present and a
 fenced `Bounded arguments` projection when arguments exist, `run` → `_(reason)_` followed by `---`.
 The projection uses the same bounded, renderer-safe display path as live rendering and labels shortening;
 it never serializes the unbounded raw envelope. Every other kind yields nothing. The tool line uses
@@ -792,12 +807,12 @@ it never serializes the unbounded raw envelope. Every other kind yields nothing.
 `packages/code/tests/unit/transcript-markdown.test.ts`.
 
 For a settled shell node, `guardReviewLabel` renders the durable verdict as
-`auto-guard approved|denied · <answerer>` in auto mode (or `guard ...` in on
-mode). `ToolLine` appends that label to the header, and Markdown export reuses
+`approved|denied by <answerer>`. It deliberately omits the guard mode and internal review facts from
+transcript chrome. `ToolLine` appends that label to the header, and Markdown export reuses
 the same pure presenter. Production: `packages/code/src/core/transcript/guard-review.ts`,
 `ToolLine` in `packages/code/src/views/blocks.tsx`, and
-`renderTranscriptMarkdownChunks`. Tests: `"shell headers state whether the
-auto-guard judge approved or denied"` in
+`renderTranscriptMarkdownChunks`. Tests: `"shell headers state the guard verdict and answerer
+without its mode"` in
 `packages/code/tests/integration/tool-destripe-render.test.tsx` and the guard
 case in `packages/code/tests/unit/transcript-markdown.test.ts`.
 
@@ -899,13 +914,15 @@ managed block untouched.
 ### 4.18 `presenters.ts`'s notice/toast formatters
 
 Eight of the barrel's exports (section 2.1) carry real formatting rules beyond their bare signatures.
-`compactionNoticeText(operation, freedChars, opts)` (`packages/code/src/core/transcript/presenters.ts`) rounds `freedChars` to
-the nearest thousand for its `−Nk chars` segment and appends a user-contribution count when
-`opts.userContributionCount` is set. `compactionSkippedNoticeText(reason)` reports an
+`compactionNoticeText(operation, freedChars, opts)` (`packages/code/src/core/transcript/presenters.ts`) presents
+tool-result `truncation` as `tool output shortened`, distinct from context `compaction`; it rounds
+`freedChars` to the nearest thousand for its `−Nk chars` segment and appends a user-contribution
+count to context compaction when `opts.userContributionCount` is set. `compactionSkippedNoticeText(reason)` reports an
 explicit compaction request that could not be applied, replacing the reason's underscores with spaces.
 `visionNoticeText(model, imageCount, status)` names the model rather than an agent
 because the vision pre-pass is one completion with no run-tree child a reader could go looking for.
-`softLimitNoticeText` is a plain `used/limit → outcome` line.
+`softLimitNoticeText` is a plain `used/limit → outcome` line. For the `iterations` dimension its TUI
+label is `iteration limit`; other dimensions retain their `soft <dimension>` label.
 
 `steerNoticeText`, `steerQueuedNoticeText` and
 `steerUndeliveredNoticeText` all quote the steer message through the internal
@@ -970,35 +987,37 @@ owner. When `hasContent()` — a plan, at least one leader, a sequence checkpoin
 entire body is the one line `No run activity to inspect`.
 
 **Plan section.** `PlanSummary` (`packages/code/src/views/Sidebar.tsx`, `PlanSummary`) renders a bold
-accent title, a lifecycle/progress line in its semantic status colour, the windowed task list, a
-distinct `Last result` section, and a footer hint. For an expected discard,
+accent title, a lifecycle/progress line in its semantic status colour, and the windowed task list.
+For an available plan, the progress line appends the compact `[^p] full plan` affordance produced
+from the real `Ctrl+P` binding through `compactKey`; the Sidebar renders no separate result panel or
+result preview. For an expected discard,
 the muted meta is `Completed · C/N completed · history discarded` and the muted footer is
 `Plan deleted after success`; only another removed plan gets `Unavailable · plan file
 unavailable` plus the red `Restore the plan file or create a replacement` recovery action
 (`PlanSummary` in `packages/code/src/views/Sidebar.tsx`). `planProgress` otherwise reports
-`N task(s) proposed` while `awaiting_approval`, and `C/N completed`. Each task row takes its glyph and colour
+`N task(s) proposed` while `awaiting_approval`, and `C/N completed`. The compact task list is sorted
+by lifecycle before source position: `in_progress`, then actionable `pending`/`returned`, then
+`done`, then unsuccessful `failed`/`abandoned`; source order remains stable inside each group. Each
+task row takes its glyph and colour
 from `taskTone` (`packages/code/src/views/blocks.tsx`), called from
 `packages/code/src/views/Sidebar.tsx` — except the current one, which is drawn with the accent
 chevron and selection background instead — but only while the plan is neither removed nor terminal.
-Every row also prints a lifecycle label (`Done`, `Running`, `Failed`, `Skipped`, `Returned`, `Next`,
-or `Recorded`), so task state never depends on colour alone. The
+The glyph is the row's only lifecycle marker: the Sidebar omits lifecycle words, task numbers,
+assignees, and exit conditions so the title remains the sole task copy. Those details remain in the
+complete `Ctrl+P` plan surface. The
 source states the defect that rule fixes in `PlanSummary`'s one surviving line comment: "A
 completed plan has no active task. Retaining the chevron on its final task made a finished plan look
-like it was still executing." `PlanSummary` appends a task's `assignee` to its title when present and
-shows the `Exit: …` condition for the active task alone;
-`lastOutcome` scans the task list **backwards** for the newest
-`done`/`failed`/`returned`/`abandoned` task and prints its `error`, else `result`, else `reason`,
-else its lifecycle word. `Last result` renders only a bounded `activityPreview`; clicking it opens the
-unabridged result/error/reason as Markdown in the shared activity-detail modal. The footer is
-the styled `Ctrl+P full plan` affordance, replaced by neutral retention confirmation for an expected discard
-or by the red restore action for an unexpected removal (`packages/code/src/views/Sidebar.tsx`,
-`PlanSummary`). Visual hierarchy is pinned by
+like it was still executing."
+Removed plans omit the full-plan affordance; their footer is neutral retention confirmation for an
+expected discard or the red restore action for an unexpected removal
+(`packages/code/src/views/Sidebar.tsx`, `PlanSummary`). Visual hierarchy is pinned by
 `packages/code/tests/integration/sidebar-render.test.tsx`.
 
-**`planTaskWindow` — a bounded slice that always contains the active task.**
-`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx`). The window centres on
-`currentPlanTask(plan)`, falling back to the last task when the plan has no current one, then clamps
-`start` so the window never runs past either end. It
+**`planTaskWindow` — a bounded status-prioritized slice that always contains the active task.**
+`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx`). The function first applies
+the same lifecycle priority as the visible list, with original index as the stable tie-breaker. The
+window then centres on `currentPlanTask(plan)` in that ordered projection, falling back to the last
+source task when the plan has no current one, and clamps `start` so it never runs past either end. It
 returns entries carrying their **absolute** index — which is what makes the row ids
 `sidebar-plan-<index>` stable — plus `hiddenBefore`/`hiddenAfter`, rendered as `↑ N earlier tasks`
 and `↓ N later tasks`, and `currentIndex`. `PlanSummary` keeps the current row on screen through
@@ -1403,13 +1422,16 @@ check is that each package's own suite asserts the same behavioural cases. Produ
 `packages/code/tests/unit/message-content.test.ts`, a six-case table whose own header states the
 same rule from the test side.
 
-**INV-T44.** The sidebar's plan section mounts a **bounded** slice of the task list that always
-contains the current task: at most `PLAN_SIDEBAR_TASK_LIMIT = 12` rows, centred on
-`currentPlanTask`, with the remainder reported as `↑ N earlier tasks` / `↓ N later tasks` rather
-than mounted. Production: `PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, and `PlanSummary` in
+**INV-T44.** The sidebar's plan section mounts a **bounded**, lifecycle-prioritized slice of the task
+list that always contains the current task: `in_progress`, actionable `pending`/`returned`, `done`,
+then unsuccessful `failed`/`abandoned`, with original index breaking ties. At most
+`PLAN_SIDEBAR_TASK_LIMIT = 12` rows are centred on `currentPlanTask` in that projection, with the
+remainder reported as `↑ N earlier tasks` / `↓ N later tasks` rather than mounted. Production:
+`PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, and `PlanSummary` in
 `packages/code/src/views/Sidebar.tsx`. Test
 `packages/code/tests/integration/sidebar-render.test.tsx`, which asserts both the window's own
-shape and that a 50-task plan paints `Task 30` with the first task absent from the frame.
+shape and priority and that a 50-task plan paints `Task 30` with the first task absent from the
+frame.
 
 **INV-T45.** The sidebar carries no run totals. A sub-agent's `input`/`output` token counts and the
 run's context and usage figures are held by the same `ActivityStore` the sidebar reads
@@ -1752,6 +1774,7 @@ any renderer at all is still not determinable: nothing this document or the side
 `error` nodes.** `packages/code/src/views/transcript-markdown.ts` silently yields nothing for those four kinds;
 `packages/code/tests/unit/transcript-markdown.test.ts` exercises only the five kinds that do render. Whether the
 omission is intended is not stated.
+
 ## Structured effect review receipts
 
 Guard elicitation shows one-based segment causes and argument positions, effect attestation and

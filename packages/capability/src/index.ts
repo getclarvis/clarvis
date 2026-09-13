@@ -409,6 +409,7 @@ export type {
   ReviewedEffectInference,
   ReviewedEffectTarget,
   OperatorEvidence,
+  OperatorElicitationContext,
   OperatorAuthorityBinding,
   OperatorAuthoritySeed,
   AuthorityEnvelopeV1,

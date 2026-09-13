@@ -79,13 +79,17 @@ Only explicitly allowlisted observing tools qualify. Shell, mutations, unknown t
 MCP names remain individual. A group exists with one member; no timer waits for a sibling.
 Different eligible read/search names may share a contiguous execution/actor/iteration segment.
 Prose, notices, delegation and a new iteration close membership. Late results update a member
-without reopening the segment. Errors remain indicated in the folded header.
+without reopening the segment. The header says `Exploring` while any member is active and `Explored`
+after every member settles, without displaying a numeric active count. Errors remain indicated.
 
 An open group mounts one page of 20 member IDs. Explicit expansion is retained outside the owner.
 Opening a group never authorizes unlimited payload hydration or mounting all members.
-The folded header exposes failure counts; “Open first issue” opens the corresponding bounded
-member page and the failed member. Individual folded failures retain a short sanitized reason;
-shell failures retain their parsed exit code instead of printing a serialized result envelope.
+The folded header exposes failure counts. A single-page group relies on ordinary expansion and adds
+no redundant failure shortcut; in a paginated group, “Show first failure” opens the corresponding
+bounded member page and the failed member. Individual folded failures retain a short sanitized reason
+on a diagnostic row below their identity rather than appending it to the header; shell errors and
+non-zero warnings start folded and retain their parsed exit code instead of printing a serialized
+result envelope.
 
 ### Viewport and reader intent
 

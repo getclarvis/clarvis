@@ -9,10 +9,128 @@ import { globalPaths, workspacePaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
 import { withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
 import { settingsDocumentRevision } from "../../src/config/config-store.ts";
+import { EFFECT_REVIEW_POLICY } from "../../src/guard/reviewer-policy.ts";
 
 const temporary: string[] = [];
 afterEach(() => {
   for (const root of temporary.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+it("uses an accepted ask_user authorization in the following configuration review", async () => {
+  const root = mkdtempSync(join(tmpdir(), "clarvis-elicited-configuration-"));
+  temporary.push(root);
+  const workspaceRoot = join(root, "workspace");
+  const globalDir = join(root, "global");
+  mkdirSync(workspaceRoot);
+  mkdirSync(globalDir);
+  writeFileSync(
+    globalPaths(globalDir).settingsFile,
+    JSON.stringify({
+      default_model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+      guard: { type: "shell", mode: "auto" },
+    }),
+  );
+  const skillRoot = join(workspaceRoot, ".agents/skills/review-docs");
+  const target = join(skillRoot, "references/coverage-matrix.md");
+  mkdirSync(join(skillRoot, "references"), { recursive: true });
+  writeFileSync(
+    join(skillRoot, "SKILL.md"),
+    "---\nname: review-docs\ndescription: Review documentation coverage.\n---\nReview it.\n",
+  );
+  const original = "SAFE-09 pending\nSAFE-10 pending\nSAFE-11 pending\n";
+  const updated = "SAFE-09 covered\nSAFE-10 covered\nSAFE-11 covered\n";
+  writeFileSync(target, original);
+  const agent = new MockLLM({
+    script: [
+      {
+        toolCalls: [
+          {
+            name: "ask_user",
+            arguments: {
+              question: "Authorize updating SAFE-09 through SAFE-11 in the coverage matrix?",
+              options: ["Authorize the three lines", "Do not update"],
+            },
+          },
+        ],
+      },
+      {
+        toolCalls: [
+          {
+            name: "configure_clarvis",
+            arguments: {
+              operation: "edit",
+              root: "workspace_agents",
+              path: "skills/review-docs/references/coverage-matrix.md",
+              expected_revision: settingsDocumentRevision(original),
+              old_text: original,
+              new_text: updated,
+            },
+          },
+        ],
+      },
+      { text: "Coverage updated." },
+    ],
+  });
+  const reviewed = withHostValidatedEffectReview(agent);
+  let reviewerEvidence: Array<Record<string, unknown>> | undefined;
+  const kernel = await createFileKernel({
+    workspaceRoot,
+    globalDir,
+    logger: NOOP_LOGGER,
+    env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+    subscriptions: false,
+    builtins: { hooks: false, tasks: false },
+    executeRun: (args) =>
+      executeRun({
+        ...args,
+        deps: {
+          ...args.deps,
+          llm: {
+            async call(params) {
+              if (
+                params.messages[0]?.content === EFFECT_REVIEW_POLICY &&
+                params.tools?.[0]?.wireName === "compile"
+              )
+                reviewerEvidence = JSON.parse(
+                  params.messages.at(-1)!.content as string,
+                ).operator_evidence;
+              return reviewed.call(params);
+            },
+          },
+        },
+      }),
+  });
+  try {
+    const run = await kernel.runs.start({
+      agent: "marshall",
+      messages: [{ role: "user", content: "Inspect the remaining documentation coverage." }],
+      guard_mode: "auto",
+    });
+    let questions = 0;
+    run.onElicit((request) => {
+      questions++;
+      expect(request.kind).toBe("ask_user");
+      void run.respond({
+        id: request.id,
+        action: "accept",
+        content: { response: "Authorize the three lines" },
+      });
+    });
+    const events = Array.fromAsync(run.events);
+    expect(await run.done).toMatchObject({ status: "completed" });
+    await events;
+    await run.closed;
+    expect(questions).toBe(1);
+    expect(readFileSync(target, "utf8")).toBe(updated);
+    expect(reviewerEvidence?.at(-1)).toMatchObject({
+      source: "ask_user",
+      prompt: "Authorize updating SAFE-09 through SAFE-11 in the coverage matrix?",
+      text: "Authorize the three lines",
+    });
+  } finally {
+    await kernel.close();
+  }
 });
 
 it.each(["auto", "on", "off"] as const)(

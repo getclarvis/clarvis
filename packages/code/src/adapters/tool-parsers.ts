@@ -105,6 +105,36 @@ function errorText(j: Record<string, unknown>): string | undefined {
   return message || code || undefined;
 }
 
+/**
+ * Produce a human-readable collapsed summary for a structured or plain tool error.
+ *
+ * @remarks Recognized `{ error, message }` envelopes keep both stable code and
+ * message while dropping their JSON syntax. Unknown JSON and plain diagnostic
+ * text remain intact so presentation never invents a more specific failure.
+ */
+export function toolErrorSummaryText(error: string): string {
+  const value = error.trim();
+  const parsed = tryJson(value);
+  if (parsed !== undefined) {
+    const code = typeof parsed.error === "string" ? parsed.error.trim() : "";
+    const message = typeof parsed.message === "string" ? parsed.message.trim() : "";
+    if (code || message) {
+      const label = humanizeErrorCode(code);
+      if (!message || message.toLowerCase() === code.toLowerCase()) return label;
+      return label ? `${label}: ${message}` : message;
+    }
+    return value;
+  }
+  const coded = /^([a-z][a-z0-9_]*)\s*:\s*(.+)$/s.exec(value);
+  if (coded) return `${humanizeErrorCode(coded[1]!)}: ${coded[2]!.trim()}`;
+  return value.length > 0 ? value[0]!.toUpperCase() + value.slice(1) : value;
+}
+
+function humanizeErrorCode(code: string): string {
+  const words = code.replaceAll("_", " ");
+  return words.length > 0 ? words[0]!.toUpperCase() + words.slice(1) : "";
+}
+
 /** A `read_file` tool call's result, split into its numbered content and any trailing notes. */
 export interface ReadFileParsed {
   firstLine: number | null;

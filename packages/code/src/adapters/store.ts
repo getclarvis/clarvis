@@ -1013,7 +1013,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         n.status = "ok";
         if (n.startedAt) n.elapsedMs = Date.now() - n.startedAt;
         n.warn = failed;
-        foldDefaults.set(n.key, !failed);
+        foldDefaults.set(n.key, true);
       });
       noteHydrated(key);
       terminalContent.publishImmediate(key);
@@ -1742,7 +1742,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.mutation = described.mutation;
             }
             Object.assign(n, attrOf(event.subagent_id));
-            foldDefaults.set(n.key, event.error ? true : !bashFailed);
+            foldDefaults.set(n.key, true);
           });
           terminalContent.observe(execId, span, event, source);
           noteHydrated(ns(span.span_id));

@@ -27,14 +27,14 @@ export function ExplorationRow(props: {
     props.transcript.overrideOf(props.id) === "expanded" ||
     (props.transcript.overrideOf(props.id) !== "collapsed" && props.transcript.expandAll());
   const counts = createMemo(() => {
-    let active = 0;
+    let hasActive = false;
     let failed = 0;
     for (const id of members()) {
       const node = props.projection.record(id);
-      if (node?.status === "running" || node?.status === "pending") active++;
+      if (node?.status === "running" || node?.status === "pending") hasActive = true;
       if (node?.status === "error") failed++;
     }
-    return { active, failed };
+    return { hasActive, failed };
   });
   const start = () =>
     Math.min(
@@ -45,7 +45,7 @@ export function ExplorationRow(props: {
   const toggle = () => {
     if (props.active()) props.preserve(() => props.transcript.toggleAt(props.id));
   };
-  const showIssue = () => {
+  const showFailure = () => {
     if (!props.active()) return;
     const index = members().findIndex((id) => props.projection.record(id)?.status === "error");
     if (index < 0) return;
@@ -68,12 +68,12 @@ export function ExplorationRow(props: {
           onMouseDown={toggle}
           fg={counts().failed > 0 ? tokens.del : tokens.accent}
         >
-          {`${expanded() ? "v" : ">"} Exploring · ${members().length} tools · ${counts().active} active${counts().failed ? ` · ${counts().failed} failed/interrupted` : ""}`}
+          {`${expanded() ? "v" : ">"} ${counts().hasActive ? "Exploring" : "Explored"} · ${members().length} ${members().length === 1 ? "tool" : "tools"}${counts().failed ? ` · ${counts().failed} failed/interrupted` : ""}`}
         </text>
       </box>
-      <Show when={counts().failed > 0}>
-        <text selectable={false} fg={tokens.del} onMouseDown={showIssue}>
-          Open first issue
+      <Show when={counts().failed > 0 && members().length > EXPLORATION_PAGE_MEMBERS}>
+        <text selectable={false} fg={tokens.del} onMouseDown={showFailure}>
+          Show first failure
         </text>
       </Show>
       <Show when={expanded()}>

@@ -93,6 +93,24 @@ describe("host operator ledger", () => {
     expect(ledger.reader.snapshot().revision).toBe(before.revision + 1);
     expect(ledger.reader.snapshot().evidence.at(-1)?.text).toBe("Do not push");
   });
+  test("admits an accepted ask_user answer with its untrusted question context", () => {
+    const ledger = runtime();
+    const before = ledger.reader.snapshot();
+    const elicitation = {
+      question: "May I update SAFE-09 through SAFE-11?",
+      answer: "Authorize the three lines",
+    };
+    ledger.onElicitation(elicitation);
+    const after = ledger.reader.snapshot();
+    expect(after.revision).toBe(before.revision + 1);
+    expect(after.evidence.at(-1)).toMatchObject({
+      source: "ask_user",
+      prompt: elicitation.question,
+      text: elicitation.answer,
+      agent: "lead",
+      execution_id: "run",
+    });
+  });
   test("invalidates in-flight compilation and installed grants on steer", () => {
     const ledger = runtime();
     const envelope = {

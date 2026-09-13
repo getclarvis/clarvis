@@ -53,6 +53,32 @@ test("ElicitBlock renders the question, options and footer inline", async () => 
   expect(out).toContain("request_changes");
 });
 
+test("an iteration-limit question omits soft wording in the TUI", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={{
+        message: "Used 200 of the soft iterations limit (200). Continue?",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            continue: {
+              type: "string",
+              enum: ["continue", "stop"],
+              description: "Continue past the soft limit, or stop with the partial result?",
+            },
+          },
+          required: ["continue"],
+        },
+      }}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("Used 200 of the iteration limit (200). Continue?");
+  expect(out).toContain("Continue past the iteration limit");
+  expect(out).not.toContain("soft");
+});
+
 const PLAN_ACTIVITY: PlanActivity = {
   id: ".clarvis/plans/search.md",
   path: ".clarvis/plans/search.md",

@@ -68,7 +68,8 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint followed by `lint:tooling` | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source-policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `lint:intent` | `test:tooling`, then source-policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |
@@ -947,6 +948,15 @@ Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`,
 Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
 host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
 toolchain through the real native backend`).
+
+Container canaries retain separate Docker and Podman opt-in gates. With neither gate enabled they are
+skipped; after either gate is enabled, an absent executable is reported unavailable and malformed or
+missing digest/context input fails as misconfigured instead of becoming a skip. A complete
+`sha256:` digest and explicit Docker context or Podman connection are required, and enabling both
+engine gates in one process is invalid. Test:
+`packages/kernel/tests/helpers/native-canary.ts`,
+`packages/kernel/tests/unit/native-canary.test.ts`, and the gated `*.e2e.test.ts` files under
+`packages/kernel/tests/integration`.
 
 **BUILD-21.** The crash retry accepts exactly 132/134/139 and never retries 130 or 143.
 Production: `tooling/ci/retry-code-coverage.sh`.

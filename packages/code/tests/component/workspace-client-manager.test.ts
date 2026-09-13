@@ -11,6 +11,7 @@ import type { KernelClient } from "@clarvis/protocol";
 import { WorkspaceClientManager } from "../../src/adapters/workspace-client-manager.ts";
 import { prepareStartupFoundation } from "../../src/startup-foundation.ts";
 import { openTempDir } from "../helpers/tracked-temp.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync("git", args, {
@@ -161,14 +162,18 @@ describe("WorkspaceClientManager", () => {
     const root = openTempDir("clarvis-startup-foundation-");
     const workspace = join(root, "workspace");
     mkdirSync(workspace);
-    const previousHome = process.env.CLARVIS_HOME;
-    const previousWorkspace = process.env.CLARVIS_WORKSPACE_ROOT;
-    const previousOwner = process.env.CLARVIS_OWNER;
+    const ambient = environmentFixture();
+    const env = spyOnProcessEnv(ambient);
     let manager: WorkspaceClientManager | undefined;
     try {
-      process.env.CLARVIS_HOME = join(root, "global");
-      process.env.CLARVIS_WORKSPACE_ROOT = workspace;
-      process.env.CLARVIS_OWNER = "startup-owner";
+      env.mockReturnValue(
+        environmentFixture({
+          ...ambient,
+          CLARVIS_HOME: join(root, "global"),
+          CLARVIS_WORKSPACE_ROOT: workspace,
+          CLARVIS_OWNER: "startup-owner",
+        }),
+      );
       manager = await prepareStartupFoundation({
         kind: "run",
         ascii: false,
@@ -180,7 +185,14 @@ describe("WorkspaceClientManager", () => {
       await manager.close();
       manager = undefined;
 
-      delete process.env.CLARVIS_OWNER;
+      env.mockReturnValue(
+        environmentFixture({
+          ...ambient,
+          CLARVIS_HOME: join(root, "global"),
+          CLARVIS_WORKSPACE_ROOT: workspace,
+          CLARVIS_OWNER: undefined,
+        }),
+      );
       manager = await prepareStartupFoundation({
         kind: "run",
         ascii: false,
@@ -189,12 +201,7 @@ describe("WorkspaceClientManager", () => {
       expect(manager.defaultOwner).toBe(ownerFromWorkspace(workspace));
     } finally {
       await manager?.close();
-      if (previousHome === undefined) delete process.env.CLARVIS_HOME;
-      else process.env.CLARVIS_HOME = previousHome;
-      if (previousWorkspace === undefined) delete process.env.CLARVIS_WORKSPACE_ROOT;
-      else process.env.CLARVIS_WORKSPACE_ROOT = previousWorkspace;
-      if (previousOwner === undefined) delete process.env.CLARVIS_OWNER;
-      else process.env.CLARVIS_OWNER = previousOwner;
+      env.mockRestore();
     }
   });
 

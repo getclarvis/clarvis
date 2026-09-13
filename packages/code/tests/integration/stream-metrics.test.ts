@@ -1,8 +1,9 @@
-import { afterEach, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStreamMetrics, streamMetrics } from "../../src/adapters/stream-metrics.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 process.setMaxListeners(0);
 
@@ -36,16 +37,18 @@ function logFile(): string {
   return join(mkdtempSync(join(tmpdir(), "clarvis-stream-metrics-")), "metrics.jsonl");
 }
 
-afterEach(() => {
-  delete process.env.CLARVIS_STREAM_DEBUG;
-});
-
 test("streamMetrics: with the env var unset, returns a memoized no-op sink that never throws", () => {
-  delete process.env.CLARVIS_STREAM_DEBUG;
-  const m = streamMetrics();
-  expect(() => m.count("x")).not.toThrow();
-  expect(() => m.count("x", 5)).not.toThrow();
-  expect(streamMetrics("other-source")).toBe(m);
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, CLARVIS_STREAM_DEBUG: undefined }),
+  );
+  try {
+    const m = streamMetrics();
+    expect(() => m.count("x")).not.toThrow();
+    expect(() => m.count("x", 5)).not.toThrow();
+    expect(streamMetrics("other-source")).toBe(m);
+  } finally {
+    env.mockRestore();
+  }
 });
 
 test("createStreamMetrics: count() accumulates and exit flushes window + totals as JSONL", async () => {
@@ -55,7 +58,7 @@ test("createStreamMetrics: count() accumulates and exit flushes window + totals 
   m.count("tokens", 3);
   m.count("tokens");
   m.count("chars", 10);
-  await new Promise((r) => setTimeout(r, 5));
+  await Bun.sleep(0);
 
   withoutListener(before, () => process.emit("exit", 0));
 

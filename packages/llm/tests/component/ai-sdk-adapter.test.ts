@@ -183,19 +183,12 @@ describe("AiSdkAdapter — representative generation composition", () => {
     ).resolves.toBeDefined();
   });
 
-  it("uses process.env only as the default credential resolver and restores the prior value", async () => {
+  it("uses the injected credential resolver without touching process.env", async () => {
     const key = "CLARVIS_LLM_COMPONENT_KEY";
-    const previous = process.env[key];
-    process.env[key] = "from-env";
-    try {
-      await adapter().call(
-        params({ providerConfig: { kind: "anthropic", apiKeyEnv: key }, model: "claude" }),
-      );
-      expect(mockGenerate).toHaveBeenCalledTimes(1);
-    } finally {
-      if (previous === undefined) delete process.env[key];
-      else process.env[key] = previous;
-    }
+    await adapter({ resolveRegistryKey: (name) => (name === key ? "from-env" : undefined) }).call(
+      params({ providerConfig: { kind: "anthropic", apiKeyEnv: key }, model: "claude" }),
+    );
+    expect(mockGenerate).toHaveBeenCalledTimes(1);
   });
 
   it("strips images only when the resolved model lacks vision", async () => {

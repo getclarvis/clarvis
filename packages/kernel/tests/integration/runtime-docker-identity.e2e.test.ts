@@ -5,17 +5,17 @@ import { createNodeDockerControl } from "../../src/local.ts";
 
 const image = process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
 const context = process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
-const enabled =
-  process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1" &&
-  /^sha256:[a-f0-9]{64}$/u.test(image ?? "") &&
-  Boolean(context);
+const enabled = process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1";
 
 test.skipIf(!enabled)(
   "writes ordinary Linux-owned workspace files without DAC capabilities and reuses the user-owned mise cache",
   async () => {
     const docker = Bun.which("docker");
-    if (docker === null || image === undefined || context === undefined)
-      throw new Error("missing Docker canary inputs");
+    if (docker === null) throw new Error("[unavailable] docker executable is unavailable");
+    if (image === undefined || !/^sha256:[a-f0-9]{64}$/u.test(image) || !context) {
+      throw new Error("[misconfigured] Docker canary requires a digest and explicit context");
+    }
+    const imageDigest = image;
     const control = createNodeDockerControl({
       executable: docker,
       context,
@@ -49,7 +49,7 @@ test.skipIf(!enabled)(
         "/bin/sh",
         "--mount",
         `type=volume,source=${volume},target=/fixture`,
-        image,
+        imageDigest,
         "-euc",
         "printf initial > /fixture/existing; chown 1001:1002 /fixture /fixture/existing; chmod 0755 /fixture; chmod 0644 /fixture/existing",
       ]);
@@ -66,7 +66,7 @@ test.skipIf(!enabled)(
         "/bin/sh",
         "--mount",
         `type=volume,source=${volume},target=/fixture`,
-        image,
+        imageDigest,
         "-c",
         "printf denied >> /fixture/existing",
       ]);
@@ -87,7 +87,7 @@ test.skipIf(!enabled)(
           workspace: { id: volume, projectId: volume, label: "DAC canary", kind: "primary" },
           workspaceRoot,
           readOnlyWorkspacePaths: [],
-          imageDigest: image,
+          imageDigest,
           configurationRevision: "test",
           extensionRevision: "test",
           network: "none",

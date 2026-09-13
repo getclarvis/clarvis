@@ -73,9 +73,11 @@ function turn(n: number): LLMCallParams {
 
 describe("what an implicit-cache openai-compatible request actually carries", () => {
   it("keeps the wire prefix byte-identical across turns and sends no markers", async () => {
-    process.env.OPENROUTER_API_KEY = "secret";
     const calls = stubFetch();
-    const a = new AiSdkAdapter({ generateText: mockGenerate });
+    const a = new AiSdkAdapter({
+      generateText: mockGenerate,
+      resolveRegistryKey: (name) => (name === "OPENROUTER_API_KEY" ? "secret" : undefined),
+    });
     for (const n of [1, 2, 3]) await a.call(turn(n));
 
     /* Nothing cache-affecting may vary between turns except the appended

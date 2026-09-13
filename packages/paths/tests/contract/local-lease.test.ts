@@ -194,13 +194,15 @@ describe("local filesystem leases", () => {
 
   test("renews through the held inode while protected work is running", async () => {
     const path = fixture();
+    let now = Date.now();
     const lease = await acquireLocalLease(path, {
       staleMs: 1_000,
-      heartbeatMs: 5,
+      now: () => now,
     });
     expect(lease).not.toBeNull();
     const acquired = statSync(path).mtimeMs;
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    now += 10_000;
+    await lease!.renew();
     expect(statSync(path).mtimeMs).toBeGreaterThan(acquired);
     await lease!.release();
   });

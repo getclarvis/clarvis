@@ -91,7 +91,7 @@ async function renderUntil(
   maxIters = 200,
 ): Promise<void> {
   for (let index = 0; index < maxIters && !done(); index++) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Bun.sleep(0);
     await rendered.renderOnce();
   }
 }

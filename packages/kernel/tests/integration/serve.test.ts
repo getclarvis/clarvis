@@ -2,10 +2,11 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
 import { createStdioTransport, connectKernelClient } from "../../src/index.ts";
 import { createLogger, serveFileKernelOverStdio } from "../../src/bootstrap.ts";
+import { SERVE_AGENT_TOOLS_PROBE_PATH } from "../fixtures/serve-agent-tools-probe.ts";
 
 function seedWorkspace(): string {
   const ws = mkdtempSync(join(tmpdir(), "clarvis-serve-"));
@@ -28,8 +29,6 @@ async function connectOverServe(input: PassThrough, output: PassThrough) {
   const transport = createStdioTransport({ input: output, output: input });
   return connectKernelClient(transport);
 }
-
-const originalAgentToolsEnv = process.env.CLARVIS_AGENT_TOOLS_ENABLED;
 
 describe("serveFileKernelOverStdio refuses a logger bound to its own wire", () => {
   it("rejects a stdout logger before constructing anything", async () => {
@@ -122,11 +121,6 @@ describe("serveFileKernelOverStdio refuses a logger bound to its own wire", () =
 });
 
 describe("serveFileKernelOverStdio", () => {
-  afterEach(() => {
-    if (originalAgentToolsEnv === undefined) delete process.env.CLARVIS_AGENT_TOOLS_ENABLED;
-    else process.env.CLARVIS_AGENT_TOOLS_ENABLED = originalAgentToolsEnv;
-  });
-
   it("serves a real file kernel over a stream pair and answers requests", async () => {
     const ws = seedWorkspace();
     const toServer = new PassThrough();
@@ -158,27 +152,21 @@ describe("serveFileKernelOverStdio", () => {
   });
 
   it("advertises agent_tools:false when CLARVIS_AGENT_TOOLS_ENABLED=false", async () => {
-    process.env.CLARVIS_AGENT_TOOLS_ENABLED = "false";
-
-    const ws = seedWorkspace();
-    const toServer = new PassThrough();
-    const toClient = new PassThrough();
-
-    const handle = await serveFileKernelOverStdio({
-      workspaceRoot: ws,
-      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
-      traceDir: join(ws, "traces"),
-      globalDir: join(ws, "global"),
-      input: toServer,
-      output: toClient,
+    const child = Bun.spawn({
+      cmd: [process.execPath, SERVE_AGENT_TOOLS_PROBE_PATH],
+      cwd: join(import.meta.dir, "../.."),
+      env: { ...process.env, CLARVIS_AGENT_TOOLS_ENABLED: "false" },
+      stdout: "pipe",
+      stderr: "pipe",
     });
-
-    const client = await connectOverServe(toServer, toClient);
-
-    expect(client.capabilities.agent_tools).toBe(false);
-
-    await client.close();
-    await handle.close();
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(stderr).toBe("");
+    expect(exitCode).toBe(0);
+    expect(stdout.trim()).toBe("false");
   });
 
   it("close() tears the connection down without ending the underlying streams", async () => {

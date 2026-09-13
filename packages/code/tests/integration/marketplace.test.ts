@@ -12,6 +12,7 @@ import {
   type MarketplaceListing,
 } from "../../src/adapters/marketplace.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -319,10 +320,9 @@ test("agents catalogs: discovery reads both scopes and skips the ones that are a
   const home = scratch();
   const workspace = scratch();
   agentsCatalog(workspace, { name: "workspace market", plugins: [] });
-  const previousHome = process.env.HOME;
-  const previousWorkspace = process.env[WORKSPACE_ENV];
-  process.env.HOME = home;
-  process.env[WORKSPACE_ENV] = workspace;
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, HOME: home, [WORKSPACE_ENV]: workspace }),
+  );
   try {
     const a = createMarketplaceAdapter({
       urls: () => [],
@@ -334,10 +334,7 @@ test("agents catalogs: discovery reads both scopes and skips the ones that are a
     a.refresh();
     expect(a.sources()).toEqual([]);
   } finally {
-    if (previousHome === undefined) delete process.env.HOME;
-    else process.env.HOME = previousHome;
-    if (previousWorkspace === undefined) delete process.env[WORKSPACE_ENV];
-    else process.env[WORKSPACE_ENV] = previousWorkspace;
+    env.mockRestore();
   }
 });
 

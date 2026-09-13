@@ -10,14 +10,17 @@ import {
 const servers: Server[] = [];
 
 afterEach(async () => {
-  await Promise.all(
-    servers.splice(0).map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-        }),
-    ),
-  );
+  const failures: unknown[] = [];
+  for (const server of servers.splice(0).reverse()) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "preview server cleanup failed");
 });
 
 function listen(server: Server): Promise<number> {

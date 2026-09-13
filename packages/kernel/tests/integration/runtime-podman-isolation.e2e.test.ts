@@ -17,10 +17,9 @@ test.skipIf(!enabled)(
     const executable = Bun.which("podman");
     const imageDigest = process.env.CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST;
     const connection = process.env.CLARVIS_PODMAN_RUNTIME_CONNECTION;
-    if (executable === null || !/^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") || !connection) {
-      throw new Error(
-        "Podman isolation canary requires executable, canonical image ID and connection",
-      );
+    if (executable === null) throw new Error("[unavailable] podman executable is unavailable");
+    if (imageDigest === undefined || !/^sha256:[a-f0-9]{64}$/u.test(imageDigest) || !connection) {
+      throw new Error("[misconfigured] Podman canary requires a digest and explicit connection");
     }
     const control = createNodePodmanControl({
       executable,
@@ -75,7 +74,7 @@ test.skipIf(!enabled)(
           },
           workspaceRoot: root,
           readOnlyWorkspacePaths: [protectedRoot],
-          imageDigest: imageDigest!,
+          imageDigest,
           configurationRevision: "test",
           extensionRevision: "test",
           network: "none",

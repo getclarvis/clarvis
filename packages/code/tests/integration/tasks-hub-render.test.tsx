@@ -170,7 +170,7 @@ function mount(
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let index = 0; index < 100 && !predicate(); index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Bun.sleep(0);
   }
   expect(predicate()).toBeTrue();
 }

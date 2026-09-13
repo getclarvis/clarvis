@@ -42,9 +42,8 @@ import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { Help } from "../../src/views/overlays/Help.tsx";
 
 async function waitUntil(predicate: () => boolean, maxIters = 40): Promise<void> {
-  for (let i = 0; i < maxIters && !predicate(); i++) {
-    await new Promise((r) => setTimeout(r, 5));
-  }
+  for (let i = 0; i < maxIters && !predicate(); i++) await Bun.sleep(0);
+  if (!predicate()) throw new Error(`app command condition did not settle after ${maxIters} turns`);
 }
 
 async function waitForFrame(
@@ -57,9 +56,11 @@ async function waitForFrame(
     await rendered.renderOnce();
     frame = rendered.captureCharFrame();
     if (frame.includes(token)) return frame;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Bun.sleep(0);
   }
-  return frame;
+  throw new Error(
+    `frame ${JSON.stringify(token)} did not render after ${maxIters} turns:\n${frame}`,
+  );
 }
 
 interface FakeCmd {

@@ -645,11 +645,11 @@ describe("createNotificationSink state machine", () => {
     );
 
     sink.onEvent(runStarted());
-    await Bun.sleep(1);
+    await Promise.resolve();
     timeouts.fireNext();
     await Promise.allSettled(drains);
     sink.onEvent(runStarted());
-    await Bun.sleep(1);
+    await Promise.resolve();
 
     const record = logs.one("stream.wedged");
     expect(record.level).toBe("warn");

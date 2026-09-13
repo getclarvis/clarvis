@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -85,15 +85,18 @@ describe("staleReport", () => {
     await mkdir(join(pkg, "src"), { recursive: true });
     await mkdir(join(pkg, "coverage"), { recursive: true });
 
-    if (sourceMtime === "before") {
-      await writeFile(join(pkg, "src", "a.ts"), "export const a = 1;\n");
-      await new Promise((r) => setTimeout(r, 12));
-      await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\nend_of_record\n");
-    } else {
-      await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\nend_of_record\n");
-      await new Promise((r) => setTimeout(r, 12));
-      await writeFile(join(pkg, "src", "a.ts"), "export const a = 1;\n");
-    }
+    const source = join(pkg, "src", "a.ts");
+    const report = join(pkg, "coverage", "lcov.info");
+    await writeFile(source, "export const a = 1;\n");
+    await writeFile(report, "TN:\nend_of_record\n");
+    const sourceInstant = new Date(
+      sourceMtime === "before" ? "2026-01-01T00:00:00Z" : "2026-01-02T00:00:00Z",
+    );
+    const reportInstant = new Date(
+      sourceMtime === "before" ? "2026-01-02T00:00:00Z" : "2026-01-01T00:00:00Z",
+    );
+    await utimes(source, sourceInstant, sourceInstant);
+    await utimes(report, reportInstant, reportInstant);
     return root;
   }
 
@@ -118,9 +121,15 @@ describe("staleReport", () => {
     const pkg = join(root, "packages", "protocol");
     await mkdir(join(pkg, "coverage"), { recursive: true });
     await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\n");
-    await new Promise((r) => setTimeout(r, 12));
     await mkdir(join(pkg, "src"), { recursive: true });
-    await writeFile(join(pkg, "src", "index.ts"), "export type A = string;\n");
+    const source = join(pkg, "src", "index.ts");
+    await writeFile(source, "export type A = string;\n");
+    await utimes(
+      join(pkg, "coverage", "lcov.info"),
+      new Date("2026-01-01T00:00:00Z"),
+      new Date("2026-01-01T00:00:00Z"),
+    );
+    await utimes(source, new Date("2026-01-02T00:00:00Z"), new Date("2026-01-02T00:00:00Z"));
 
     expect(await staleReport("protocol", root)).toBeNull();
   });

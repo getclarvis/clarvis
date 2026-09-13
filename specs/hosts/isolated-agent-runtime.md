@@ -970,6 +970,16 @@ Docker inputs remain the default. Both selections exercise the same assertions w
 host LLM. Podman also has a live isolation/cache canary; recipes and the rootful DAC canary remain
 Docker-specific.
 
+Canary admission is test-owned and does not alter runtime fallback. With neither engine gate enabled,
+the live journeys skip. Once a Docker or Podman gate is enabled, the selected executable must exist,
+the image must be a complete `sha256:` digest and the corresponding context or connection must be
+nonempty; unavailable and misconfigured prerequisites fail with distinct labels instead of being
+silently converted to a skip. Docker and Podman gates cannot be combined in one test process, so an
+execution record always identifies one physical engine. Test:
+`packages/kernel/tests/helpers/native-canary.ts`,
+`packages/kernel/tests/unit/native-canary.test.ts`, and the live container journeys under
+`packages/kernel/tests/integration`.
+
 The opt-in Docker/Colima canaries exercise a real Linux engine and worker with a synthetic host LLM:
 linked Git worktrees, host skill/plugin/Memory reads, denial of Memory mutations, immediate workspace
 writes, mise/npm outbound installation, host-loopback preview, steering, cancellation/recovery,

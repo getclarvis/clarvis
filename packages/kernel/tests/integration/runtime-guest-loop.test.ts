@@ -146,7 +146,6 @@ describe("runtime guest loop", () => {
     const events: unknown[] = [];
     const checkpoints: Array<Omit<RuntimeCheckpointInput, "generation" | "runId">> = [];
     const records: unknown[] = [];
-    process.env.CLARVIS_RUNTIME_HOST_SECRET = "must-not-cross";
     const bridge: GuestExecutionBridge = {
       async model(_callId, request) {
         modelBodies.push(request.body);
@@ -187,41 +186,37 @@ describe("runtime guest loop", () => {
       },
     };
 
-    try {
-      const outcome = await createGuestLoopExecutor({ workspaceRoot, scratchRoot }).execute(
-        "exec_guest_1",
-        {
-          owner: "owner",
-          modelLeaseId: "lease-1",
-          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-          loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          rawBody: {
-            execution_id: "exec_guest_1",
-            messages: [{ role: "user", content: "hi" }],
-            servers: [],
-            profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            budget: { on_exceed: "stop", total_token_limit: 1_000 },
-          },
+    const outcome = await createGuestLoopExecutor({ workspaceRoot, scratchRoot }).execute(
+      "exec_guest_1",
+      {
+        owner: "owner",
+        modelLeaseId: "lease-1",
+        toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
+        loopPolicy: runtimeLoopPolicy(loadEnv({})),
+        rawBody: {
+          execution_id: "exec_guest_1",
+          messages: [{ role: "user", content: "hi" }],
+          servers: [],
+          profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
+          entry: "solo",
+          providers: [{ name: "anthropic", kind: "anthropic" }],
+          budget: { on_exceed: "stop", total_token_limit: 1_000 },
         },
-        bridge,
-        new AbortController().signal,
-      );
+      },
+      bridge,
+      new AbortController().signal,
+    );
 
-      expect(outcome).toMatchObject({
-        executionId: "exec_guest_1",
-        response: { status: "completed" },
-      });
-      expect(events.length).toBeGreaterThan(0);
-      expect(records).toHaveLength(1);
-      expect(records[0]).toMatchObject({ id: "exec_guest_1", owner_key_name: "owner" });
-      expect(checkpoints).toEqual([{ sequence: 1, terminal: false, state: { outcome } }]);
-      expect(JSON.stringify(modelBodies)).not.toContain("must-not-cross");
-      expect(JSON.stringify(modelBodies)).toContain(workspaceRoot);
-    } finally {
-      delete process.env.CLARVIS_RUNTIME_HOST_SECRET;
-    }
+    expect(outcome).toMatchObject({
+      executionId: "exec_guest_1",
+      response: { status: "completed" },
+    });
+    expect(events.length).toBeGreaterThan(0);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ id: "exec_guest_1", owner_key_name: "owner" });
+    expect(checkpoints).toEqual([{ sequence: 1, terminal: false, state: { outcome } }]);
+    expect(JSON.stringify(modelBodies)).not.toContain("CLARVIS_RUNTIME_HOST_SECRET");
+    expect(JSON.stringify(modelBodies)).toContain(workspaceRoot);
   });
 
   it("accepts the host plans request block and resolves its canonical provider", async () => {

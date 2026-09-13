@@ -36,22 +36,10 @@ import {
 import { createNodeDockerControl, createNodePodmanControl } from "../../src/local.ts";
 import { createLocalDockerRuntime } from "../../src/runtime/local-docker-runtime.ts";
 import { createLocalPodmanRuntime } from "../../src/runtime/local-podman-runtime.ts";
+import { containerCanaryRequested, requireContainerCanary } from "../helpers/native-canary.ts";
 
-const engine = process.env.CLARVIS_PODMAN_RUNTIME_CANARY === "1" ? "podman" : "docker";
-const imageDigest =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST
-    : process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
-const context =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_CONNECTION
-    : process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
 const execFileAsync = promisify(execFile);
-const enabled =
-  (engine === "podman" || process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1") &&
-  /^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") &&
-  typeof context === "string" &&
-  context.length > 0;
+const enabled = containerCanaryRequested(process.env);
 
 function traceStore(): TraceStore {
   const records = new Map<string, ExecutionRecord>();
@@ -94,10 +82,10 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 test.skipIf(!enabled)(
   "bridges host reads and steer, installs through mise, previews, and survives cancellation",
   async () => {
-    const executable = Bun.which(engine);
-    if (executable === null || imageDigest === undefined || context === undefined) {
-      throw new Error(`${engine} canary inputs disappeared after admission`);
-    }
+    const { engine, executable, imageDigest, context } = requireContainerCanary(
+      process.env,
+      Bun.which,
+    );
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, "docker-"));
@@ -614,9 +602,10 @@ test.skipIf(!enabled)(
 test.skipIf(!enabled)(
   "interrupts a real guest shell through its handle and continues the same run with partial output",
   async () => {
-    const executable = Bun.which(engine);
-    if (executable === null || imageDigest === undefined || context === undefined)
-      throw new Error(`${engine} shell interruption canary inputs disappeared after admission`);
+    const { engine, executable, imageDigest, context } = requireContainerCanary(
+      process.env,
+      Bun.which,
+    );
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, `${engine}-interrupt-`));

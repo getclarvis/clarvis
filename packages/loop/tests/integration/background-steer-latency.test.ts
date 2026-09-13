@@ -41,6 +41,10 @@ describe("a lead with background children stays reachable while they run", () =>
     });
     let childrenStarted = 0;
     let steerSeenByLead = false;
+    let steerSeenResolve!: () => void;
+    const steerSeen = new Promise<void>((resolve) => {
+      steerSeenResolve = resolve;
+    });
 
     const llm = new MockLLM({
       script: [],
@@ -82,6 +86,7 @@ describe("a lead with background children stays reachable while they run", () =>
       }
       if (params.model === "claude-opus-4-5" && msgHasText(params, STEER)) {
         steerSeenByLead = true;
+        steerSeenResolve();
         expect(childrenStarted).toBe(2);
       }
       return originalCall(params);
@@ -132,7 +137,21 @@ describe("a lead with background children stays reachable while they run", () =>
 
     // The lead takes its second turn — and drains the steer — while both
     // children are parked. Only then are they released.
-    await waitFor(() => steerSeenByLead, 5000);
+    let fuse: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        steerSeen,
+        new Promise<never>((_, reject) => {
+          fuse = setTimeout(
+            () => reject(new Error("the lead never took another turn while its children ran")),
+            5000,
+          );
+        }),
+      ]);
+    } finally {
+      if (fuse !== undefined) clearTimeout(fuse);
+    }
+    expect(steerSeenByLead).toBe(true);
     releaseChildren();
     await runPromise;
 
@@ -144,17 +163,3 @@ describe("a lead with background children stays reachable while they run", () =>
     expect(recorded.message).toBe(STEER);
   });
 });
-
-/** Poll until `ready` or throw — the children are held, so a hang here means the
- * lead never got its next turn, which is precisely the defect. */
-async function waitFor(ready: () => boolean, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!ready()) {
-    if (Date.now() > deadline) {
-      throw new Error(
-        "the lead never took another turn while its children ran — an awaited spawn is back",
-      );
-    }
-    await new Promise((r) => setTimeout(r, 10));
-  }
-}

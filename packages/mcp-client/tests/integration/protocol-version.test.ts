@@ -74,9 +74,22 @@ function probeServer(): Promise<ProbeServer> {
 let srv: ProbeServer | undefined;
 const live: MCPClientHandle[] = [];
 afterEach(async () => {
-  for (const h of live.splice(0)) await h.close().catch(() => {});
-  await srv?.close();
-  srv = undefined;
+  const failures: unknown[] = [];
+  for (const handle of live.splice(0).reverse()) {
+    try {
+      await handle.close();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await srv?.close();
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    srv = undefined;
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "protocol fixture cleanup failed");
 });
 
 // createMCPClientFactory replaces `transport.setProtocolVersion` with a wrapper

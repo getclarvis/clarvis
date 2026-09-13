@@ -448,7 +448,7 @@ async function moveReaderAwayFromTail(t: Awaited<ReturnType<typeof openRender>>)
     press(t, "pageup");
     await t.renderOnce();
     if (t.renderer.root.findDescendantById("transcript-reader-indicator") !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await Bun.sleep(0);
   }
   throw new Error(`reader never left the tail:\n${t.captureCharFrame()}`);
 }
@@ -3244,7 +3244,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   const coveredFrame = t.captureCharFrame();
   const coveredRecorder = new TestRecorder(t.renderer);
   coveredRecorder.rec();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await Bun.sleep(0);
   coveredRecorder.stop();
   for (const recorded of coveredRecorder.recordedFrames) expect(recorded.frame).toBe(coveredFrame);
 

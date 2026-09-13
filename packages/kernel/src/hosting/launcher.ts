@@ -10,6 +10,7 @@ import { connectLocalKernelTransport } from "../transport/local.ts";
 import { CLARVIS_WIRE_VERSION } from "../transport/wire.ts";
 import {
   localHostProcessAlive,
+  localHostEndpointRootCandidates,
   readLocalHostConnection,
   resolveLocalHostIdentity,
   type LocalHostIdentity,
@@ -111,7 +112,12 @@ export async function connectOrLaunchLocalKernel(
     throw kernelError("invalid_request", "host startup timeout must be within 120 seconds");
   const logger = options.logger ?? NOOP_LOGGER;
   const policyId = localKernelPolicyIdentity(loadEnv(options.environment));
-  const identity = await resolveLocalHostIdentity(options);
+  const identity = await resolveLocalHostIdentity({
+    ...options,
+    ...(process.platform === "win32"
+      ? {}
+      : { endpointRootCandidates: localHostEndpointRootCandidates(options.environment) }),
+  });
   const environment = {
     ...options.environment,
     CLARVIS_HOME: identity.globalDir,

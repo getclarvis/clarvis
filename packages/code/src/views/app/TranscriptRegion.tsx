@@ -53,6 +53,7 @@ export interface TranscriptRegionLayout {
   contentInset: Accessor<number>;
   width: Accessor<number>;
   height: Accessor<number>;
+  sidebarHint?: Accessor<string>;
 }
 
 /** Props for the transcript, sidebar, splash, and elicitation shell region. */
@@ -204,6 +205,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
           workflow={props.run.workflowActivity}
           reveal={props.sidebarReveal}
           onOpenDetail={props.onOpenDetail}
+          footerHint={props.layout.sidebarHint}
+          onClose={props.layout.closeDrawer}
         />
       </Show>
       <Show
@@ -253,6 +256,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
                 workflow={props.run.workflowActivity}
                 reveal={props.sidebarReveal}
                 onOpenDetail={props.onOpenDetail}
+                footerHint={props.layout.sidebarHint}
+                onClose={props.layout.closeDrawer}
               />
             </box>
           </SurfaceOverlay>

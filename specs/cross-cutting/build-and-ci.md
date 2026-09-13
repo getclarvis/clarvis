@@ -68,7 +68,8 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint followed by `lint:tooling` | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source-policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `lint:intent` | `test:tooling`, then source-policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |

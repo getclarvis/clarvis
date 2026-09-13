@@ -294,6 +294,9 @@ bun --filter @clarvis/code start
 - Use `bun run test`, not raw root `bun test`, for the supported full suite; the root script isolates
   workspaces.
 - Do not use `mock.module()`. Process-global module mutation invalidates suite isolation.
+- Keep test determinism occurrences classified in `tooling/test-runtime/test-determinism-baseline.json`; run
+  `bun run check:test-determinism` (or `--report` during migration). New, stale, duplicate or
+  malformed rows fail the gate; listener/subprocess boundary canaries require an explicit reason.
 - Every workspace `tsconfig.json` includes its tests.
 - Every package test command keeps `--timeout 60000`. Package `bunfig.toml` files keep the shared
   preload and `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces this.

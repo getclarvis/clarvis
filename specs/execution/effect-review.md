@@ -37,9 +37,13 @@ increments revision, so an in-flight compilation or decision cannot authorize th
 
 `ExecutionRecord.operator_authority_state` is versioned transversal state, outside capability slots.
 Continuation restores active state only under identical owner, session, controller epoch and outcome
-binding. Completed checkpoints may retain active state; final completion settles it. Cancellation and
-controller retirement revoke it. Embeddings without a durable host binding use execution-local IDs.
-Recovered records lacking authority state supply no inherited grants.
+binding. A fresh authenticated operator message under that same owner, session and controller may
+carry a settled run's evidence into a newly minted outcome; it carries no prior envelope, denial or
+effect consumption, and a synthetic continuation cannot reactivate it. This provenance comes only
+from the stored authority ledger, never from `final_context`. Completed checkpoints may retain active
+state; final completion settles it. Cancellation and controller retirement revoke it. Embeddings
+without a durable host binding use execution-local IDs. Recovered records lacking authority state
+supply no inherited grants.
 The host mints an outcome ID for a new admission and preserves it only for an active continuation
 with the same session and epoch. Controller retirement uses a separate authority signal, so work
 already running in the background is not cancelled as a side effect of semantic revocation.
@@ -60,6 +64,7 @@ Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-aut
 `captures admitted operator text before skill seeds` in
 [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts),
 `keeps an admitted prompt larger than the former evidence ceiling active` in that same test, and
+the settled-conversation carry-forward cases in that same test, and
 `prepublishes one authority reader` in
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
 
@@ -163,7 +168,9 @@ ceiling as `local`: fully attested local effects only. CI retry
 also permits the tightly correlated failed-only effect. Unknown effects remain closed to the grant
 compiler. A separate call-local command reviewer may answer an ordinary shell ask whose sole fact is
 `external.unknown`; that answer applies only to the exact command and never enters the authority
-envelope. Review `on` remains human review,
+envelope. It reads evidence chronologically, allowing the newest instruction to refer to authenticated
+scope from earlier turns without treating an earlier outcome-bounded external action as renewed after
+the newest instruction changes scope. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
 Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings

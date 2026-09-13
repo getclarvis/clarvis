@@ -37,8 +37,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
-- Long accepted user prompts no longer discard authenticated operator evidence and force every
-  automatic command review through manual approval.
+- Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
+  scope for automatic command review instead of forcing manual approval through missing evidence.
 - Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
   the development runtime image, instead of reporting an invalid image id after a successful build.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.

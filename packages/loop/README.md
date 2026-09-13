@@ -556,7 +556,9 @@ validation and separate deterministic, live-provider and installed-artifact qual
 prepublishes its reader, admits steers through its private hook, and persists
 `operator_authority_state` separately from capability slots. It never reconstructs evidence from
 `final_context`. The host evidence validator reuses this package's exported request message ceilings,
-so accepted user input does not encounter a smaller authority-only text limit. See
+so accepted user input does not encounter a smaller authority-only text limit. A later host-admitted
+turn may carry settled evidence only through that separately persisted ledger; it never treats model
+context as authority. See
 [effect review](../../specs/execution/effect-review.md).
 
 The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.

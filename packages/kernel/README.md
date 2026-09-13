@@ -849,7 +849,9 @@ cannot grant authority. The [effect-review contract](../../specs/execution/effec
 owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
 ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` with the complete call
 and the same host-owned evidence. That verdict is valid only for the exact call and installs no
-descriptor, envelope grant or session permission.
+descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
+instruction can refer to the authenticated implementation scope from earlier turns, while an old
+publication instruction alone cannot authorize a changed outcome.
 Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
 LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
@@ -887,7 +889,10 @@ request. The effect reviewer reads the live revisioned ledger, and does not deri
 assistant text, child briefs, command arguments, justification or role-filtered final context. Its
 seed accepts the same message-count and character envelope as validated run input, including the
 separator overhead of extracted multipart text, so a valid long operator prompt does not silently
-disable Auto review.
+disable Auto review. When a new authenticated operator turn continues the same host controller after
+the previous run settled, the host carries its authenticated evidence into a fresh outcome without
+reviving the prior envelope, refusals or consumed effects. Synthetic continuations and controller
+changes cannot reactivate settled evidence.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
 the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when

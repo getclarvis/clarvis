@@ -4,6 +4,7 @@ import type { ExecuteRunArgs, ExecuteRunDeps } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
+import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { createRunService } from "../../src/runs/run-service.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -160,6 +161,205 @@ describe("run-service lifecycle reservation", () => {
     expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");
     expect(JSON.stringify(captured?.rawBody)).toContain("synthetic skill seed");
     await handle.closed;
+  });
+  it("keeps an admitted prompt larger than the former evidence ceiling active", async () => {
+    const prompt = "Implement the approved plan. ".repeat(800);
+    let authorityStatus: string | undefined;
+    let evidenceText: string | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        const authority = createOperatorAuthorityRuntime({
+          seed: args.operatorAuthoritySeed,
+          owner: "owner",
+          executionId: "long-authority",
+        }).reader.snapshot();
+        authorityStatus = authority.status;
+        evidenceText = authority.evidence[0]?.text;
+        return {
+          executionId: "long-authority",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "long-authority",
+      messages: [{ role: "user", content: prompt }],
+    });
+    await handle.done;
+    expect(prompt.length).toBeGreaterThan(4_096);
+    expect(authorityStatus).toBe("active");
+    expect(evidenceText).toBe(prompt);
+    await handle.closed;
+  });
+  it("carries settled conversation evidence into a fresh authenticated outcome", async () => {
+    const traceStore = createMemoryTraceStore();
+    const previous = settledRecord("implementation", []);
+    previous.operator_authority_state = {
+      version: 1,
+      binding: {
+        owner_key_name: "owner",
+        session_id: "session",
+        controller_epoch: "epoch",
+        outcome_id: "implementation-outcome",
+      },
+      revision: 2,
+      status: "settled",
+      evidence: [
+        {
+          id: "original-request",
+          source: "start",
+          text: "Fix the command reviewer for the scoped files",
+          execution_id: "implementation",
+        },
+      ],
+      consumed_effects: [],
+    };
+    await traceStore.insert(previous);
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "publication",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "publication",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Open a pull request" }],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.binding.outcome_id).not.toBe("implementation-outcome");
+    expect(captured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Fix the command reviewer for the scoped files",
+      "Open a pull request",
+    ]);
+    expect(
+      createOperatorAuthorityRuntime({
+        seed: captured?.operatorAuthoritySeed,
+        owner: "owner",
+        executionId: "publication",
+      }).reader.snapshot().status,
+    ).toBe("active");
+    await handle.closed;
+  });
+  it("does not reactivate settled evidence without fresh input or under another controller", async () => {
+    const traceStore = createMemoryTraceStore();
+    const previous = settledRecord("implementation", []);
+    previous.operator_authority_state = {
+      version: 1,
+      binding: {
+        owner_key_name: "owner",
+        session_id: "session",
+        controller_epoch: "epoch",
+      },
+      revision: 2,
+      status: "settled",
+      evidence: [
+        {
+          id: "original-request",
+          source: "start",
+          text: "Commit the prior change",
+          execution_id: "implementation",
+        },
+      ],
+      consumed_effects: [],
+    };
+    await traceStore.insert(previous);
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        captureInput: false,
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "automatic",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "automatic",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Synthetic continuation" }],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.evidence).toEqual([]);
+    await handle.closed;
+
+    let foreignCaptured: ExecuteRunArgs | undefined;
+    const foreignService = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: {
+          owner_key_name: "owner",
+          session_id: "session",
+          controller_epoch: "other-epoch",
+        },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        foreignCaptured = args;
+        return {
+          executionId: "foreign-controller",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const foreignHandle = await foreignService.start({
+      execution_id: "foreign-controller",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Open a pull request" }],
+    });
+    await foreignHandle.done;
+    expect(foreignCaptured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Open a pull request",
+    ]);
+    await foreignHandle.closed;
   });
   it.each([
     { text: "Preserve the user's confirmed database choice.", expected: "compacted" },

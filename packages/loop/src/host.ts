@@ -74,6 +74,12 @@ export type {
 export { parseModelRef } from "@clarvis/capability";
 export { resolveProvider } from "@clarvis/capability";
 export { providerConfigSchema, grantSchema } from "./validation/request-schema.ts";
+export {
+  CONTENT_PARTS_MAX,
+  MESSAGE_CONTENT_MAX_CHARS,
+  MESSAGES_MAX_ENTRIES,
+  MESSAGES_TOTAL_MAX_CHARS,
+} from "./validation/request/message-schemas.ts";
 export { BUILTIN_GRANT_NAMES } from "./validation/request/grant-registry.ts";
 export {
   profileReadinessIssues,

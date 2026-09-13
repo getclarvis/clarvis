@@ -37,6 +37,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
+  scope for automatic command review instead of forcing manual approval through missing evidence.
+- Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now
+  reach automatic effect review with repository, branch and HEAD attestation instead of stopping as
+  partial evidence before a reviewer attempt.
 - POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the
   operator environment's temporary root would make the Unix socket exceed its byte limit, preserving
   independent startup, discovery and reconnection without changing run scratch paths.

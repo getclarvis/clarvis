@@ -23,9 +23,12 @@ substrate. Automatic goal continuations retain their admitted binding but contri
 message as new evidence; a missing interactive admission supplies no seed. Later authenticated
 operator steers can still update that continuation's ledger. Public requests cannot supply this
 substrate. Missing evidence never falls back to filtering an
-assembled transcript. The limits are 32 entries, 4 KiB UTF-8 per entry and 16 KiB in aggregate.
-Overflow revokes the ledger instead of dropping restrictions. Evidence is sanitized and is not
-written to audit events.
+assembled transcript. The evidence schema shares the request message-count and
+aggregate-character ceilings from `message-schemas.ts`; its per-entry and aggregate allowances
+include only the newline separators introduced while preserving multipart text boundaries.
+Therefore every accepted user-message input can become authenticated evidence without a smaller
+authority-only cutoff. Later lifetime overflow still revokes the ledger instead of dropping
+restrictions. Evidence is sanitized and is not written to audit events.
 
 The loop creates the host runtime before capability activation and prepublishes its read-only port.
 Only the loop's private callback admits a steer taken from the root operator queue; child briefs and
@@ -34,9 +37,13 @@ increments revision, so an in-flight compilation or decision cannot authorize th
 
 `ExecutionRecord.operator_authority_state` is versioned transversal state, outside capability slots.
 Continuation restores active state only under identical owner, session, controller epoch and outcome
-binding. Completed checkpoints may retain active state; final completion settles it. Cancellation and
-controller retirement revoke it. Embeddings without a durable host binding use execution-local IDs.
-Recovered records lacking authority state supply no inherited grants.
+binding. A fresh authenticated operator message under that same owner, session and controller may
+carry a settled run's evidence into a newly minted outcome; it carries no prior envelope, denial or
+effect consumption, and a synthetic continuation cannot reactivate it. This provenance comes only
+from the stored authority ledger, never from `final_context`. Completed checkpoints may retain active
+state; final completion settles it. Cancellation and controller retirement revoke it. Embeddings
+without a durable host binding use execution-local IDs. Recovered records lacking authority state
+supply no inherited grants.
 The host mints an outcome ID for a new admission and preserves it only for an active continuation
 with the same session and epoch. Controller retirement uses a separate authority signal, so work
 already running in the background is not cancelled as a side effect of semantic revocation.
@@ -55,7 +62,9 @@ Production: `createOperatorAuthorityRuntime` in
 Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts) and
 [capability inheritance tests](../../packages/capability/tests/unit/operator-authority.test.ts),
 `captures admitted operator text before skill seeds` in
-[run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts), and
+[run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts),
+`keeps an admitted prompt larger than the former evidence ceiling active` in that same test, and
+the settled-conversation carry-forward cases in that same test, and
 `prepublishes one authority reader` in
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
 
@@ -73,13 +82,18 @@ additional redirection or command, at most 4 KiB of data, and occupy an entire d
 argument. Unquoted substitution, file-reading `cat`, an expandable heredoc, dynamic executable or
 subcommand, redirections, and unknown batch segments cannot receive partial approval.
 
-Git probes resolve repository root, current branch and HEAD. GitHub failed-only rerun probes also
-correlate the canonical origin, run ID, completed failed state, supported event, branch, SHA and open
-PR head. Probes use an injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined
-output cap. They never execute the reviewed operation. The resolver reattests shell effects before
-returning a model allow. Network, authentication, malformed output or target mismatch closes the
-attestation. Unsupported external variants retain human review; registry membership is not proof
-that every CLI spelling has a complete attestor.
+Git probes resolve repository root, current branch and HEAD. An explicit non-forced push of that
+branch to a named GitHub remote also resolves the push URL and binds its repository, destination,
+HEAD and upstream-setting intent; implicit refspecs, another source or destination, additional
+options and every force spelling retain human review. A JSON `gh pr view` observation with the
+supported metadata/check fields resolves the canonical origin and binds the requested open PR to
+the current branch and HEAD. GitHub failed-only rerun probes additionally correlate the canonical
+origin, run ID, completed failed state, supported event, branch, SHA and open PR head. Probes use an
+injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined output cap. They never
+execute the reviewed mutation. The resolver reattests shell effects before returning a model allow.
+Network, authentication, malformed output or target mismatch closes the attestation. Unsupported
+external variants retain human review; registry membership is not proof that every CLI spelling has
+a complete attestor.
 Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
 `resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
 close attestation before any query; arbitrary environment values are not copied into probes. The
@@ -159,7 +173,9 @@ ceiling as `local`: fully attested local effects only. CI retry
 also permits the tightly correlated failed-only effect. Unknown effects remain closed to the grant
 compiler. A separate call-local command reviewer may answer an ordinary shell ask whose sole fact is
 `external.unknown`; that answer applies only to the exact command and never enters the authority
-envelope. Review `on` remains human review,
+envelope. It reads evidence chronologically, allowing the newest instruction to refer to authenticated
+scope from earlier turns without treating an earlier outcome-bounded external action as renewed after
+the newest instruction changes scope. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
 Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings

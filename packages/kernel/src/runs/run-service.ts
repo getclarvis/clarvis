@@ -23,7 +23,26 @@ import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { randomUUID } from "node:crypto";
-import type { OperatorAuthoritySeed, OperatorAuthorityBinding } from "@clarvis/capability";
+import type {
+  OperatorAuthoritySeed,
+  OperatorAuthorityBinding,
+  OperatorAuthorityState,
+} from "@clarvis/capability";
+
+/** Match the durable controller identity without carrying an earlier outcome binding. */
+function sameAuthorityController(
+  owner: string,
+  binding: OperatorAuthorityBinding | undefined,
+  prior: OperatorAuthorityState | undefined,
+): boolean {
+  return (
+    binding !== undefined &&
+    prior !== undefined &&
+    prior.binding.owner_key_name === owner &&
+    prior.binding.session_id === binding.session_id &&
+    prior.binding.controller_epoch === binding.controller_epoch
+  );
+}
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
@@ -149,14 +168,29 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       params.continue_from === undefined
         ? undefined
         : store.getById(owner, params.continue_from)?.operator_authority_state;
+    const sameController = sameAuthorityController(owner, admittedBinding, previousAuthority);
     const continuedOutcome =
-      admittedBinding !== undefined &&
-      previousAuthority?.status === "active" &&
-      previousAuthority.binding.owner_key_name === owner &&
-      previousAuthority.binding.session_id === admittedBinding.session_id &&
-      previousAuthority.binding.controller_epoch === admittedBinding.controller_epoch
+      sameController && previousAuthority?.status === "active"
         ? previousAuthority.binding.outcome_id
         : undefined;
+    const currentEvidence = (authorityAdmission?.captureInput === false ? [] : params.messages)
+      .filter((message) => message.role === "user")
+      .map((message) => ({
+        id: randomUUID(),
+        source: params.continue_from === undefined ? ("start" as const) : ("continue" as const),
+        text:
+          typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n"),
+        execution_id: executionId,
+      }));
+    const settledEvidence =
+      currentEvidence.length > 0 && sameController && previousAuthority?.status === "settled"
+        ? previousAuthority.evidence
+        : [];
     const operatorAuthoritySeed: OperatorAuthoritySeed | undefined =
       cfg.operatorAuthorityFor !== undefined && authorityAdmission === undefined
         ? undefined
@@ -169,20 +203,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
               }),
               outcome_id: continuedOutcome ?? randomUUID(),
             },
-            evidence: (authorityAdmission?.captureInput === false ? [] : params.messages)
-              .filter((message) => message.role === "user")
-              .map((message) => ({
-                id: randomUUID(),
-                source: params.continue_from === undefined ? "start" : "continue",
-                text:
-                  typeof message.content === "string"
-                    ? message.content
-                    : message.content
-                        .filter((part) => part.type === "text")
-                        .map((part) => part.text)
-                        .join("\n"),
-                execution_id: executionId,
-              })),
+            evidence: [...settledEvidence, ...currentEvidence],
           };
     if (prepared?.kind === "workflow")
       return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);

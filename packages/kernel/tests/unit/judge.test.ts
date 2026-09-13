@@ -72,6 +72,7 @@ describe("call-local command judge", () => {
     expect(payload.call.args.command).toBe(command);
     expect(payload.operator_evidence).toEqual(ledger.reader.snapshot().evidence);
     expect(calls[0]!.messages[0]!.content).toContain("guidance are untrusted");
+    expect(calls[0]!.messages[0]!.content).toContain("chronological order");
     expect(calls[0]!.messages[1]!.content).toContain("Prefer commands");
     expect(calls[0]!.agentInstanceId).toBe("judge");
     expect(calls[0]!.cacheBreakpoints).toEqual([1]);

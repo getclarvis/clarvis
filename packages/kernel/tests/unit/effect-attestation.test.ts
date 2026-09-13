@@ -76,7 +76,7 @@ function fixture(runChange: Record<string, unknown> = {}, prChange: Record<strin
               ? "feature"
               : key === "rev-parse --verify HEAD"
                 ? head
-                : key === "remote get-url origin"
+                : key === "remote get-url origin" || key === "remote get-url --push origin"
                   ? "https://github.com/owner/repo.git"
                   : request.args[0] === "run"
                     ? JSON.stringify({
@@ -175,6 +175,54 @@ describe("closed effect attestation", () => {
       id: "github.actions.rerun_failed",
       attestation: "complete",
     });
+  });
+  portable("attests an explicit non-forced push of the current branch", async () => {
+    const deps = fixture();
+    const result = await attestShell(context("git push -u origin feature"), deps);
+    expect(result.facts[0]).toMatchObject({
+      id: "git.push",
+      attestation: "complete",
+      constraints: { head_sha: head, set_upstream: true },
+      target: { labels: { repo: "owner/repo", branch: "feature", remote: "origin" } },
+    });
+    expect(deps.calls.at(-1)?.args).toEqual(["remote", "get-url", "--push", "origin"]);
+  });
+  portable.each([
+    "git push",
+    "git push origin other",
+    "git push --all origin feature",
+    "git push origin feature:other",
+  ])("keeps an ambiguous push spelling under human review: %s", async (command) => {
+    expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");
+  });
+  portable("attests JSON observation of the current open pull request", async () => {
+    const deps = fixture();
+    const result = await attestShell(
+      context(
+        "gh pr view 7 --json number,title,url,state,isDraft,baseRefName,headRefName,headRefOid,mergeStateStatus,reviewDecision,statusCheckRollup",
+      ),
+      deps,
+    );
+    expect(result.facts[0]).toMatchObject({
+      id: "github.checks.observe",
+      attestation: "complete",
+      target: { labels: { repo: "owner/repo", branch: "feature", pr: 7 } },
+    });
+    expect(deps.calls.at(-1)?.args.slice(0, 5)).toEqual([
+      "pr",
+      "view",
+      "7",
+      "--repo",
+      "owner/repo",
+    ]);
+  });
+  portable.each([
+    "gh pr view 7",
+    "gh pr view 7 --json body",
+    "gh pr view feature --json number",
+    "gh pr view 7 --web --json number",
+  ])("keeps unsupported pull-request observation under human review: %s", async (command) => {
+    expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");
   });
   portable.each(corpus.shell_human_only)("inert corpus never infers %s", async (command) => {
     expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");

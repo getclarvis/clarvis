@@ -2,9 +2,14 @@ import { z } from "zod";
 
 const CONTENT_MAX_CHARS = 1_000_000;
 const IMAGE_MAX_CHARS = 10_000_000;
-const CONTENT_PARTS_MAX = 100;
-const MESSAGE_CONTENT_MAX_CHARS = 16_000_000;
-const MESSAGES_TOTAL_MAX_CHARS = 16_000_000;
+/** Maximum number of typed parts accepted in one request message. */
+export const CONTENT_PARTS_MAX = 100;
+/** Maximum aggregate payload characters accepted in one request message. */
+export const MESSAGE_CONTENT_MAX_CHARS = 16_000_000;
+/** Maximum number of messages accepted in one request. */
+export const MESSAGES_MAX_ENTRIES = 10_000;
+/** Maximum aggregate payload characters accepted across one request. */
+export const MESSAGES_TOTAL_MAX_CHARS = 16_000_000;
 
 /** Count request payload characters without serializing or copying the body. */
 function contentChars(
@@ -100,7 +105,7 @@ export const messageSchema = z
 export const messagesField = z
   .array(messageSchema, { error: "messages must be a non-empty array" })
   .min(1, "messages must be a non-empty array")
-  .max(10_000, "messages must contain at most 10000 entries")
+  .max(MESSAGES_MAX_ENTRIES, `messages must contain at most ${MESSAGES_MAX_ENTRIES} entries`)
   .superRefine((messages, ctx) => {
     let total = 0;
     for (const message of messages) {

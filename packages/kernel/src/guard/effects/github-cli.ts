@@ -1,14 +1,16 @@
 import type { EffectAttestorDeps, GuardEffectFact } from "./types.ts";
 import { query } from "./query.ts";
-import { repository } from "./git.ts";
+import { githubRemote, repository } from "./git.ts";
 import { effectDigest, effectFact } from "./facts.ts";
 
-/** Correlate a failed-only rerun with the current repository, branch, HEAD and open PR. */
-export async function githubRerun(
+/** Attest the closed set of supported GitHub CLI observations and mutations. */
+export async function githubCommand(
   deps: EffectAttestorDeps,
   cwd: string,
   argv: string[],
 ): Promise<GuardEffectFact> {
+  if (argv[0] === "gh" && argv[1] === "pr" && argv[2] === "view")
+    return githubPullRequestView(deps, cwd, argv);
   if (argv[0] !== "gh" || argv[1] !== "run" || argv[2] !== "rerun") {
     const id =
       argv[1] === "pr" && ["create", "edit"].includes(argv[2] ?? "")
@@ -42,13 +44,9 @@ export async function githubRerun(
     return effectFact(deps, "github.actions.rerun_failed");
   }
   const git = await repository(deps, cwd);
-  const remote = await query(deps, cwd, "git", ["remote", "get-url", "origin"]);
-  const match =
-    /^(?:https:\/\/github\.com\/|git@github\.com:)([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/.exec(
-      remote,
-    );
-  repo ??= match?.[1];
-  if (repo === undefined || match?.[1]?.toLowerCase() !== repo.toLowerCase())
+  const origin = await githubRemote(deps, cwd);
+  repo ??= origin;
+  if (repo === undefined || origin !== repo.toLowerCase())
     return effectFact(deps, "github.actions.rerun_failed");
   const run = JSON.parse(
     await query(deps, cwd, "gh", [
@@ -98,6 +96,82 @@ export async function githubRerun(
       labels: { repo: repo.toLowerCase(), branch: git.branch, pr: Number(pr.number) },
     },
     { failed_only: true, attempts: 1, head_sha: git.head, run_id: id },
+    true,
+  );
+}
+
+const PULL_REQUEST_FIELDS = new Set([
+  "baseRefName",
+  "headRefName",
+  "headRefOid",
+  "isDraft",
+  "mergeStateStatus",
+  "number",
+  "reviewDecision",
+  "state",
+  "statusCheckRollup",
+  "title",
+  "url",
+]);
+
+async function githubPullRequestView(
+  deps: EffectAttestorDeps,
+  cwd: string,
+  argv: string[],
+): Promise<GuardEffectFact> {
+  let id: string | undefined;
+  let repo: string | undefined;
+  let fields: string | undefined;
+  for (let at = 3; at < argv.length; at++) {
+    const value = argv[at] ?? "";
+    if (/^[1-9][0-9]*$/.test(value) && id === undefined) id = value;
+    else if (value === "--repo" && repo === undefined) repo = argv[++at];
+    else if (value === "--json" && fields === undefined) fields = argv[++at];
+    else return effectFact(deps, "github.checks.observe");
+  }
+  const requestedFields = fields?.split(",") ?? [];
+  const number = Number(id);
+  if (
+    id === undefined ||
+    !Number.isSafeInteger(number) ||
+    requestedFields.length === 0 ||
+    requestedFields.some((field) => !PULL_REQUEST_FIELDS.has(field)) ||
+    (repo !== undefined && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))
+  )
+    return effectFact(deps, "github.checks.observe");
+  const git = await repository(deps, cwd);
+  const origin = await githubRemote(deps, cwd);
+  repo ??= origin;
+  if (repo === undefined || origin !== repo.toLowerCase())
+    return effectFact(deps, "github.checks.observe");
+  const pr = JSON.parse(
+    await query(deps, cwd, "gh", [
+      "pr",
+      "view",
+      id,
+      "--repo",
+      repo,
+      "--json",
+      [...PULL_REQUEST_FIELDS].join(","),
+    ]),
+  ) as Record<string, unknown>;
+  if (
+    String(pr.number) !== id ||
+    pr.headRefName !== git.branch ||
+    pr.headRefOid !== git.head ||
+    pr.state !== "OPEN"
+  )
+    return effectFact(deps, "github.checks.observe");
+  return effectFact(
+    deps,
+    "github.checks.observe",
+    {
+      kind: "pull_request",
+      digest: effectDigest(repo, id),
+      state_digest: effectDigest(git.head),
+      labels: { repo, branch: git.branch, pr: number },
+    },
+    {},
     true,
   );
 }

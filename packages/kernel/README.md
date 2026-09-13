@@ -849,7 +849,9 @@ cannot grant authority. The [effect-review contract](../../specs/execution/effec
 owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
 ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` with the complete call
 and the same host-owned evidence. That verdict is valid only for the exact call and installs no
-descriptor, envelope grant or session permission.
+descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
+instruction can refer to the authenticated implementation scope from earlier turns, while an old
+publication instruction alone cannot authorize a changed outcome.
 Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
 LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
@@ -866,8 +868,11 @@ contained-or-fail-closed, including legacy optional availability; Docker/Podman 
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
 Complete effect attestations refine syntactic opacity into mechanically covered effects after
-deterministic denials. Other ordinary Host/Sandbox asks and allow-list misses can use the call-local
-argv reviewer in Auto, including options, wrappers, dynamic arguments and environment prefixes.
+deterministic denials. This includes an explicit non-forced push of the checked-out branch to a
+resolved GitHub remote and bounded JSON inspection of its current open pull request; ambiguous
+refspecs, force variants and unsupported observation fields remain closed. Other ordinary
+Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
+options, wrappers, dynamic arguments and environment prefixes.
 Review `on`, credential-file asks, forced `rm` and `sudo` remain human decisions. A nonempty deny
 list rejects undecidable commands before any reviewer. No unmatched contained silent-allow rule is
 installed.
@@ -884,7 +889,13 @@ retain ordinary matching. Paths still participate in denial.
 
 Operator evidence is captured before synthetic message assembly and transported outside the public
 request. The effect reviewer reads the live revisioned ledger, and does not derive grants from
-assistant text, child briefs, command arguments, justification or role-filtered final context.
+assistant text, child briefs, command arguments, justification or role-filtered final context. Its
+seed accepts the same message-count and character envelope as validated run input, including the
+separator overhead of extracted multipart text, so a valid long operator prompt does not silently
+disable Auto review. When a new authenticated operator turn continues the same host controller after
+the previous run settled, the host carries its authenticated evidence into a fresh outcome without
+reviving the prior envelope, refusals or consumed effects. Synthetic continuations and controller
+changes cannot reactivate settled evidence.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
 the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when

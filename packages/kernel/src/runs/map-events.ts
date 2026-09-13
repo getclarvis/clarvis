@@ -388,6 +388,7 @@ export function capabilityEventToProto(
  */
 export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER): RunEvent | null {
   if (isWorkflowPersistedTraceEvent(ev)) return workflowEventToProto(ev);
+  if (ev.type === "guard_reviewer_model_call") return null;
   if (!isBuiltinTraceEvent(ev)) {
     reportUnmapped(logger, "engine", String(ev.type), undefined, "not_builtin");
     return null;

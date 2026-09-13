@@ -1,6 +1,7 @@
 import {
   NOOP_LOGGER,
   OPERATOR_AUTHORITY_PORT,
+  RUN_TRACE_PORT,
   type RunCapabilityContext,
   type EffectReviewConfig,
 } from "@clarvis/capability";
@@ -290,6 +291,7 @@ function createGuardRuntimeResolver(
         settings.defaultModel ??
         (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
       authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
+      trace: ctx.services?.get(RUN_TRACE_PORT),
       registry,
       audit,
       signal: ctx.signal,
@@ -443,6 +445,7 @@ function createGuardRuntimeResolver(
                 settings.defaultModel ??
                 (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
               authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
+              trace: ctx.services?.get(RUN_TRACE_PORT),
               logger: deps.logger ?? ctx.logger,
               signal: ctx.signal,
             },

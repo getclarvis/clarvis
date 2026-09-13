@@ -8,10 +8,15 @@ import {
 import type { RunRequest } from "../../src/api.ts";
 import { TOOL_EFFECT_PORT } from "../../src/tool-effect.ts";
 import { TASK_TRACKING_PORT } from "../../src/task-tracking-port.ts";
+import { RUN_TRACE_PORT } from "../../src/run-trace-port.ts";
 import { partialStructOf } from "../../src/agent-result.ts";
 import { projected, type CapabilityEvent } from "../../src/contract.ts";
 
 describe("createCapabilityServices", () => {
+  it("publishes the run trace under one canonical owner-neutral key", () => {
+    expect(RUN_TRACE_PORT.id).toBe("loop.run_trace");
+  });
+
   it("returns undefined for a key nobody provided, so a consumer reads that as the feature being off", () => {
     const services = createCapabilityServices();
     const key = portKey<{ ping(): string }>("nonexistent.port");

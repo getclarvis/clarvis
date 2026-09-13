@@ -206,6 +206,31 @@ failure are distinct receipts. Cancellation is enforced even if a provider ignor
 Audit fields contain counts, timing, model identity, effect IDs and digests, never raw command,
 justification, operator evidence, reviewer prompt or probe output.
 
+Every logical provider call made by the call-local judge or the effect reviewer records exactly one
+kernel-owned contributed trace event named `guard_reviewer_model_call`. The flat persisted event
+distinguishes `call_local` from `effect_review`, `command_guard` from `configure_clarvis`, and
+`compile` from `decide`; it totals the successful attempt with `retriedUsage`, uses
+`ProviderError.accumulatedUsage` on failure, and leaves `cache_read_ratio` absent whenever cache
+accounting is incomplete. Cancellation wins once even when the provider settles later. An internal
+verdict or receipt cache hit produces no event because it made no provider call. Production:
+`callReviewerWithTrace` and `guardReviewerModelCallProjector` in
+[reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts), plus `createJudgeElicit` and
+`createEffectReviewService`. Test:
+[reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts),
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+
+The event records no prompt, messages, tools, commands, arguments, operator evidence, model response,
+reasoning, justification or opaque provider metadata. Instrumentation observes the existing
+`LLMCallParams` and result without changing provider messages or `final_context`; it does not call a
+`ContextPort` method. It remains outside protocol, UI, current run totals, budgets and
+`RunResponse.usage`. Production: `callReviewerWithTrace` and `engineEventToProto` in
+[map-events.ts](../../packages/kernel/src/runs/map-events.ts). Test:
+[reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts),
+[observability.test.ts](../../packages/kernel/tests/unit/observability.test.ts), and
+[execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts), "keeps contributed
+trace accounting out of provider messages and final_context".
+
 Production: [reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts),
 [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
 [effect-review-settings.ts](../../packages/loop/src/runtime/capabilities/effect-review-settings.ts),

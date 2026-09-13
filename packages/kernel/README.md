@@ -859,6 +859,12 @@ LLM provider. The shared prompt-cache decorator therefore retains the authentica
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
 Explicit breakpoints end at stable reviewer policy/guidance; operator evidence and call facts remain
 after that boundary.
+Each real call-local or effect-review provider invocation also records one kernel-owned
+`guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
+retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
+complete. Verdict memoization emits nothing. The persisted event contains identity, timing, status,
+attempts, token counters and bounded authority/effect identifiers only; it is deliberately dropped
+before protocol projection and never enters run usage totals or context.
 Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
 matches and explicit Host escalation retain their precedence. Shell attestation recaptures process
 lookup/configuration roots from the actual spawn and refuses unmatched execution-affecting

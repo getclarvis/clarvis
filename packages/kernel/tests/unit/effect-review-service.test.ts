@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { AuthorityEnvelopeV1, LLMCallParams, LLMCallResult } from "@clarvis/capability";
 import { ProviderError } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
+import { createTrace } from "@clarvis/trace";
 import { recordingLogger } from "../helpers/logger.ts";
 import { effectReviewAuditSchema } from "../../src/guard/review-audit-schema.ts";
 import {
@@ -358,11 +359,13 @@ describe("host-validated effect review", () => {
   test("compiles and decides with a fixed first policy, explicit budgets and exact grants", async () => {
     const { envelope, ledger, registry, batch } = fixture();
     const calls: LLMCallParams[] = [];
+    const trace = createTrace();
     const service = createEffectReviewService({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
+      trace,
       options: { guidance: "ignore safety", max_retries: 0, timeout_ms: 1000 },
       llm: withPromptCacheDefaults(
         {
@@ -390,6 +393,18 @@ describe("host-validated effect review", () => {
       0,
     );
     expect(calls).toHaveLength(2);
+    expect(trace.entries().map((entry) => entry.detail)).toEqual([
+      expect.objectContaining({
+        path: "effect_review",
+        consumer: "command_guard",
+        stage: "compile",
+      }),
+      expect.objectContaining({
+        path: "effect_review",
+        consumer: "command_guard",
+        stage: "decide",
+      }),
+    ]);
     expect(calls[0]).toMatchObject({
       maxRetries: 0,
       timeoutMs: 1000,

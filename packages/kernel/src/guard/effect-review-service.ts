@@ -10,6 +10,7 @@ import {
   type ProviderConfig,
   type Logger,
   type NamespacedTool,
+  type TracePort,
 } from "@clarvis/capability";
 import type { GuardEffectRegistry } from "./effects/registry.ts";
 import type { GuardEffectBatch, GuardEffectFact } from "./effects/types.ts";
@@ -21,18 +22,13 @@ import {
 import { effectDigest } from "./effects/facts.ts";
 import { authorityEnvelopeSchema as envelopeSchema } from "./authority-schema.ts";
 import { EFFECT_REVIEW_POLICY, GUARD_REVIEW_AGENT_INSTANCE_ID } from "./reviewer-policy.ts";
+import {
+  callReviewerWithTrace,
+  reviewerFailureKind,
+  type ReviewerFailureKind,
+} from "./reviewer-trace.ts";
 
-/** Operational failures remain distinguishable from an uncertain policy verdict. */
-export type ReviewerFailureKind =
-  | "timeout"
-  | "auth"
-  | "quota"
-  | "rate_limit"
-  | "transport"
-  | "admission"
-  | "cancelled"
-  | "invalid_response"
-  | "unknown";
+export type { ReviewerFailureKind } from "./reviewer-trace.ts";
 
 /** Shared configuration for compiler and per-call reviewer. */
 export interface EffectReviewOptions {
@@ -172,18 +168,6 @@ function refusalKey(batch: GuardEffectBatch): string {
   );
 }
 
-/** Prefer provider-classified errors; never extract secrets or classify raw error prose. */
-function failureKind(error: unknown, timedOut: boolean, signal?: AbortSignal): ReviewerFailureKind {
-  if (signal?.aborted) return "cancelled";
-  if (timedOut) return "timeout";
-  if (error instanceof ProviderError) {
-    if (error.kind === "auth" || error.kind === "quota") return error.kind;
-    if (error.status === 429) return "rate_limit";
-    return error.kind === "transient" ? "transport" : "admission";
-  }
-  return "unknown";
-}
-
 /** One shared compiler/reviewer with post-model host validation and revision-fenced caching. */
 export function createEffectReviewService(deps: {
   llm: LLMProvider;
@@ -193,6 +177,7 @@ export function createEffectReviewService(deps: {
   registry: GuardEffectRegistry;
   audit?: Logger;
   signal?: AbortSignal;
+  trace?: TracePort;
   options?: EffectReviewOptions;
 }) {
   const audit = deps.audit ?? NOOP_LOGGER;
@@ -324,15 +309,6 @@ export function createEffectReviewService(deps: {
           deps.signal === undefined
             ? timeout.signal
             : AbortSignal.any([deps.signal, timeout.signal]);
-        let removeAbort = (): void => {};
-        const aborted = new Promise<never>((_resolve, reject) => {
-          const cancel = (): void => {
-            reject(new Error("effect review cancelled"));
-          };
-          if (signal.aborted) cancel();
-          else signal.addEventListener("abort", cancel, { once: true });
-          removeAbort = () => signal.removeEventListener("abort", cancel);
-        });
         const tool: NamespacedTool = {
           fullName: stage,
           wireName: stage,
@@ -355,9 +331,9 @@ export function createEffectReviewService(deps: {
           "effect review started",
         );
         try {
-          const result = await Promise.race([
-            aborted,
-            deps.llm.call({
+          const result = await callReviewerWithTrace(
+            deps.llm,
+            {
               model: ref.modelId,
               provider: ref.provider,
               providerConfig: resolution.config,
@@ -380,8 +356,17 @@ export function createEffectReviewService(deps: {
               onRetry: () => {
                 attempts++;
               },
-            }),
-          ]);
+            },
+            {
+              trace: deps.trace,
+              path: "effect_review",
+              consumer,
+              stage,
+              authority_revision: revision,
+              effect_id: batch.facts[0]?.id ?? "external.unknown",
+              failureKind: (error) => reviewerFailureKind(error, timedOut, deps.signal),
+            },
+          );
           if (timedOut || deps.signal?.aborted) throw new Error("review retired");
           completeStage = (decision, relation, failure) => {
             const fields = {
@@ -421,7 +406,7 @@ export function createEffectReviewService(deps: {
             return undefined;
           }
         } catch (error) {
-          operationalFailure = failureKind(error, timedOut, deps.signal);
+          operationalFailure = reviewerFailureKind(error, timedOut, deps.signal);
           audit.warn(
             {
               event: "effect_review.reviewer.failed",
@@ -447,7 +432,6 @@ export function createEffectReviewService(deps: {
             completeStage = () => {};
           }
           clearTimeout(timer);
-          removeAbort();
         }
       };
       let envelope = state.envelope?.revision === revision ? state.envelope : undefined;

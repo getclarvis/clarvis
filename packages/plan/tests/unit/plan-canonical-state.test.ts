@@ -4,6 +4,8 @@ import {
   planCasHeader,
   planSpecBlock,
 } from "../../src/capability/canonical-state.ts";
+import { MAX_PLAN_TASKS, MAX_PLAN_TITLE_CHARS } from "../../src/limits.ts";
+import { planDocumentSchema, type PlanTaskStatus } from "../../src/schemas.ts";
 import { PlanSession } from "../../src/capability/session.ts";
 import { createPlanStore } from "../../src/index.ts";
 import { createInMemoryPlanRepository } from "../../src/testing.ts";
@@ -26,6 +28,19 @@ async function planned(taskCount = 2): Promise<PlanSession> {
   return session;
 }
 
+const OPERATIONAL_GUIDANCE =
+  "Keep the plan current. Mark direct work in_progress first. After delegate_task, verify the task's published status. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
+
+function withStatuses(
+  document: NonNullable<ReturnType<PlanSession["cached"]>>,
+  statuses: readonly PlanTaskStatus[],
+) {
+  return {
+    ...document,
+    tasks: document.tasks.map((task, index) => ({ ...task, status: statuses[index]! })),
+  };
+}
+
 describe("plan canonical state", () => {
   test("carries the compare-and-swap triple the mutating tools demand", async () => {
     const session = await planned();
@@ -36,66 +51,120 @@ describe("plan canonical state", () => {
     expect(body).toContain(`expected_digest: ${document.digest}`);
     expect(body).toContain(`expected_spec_digest: ${document.spec_digest}`);
     expect(body).toContain(`Plan file: ${document.path}`);
+    expect(body).toContain("Plan name: Anchor");
   });
 
-  test("names the open tasks with their status, and says so when none are left", async () => {
-    const session = await planned();
-    expect(planCanonicalState(session.cached()!, false)).toContain(
-      "Open tasks: t1 (pending), t2 (pending)",
-    );
-
-    await session.transitionCurrent({ taskId: "t1", status: "done", result: "did it" });
-    await session.transitionCurrent({ taskId: "t2", status: "abandoned", reason: "not needed" });
-    expect(planCanonicalState(session.cached()!, false)).toContain("Open tasks: none");
-  });
-
-  test("renders no active task without implicitly selecting a pending task", async () => {
-    const session = await planned();
-
-    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
-  });
-
-  test("renders no active task for a plan with no tasks", async () => {
+  test("renders all three empty categories", async () => {
     const session = await planned(0);
     const header = planCasHeader(session.cached()!, false);
 
-    expect(header).toContain("Active task: none.");
-    expect(header).toContain("Task status: (no tasks yet)");
+    expect(header).toContain("Tasks requiring attention: none.");
+    expect(header).toContain("Pending tasks: none.");
+    expect(header).toContain("Closed tasks: none.");
   });
 
-  test("renders one in-progress task and removes it once it closes", async () => {
-    const session = await planned();
-    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
-
-    expect(planCasHeader(session.cached()!, false)).toContain(
-      "Active task: t1 (in_progress). Record its outcome with transition_plan_task when its exit criterion is satisfied.",
-    );
-
-    await session.transitionCurrent({ taskId: "t1", status: "done", result: "did it" });
-    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
-  });
-
-  test("renders multiple active tasks in document order", async () => {
-    const session = await planned();
-    await session.transitionCurrent({ taskId: "t2", status: "in_progress" });
-    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
-
-    expect(planCasHeader(session.cached()!, false)).toContain(
-      "Active tasks: t1, t2 (in_progress). Record each outcome with transition_plan_task when its exit criterion is satisfied.",
-    );
-  });
-
-  test("does not classify returned, failed, done, or abandoned tasks as active", async () => {
+  test("classifies the normative five-task example without duplication", async () => {
     const session = await planned(5);
-    await session.transitionCurrent({ taskId: "t1", status: "in_progress" });
-    await session.transitionCurrent({ taskId: "t1", status: "returned", result: "review it" });
-    await session.transitionCurrent({ taskId: "t2", status: "in_progress" });
-    await session.transitionCurrent({ taskId: "t2", status: "failed", error: "try again" });
-    await session.transitionCurrent({ taskId: "t3", status: "in_progress" });
-    await session.transitionCurrent({ taskId: "t3", status: "done", result: "did it" });
-    await session.transitionCurrent({ taskId: "t4", status: "abandoned", reason: "not needed" });
+    const document = withStatuses(session.cached()!, [
+      "done",
+      "done",
+      "pending",
+      "in_progress",
+      "returned",
+    ]);
+    const header = planCasHeader(document, false);
 
-    expect(planCasHeader(session.cached()!, false)).toContain("Active task: none.");
+    expect(header).toContain("Tasks requiring attention: t4 (in_progress), t5 (returned)");
+    expect(header).toContain("Pending tasks: t3 (pending)");
+    expect(header).toContain("Closed tasks: t1 (done), t2 (done)");
+    for (const task of document.tasks)
+      expect(header.match(new RegExp(`${task.id} \\(`, "g"))).toHaveLength(1);
+  });
+
+  test("classifies every status exactly once while preserving document order", async () => {
+    const session = await planned(6);
+    const document = withStatuses(session.cached()!, [
+      "failed",
+      "pending",
+      "returned",
+      "abandoned",
+      "in_progress",
+      "done",
+    ]);
+    const header = planCasHeader(document, false);
+
+    expect(header).toContain(
+      "Tasks requiring attention: t1 (failed), t3 (returned), t5 (in_progress)",
+    );
+    expect(header).toContain("Pending tasks: t2 (pending)");
+    expect(header).toContain("Closed tasks: t4 (abandoned), t6 (done)");
+  });
+
+  test("category lines contain only task ids and statuses", async () => {
+    const session = await planned();
+    const document = {
+      ...withStatuses(session.cached()!, ["returned", "failed"]),
+      tasks: withStatuses(session.cached()!, ["returned", "failed"]).tasks.map((task, index) => ({
+        ...task,
+        title: `SECRET TITLE ${index}`,
+        detail: "SECRET DETAIL",
+        exit: "SECRET EXIT",
+        result: "SECRET RESULT",
+      })),
+    };
+    const categoryLines = planCasHeader(document, false)
+      .split("\n")
+      .filter((line) => /^(Tasks requiring attention|Pending tasks|Closed tasks):/.test(line));
+
+    expect(categoryLines).toEqual([
+      "Tasks requiring attention: t1 (returned), t2 (failed)",
+      "Pending tasks: none.",
+      "Closed tasks: none.",
+    ]);
+    expect(categoryLines.join("\n")).not.toContain("SECRET");
+  });
+
+  test("projects the plan name onto one bounded line without mutating the document", async () => {
+    const session = await planned();
+    const document = { ...session.cached()!, title: `${"😀".repeat(260)}\r\nsecond line` };
+    const original = document.title;
+    const nameLine = planCasHeader(document, false).split("\n")[1]!;
+
+    expect(Array.from(nameLine.slice("Plan name: ".length))).toHaveLength(256);
+    expect(nameLine).not.toContain("\r");
+    expect(nameLine).not.toContain("\n");
+    expect(document.title).toBe(original);
+  });
+
+  test("keeps the invariant operational guidance within 240 Unicode characters", async () => {
+    const session = await planned();
+    const header = planCasHeader(session.cached()!, false);
+
+    expect(header.split("\n").at(-1)).toBe(OPERATIONAL_GUIDANCE);
+    expect(Array.from(OPERATIONAL_GUIDANCE).length).toBeLessThanOrEqual(240);
+    expect(OPERATIONAL_GUIDANCE).toContain("Mark direct work in_progress first");
+    expect(OPERATIONAL_GUIDANCE).toContain(
+      "After delegate_task, verify the task's published status",
+    );
+    expect(OPERATIONAL_GUIDANCE).not.toContain("Call delegate_task");
+    expect(OPERATIONAL_GUIDANCE).toContain("transition_plan_task");
+  });
+
+  test("the largest valid compact header fits without omitting any task", async () => {
+    const session = await planned(MAX_PLAN_TASKS);
+    const base = session.cached()!;
+    const document = planDocumentSchema.parse({
+      ...base,
+      title: "x".repeat(MAX_PLAN_TITLE_CHARS),
+      tasks: base.tasks.map((task, index) => ({
+        ...task,
+        id: `t${String(index + 1).padEnd(31, "0")}`,
+      })),
+    });
+    const header = planCasHeader(document, false);
+
+    expect(Array.from(header).length).toBeLessThanOrEqual(32_768);
+    for (const task of document.tasks) expect(header).toContain(`${task.id} (${task.status})`);
   });
 
   test("embeds the whole document so the model reads the real Markdown", async () => {
@@ -182,13 +251,12 @@ describe("plan canonical state", () => {
       const header = planCasHeader(document, false);
 
       expect(header).toContain(`expected_spec_digest: ${document.spec_digest}`);
-      expect(header).toContain("Task status: t1 (done), t2 (pending)");
-      expect(header).toContain("Open tasks: t2 (pending)");
-      expect(header).toContain("Active task: none.");
+      expect(header).toContain("Tasks requiring attention: none.");
+      expect(header).toContain("Pending tasks: t2 (pending)");
+      expect(header).toContain("Closed tasks: t1 (done)");
       expect(header).not.toContain("## Objective");
       expect(header).not.toContain("- [x] (t1)");
-      // It is re-sent uncached every iteration, so its size is the running cost.
-      expect(header.length).toBeLessThan(1000);
+      expect(Array.from(header).length).toBeLessThanOrEqual(32_768);
     });
 
     /** The compaction anchor must keep the whole document, unlike the tail. */

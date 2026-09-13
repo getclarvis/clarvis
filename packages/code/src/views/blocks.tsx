@@ -295,6 +295,16 @@ function ToolLine(props: {
     }
     return firstErrorLine(error);
   };
+  const inlineExitSummary = (): string => {
+    if (
+      !isCollapsed() ||
+      toolIdentity(props.node.mcpName, props.node.toolName) !== "shell" ||
+      (props.node.status !== "error" && props.node.warn !== true)
+    )
+      return "";
+    const shell = parseBash(display().result, display().error ?? "No authoritative result");
+    return shell.exitCode === null ? "" : `exit ${shell.exitCode}`;
+  };
   const diffChip = createMemo<DiffStats | null>(() =>
     isCollapsed() && props.node.status !== "error" ? (trueMutationStats(props.node) ?? null) : null,
   );
@@ -383,6 +393,10 @@ function ToolLine(props: {
             <Show when={hiddenLines() > 0}>
               <span style={{ fg: tokens.muted }}>{`  ${moreChip(hiddenLines())}`}</span>
             </Show>
+            <Show when={inlineExitSummary().length > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span style={{ fg: tokens.del }}>{inlineExitSummary()}</span>
+            </Show>
             <Show when={guardLabel().length > 0}>
               <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
               <span
@@ -411,7 +425,7 @@ function ToolLine(props: {
           </text>
         </Show>
       </box>
-      <Show when={hasDiagnostic()}>
+      <Show when={hasDiagnostic() && inlineExitSummary().length === 0}>
         <box paddingLeft={props.indent ? 6 : 4} paddingRight={1}>
           <text fg={tokens.del} wrapMode="none" truncate selectable={false}>
             {failureSummary()}

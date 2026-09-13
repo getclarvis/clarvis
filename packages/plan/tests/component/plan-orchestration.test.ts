@@ -965,20 +965,42 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     expect(canonical[0]).toContain("expected_spec_digest");
   });
 
-  it("republishes active work on the next iteration without rewriting the prior header", async () => {
+  it("republishes pending, active, returned, and closed work without rewriting prior headers", async () => {
     const { ctx, canonical } = recordingCtx();
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
-    await createPlan(orch);
+    await createPlan(orch, {
+      title: "Publication lifecycle",
+      objective: "Keep every publication current",
+      tasks: Array.from({ length: 5 }, (_, index) => ({ title: `Task ${index + 1}` })),
+      validation: [],
+    });
 
     await orch.contribution.hooks!.beforeIteration!();
     const first = canonical[0]!;
-    expect(first).toContain("Active task: none.");
+    expect(first).toContain(
+      "Pending tasks: t1 (pending), t2 (pending), t3 (pending), t4 (pending), t5 (pending)",
+    );
 
     await transitionTaskTo(orch, "t1", { status: "in_progress" });
     await orch.contribution.hooks!.beforeIteration!();
-
-    expect(canonical).toHaveLength(2);
-    expect(canonical[1]).toContain("Active task: t1 (in_progress).");
+    const second = canonical[1]!;
+    expect(second).toContain("Tasks requiring attention: t1 (in_progress)");
+    expect(second).not.toContain("Task 1");
     expect(canonical[0]).toBe(first);
+
+    expect(await orch.port.markReturned?.("t1", "complete child summary")).toBeTrue();
+    await orch.contribution.hooks!.beforeIteration!();
+    const third = canonical[2]!;
+    expect(third).toContain("Tasks requiring attention: t1 (returned)");
+    expect(third).not.toContain("Closed tasks: t1");
+    expect(third).not.toContain("complete child summary");
+
+    await transitionTaskTo(orch, "t1", { status: "done", result: "reviewed" });
+    await orch.contribution.hooks!.beforeIteration!();
+    expect(canonical).toHaveLength(4);
+    expect(canonical[3]).toContain("Closed tasks: t1 (done)");
+    expect(canonical[0]).toBe(first);
+    expect(canonical[1]).toBe(second);
+    expect(canonical[2]).toBe(third);
   });
 });

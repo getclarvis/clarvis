@@ -106,6 +106,7 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
+  "activity.toggle": [{ key: "ctrl+l" }],
   "isolation.picker": [
     { key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] },
     { key: "ctrl+s" },
@@ -136,6 +137,7 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
 export const DEFAULT_WHEN: Record<string, string> = {
   "focus.next": "overlay==none",
   "agent.picker": "overlay==none",
+  "activity.toggle": "overlay==none",
   "isolation.picker": "overlay==none",
   "review.picker": "overlay==none",
   "controls.open": "overlay==none",

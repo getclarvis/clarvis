@@ -22,6 +22,7 @@ import type { ToolDef } from "./types.ts";
  * returns a human-readable summary noting when an existing file was overwritten.
  */
 export const move: ToolDef = {
+  atomicMutation: true,
   name: "move",
   description:
     "Move or rename ONE file (atomic). Operates on regular files only — a directory source is " +
@@ -111,14 +112,19 @@ export const move: ToolDef = {
         );
       }
 
-      try {
-        await fs.mkdir(path.dirname(absDst), { recursive: true });
-        await renameWithRetry(absSrc, absDst);
-      } catch (err) {
-        throw fsError(err as NodeJS.ErrnoException, dstRel);
-      }
-      await fsyncDir(path.dirname(absSrc));
-      await fsyncDir(path.dirname(absDst));
+      const commit = async (): Promise<void> => {
+        try {
+          await fs.mkdir(path.dirname(absDst), { recursive: true });
+          await renameWithRetry(absSrc, absDst);
+        } catch (err) {
+          throw fsError(err as NodeJS.ErrnoException, dstRel);
+        }
+        await fsyncDir(path.dirname(absSrc));
+        await fsyncDir(path.dirname(absDst));
+      };
+      if (config.reviewMutation !== undefined)
+        await config.reviewMutation([{ type: "rename", path: absDst, from: absSrc }], commit);
+      else await commit();
 
       const from = displayPath(absSrc, config.workspaceRoot);
       const to = displayPath(absDst, config.workspaceRoot);

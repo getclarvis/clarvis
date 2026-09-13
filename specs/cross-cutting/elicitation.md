@@ -28,21 +28,16 @@ just always the same one, `decline` or `cancel` — so the engine's control flow
 
 ## 2. Surface
 
-The host also raises `configuration_access` before starting the builtin native configuration run.
-Its prompt identifies the host execution mode, four roots, file operations, exclusions and live TUI
-session lifetime. Only an explicit `allow_session` answer with an accepted action grants access;
-resume cannot restore it. This preflight precedes the loop, so it uses the run's existing elicitation
-bridge directly. Production: `createNativeConfigurationRuns` in
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
-Test: [native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts).
+The restricted `configure_clarvis` writer uses the existing `configuration_review` bridge for a concrete
+mutation when policy requires human review. The prompt binds the target and expected revision to
+the proposed change. Denial is selected initially; approval covers that change only. Validation and
+catalog application do not request another activation approval. A host-admitted steer changes the
+authority revision immediately, invalidating an approval still in flight before mutation.
+Production: `createDirectConfigurationCapability` in
+[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts).
+Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+and [elicitation.test.ts](../../packages/code/tests/unit/elicitation.test.ts).
 The complete authority contract is [self-configuration.md](../hosts/self-configuration.md).
-
-Code renders that request with the warning title `Native configuration access`, a readable
-live-session approval label and denial selected initially. Production: `ElicitBlock` in
-[ElicitBlock.tsx](../../packages/code/src/views/ElicitBlock.tsx) and `DECISION_LABELS` in
-[elicitation.ts](../../packages/code/src/adapters/elicitation.ts). Test: `native configuration consent
-has a live-session label and defaults to denial` in
-[elicitation.test.ts](../../packages/code/tests/unit/elicitation.test.ts).
 
 ### 2.1 The elicitation port (`@clarvis/capability`)
 

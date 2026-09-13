@@ -17,6 +17,7 @@ import type { ToolDef } from "./types.ts";
  * concurrent writers of the same path.
  */
 export const remove: ToolDef = {
+  atomicMutation: true,
   name: "remove",
   description:
     "Delete ONE file. Operates on regular files only — a directory is rejected; use shell for " +
@@ -56,7 +57,7 @@ export const remove: ToolDef = {
       }
 
       try {
-        await applyOpsAtomic([{ type: "delete", path: target }]);
+        await applyOpsAtomic([{ type: "delete", path: target }], config.reviewMutation);
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, rel);

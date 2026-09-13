@@ -657,7 +657,7 @@ describe("createGuardResolver", () => {
     expect(prompts).toBe(2);
   });
 
-  it("never accepts a model allow without a host-attested effect and authority coverage", async () => {
+  it("never accepts a model allow without authenticated operator authority evidence", async () => {
     let judged = false;
     let asked = false;
     const resolver = createGuardResolver({

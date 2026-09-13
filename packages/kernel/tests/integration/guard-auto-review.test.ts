@@ -147,6 +147,34 @@ describe("placement and dangerous cascade", () => {
       ).toMatchObject({ verdict: "deny", matched: "undecidable" });
     }
   });
+  it("leaves Host parameters and environment bindings reviewable only when Auto owns the ask", async () => {
+    for (const command of [
+      "TMPDIR=.tmp bun test --timeout 60000",
+      "CI=1 NO_COLOR=1 bun --filter @clarvis/kernel test",
+      'git commit -m "$MSG"',
+      "env CI=1 bun test",
+    ]) {
+      expect(await createShellGuard({ placement: "host" })(context(command))).toMatchObject({
+        verdict: "ask",
+        escalate: "human",
+      });
+      const automatic = await createShellGuard({ placement: "host", allowHostJudge: true })(
+        context(command),
+      );
+      expect(automatic).toMatchObject({ verdict: "ask", placement: "host" });
+      expect(automatic).not.toHaveProperty("escalate");
+    }
+  });
+  it("keeps credential and dangerous classifications ahead of environment review", async () => {
+    expect(
+      await createShellGuard({ placement: "host", allowHostJudge: true })(context("CI=1 cat .env")),
+    ).toMatchObject({ verdict: "ask", matched: "credential_file" });
+    expect(
+      await createShellGuard({ placement: "host", allowHostJudge: true })(
+        context("CI=1 rm -rf ./dist"),
+      ),
+    ).toMatchObject({ verdict: "ask", matched: "dangerous", dangerous: true });
+  });
   it("retains explicit unsandbox human authority even for contained expansions", async () => {
     const ctx = context('git commit -m "$MSG"', {
       sandbox_permissions: "require_escalated",

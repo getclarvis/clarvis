@@ -28,9 +28,9 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts`).
 
 ## 2. Surface
 
-Agent-driven edits through the builtin skill use the separate
-[native self-configuration contract](self-configuration.md): live-session elicitation, authored-file
-allow-lists and revision-bound `write`, `edit` and `delete`. This mode does not expose credential,
+Agent-driven edits in the ordinary conversation use the
+[direct self-configuration contract](self-configuration.md): shared effect review, authored-file
+classification and revision-bound `write`, `edit` and `delete`. The restricted writer does not expose credential,
 trust or private-state stores, and does not replace the operator-facing config service below.
 Production: `configurationFileOperation` in
 [files.ts](../../packages/kernel/src/configuration/files.ts). Test:
@@ -602,11 +602,17 @@ Each entry: **rule** — production anchor — test anchor.
    (`packages/kernel/src/config/config-service.ts`). Pinned: `packages/kernel/tests/contract/config-service.test.ts` on the **file** store, asserting
    `listAgents()` minus builtins is empty afterward.
 
-5. **INV-200 — unknown agent frontmatter keys survive a write verbatim.** The service validates with
-   `agentFrontmatterSchema` but passes `doc.frontmatter` through unchanged
-   (`packages/kernel/src/config/config-service.ts`); the schema is `.loose()`
-   (`packages/loop/src/settings/agent-frontmatter.ts`, documented). Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts` (`x-house-style`, a nested `presentation` object).
+5. **INV-200 — unknown Agent Profile fields fail before mutation.** The service validates with
+   the strict `agentFrontmatterSchema`; attempted executor-policy, endpoint, credential and
+   capability overrides do not become grants or consent requests. Existing bytes survive rejection.
+   Production: `writeAgent` in [config-service.ts](../../packages/kernel/src/config/config-service.ts)
+   and `agentFrontmatterSchema` in [agent-frontmatter.ts](../../packages/loop/src/settings/agent-frontmatter.ts).
+   `buildProfile` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts)
+   repeats validation during entry and delegated profile admission, including files written outside
+   the configuration service. Test: `rejects authority overrides read from entry or delegated profile files`
+   in [settings-assembler.test.ts](../../packages/kernel/tests/component/settings-assembler.test.ts).
+   Test: `rejects unknown frontmatter before changing an agent` in
+   [config-service.test.ts](../../packages/kernel/tests/contract/config-service.test.ts).
 
 6. **INV-201 — an agent name is unique across `global` and `workspace` together, and a pre-existing
    cross-scope duplicate makes both copies un-writable through the service while both stay readable.**
@@ -743,7 +749,7 @@ Each entry: **rule** — production anchor — test anchor.
     agent and Extension Profile input must match the pre-write snapshot, and the trust record uses
     the fingerprint from the verified post-write snapshot. Production:
     `packages/kernel/src/config/file-config-store.ts` and
-    `packages/kernel/src/configuration/native-configuration.ts`. Pinned by the concurrent
+    `packages/kernel/src/configuration/direct-configuration.ts`. Pinned by the concurrent
     executable-change case in `packages/kernel/tests/integration/workspace-trust.test.ts`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose

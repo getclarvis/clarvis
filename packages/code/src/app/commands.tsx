@@ -81,6 +81,8 @@ import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 
 /** Dependencies for {@link registerAppCommands}: every adapter and effect the app-level commands close over. */
 export interface AppCommandDeps {
+  /** Host catalog generation, independent of connection lifetime. */
+  skillsRevision?: () => number;
   commands: Commands;
   ui: CommandUi;
   effects: Pick<
@@ -1653,6 +1655,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   let initialMcpRefresh = true;
   createEffect(() => {
     backendConnected();
+    deps.skillsRevision?.();
     const refresh = (): void => {
       void mcpCaps
         .refresh()

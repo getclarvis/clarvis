@@ -2842,35 +2842,31 @@ test("submitSkillRun: starts a run on the skill's agent, appends its digest, and
   dispose();
 });
 
-test("configuration consent identity lives only in the open TUI session, never in resume", async () => {
-  const { host, runs } = mount();
-  const runSkill = async (): Promise<StartRunInput> => {
-    const turn = host.submitSkillRun(
-      "clarvis-configure",
-      "Configure a reviewer",
-      "clarvis-configure",
-    );
+test("configuration uses normal turns across continuation and resume without a consent nonce", async () => {
+  const { host, runs, dispose } = mount();
+  const configure = async (): Promise<StartRunInput> => {
+    const turn = host.submitTurn("Create a local reviewer agent.");
     await flush();
     const run = runs.at(-1)!;
     run.resolve(completed(run.handle.executionId));
     await turn;
     return run.input;
   };
-  const first = await runSkill();
-  const second = await runSkill();
-  expect(first.configurationSessionId).toBeString();
-  expect(second.configurationSessionId).toBe(first.configurationSessionId);
-  const saved = host.sessionMeta()!;
-  expect(first.configurationSessionId).not.toBe(saved.id);
-  expect(JSON.stringify(saved)).not.toContain(first.configurationSessionId!);
-  host.clearSession();
-  await host.loadSessionMeta(saved);
-  const resumed = await runSkill();
-  expect(host.sessionMeta()?.id).toBe(saved.id);
-  expect(resumed.configurationSessionId).toBeString();
-  expect(resumed.configurationSessionId).not.toBe(first.configurationSessionId);
-  const repeated = await runSkill();
-  expect(repeated.configurationSessionId).toBe(resumed.configurationSessionId);
+  try {
+    const first = await configure();
+    const second = await configure();
+    expect(first).not.toHaveProperty("configurationSessionId");
+    expect(second).not.toHaveProperty("configurationSessionId");
+    const saved = host.sessionMeta()!;
+    host.clearSession();
+    await host.loadSessionMeta(saved);
+    const resumed = await configure();
+    expect(host.sessionMeta()?.id).toBe(saved.id);
+    expect(resumed).not.toHaveProperty("configurationSessionId");
+    expect(resumed.profile).toBe(first.profile);
+  } finally {
+    dispose();
+  }
 });
 
 test("submitSkillRun: a failed skill run reports the skill name in the error status", async () => {

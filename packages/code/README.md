@@ -238,19 +238,12 @@ another project, start the binary from that directory or use the installed
 
 ## Configuration
 
-`/clarvis-configure <task>` opens the shipped configuration skill on a dedicated native agent.
-Typing `$clarvis-configure` in an already-open turn does not start that run and does not dump the
-guide; `$` in the composer lists skills and inserts a `$name` token, which the kernel expands only
-for skills that do not name an `agent`.
-After approving its elicitation, that agent can list, read, write, edit and delete authored files in
-`~/.clarvis`, `<workspace>/.clarvis`, `~/.agents` and `<workspace>/.agents`, with credentials and
-private state excluded. It executes on the host without sandbox or container, using only the
-configuration file tool and questions. Approval is reused while that session is live in the TUI;
-closing it and resuming requires a new approval. No authorization is saved in session history. The
-turn remains a single standalone transcript: its file reads and mutations appear as ordinary tool
-calls both live and after reconciliation, with no synthetic subagent card. Each row names the
-concrete configuration action and scoped authored path; file contents, CAS revisions and edit
-snippets are not retained in the trace.
+Configuration requests use the normal conversation. The optional `/clarvis-configure <task>`
+loads embedded guidance without changing the agent or runtime. The host-admitted `configure_clarvis`
+writer reviews exact mutations through the current policy and excludes credentials/private state.
+Automatic authorization does not require a second activation prompt. Human review concerns the
+concrete operation. Skill catalog notifications refresh command listings without reconnecting;
+active resource users retain their captured revision until safe application.
 See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 The app uses a file-backed kernel. Workspace configuration lives under
@@ -714,10 +707,11 @@ Never approve a command that pipes a network fetch into a shell.
 ```
 
 The effect reviewer uses host-attributed operator evidence and mechanically attested effects.
-The opt-in local and CI-retry rollout validates every model allow against current grants; uncertain
-syntax without complete attestation remains human-reviewed. The prompt shows segment causes,
-effect identity and operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
-
+The local and CI-retry paths validate effect-model allows against current grants. An ordinary shell
+ask without a registered effect instead uses the exact-call Judge in Auto: its payload separates
+segment source, executable, parameters and environment bindings, while deny-list, path, credential
+and dangerous-command rules retain precedence. The prompt shows segment causes, effect identity and
+operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -836,33 +830,33 @@ full log still records its final counters.
 
 Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 
-| Level | Event                                                                                                               | Fields                                                         |
-| ----- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`                                    | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
-| info  | `app.boot.painted`                                                                                                  | `elapsed_ms`, `mode`, `deferred_catalog`                       |
-| debug | `markdown.preload.completed`                                                                                        | `markdown`, `markdownInline`, `duration_ms`                    |
-| warn  | `markdown.preload.failed`                                                                                           | `error`, `duration_ms`                                         |
-| error | `boot.failed`                                                                                                       | `phase`, `error`, `attempt`                                    |
-| warn  | `catalog.unavailable`                                                                                               | `reason`, `source` (`kernel` \| `snapshot`)                    |
-| info  | `catalog.load.started`                                                                                              | `trigger`                                                      |
-| debug | `memory.ledger`                                                                                                     | bounded ownership, payload and event-queue counters            |
-| info  | `memory.gc.completed`, `memory.gc.skipped`                                                                          | `mode`, `reason`                                               |
-| warn  | `memory.gc.failed`, `memory.efficiency`                                                                             | collection error or RSS baseline/slope evidence                |
-| info  | `worktree.remove.completed`                                                                                         | `name`, `branch`                                               |
-| error | `worktree.remove.failed`                                                                                            | `name`, `branch`, `error`                                      |
-| info  | `settings.save.applied`                                                                                             | `scope`, `keys`                                                |
-| error | `settings.save.rejected`                                                                                            | `scope`, `issue_count`, `fields`, `reason`                     |
-| debug | `settings.model_ref.unparsed`                                                                                       | `site`, `error` (sampled)                                      |
-| error | `plugin.install.failed`                                                                                             | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
-| warn  | `marketplace.containment.unknown`                                                                                   | `reason`                                                       |
-| error | `doctor.check.failed`                                                                                               | `check_id`, `error`, `duration_ms`                             |
-| debug | `shell.local.exit`                                                                                                  | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
-| warn  | `run.stream.interrupted`                                                                                            | `execution_id`, `error`                                        |
-| debug | `run.close.failed`                                                                                                  | `execution_id`, `error`                                        |
-| warn  | `elicit.handler.failed`                                                                                             | `error`                                                        |
-| warn  | `transcript.rehydrate.failed`                                                                                       | `error`                                                        |
-| warn  | `mcp.list.failed`                                                                                                   | `surface` (`tools` \| `prompts`), `error`                      |
-| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested`                              | sampled counters                                               |
+| Level | Event                                                                                  | Fields                                                         |
+| ----- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`       | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
+| info  | `app.boot.painted`                                                                     | `elapsed_ms`, `mode`, `deferred_catalog`                       |
+| debug | `markdown.preload.completed`                                                           | `markdown`, `markdownInline`, `duration_ms`                    |
+| warn  | `markdown.preload.failed`                                                              | `error`, `duration_ms`                                         |
+| error | `boot.failed`                                                                          | `phase`, `error`, `attempt`                                    |
+| warn  | `catalog.unavailable`                                                                  | `reason`, `source` (`kernel` \| `snapshot`)                    |
+| info  | `catalog.load.started`                                                                 | `trigger`                                                      |
+| debug | `memory.ledger`                                                                        | bounded ownership, payload and event-queue counters            |
+| info  | `memory.gc.completed`, `memory.gc.skipped`                                             | `mode`, `reason`                                               |
+| warn  | `memory.gc.failed`, `memory.efficiency`                                                | collection error or RSS baseline/slope evidence                |
+| info  | `worktree.remove.completed`                                                            | `name`, `branch`                                               |
+| error | `worktree.remove.failed`                                                               | `name`, `branch`, `error`                                      |
+| info  | `settings.save.applied`                                                                | `scope`, `keys`                                                |
+| error | `settings.save.rejected`                                                               | `scope`, `issue_count`, `fields`, `reason`                     |
+| debug | `settings.model_ref.unparsed`                                                          | `site`, `error` (sampled)                                      |
+| error | `plugin.install.failed`                                                                | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
+| warn  | `marketplace.containment.unknown`                                                      | `reason`                                                       |
+| error | `doctor.check.failed`                                                                  | `check_id`, `error`, `duration_ms`                             |
+| debug | `shell.local.exit`                                                                     | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
+| warn  | `run.stream.interrupted`                                                               | `execution_id`, `error`                                        |
+| debug | `run.close.failed`                                                                     | `execution_id`, `error`                                        |
+| warn  | `elicit.handler.failed`                                                                | `error`                                                        |
+| warn  | `transcript.rehydrate.failed`                                                          | `error`                                                        |
+| warn  | `mcp.list.failed`                                                                      | `surface` (`tools` \| `prompts`), `error`                      |
+| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested` | sampled counters                                               |
 
 `shell.local.exit` deliberately carries no command text: a `!` command is
 whatever the user typed, credentials included.
@@ -1456,3 +1450,5 @@ limit.
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
+Agent Profile frontmatter uses the closed kernel schema. Unknown keys mark a document invalid in the editor and are rejected on write and execution admission; they cannot become executor overrides.

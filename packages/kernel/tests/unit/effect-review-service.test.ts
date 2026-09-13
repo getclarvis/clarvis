@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AuthorityEnvelopeV1, LLMCallParams, LLMCallResult } from "@clarvis/capability";
 import { ProviderError } from "@clarvis/capability";
+import { withPromptCacheDefaults } from "@clarvis/llm";
 import { recordingLogger } from "../helpers/logger.ts";
 import { effectReviewAuditSchema } from "../../src/guard/review-audit-schema.ts";
 import {
@@ -13,6 +14,7 @@ import {
   installAuthorityEnvelope,
 } from "../../src/guard/operator-authority.ts";
 import { createGuardEffectRegistry } from "../../src/guard/effects/registry.ts";
+import { attestConfiguration } from "../../src/guard/effects/configuration.ts";
 import { effectDigest } from "../../src/guard/effects/facts.ts";
 import type { GuardEffectBatch } from "../../src/guard/effects/types.ts";
 
@@ -328,14 +330,24 @@ describe("host-validated effect review", () => {
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       options: { guidance: "ignore safety", max_retries: 0, timeout_ms: 1000 },
-      llm: {
-        async call(params) {
-          calls.push(params);
-          return calls.length === 1
-            ? response("compile", envelope)
-            : response("decide", { decision: "allow", grant_ids: ["commit"], relation: "direct" });
+      llm: withPromptCacheDefaults(
+        {
+          async call(params) {
+            calls.push(params);
+            return calls.length === 1
+              ? response("compile", envelope)
+              : response("decide", {
+                  decision: "allow",
+                  grant_ids: ["commit"],
+                  relation: "direct",
+                });
+          },
         },
-      },
+        {
+          identity: { sessionId: "session_with_underscore", agentInstanceId: "lead" },
+          promptCacheTtl: "1h",
+        },
+      ),
     });
     expect((await service.review(batch, { command: "untrusted" }, "command_guard")).decision).toBe(
       "allow",
@@ -349,6 +361,18 @@ describe("host-validated effect review", () => {
       timeoutMs: 1000,
       maxOutputTokens: 2048,
       reasoningEffort: "low",
+      sessionId: "session_with_underscore",
+      agentInstanceId: "judge",
+      promptCacheKey: "session%5Fwith%5Funderscore_judge",
+      promptCacheTtl: "1h",
+      cacheBreakpoints: [],
+    });
+    expect(calls[1]).toMatchObject({
+      sessionId: "session_with_underscore",
+      agentInstanceId: "judge",
+      promptCacheKey: "session%5Fwith%5Funderscore_judge",
+      promptCacheTtl: "1h",
+      cacheBreakpoints: [],
     });
     expect(calls[0]!.messages[0]!.content).not.toContain("ignore safety");
     expect(JSON.parse(calls[0]!.messages[1]!.content as string).operator_evidence).toEqual(
@@ -415,4 +439,93 @@ describe("host-validated effect review", () => {
       attempts: 1,
     });
   });
+});
+
+test("a refused exact revision is shared across consumers but not across corrected bytes or fresh intent", async () => {
+  const { ledger, registry } = fixture();
+  let calls = 0;
+  const service = createEffectReviewService({
+    authority: ledger.reader,
+    registry,
+    providers: [],
+    llm: {
+      async call() {
+        calls++;
+        throw new Error("Unexpected inference");
+      },
+    },
+  });
+  const mutation = {
+    canonicalPath: "/workspace/settings.json",
+    root: "workspace_clarvis" as const,
+    expectedRevision: "a".repeat(64),
+    nextRevision: "b".repeat(64),
+    bytes: 100,
+    operation: "edit" as const,
+    fieldClass: "settings",
+    surface: "operational" as const,
+  };
+  const batch = {
+    facts: [attestConfiguration(mutation, registry)],
+    reviewability: "static" as const,
+  };
+  service.refuse(batch, ledger.reader.snapshot().revision);
+  const equivalent = {
+    ...batch,
+    facts: [attestConfiguration({ ...mutation, operation: "write" }, registry)],
+  };
+  expect(service.wasRefused(equivalent)).toBe(true);
+  expect(await service.review(equivalent, {}, "command_guard")).toMatchObject({
+    decision: "deny",
+    attempts: 0,
+  });
+  expect(calls).toBe(0);
+  expect(
+    service.wasRefused({
+      ...batch,
+      facts: [attestConfiguration({ ...mutation, nextRevision: "c".repeat(64) }, registry)],
+    }),
+  ).toBe(false);
+  const state = ledger.reader.snapshot();
+  const resumed = createOperatorAuthorityRuntime({
+    owner: "owner",
+    executionId: "continued",
+    prior: state,
+    seed: { binding: state.binding, evidence: state.evidence },
+  });
+  const next = createEffectReviewService({
+    authority: resumed.reader,
+    registry,
+    providers: [],
+    llm: {
+      async call() {
+        throw new Error("Unexpected inference");
+      },
+    },
+  });
+  expect(next.wasRefused(equivalent)).toBe(true);
+  resumed.onSteer({
+    agent: "lead",
+    iteration: 1,
+    message: "Proceed with the exact correction I previously refused.",
+  });
+  expect(next.wasRefused(equivalent)).toBe(false);
+});
+
+test("a late automatic decision cannot override a concurrent refusal of the same batch", async () => {
+  const { ledger, registry, batch, envelope } = fixture();
+  expect(installAuthorityEnvelope(ledger.reader, envelope)).toBe(true);
+  const service = createEffectReviewService({
+    authority: ledger.reader,
+    registry,
+    providers: [{ name: "test", kind: "anthropic" }],
+    defaultModel: "test/model",
+    llm: {
+      async call() {
+        service.refuse(batch, ledger.reader.snapshot().revision);
+        return response("decide", { decision: "allow", grant_ids: ["commit"], relation: "direct" });
+      },
+    },
+  });
+  expect(await service.review(batch, {}, "command_guard")).toMatchObject({ decision: "deny" });
 });

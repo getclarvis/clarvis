@@ -180,8 +180,9 @@ its skill was selected.
 
 Native file-mutation tools also protect the workspace-authored Clarvis roots resolved by
 `configurationRoots`. Reads remain available, including copying a configuration file to an
-ordinary workspace destination. Writes targeting those roots fail before guard review and direct
-the operator to `/clarvis-configure <change>`, whose kernel-owned route asks for consent.
+ordinary workspace destination. Canonical authoring targets use the shared `configurationPathClass` vocabulary and require a
+complete reviewed authoring effect. Operational targets direct the agent to the restricted
+`configure_clarvis` writer in the same conversation. Loading guidance never grants access.
 Project-wide `replace` excludes both roots while continuing over ordinary workspace files. Command
 tools retain the separate shell and sandbox posture above; the builtin configuration guide forbids
 using them as an alternate writer.
@@ -268,6 +269,11 @@ segment indices and affected positions. `undecidable` remains the conservative n
 fold. A dynamic value is not proof of a safe effect: `GuardReviewability` reserves `judgeable`
 for host attestation. POSIX and PowerShell provide their own issue analysis. Environment assignment
 values participate in path extraction; the assignment name is not part of a filesystem path.
+An ordinary allow-list miss can still be judged from the complete call in Auto mode. That call-local
+answer does not claim a registered effect or persist authority. The reviewer receives the exact
+segment source plus separate executable, parameter and environment-binding fields, so `TMPDIR=/tmp`,
+ordinary flags, wrappers and dynamic values do not become human-only merely because they are
+parameters. Deterministic denial, credential and destructive rules retain precedence in the host.
 
 ```ts
 import { analyzeShell, buildGuardContext, touchesOutside, type Guard } from "@clarvis/tools/guard";
@@ -473,9 +479,14 @@ bun --filter @clarvis/tools format:check
 commands exist for targeted development and do not replace the full suite.
 
 The package requires Bun 1.4.0 or newer.
+
 ### Effect facts and authoring
 
 The standalone guard DTO can carry host-attested effect facts and review receipts without importing
 capability. Canonical agent, skill and workflow Markdown may pass native mutation protection only
 after an explicit host effect review; operational configuration retains its restricted writer.
 An absent/off guard does not authorize authoring writes. See [effect review](../../specs/execution/effect-review.md).
+
+Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Authoring batches reuse the configuration reviewer, validate all resulting documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for authored destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
+
+An explicitly scoped recursive replacement inside configuration directories discovers bounded authoring leaves despite default configuration ignore rules. Operational/private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.

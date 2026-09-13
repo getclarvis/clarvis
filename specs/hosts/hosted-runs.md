@@ -569,7 +569,7 @@ exported through [bootstrap.ts](../../packages/kernel/src/bootstrap.ts). Test:
 FileKernel, real loop with MockLLM, file-backed projection/index and Unix socket. It verifies
 withholding local controls without removing hosted goal authority,
 completion with no connected client, the same execution id after attach, canonical turn settlement,
-authentication, observer restrictions and native configuration revocation. This is not evidence of
+authentication, observer restrictions and shared operator authority revocation. This is not evidence of
 a surviving child process, a subscription provider, or a TUI journey.
 
 `serveRemoteFileKernelOverStdio` composes that same file host for one process-owned authenticated
@@ -627,8 +627,8 @@ Live guard and extension revocation still resolve through the host's current aut
 
 Preparation does not launch or reserve an execution id. Its single-use start passes through the
 ordinary execution-id, owner-generation and Extension Profile run leases. A retired owner cannot be
-resurrected by its prepared start. Native configuration skips ordinary profile assembly, identifies
-the shipped configuration skill, requires fresh interactive consent and remains non-detachable.
+resurrected by its prepared start. Configuration guidance uses the same ordinary profile assembly,
+leases and hosted control lifecycle. Concrete file effects are reviewed by the restricted writer.
 
 Production: `prepareKernelRun` in [prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts),
 `snapshotRunConfiguration` in

@@ -13,24 +13,14 @@ import type {
 } from "@clarvis/protocol";
 import type { EventStreamOptions } from "../core/event-stream.ts";
 import { DEFAULT_INGEST_CLOSE_GRACE_MS } from "./memory-ingest-phase.ts";
-import {
-  capabilityEventToProto,
-  engineEventToProto,
-  nativeConfigurationEventToProto,
-} from "./map-events.ts";
-import {
-  engineResultToProto,
-  nativeConfigurationResultToProto,
-  storedToDetail,
-  summaryToProto,
-} from "./map-result.ts";
+import { capabilityEventToProto, engineEventToProto } from "./map-events.ts";
+import { engineResultToProto, storedToDetail, summaryToProto } from "./map-result.ts";
 import { kernelError } from "../core/errors.ts";
 import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
-import type { NativeConfigurationRuns } from "../configuration/native-configuration.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { randomUUID } from "node:crypto";
 import type { OperatorAuthoritySeed, OperatorAuthorityBinding } from "@clarvis/capability";
@@ -112,8 +102,6 @@ export interface RunServiceConfig {
   logger?: Logger;
   /** Executes the loop natively or through an explicitly configured isolated runtime. */
   executeRun?: RunExecutor;
-  /** Explicitly approved host-only route for the shipped configuration skill. */
-  nativeConfiguration?: NativeConfigurationRuns;
 }
 
 /**
@@ -196,11 +184,9 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
                 execution_id: executionId,
               })),
           };
-    const configuration = cfg.nativeConfiguration?.requested(params) === true;
-    if (!configuration && prepared?.kind === "workflow")
+    if (prepared?.kind === "workflow")
       return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);
     if (
-      !configuration &&
       prepared === undefined &&
       cfg.runManagerWorkflow !== undefined &&
       cfg.isManagerRun?.(params) === true
@@ -235,9 +221,7 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
                 },
           onEvent: (ev) => {
             goal?.observe(ev);
-            const mapped = configuration
-              ? nativeConfigurationEventToProto(ev, logger)
-              : engineEventToProto(ev, logger);
+            const mapped = engineEventToProto(ev, logger);
             if (mapped !== null) context.emit(mapped);
           },
           onCapabilityEvent: (event) => {
@@ -251,16 +235,11 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           operatorAuthoritySignal: authorityAdmission?.signal,
           elicit: context.elicit,
         };
-        const outcome = configuration
-          ? await cfg.nativeConfiguration!.execute(request, args)
-          : await executeRun({
-              ...args,
-              rawBody:
-                prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
-            });
-        return configuration
-          ? nativeConfigurationResultToProto(outcome.executionId, outcome.response)
-          : engineResultToProto(outcome.executionId, outcome.response);
+        const outcome = await executeRun({
+          ...args,
+          rawBody: prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
+        });
+        return engineResultToProto(outcome.executionId, outcome.response);
       },
     });
   }

@@ -156,18 +156,30 @@ first system message, `EFFECT_REVIEW_POLICY`, which is owned by the kernel. Code
 The explicit rollout stages are `shadow`, `local` and `ci_retry`. Shadow computes review evidence
 without changing the existing guard outcome. An absent rollout uses the same conservative effect
 ceiling as `local`: fully attested local effects only. CI retry
-also permits the tightly correlated failed-only effect. Unknown effects remain closed. Outside shadow,
-Review `auto` always uses this host-validated service; there is no compatibility judge that can turn
-a model verdict directly into authority. Review `on` remains human review,
+also permits the tightly correlated failed-only effect. Unknown effects remain closed to the grant
+compiler. A separate call-local command reviewer may answer an ordinary shell ask whose sole fact is
+`external.unknown`; that answer applies only to the exact command and never enters the authority
+envelope. Review `on` remains human review,
 and deterministic deny rules precede a reviewer. Review `off` supplies no command guard and does not
 disable filesystem, credential, capability, placement or host/guest invariants.
 Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings
 still stop the call first, and explicit Host escalation never consumes session consent. Human
 consent is not operator evidence. Production: `createGuardResolver` in
-[resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
-[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts).
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and `createJudgeElicit` in
+[judge.ts](../../packages/kernel/src/guard/judge.ts). Test:
+[guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts) and
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
 
 Compiler and judge have their own explicit timeout, retries, output cap and reasoning effort.
+Their model calls use the shared `judge` auxiliary instance on the run's decorated provider, so
+session affinity, canonical prompt-cache key and TTL follow the same composition as ordinary and
+memory runs. Effect review marks only its stable system policy; guidance remains bundled with the
+current authority evidence and effect facts outside that breakpoint. Production:
+`GUARD_REVIEW_AGENT_INSTANCE_ID`
+in [reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts),
+`createEffectReviewService` and `createJudgeElicit`. Test:
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
 Timeout, auth, quota, rate limit, transport, admission, cancellation, invalid response and unknown
 failure are distinct receipts. Cancellation is enforced even if a provider ignores its signal.
 Audit fields contain counts, timing, model identity, effect IDs and digests, never raw command,

@@ -385,6 +385,39 @@ describe("an operator's own write is not a clone", () => {
     expect(after.merged.hooks).toBeUndefined();
   });
 
+  it.each([false, true])(
+    "carries an asynchronous batch only when unrelated bytes remain unchanged (drift=%s)",
+    async (drift) => {
+      const { root, store, config, writeWorkspace } = freshConfig();
+      writeWorkspace({ hooks: [HOOK] });
+      await config.approveWorkspace();
+      const paths = ["one", "two"].map((name) => join(root, ".clarvis", "agents", `${name}.md`));
+      const content = "Review only.\n";
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const write = store.withOperatorWrite!(
+        "workspace",
+        async () => {
+          await pending;
+          for (const path of paths) {
+            mkdirSync(dirname(path), { recursive: true });
+            writeFileSync(path, content);
+          }
+        },
+        () => paths.map((path) => ({ path, expectedRevision: settingsDocumentRevision(content) })),
+      );
+      if (drift) writeWorkspace({ hooks: [EVIL] });
+      release();
+      await write;
+      expect((await config.getSettings()).workspace_trust?.state).toBe(
+        drift ? "changed" : "trusted",
+      );
+      expect(store.readEffectiveAgent("one") === null).toBe(drift);
+    },
+  );
+
   it("withholds a concurrent executable change instead of carrying it with the authorized target", async () => {
     const { root, store, config, writeWorkspace } = freshConfig();
     writeWorkspace({ hooks: [HOOK] });

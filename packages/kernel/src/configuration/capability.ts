@@ -1,12 +1,9 @@
 import {
   handlerBaseOf,
   openCallEnvelope,
-  OPERATOR_AUTHORITY_PORT,
-  type OperatorAuthorityReader,
-  type LLMProvider,
-  type ProviderConfig,
   type Capability,
   type NamespacedTool,
+  type RunCapabilityContext,
 } from "@clarvis/capability";
 import type { ConfigurationRoot } from "@clarvis/paths";
 import type { ConfigurationFileRequest } from "./files.ts";
@@ -36,16 +33,10 @@ function traceResult(operation: ConfigurationFileRequest["operation"]): string {
   return `${operation.charAt(0).toUpperCase()}${operation.slice(1)} completed.`;
 }
 
-/** Configuration file tools are bound to a live, approved native run, never to a persisted grant. */
+/** Configuration tools bind to the host-admitted run and review each concrete mutation. */
 export function createConfigurationCapability(options: {
   roots: Readonly<Record<ConfigurationRoot, string>>;
-  assertAuthorized(): void;
-  operate(
-    request: ConfigurationFileRequest,
-    authority?: OperatorAuthorityReader,
-    providers?: ProviderConfig[],
-    llm?: LLMProvider,
-  ): unknown;
+  bind(ctx: RunCapabilityContext): ((request: ConfigurationFileRequest) => unknown) | null;
 }): Capability {
   const tool: NamespacedTool = {
     fullName: TOOL_NAME,
@@ -74,25 +65,25 @@ export function createConfigurationCapability(options: {
     },
   };
   return {
-    name: "native-configuration",
+    name: "configuration",
     grants: [{ name: TOOL_NAME }],
     reservedWireNames: [TOOL_NAME],
     toolEffects: { [TOOL_NAME]: "mutate" },
     forRun(ctx) {
-      options.assertAuthorized();
+      const bound = options.bind(ctx);
+      if (bound === null) return null;
       return {
-        name: "native-configuration",
+        name: "configuration",
         systemSection: () =>
-          "Native configuration mode is active for this run after human consent. " +
+          "Configure Clarvis directly in this conversation using the restricted configure_clarvis writer. " +
           "Use configure_clarvis only for authored configuration. " +
-          "No shell, MCP, plugins, hooks, memory or subagents run in this mode. " +
+          "Each mutation follows the current effect review policy; loading instructions grants no authority. " +
           "Configuration roots: " +
           JSON.stringify(options.roots),
         forAgent(scope) {
-          if (!scope.entry || !scope.grants.includes(TOOL_NAME)) return null;
+          if (!scope.entry) return null;
           return {
             attach(build) {
-              const authority = ctx.services.get(OPERATOR_AUTHORITY_PORT);
               const base = handlerBaseOf(build);
               return {
                 tools: [tool],
@@ -120,14 +111,8 @@ export function createConfigurationCapability(options: {
                       if (base.signal?.aborted === true) return { kind: "cancelled" };
                       envelope.start();
                       try {
-                        options.assertAuthorized();
                         const request = call.arguments as ConfigurationFileRequest;
-                        const result = await options.operate(
-                          request,
-                          authority,
-                          ctx.request.providers,
-                          ctx.llm,
-                        );
+                        const result = await bound(request);
                         return {
                           kind: "result",
                           text: envelope.ok(JSON.stringify(result), traceResult(request.operation)),

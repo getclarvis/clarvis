@@ -28,6 +28,7 @@ export interface SteerQueue extends SteerSource {
 export function createSteerQueue(): SteerQueue {
   let queue: SteerDelivery[] = [];
   const pending = new Set<SteerDelivery>();
+  const listeners = new Set<(message: SteerMessage) => void>();
   let closed = false;
   const take = (): SteerDelivery[] => {
     const out = queue;
@@ -46,9 +47,18 @@ export function createSteerQueue(): SteerQueue {
         };
         pending.add(entry);
         queue.push(entry);
+        for (const listener of listeners) listener(message);
       });
     },
     take,
+    onPending(listener: (message: SteerMessage) => void) {
+      if (closed) return () => undefined;
+      listeners.add(listener);
+      for (const entry of pending) listener(entry.message);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     drain(): SteerMessage[] {
       const out = take();
       for (const entry of out) entry.settle(true);
@@ -58,6 +68,7 @@ export function createSteerQueue(): SteerQueue {
       if (closed) return;
       closed = true;
       queue = [];
+      listeners.clear();
       for (const entry of pending) entry.settle(false);
     },
     undrained(): SteerMessage[] {

@@ -443,7 +443,7 @@ describe("buildExecuteRunDeps", () => {
       },
     });
     try {
-      expect(phases).toEqual(["observe", "verify"]);
+      expect(phases).toEqual(["observe", "verify", "verify"]);
       expect(built.skills!.listSkills()).toEqual([]);
       expect(built.skills!.loadSkill("guide")).toBeUndefined();
     } finally {
@@ -493,7 +493,7 @@ describe("buildExecuteRunDeps", () => {
 
       expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["approved"]);
       expect(built.skills!.loadSkill("guide")).toBeUndefined();
-      expect(phases).toEqual(["observe", "verify", "observe", "verify"]);
+      expect(phases).toEqual(["observe", "verify", "verify", "observe", "verify", "verify"]);
     } finally {
       await built.dispose();
       rmSync(dir, { recursive: true, force: true });
@@ -541,6 +541,51 @@ describe("buildExecuteRunDeps", () => {
         expect.objectContaining({ event: "skills.snapshot_recomposition_failed" }),
         expect.any(String),
       );
+    } finally {
+      await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("retains captured resource bytes when an authored replacement fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-failed-trust-skill-roots-"));
+    const skillDir = join(dir, "guide");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nGuide body.\n",
+    );
+    let failReplacement = false;
+    let publish!: (retainOnFailure?: boolean) => void;
+    const logger = createLogger("silent");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger,
+      workspaceRoot: dir,
+      skillRoots: {
+        roots: () => {
+          if (failReplacement) throw new Error("replacement roots unavailable");
+          return [{ path: dir, include: ["guide"] }];
+        },
+        observe: () => undefined,
+        verify: () => undefined,
+        available: () => true,
+        onRootsChanged: (listener) => {
+          publish = listener;
+          return () => undefined;
+        },
+      },
+    });
+    try {
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+      failReplacement = true;
+
+      expect(() => publish(true)).toThrow("replacement roots unavailable");
+
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+      expect(built.skills!.loadSkill("guide")?.body).toContain("Guide body.");
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       await built.dispose();
       rmSync(dir, { recursive: true, force: true });

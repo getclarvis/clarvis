@@ -166,13 +166,12 @@ in `packages/kernel/src/guard/shell-guard.ts`. Test:
 
 `CreateFileKernelOptions.sessionAllowlistFor` can bind command consent to a persistent host's current
 interactive controller. Without it, the guard keeps its ordinary resolver-local lifetime. The
-host-only `FileKernel.nativeConfiguration` surface exposes `requested` and `retireSession` for native
-configuration admission and revocation; it does not expose its executor or become a `KernelClient`
-service. `retireSession` takes the authenticated owner and derives the same workspace scope as runs;
-the guard callback receives that internal scoped owner directly. Production: `createFileKernel` in
-[file-kernel.ts](../../packages/kernel/src/file-kernel.ts).
-Test: the revoked-live-session branch of
-[native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts)
+host owns the shared operator authority reader and revokes it with the interactive scope. Direct
+configuration and command review consume that same reader; no separate configuration consent
+lifecycle exists. Production: `createFileKernel` in
+[file-kernel.ts](../../packages/kernel/src/file-kernel.ts) and `createHostedRegistry` in
+[registry.ts](../../packages/kernel/src/hosting/registry.ts).
+Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
 and the controller-lifetime cases in [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts).
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
@@ -277,12 +276,12 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/tests/unit/run-lease.test.ts` and
    `packages/memory/tests/component/factory.test.ts`.
 
-   The explicitly approved [native configuration route](self-configuration.md) supplies its own
-   extension-free profile and capabilities, so it bypasses this lease and ordinary placement.
-   Production: `createNativeConfigurationRuns` in
-   [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), wired
+   Direct configuration participates in the same run lease and captured placement. Its writer queues
+   catalog refresh without waiting for its own run to close. Production:
+   `createDirectConfigurationCapability` in
+   [direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts), wired
    by `createFileKernel`. Test:
-   [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
+   [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
 
 ## 8. Failure behavior
 

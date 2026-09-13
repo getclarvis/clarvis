@@ -12,7 +12,6 @@ import {
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
-import type { NativeConfigurationRuns } from "./configuration/native-configuration.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
   AgentSummary,
@@ -201,8 +200,6 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
 export interface CreateKernelOptions {
   /** Authenticated host controller binding, separate from protocol run parameters. */
   operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
-  /** Host-only native configuration execution, bound to volatile user consent. */
-  nativeConfiguration?: NativeConfigurationRuns;
   /** Loop execution deps the run service drives (built by `buildExecuteRunDeps`). */
   deps: ExecuteRunDeps;
   /** Absolute workspace root the kernel operates over. */
@@ -517,9 +514,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...(opts.operatorAuthorityFor === undefined
         ? {}
         : { operatorAuthorityFor: opts.operatorAuthorityFor }),
-      ...(opts.nativeConfiguration === undefined
-        ? {}
-        : { nativeConfiguration: opts.nativeConfiguration }),
       deps: runDeps,
       owner: scope.owner,
       assembleRunRequest,
@@ -540,8 +534,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               params: Parameters<typeof baseRuns.start>[0],
               prepared?: PreparedRunExecution,
             ) {
-              if (opts.nativeConfiguration?.requested(params) === true)
-                return baseRuns.start(params, prepared);
               const release = opts.acquireRunLease!();
               try {
                 const handle = await baseRuns.start(params, prepared);
@@ -594,8 +586,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               ? {}
               : { assembleRunRequest: opts.assembleRunRequest }),
             ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
-            nativeConfigurationRequested: (request) =>
-              opts.nativeConfiguration?.requested(request) === true,
             workflowSettings: readWorkflowsSettings,
             start: (request, prepared) => {
               if (ownerEntries.get(owner) !== entry)
@@ -619,7 +609,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     const retiring = Promise.resolve()
       .then(async () => {
         const cleanup = await Promise.allSettled([
-          Promise.resolve().then(() => opts.nativeConfiguration?.retireOwner(entry.stateOwner)),
           opts.memoryFactory?.stopOwner?.(entry.stateOwner) ?? Promise.resolve(),
           Promise.resolve().then(() => planFactory?.evictOwner?.(entry.stateOwner)),
           Promise.resolve().then(() => opts.onOwnerRetired?.(entry.stateOwner)),

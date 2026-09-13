@@ -298,6 +298,7 @@ export interface AppFleet {
 /** The kernel-backed services the shell talks to: connection state, MCP client, plans/workflows and run lookup. */
 export interface AppBackend {
   connection: Accessor<ConnectionState>;
+  skillsRevision?: Accessor<number>;
   probe: Accessor<BackendProbe>;
   client: McpClientCaps;
   plans: Pick<PlansService, "read">;
@@ -998,6 +999,7 @@ export function App(props: AppProps): JSX.Element {
     hasAvailablePlan: () => isAvailablePlan(props.activity.plan),
     backend: props.backend.probe,
     mcpClient: props.backend.client,
+    skillsRevision: props.backend.skillsRevision,
     ...(props.shell.afterPaint === undefined
       ? {}
       : { afterPaint: (task: () => void) => props.shell.afterPaint!(task) }),

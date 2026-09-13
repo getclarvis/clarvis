@@ -25,6 +25,7 @@ import type { ToolDef } from "./types.ts";
  * maps any other filesystem failure through {@link fsError}.
  */
 export const writeFile: ToolDef = {
+  atomicMutation: true,
   name: "write_file",
   description:
     "Create or completely overwrite a file with `content`, creating missing parent directories. " +
@@ -93,7 +94,7 @@ export const writeFile: ToolDef = {
       }
 
       try {
-        await writeAtomic(target, content);
+        await writeAtomic(target, content, config.reviewMutation);
       } catch (err) {
         if (err instanceof ToolError) throw err;
         throw fsError(err as NodeJS.ErrnoException, relPath);

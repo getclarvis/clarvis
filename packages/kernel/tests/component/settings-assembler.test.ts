@@ -46,6 +46,27 @@ async function assemblerWith(
 }
 
 describe("settings run assembler", () => {
+  it("rejects authority overrides read from entry or delegated profile files", () => {
+    for (const name of ["lead", "worker"]) {
+      const store = createMemoryConfigStore({
+        settings: { global: { default_model: "openrouter/m" } },
+      });
+      store.writeAgent("global", "lead", {
+        frontmatter: { can_spawn: ["worker"] },
+        body: "Coordinate.",
+      });
+      store.writeAgent("global", "worker", {
+        frontmatter: { grants: ["read_workspace"] },
+        body: "Review.",
+      });
+      store.writeAgent("global", name, { frontmatter: { sandbox: false }, body: "Override." });
+      const assemble = createSettingsRunAssembler(store);
+      expect(() => assemble({ agent: "lead", messages: [], execution_id: "rejected" })).toThrow(
+        `agent '${name}' has invalid frontmatter`,
+      );
+    }
+  });
+
   it("threads can_spawn/default_spawn and builds the spawnable closure", async () => {
     const assemble = await assemblerWith({
       coder: {

@@ -40,7 +40,6 @@ const input = (revision = 1, executionId = "run-1"): StartHostedTurnParams => ({
   user_preview: "Inspect SECRET",
   params: {
     execution_id: executionId,
-    configuration_session_id: "forged-consent",
     messages: [{ role: "user", content: "Inspect it" }],
   },
 });
@@ -230,7 +229,7 @@ describe("host-owned conversation transactions", () => {
     const prepared = await f.prepareTurn();
     expect(f.starts()).toBe(0);
     expect(prepared.title).toBe("Discussion with [REDACTED]");
-    expect(f.params()!.configuration_session_id).toBe("host-consent");
+    expect(f.params()).not.toHaveProperty("configuration_session_id");
     expect(f.params()!.messages.map((message) => message.content)).toEqual([
       "Earlier shell observation",
       "Inspect it",

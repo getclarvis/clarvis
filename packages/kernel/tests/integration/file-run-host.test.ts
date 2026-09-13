@@ -38,6 +38,7 @@ async function fixture(
   authenticate?: FileRunHostOptions["authenticate"],
   script?: MockLLMScriptStep[],
   exposeLocalControls = true,
+  editable = false,
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-file-run-host-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -116,7 +117,9 @@ async function fixture(
   await mkdir(global.agentsDir);
   await writeFile(
     join(global.agentsDir, "solo.md"),
-    "---\ntools: []\ngrants: []\n---\nYou are solo.\n",
+    editable
+      ? "---\ngrants: [read_workspace, edit_workspace]\n---\nYou are solo.\n"
+      : "---\ntools: []\ngrants: []\n---\nYou are solo.\n",
   );
   const paths = localHostPaths({ globalDir, workspaceRoot, owner: "operator", operatorId: "test" });
   await mkdir(paths.root, { recursive: true, mode: 0o700 });
@@ -133,8 +136,11 @@ async function fixture(
       defaultOwner: "operator",
       subscriptions: false,
       logger: NOOP_LOGGER,
-      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
-      builtins: { tools: false, hooks: false, tasks: false },
+      env: loadEnv({
+        CLARVIS_LOG_LEVEL: "silent",
+        CLARVIS_AGENT_TOOLS_ENABLED: editable ? "1" : "0",
+      }),
+      builtins: { tools: editable, hooks: false, tasks: false },
       async executeRun(args) {
         const request = args.rawBody as { execution_id: string };
         entered.push(request.execution_id);
@@ -692,26 +698,69 @@ describe("file kernel behind the hosted RPC", () => {
     expect(f.entered).toEqual([]);
   });
 
-  test("keeps native configuration attached and retires consent on connection loss", async () => {
+  test("delivers a concrete configuration review across hosted transport without dropping the connection", async () => {
+    const f = await fixture(
+      undefined,
+      [
+        {
+          toolCalls: [
+            {
+              name: "configure_clarvis",
+              arguments: {
+                operation: "write",
+                root: "workspace_clarvis",
+                path: "settings.json",
+                expected_revision: null,
+                content: '{"budget":{"total_token_limit":200000}}',
+              },
+            },
+          ],
+        },
+        { text: "Settings saved." },
+      ],
+      true,
+      true,
+    );
+    const input = await f.input("configuration-review");
+    input.params.guard_mode = "on";
+    input.params.messages = [{ role: "user", content: "Set workspace budget to 200000 tokens" }];
+    const started = await f.client.hosting!.start(input);
+    let reviews = 0;
+    started.handle.onElicit((request) => {
+      reviews++;
+      expect(request.kind).toBe("configuration_review");
+      expect(request.prompt).toContain("200000");
+      void started.handle.respond({
+        id: request.id,
+        action: "accept",
+        content: { decision: "allow" },
+      });
+    });
+    const events = Array.fromAsync(started.handle.events);
+    f.released.resolve();
+    expect(await started.handle.done).toMatchObject({ status: "completed" });
+    await events;
+    expect(reviews).toBe(1);
+    expect(await f.client.config.getSettings()).toMatchObject({
+      merged: { budget: { total_token_limit: 200000 } },
+    });
+  });
+
+  test("keeps configuration guidance in the ordinary agent and cancels it on connection loss", async () => {
     const f = await fixture();
     const input = await f.input("configuration-run");
     input.params.skill = { name: "clarvis-configure", task: "Inspect the settings" };
-    input.params.configuration_session_id = "caller-cannot-grant-this";
     const started = await f.client.hosting!.start(input);
     const questions: ElicitationRequest[] = [];
     started.handle.onElicit((question) => {
       questions.push(question);
     });
-    await until(() => questions.length > 0);
-    expect(questions[0]!.kind).toBe("configuration_access");
-    expect(started.run.config.agent).toBe("clarvis-configure");
-    const [run] = await f.client.hosting!.list();
-    await expect(f.client.hosting!.detach(f.handoff(run!))).rejects.toMatchObject({
-      code: "conflict",
-    });
+    await until(() => f.entered.length > 0);
+    expect(questions).toEqual([]);
+    expect(started.run.config.agent).toBe("solo");
     await f.client.close();
     await until(() => f.host.stats().runs === 0);
-    expect(f.entered).toEqual([]);
+    expect(f.entered).toEqual(["configuration-run"]);
     const resumed = await f.connect();
     const session = (await resumed.sessions.get("conversation"))!;
     const second = await resumed.hosting!.start({
@@ -719,10 +768,9 @@ describe("file kernel behind the hosted RPC", () => {
       session_revision: session.revision!,
       params: { ...input.params, execution_id: "resumed-configuration" },
     });
-    const next = Promise.withResolvers<ElicitationRequest>();
-    second.handle.onElicit((question) => next.resolve(question));
-    expect((await next.promise).kind).toBe("configuration_access");
-    await second.handle.respond({ id: (await next.promise).id, action: "decline" });
-    expect((await second.handle.done).status).toBe("failed");
+    second.handle.onElicit((question) => questions.push(question));
+    f.released.resolve();
+    expect((await second.handle.done).status).toBe("completed");
+    expect(questions).toEqual([]);
   });
 });

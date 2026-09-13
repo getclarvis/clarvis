@@ -86,7 +86,6 @@ export interface HostedRegistryOptions {
   ): Promise<HostedRecoveryResolution>;
   /** Prior process index. Only discovery metadata returns; no execution or consent is restored. */
   initialState?: HostedRegistryState;
-  retireConfigurationSession(scope: string): void;
   limits?: Omit<HostedAdmissionOptions, "revokeInteractiveScope">;
   maxRetainedRuns?: number;
   maxReceipts?: number;
@@ -235,7 +234,6 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
       authorityScopes.delete(scope);
       allowlists.get(scope)?.revoke();
       allowlists.delete(scope);
-      options.retireConfigurationSession(scope);
     },
   });
   let closing = false;
@@ -877,7 +875,7 @@ export function createHostedRegistry(options: HostedRegistryOptions): HostedRegi
           if (entry.ref.revision !== input.revision)
             throw kernelError("conflict", "run revision changed; refresh before handoff");
           if (entry.execution === undefined || entry.prepared?.detachable !== true)
-            throw kernelError("conflict", "preparing or native configuration runs cannot detach");
+            throw kernelError("conflict", "preparing or non-detachable runs cannot detach");
           if (entry.execution.state().recoveryError !== undefined)
             throw kernelError("unavailable", "hosted recovery is unavailable");
           seenOperations.add(input.operation_id);

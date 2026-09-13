@@ -1,3 +1,4 @@
+import type { ExtensionProfileSkillRef } from "@clarvis/protocol";
 import {
   closeSync,
   constants,
@@ -12,37 +13,19 @@ import {
 import { join } from "node:path";
 import {
   DIR_MODE,
-  MARKETPLACE_FILE,
+  configurationPathClass,
   writeFileAtomicSync,
   type ConfigurationRoot,
 } from "@clarvis/paths";
 import { settingsDocumentRevision } from "../config/config-store.ts";
 import { kernelSettingsSchema } from "../config/capability-registry.ts";
 import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
+import { agentFrontmatterSchema, splitAgentFrontmatter } from "@clarvis/loop/host";
+import { validateSkillDocument } from "@clarvis/skills";
 
 const MAX_BYTES = 256 * 1024;
 const MAX_ENTRIES = 200;
-const CLARVIS_FILES = new Set([
-  "settings.json",
-  "shared-agent.md",
-  "guard-judge.md",
-  "memory-policy.md",
-  "CLARVIS.md",
-  "AGENTS.md",
-]);
-const CLARVIS_DIRS = new Set([
-  "agents",
-  "skills",
-  "plugins",
-  "workflows",
-  "extension-profiles",
-  "runtime-recipes",
-]);
-const SHARED_DIRS = new Set(["skills", "plugins"]);
-const PRIVATE_COMPONENT =
-  /^(?:keys?|subscriptions?|auth(?:-key)?|credentials?|secrets?|tokens?|workspace-trust)(?:[.-]|$)|^\.env(?:[.-]|$)|\.(?:pem|key|p12|pfx)$/i;
-
-/** Native configuration operations; every mutation requires the revision returned by a read. */
+/** Restricted configuration operations; every mutation requires the revision returned by a read. */
 export type ConfigurationFileRequest = {
   operation: "list" | "read" | "write" | "edit" | "delete";
   root: ConfigurationRoot;
@@ -52,18 +35,6 @@ export type ConfigurationFileRequest = {
   new_text?: string;
   expected_revision?: string | null;
 };
-
-/** Allowed authored configuration paths. Private machine state never enters this vocabulary. */
-function allowed(root: ConfigurationRoot, parts: readonly string[]): boolean {
-  const head = parts[0];
-  if (head === undefined) return true;
-  if (parts.some((part) => PRIVATE_COMPONENT.test(part))) return false;
-  if (parts.some((part) => [".git", "node_modules", "state", "cache"].includes(part.toLowerCase())))
-    return false;
-  if (root.endsWith("_agents"))
-    return SHARED_DIRS.has(head) || (parts.length === 1 && head === MARKETPLACE_FILE);
-  return CLARVIS_DIRS.has(head) || (parts.length === 1 && CLARVIS_FILES.has(head));
-}
 
 function pathParts(path: string): string[] {
   if (path === "") return [];
@@ -146,7 +117,7 @@ function readDocument(file: string): { content: string; revision: string } | nul
 }
 
 /**
- * Mediated host file access used only after native configuration consent.
+ * Mediated host file access used after admission and review of the concrete mutation.
  * Rechecks reject stable link escapes; parent replacement by another process remains the
  * documented portable-filesystem TOCTOU limitation. This is not an OS sandbox.
  */
@@ -157,13 +128,17 @@ export function configurationFileOperation(
 ): unknown {
   if (!Object.hasOwn(roots, request.root)) throw new Error("Unknown configuration root.");
   const parts = pathParts(request.path);
-  if (!allowed(request.root, parts))
+  if (configurationPathClass(request.root, parts.join("/")) === "private")
     throw new Error("This path is outside authored configuration access.");
   const root = roots[request.root];
   if (request.operation === "list") {
     if (!directories(root, parts, false)) return { entries: [], missing: true };
     const entries = readdirSync(join(root, ...parts), { withFileTypes: true })
-      .filter((entry) => allowed(request.root, [...parts, entry.name]) && !entry.isSymbolicLink())
+      .filter(
+        (entry) =>
+          configurationPathClass(request.root, [...parts, entry.name].join("/")) !== "private" &&
+          !entry.isSymbolicLink(),
+      )
       .filter((entry) => entry.isFile() || entry.isDirectory())
       .sort((a, b) => a.name.localeCompare(b.name));
     return {
@@ -174,7 +149,8 @@ export function configurationFileOperation(
       truncated: entries.length > MAX_ENTRIES,
     };
   }
-  if (parts.length === 0) throw new Error("Choose a configuration file, not its root.");
+  const fieldClass = parts.at(0);
+  if (fieldClass === undefined) throw new Error("Choose a configuration file, not its root.");
   const parents = parts.slice(0, -1);
   const parentExists = directories(root, parents, false);
   const file = join(root, ...parts);
@@ -199,6 +175,8 @@ export function configurationFileOperation(
       expectedRevision: current.revision,
       nextRevision: null,
       bytes: 0,
+      operation: "delete",
+      fieldClass,
       surface: "delete",
     });
     directories(root, parents, false);
@@ -219,6 +197,16 @@ export function configurationFileOperation(
   }
   if (typeof content !== "string" || Buffer.byteLength(content) > MAX_BYTES)
     throw new Error("Provide UTF-8 configuration content within the size limit.");
+  if (parts[0] === "agents" && parts.length === 2 && parts[1]?.endsWith(".md")) {
+    const document = splitAgentFrontmatter(content);
+    agentFrontmatterSchema.strict().parse(document.data);
+  }
+  if (parts[0] === "skills" && parts.at(-1) === "SKILL.md" && parts.length >= 3) {
+    validateSkillDocument(content, {
+      directory: join(root, ...parents),
+      ...(request.root.endsWith("_agents") ? { validation: "agent-skills" as const } : {}),
+    });
+  }
   if (parts.length === 1 && parts[0] === "settings.json") {
     try {
       kernelSettingsSchema.parse(JSON.parse(content));
@@ -226,16 +214,15 @@ export function configurationFileOperation(
       throw new Error("settings.json must be valid JSON satisfying Clarvis settings schema.");
     }
   }
-  const authoring =
-    (parts[0] === "agents" && parts.length === 2 && parts[1]?.endsWith(".md") === true) ||
-    (parts[0] === "skills" && parts.length === 3 && parts[2] === "SKILL.md") ||
-    (parts[0] === "workflows" && parts.length === 3 && parts[2] === "WORKFLOW.md");
+  const authoring = configurationPathClass(request.root, parts.join("/")) === "authoring";
   onAttested?.({
     canonicalPath: file,
     root: request.root,
     expectedRevision: current?.revision ?? null,
     nextRevision: settingsDocumentRevision(content),
     bytes: Buffer.byteLength(content),
+    operation: request.operation,
+    fieldClass,
     surface: authoring ? "authoring" : "operational",
   });
   directories(root, parents, true);
@@ -260,4 +247,24 @@ export function configurationFileMutationFacts(
     if (error !== EFFECT_PREVIEW_COMPLETE) throw error;
   }
   return facts;
+}
+
+/** Preserve the catalog identity of a newly authored skill, including permissive Clarvis names. */
+export function configurationSkillRef(
+  roots: Readonly<Record<ConfigurationRoot, string>>,
+  root: ConfigurationRoot,
+  path: string,
+  content: string,
+): ExtensionProfileSkillRef | undefined {
+  const parts = path.split("/");
+  if (parts.length !== 3 || parts[0] !== "skills" || parts[2] !== "SKILL.md") return undefined;
+  const metadata = validateSkillDocument(content, {
+    directory: join(roots[root], ...parts.slice(0, -1)),
+    ...(root.endsWith("_agents") ? { validation: "agent-skills" as const } : {}),
+  });
+  return {
+    scope: root.startsWith("workspace_") ? "workspace" : "user",
+    source: root.endsWith("_agents") ? "agents" : "clarvis",
+    name: metadata.name,
+  };
 }

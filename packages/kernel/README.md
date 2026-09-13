@@ -45,10 +45,9 @@ revokes volatile consent scopes on disconnect, takeover or conversation close.
 Native Host/Sandbox guard decisions use the current interactive command allowlist. Container guests
 receive no guard policy, approval bridge, reviewer or operator authority. Retired native scopes
 reject late answers, including one-time approval, and effect review caches only host-validated final
-decisions. Native configuration can retire an individual live session,
-aborting its pending approval and active native work without revoking another conversation.
-`createFileKernel` accepts `sessionAllowlistFor` and exposes host-only native routing/revocation
-through `nativeConfiguration`; these controls are not model-callable services.
+decisions. Configuration mutations consume the same host-owned authority reader and revocation
+signal as command review. `createFileKernel` installs the restricted writer into admitted editable
+Host/Sandbox runs; the ordinary agent and placement remain in use.
 `src/hosting/projection.ts` provides bounded append-only observation storage with immutable,
 byte-paginated snapshots. It uses the existing run event coalescer and keeps structural events;
 storage/quota failures prevent new snapshots. `src/hosting/execution.ts` keeps the sole managed-run
@@ -555,8 +554,11 @@ allow-list. Monitoring is armed for every identity file, including the selected 
 post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
 affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
 construction or delaying a run. `ExtensionProfileManager.observeSkillCatalog` then polls those paths
-asynchronously; later drift has the same non-blocking withdrawal behavior. Builtin and custom
-standalone roots carry exact `include` lists for only the skills captured in that snapshot. If any
+asynchronously. Standalone authorship queues a coalesced refresh after captured users settle;
+invalid replacements retain the last catalog and its monitors. Root watchers also detect new skills.
+Plugin drift retains its explicit trust boundary. Builtin and custom standalone roots carry exact
+`include` lists for the captured generation. New skills authored through the restricted writer
+include a reviewed membership delta: global profiles are copied and selected locally. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
 surface is withheld while its independently valid non-skill contributions remain.
 `PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
@@ -840,11 +842,19 @@ human, `auto` has an LLM answer it. In `on` and `auto`, a **deny** is enforced b
 review, and `denied_commands` outranks `allowed_commands`. Mode `off` supplies no command guard;
 independent filesystem, credential, capability and runtime boundaries remain active.
 
-The kernel supplies the first, nonreplaceable reviewer policy. Auto resolves its model from
+The kernel supplies nonreplaceable policies for effect and call-local command review. Auto resolves its model from
 operator-owned `effect_review` settings or the default model; `guard_judge` supplies optional
 overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
 cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
-owns the host evidence ledger, effect registry, rollout and validated review path.
+owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
+ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` with the complete call
+and the same host-owned evidence. That verdict is valid only for the exact call and installs no
+descriptor, envelope grant or session permission.
+Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
+LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
+composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
+Explicit breakpoints end at stable reviewer policy/guidance; operator evidence and call facts remain
+after that boundary.
 Auto reuses eligible exact human session approvals before invoking the reviewer, while deny-list
 matches and explicit Host escalation retain their precedence. Shell attestation recaptures process
 lookup/configuration roots from the actual spawn and refuses unmatched execution-affecting
@@ -855,17 +865,19 @@ The resolver snapshots host-owned placement once per run: enabled native sandbox
 contained-or-fail-closed, including legacy optional availability; Docker/Podman guests also count
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
-Outside the effect rollout, undecidable contained commands remain ordinary asks that Auto may
-judge; ordinary Host undecidable commands still require a human, and a nonempty deny list rejects
-either. Within the rollout, only complete effect attestations can refine syntactic opacity into
-judgeable effects, after deterministic denials. No unmatched
-contained silent-allow rule is installed. Forced `rm` and `sudo` ask after allowlist checks.
+Complete effect attestations refine syntactic opacity into mechanically covered effects after
+deterministic denials. Other ordinary Host/Sandbox asks and allow-list misses can use the call-local
+argv reviewer in Auto, including options, wrappers, dynamic arguments and environment prefixes.
+Review `on`, credential-file asks, forced `rm` and `sudo` remain human decisions. A nonempty deny
+list rejects undecidable commands before any reviewer. No unmatched contained silent-allow rule is
+installed.
 
 POSIX Git presentation globals normalize for matching, while validated `cd <in-workspace>` and
 Git `-C` directory operands receive comparison-only handling for straight `&&` chains.
 Environment prefixes and assignment-only `NAME=value` segments prevent static allow-list approval,
-including wildcard entries. Unattested bindings require a human on Host and explicit review when
-contained. Bare normalized commands remain visible to deny matching. Sequential literal `$NAME`
+including wildcard entries. In Auto, the call-local payload separates each binding at its first `=`,
+labels the effective executable and parameters, and retains the exact segment source; other modes
+keep the human review. Bare normalized commands remain visible to deny matching. Sequential literal `$NAME`
 bindings are still inlined for path analysis without authorizing their environment effects. Session
 approval keys keep their original normalized identities; unsupported control flow and PowerShell
 retain ordinary matching. Paths still participate in denial.
@@ -939,34 +951,26 @@ state. The lease is not a distributed-lock claim for NFS or multi-host storage.
 
 ## Builtin configuration skill
 
-Invoke `/clarvis-configure <task>` in Code to start a dedicated native configuration run after human
-elicitation. Its `configure_clarvis` tool provides `list`, `read`, `write`, `edit` and `delete` for
-authored files in the four global/workspace Clarvis and `.agents` roots. `edit` replaces exactly one
-matching snippet against the last read revision. Keys, subscriptions, auth, trust and private state
-are excluded. The run executes on the host without sandbox/container or extension/shell execution.
-Consent lasts only in the currently open TUI session; resume or reconnect requires approval again.
-It is published as one standalone transcript agent: every `configure_clarvis` read or mutation is
-visible as a normal tool call, live and after replay, and no child agent is spawned. The transcript
-labels the concrete list/read/write/edit/delete action and its scoped authored path while keeping
-content, revisions and edit snippets out of trace storage. An approved
-workspace (including an initially inert workspace) retains trust across these operator-authorized
-workspace mutations only when the resulting revision matches the authorized target and every other
-executable input remains unchanged. Concurrent drift leaves the resulting surface withheld; an
-already unapproved or changed workspace is never approved by file consent.
-See [self-configuration.md](../../specs/hosts/self-configuration.md) for the path policy, volatile
-identity and explicit filesystem limits. Normal turns retain their configured runtime.
+The file kernel installs `configure_clarvis` for an admitted editing entry agent in Host/Sandbox.
+The operator can request changes in the ordinary conversation; `/clarvis-configure` is optional
+embedded guidance with no agent override. Loading it does not grant authority. Each mutation uses
+the host-owned authority reader and the shared effect reviewer; human mode reviews the concrete
+operation, while automatic mode can reuse covered authorization. Container skill admission rejects
+this route before inference and directs the operator to Host/Sandbox.
 
-The file kernel includes `clarvis-configure`, a user-invocable skill with its body in
-[`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts). It ships in the executable,
-requires no `SKILL.md` or first-run scaffolding, and remains available with an empty custom
-Extension Profile. Agents carrying `use_skills` can load it through `load_skill`; clients can invoke
-it through the ordinary skills service. `/clarvis-configure` is the only path that starts the
-privileged configure run. A `$clarvis-configure` mention in an already-open turn stays literal text:
-it does not dump the guide and does not request `configuration_access`. Loading it during an ordinary
-turn grants no configuration authority: the guide directs changes to `/clarvis-configure`, and native
-file-mutation tools reject operational configuration before guard review. Canonical authoring files
-require a complete authoring effect and review approval. Disabling
-skills through the host or environment also disables this builtin.
+The restricted writer provides `list`, `read`, `write`, `edit` and `delete` across the four authored
+roots. It validates settings and agent fields, binds mutations to exact revisions, and excludes
+private state, credentials and links. An external edit during review causes conflict. Workspace
+trust carries only across the authorized target bytes when every other input is unchanged.
+Standalone skill changes request a coalesced refresh after captured users settle, without changing
+the host process. Skill snapshots keep resource and helper bytes together. See
+[self-configuration.md](../../specs/hosts/self-configuration.md).
+
+The `clarvis-configure` guide ships as TypeScript data in
+[`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts), requires no generated files,
+and remains available with an empty custom Extension Profile. Its `use_skills` and host/environment
+gates are the same as other skills. It directs protected operations to the available restricted
+writer in the current conversation.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
 models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,
@@ -981,9 +985,9 @@ Admiral launcher, a nonempty Extension Profile with exact plugin/skill identitie
 fragments for the configurable services. Workflow files are loaded on the next manager run;
 Extension Profile selection uses the operator's preview/confirmation and `/reconnect reload` flow
 when the host is idle. Plain `/reconnect` restores a connection to the same host without applying
-pinned configuration. The configuration tool authors files; installation, selection, workspace
-trust, credentials, UI preferences, loop registration and background controls retain their operator
-interfaces. A working default model is needed to enter this mode.
+pinned configuration. The configuration tool authors files and includes new-skill membership in the same review.
+Other installation/selection, workspace trust, credentials, UI preferences, loop registration and
+background controls retain their operator interfaces. A working default model is needed.
 Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
 be replaced by an installed skill. Discovery and resources for other skills retain their existing
 snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).
@@ -1361,3 +1365,7 @@ provider import to the kernel.
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
+`createAuthoringMutationReview` binds ordinary file-tool batches to the same `createConfigurationReview` and authority reader used by `configure_clarvis`. It validates final bytes, reviews one complete batch (including local skill membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds. Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases remain held through async file mutation and rollback companion changes on failure.
+
+Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).

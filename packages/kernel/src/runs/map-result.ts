@@ -18,7 +18,7 @@ import type {
 } from "@clarvis/protocol";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { engineMessagesToProto } from "./map-message.ts";
-import { engineEventToProto, nativeConfigurationEventToProto } from "./map-events.ts";
+import { engineEventToProto } from "./map-events.ts";
 import { RUN_EVENT_POLICY } from "./event-policy.ts";
 import { planRefFromCapabilityState } from "./plan-ref.ts";
 import { taskBindingFromCapabilityState } from "./task-binding.ts";
@@ -126,24 +126,6 @@ export function engineResultToProto(executionId: string, response: RunResponse):
   };
 }
 
-/** Present the native configuration leaf's usage as the standalone entry agent. */
-export function nativeConfigurationResultToProto(
-  executionId: string,
-  response: RunResponse,
-): RunResult {
-  const result = engineResultToProto(executionId, response);
-  if (result.usage === undefined) return result;
-  return {
-    ...result,
-    usage: {
-      ...result.usage,
-      by_agent: result.usage.by_agent?.map((agent) =>
-        agent.role === "subagent" ? { ...agent, role: "lead" as const } : agent,
-      ),
-    },
-  };
-}
-
 /** Builds a failed {@link RunResult} from a {@link KernelException} with empty usage. */
 export function failedResult(executionId: string, err: KernelException): RunResult {
   return {
@@ -183,10 +165,7 @@ export function summaryToProto(s: StoredSummary): RunSummary {
  *   it would render a partially recovered run as an ordinary interrupted one.
  */
 export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER): RunDetail {
-  const nativeConfiguration = s.host_metadata?.execution_mode === "native_configuration";
-  const result = nativeConfiguration
-    ? nativeConfigurationResultToProto(s.id, s.response)
-    : engineResultToProto(s.id, s.response);
+  const result = engineResultToProto(s.id, s.response);
   const baseUsage = result.usage ?? liveUsage(s.response.usage);
   result.usage = {
     ...baseUsage,
@@ -208,7 +187,7 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
     ...(extensionProfile !== undefined ? { extension_profile: extensionProfile } : {}),
     ...(s.recovery !== undefined ? { recovery: s.recovery } : {}),
     messages: engineMessagesToProto(s.request.messages),
-    events: rehydrateEvents(s, logger, nativeConfiguration),
+    events: rehydrateEvents(s, logger),
     result,
   };
 }
@@ -224,14 +203,9 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
  *   lines without having to read which, and raises `CLARVIS_LOG=runs=debug` to
  *   get the kinds.
  */
-function rehydrateEvents(
-  s: StoredExecution,
-  logger: Logger,
-  nativeConfiguration: boolean,
-): RunEvent[] {
-  const project = nativeConfiguration ? nativeConfigurationEventToProto : engineEventToProto;
+function rehydrateEvents(s: StoredExecution, logger: Logger): RunEvent[] {
   const mapped = s.trace.events
-    .map((event) => project(event, logger))
+    .map((event) => engineEventToProto(event, logger))
     .filter(
       (event): event is NonNullable<typeof event> =>
         event !== null && RUN_EVENT_POLICY[event.type].durability === "persisted",

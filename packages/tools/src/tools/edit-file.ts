@@ -52,7 +52,7 @@ export async function editFileLocked(
       );
     }
     const newText = transform(decoded.content);
-    await writeAtomic(target, reencode(newText, decoded));
+    await writeAtomic(target, reencode(newText, decoded), config.reviewMutation);
     const rel = displayPath(target, config.workspaceRoot);
     const content = message(rel);
     const diff = unifiedDiff(rel, decoded.content, newText, config.maxDiffInputBytes);
@@ -236,6 +236,7 @@ export function applyEdit(
  * {@link editFileLocked} (`is_binary`).
  */
 export const editFile: ToolDef = {
+  atomicMutation: true,
   name: "edit_file",
   description:
     "Replace literal text in one file. Prefer an exact, unique match; a whitespace-tolerant " +

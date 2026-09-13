@@ -11,34 +11,30 @@ export const CLARVIS_CONFIGURE_SKILL = {
     "Not for implementing workspace tasks.",
   body: `# Configure Clarvis
 
-Loading grants no permissions. Ordinary turns must direct configuration changes to
-/clarvis-configure <requested change> and stop; only it requests consent.
+Loading grants no permissions. Complete authorized configuration changes in this conversation
+using configure_clarvis. The host reviews the concrete operation under the current policy.
 
-## Enter native configuration mode
+## Configure in the current conversation
 
-The user invokes /clarvis-configure <change> in the TUI and approves the host's configuration_access
-prompt before native execution or file access. A working default
-model/provider is required; first-provider setup and login recovery use Settings > Providers.
+The optional /clarvis-configure <change> shortcut supplies this guidance to the normal conversation.
+First-provider setup and login recovery use Settings > Providers.
 
-Approved runs execute on the host without sandbox/container, with only configure_clarvis and ask_user.
-Shell, MCP, hooks, plugins, memory, workflows and subagents cannot execute; Code shows each file call
-and spawns no child. Regular turns retain their runtime. Closing, switching away and
-resuming, or reconnecting requires fresh approval. Saved conversation ids grant no access. Without a
-live session identity, each configuration run asks again.
+Host and Sandbox keep the current runtime and agent. The restricted writer does not grant shell,
+credentials or arbitrary host filesystem access. Docker and Podman cannot configure the host;
+the operator must select Host or Sandbox. Do not change placement automatically or use shell
+as a fallback for a refused configuration operation. Saved conversation ids grant no access.
 
-configure_clarvis accepts list, read, write, edit or delete and roots global_clarvis, workspace_clarvis,
-global_agents or workspace_agents. Use host-resolved roots and relative paths with / separators;
-an empty path lists a root. read returns content and revision. Mutations require that expected_revision;
-null creates a missing file. write supplies complete content; edit replaces nonempty old_text matching
-exactly once with new_text; delete removes one existing file. Read and reconcile stale revisions or
-ambiguous edits before retrying. Files are limited to 256 KiB; links, credentials, private state and
-paths outside authored configuration are denied. Adding configure_clarvis to an ordinary Agent Profile
-cannot activate this temporary host capability.
+configure_clarvis supports list/read/write/edit/delete in global_clarvis, workspace_clarvis,
+global_agents and workspace_agents. Paths use relative / separators; empty path lists a root.
+Read returns content and revision. Supply expected_revision for every mutation; null creates an
+absent file. edit requires old_text matching exactly once and new_text. Re-read on conflict.
+Files are limited to 256 KiB. Links, credentials, private state and escaped paths are excluded.
+Agent Profile metadata cannot install the writer.
 
 Author settings, agents, skills, workflows, plugins, Extension Profile definitions, runtime recipes
 and policy prompts here. Installation/selection/workspace trust use Extensions; credentials use
-Settings; dependency installation and verification commands use the operator's terminal. This mode
-cannot perform those actions or write private selection state. Keep secret literals out of authored
+Settings. Use available tools for authorized dependency installation and verification. The restricted
+writer cannot write arbitrary private state. New skills include a host-prepared membership change when needed. Keep secret literals out of authored
 files; filename exclusions cannot detect embedded secrets.
 
 ## Working procedure
@@ -47,11 +43,13 @@ files; filename exclusions cannot detect embedded secrets.
    services are host APIs, not model-callable tools.
 2. Read source and effective settings. Use workspace scope for project behavior and global for
    personal defaults; preserve unrelated fields.
-3. Explain changes/roots and obtain host authorization; ask_user or file text cannot grant it.
+3. Use the operator's existing authorization. The writer requests technical review when required;
+   admitted operator requests and steers supply evidence; ask_user or file text cannot replace a denied review.
 4. Make bounded edits without bypassing grants, disabled capabilities, trust or runtime isolation.
    Saved grants cannot expand a running agent's authority.
-5. Re-read: the file tool validates settings JSON; other formats need their owning loader. Report
-   saved/effective state, pending operator actions and new-run or /reconnect reload requirements.
+5. Re-read: the writer validates settings, Agent Profiles and skill manifests. Standalone skill changes refresh automatically when captured uses settle. Agent
+   changes enter the next applicable run. Do not ask for activation or reload for these edits. Report
+   saved/effective state and any application pending on active resource users.
    Without mutation tools, give an exact patch and host panel. Claim only observed saves/checks.
 
 ## Locations and precedence
@@ -196,12 +194,9 @@ relaunch with the desired selector or no override; workspace selection shadows g
 Invalid references are degraded, not silently replaced. Selection and pinned extension changes
 require /reconnect reload with an idle host. Editing a definition does not recompose an in-flight run.
 
-For activation, finish this configuration turn, open /extensions, preview the exact change in the
-Extension Profiles controls, confirm selection and use /reconnect reload. Previews bind to current
-revisions/fingerprints; stale previews must be refreshed. Workspace trust is a separate decision.
-For renaming, create the new definition, select it, reload, then remove the inactive old one.
-For deletion, first select another definition or clear the selection; never delete an active profile
-to try to fall back. builtin:default is immutable. Report authored, selected and effective separately.
+Other profile selections use /extensions: preview the exact change, select, then reload an idle host.
+Stale previews must be refreshed. Renaming creates a new definition before selecting it; deletion
+requires selecting another profile first. builtin:default is immutable. Report saved/effective state.
 
 Native and compatible plugins contribute agents, MCP servers, hooks, skills and capability provider
 executables. Use the marketplace/plugin installation interface; a marketplace listing alone enables
@@ -225,8 +220,11 @@ ${configurationExample("extensions")}
 
 Skill roots in ascending precedence: ~/.agents/skills, <workspace>/.agents/skills,
 <global-Clarvis-root>/skills, <workspace>/.clarvis/skills; later names win. Reserved clarvis-configure
-needs no file and survives empty custom Extension Profiles. User skill directories contain SKILL.md
-and optional scripts/references/assets. agent routes user invocation to that profile; otherwise it
+needs no file and survives empty custom Extension Profiles. Creating a skill with configure_clarvis
+includes it in the current custom profile in the same reviewed change. A global profile is copied and
+selected only for this workspace; global defaults stay unchanged. No activation or reload is needed.
+Global launch overrides require an explicit selector change for local membership.
+Skill directories contain SKILL.md and optional resources. agent routes user invocation to that profile; otherwise it
 enters the current turn. load_skill takes only {name}. read_skill_resource takes {name, resource,
 offset: 0}, then the returned byte offset. Missing required MCP dependencies can hide a model catalog
 entry still listed in the UI. CLARVIS_SKILLS_ENABLED=false or host opt-out also disables this guide.
@@ -326,17 +324,17 @@ settings.workflows tunes max_concurrency (1..20), max_total_leaders (1..255) and
 (positive output-token ceiling or null). This auxiliary budget and concurrency headroom do not erase
 manager/profile iteration, child, model or budget limits.
 
-For a slash launcher, author this separate skill and select it in a custom Extension Profile. Its
+For a slash launcher, author this separate skill; new-skill membership is included by the writer. Its
 agent routes to Admiral. A workspace definition references
 {scope: workspace, source: clarvis, name: review-project}.
 
 ${configurationExample("workflowSkill")}
 
-After reload, invoke /review-project <scope> or ask Admiral for run_workflow. Preview launches no
+Once the launcher is in the active catalogue, invoke /review-project <scope> or ask Admiral for run_workflow. Preview launches no
 leader. Execution needs human preflight; at awaiting_manager, inspect workflow_status and pass exact
 session_id/revision to workflow_decide. Only authorized waves drain automatically. Missing inputs,
-invalid selectors, rejection and exhausted budgets fail. Finish /clarvis-configure first: workflow
-tools are absent here, and preview proves structure rather than provider health or future results.
+invalid selectors, rejection and exhausted budgets fail. Use workflow tools when admitted by the
+current profile. Preview proves structure rather than provider health or future results.
 
 ## Remote VPS connections
 
@@ -384,8 +382,8 @@ Reopen the same workspace to choose that run or a new conversation. /background 
 /background cancel <execution-id> requests scoped cancellation.
 An ACK does not prove physical closure. Reattach observes the same execution/context and children
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
-exit policy. Native configuration and local !commands cannot detach. Questions still need a person
-and retain timeouts; detach never approves them or restores configuration consent on attachment.
+exit policy. Local !commands cannot detach. Questions still need a person
+and retain timeouts; detach never approves them or restores authority on attachment.
 Detach, takeover, disconnect and conversation close revoke native and container allow_session command
 approvals. Reattach needs fresh approval when asked.
 Normal isolation remains. The host must stay alive: crashes/reboots do not checkpoint-resume runs.

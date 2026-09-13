@@ -10,13 +10,13 @@ and authenticated authority on the host.
 
 This document is the current contract and records only behavior implemented in source.
 
-The builtin `/clarvis-configure` flow has an explicit host-only
-[native configuration contract](self-configuration.md). A separate human elicitation admits its
-limited configuration file tools for the currently open TUI session. That run never enters the
-runtime coordinator, launches a container or invokes a sandbox. It executes no extensions and
-does not change placement for subsequent ordinary runs. Resume requires new approval.
-Production: `createNativeConfigurationRuns` in
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
+[Direct configuration](self-configuration.md) is admitted only in Host/Sandbox and keeps the
+ordinary runtime. The host installs its restricted writer; editable metadata cannot install it.
+Container admission rejects an explicit configuration skill request before inference and directs
+the operator to Host or Sandbox. No configuration operation is forwarded from a guest.
+Production: `createDirectConfigurationCapability` in
+[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts) and
+`createSettingsRunAssembler` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).
 Test: [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
 
 Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker and

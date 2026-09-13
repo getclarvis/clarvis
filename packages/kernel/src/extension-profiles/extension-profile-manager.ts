@@ -1,6 +1,7 @@
 import {
   constants,
   closeSync,
+  existsSync,
   fstatSync,
   mkdirSync,
   openSync,
@@ -15,6 +16,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import {
   acquireLocalLeaseSync,
+  configurationRoots,
   DIR_MODE,
   globalPaths,
   workspacePaths,
@@ -23,6 +25,7 @@ import {
 } from "@clarvis/paths";
 import {
   clarvisSkillRoots,
+  listSkillDirs,
   createAgentSkills,
   hashBoundedFile,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -69,6 +72,20 @@ import type {
 } from "../plugins/plugin-contributions.ts";
 import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-manifest.ts";
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
+
+import {
+  configurationFileMutationFacts,
+  configurationFileOperation,
+  type ConfigurationFileRequest,
+} from "../configuration/files.ts";
+import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
+
+/** Host-prepared membership delta reviewed together with a newly authored skill. */
+export interface PreparedSkillInclusion {
+  facts: readonly ConfigurationMutationFacts[];
+  review: unknown;
+  apply<T>(write: () => T): T;
+}
 
 const BUILTIN_REF: ExtensionProfileRef = { scope: "builtin", name: "default" };
 const MAX_EXTENSION_PROFILE_BYTES = 1024 * 1024;
@@ -553,7 +570,12 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   observeSkillCatalog(skills: readonly SkillContent[]): void;
   verifySkillCatalog(skills: readonly SkillContent[]): void;
   skillAvailable(skill: SkillInfo): boolean;
-  onSkillRootsChanged(listener: () => void): () => void;
+  onSkillRootsChanged(listener: (retainOnFailure?: boolean) => void): () => void;
+  requestSkillRefresh(): void;
+  prepareSkillInclusion(
+    ref: ExtensionProfileSkillRef | readonly ExtensionProfileSkillRef[],
+  ): PreparedSkillInclusion | undefined;
+  flushSkillRefresh(): void;
   runRef(): ExtensionProfileRunRef;
   workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
   assertWorkspaceTrustTransitionAllowed(): void;
@@ -573,11 +595,14 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   const previews = new Map<string, PreviewEntry>();
   let runtime: ExtensionProfileRuntimeBinding | undefined;
   let pinned: ResolvedExtensionProfile | undefined;
+  let authoredProfile: ResolvedExtensionProfile | undefined;
   let pinnedEnabled: readonly ExtensionProfilePluginRef[] = [];
   let pinnedTrust: WorkspaceTrustVerdict = { state: "inert" };
   const driftedSkillDirs = new Set<string>();
   const skillWatchers = new Map<string, SkillPathWatcher[]>();
-  const skillRootListeners = new Set<() => void>();
+  const rootWatchers = new Map<string, SkillPathWatcher>();
+  const skillRootListeners = new Set<(retainOnFailure?: boolean) => void>();
+  const capturedSkillPaths = new Map<string, string>();
   let workspaceTrustSurfaceCaptured = false;
   let capturedWorkspaceTrustSurface: unknown;
   let closed = false;
@@ -623,7 +648,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     }
   };
 
-  /** Run one synchronous filesystem transaction under a crash-recoverable local lease. */
+  /** Retain the crash-recoverable local lease until the transaction settles. */
   const underLease = <T>(path: string, label: string, operation: () => T): T => {
     const lease = acquireLocalLeaseSync(`${path}.lock`, {
       staleMs: EXTENSION_PROFILE_LOCK_STALE_MS,
@@ -631,9 +656,13 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     if (lease === null)
       throw kernelError("conflict", `${label} is being changed by another process`);
     try {
-      return operation();
-    } finally {
+      const result = operation();
+      if (result instanceof Promise) return result.finally(() => lease.release()) as T;
       lease.release();
+      return result;
+    } catch (error) {
+      lease.release();
+      throw error;
     }
   };
 
@@ -1328,6 +1357,139 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   };
 
   const skillRoots = (): SkillRootInput[] => pinnedSkillRoots();
+  let skillRefreshPending = false;
+
+  /** Observe empty/grouping directories within the same bounded discovery walk as skills. */
+  const observeSkillRoots = (): void => {
+    const present = new Set<string>();
+    for (const root of standardRoots) {
+      listSkillDirs(
+        root.path,
+        false,
+        {
+          logger,
+          warningSink: (message) =>
+            logger.warn(
+              { event: "kernel.extension_profile.skill_discovery_notice", detail: message.trim() },
+              "skill directory discovery reported a limitation",
+            ),
+        },
+        undefined,
+        {
+          discovery: root.discovery,
+          manifestName: root.manifestName,
+          observeDirectory(path) {
+            present.add(path);
+            if (rootWatchers.has(path)) return;
+            try {
+              rootWatchers.set(path, watchSkillPath(path, requestSkillRefresh));
+            } catch (error) {
+              logger.warn(
+                {
+                  event: "kernel.extension_profile.skill_root_watch_unavailable",
+                  path,
+                  cause: error instanceof Error ? error.message : String(error),
+                },
+                "skill directory monitoring is unavailable; authorized writer notifications remain active",
+              );
+            }
+          },
+        },
+      );
+    }
+    for (const [path, watcher] of rootWatchers) {
+      if (!present.has(path) && !existsSync(path)) {
+        watcher.close();
+        rootWatchers.delete(path);
+      }
+    }
+  };
+
+  /** Coalesce authoring changes and publish only when all captured resource users have settled. */
+  const flushSkillRefresh = (): void => {
+    if (!skillRefreshPending || closed || pinned === undefined || runtime?.hasActiveRuns?.())
+      return;
+    skillRefreshPending = false;
+    observeSkillRoots();
+    const candidate = authoredProfile ?? pinned;
+    if (
+      authoredProfile !== undefined &&
+      readDefinition(candidate.ref).revision !== candidate.definition_revision
+    )
+      return;
+    const selected =
+      candidate.ref.scope === "builtin" ? undefined : (candidate.definition?.skills ?? []);
+    const inventory = standaloneInventory(selected);
+    const refs = selected ?? defaultStandaloneSelection(inventory);
+    const skills = refs.flatMap((ref) => {
+      const entry = inventory.find(
+        (item) =>
+          item.ref.scope === ref.scope &&
+          item.ref.source === ref.source &&
+          item.ref.name === ref.name,
+      );
+      return entry === undefined
+        ? []
+        : [
+            {
+              ref,
+              active: true,
+              found: true,
+              description: entry.description,
+              digest: entry.digest,
+            },
+          ];
+    });
+    if (
+      pinned.standalone_skills.some(
+        (previous) =>
+          previous.active &&
+          !skills.some(
+            (next) =>
+              next.ref.scope === previous.ref.scope &&
+              next.ref.source === previous.ref.source &&
+              next.ref.name === previous.ref.name,
+          ) &&
+          existsSync(
+            capturedSkillPaths.get(
+              `${previous.ref.scope}/${previous.ref.source}/${previous.ref.name}`,
+            ) ?? "",
+          ),
+      )
+    )
+      return;
+    if (
+      authoredProfile === undefined &&
+      skills.length === pinned.standalone_skills.length &&
+      skills.every((next) =>
+        pinned!.standalone_skills.some(
+          (prior) =>
+            prior.active &&
+            prior.ref.scope === next.ref.scope &&
+            prior.ref.source === next.ref.source &&
+            prior.ref.name === next.ref.name &&
+            prior.digest === next.digest,
+        ),
+      )
+    )
+      return;
+    const previous = pinned;
+    const { fingerprint: _previousFingerprint, ...identity } = candidate;
+    const next = {
+      ...identity,
+      standalone_skills: skills,
+      counts: { ...candidate.counts, standalone_skills_active: skills.length },
+    };
+    pinned = { ...next, fingerprint: fingerprintOf(next) };
+    if (!publishSkillRootsChanged(true)) pinned = previous;
+    else authoredProfile = undefined;
+  };
+
+  const requestSkillRefresh = (): void => {
+    if (closed || skillRefreshPending) return;
+    skillRefreshPending = true;
+    queueMicrotask(flushSkillRefresh);
+  };
 
   /** Release monitors for a catalog that is about to be replaced at an idle trust boundary. */
   const resetSkillMonitoring = (): void => {
@@ -1342,10 +1504,14 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
    * Watch each admitted skill directory after one exact catalog capture.
    *
    * @remarks Watch callbacks only flip an in-memory latch and publish a notice.
-   * They never rescan, hash, or mutate run admission. A changed skill remains
-   * withdrawn until an explicit snapshot replacement captures new bytes.
+   * They never rescan, hash, or mutate run admission. Standalone authorship queues
+   * a validated idle refresh; plugin changes retain their explicit trust boundary.
    */
   const withdrawSkill = (skill: SkillInfo): void => {
+    if (!skill.source.startsWith("plugin:")) {
+      requestSkillRefresh();
+      return;
+    }
     if (closed || driftedSkillDirs.has(skill.dir)) return;
     driftedSkillDirs.add(skill.dir);
     for (const watcher of skillWatchers.get(skill.dir) ?? []) watcher.close();
@@ -1382,6 +1548,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
   const observeSkillCatalog = (skills: readonly SkillContent[]): void => {
     if (closed) return;
     for (const skill of skills) {
+      capturedSkillPaths.set(`${skill.scope}/${skill.source}/${skill.name}`, skill.path);
       if (skillWatchers.has(skill.dir)) continue;
       const onChange = (): void => withdrawSkill(skill);
       const paths = new Set<string>(
@@ -1410,6 +1577,7 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
         );
       }
     }
+    observeSkillRoots();
   };
 
   const skillAvailable = (skill: SkillInfo): boolean => !driftedSkillDirs.has(skill.dir);
@@ -1442,24 +1610,35 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       if (skill.source.startsWith("plugin:")) continue;
       const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
       const pinnedDigest = expected.get(key);
-      if (pinnedDigest === undefined || current.get(key) !== pinnedDigest) withdrawSkill(skill);
+      if (pinnedDigest === undefined || current.get(key) !== pinnedDigest) {
+        driftedSkillDirs.add(skill.dir);
+        requestSkillRefresh();
+      }
     }
   };
 
   /** Subscribe to idle trust recompositions that replace the exact skill-root set. */
-  const onSkillRootsChanged = (listener: () => void): (() => void) => {
+  const onSkillRootsChanged = (listener: (retainOnFailure?: boolean) => void): (() => void) => {
     if (closed) return () => undefined;
     skillRootListeners.add(listener);
     return () => skillRootListeners.delete(listener);
   };
 
   /** Replace subscribers synchronously while no run can observe the old trust catalog. */
-  const publishSkillRootsChanged = (): void => {
-    resetSkillMonitoring();
+  const publishSkillRootsChanged = (retainOnFailure = false): boolean => {
+    const previousWatchers = new Map(skillWatchers);
+    const previousDrift = new Set(driftedSkillDirs);
+    const previousPaths = new Map(capturedSkillPaths);
+    if (retainOnFailure) {
+      skillWatchers.clear();
+      driftedSkillDirs.clear();
+    } else resetSkillMonitoring();
+    let success = true;
     for (const listener of [...skillRootListeners]) {
       try {
-        listener();
+        listener(retainOnFailure);
       } catch (error) {
+        success = false;
         logger.warn(
           {
             event: "kernel.extension_profile.skill_recomposition_failed",
@@ -1467,8 +1646,22 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
           },
           "a skill catalog subscriber failed during an idle trust recomposition",
         );
+        if (retainOnFailure) break;
       }
     }
+    if (retainOnFailure) {
+      if (success) {
+        for (const watchers of previousWatchers.values())
+          for (const watcher of watchers) watcher.close();
+      } else {
+        resetSkillMonitoring();
+        for (const [path, watchers] of previousWatchers) skillWatchers.set(path, watchers);
+        for (const path of previousDrift) driftedSkillDirs.add(path);
+        capturedSkillPaths.clear();
+        for (const [key, path] of previousPaths) capturedSkillPaths.set(key, path);
+      }
+    }
+    return success;
   };
 
   /**
@@ -2011,6 +2204,156 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     );
   };
 
+  /** Prepare a skill-only membership change without applying or approving any plugin contribution. */
+  const prepareSkillInclusion = (
+    raw: ExtensionProfileSkillRef | readonly ExtensionProfileSkillRef[],
+  ): PreparedSkillInclusion | undefined => {
+    const refs = (Array.isArray(raw) ? raw : [raw]).map((ref) => skillRefSchema.parse(ref));
+    if (refs.length === 0 || refs.length > 128)
+      throw kernelError("invalid_request", "Invalid skill inclusion batch");
+    const current = authoredProfile ?? pinned;
+    if (current === undefined)
+      throw kernelError("unavailable", "Extension Profile has not been resolved");
+    if (current.ref.scope === "builtin") return undefined;
+    const source = readDefinition(current.ref);
+    if (source.definition === undefined || source.revision !== current.definition_revision)
+      throw kernelError(
+        "conflict",
+        "The active Extension Profile changed; retry after its catalog refresh",
+      );
+    const additions = refs.filter(
+      (ref, index) =>
+        !source.definition!.skills.some(
+          (skill) =>
+            skill.scope === ref.scope && skill.source === ref.source && skill.name === ref.name,
+        ) &&
+        refs.findIndex(
+          (skill) =>
+            skill.scope === ref.scope && skill.source === ref.source && skill.name === ref.name,
+        ) === index,
+    );
+    if (additions.length === 0) return undefined;
+    if (options.cliSelection !== undefined && current.ref.scope !== "workspace")
+      throw kernelError(
+        "conflict",
+        "The command-line Extension Profile cannot include a local skill; select a workspace profile for this operation",
+      );
+    const target: { scope: Scope; name: string } =
+      current.ref.scope === "workspace"
+        ? { scope: "workspace", name: current.ref.name }
+        : {
+            scope: "workspace",
+            name: `local-${current.ref.name.slice(0, 32)}-${randomUUID().slice(0, 8)}`,
+          };
+    const definition = {
+      ...source.definition,
+      skills: [...source.definition.skills, ...additions],
+    };
+    const proposed = compositionDefinition({
+      ref: target,
+      definition,
+      expected_revision: null,
+      selection_scope: "workspace",
+    });
+    const replacing = current.ref.scope === "workspace";
+    const expected = replacing ? source.revision! : null;
+    const selections = selectionRevisions();
+    const beforeSelection = readBounded(
+      selectionPath("workspace"),
+      "workspace Extension Profile selection",
+    );
+    if (!replacing && beforeSelection.raw === undefined && beforeSelection.missing !== true)
+      throw kernelError("unavailable", "The workspace selection could not be captured");
+    const selectionContent = `${JSON.stringify({ schema_version: 1, extension_profile: target }, null, 2)}\n`;
+    const roots = configurationRoots({
+      workspaceRoot: options.workspaceRoot,
+      globalDir: options.globalDir,
+      home: options.home,
+    });
+    const profileWrite: ConfigurationFileRequest = {
+      operation: "write",
+      root: "workspace_clarvis",
+      path: `extension-profiles/${target.name}.json`,
+      content: proposed.serialized,
+      expected_revision: expected?.slice(7) ?? null,
+    };
+    const profileFact = configurationFileMutationFacts(roots, profileWrite)!;
+    const facts: ConfigurationMutationFacts[] = [
+      { ...profileFact, fieldClass: "extension_profile.skills" },
+    ];
+    if (!replacing)
+      facts.push({
+        canonicalPath: selectionPath("workspace"),
+        root: "workspace_clarvis",
+        expectedRevision: beforeSelection.revision?.slice(7) ?? null,
+        nextRevision: documentRevision(Buffer.from(selectionContent)).slice(7),
+        bytes: Buffer.byteLength(selectionContent),
+        operation: "write",
+        fieldClass: "extension_profile.selection",
+        surface: "operational",
+      });
+    return {
+      facts,
+      review: {
+        operation: "include_new_skill",
+        skills: additions,
+        profile: target,
+        previous_profile: current.ref,
+        definition,
+        selection_scope: "workspace",
+      },
+      apply(write) {
+        return withDefinitionMutation(target, expected, (beforeDefinition, _path) =>
+          underSelectionLeases(["global", "workspace"], () => {
+            const now = selectionRevisions();
+            if (
+              now.global !== selections.global ||
+              now.workspace !== selections.workspace ||
+              readDefinition(current.ref).revision !== source.revision
+            )
+              throw kernelError("conflict", "Extension Profile changed during authoring review");
+            let definitionWritten = false;
+            let selectionWritten = false;
+            try {
+              configurationFileOperation(roots, profileWrite);
+              definitionWritten = true;
+              if (!replacing) {
+                writeSelection(target, "workspace");
+                selectionWritten = true;
+              }
+              const finish = <T>(result: T): T => {
+                authoredProfile = {
+                  ...current,
+                  id: extensionProfileId(target),
+                  ref: target,
+                  immutable: false,
+                  selection_origin: replacing ? current.selection_origin : "workspace",
+                  definition,
+                  definition_revision: proposed.view.revision,
+                };
+                requestSkillRefresh();
+                return result;
+              };
+              const rollback = (error: unknown): never => {
+                if (selectionWritten) restoreSelection("workspace", beforeSelection);
+                if (definitionWritten) restoreDefinition(target, beforeDefinition);
+                throw error;
+              };
+              const result = write();
+              return result instanceof Promise
+                ? (result.then(finish, rollback) as typeof result)
+                : finish(result);
+            } catch (error) {
+              if (selectionWritten) restoreSelection("workspace", beforeSelection);
+              if (definitionWritten) restoreDefinition(target, beforeDefinition);
+              throw error;
+            }
+          }),
+        );
+      },
+    };
+  };
+
   const service: ExtensionProfileService = {
     list,
     async current() {
@@ -2287,6 +2630,9 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
     verifySkillCatalog,
     skillAvailable,
     onSkillRootsChanged,
+    requestSkillRefresh,
+    prepareSkillInclusion,
+    flushSkillRefresh,
     runRef() {
       if (pinned === undefined)
         throw kernelError("unavailable", "Extension Profile has not been resolved");
@@ -2298,6 +2644,8 @@ export function createExtensionProfileManager(options: ExtensionProfileManagerOp
       if (closed) return;
       closed = true;
       resetSkillMonitoring();
+      for (const watcher of rootWatchers.values()) watcher.close();
+      rootWatchers.clear();
       skillRootListeners.clear();
     },
   };

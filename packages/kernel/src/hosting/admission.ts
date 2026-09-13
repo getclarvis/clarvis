@@ -44,7 +44,7 @@ export interface HostedAdmissionOptions {
   maxRuns?: number;
   maxActivities?: number;
   maxSessionScopes?: number;
-  /** Synchronously retire native-configuration and shell-session consent for this one scope. */
+  /** Synchronously revoke operator authority and command grants for this one scope. */
   revokeInteractiveScope(scope: string): void;
 }
 

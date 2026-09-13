@@ -43,11 +43,19 @@ function validConstraints(id: string, value: Record<string, string | number | bo
           : id === "git.commit"
             ? ["head_sha"]
             : [
+                  "workspace.content.write",
                   "clarvis.authoring.write",
                   "clarvis.operational_config.write",
                   "destructive.delete",
                 ].includes(id)
-              ? ["expected_revision", "next_revision", "bytes"]
+              ? [
+                  "expected_revision",
+                  "next_revision",
+                  "bytes",
+                  "operation",
+                  "field_class",
+                  "diff_digest",
+                ]
               : [];
   if (Object.keys(value).some((key) => !keys.includes(key))) return false;
   if (
@@ -72,18 +80,28 @@ function validConstraints(id: string, value: Record<string, string | number | bo
   if (id === "git.commit")
     return typeof value.head_sha === "string" && /^[a-f0-9]{40,64}$/.test(value.head_sha);
   if (
-    ["clarvis.authoring.write", "clarvis.operational_config.write", "destructive.delete"].includes(
-      id,
-    )
-  )
+    [
+      "workspace.content.write",
+      "clarvis.authoring.write",
+      "clarvis.operational_config.write",
+      "destructive.delete",
+    ].includes(id)
+  ) {
+    if (id === "workspace.content.write" && Object.keys(value).length === 0) return true;
     return (
       typeof value.expected_revision === "string" &&
       /^(?:absent|[a-f0-9]{64})$/.test(value.expected_revision) &&
       typeof value.next_revision === "string" &&
       /^(?:absent|[a-f0-9]{64})$/.test(value.next_revision) &&
       typeof value.bytes === "number" &&
-      value.bytes <= 262144
+      value.bytes <= 262144 &&
+      (value.operation === undefined ||
+        ["write", "edit", "delete"].includes(String(value.operation))) &&
+      (value.field_class === undefined || typeof value.field_class === "string") &&
+      (value.diff_digest === undefined ||
+        (typeof value.diff_digest === "string" && /^[a-f0-9]{64}$/.test(value.diff_digest)))
     );
+  }
   return true;
 }
 

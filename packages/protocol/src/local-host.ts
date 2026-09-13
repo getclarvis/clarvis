@@ -3,6 +3,8 @@ import type { RuntimeStatus } from "./client.ts";
 /** Latest operator-facing process state, without configuration values or provider credentials. */
 export interface LocalHostStatus {
   host_generation: string;
+  /** Changes when a validated local skill catalog becomes available. */
+  skills_revision?: number;
   runtime: RuntimeStatus;
   runtime_notice?: { sequence: number; message: string };
   extension_drift?: {

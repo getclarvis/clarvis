@@ -276,7 +276,6 @@ async function fixture(
       if (count > 0) closedIndex[count - 1]?.resolve();
     },
     async removeProjection() {},
-    retireConfigurationSession() {},
   });
   await coordinator.sessions.save({
     id: "session",

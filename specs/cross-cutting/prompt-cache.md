@@ -127,6 +127,16 @@ shared key produces an initial backend warmup; it does not justify later warmup 
 caller cannot restore the old shared key through `LLMCallParams.promptCacheKey`. TTL remains a
 separate setting, defaulting to `1h` when the run can wait for human interaction and `5m` otherwise.
 
+Guard compiler/reviewer inference is another auxiliary instance in the same persisted run session.
+Every such call supplies the stable instance `judge` to the decorated provider, producing the
+canonical `<session>_judge` key through `composePromptCacheKey` and inheriting the run's TTL. The
+call-local reviewer marks stable guidance when present; otherwise it and effect review request an
+empty message-breakpoint list so Anthropic and explicitly cached OpenAI-compatible adapters can mark
+the stable system policy without marking variable operator evidence, effect facts or command data.
+Native OpenAI, ChatGPT and xAI consume the same composed key through their existing provider-specific
+affinity fields. Google retains its existing adapter behavior because it exposes no Clarvis cache
+protocol.
+
 Memory queue claims persist a dedicated agent ID and reserve each execution ID before inference.
 Recovery preserves the agent ID and continues the previous indexing execution when its context is
 available. The durable predecessor reservation list also crosses a claim that died before
@@ -143,11 +153,18 @@ have different jobs and are not interchangeable.
 [hosted session preparation](../../packages/kernel/src/hosting/sessions.ts),
 [`assembleLeader`](../../packages/kernel/src/workflows/workflows-service.ts),
 [`runSubagent`](../../packages/loop/src/runtime/subagents/run-subagent.ts) and
-[memory queue claims](../../packages/memory/src/file-store/jobs.ts).
+[memory queue claims](../../packages/memory/src/file-store/jobs.ts), plus
+`GUARD_REVIEW_AGENT_INSTANCE_ID` in
+[reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts).
 Test: [`prompt-cache-identity.test.ts`](../../packages/capability/tests/unit/prompt-cache-identity.test.ts),
 [`prompt-cache-provider.test.ts`](../../packages/llm/tests/unit/prompt-cache-provider.test.ts),
 [`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts)
-and the kernel composition test. Workflow manager/leader separation, SDK-serialized keys and
+the kernel composition test,
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
+while [observability.test.ts](../../packages/llm/tests/unit/observability.test.ts) pins the empty
+breakpoint list to a system-only marker on Anthropic and explicitly cached OpenAI-compatible models.
+Workflow manager/leader separation, SDK-serialized keys and
 continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).

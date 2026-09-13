@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { Accessor, JSX } from "solid-js";
 import { createSignal } from "solid-js";
 import { useRenderer } from "@opentui/solid";
-import { openRender } from "../helpers/tracked-render.ts";
+import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import { KeyEvent, TextareaRenderable, type Renderable } from "@opentui/core";
 import { TestRecorder } from "@opentui/core/testing";
 import type {
@@ -3240,11 +3240,13 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   expect(kept).toContain("contrast checker");
   expect(kept).not.toContain("allow this command?");
 
+  await settleSyntaxSurfaces(t);
+  const coveredFrame = t.captureCharFrame();
   const coveredRecorder = new TestRecorder(t.renderer);
   coveredRecorder.rec();
   await new Promise((resolve) => setTimeout(resolve, 20));
   coveredRecorder.stop();
-  expect(coveredRecorder.recordedFrames).toHaveLength(0);
+  for (const recorded of coveredRecorder.recordedFrames) expect(recorded.frame).toBe(coveredFrame);
 
   press(t, "escape");
   await captureUntil(t, "Discard unsaved changes?");

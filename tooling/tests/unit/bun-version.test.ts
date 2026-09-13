@@ -91,6 +91,39 @@ jobs:
 });
 
 describe("bunVersionFailures", () => {
+  test("accepts an additional independently configured Bun job without a fixed setup count", () => {
+    const snapshot = validSnapshot();
+    snapshot.ci += `  extra:\n    steps:\n      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: ${VERSION}\n      - run: bun --version && bun --revision\n      - run: bun run test:tooling\n`;
+    expect(bunVersionFailures(snapshot)).toEqual([]);
+  });
+
+  test("rejects Bun execution without its own setup and evidence, including zero setups", () => {
+    const snapshot = validSnapshot();
+    snapshot.ci += "  forgotten:\n    steps:\n      - run: bun run typecheck\n";
+    expect(bunVersionFailures(snapshot).join("\n")).toContain(
+      "job forgotten: expected one setup-bun",
+    );
+    expect(bunVersionFailures(snapshot).join("\n")).toContain(
+      "job forgotten: expected one Bun version/revision",
+    );
+    snapshot.ci = "jobs:\n  empty:\n    steps:\n      - run: echo empty\n";
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("expected at least one setup-bun");
+  });
+
+  test("rejects duplicate evidence, missing pins and evidence after execution", () => {
+    const original = validSnapshot();
+    for (const ci of [
+      original.ci.replace(`          bun-version: ${VERSION}`, ""),
+      original.ci.replace(
+        "      - run: bun --version",
+        "      - run: bun run typecheck\n      - run: bun --version",
+      ),
+      original.ci.replace("  windows:", "      - run: bun --version && bun --revision\n  windows:"),
+      "jobs: [",
+    ])
+      expect(bunVersionFailures({ ...original, ci }).length).toBeGreaterThan(0);
+  });
+
   test("accepts one exact version across every surface", () => {
     expect(bunVersionFailures(validSnapshot())).toEqual([]);
   });
@@ -116,7 +149,9 @@ describe("bunVersionFailures", () => {
     );
     snapshot.canary = snapshot.canary.replace("      - run: bun --version && bun --revision\n", "");
     const failures = bunVersionFailures(snapshot).join("\n");
-    expect(failures).toContain("expected three Bun version/revision evidence steps, found 2");
+    expect(failures).toContain(
+      "job linux: expected one Bun version/revision evidence step, found 0",
+    );
     expect(failures).toContain("expected four Bun version/revision evidence steps, found 3");
     expect(failures).toContain("expected one Bun version/revision evidence step, found 0");
   });

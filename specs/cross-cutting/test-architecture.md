@@ -633,8 +633,14 @@ none of these modes executes when the checker module is imported.
 
 ### 4.3 `coverage.ts`
 
-For each of the 18 entries in `PACKAGE_THRESHOLDS`, in object order
-(`tooling/checks/coverage.ts`):
+`coverageWorkspaceFailures` first compares the manifest workspace inventory with
+`PACKAGE_THRESHOLDS`. A new workspace without a floor, a floor without a workspace, or a missing
+coverage script fails before reports can be accepted. Protocol's absent-LCOV exception does not
+excuse its contract script. Production: `tooling/checks/coverage.ts`, `coverageWorkspaceFailures`
+and `checkCoverage`; `tooling/lib/ci-workspaces.ts`, `readCiWorkspaces`. Test:
+`tooling/tests/unit/coverage.test.ts`, `coverage workspace policy`.
+
+For each entry in `PACKAGE_THRESHOLDS`, in object order (`tooling/checks/coverage.ts`):
 
 1. `readOwnSourceCoverage` reads `packages/<pkg>/coverage/lcov.info` with a bare `readFile`. On
    `ENOENT` it rethrows *unless* the package is in `TYPE_ONLY_PACKAGES`, in which case it first
@@ -837,24 +843,58 @@ Verified against the then-pinned 1.3.11 toolchain: a scratch project with
 `this test timed out after 5000ms`. The claim holds on 1.3.11 as well as on the 1.3.14 the comment
 names.
 
-### 4.8 The CI retry wrapper
+### 4.8 The CI coverage supervisor
 
-`tooling/ci/retry-code-coverage.sh` runs `bun run test:coverage` once; on exit 0 it stops. Otherwise it retries **up to 3 times**, and only while `is_crash_exit` holds. The classifier is a three-value case: 132 (SIGILL, "Bun's @trap"), 134 (SIGABRT),
-139 (SIGSEGV).
+`tooling/ci/retry-code-coverage.sh` execs `tooling/checks/ci-coverage.ts`; it contains no retry
+state machine. Importing `tooling/lib/ci-coverage.ts` starts no process. `runCiCoverage` receives
+an executor, clock, cancellation signal, environment and event sink. It discovers explicit manifest
+workspaces through `readCiWorkspaces`, validates confined real directories and matching package
+names, and requires `test:coverage` for every package before starting any child. New packages are
+included automatically; their coverage floors remain owned only by `PACKAGE_THRESHOLDS`.
 
-| Exit | Retried? | Reason given in the file |
-| --- | --- | --- |
-| 0 | n/a | success |
-| 132 / 134 / 139 | yes, ≤3× | Bun crash signals |
-| 130 (SIGINT) | **no** | "somebody asked this to stop — a cancelled workflow, or Bun killing sibling scripts after one of them failed" |
-| 143 (SIGTERM) | **no** | same |
-| anything else | no | a real test failure |
+Each package is invoked by argv as `bun run test:coverage`, with its own cwd and full script,
+including architecture checks and Protocol's type contract. Package bunfig/preloads therefore retain
+ownership, and the Linux native-sandbox canary environment reaches every child. Coverage stays
+sequential; correctness does not depend on Code's position in the inventory.
 
-Each retry re-runs `bun --filter @clarvis/code test:coverage` **alone**, then `bun run coverage:check`. The file states the precondition that makes that sound: `code` is last in the sequential
-root script, so every other package has already written its lcov; and if any other package died by
-signal its report would be missing and `coverage:check` "fails loudly", because check-coverage reads
-each report with a bare `readFile`. A retry emits a `::warning::` annotation and appends a
-line to `$GITHUB_STEP_SUMMARY`.
+Before each attempt, only the selected package's prior `coverage/lcov.info` is removed, after
+revalidating real package/coverage directories. A failed attempt cannot lend stale LCOV to its retry.
+A successful package advances to the next package. Only Code status 132, 134 or 139 gets up to three
+additional attempts. Recovery resumes the remaining packages, and the global `coverage:check`
+executes exactly once after every package succeeds. Assertions, 130/143, other-package crashes and
+retry exhaustion return failure without global checking. Protocol need not emit LCOV, but must
+successfully execute its contract.
+
+`executeCoverageCommand` inherits logs and waits for child closure. The named POSIX process-group
+predicate gates detached execution; cancellation sends SIGTERM to that group, bounds uncooperative
+children with a kill fuse, and kills residual group members when the active child closes. It then
+settles the active executor before the supervisor can return. An abort during the child, between
+packages or before retry prevents any subsequent execution. The CLI handles SIGINT/SIGTERM with
+130/143 and reports cancellation; job timeouts remain failures. `normalizeCoverageExit` explicitly
+handles Bun's nullable exit code plus signal, mapping known signals to 128 + signal number rather
+than parsing stdout or treating null as success.
+
+The event sink records package, attempt, start/end, duration and result. The CLI emits the retained
+crash annotations and a summary of completed attempts. Executor/clock/cancellation fakes establish
+the supervisor's ordering; small actual subprocess fixtures qualify the pinned Bun script/signal
+boundary and observable-readiness cancellation. These fixtures do not substitute for complete
+remote coverage, floors, sandbox, smoke, Docker, Windows or macOS.
+
+Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage`,
+`executeCoverageCommand`, `normalizeCoverageExit`;
+[coverage CLI](../../tooling/checks/ci-coverage.ts);
+[workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`.
+Test: [supervisor tests](../../tooling/tests/unit/ci-coverage.test.ts), complete scripts,
+manifest-order permutations, classified retries/exhaustion, stale LCOV and cancellation.
+
+The required `linux` aggregator independently requires all seven Linux job results, with the
+exact key set and every result successful. Its `always()` condition cannot itself approve Linux.
+Production: [CI workflow](../../.github/workflows/ci.yml), `jobs.linux`;
+[workflow validator](../../tooling/lib/ci-workflow.ts), `ciWorkflowFailures`.
+Test: [workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), the actual Bash body with
+success/failure/cancellation/skip/missing/unknown/empty fixtures and gate/dependency removal.
+Build transfer and retained platform scopes belong to [build and CI](build-and-ci.md#44-ci-jobs).
+Local `test:coverage` and the sequential `GATE_PHASES` remain unchanged.
 
 ### 4.9 Conformance harnesses
 
@@ -995,8 +1035,7 @@ only the owner-specific default").
 
 9. **INV-306 (hard-error half) — an LCOV report that names own-source files but reports zero lines
    is a hard error for a non-type-only package.** Rule: `tooling/checks/coverage.ts`, message
-   `"<pkg>: LCOV report contains no own-source line data"`. **Unpinned** by a test; relied upon in
-   prose by `tooling/ci/retry-code-coverage.sh`.
+   `"<pkg>: LCOV report contains no own-source line data"`. Test: `tooling/tests/unit/coverage.test.ts`, absent runtime LCOV and empty own-source reports.
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
@@ -1178,7 +1217,7 @@ only the owner-specific default").
 | Git inventory fails for the Bun-source check | `tooling/checks/bun-sources.ts` | throws `git ls-files failed`, appending trimmed stderr when present |
 | Python source path found | `tooling/checks/bun-sources.ts` | every sorted path is printed and `process.exitCode = 1` |
 | Documentation embeds a source line locator, names an explicit repository file that does not exist, or a tracked spec embeds a calendar date or source-size inventory | `tooling/checks/spec-hygiene.ts`; `extractLineQualifiedReferences`, `resolveRepositoryFileReference`, `extractCalendarDates`, and `extractSourceSizeReferences` in `tooling/lib/spec-hygiene.ts` | every unstable, missing, dated, or source-size reference is reported and `process.exitCode = 1`; illustrative paths use visible placeholders, chronology stays in `CHANGELOG.md`, and behavioral line limits remain legal |
-| Bun dies by SIGILL/SIGABRT/SIGSEGV in CI | `tooling/ci/retry-code-coverage.sh` | up to 3 retries of `@clarvis/code` alone, then `coverage:check` |
+| Code dies by SIGILL/SIGABRT/SIGSEGV in CI | `tooling/lib/ci-coverage.ts`, `runCiCoverage` | up to 3 additional Code attempts, then remaining packages and global checking |
 | Bun dies by SIGINT/SIGTERM in CI | `tooling/ci/retry-code-coverage.sh` | never retried |
 | Preload temp-dir cleanup fails at exit | `tooling/test-runtime/clarvis-home-preload.ts` | swallowed; "the OS reaps the temp dir" |
 | A conformance harness lacks an optional capability | `packages/memory/src/testing.ts` | the case returns early rather than failing |
@@ -1199,8 +1238,10 @@ fail-hard. Notably, `coverage.ts` has no partial mode — there is no flag to ch
 | `tooling/lib/package-graph.ts` | `typescript` | runtime, static | used for both `createSourceFile` and `parseConfigFileTextToJson` (JSONC tsconfigs) |
 | `tooling/checks/import-extensions.ts` | `typescript` | runtime, static | the import-extension policy parses module specifiers through the TypeScript AST |
 | `tooling/tests/architecture/stream-metrics-drift.test.ts` | `typescript` | runtime, static | `ts.createScanner` with `skipTrivia` is what makes comments non-material |
-| `tooling/checks/coverage.ts` | none beyond `node:fs/promises`, `node:path`, `node:url` | — | it parses LCOV with `split`/`startsWith`, no library |
-| `tooling/checks/bun-version.ts` | none beyond `node:fs`, `node:path`, `node:url` | — | validates the exact mise pin against every runtime and declaration surface |
+| `tooling/checks/coverage.ts` | `tooling/lib/ci-workspaces.ts` plus filesystem/path APIs | runtime, static | manifest inventory and LCOV coverage policy must agree |
+| `tooling/lib/ci-coverage.ts` | workspace manifests and the Bun child-process boundary | runtime, subprocess | package cwd, full scripts, cancellation and classified retry |
+| `tooling/lib/ci-workflow.ts` | Bun YAML, `workflowSecurityFailures`, `checkGateChain`, `checkRootBuild` | runtime, static | independent CI must retain the local sequential gate and workflow security |
+| `tooling/checks/bun-version.ts` | Bun YAML plus `node:fs`, `node:path`, `node:url` | — | validates the exact mise pin against every runtime and declaration surface |
 | `tooling/checks/bun-sources.ts` | Git executable plus `node:fs`/`node:path`/`node:url` | subprocess | Git supplies the tracked-and-unignored path inventory; the script performs no recursive filesystem scan |
 | `tooling/test-runtime/clarvis-home-preload.ts` | `@clarvis/paths` | runtime, static | — it must not spell `CLARVIS_HOME` itself; `HOME_ENV` is owned at `packages/paths/src/roots.ts` |
 | `tooling/checks/package-graph.ts` | `specs/package-coupling-analysis.md` | runtime, filesystem | only under `--check-doc` |
@@ -1213,9 +1254,9 @@ lets these four repository-tooling modules import it from the repository root.
 
 - **Every commit**, through `.githooks/pre-commit` → `package.json`
   (`scripts.check:pre-commit`).
-- **CI's linux job**, which runs `bun run lint` (hence `lint:intent`) and
-  `bash tooling/ci/retry-code-coverage.sh` (`.github/workflows/ci.yml`). CI job layout belongs to
-  *build-tooling-ci-and-platform*.
+- **CI's independent Linux gates**: `checks` runs `lint:intent` and `test:cache`, `coverage` runs
+  the sequential supervisor, and `linux` requires every gate's success (`.github/workflows/ci.yml`).
+  Job layout and shared build transfer belong to [build and CI](build-and-ci.md).
 - **Every package's `test:coverage` script**, which must write `coverage/lcov.info` where
   `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts`), i.e. the `coverageDir`
   setting in each package's `bunfig.toml` is part of this contract.
@@ -1241,9 +1282,10 @@ inventory and parses every TypeScript file's module specifiers.
 | repo `tooling/tests` | yes | yes | yes | mock-module only | no | yes | yes |
 | repo `tooling/ci` | no¹ | no¹ | no¹ | no¹ | no | no¹ | no¹ |
 
-¹ `tooling/ci/retry-code-coverage.sh` is the sole exception because its behavior is GitHub Actions
-shell orchestration rather than importable repository logic. It remains isolated and temporary
-pending the Bun 1.4 canary described in `specs/known-issues.md`.
+¹ Shell entries under `tooling/ci/` remain outside TypeScript tooling globs.
+`tooling/ci/retry-code-coverage.sh` is only a thin exec entry; its supervisor, process adapter and
+artifact libraries live under `tooling/checks/` and `tooling/lib/`, covered by every tooling gate.
+The independent Bun retirement canary remains described in `specs/known-issues.md`.
 
 Root tooling has its own TypeScript and ESLint projects (`tooling/tsconfig.json`,
 `tooling/eslint.config.js`); root package scripts also include it in Prettier and Knip. The

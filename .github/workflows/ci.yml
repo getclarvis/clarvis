@@ -14,31 +14,207 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The full graph, on the platform everything is developed against.
-  linux:
-    name: linux
+  build:
     runs-on: ubuntu-latest
-    # The full graph builds, typechecks, lints and tests in well under 15
-    # minutes; a job past this is hung, not slow. Without a bound it would hold
-    # a runner for the six-hour default before reporting anything at all.
-    timeout-minutes: 30
+    timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+      tar-digest: ${{ steps.pack.outputs.tar-digest }}
+      producer-attempt: ${{ steps.pack.outputs.producer-attempt }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Matches the pin in mise.toml and every package's engines field.
           bun-version: 1.4.0
       - name: record Bun runtime
         run: bun --version && bun --revision
-      # ripgrep is not preinstalled on the ubuntu-latest image; @clarvis/tools'
-      # grep-parity suite (TEST-01) requires it whenever CI=true. Bubblewrap is
-      # equally load-bearing now: the native-sandbox canary below must exercise
-      # a real Linux backend rather than only inspect generated argv. Ubuntu
-      # restricts unprivileged user namespaces through AppArmor, so load the
-      # packaged bwrap profile instead of disabling that protection globally.
-      # The minimal launch proves the profile works before the long test suite.
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run smoke
+      - name: package verified Linux build
+        id: pack
+        run: bun run tooling/checks/ci-artifacts.ts pack
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        id: upload
+        with:
+          name: linux-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage/ci/linux-build.tar
+          if-no-files-found: error
+          compression-level: 1
+          retention-days: 2
+      - name: record upload cost
+        env:
+          CI_BUILD_ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          CI_BUILD_ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          CI_BUILD_TAR_DIGEST: ${{ steps.pack.outputs.tar-digest }}
+          CI_BUILD_PRODUCER_ATTEMPT: ${{ steps.pack.outputs.producer-attempt }}
+        run: bun run tooling/checks/ci-artifacts.ts uploaded
+
+  typecheck:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI_BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      CI_BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+      CI_BUILD_TAR_DIGEST: ${{ needs.build.outputs.tar-digest }}
+      CI_BUILD_PRODUCER_ATTEMPT: ${{ needs.build.outputs.producer-attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - name: validate producer outputs before download
+        run: bun run tooling/checks/ci-artifacts.ts producer
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: coverage/ci/incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: verify and restore shared build
+        run: bun run tooling/checks/ci-artifacts.ts restore
+      - run: bun run typecheck
+
+  lint:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI_BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      CI_BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+      CI_BUILD_TAR_DIGEST: ${{ needs.build.outputs.tar-digest }}
+      CI_BUILD_PRODUCER_ATTEMPT: ${{ needs.build.outputs.producer-attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - name: validate producer outputs before download
+        run: bun run tooling/checks/ci-artifacts.ts producer
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: coverage/ci/incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: verify and restore shared build
+        run: bun run tooling/checks/ci-artifacts.ts restore
+      - run: bun run lint:eslint
+
+  knip:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI_BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      CI_BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+      CI_BUILD_TAR_DIGEST: ${{ needs.build.outputs.tar-digest }}
+      CI_BUILD_PRODUCER_ATTEMPT: ${{ needs.build.outputs.producer-attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - name: validate producer outputs before download
+        run: bun run tooling/checks/ci-artifacts.ts producer
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: coverage/ci/incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: verify and restore shared build
+        run: bun run tooling/checks/ci-artifacts.ts restore
+      - run: bun run knip
+
+  checks:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI_BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      CI_BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+      CI_BUILD_TAR_DIGEST: ${{ needs.build.outputs.tar-digest }}
+      CI_BUILD_PRODUCER_ATTEMPT: ${{ needs.build.outputs.producer-attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - name: validate producer outputs before download
+        run: bun run tooling/checks/ci-artifacts.ts producer
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: coverage/ci/incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: verify and restore shared build
+        run: bun run tooling/checks/ci-artifacts.ts restore
+      - run: bun run format:check
+      - run: bun run lint:intent
+      - name: serialized prompt cache contracts (no credentials)
+        run: bun run test:cache
+
+  coverage:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI_BUILD_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+      CI_BUILD_ARTIFACT_DIGEST: ${{ needs.build.outputs.artifact-digest }}
+      CI_BUILD_TAR_DIGEST: ${{ needs.build.outputs.tar-digest }}
+      CI_BUILD_PRODUCER_ATTEMPT: ${{ needs.build.outputs.producer-attempt }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - name: install frozen dependencies
+        run: time bun install --frozen-lockfile
+      - name: validate producer outputs before download
+        run: bun run tooling/checks/ci-artifacts.ts producer
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: coverage/ci/incoming
+          merge-multiple: true
+          digest-mismatch: error
+      - name: verify and restore shared build
+        run: bun run tooling/checks/ci-artifacts.ts restore
       - name: install Linux test dependencies
         run: |
           sudo apt-get update
@@ -47,30 +223,39 @@ jobs:
           bwrap --unshare-user --ro-bind / / -- /bin/true
           bwrap --version
           rg --version
-      # Root install only: one lockfile, and bunfig.toml's `linker = "hoisted"`
-      # keeps node_modules symlink-free.
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - run: bun run typecheck
-      - name: serialized prompt cache contracts (no credentials)
-        run: bun run test:cache
-      - run: bun run format:check
-      - run: bun run lint
-      # The server image installs from the workspace manifests before copying
-      # sources. Building it here is the smoke that keeps that manifest list and
-      # the repository-root Docker context honest.
+      - name: sequential workspace coverage with classified code retry
+        env:
+          CLARVIS_NATIVE_SANDBOX_CANARY: "1"
+        run: bash tooling/ci/retry-code-coverage.sh
+
+  server-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - run: docker build --file packages/server/Dockerfile --tag clarvis-server:ci .
-      # Bun 1.4 carries the upstream Worker lifetime fix, but this stays wrapped
-      # until the GitHub-runner retirement canary in Known issues passes. A real
-      # test failure, a coverage threshold miss, and a cancellation are all
-      # passed straight through.
-      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bash tooling/ci/retry-code-coverage.sh
-      # The root build already produced the code bundle after the TypeScript
-      # library graph. Boots that artifact under a PTY and asserts first paint.
-      # It fabricates a clean HOME, which is load-bearing: `loadCatalogData` prefers
-      # `~/.clarvis/cache/models-dev.json` and only falls back to the shipped
-      # snapshot when that cache is absent, so a warm cache hides the failure.
-      - run: bun run smoke
+
+  linux:
+    name: linux
+    needs: [build, typecheck, lint, knip, checks, coverage, server-image]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: require every Linux gate
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          jq -e -s '
+            length == 1 and (.[0] |
+            type == "object" and
+            (keys == ["build", "checks", "coverage", "knip", "lint", "server-image", "typecheck"]) and
+            all(.[]; type == "object" and has("result") and .result == "success"))
+          ' <<< "$NEEDS_JSON"
 
   # Scoped to @clarvis/tools, @clarvis/paths and @clarvis/plan, which is where
   # the platform-specific code lives. All three resolve to source under Bun

@@ -912,6 +912,30 @@
       "package_owner": "tooling",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/unit/ci-artifacts.test.ts",
+      "identity": "subprocess|describe:shared Linux build artifact/test:attributes the current checkout using real Git, Bun and lockfile bytes|Bun.spawnSync([\"git\", \"rev-parse\", \"HEAD\"], { stdout: \"pipe\" })|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Read-only Git subprocess qualifies actual checkout identity independently of artifact manifest fields."
+    },
+    {
+      "mechanism": "timer",
+      "file": "tooling/tests/unit/ci-coverage.test.ts",
+      "identity": "timer|describe:real Bun script exit boundary/test:cancels a real active child after its observable readiness and waits for exit|setTimeout(() => { controller.abort(); ready.reject(new Error(\"Physical child readiness fuse expired\")); }, 10_000)|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Fuse around observable filesystem readiness of a real Bun child; cancellation awaits child closure rather than elapsed time."
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "tooling/tests/unit/ci-workflow.test.ts",
+      "identity": "subprocess|describe:real required-linux Bash aggregator|Bun.spawnSync([\"bash\", \"-c\", body], { env: { ...process.env, NEEDS_JSON: needs }, stdout: \"pipe\", stderr: \"pipe\", })|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Runs the real YAML Bash/jq aggregator against failure fixtures; mocks cannot establish required-status closure."
     }
   ]
 }

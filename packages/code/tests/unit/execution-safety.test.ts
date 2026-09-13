@@ -103,6 +103,9 @@ describe("execution safety", () => {
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);
+    expect(safetyDescription({ ...sandbox, guardMode: "on" })[0]).toBe(
+      "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
+    );
 
     expect(safetyDescription(deriveRunControls({}, "off", "off"))).toEqual([
       "Commands run directly without approval.",

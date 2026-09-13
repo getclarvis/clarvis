@@ -171,8 +171,8 @@ Memory and plans do not use invented memory/plans grants. A skill itself never a
 
 Installing a plugin adds it to inventory. Activating it chooses its exact installation. A plugin
 reference is {scope: global|workspace, source: agents|clarvis, name}. builtin:default activates
-enabledPlugins and the four standard skill roots. Custom Extension Profiles are complete allow-lists;
-they do not inherit builtin:default's installed plugin or standalone skill selection. Container keeps Extensions inactive; use Sandbox/Host.
+enabledPlugins and the four standard skill roots. Custom Extension Profiles are complete allow-lists,
+with no builtin:default inheritance. Container: no Extensions; use Sandbox/Host.
 
 The following GLOBAL definition assumes the exact global review-tools plugin and the global
 review-project standalone skill shown below have been authored or installed. Inventory them first;

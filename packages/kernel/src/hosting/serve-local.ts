@@ -13,6 +13,7 @@ import { memoryKeepsHostAlive } from "./memory-activity.ts";
 import { localKernelPolicyIdentity } from "./policy-identity.ts";
 import {
   acquireLocalHostState,
+  localHostEndpointRootCandidates,
   resolveLocalHostIdentity,
   type LocalHostIdentity,
 } from "./local-state.ts";
@@ -54,12 +55,16 @@ export async function serveLocalFileKernel(
   const idleTimeout = positive(options.idleTimeoutMs ?? 60_000);
   const interval = Math.min(positive(options.checkIntervalMs ?? 1000), idleTimeout);
   const logger = options.kernel.logger ?? NOOP_LOGGER;
+  const environment = options.kernel.environment?.values ?? process.env;
   const identity = await resolveLocalHostIdentity({
     workspaceRoot: options.kernel.workspaceRoot,
     globalDir: options.kernel.globalDir,
     owner: options.kernel.defaultOwner,
+    ...(process.platform === "win32"
+      ? {}
+      : { endpointRootCandidates: localHostEndpointRootCandidates(environment) }),
   });
-  const env = options.kernel.env ?? loadEnv(options.kernel.environment?.values ?? process.env);
+  const env = options.kernel.env ?? loadEnv(environment);
   const state = await acquireLocalHostState(
     identity,
     options.artifactId,

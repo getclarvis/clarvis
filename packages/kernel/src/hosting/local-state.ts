@@ -51,11 +51,23 @@ export interface LocalHostIdentity {
   paths: LocalHostPaths;
 }
 
+/** Derive the host-owned POSIX endpoint roots from the exact environment passed to the host. */
+export function localHostEndpointRootCandidates(
+  environment: Readonly<Record<string, string | undefined>>,
+): readonly string[] {
+  const preferred = [environment.TMPDIR, environment.TMP, environment.TEMP].find(
+    (candidate): candidate is string =>
+      candidate !== undefined && candidate.length > 0 && isAbsolute(candidate),
+  );
+  return preferred === undefined || preferred === "/tmp" ? ["/tmp"] : [preferred, "/tmp"];
+}
+
 /** Resolve one account/workspace namespace before either discovery or host lease acquisition. */
 export async function resolveLocalHostIdentity(options: {
   workspaceRoot: string;
   globalDir?: string;
   owner?: string;
+  endpointRootCandidates?: readonly string[];
 }): Promise<LocalHostIdentity> {
   const workspaceRoot = await realpath(resolve(options.workspaceRoot));
   const globalRoot = globalPaths(options.globalDir).root;
@@ -72,7 +84,15 @@ export async function resolveLocalHostIdentity(options: {
     workspaceRoot,
     globalDir,
     owner,
-    paths: localHostPaths({ workspaceRoot, globalDir, owner, operatorId }),
+    paths: localHostPaths({
+      workspaceRoot,
+      globalDir,
+      owner,
+      operatorId,
+      ...(options.endpointRootCandidates === undefined
+        ? {}
+        : { endpointRootCandidates: options.endpointRootCandidates }),
+    }),
   };
 }
 

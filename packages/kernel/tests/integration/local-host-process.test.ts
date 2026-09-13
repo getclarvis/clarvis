@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { globalPaths } from "@clarvis/paths";
 import { connectOrLaunchLocalKernel } from "../../src/hosting/launcher.ts";
 import {
+  localHostEndpointRootCandidates,
   readLocalHostConnection,
   resolveLocalHostIdentity,
 } from "../../src/hosting/local-state.ts";
@@ -22,7 +23,7 @@ async function until(predicate: () => Promise<boolean>, timeout = 10_000): Promi
   }
 }
 
-async function fixture() {
+async function fixture(environmentOverrides: Readonly<Record<string, string | undefined>> = {}) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-host-process-"));
   const workspaceRoot = join(root, "workspace with spaces");
   const globalDir = join(root, "global");
@@ -44,7 +45,18 @@ async function fixture() {
       memory: { enabled: false },
     }),
   );
-  const identity = await resolveLocalHostIdentity({ workspaceRoot, globalDir, owner: "operator" });
+  const environment = {
+    ...process.env,
+    CLARVIS_AGENT_TOOLS_ENABLED: "0",
+    CLARVIS_AGENT_TOOLS_MAX_GRANT: "read",
+    ...environmentOverrides,
+  };
+  const identity = await resolveLocalHostIdentity({
+    workspaceRoot,
+    globalDir,
+    owner: "operator",
+    endpointRootCandidates: localHostEndpointRootCandidates(environment),
+  });
   cleanups.push(async () => {
     await writeFile(join(workspaceRoot, "continue.flag"), "continue");
     await until(async () => (await readLocalHostConnection(identity)) === null, 30_000);
@@ -61,16 +73,39 @@ async function fixture() {
       process.execPath,
       join(import.meta.dir, "../fixtures/local-host-process.ts"),
     ] as const,
-    environment: {
-      ...process.env,
-      CLARVIS_AGENT_TOOLS_ENABLED: "0",
-      CLARVIS_AGENT_TOOLS_MAX_GRANT: "read",
-    },
+    environment,
   };
   return { workspaceRoot, globalDir, identity, options };
 }
 
 describe("independent local kernel process", () => {
+  test.skipIf(process.platform === "win32")(
+    "falls back from a long temp snapshot and reconnects to the same generation",
+    async () => {
+      const longRoot = (label: string): string => join("/tmp", `${label}-${"a".repeat(168)}`);
+      const f = await fixture({
+        TMPDIR: longRoot("tmpdir"),
+        TMP: longRoot("tmp"),
+        TEMP: longRoot("temp"),
+      });
+      const first = await connectOrLaunchLocalKernel(f.options);
+      cleanups.push(() => first.client.close());
+      const record = (await readLocalHostConnection(first.identity))!;
+      expect(record).toBeDefined();
+      expect(dirname(first.identity.paths.endpointDirectory!)).toBe(resolve("/tmp"));
+      expect(record.endpoint).toBe(first.identity.paths.endpoint);
+      expect(Buffer.byteLength(record.endpoint, "utf8")).toBeLessThanOrEqual(100);
+      expect(first.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
+
+      const second = await connectOrLaunchLocalKernel(f.options);
+      cleanups.push(() => second.client.close());
+      expect(second.identity.paths.endpoint).toBe(first.identity.paths.endpoint);
+      expect(second.client.capabilities.hosting!.host_generation).toBe(record.host_generation);
+      await second.client.close();
+      await first.client.close();
+    },
+  );
+
   test("retires an idle memory-capable process with workspace memory disabled", async () => {
     const f = await fixture();
     const { client } = await connectOrLaunchLocalKernel(f.options);

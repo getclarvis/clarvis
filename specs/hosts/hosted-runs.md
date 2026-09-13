@@ -671,10 +671,15 @@ reject; an absent record does not authorize replacing a live lease or replaying 
 
 `connectOrLaunchLocalKernel` takes an absolute installation-selected executable/argv and an operator
 environment snapshot. It preserves policy while binding `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`
-to the selected canonical roots. Child stdio is independent of the TUI. Linux/macOS and Windows have
-explicit detachment policies; `unref` releases the parent wait. Launch waits at most 30 seconds by
-default, configurable up to 120 seconds. It retries discovery/connection without replaying ordinary
-mutations. A live host with the same wire and effective operator policy accepts an artifact transition only
+to the selected canonical roots. On POSIX, both launcher and child derive endpoint candidates from
+that same snapshot: the first non-empty absolute value in `TMPDIR`, `TMP`, `TEMP` order, then `/tmp`.
+Relative values are ignored because launcher and child have different working directories. A short
+effective temp therefore preserves the existing endpoint, while a temp that would exceed the socket
+budget falls back deterministically without changing the environment delivered to runs. Child stdio
+is independent of the TUI. Linux/macOS and Windows have explicit detachment policies; `unref`
+releases the parent wait. Launch waits at most 30 seconds by default, configurable up to 120 seconds.
+It retries discovery/connection without replaying ordinary mutations. A live host with the same wire
+and effective operator policy accepts an artifact transition only
 through its authenticated local control and only while idle. The new launcher requests restart,
 waits for the prior generation to retire, and then starts its selected artifact. Active physical work
 refuses the transition and remains owned by the prior process. A wire mismatch still requires the
@@ -691,10 +696,14 @@ The operator reconnects with the original policy, requests an idle host restart,
 the desired policy. The launcher never silently mutates policy or restarts an active host.
 Production: `localKernelPolicyIdentity` in
 [policy-identity.ts](../../packages/kernel/src/hosting/policy-identity.ts),
+`localHostEndpointRootCandidates` and `resolveLocalHostIdentity` in
+[local-state.ts](../../packages/kernel/src/hosting/local-state.ts),
 `connectOrLaunchLocalKernel` in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts), and
 `serveLocalFileKernel` in [serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts).
-Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts)
-and the independent process test that preserves its background execution after incompatible
+Test: [host-policy-identity.test.ts](../../packages/kernel/tests/unit/host-policy-identity.test.ts),
+[local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) for
+snapshot precedence and identity stability, and the independent process tests for long-temp fallback,
+same-generation reconnection and preservation of background execution after incompatible
 tool/default/ceiling reconnect attempts in
 [local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts).
 
@@ -812,15 +821,26 @@ root with a fixed-width hash. Discovery credentials, lease and bounded run index
 global state, outside the workspace scratch tree. Projection filenames hash generation and execution
 identity; neither id is interpreted as a path component.
 
-Unix socket names use a short operator-scoped temporary directory, independently of HOME length, and
-reject endpoint paths exceeding 100 UTF-8 bytes. Windows uses its named-pipe namespace. These builders
-do not authenticate peers, create listeners or establish filesystem permissions: callers must enforce
-those boundaries before publishing a usable endpoint.
+Unix socket names use a short account-scoped temporary directory independently of HOME length. The
+host supplies an ordered list derived from its launch snapshot, and `localHostPaths` chooses the first
+candidate whose complete endpoint fits 100 UTF-8 bytes; normal composition includes `/tmp` after the
+preferred temp. Candidate selection is based only on length. A short but missing, inaccessible,
+symlinked, foreign-owned or permissive root still fails closed in the existing transport preparation;
+there is no post-bind security fallback. Windows uses its unchanged named-pipe namespace. These
+builders do not authenticate peers, create listeners or establish filesystem permissions: callers
+must enforce those boundaries before publishing a usable endpoint.
 
-Production: `localHostPaths` in [local-host.ts](../../packages/paths/src/local-host.ts). Test:
-[local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers identity separation,
-hostile ids, long global paths, named-pipe spelling and excessive temporary path lengths. These are
-deterministic builder tests, not native Windows/macOS listener qualification.
+Production: `localHostPaths` in [local-host.ts](../../packages/paths/src/local-host.ts), the snapshot
+derivation in [local-state.ts](../../packages/kernel/src/hosting/local-state.ts), and the launcher/host
+composition in [launcher.ts](../../packages/kernel/src/hosting/launcher.ts) and
+[serve-local.ts](../../packages/kernel/src/hosting/serve-local.ts). Test:
+[local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers deterministic builder
+selection and named-pipe spelling;
+[local-host-state.test.ts](../../packages/kernel/tests/integration/local-host-state.test.ts) covers
+snapshot derivation and discovery validation; and
+[local-host-process.test.ts](../../packages/kernel/tests/integration/local-host-process.test.ts)
+launches a separate POSIX host with long temp values, completes authenticated hello and reconnects to
+the same generation. CI on Windows retains named-pipe coverage; the process fallback is POSIX-only.
 
 `protocol` owns the DTOs and has no runtime dependency. `kernel` implements storage using `paths`
 and the ordinary run event policy; it does not import Code or the TUI. The canonical terminal run

@@ -393,13 +393,13 @@ describe("the MCP path", () => {
     const served = await serve(fixture);
     try {
       const token = await accessToken(served.base, "svc", "s3cret");
-      fixture.write({
+      const revision = fixture.write({
         version: 1,
         issuer: "https://clarvis.test",
         resource: "https://clarvis.test/mcp",
         clients: [{ client_id: "other", secret_hash: cheapHash("x"), owner: "beta" }],
       });
-      await Bun.sleep(1_100);
+      await fixture.reloadObserved(revision);
 
       const res = await fetch(
         `${served.base}/mcp`,
@@ -432,7 +432,7 @@ describe("the MCP path", () => {
       );
       expect(before).toMatchObject({ status: "completed" });
 
-      fixture.write({
+      const revision = fixture.write({
         version: 1,
         issuer: "https://clarvis.test",
         resource: "https://clarvis.test/mcp",
@@ -441,7 +441,7 @@ describe("the MCP path", () => {
         ],
         roles: { svc: { agents: ["support"] } },
       });
-      await Bun.sleep(1_100);
+      await fixture.reloadObserved(revision);
 
       const after = payloadOf(
         await client.callTool({ name: TOOL_NAMES.run, arguments: { prompt: "go", agent: "root" } }),
@@ -582,13 +582,13 @@ describe("owner mode 'token'", () => {
       const sessionId = opened.headers.get("mcp-session-id");
       expect(sessionId).not.toBeNull();
 
-      fixture.write({
+      const revision = fixture.write({
         version: 1,
         issuer: "https://clarvis.test",
         resource: "https://clarvis.test/mcp",
         clients: [{ client_id: "svc", secret_hash: cheapHash("s3cret"), owner: "beta" }],
       });
-      await Bun.sleep(1_100);
+      await fixture.reloadObserved(revision);
 
       const stale = await fetch(`${served.base}/mcp`, {
         method: "POST",

@@ -200,14 +200,19 @@ describe("file-store internal repositories", () => {
     });
     const order: string[] = [];
     let release!: () => void;
+    let enteredResolve!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enteredResolve = resolve;
+    });
     const first = lock.run(async () => {
       expect(lock.nested()).toBe(true);
       order.push("first");
+      enteredResolve();
       await new Promise<void>((resolve) => (release = resolve));
     });
-    await Bun.sleep(10);
+    await entered;
     const second = lock.run(async () => void order.push("second"));
-    await Bun.sleep(20);
+    await Promise.resolve();
     expect(order).toEqual(["first"]);
     release();
     await Promise.all([first, second]);

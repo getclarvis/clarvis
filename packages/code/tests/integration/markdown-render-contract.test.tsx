@@ -25,7 +25,7 @@ async function settle(t: Harness, ready: (frame: string) => boolean): Promise<st
   let previous = "";
   let stable = 0;
   for (let frame = 0; frame < 80; frame += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 8));
+    await Bun.sleep(0);
     await t.renderOnce();
     const current = t.captureCharFrame();
     if (current === previous && ready(current)) {
@@ -241,7 +241,7 @@ test("settlement releases a streaming height floor after the final tree is ready
     expect([streamingRows, unfinishedRows, concealedRows]).toEqual([2, 2, 2]);
     setStreaming(false);
     for (let pass = 0; pass < 80 && owner.height > 2; pass += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 8));
+      await Bun.sleep(0);
       await t.renderOnce();
     }
 

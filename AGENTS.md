@@ -297,6 +297,9 @@ bun --filter @clarvis/code start
 - Keep test determinism occurrences classified in `tooling/test-runtime/test-determinism-baseline.json`; run
   `bun run check:test-determinism` (or `--report` during migration). New, stale, duplicate or
   malformed rows fail the gate; listener/subprocess boundary canaries require an explicit reason.
+- Coordinate controllable test work with test-local spies, deferred milestones and observable render
+  settling; use explicit `fs.utimes` for mtime fixtures. Restore every spy in `finally`. A positive
+  timeout may remain only as a labelled fuse around a physical boundary, never as the event awaited.
 - Every workspace `tsconfig.json` includes its tests.
 - Every package test command keeps `--timeout 60000`. Package `bunfig.toml` files keep the shared
   preload and `coveragePathIgnorePatterns = ["../**"]`. `bun run check:harness` enforces this.

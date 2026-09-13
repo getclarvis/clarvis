@@ -24,7 +24,7 @@ async function frame(node: TranscriptNode): Promise<string> {
   });
   let out = "";
   for (let attempt = 0; attempt < 80; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 8));
+    await Bun.sleep(0);
     await t.renderOnce();
     out = t.captureCharFrame();
     if (out.trim().length > 0 && !out.trim().endsWith("•")) break;

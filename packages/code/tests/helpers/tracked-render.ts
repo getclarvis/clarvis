@@ -19,11 +19,17 @@ export async function openRender(
   return rendered;
 }
 
+/** Dispose a test renderer after one final event-loop turn for its teardown work. */
+export async function disposeRender(rendered: RenderHandle): Promise<void> {
+  if (!rendered.renderer.isDestroyed) rendered.renderer.destroy();
+  await Bun.sleep(0);
+}
+
 /** Waits until every retained syntax owner has reached two visually idle frames. */
 export async function settleSyntaxSurfaces(rendered: RenderHandle): Promise<void> {
   let idleFrames = 0;
   for (let attempt = 0; attempt < 650; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 8));
+    await Bun.sleep(0);
     await rendered.renderOnce();
     const surfaces: Renderable[] = [];
     const codeSurfaces: CodeRenderable[] = [];

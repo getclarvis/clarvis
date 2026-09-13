@@ -55,7 +55,7 @@ test("createStreamMetrics: count() accumulates and exit flushes window + totals 
   m.count("tokens", 3);
   m.count("tokens");
   m.count("chars", 10);
-  await new Promise((r) => setTimeout(r, 5));
+  await Bun.sleep(0);
 
   withoutListener(before, () => process.emit("exit", 0));
 

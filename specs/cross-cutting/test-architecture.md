@@ -293,6 +293,20 @@ Production: `tooling/lib/test-determinism.ts` and `tooling/checks/test-determini
 `tooling/tests/unit/test-determinism.test.ts` covers AST contrasts, lifecycle restoration, baseline
 validation, path normalization and side-effect-free import.
 
+Deterministic coordination uses test-local spies, deferred milestones and explicit filesystem mtimes
+rather than elapsed time. Tests may replace an existing global callback temporarily, always restoring
+the spy in `finally`; they do not combine fake clocks with sockets, subprocesses or other physical-I/O
+canaries. Filesystem-age fixtures set mtimes explicitly with `fs.utimes`, and Code render fixtures
+use `flush`, bounded `until` diagnostics and `disposeRender`
+(`packages/code/tests/helpers/render-support.ts`, `packages/code/tests/helpers/tracked-render.ts`).
+Physical boundaries wait on their own ready/close milestone and may use a labelled timeout only as a
+fuse.
+
+Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
+`packages/paths/tests/contract/local-lease.test.ts`, `packages/server/tests/unit/sessions.test.ts`,
+`tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
+mtimes and observable settling without changing production defaults.
+
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
 Records are split on the literal `end_of_record` and only four numeric fields are read, via

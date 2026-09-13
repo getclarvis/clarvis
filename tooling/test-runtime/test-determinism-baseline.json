@@ -107,46 +107,6 @@
     },
     {
       "mechanism": "timer",
-      "file": "packages/code/tests/integration/agents-panel-render.test.tsx",
-      "identity": "timer|renderUntil|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/app-commands.test.tsx",
-      "identity": "timer|waitForFrame|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/app-commands.test.tsx",
-      "identity": "timer|waitUntil|setTimeout(r, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/app-shell-render.test.tsx",
-      "identity": "timer|moveReaderAwayFromTail|setTimeout(resolve, 1)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/app-shell-render.test.tsx",
-      "identity": "timer|test:a pending elicitation does not discard an in-progress config edit|setTimeout(resolve, 20)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
       "file": "packages/code/tests/integration/clipboard-process.test.ts",
       "identity": "timer|test:a hung clipboard helper does not block the event loop and is force-killed after timeout|setTimeout(resolve, 2)|0",
       "package_owner": "@clarvis/code",
@@ -155,48 +115,8 @@
     },
     {
       "mechanism": "timer",
-      "file": "packages/code/tests/integration/interaction.test.ts",
-      "identity": "timer|settle|setTimeout(r, 10)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/lead-presentation.test.tsx",
-      "identity": "timer|frame|setTimeout(resolve, 8)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/level-verb-guard.test.ts",
-      "identity": "timer|settle|setTimeout(r, 10)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
       "file": "packages/code/tests/integration/local-shell.test.ts",
       "identity": "timer|test:abort signal cancels the command|setTimeout(() => abort.abort(), 100)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/markdown-render-contract.test.tsx",
-      "identity": "timer|settle|setTimeout(resolve, 8)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/markdown-render-contract.test.tsx",
-      "identity": "timer|test:settlement releases a streaming height floor after the final tree is ready|setTimeout(resolve, 8)|0",
       "package_owner": "@clarvis/code",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -811,30 +731,6 @@
     },
     {
       "mechanism": "timer",
-      "file": "packages/code/tests/integration/stream-metrics.test.ts",
-      "identity": "timer|test:createStreamMetrics: count() accumulates and exit flushes window + totals as JSONL|setTimeout(r, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/tasks-hub-render.test.tsx",
-      "identity": "timer|waitFor|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/integration/tool-diff-render.test.tsx",
-      "identity": "timer|frame|setTimeout(resolve, 8)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
       "file": "packages/code/tests/integration/workflows-hub-render.test.tsx",
       "identity": "timer|test:a refresh that never settles stays one physical request and becomes visible|setTimeout(resolve, 20)|0",
       "package_owner": "@clarvis/code",
@@ -914,6 +810,14 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
+      "mechanism": "timer",
+      "file": "packages/code/tests/unit/diagnostics.test.ts",
+      "identity": "timer|test:physical async work uses one standard start, pending and settled vocabulary|setTimeout(done, 5)|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "the diagnostic test proves the real slow-operation timer emits its pending event"
+    },
+    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/unit/candidate-install.test.ts",
       "identity": "subprocess|test:candidate installation checks out the published commit with real Git and launches it with Bun|spawnSync(executable, argv.slice(1), { cwd, env: withoutGitRepositoryEnvironment(inheritedEnv), encoding: \"utf8\", })|0",
@@ -968,14 +872,6 @@
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/code/tests/unit/diagnostics.test.ts",
-      "identity": "timer|test:physical async work uses one standard start, pending and settled vocabulary|setTimeout(done, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",
@@ -1082,28 +978,12 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "positive-wait",
-      "file": "packages/kernel/tests/integration/file-run-host.test.ts",
-      "identity": "positive-wait|until|Bun.sleep(1)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/git-workspace.test.ts",
       "identity": "subprocess|git|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: withoutGitRepositoryEnvironment(process.env), })|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/kernel/tests/integration/hosted-transport.test.ts",
-      "identity": "positive-wait|until|Bun.sleep(1)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "timer",
@@ -1587,16 +1467,8 @@
     },
     {
       "mechanism": "timer",
-      "file": "packages/loop/tests/component/lifecycle-finalize-wiring.test.ts",
-      "identity": "timer|describe:onTeardown fires exactly once on every exit path/it:is awaited, so background work has settled before the run returns|setTimeout(r, 10)|0",
-      "package_owner": "@clarvis/loop",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
       "file": "packages/loop/tests/integration/background-steer-latency.test.ts",
-      "identity": "timer|waitFor|setTimeout(r, 10)|0",
+      "identity": "timer|describe:a lead with background children stays reachable while they run/it:drains a steer within one iteration, with both children still in flight|setTimeout( () => reject(new Error(\"the lead never took another turn while its children ran\")), 5000, )|0",
       "package_owner": "@clarvis/loop",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -1762,54 +1634,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "positive-wait",
-      "file": "packages/memory/tests/integration/file-store-internals.test.ts",
-      "identity": "positive-wait|describe:file-store internal repositories/test:tree lock serializes concurrent holders and supports nesting detection|Bun.sleep(10)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/memory/tests/integration/file-store-internals.test.ts",
-      "identity": "positive-wait|describe:file-store internal repositories/test:tree lock serializes concurrent holders and supports nesting detection|Bun.sleep(20)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/memory/tests/integration/file-store-observability.test.ts",
-      "identity": "timer|describe:memory.lock.held_long/test:names a nested hold as nested, so a re-entrant caller is not read as a slow one|setTimeout(resolve, 2)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/memory/tests/integration/file-store-observability.test.ts",
-      "identity": "timer|describe:memory.lock.held_long/test:reports a hold that outlasted a batch of writes, and the threshold it passed|setTimeout(resolve, 2)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/memory/tests/integration/file-store-observability.test.ts",
-      "identity": "timer|describe:memory.lock.wait/test:builds no record at all when the logger discards debug|setTimeout(resolve, 20)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/memory/tests/integration/file-store-observability.test.ts",
-      "identity": "timer|describe:memory.lock.wait/test:reports the queue and whether a dead holder's lock was stolen|setTimeout(resolve, 20)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "process-env-mutation",
       "file": "packages/memory/tests/integration/workspace-state.test.ts",
       "identity": "process-env-mutation|describe:workspace state capture/test:repository-local variables from a parent hook cannot redirect the workspace probe|delete process.env[name]|0",
@@ -1877,14 +1701,6 @@
       "mechanism": "timer",
       "file": "packages/paths/tests/contract/local-lease.test.ts",
       "identity": "timer|describe:local filesystem leases/test:coalesces heartbeat pressure and release drains only the active renewal|setTimeout(resolve, 5)|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/paths/tests/contract/local-lease.test.ts",
-      "identity": "timer|describe:local filesystem leases/test:renews through the held inode while protected work is running|setTimeout(resolve, 30)|0",
       "package_owner": "@clarvis/paths",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -2048,126 +1864,6 @@
       "package_owner": "@clarvis/server",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-config-source.test.ts",
-      "identity": "positive-wait|describe:readAuthConfig and createAuthConfigSource/it:adopts an edit, and keeps the last good config when a later read fails|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-config-source.test.ts",
-      "identity": "positive-wait|describe:readAuthConfig and createAuthConfigSource/it:adopts an edit, and keeps the last good config when a later read fails|Bun.sleep(5)|1",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-config-source.test.ts",
-      "identity": "positive-wait|describe:readAuthConfig and createAuthConfigSource/it:names the clients an adopted edit added, removed and disabled — ids, never hashes|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-config-source.test.ts",
-      "identity": "positive-wait|describe:readAuthConfig and createAuthConfigSource/it:reports a vanished file as its own degradation, keeping every enrolled client|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-config-source.test.ts",
-      "identity": "positive-wait|describe:readAuthConfig and createAuthConfigSource/it:says nothing while the file has not changed|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-http.test.ts",
-      "identity": "positive-wait|describe:owner mode 'token'/it:refuses to let a live session follow its client to a new owner|Bun.sleep(1_100)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-http.test.ts",
-      "identity": "positive-wait|describe:the MCP path/it:forbids a token whose client was removed, before any owner is provisioned|Bun.sleep(1_100)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/integration/auth-http.test.ts",
-      "identity": "positive-wait|describe:the MCP path/it:narrows a live session when the operator narrows its role|Bun.sleep(1_100)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/elicitation.test.ts",
-      "identity": "positive-wait|describe:ElicitationController/it:records a relayed answer as the client's, not the facade's|Bun.sleep(1)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/notify.test.ts",
-      "identity": "positive-wait|describe:createNotificationSink state machine/it:reports a wedge once, with the counters as they stood|Bun.sleep(1)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/notify.test.ts",
-      "identity": "positive-wait|describe:createNotificationSink state machine/it:reports a wedge once, with the counters as they stood|Bun.sleep(1)|1",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/server-tasks.test.ts",
-      "identity": "positive-wait|describe:observeServerTask/it:does not report a task that succeeded|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/server-tasks.test.ts",
-      "identity": "positive-wait|describe:observeServerTask/it:stays silent while no host has installed one|Bun.sleep(5)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/server-tasks.test.ts",
-      "identity": "positive-wait|settle|Bun.sleep(1)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "positive-wait",
-      "file": "packages/server/tests/unit/sessions.test.ts",
-      "identity": "positive-wait|describe:HTTP session admission/it:sweeps only idle sessions that have no live runs|Bun.sleep(1_050)|0",
-      "package_owner": "@clarvis/server",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "process-env-mutation",
@@ -2568,46 +2264,6 @@
       "package_owner": "@clarvis/trace",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/workflows/tests/component/dispatch.test.ts",
-      "identity": "timer|describe:beginDispatch/test:waits for a child outside the batch to free a slot, rather than dropping the queue|setTimeout(() => { for (const handle of foreign) handle.settled({ status: \"completed\", result: \"done\" }); }, 60)|0",
-      "package_owner": "@clarvis/workflows",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "packages/workflows/tests/component/observability.test.ts",
-      "identity": "timer|describe:dispatch — a batch's own lifecycle/test:a deadline-free capacity wait is sampled, and reported once as a stall|setTimeout(() => foreign.settled({ status: \"completed\", result: \"done\" }), 80)|0",
-      "package_owner": "@clarvis/workflows",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "tooling/tests/unit/coverage.test.ts",
-      "identity": "timer|describe:staleReport/test:stays quiet for a type-only package, whose report is never regenerated|setTimeout(r, 12)|0",
-      "package_owner": "tooling",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "tooling/tests/unit/coverage.test.ts",
-      "identity": "timer|describe:staleReport/withReport|setTimeout(r, 12)|0",
-      "package_owner": "tooling",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "timer",
-      "file": "tooling/tests/unit/coverage.test.ts",
-      "identity": "timer|describe:staleReport/withReport|setTimeout(r, 12)|1",
-      "package_owner": "tooling",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",

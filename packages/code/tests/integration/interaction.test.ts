@@ -127,7 +127,7 @@ function fakePlatform(): Platform & { suspendCalls: number; resumeCalls: number 
 }
 
 async function settle(): Promise<void> {
-  await new Promise((r) => setTimeout(r, 10));
+  await Bun.sleep(0);
 }
 
 /**

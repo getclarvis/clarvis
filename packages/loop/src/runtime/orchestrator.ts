@@ -53,6 +53,7 @@ import {
   createCapabilityRequestView,
   createCapabilityServices,
   MCP_HOOK_TOOL_PORT,
+  RUN_TRACE_PORT,
 } from "@clarvis/capability";
 import { TOOL_EFFECT_PORT } from "@clarvis/capability";
 import { orderCapabilities } from "./capability-order.ts";
@@ -230,7 +231,33 @@ export async function runOrchestrator(
       })
     : undefined;
 
+  const journalHolder: { current: RunJournal | undefined } = { current: undefined };
+  let journalInitialized = false;
+  const pendingJournalEvents: TraceEvent[] = [];
+  const traceHandle = createTrace(
+    startedAt,
+    traceBridge({
+      clockHolder,
+      wallStartedAt,
+      projectors: persistedTraceProjectors,
+      ...(deps.onEvent !== undefined ? { emitEvent: deps.onEvent } : {}),
+      ...(agents !== undefined
+        ? {
+            ingest: (entry: TraceEntry): void => {
+              agents.ingestTraceEntry(entry);
+            },
+          }
+        : {}),
+      journal: (event: TraceEvent): void => {
+        if (!journalInitialized) pendingJournalEvents.push(event);
+        else journalHolder.current?.append(event);
+      },
+      ...(deps.logger !== undefined ? { logger: deps.logger } : {}),
+    }),
+  );
+
   const services = createCapabilityServices();
+  services.provide(RUN_TRACE_PORT, traceHandle);
   if (deps.operatorAuthority !== undefined)
     services.provide(OPERATOR_AUTHORITY_PORT, deps.operatorAuthority);
   if (agents !== undefined) services.provide(AGENT_REGISTRY_PORT, agents);
@@ -388,30 +415,12 @@ export async function runOrchestrator(
 
   const { provider } = parseModelRef(shape.entryProfile.model);
   const journal = deps.openJournal?.(wallStartedAt);
-  const traceHandle = createTrace(
-    startedAt,
-    traceBridge({
-      clockHolder,
-      wallStartedAt,
-      projectors: persistedTraceProjectors,
-      ...(deps.onEvent !== undefined ? { emitEvent: deps.onEvent } : {}),
-      ...(agents !== undefined
-        ? {
-            ingest: (entry: TraceEntry): void => {
-              agents.ingestTraceEntry(entry);
-            },
-          }
-        : {}),
-      ...(journal !== undefined
-        ? {
-            journal: (event: TraceEvent): void => {
-              journal.append(event);
-            },
-          }
-        : {}),
-      ...(deps.logger !== undefined ? { logger: deps.logger } : {}),
-    }),
-  );
+  journalHolder.current = journal;
+  journalInitialized = true;
+  if (journal !== undefined) {
+    for (const event of pendingJournalEvents) journal.append(event);
+  }
+  pendingJournalEvents.length = 0;
   const mode = shape.isLead ? "lead-subagent" : "subagent-only";
   reportRunComposition(deps.logger, {
     request,

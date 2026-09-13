@@ -267,6 +267,10 @@ The engine publishes that registry under `AGENT_REGISTRY_PORT` on the run's gene
 `CapabilityServices` before `forRun` begins. Capabilities consume it through `ctx.services`; the old
 special `RunCapabilityContext.agents` channel is gone. Other capability-to-capability ports are read
 at `attach` time, after providers have activated, so registration order cannot hide a peer.
+The same substrate publishes `RUN_TRACE_PORT` before activation. Its recording handle retains durable
+entries and its bridge buffers their projected journal form until a journal is connected after
+activation succeeds. Activation failures therefore do not create new orphan journals, successful
+runs keep journal/final-trace parity, and `init`/`run_started` keep their existing positions.
 
 The standard kernel additionally registers `@clarvis/plan/capability` over the
 same owner-scoped store factory its plans control-plane service uses.

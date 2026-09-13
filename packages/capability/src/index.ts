@@ -30,6 +30,7 @@ export type { OutputTokenBudget, OutputTokenReservation } from "./output-budget.
 export { createCapabilityRequestView, portKey, createCapabilityServices } from "./services.ts";
 export type { PortKey, CapabilityServices } from "./services.ts";
 export { TASK_TRACKING_PORT } from "./task-tracking-port.ts";
+export { RUN_TRACE_PORT } from "./run-trace-port.ts";
 export type {
   SpawnGate,
   DelegateTaskAugmentation,

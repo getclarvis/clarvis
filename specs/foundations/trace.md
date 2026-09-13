@@ -66,6 +66,12 @@ When the process dies before the batch path completes, `recoverOrphans` folds th
 
 `TracePort` itself (`packages/capability/src/ports.ts`) has exactly three members: `record<K>(kind,
 detail)`, `signal<K>(kind, detail)`, and `now(): number`.
+`RUN_TRACE_PORT` (`packages/capability/src/run-trace-port.ts`) publishes that narrow port before
+capability activation. The loop creates the recording handle first but opens the crash journal only
+after activation, flushing the already-projected activation entries through a late-bound journal reference
+(`packages/loop/src/runtime/orchestrator.ts`). Test:
+`packages/loop/tests/component/execute-run.test.ts`, "publishes the run trace during forRun and
+journals later contributed records".
 
 `VisionAnalysisDetail` (`packages/capability/src/trace-kinds.ts`) is reachable through `./trace`'s `export *`
 (`packages/capability/src/trace.ts`) but is not in `index.ts`'s explicit type-export list, which

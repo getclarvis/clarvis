@@ -4,6 +4,7 @@ import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
 import {
   detachObserved,
+  composePersistedTraceProjectors,
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
@@ -12,6 +13,7 @@ import {
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
 import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
+import { guardReviewerModelCallProjector } from "./guard/reviewer-trace.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
   AgentSummary,
@@ -427,6 +429,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const runDeps: ExecuteRunDeps = {
     ...opts.deps,
     capabilityRegistry: mergedRegistry,
+    persistedTraceProjectors: composePersistedTraceProjectors(opts.deps.persistedTraceProjectors, [
+      guardReviewerModelCallProjector,
+    ]),
   };
   if (levelEnabled(logger, "debug")) {
     logger.debug(

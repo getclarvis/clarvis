@@ -1,7 +1,11 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
-import { OPERATOR_AUTHORITY_PORT, type OperatorAuthorityState } from "@clarvis/capability";
+import {
+  OPERATOR_AUTHORITY_PORT,
+  RUN_TRACE_PORT,
+  type OperatorAuthorityState,
+} from "@clarvis/capability";
 import type { Capability, TraceEvent, SteerMessage } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import { ConflictError, PersistenceError } from "@clarvis/capability";
@@ -41,6 +45,111 @@ function insertThrows(thrown: unknown): TraceStore {
 }
 
 describe("executeRun (shared engine)", () => {
+  it("publishes the run trace during forRun and journals later contributed records", async () => {
+    const journaled: TraceEvent[] = [];
+    const traceStore: TraceStore = {
+      ...makeTestTraceStore(),
+      openJournal: () => ({
+        append: (entry) => {
+          if (entry !== null) journaled.push(entry);
+        },
+        close: () => {},
+        discard: () => {},
+      }),
+    };
+    const capability: Capability = {
+      name: "activation-trace",
+      persistedTraceProjectors: [
+        {
+          kind: "activation_observed",
+          project(entry, context) {
+            return {
+              type: "activation_observed",
+              occurred_at: context.absoluteTime(entry.at),
+            };
+          },
+        },
+      ],
+      forRun(ctx) {
+        const trace = ctx.services.get(RUN_TRACE_PORT);
+        expect(trace).toBeDefined();
+        trace!.record("activation_observed", {});
+        return {
+          name: "activation-trace",
+          forAgent: () => ({
+            attach(build) {
+              build.trace.record("activation_observed", {});
+              return {};
+            },
+          }),
+        };
+      },
+    };
+    const outcome = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      deps: makeDeps({
+        traceStore,
+        capabilities: [capability],
+      }),
+    });
+    const persisted = traceStore
+      .getById("o", outcome.executionId)!
+      .trace.events.filter((entry) => entry.type === "activation_observed");
+    expect(persisted).toHaveLength(2);
+    expect(journaled.filter((entry) => entry.type === "activation_observed")).toHaveLength(2);
+  });
+
+  it("keeps contributed trace accounting out of provider messages and final_context", async () => {
+    const run = async (withTrace: boolean) => {
+      const calls: unknown[] = [];
+      const traceStore = makeTestTraceStore();
+      const outcome = await executeRun({
+        rawBody: BODY,
+        owner: "o",
+        deps: makeDeps({
+          traceStore,
+          llm: {
+            async call(params) {
+              calls.push(structuredClone(params.messages));
+              return {
+                text: "done",
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  cached_tokens: 0,
+                  cache_write_tokens: 0,
+                },
+              };
+            },
+          },
+          capabilities: withTrace
+            ? [
+                {
+                  name: "trace-only",
+                  forRun(ctx) {
+                    ctx.services.get(RUN_TRACE_PORT)!.record("guard_reviewer_model_call", {
+                      usage: "private accounting",
+                    });
+                    return { name: "trace-only", forAgent: () => null };
+                  },
+                },
+              ]
+            : [],
+        }),
+      });
+      return {
+        calls,
+        context: traceStore.getById("o", outcome.executionId)!.final_context,
+      };
+    };
+    const baseline = await run(false);
+    const instrumented = await run(true);
+    expect(instrumented.calls).toEqual(baseline.calls);
+    expect(instrumented.context).toEqual(baseline.context);
+    expect(JSON.stringify(instrumented)).not.toContain("guard_reviewer_model_call");
+    expect(JSON.stringify(instrumented)).not.toContain("private accounting");
+  });
   it("rejects authority-shaped public request fields before host runtime creation", async () => {
     for (const key of [
       "operator_evidence",

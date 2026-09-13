@@ -1,5 +1,6 @@
 import {
   OPERATOR_AUTHORITY_PORT,
+  RUN_TRACE_PORT,
   sanitizeDeep,
   sanitizeText,
   type Logger,
@@ -31,6 +32,7 @@ export function createConfigurationReview(
     providers: ctx.request.providers,
     defaultModel: settings.default_model,
     authority,
+    trace: ctx.services.get(RUN_TRACE_PORT),
     registry,
     audit: options.audit,
     signal: ctx.signal,

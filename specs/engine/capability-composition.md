@@ -407,13 +407,20 @@ the order `foldContributions` later folds contributions in when none declares an
    (`packages/loop/src/runtime/orchestrator.ts`).
 2. `capabilityToolMetadata = collectCapabilityToolMetadata(allCapabilities)` — reserved names/tool
    effects computed over **registration**, not activation.
-3. Concurrently, for each registered capability, call `capability.forRun(ctx)` under a bounded wall
+3. Create the run trace and publish its narrow interface as `RUN_TRACE_PORT` in
+   `CapabilityServices` before activation. The journal remains unopened until activation completes;
+   its bridge buffers projected activation entries behind a late-bound reference, so a successful
+   run flushes them into the journal without turning an activation failure into an orphan journal
+   (`packages/loop/src/runtime/orchestrator.ts`, `packages/capability/src/run-trace-port.ts`). Test:
+   `packages/loop/tests/component/execute-run.test.ts`, "publishes the run trace during forRun and
+   journals later contributed records".
+4. Concurrently, for each registered capability, call `capability.forRun(ctx)` under a bounded wall
    budget `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (default `5000`ms, `packages/capability/src/env.ts`);
    a timeout or an `ExtensionCallUnavailableError` (host's extension gate saturated) both resolve to
    `null` for an optional registration, logged, not thrown (`packages/loop/src/runtime/orchestrator.ts`).
    A `required: true` registration instead fails before inference if activation returns null,
    times out or cannot acquire extension capacity. The flag survives the admitted wrapper.
-4. Every non-null activation is wrapped by `admittedRunCapability` (`packages/loop/src/runtime/extension-admission.ts`),
+5. Every non-null activation is wrapped by `admittedRunCapability` (`packages/loop/src/runtime/extension-admission.ts`),
    which re-routes `seedBlock`/`onRunEnd`/`finalizeRun`/every lifecycle-hook method through the
    host's `ExtensionAdmissionController`, keyed by the capability's **name** (not object identity, so
    a host that reconstructs the object every run does not bypass the per-operation ceiling —
@@ -421,9 +428,9 @@ the order `foldContributions` later folds contributions in when none declares an
    `onRunEnd` (both the lifecycle-hook form, `packages/loop/src/runtime/extension-admission.ts`, and the `RunCapability`
    form) and `finalizeRun`, which are admitted on the distinct `"run_end"` lane —
    so a saturated `"normal"` gate cannot block the calls a run's teardown depends on.
-5. `runCapabilities = orderCapabilities(<filtered, admitted, non-null activations>)`
+6. `runCapabilities = orderCapabilities(<filtered, admitted, non-null activations>)`
    (`packages/loop/src/runtime/orchestrator.ts`); `hooks = runCapabilities.flatMap(c => c.lifecycle ?? [])`.
-6. `seedBlocks` are computed by calling each **activated** capability's `seedBlock()` under the same
+7. `seedBlocks` are computed by calling each **activated** capability's `seedBlock()` under the same
    setup-timeout budget. An optional block may be omitted; a required declared seed must produce
    non-empty content before inference (`packages/loop/src/runtime/orchestrator.ts`). Entry attachment
    is similarly mandatory for a required activation, while child scopes retain their ordinary filter.

@@ -58,6 +58,15 @@ none of them touches `TracePort`. No in-scope file states this contrast better t
 example already cited in §6; that example remains the illustration, not a restatement of a principle
 this document can source more directly.
 
+Kernel reviewer accounting is a durable trace, not a diagnostic log: one
+`guard_reviewer_model_call` event survives in `ExecutionRecord.trace` for each actual provider call,
+while `engineEventToProto` deliberately drops that contributed discriminator without an unmapped-event
+warning. The event contains bounded operational counters and identifiers only, never reviewer input
+or output. Production: `callReviewerWithTrace` in
+`packages/kernel/src/guard/reviewer-trace.ts` and `engineEventToProto` in
+`packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/reviewer-trace.test.ts`
+and `packages/kernel/tests/unit/observability.test.ts`.
+
 ## 2. Surface
 
 ### 2.1 The port (`@clarvis/capability`)

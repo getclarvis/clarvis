@@ -93,6 +93,8 @@ kinds and are composed into one immutable per-run projector registry.
 any `forRun`; capabilities may publish their own ports while activating, and consumers resolve peers
 at `attach` time so capability registration order does not decide visibility. The optional task
 tracking contract and its owner-neutral `TASK_TRACKING_PORT` have one canonical declaration here.
+The loop-owned `RUN_TRACE_PORT` exposes the current run's narrow `TracePort` during `forRun` without
+publishing the concrete recording handle or any context mutation surface.
 Without a provider, child spawning remains available through `spawn_subagent`; with a provider,
 the tracker contributes the required `task_id` property for `delegate_task`.
 

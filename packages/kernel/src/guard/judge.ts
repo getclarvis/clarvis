@@ -4,6 +4,7 @@ import {
   resolveProvider,
   type NamespacedTool,
   type OperatorAuthorityReader,
+  type TracePort,
 } from "@clarvis/capability";
 import type {
   ElicitRequest,
@@ -15,6 +16,7 @@ import type {
   ProviderConfig,
 } from "@clarvis/loop";
 import { GUARD_REVIEW_AGENT_INSTANCE_ID } from "./reviewer-policy.ts";
+import { callReviewerWithTrace, reviewerFailureKind } from "./reviewer-trace.ts";
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 20_000;
 const DECIDE_TOOL_NAME = "decide";
@@ -65,6 +67,7 @@ export interface JudgeDeps {
   authority?: OperatorAuthorityReader;
   logger?: Logger;
   signal?: AbortSignal;
+  trace?: TracePort;
 }
 
 export interface JudgeElicitAnswer {
@@ -189,21 +192,32 @@ export function createJudgeElicit(
     const stableGuidanceIndex = messages.length === 3 ? 1 : undefined;
     let verdict: JudgeVerdict | undefined;
     try {
-      const result = await deps.llm.call({
-        model: ref.modelId,
-        provider: ref.provider,
-        providerConfig: resolution.config,
-        messages,
-        tools: [DECIDE_TOOL],
-        toolChoice: { type: "function", function: { name: DECIDE_TOOL_NAME } },
-        timeoutMs: cfg.timeout_ms ?? DEFAULT_JUDGE_TIMEOUT_MS,
-        maxRetries: cfg.max_retries ?? 1,
-        maxOutputTokens: 1024,
-        reasoningEffort: "low",
-        agentInstanceId: GUARD_REVIEW_AGENT_INSTANCE_ID,
-        cacheBreakpoints: stableGuidanceIndex === undefined ? [] : [stableGuidanceIndex],
-        ...(deps.signal === undefined ? {} : { signal: deps.signal }),
-      });
+      const result = await callReviewerWithTrace(
+        deps.llm,
+        {
+          model: ref.modelId,
+          provider: ref.provider,
+          providerConfig: resolution.config,
+          messages,
+          tools: [DECIDE_TOOL],
+          toolChoice: { type: "function", function: { name: DECIDE_TOOL_NAME } },
+          timeoutMs: cfg.timeout_ms ?? DEFAULT_JUDGE_TIMEOUT_MS,
+          maxRetries: cfg.max_retries ?? 1,
+          maxOutputTokens: 1024,
+          reasoningEffort: "low",
+          agentInstanceId: GUARD_REVIEW_AGENT_INSTANCE_ID,
+          cacheBreakpoints: stableGuidanceIndex === undefined ? [] : [stableGuidanceIndex],
+          ...(deps.signal === undefined ? {} : { signal: deps.signal }),
+        },
+        {
+          trace: deps.trace,
+          path: "call_local",
+          consumer: "command_guard",
+          stage: "decide",
+          authority_revision: revision,
+          failureKind: (error) => reviewerFailureKind(error, false, deps.signal),
+        },
+      );
       verdict = parseDecision(result.toolCalls);
     } catch {
       deps.logger?.warn(

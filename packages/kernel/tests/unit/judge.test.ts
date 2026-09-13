@@ -8,6 +8,7 @@ import {
   type RunCapabilityContext,
 } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
+import { createTrace } from "@clarvis/trace";
 import { buildGuardContext, posixDialect } from "@clarvis/tools/guard";
 import type { ElicitRequest } from "@clarvis/loop";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
@@ -46,6 +47,7 @@ describe("call-local command judge", () => {
   it("sees the complete command and host evidence, then memoizes an exact allow", async () => {
     const ledger = authority();
     const calls: LLMCallParams[] = [];
+    const trace = createTrace();
     const judge = createJudgeElicit(
       {
         llm: {
@@ -60,6 +62,7 @@ describe("call-local command judge", () => {
         providers: [{ name: "anthropic", kind: "anthropic" }],
         defaultModel: "anthropic/test",
         authority: ledger.reader,
+        trace,
       },
       { guidance: "Prefer commands that only inspect or test the current workspace." },
       undefined,
@@ -68,6 +71,7 @@ describe("call-local command judge", () => {
     expect(await judge(request(command))).toEqual({ allowed: true, answerer: "judge" });
     expect(await judge(request(command))).toEqual({ allowed: true, answerer: "judge" });
     expect(calls).toHaveLength(1);
+    expect(trace.entries().map((entry) => entry.kind)).toEqual(["guard_reviewer_model_call"]);
     const payload = JSON.parse(calls[0]!.messages.at(-1)!.content as string);
     expect(payload.call.args.command).toBe(command);
     expect(payload.operator_evidence).toEqual(ledger.reader.snapshot().evidence);

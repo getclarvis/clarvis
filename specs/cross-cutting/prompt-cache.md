@@ -137,6 +137,14 @@ Native OpenAI, ChatGPT and xAI consume the same composed key through their exist
 affinity fields. Google retains its existing adapter behavior because it exposes no Clarvis cache
 protocol.
 
+Kernel reviewer accounting observes those calls out-of-band: recording
+`guard_reviewer_model_call` does not change `LLMCallParams`, provider messages, tools, breakpoints,
+session/agent identity, prompt-cache key or persisted `final_context`. Production:
+`callReviewerWithTrace` in [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts).
+Test: "keeps contributed trace accounting out of provider messages and final_context" in
+[execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts) compares the exact
+captured messages and final context with and without the trace-only activation.
+
 Memory queue claims persist a dedicated agent ID and reserve each execution ID before inference.
 Recovery preserves the agent ID and continues the previous indexing execution when its context is
 available. The durable predecessor reservation list also crosses a claim that died before

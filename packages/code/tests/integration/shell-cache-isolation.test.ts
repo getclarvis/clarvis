@@ -17,15 +17,18 @@ const pkgRoot = join(import.meta.dir, "..", "..");
  */
 function probeSource(): string {
   return [
+    `import { spyOn } from "bun:test";`,
     `const platform = await import(${JSON.stringify(join(pkgRoot, "src/adapters/platform.ts"))});`,
-    `const real = process.platform;`,
-    `Object.defineProperty(process, "platform", { value: "win32", configurable: true });`,
-    `await platform.readClipboardImage(undefined, async () => ({`,
-    `  exitCode: 1, stdout: Buffer.alloc(0), stderr: "", timedOut: false,`,
-    `  cancelled: false, outputExceeded: false,`,
-    `}));`,
-    `Object.defineProperty(process, "platform", { value: real, configurable: true });`,
     `const shell = await import(${JSON.stringify(join(pkgRoot, "src/adapters/local-shell.ts"))});`,
+    `const platformSpy = spyOn(process, "platform", "get").mockReturnValue("win32");`,
+    `try {`,
+    `  await platform.readClipboardImage(undefined, async () => ({`,
+    `    exitCode: 1, stdout: Buffer.alloc(0), stderr: "", timedOut: false,`,
+    `    cancelled: false, outputExceeded: false,`,
+    `  }));`,
+    `} finally {`,
+    `  platformSpy.mockRestore();`,
+    `}`,
     `const r = await shell.runLocalBash("printf probe-ok", { cwd: ${JSON.stringify(pkgRoot)} });`,
     `process.stdout.write(JSON.stringify({ exitCode: r.exitCode, stdout: r.stdout, stderr: r.stderr }));`,
   ].join("\n");

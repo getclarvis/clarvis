@@ -19,6 +19,7 @@ import {
   removeWorktreeCheckout,
   worktreeIsClean,
 } from "../../src/bootstrap/worktree.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const roots: string[] = [];
 
@@ -54,8 +55,9 @@ function repository(): { root: string; parent: string } {
 
 test("bootstrapWorktree creates and then reopens a deterministic Git-owned checkout", async () => {
   const repo = repository();
-  const previousIndexFile = process.env.GIT_INDEX_FILE;
-  process.env.GIT_INDEX_FILE = join(repo.root, "inherited-index");
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, GIT_INDEX_FILE: join(repo.root, "inherited-index") }),
+  );
   try {
     const created = await bootstrapWorktree(repo.root, "review-auth");
     expect(created.created).toBe(true);
@@ -76,8 +78,7 @@ test("bootstrapWorktree creates and then reopens a deterministic Git-owned check
     const reopened = await bootstrapWorktree(repo.root, "review-auth");
     expect(reopened).toEqual({ ...created, created: false });
   } finally {
-    if (previousIndexFile === undefined) delete process.env.GIT_INDEX_FILE;
-    else process.env.GIT_INDEX_FILE = previousIndexFile;
+    env.mockRestore();
   }
 });
 

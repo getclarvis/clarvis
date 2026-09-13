@@ -3,7 +3,7 @@
  * confinement it enforces, the permissions it sets, and how it recovers a lock
  * whose holder died. The backend-agnostic contract lives in repository.test.ts.
  */
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, spyOn, test, vi } from "bun:test";
 import { constants, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { mkdir, mkdtemp, open, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -26,6 +26,12 @@ import {
   type PlanRepository,
   PlanConflictError,
 } from "@clarvis/plan";
+
+const spyOnProcessPlatform = vi.spyOn as unknown as (
+  target: object,
+  property: string,
+  accessType: "get",
+) => { mockReturnValue(value: NodeJS.Platform): { mockRestore(): void } };
 
 const NOW = new Date("2026-07-27T10:00:00.000Z");
 
@@ -557,20 +563,19 @@ describe("fsyncDir — the win32 directory-sync durability branch", () => {
   test("swallows a directory-open failure on win32, so the write still succeeds", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-fsyncdir-"));
     const root = join(dir, "plans");
-    const originalPlatform = process.platform;
+    const platformSpy = spyOnProcessPlatform(process, "platform", "get").mockReturnValue("win32");
     const openSpy = interceptDirectoryOpen(
       root,
       Object.assign(new Error("simulated: cannot open a directory handle on win32"), {
         code: "EPERM",
       }),
     );
-    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
     try {
       const repository = createFilePlanRepository({ workspaceRoot: dir, root });
       const created = await repository.create(draft("Windows durability"));
       expect(created.index.path).toContain("windows-durability");
     } finally {
-      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      platformSpy.mockRestore();
       openSpy.mockRestore();
       await rm(dir, { recursive: true, force: true });
     }
@@ -588,19 +593,18 @@ describe("fsyncDir — the win32 directory-sync durability branch", () => {
   test("still propagates a directory-open failure off win32", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clarvis-plan-fsyncdir-"));
     const root = join(dir, "plans");
-    const originalPlatform = process.platform;
+    const platformSpy = spyOnProcessPlatform(process, "platform", "get").mockReturnValue("linux");
     const openSpy = interceptDirectoryOpen(
       root,
       Object.assign(new Error("simulated EIO opening the plans directory"), { code: "EIO" }),
     );
-    Object.defineProperty(process, "platform", { value: "linux", configurable: true });
     try {
       const repository = createFilePlanRepository({ workspaceRoot: dir, root });
       await expect(repository.create(draft("Non-Windows durability"))).rejects.toThrow(
         /simulated EIO/,
       );
     } finally {
-      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      platformSpy.mockRestore();
       openSpy.mockRestore();
       await rm(dir, { recursive: true, force: true });
     }

@@ -10,86 +10,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|delete process.env.CLARVIS_HOME|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|delete process.env.CLARVIS_OWNER|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|delete process.env.CLARVIS_OWNER|1",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|delete process.env.CLARVIS_WORKSPACE_ROOT|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_HOME = join(root, \"global\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_HOME = previousHome|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_OWNER = \"startup-owner\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_OWNER = previousOwner|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_WORKSPACE_ROOT = previousWorkspace|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/component/workspace-client-manager.test.ts",
-      "identity": "process-env-mutation|describe:WorkspaceClientManager/it:prepares the startup foundation from process-pinned paths and owner|process.env.CLARVIS_WORKSPACE_ROOT = workspace|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/component/workspace-client-manager.test.ts",
       "identity": "subprocess|git|execFileSync(\"git\", args, { cwd, env: withoutGitRepositoryEnvironment(process.env), stdio: \"ignore\", })|0",
@@ -122,54 +42,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|delete process.env.HOME|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|delete process.env[WORKSPACE_ENV]|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|process.env.HOME = home|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|process.env.HOME = previousHome|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|process.env[WORKSPACE_ENV] = previousWorkspace|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/marketplace.test.ts",
-      "identity": "process-env-mutation|test:agents catalogs: discovery reads both scopes and skips the ones that are absent|process.env[WORKSPACE_ENV] = workspace|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/integration/marketplace.test.ts",
       "identity": "subprocess|runGit|Bun.spawnSync([\"git\", ...args], { cwd: repo, env: withoutGitRepositoryEnvironment(process.env), })|0",
@@ -178,441 +50,9 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env[k]|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env[k] = stash[k]!|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.SSH_CONNECTION|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.SSH_TTY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.WAYLAND_DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|beforeEach|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|test:over SSH, copyText falls back to the native tool when OSC-52 reports unsupported|process.env.SSH_TTY = \"/dev/pts/3\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-env-mutation|test:over SSH, copyText tries OSC-52 first and skips the native tool when it succeeds|process.env.SSH_TTY = \"/dev/pts/3\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-platform-redefinition|afterEach|Object.defineProperty(process, \"platform\", { value: stash.platform, configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-copy.test.ts",
-      "identity": "process-platform-redefinition|beforeEach|Object.defineProperty(process, \"platform\", { value: \"linux\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env[k]|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env[k] = stash[k]!|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.NO_COLOR|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.SSH_CONNECTION|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.SSH_TTY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.TERM_PROGRAM|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.WAYLAND_DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:buildRendererConfig: direct macOS iTerm preserves native text composition|process.env.TERM_PROGRAM = \"iTerm.app\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:createPlatform: colorDepth prefers ansi256 over 16-color, and NO_COLOR forces mono|process.env.NO_COLOR = \"1\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:createPlatform: over SSH and a non-panic reason, shutdown drains pending stdin before exiting|process.env.SSH_TTY = \"/dev/pts/4\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:createPlatform: over SSH, stdin activity during the drain window resets the quiet timer instead of ending it early|process.env.SSH_TTY = \"/dev/pts/4\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:createPlatform: reports the client runtime, remote path, and terminal identity|process.env.SSH_CONNECTION = \"client server\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:createPlatform: shutdown cancels an in-flight clipboard helper|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:nativeClipboardCopy: a candidate error is treated as a miss, not a crash|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: a candidate error is skipped, not fatal|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|afterEach|Object.defineProperty(process, \"platform\", { value: stash.platform, configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|beforeEach|Object.defineProperty(process, \"platform\", { value: \"linux\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:buildRendererConfig: direct macOS iTerm preserves native text composition|Object.defineProperty(process, \"platform\", { value: \"darwin\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:createPlatform: reports the client runtime, remote path, and terminal identity|Object.defineProperty(process, \"platform\", { value: \"aix\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:createPlatform: reports the client runtime, remote path, and terminal identity|Object.defineProperty(process, \"platform\", { value: \"darwin\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:createPlatform: reports the client runtime, remote path, and terminal identity|Object.defineProperty(process, \"platform\", { value: \"win32\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:nativeClipboardCopy: on win32, copyText invokes the PowerShell clipboard candidate|Object.defineProperty(process, \"platform\", { value: \"win32\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
-      "identity": "process-platform-redefinition|test:readClipboardImage: on win32, the PowerShell image script is attempted|Object.defineProperty(process, \"platform\", { value: \"win32\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/code/tests/integration/platform-lifecycle.test.ts",
       "identity": "timer|test:createPlatform: over SSH, stdin activity during the drain window resets the quiet timer instead of ending it early|setTimeout(() => process.stdin.emit(\"data\", Buffer.from(\"x\")), 30)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env.DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env.WAYLAND_DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env.DISPLAY = stash.DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env.WAYLAND_DISPLAY = stash.WAYLAND_DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env.WAYLAND_DISPLAY|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: nunca usa xsel; um payload de texto (sem assinatura PNG) é rejeitado -> null|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: spawn com error (ENOENT) -> proximo candidate e null|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: spawn com error (ENOENT) -> proximo candidate e null|process.env.WAYLAND_DISPLAY = \"wayland-0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: stdout vazio (mesmo status 0) -> continua e retorna null|process.env.WAYLAND_DISPLAY = \"wayland-0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: todos os candidates com status != 0 -> null|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: todos os candidates com status != 0 -> null|process.env.WAYLAND_DISPLAY = \"wayland-0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: wl-paste retorna PNG -> base64 + mediaType image/png|process.env.WAYLAND_DISPLAY = \"wayland-0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-env-mutation|test:readClipboardImage: xclip retorna PNG -> base64 + image/png|process.env.DISPLAY = \":0\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-platform-redefinition|afterEach|Object.defineProperty(process, \"platform\", { value: stash.platform, configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-platform-redefinition|beforeEach|Object.defineProperty(process, \"platform\", { value: \"linux\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/code/tests/integration/platform.test.ts",
-      "identity": "process-platform-redefinition|test:readClipboardImage: darwin tenta pngpaste -> base64 + image/png|Object.defineProperty(process, \"platform\", { value: \"darwin\", configurable: true })|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/plugin-install.test.ts",
-      "identity": "process-env-mutation|test:a clone cannot inherit repository routing from the process that launched Clarvis|delete process.env[name]|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/plugin-install.test.ts",
-      "identity": "process-env-mutation|test:a clone cannot inherit repository routing from the process that launched Clarvis|process.env[name] = join(root, \"parent\", name)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/plugin-install.test.ts",
-      "identity": "process-env-mutation|test:a clone cannot inherit repository routing from the process that launched Clarvis|process.env[name] = value|0",
       "package_owner": "@clarvis/code",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -658,76 +98,12 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: reads process.env at the current moment|delete process.env.CLARVIS_TEST_KEY_XYZ|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: reads process.env at the current moment|process.env.CLARVIS_TEST_KEY_XYZ = \"secret\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: source=keyfile makes keys.json win over a shell env var|delete process.env.CLARVIS_TEST_SRC_XYZ|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: source=keyfile makes keys.json win over a shell env var|process.env.CLARVIS_TEST_SRC_XYZ = \"env-value\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: tri-state — real env wins over the keys file|delete process.env.CLARVIS_TEST_TRI_XYZ|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/settings.test.ts",
-      "identity": "process-env-mutation|test:envStatus: tri-state — real env wins over the keys file|process.env.CLARVIS_TEST_TRI_XYZ = \"env-value\"|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/integration/shell-cache-isolation.test.ts",
       "identity": "subprocess|module|Bun.spawnSync([\"bun\", file], { cwd: pkgRoot })|0",
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/stream-metrics.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env.CLARVIS_STREAM_DEBUG|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/stream-metrics.test.ts",
-      "identity": "process-env-mutation|test:streamMetrics: with the env var unset, returns a memoized no-op sink that never throws|delete process.env.CLARVIS_STREAM_DEBUG|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "timer",
@@ -778,30 +154,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/worktree-bootstrap.test.ts",
-      "identity": "process-env-mutation|test:bootstrapWorktree creates and then reopens a deterministic Git-owned checkout|delete process.env.GIT_INDEX_FILE|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/worktree-bootstrap.test.ts",
-      "identity": "process-env-mutation|test:bootstrapWorktree creates and then reopens a deterministic Git-owned checkout|process.env.GIT_INDEX_FILE = join(repo.root, \"inherited-index\")|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/integration/worktree-bootstrap.test.ts",
-      "identity": "process-env-mutation|test:bootstrapWorktree creates and then reopens a deterministic Git-owned checkout|process.env.GIT_INDEX_FILE = previousIndexFile|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/integration/worktree-bootstrap.test.ts",
       "identity": "subprocess|git|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: { ...withoutGitRepositoryEnvironment(process.env), GIT_CONFIG_NOSYSTEM: \"1\", }, })|0",
@@ -810,44 +162,12 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "timer",
-      "file": "packages/code/tests/unit/diagnostics.test.ts",
-      "identity": "timer|test:physical async work uses one standard start, pending and settled vocabulary|setTimeout(done, 5)|0",
-      "package_owner": "@clarvis/code",
-      "classification": "boundary-canary",
-      "reason": "the diagnostic test proves the real slow-operation timer emits its pending event"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/code/tests/unit/candidate-install.test.ts",
       "identity": "subprocess|test:candidate installation checks out the published commit with real Git and launches it with Bun|spawnSync(executable, argv.slice(1), { cwd, env: withoutGitRepositoryEnvironment(inheritedEnv), encoding: \"utf8\", })|0",
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/unit/debug-session.test.ts",
-      "identity": "process-env-mutation|test:the default factory writes into the workspace's own machine-local state|delete process.env.CLARVIS_HOME|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/unit/debug-session.test.ts",
-      "identity": "process-env-mutation|test:the default factory writes into the workspace's own machine-local state|process.env.CLARVIS_HOME = home|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/code/tests/unit/debug-session.test.ts",
-      "identity": "process-env-mutation|test:the default factory writes into the workspace's own machine-local state|process.env.CLARVIS_HOME = previousHome|0",
-      "package_owner": "@clarvis/code",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",
@@ -872,6 +192,14 @@
       "package_owner": "@clarvis/code",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
+    },
+    {
+      "mechanism": "timer",
+      "file": "packages/code/tests/unit/diagnostics.test.ts",
+      "identity": "timer|test:physical async work uses one standard start, pending and settled vocabulary|setTimeout(done, 5)|0",
+      "package_owner": "@clarvis/code",
+      "classification": "boundary-canary",
+      "reason": "the diagnostic test proves the real slow-operation timer emits its pending event"
     },
     {
       "mechanism": "subprocess",
@@ -950,22 +278,6 @@
       "file": "packages/hooks/tests/integration/real-subprocess.test.ts",
       "identity": "positive-wait|waitGone|Bun.sleep(25)|0",
       "package_owner": "@clarvis/hooks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/architecture/workspace-surface.test.ts",
-      "identity": "process-env-mutation|exerciseWriters|process.env.CLARVIS_HOME = home|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/file-kernel.test.ts",
-      "identity": "process-env-mutation|describe:createFileKernel — guard settings loader/it:resolves guard settings from live config at run start (a run whose model call fails fast, unguarded)|delete process.env.CLARVIS_FK_UNSET_TEST_KEY|0",
-      "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
@@ -1058,30 +370,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/plugin-service.test.ts",
-      "identity": "process-env-mutation|describe:PluginService/it:lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree|delete process.env[WORKSPACE_ENV]|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/plugin-service.test.ts",
-      "identity": "process-env-mutation|describe:PluginService/it:lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree|process.env[WORKSPACE_ENV] = foreign|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/plugin-service.test.ts",
-      "identity": "process-env-mutation|describe:PluginService/it:lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree|process.env[WORKSPACE_ENV] = previous|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/plugin-service.test.ts",
       "identity": "subprocess|runGit|spawnSync(\"git\", args, { cwd, encoding: \"utf8\", env: withoutGitRepositoryEnvironment(process.env), })|0",
@@ -1090,20 +378,20 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/runtime-guest-loop.test.ts",
-      "identity": "process-env-mutation|describe:runtime guest loop/it:runs the real loop through host model authority without inheriting host secrets|delete process.env.CLARVIS_RUNTIME_HOST_SECRET|0",
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
+      "identity": "subprocess|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|Bun.spawn({ cmd: [process.execPath, SANDBOX_CACHE_PROBE_PATH, root], env: { ...process.env, PATH: bin }, stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+      "classification": "boundary-canary",
+      "reason": "isolated child owns PATH while proving physical toolchain discovery and cache invalidation"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/runtime-guest-loop.test.ts",
-      "identity": "process-env-mutation|describe:runtime guest loop/it:runs the real loop through host model authority without inheriting host secrets|process.env.CLARVIS_RUNTIME_HOST_SECRET = \"must-not-cross\"|0",
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/serve.test.ts",
+      "identity": "subprocess|describe:serveFileKernelOverStdio/it:advertises agent_tools:false when CLARVIS_AGENT_TOOLS_ENABLED=false|Bun.spawn({ cmd: [process.execPath, SERVE_AGENT_TOOLS_PROBE_PATH], cwd: join(import.meta.dir, \"../..\"), env: { ...process.env, CLARVIS_AGENT_TOOLS_ENABLED: \"false\" }, stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
+      "classification": "boundary-canary",
+      "reason": "isolated child verifies the production environment default without mutating the test runner"
     },
     {
       "mechanism": "listener",
@@ -1130,86 +418,6 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|process.env.PATH = `${otherBin}:${bin}`|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|process.env.PATH = bin|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy/it:caches discovery until the environment changes or refresh is requested|process.env.PATH = previousPath|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy|process.env.PATH = bin|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy|process.env.PATH = previousPath ? `${bin}${delimiter}${previousPath}` : bin|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy|process.env.PATH = previousPath|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/sandbox-policy.test.ts",
-      "identity": "process-env-mutation|describe:sandbox host policy|process.env.PATH = previousPath|1",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/serve.test.ts",
-      "identity": "process-env-mutation|describe:serveFileKernelOverStdio/afterEach|delete process.env.CLARVIS_AGENT_TOOLS_ENABLED|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/serve.test.ts",
-      "identity": "process-env-mutation|describe:serveFileKernelOverStdio/afterEach|process.env.CLARVIS_AGENT_TOOLS_ENABLED = originalAgentToolsEnv|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/integration/serve.test.ts",
-      "identity": "process-env-mutation|describe:serveFileKernelOverStdio/it:advertises agent_tools:false when CLARVIS_AGENT_TOOLS_ENABLED=false|process.env.CLARVIS_AGENT_TOOLS_ENABLED = \"false\"|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "positive-wait",
       "file": "packages/kernel/tests/integration/settings-concurrent-writes.test.ts",
       "identity": "positive-wait|waitForWorkers|Bun.sleep(5)|0",
@@ -1229,70 +437,6 @@
       "mechanism": "positive-wait",
       "file": "packages/kernel/tests/integration/transport.test.ts",
       "identity": "positive-wait|describe:kernel loopback transport/it:closes without waiting for an infinite notification send|Bun.sleep(250)|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env[name] = value|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|beforeEach|delete process.env[name]|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation/call|process.env.GIT_DIR = \"/unattested-repository\"|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation|delete process.env.GIT_DIR|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation|delete process.env[name]|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation|process.env.GIT_DIR = previous|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation|process.env[name] = \"unattested-override\"|0",
-      "package_owner": "@clarvis/kernel",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/kernel/tests/unit/effect-attestation.test.ts",
-      "identity": "process-env-mutation|describe:closed effect attestation|process.env[name] = previous|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -1362,97 +506,9 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/component/ai-sdk-adapter.test.ts",
-      "identity": "process-env-mutation|describe:AiSdkAdapter — representative generation composition/it:uses process.env only as the default credential resolver and restores the prior value|delete process.env[key]|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/component/ai-sdk-adapter.test.ts",
-      "identity": "process-env-mutation|describe:AiSdkAdapter — representative generation composition/it:uses process.env only as the default credential resolver and restores the prior value|process.env[key] = \"from-env\"|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/component/ai-sdk-adapter.test.ts",
-      "identity": "process-env-mutation|describe:AiSdkAdapter — representative generation composition/it:uses process.env only as the default credential resolver and restores the prior value|process.env[key] = previous|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/integration/wire-cache-diff.test.ts",
-      "identity": "process-env-mutation|describe:what an implicit-cache openai-compatible request actually carries/it:keeps the wire prefix byte-identical across turns and sends no markers|process.env.OPENROUTER_API_KEY = \"secret\"|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/llm/tests/unit/observability.test.ts",
       "identity": "timer|describe:llm.retry.gave_up/it:reports an abort that landed during the backoff sleep|setTimeout(() => controller.abort(), 5)|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "math-random-assignment",
-      "file": "packages/llm/tests/unit/retry-llm-provider.test.ts",
-      "identity": "math-random-assignment|describe:backoffDelayMs/it:never exceeds maxDelayMs even at maximum jitter|Math.random = () => r|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "math-random-assignment",
-      "file": "packages/llm/tests/unit/retry-llm-provider.test.ts",
-      "identity": "math-random-assignment|describe:backoffDelayMs/it:never exceeds maxDelayMs even at maximum jitter|Math.random = orig|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "math-random-assignment",
-      "file": "packages/llm/tests/unit/retry-llm-provider.test.ts",
-      "identity": "math-random-assignment|describe:withTransportRetry — signal trips before the backoff sleep starts/it:surfaces the failure without retrying when the signal aborts during backoff computation|Math.random = (): number => { controller.abort(); return 0.5; }|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "math-random-assignment",
-      "file": "packages/llm/tests/unit/retry-llm-provider.test.ts",
-      "identity": "math-random-assignment|describe:withTransportRetry — signal trips before the backoff sleep starts/it:surfaces the failure without retrying when the signal aborts during backoff computation|Math.random = originalRandom|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/unit/stream-metrics.test.ts",
-      "identity": "process-env-mutation|describe:streamMetrics/it:is a no-op sink when CLARVIS_STREAM_DEBUG is unset, memoized and never throwing|delete process.env.CLARVIS_STREAM_DEBUG|0",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/unit/stream-metrics.test.ts",
-      "identity": "process-env-mutation|describe:streamMetrics/it:is a no-op sink when CLARVIS_STREAM_DEBUG is unset, memoized and never throwing|delete process.env.CLARVIS_STREAM_DEBUG|1",
-      "package_owner": "@clarvis/llm",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/llm/tests/unit/stream-metrics.test.ts",
-      "identity": "process-env-mutation|describe:streamMetrics/it:is a no-op sink when CLARVIS_STREAM_DEBUG is unset, memoized and never throwing|process.env.CLARVIS_STREAM_DEBUG = previous|0",
       "package_owner": "@clarvis/llm",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
@@ -1530,38 +586,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/component/transport-builder.test.ts",
-      "identity": "process-env-mutation|describe:buildTransport/it:resolves a ${VAR} header from env at construct time|delete process.env.CLARVIS_TEST_TOK_039|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/component/transport-builder.test.ts",
-      "identity": "process-env-mutation|describe:buildTransport/it:resolves a ${VAR} header from env at construct time|process.env.CLARVIS_TEST_TOK_039 = \"secret-value\"|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/component/transport-builder.test.ts",
-      "identity": "process-env-mutation|describe:buildTransport/it:stdio resolves a ${VAR} env value and accepts cwd|delete process.env.CLARVIS_TEST_ENV_039|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/component/transport-builder.test.ts",
-      "identity": "process-env-mutation|describe:buildTransport/it:stdio resolves a ${VAR} env value and accepts cwd|process.env.CLARVIS_TEST_ENV_039 = \"secret-value\"|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "listener",
       "file": "packages/mcp-client/tests/integration/oauth-transport.test.ts",
       "identity": "listener|oauthMcpFixture|server.listen(0, \"127.0.0.1\", resolve)|0",
@@ -1584,78 +608,6 @@
       "package_owner": "@clarvis/mcp-client",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:always resolves declarative credential env fields when authored expansion is disabled|delete process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:always resolves declarative credential env fields when authored expansion is disabled|delete process.env.CLARVIS_TEST_REMOTE_REGION|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:always resolves declarative credential env fields when authored expansion is disabled|process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN = \"declared-secret\"|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:always resolves declarative credential env fields when authored expansion is disabled|process.env.CLARVIS_TEST_REMOTE_REGION = \"south\"|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:sends a ${VAR} auth header RESOLVED from env — never the literal — alongside Accept|delete process.env.CLARVIS_TEST_REMOTE_TOK|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/mcp-client/tests/integration/remote-transport.test.ts",
-      "identity": "process-env-mutation|describe:remote transport reaches a server over real HTTP/it:sends a ${VAR} auth header RESOLVED from env — never the literal — alongside Accept|process.env.CLARVIS_TEST_REMOTE_TOK = \"s3cret-value\"|0",
-      "package_owner": "@clarvis/mcp-client",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/memory/tests/integration/workspace-state.test.ts",
-      "identity": "process-env-mutation|describe:workspace state capture/test:repository-local variables from a parent hook cannot redirect the workspace probe|delete process.env[name]|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/memory/tests/integration/workspace-state.test.ts",
-      "identity": "process-env-mutation|describe:workspace state capture/test:repository-local variables from a parent hook cannot redirect the workspace probe|process.env[name] = join(root, \"parent\", name)|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/memory/tests/integration/workspace-state.test.ts",
-      "identity": "process-env-mutation|describe:workspace state capture/test:repository-local variables from a parent hook cannot redirect the workspace probe|process.env[name] = value|0",
-      "package_owner": "@clarvis/memory",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",
@@ -1714,126 +666,6 @@
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/housekeeping.test.ts",
-      "identity": "process-env-mutation|afterEach|delete process.env[HOME_ENV]|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/housekeeping.test.ts",
-      "identity": "process-env-mutation|afterEach|process.env[HOME_ENV] = previousHome|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/housekeeping.test.ts",
-      "identity": "process-env-mutation|beforeEach|process.env[HOME_ENV] = home|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:command resolution diagnostics/it:reports each command once, because the answer is memoized|delete process.env.PATH|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:command resolution diagnostics/it:reports each command once, because the answer is memoized|process.env.PATH = \"\"|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:command resolution diagnostics/it:reports each command once, because the answer is memoized|process.env.PATH = previous|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:resolveCommand/afterEach|delete process.env.PATH|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:resolveCommand/afterEach|process.env.PATH = previousPath|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:resolveCommand/it:falls back to the bare name so the OS still gets its own chance|process.env.PATH = root|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:resolveCommand/it:reuses the first answer, so a probe and its later spawn cannot disagree|process.env.PATH = root|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/paths/tests/integration/which.test.ts",
-      "identity": "process-env-mutation|describe:resolveCommand|process.env.PATH = root|0",
-      "package_owner": "@clarvis/paths",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/plan/tests/integration/file-repository.test.ts",
-      "identity": "process-platform-redefinition|describe:fsyncDir — the win32 directory-sync durability branch/test:still propagates a directory-open failure off win32|Object.defineProperty(process, \"platform\", { value: \"linux\", configurable: true })|0",
-      "package_owner": "@clarvis/plan",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/plan/tests/integration/file-repository.test.ts",
-      "identity": "process-platform-redefinition|describe:fsyncDir — the win32 directory-sync durability branch/test:still propagates a directory-open failure off win32|Object.defineProperty(process, \"platform\", { value: originalPlatform, configurable: true })|0",
-      "package_owner": "@clarvis/plan",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/plan/tests/integration/file-repository.test.ts",
-      "identity": "process-platform-redefinition|describe:fsyncDir — the win32 directory-sync durability branch/test:swallows a directory-open failure on win32, so the write still succeeds|Object.defineProperty(process, \"platform\", { value: \"win32\", configurable: true })|0",
-      "package_owner": "@clarvis/plan",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-platform-redefinition",
-      "file": "packages/plan/tests/integration/file-repository.test.ts",
-      "identity": "process-platform-redefinition|describe:fsyncDir — the win32 directory-sync durability branch/test:swallows a directory-open failure on win32, so the write still succeeds|Object.defineProperty(process, \"platform\", { value: originalPlatform, configurable: true })|0",
-      "package_owner": "@clarvis/plan",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/plan/tests/integration/file-repository.test.ts",
       "identity": "timer|describe:file plan repository/test:releases the local queue and retries lock-directory creation after a transient failure|setTimeout(() => reject(new Error(\"plan lock queue remained wedged\")), 1_000)|0",
@@ -1866,50 +698,10 @@
       "reason": "physical listener or subprocess boundary is required by this test"
     },
     {
-      "mechanism": "process-env-mutation",
-      "file": "packages/skills/tests/unit/preset.test.ts",
-      "identity": "process-env-mutation|describe:clarvisSkillRoots/it:reads CLARVIS_HOME from the ambient process env when none is injected|delete process.env[HOME_ENV]|0",
-      "package_owner": "@clarvis/skills",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/skills/tests/unit/preset.test.ts",
-      "identity": "process-env-mutation|describe:clarvisSkillRoots/it:reads CLARVIS_HOME from the ambient process env when none is injected|process.env[HOME_ENV] = \"/ambient\"|0",
-      "package_owner": "@clarvis/skills",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/skills/tests/unit/preset.test.ts",
-      "identity": "process-env-mutation|describe:clarvisSkillRoots/it:reads CLARVIS_HOME from the ambient process env when none is injected|process.env[HOME_ENV] = previous|0",
-      "package_owner": "@clarvis/skills",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
       "mechanism": "timer",
       "file": "packages/tasks/tests/component/capability.test.ts",
       "identity": "timer|describe:Tasks agent tools/it:serializes writes from agents sharing one run runtime|setTimeout(resolve, 5)|0",
       "package_owner": "@clarvis/tasks",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-chdir",
-      "file": "packages/tools/tests/contract/grep-parity.test.ts",
-      "identity": "process-chdir|afterEach|process.chdir(priorCwd)|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-chdir",
-      "file": "packages/tools/tests/contract/grep-parity.test.ts",
-      "identity": "process-chdir|beforeEach|process.chdir(tmpdir())|0",
-      "package_owner": "@clarvis/tools",
       "classification": "migrate",
       "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
@@ -1952,70 +744,6 @@
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/afterEach|delete process.env.HOME|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/afterEach|delete process.env.XDG_CONFIG_HOME|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/afterEach|process.env.HOME = origHome|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/afterEach|process.env.XDG_CONFIG_HOME = origXdg|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/describe:error contract/it:silently skips a global excludes file that exists but cannot be read|process.env.XDG_CONFIG_HOME = xdg|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/describe:git exclude sources/it:applies global excludes from XDG_CONFIG_HOME/git/ignore|process.env.XDG_CONFIG_HOME = xdg|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/describe:git exclude sources/it:falls back to HOME/.config/git/ignore when XDG_CONFIG_HOME is unset|delete process.env.XDG_CONFIG_HOME|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/ignore.test.ts",
-      "identity": "process-env-mutation|describe:loadIgnore/describe:git exclude sources/it:falls back to HOME/.config/git/ignore when XDG_CONFIG_HOME is unset|process.env.HOME = home|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",
@@ -2080,102 +808,6 @@
       "package_owner": "@clarvis/tools",
       "classification": "boundary-canary",
       "reason": "physical listener or subprocess boundary is required by this test"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand — withholding credentials without a sandbox|delete process.env[k]|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand — withholding credentials without a sandbox|Object.assign(process.env, vars)|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand — withholding credentials without a sandbox|process.env[k] = v|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|delete process.env.OPENAI_API_KEY|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.OPENAI_API_KEY = \"sentinel\"|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.OPENAI_API_KEY = old|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = `${blocked}:${bin}`|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = `${join(root, \"bin\")}:/private/not-mounted:/usr/bin`|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = bin|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = previous|0",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = previous|1",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
-    },
-    {
-      "mechanism": "process-env-mutation",
-      "file": "packages/tools/tests/integration/sandbox.test.ts",
-      "identity": "process-env-mutation|describe:sandboxCommand|process.env.PATH = previous|2",
-      "package_owner": "@clarvis/tools",
-      "classification": "migrate",
-      "reason": "legacy deterministic-test debt; migrate to an isolated fixture or fake clock"
     },
     {
       "mechanism": "subprocess",

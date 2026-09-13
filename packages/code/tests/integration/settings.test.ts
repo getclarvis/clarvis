@@ -16,6 +16,7 @@ import { createKeysAdapter } from "../../src/adapters/provider-secrets.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 import { globalPaths } from "@clarvis/paths";
 import { parseModelRef } from "@clarvis/kernel/config";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 /** Raw config-scope directories: what {@link createFileConfigStore} takes. */
 interface ScopeDirs {
@@ -383,10 +384,15 @@ test("write conflict never clobbers the external edit, and re-syncs the snapshot
 
 test("envStatus: reads process.env at the current moment", async () => {
   const a = await settingsFrom({ global: tmp() });
-  process.env.CLARVIS_TEST_KEY_XYZ = "secret";
-  expect(a.envStatus("CLARVIS_TEST_KEY_XYZ")).toBe("set");
-  expect(a.envStatus("CLARVIS_DEFINITELY_UNSET_XYZ")).toBe("unset");
-  delete process.env.CLARVIS_TEST_KEY_XYZ;
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, CLARVIS_TEST_KEY_XYZ: "secret" }),
+  );
+  try {
+    expect(a.envStatus("CLARVIS_TEST_KEY_XYZ")).toBe("set");
+    expect(a.envStatus("CLARVIS_DEFINITELY_UNSET_XYZ")).toBe("unset");
+  } finally {
+    env.mockRestore();
+  }
 });
 
 test("envStatus: tri-state — real env wins over the keys file", async () => {
@@ -395,10 +401,15 @@ test("envStatus: tri-state — real env wins over the keys file", async () => {
   await keys.set("CLARVIS_TEST_TRI_XYZ", "file-value");
   const a = await settingsFrom({ global: g }, { keys });
   expect(a.envStatus("CLARVIS_TEST_TRI_XYZ")).toBe("keyfile");
-  process.env.CLARVIS_TEST_TRI_XYZ = "env-value";
-  expect(a.envStatus("CLARVIS_TEST_TRI_XYZ")).toBe("set");
-  delete process.env.CLARVIS_TEST_TRI_XYZ;
-  expect(a.envStatus("CLARVIS_NOT_ANYWHERE_XYZ")).toBe("unset");
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, CLARVIS_TEST_TRI_XYZ: "env-value" }),
+  );
+  try {
+    expect(a.envStatus("CLARVIS_TEST_TRI_XYZ")).toBe("set");
+    expect(a.envStatus("CLARVIS_NOT_ANYWHERE_XYZ")).toBe("unset");
+  } finally {
+    env.mockRestore();
+  }
 });
 
 test("envStatus: source=keyfile makes keys.json win over a shell env var", async () => {
@@ -407,15 +418,20 @@ test("envStatus: source=keyfile makes keys.json win over a shell env var", async
   await keys.set("CLARVIS_TEST_SRC_XYZ", "file-value");
   const sources: Record<string, "auto" | "env" | "keyfile"> = {};
   const a = await settingsFrom({ global: g }, { keys, keySource: (v) => sources[v] ?? "auto" });
-  process.env.CLARVIS_TEST_SRC_XYZ = "env-value";
-  expect(a.envStatus("CLARVIS_TEST_SRC_XYZ")).toBe("set");
-  sources.CLARVIS_TEST_SRC_XYZ = "keyfile";
-  expect(a.envStatus("CLARVIS_TEST_SRC_XYZ")).toBe("keyfile");
-  sources.CLARVIS_TEST_SRC_XYZ = "env";
-  await keys.set("CLARVIS_TEST_SRC2_XYZ", "only-file");
-  sources.CLARVIS_TEST_SRC2_XYZ = "env";
-  expect(a.envStatus("CLARVIS_TEST_SRC2_XYZ")).toBe("unset");
-  delete process.env.CLARVIS_TEST_SRC_XYZ;
+  const env = spyOnProcessEnv(
+    environmentFixture({ ...process.env, CLARVIS_TEST_SRC_XYZ: "env-value" }),
+  );
+  try {
+    expect(a.envStatus("CLARVIS_TEST_SRC_XYZ")).toBe("set");
+    sources.CLARVIS_TEST_SRC_XYZ = "keyfile";
+    expect(a.envStatus("CLARVIS_TEST_SRC_XYZ")).toBe("keyfile");
+    sources.CLARVIS_TEST_SRC_XYZ = "env";
+    await keys.set("CLARVIS_TEST_SRC2_XYZ", "only-file");
+    sources.CLARVIS_TEST_SRC2_XYZ = "env";
+    expect(a.envStatus("CLARVIS_TEST_SRC2_XYZ")).toBe("unset");
+  } finally {
+    env.mockRestore();
+  }
 });
 
 test("corrupt settings.json: read undefined, corrupt() reports, write refuses and preserves the file", async () => {

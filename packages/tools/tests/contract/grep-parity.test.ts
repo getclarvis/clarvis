@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import { makeWorkspace, cleanup, makeConfig, callTool, write } from "../helpers/fixtures.ts";
 import type { ServerConfig } from "../../src/config.ts";
 
@@ -20,7 +19,6 @@ describe("grep parity CI guard", () => {
 
 describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
   let root: string;
-  let priorCwd: string;
 
   beforeEach(() => {
     root = makeWorkspace();
@@ -29,12 +27,8 @@ describe.skipIf(!rgAvailable)("grep ripgrep/in-process parity", () => {
     write(root, "sub/deep/d.ts", "foo nested\n");
     write(root, "top.ts", "foo top\n");
     write(root, "b.txt", "nothing\n");
-
-    priorCwd = process.cwd();
-    process.chdir(tmpdir());
   });
   afterEach(() => {
-    process.chdir(priorCwd);
     cleanup(root);
   });
 

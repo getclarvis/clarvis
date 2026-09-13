@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDebugSessionController } from "../../src/adapters/debug-session.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 import { createDiagnosticSession } from "../../src/adapters/diagnostic-session.ts";
 import {
   activeDiagnosticLogger,
@@ -126,8 +127,7 @@ test("dispose releases the controller's own session", () => {
 test("the default factory writes into the workspace's own machine-local state", () => {
   const home = tempDir();
   const workspace = tempDir();
-  const previousHome = process.env.CLARVIS_HOME;
-  process.env.CLARVIS_HOME = home;
+  const env = spyOnProcessEnv(environmentFixture({ ...process.env, CLARVIS_HOME: home }));
   const controller = createDebugSessionController({ workspace });
   try {
     const opened = controller.open("info");
@@ -136,8 +136,7 @@ test("the default factory writes into the workspace's own machine-local state", 
     expect(readFileSync(opened.path, "utf8")).toContain("diagnostics.start");
   } finally {
     controller.dispose();
-    if (previousHome === undefined) delete process.env.CLARVIS_HOME;
-    else process.env.CLARVIS_HOME = previousHome;
+    env.mockRestore();
   }
 });
 

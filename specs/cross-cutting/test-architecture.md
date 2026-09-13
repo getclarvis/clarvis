@@ -307,6 +307,21 @@ Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
 `tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
 mtimes and observable settling without changing production defaults.
 
+Environment, platform, cwd and random matrices use test-owned frozen snapshots and getter spies,
+restored after the awaited callback; they do not assign to `process.env`, redefine
+`process.platform`, change the runner cwd or overwrite `Math.random`. Where a production seam already
+exists, tests pass it directly (`createMCPClientFactory`, `resolveRegistryKey`, `clarvisSkillRoots`,
+`executableOnPath` and `createSandboxPolicyResolver`); otherwise a narrowly scoped getter spy models
+the default global read without changing the implementation. Real subprocesses remain explicit
+boundary canaries and receive their cwd/environment through spawn options.
+
+Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
+`packages/llm/src/ai-sdk-adapter.ts` (`resolveRegistryKey`), `packages/skills/src/preset.ts`
+(`clarvisSkillRoots`), `packages/paths/src/which.ts` (`executableOnPath`) and
+`packages/kernel/src/sandbox/policy.ts` (`createSandboxPolicyResolver`). Test:
+`packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
+`packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
+
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
 Records are split on the literal `end_of_record` and only four numeric fields are read, via

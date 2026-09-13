@@ -28,6 +28,7 @@ import {
 } from "@clarvis/paths";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
+import { environmentFixture } from "../helpers/process-fixtures.ts";
 
 /** Write a fixture file, creating the scope subdirectory it now lives in. */
 /**
@@ -110,13 +111,13 @@ describe("PluginService", () => {
   let global: string;
   let workspace: string;
   let enabled: PluginRef[];
-  function svc() {
+  function svc(environment = environmentFixture({ ...process.env })) {
     return createPluginService({
       globalDir: global,
       home: join(workspace, "home"),
       workspaceRoot: workspace,
       enabledPlugins: () => enabled,
-      environment: { ...process.env, [HOME_ENV]: undefined, [WORKSPACE_ENV]: undefined },
+      environment: { ...environment, [HOME_ENV]: undefined, [WORKSPACE_ENV]: undefined },
     });
   }
 
@@ -282,25 +283,23 @@ describe("PluginService", () => {
 
   it("lists constructed inventories when CLARVIS_WORKSPACE_ROOT names another tree", async () => {
     const foreign = mkdtempSync(join(tmpdir(), "clarvis-foreign-ws-"));
-    const previous = process.env[WORKSPACE_ENV];
     try {
       writePluginAt(agentsPluginsDirs({ cwd: foreign, env: {} }).workspace, "foreign", {
         name: "foreign",
         version: "leak",
       });
-      process.env[WORKSPACE_ENV] = foreign;
       const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
       writePluginAt(agents.user, "same", { name: "same", version: "agents-global" });
       writePlugin(global, "same", { name: "same", version: "clarvis-global" }, "global");
       writePluginAt(agents.workspace, "same", { name: "same", version: "agents-workspace" });
       writePlugin(workspace, "same", { name: "same", version: "clarvis-workspace" });
 
-      const views = await svc().list();
+      const views = await svc(
+        environmentFixture({ ...process.env, [WORKSPACE_ENV]: foreign }),
+      ).list();
       expect(views).toHaveLength(4);
       expect(views.map((view) => view.name)).not.toContain("foreign");
     } finally {
-      if (previous === undefined) delete process.env[WORKSPACE_ENV];
-      else process.env[WORKSPACE_ENV] = previous;
       rmSync(foreign, { recursive: true, force: true });
     }
   });

@@ -1,8 +1,13 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { openConnection, defaultMCPClientFactory } from "@clarvis/mcp-client";
+import {
+  createMCPClientFactory,
+  defaultMCPClientFactory,
+  openConnection,
+} from "@clarvis/mcp-client";
 import type { McpServerConfig } from "@clarvis/capability";
+import { environmentFixture } from "../helpers/process-fixtures.ts";
 
 const SCOPE = { workspace: "/ws", owner: "o" };
 
@@ -50,23 +55,25 @@ describe("remote transport reaches a server over real HTTP", () => {
   });
 
   it("sends a ${VAR} auth header RESOLVED from env — never the literal — alongside Accept", async () => {
-    process.env.CLARVIS_TEST_REMOTE_TOK = "s3cret-value";
     srv = await captureServer();
-    try {
-      const tool: McpServerConfig = {
-        name: "remote",
-        transport: "http",
-        url: srv.url,
-        headers: { Authorization: "Bearer ${CLARVIS_TEST_REMOTE_TOK}" },
-      };
-      void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
-      const headers = await srv.firstHeaders;
-      expect(headers.authorization).toBe("Bearer s3cret-value");
-      expect(headers.authorization).not.toContain("${");
-      expect(headers.accept).toContain("text/event-stream");
-    } finally {
-      delete process.env.CLARVIS_TEST_REMOTE_TOK;
-    }
+    const tool: McpServerConfig = {
+      name: "remote",
+      transport: "http",
+      url: srv.url,
+      headers: { Authorization: "Bearer ${CLARVIS_TEST_REMOTE_TOK}" },
+    };
+    void openConnection({
+      scope: SCOPE,
+      server: tool,
+      ...OPTS,
+      factory: createMCPClientFactory(
+        environmentFixture({ ...process.env, CLARVIS_TEST_REMOTE_TOK: "s3cret-value" }),
+      ),
+    }).catch(() => {});
+    const headers = await srv.firstHeaders;
+    expect(headers.authorization).toBe("Bearer s3cret-value");
+    expect(headers.authorization).not.toContain("${");
+    expect(headers.accept).toContain("text/event-stream");
   });
 
   it("an absent ${VAR} fails the connection before any request (no literal sent)", async () => {
@@ -80,27 +87,31 @@ describe("remote transport reaches a server over real HTTP", () => {
   });
 
   it("always resolves declarative credential env fields when authored expansion is disabled", async () => {
-    process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN = "declared-secret";
-    process.env.CLARVIS_TEST_REMOTE_REGION = "south";
     srv = await captureServer();
-    try {
-      const tool: McpServerConfig = {
-        name: "remote",
-        transport: "http",
-        url: srv.url,
-        expandVariables: false,
-        bearer_token_env_var: "CLARVIS_TEST_REMOTE_DECLARED_TOKEN",
-        env_http_headers: { "X-Region": "CLARVIS_TEST_REMOTE_REGION" },
-        headers: { "X-Literal": "${PORTABLE_VALUE}" },
-      };
-      void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
-      const headers = await srv.firstHeaders;
-      expect(headers.authorization).toBe("Bearer declared-secret");
-      expect(headers["x-region"]).toBe("south");
-      expect(headers["x-literal"]).toBe("${PORTABLE_VALUE}");
-    } finally {
-      delete process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN;
-      delete process.env.CLARVIS_TEST_REMOTE_REGION;
-    }
+    const tool: McpServerConfig = {
+      name: "remote",
+      transport: "http",
+      url: srv.url,
+      expandVariables: false,
+      bearer_token_env_var: "CLARVIS_TEST_REMOTE_DECLARED_TOKEN",
+      env_http_headers: { "X-Region": "CLARVIS_TEST_REMOTE_REGION" },
+      headers: { "X-Literal": "${PORTABLE_VALUE}" },
+    };
+    void openConnection({
+      scope: SCOPE,
+      server: tool,
+      ...OPTS,
+      factory: createMCPClientFactory(
+        environmentFixture({
+          ...process.env,
+          CLARVIS_TEST_REMOTE_DECLARED_TOKEN: "declared-secret",
+          CLARVIS_TEST_REMOTE_REGION: "south",
+        }),
+      ),
+    }).catch(() => {});
+    const headers = await srv.firstHeaders;
+    expect(headers.authorization).toBe("Bearer declared-secret");
+    expect(headers["x-region"]).toBe("south");
+    expect(headers["x-literal"]).toBe("${PORTABLE_VALUE}");
   });
 });

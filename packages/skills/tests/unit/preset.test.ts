@@ -2,6 +2,7 @@ import path from "node:path";
 import { describe, expect, it } from "bun:test";
 import { clarvisSkillRoots } from "../../src/preset.ts";
 import { agentsSkillsDirs, globalPaths, HOME_ENV, workspacePaths } from "@clarvis/paths";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 describe("clarvisSkillRoots", () => {
   it("builds the four clarvis roots in ascending precedence with scope/source labels", () => {
@@ -49,15 +50,13 @@ describe("clarvisSkillRoots", () => {
   });
 
   it("reads CLARVIS_HOME from the ambient process env when none is injected", () => {
-    const previous = process.env[HOME_ENV];
-    process.env[HOME_ENV] = "/ambient";
+    const envSpy = spyOnProcessEnv(environmentFixture({ ...process.env, [HOME_ENV]: "/ambient" }));
     try {
       expect(clarvisSkillRoots({ home: "/home/u", cwd: "/tmp", workspace: "/work" })[2]?.path).toBe(
         globalPaths("/ambient").skillsDir,
       );
     } finally {
-      if (previous === undefined) delete process.env[HOME_ENV];
-      else process.env[HOME_ENV] = previous;
+      envSpy.mockRestore();
     }
   });
 });

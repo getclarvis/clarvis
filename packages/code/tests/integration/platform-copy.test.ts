@@ -4,30 +4,45 @@ import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
 } from "../../src/adapters/clipboard-process.ts";
+import { createPlatform, WINDOWS_CLIPBOARD_COPY_SCRIPT } from "../../src/adapters/platform.ts";
+import {
+  environmentFixture,
+  spyOnProcessEnv,
+  spyOnProcessPlatform,
+} from "../helpers/process-fixtures.ts";
 
-const stash = {
-  SSH_TTY: process.env.SSH_TTY,
-  SSH_CONNECTION: process.env.SSH_CONNECTION,
-  DISPLAY: process.env.DISPLAY,
-  WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY,
-  platform: process.platform,
-};
+let ambient: NodeJS.ProcessEnv;
+let envSpy: ReturnType<typeof spyOnProcessEnv>;
+let platformSpy: ReturnType<typeof spyOnProcessPlatform>;
 
 beforeEach(() => {
-  delete process.env.SSH_TTY;
-  delete process.env.SSH_CONNECTION;
-  delete process.env.WAYLAND_DISPLAY;
-  process.env.DISPLAY = ":0";
-  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+  ambient = environmentFixture({
+    ...process.env,
+    SSH_TTY: undefined,
+    SSH_CONNECTION: undefined,
+    WAYLAND_DISPLAY: undefined,
+    DISPLAY: ":0",
+  });
+  envSpy = spyOnProcessEnv(
+    environmentFixture({
+      ...ambient,
+      SSH_TTY: undefined,
+      SSH_CONNECTION: undefined,
+      WAYLAND_DISPLAY: undefined,
+      DISPLAY: ":0",
+    }),
+  );
+  platformSpy = spyOnProcessPlatform("linux");
 });
 
 afterEach(() => {
-  for (const k of ["SSH_TTY", "SSH_CONNECTION", "DISPLAY", "WAYLAND_DISPLAY"] as const) {
-    if (stash[k] === undefined) delete process.env[k];
-    else process.env[k] = stash[k]!;
-  }
-  Object.defineProperty(process, "platform", { value: stash.platform, configurable: true });
+  platformSpy.mockRestore();
+  envSpy.mockRestore();
 });
+
+function setEnvironment(overrides: Readonly<Record<string, string | undefined>>): void {
+  envSpy.mockReturnValue(environmentFixture({ ...ambient, ...overrides }));
+}
 
 function fakeRenderer(oscResult: boolean, onOsc?: () => void) {
   return {
@@ -66,10 +81,9 @@ function clipboardRunner(
 }
 
 test("over SSH, copyText tries OSC-52 first and skips the native tool when it succeeds", async () => {
-  process.env.SSH_TTY = "/dev/pts/3";
+  setEnvironment({ SSH_TTY: "/dev/pts/3" });
   let oscCalls = 0;
   const run = clipboardRunner();
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(
     fakeRenderer(true, () => oscCalls++),
     { clipboardProcess: run },
@@ -80,10 +94,9 @@ test("over SSH, copyText tries OSC-52 first and skips the native tool when it su
 });
 
 test("over SSH, copyText falls back to the native tool when OSC-52 reports unsupported", async () => {
-  process.env.SSH_TTY = "/dev/pts/3";
+  setEnvironment({ SSH_TTY: "/dev/pts/3" });
   let oscCalls = 0;
   const run = clipboardRunner();
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(
     fakeRenderer(false, () => oscCalls++),
     { clipboardProcess: run },
@@ -96,7 +109,6 @@ test("over SSH, copyText falls back to the native tool when OSC-52 reports unsup
 test("locally, copyText prefers the native tool and never emits OSC-52 when it succeeds", async () => {
   let oscCalls = 0;
   const run = clipboardRunner();
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(
     fakeRenderer(true, () => oscCalls++),
     { clipboardProcess: run },
@@ -110,7 +122,6 @@ test("the Windows clipboard script sets Console.InputEncoding before reading pip
   // [Console]::OutputEncoding (set by the shared shell preamble in shell.ts)
   // only governs what PowerShell writes; reading piped stdin needs
   // InputEncoding set first, or non-ASCII clipboard text arrives as mojibake.
-  const { WINDOWS_CLIPBOARD_COPY_SCRIPT } = await import("../../src/adapters/platform.ts");
   expect(WINDOWS_CLIPBOARD_COPY_SCRIPT).toContain("[Console]::InputEncoding");
   expect(WINDOWS_CLIPBOARD_COPY_SCRIPT.indexOf("InputEncoding")).toBeLessThan(
     WINDOWS_CLIPBOARD_COPY_SCRIPT.indexOf("ReadToEnd"),

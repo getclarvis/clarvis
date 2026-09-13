@@ -1,46 +1,65 @@
-import { afterEach, beforeEach, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, expect, mock, test, vi } from "bun:test";
+
+const spyOn = vi.spyOn;
 import type { CliRenderer } from "@opentui/core";
 import type {
   ClipboardProcessRequest,
   ClipboardProcessResult,
 } from "../../src/adapters/clipboard-process.ts";
+import {
+  assertInteractiveTTY,
+  buildRendererConfig,
+  createPlatform,
+  readClipboardImage,
+} from "../../src/adapters/platform.ts";
+import {
+  environmentFixture,
+  spyOnProcessEnv,
+  spyOnProcessPlatform,
+} from "../helpers/process-fixtures.ts";
 
 process.setMaxListeners(0);
 
-const stash = {
-  SSH_TTY: process.env.SSH_TTY,
-  SSH_CONNECTION: process.env.SSH_CONNECTION,
-  DISPLAY: process.env.DISPLAY,
-  WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY,
-  NO_COLOR: process.env.NO_COLOR,
-  TERM_PROGRAM: process.env.TERM_PROGRAM,
-  platform: process.platform,
-};
+let ambient: NodeJS.ProcessEnv;
+let envSpy: ReturnType<typeof spyOnProcessEnv>;
+let platformSpy: ReturnType<typeof spyOnProcessPlatform>;
 
 beforeEach(() => {
-  delete process.env.SSH_TTY;
-  delete process.env.SSH_CONNECTION;
-  delete process.env.WAYLAND_DISPLAY;
-  delete process.env.DISPLAY;
-  delete process.env.NO_COLOR;
-  delete process.env.TERM_PROGRAM;
-  Object.defineProperty(process, "platform", { value: "linux", configurable: true });
+  ambient = environmentFixture({
+    ...process.env,
+    SSH_TTY: undefined,
+    SSH_CONNECTION: undefined,
+    WAYLAND_DISPLAY: undefined,
+    DISPLAY: undefined,
+    NO_COLOR: undefined,
+    TERM_PROGRAM: undefined,
+  });
+  envSpy = spyOnProcessEnv(
+    environmentFixture({
+      ...ambient,
+      SSH_TTY: undefined,
+      SSH_CONNECTION: undefined,
+      WAYLAND_DISPLAY: undefined,
+      DISPLAY: undefined,
+      NO_COLOR: undefined,
+      TERM_PROGRAM: undefined,
+    }),
+  );
+  platformSpy = spyOnProcessPlatform("linux");
 });
 
 afterEach(() => {
-  for (const k of [
-    "SSH_TTY",
-    "SSH_CONNECTION",
-    "DISPLAY",
-    "WAYLAND_DISPLAY",
-    "NO_COLOR",
-    "TERM_PROGRAM",
-  ] as const) {
-    if (stash[k] === undefined) delete process.env[k];
-    else process.env[k] = stash[k]!;
-  }
-  Object.defineProperty(process, "platform", { value: stash.platform, configurable: true });
+  platformSpy.mockRestore();
+  envSpy.mockRestore();
 });
+
+function setEnvironment(overrides: Readonly<Record<string, string | undefined>>): void {
+  envSpy.mockReturnValue(Object.freeze({ ...ambient, ...overrides }) as NodeJS.ProcessEnv);
+}
+
+function setPlatform(platform: NodeJS.Platform): void {
+  platformSpy.mockReturnValue(platform);
+}
 
 function okResult(stdout: Buffer = Buffer.alloc(0)): ClipboardProcessResult {
   return {
@@ -78,7 +97,6 @@ function fakeStream(isTTY: boolean): NodeJS.ReadStream & NodeJS.WriteStream {
 }
 
 test("assertInteractiveTTY: both stdin and stdout are TTYs -> no exit, no stderr write", async () => {
-  const { assertInteractiveTTY } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   assertInteractiveTTY({ stdin: fakeStream(true), stdout: fakeStream(true) });
@@ -89,7 +107,6 @@ test("assertInteractiveTTY: both stdin and stdout are TTYs -> no exit, no stderr
 });
 
 test("assertInteractiveTTY: non-TTY stdout writes guidance to stderr and exits with code 2", async () => {
-  const { assertInteractiveTTY } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   assertInteractiveTTY({ stdin: fakeStream(true), stdout: fakeStream(false) });
@@ -100,7 +117,6 @@ test("assertInteractiveTTY: non-TTY stdout writes guidance to stderr and exits w
 });
 
 test("assertInteractiveTTY: non-TTY stdin also exits with code 2", async () => {
-  const { assertInteractiveTTY } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   assertInteractiveTTY({ stdin: fakeStream(false), stdout: fakeStream(true) });
@@ -110,7 +126,6 @@ test("assertInteractiveTTY: non-TTY stdin also exits with code 2", async () => {
 });
 
 test("assertInteractiveTTY: falls back to process.stdin/process.stdout when no io is given", async () => {
-  const { assertInteractiveTTY } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   const stdinDesc = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
@@ -126,7 +141,6 @@ test("assertInteractiveTTY: falls back to process.stdin/process.stdout when no i
 });
 
 test("buildRendererConfig: default opts keep openConsoleOnError off", async () => {
-  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
   const cfg = buildRendererConfig();
   expect(cfg.openConsoleOnError).toBe(false);
   expect(cfg.consoleMode).toBe("disabled");
@@ -140,9 +154,8 @@ test("buildRendererConfig: default opts keep openConsoleOnError off", async () =
 });
 
 test("buildRendererConfig: direct macOS iTerm preserves native text composition", async () => {
-  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
-  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
-  process.env.TERM_PROGRAM = "iTerm.app";
+  setPlatform("darwin");
+  setEnvironment({ TERM_PROGRAM: "iTerm.app" });
   const cfg = buildRendererConfig();
 
   expect(cfg.useKittyKeyboard).toEqual({});
@@ -150,7 +163,6 @@ test("buildRendererConfig: direct macOS iTerm preserves native text composition"
 });
 
 test("buildRendererConfig: dev:true turns openConsoleOnError on", async () => {
-  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
   const cfg = buildRendererConfig({ dev: true });
   expect(cfg.openConsoleOnError).toBe(true);
   expect(cfg.consoleMode).toBe("console-overlay");
@@ -196,7 +208,6 @@ function fakeRenderer(opts: FakeRendererOpts = {}) {
 }
 
 test("createPlatform: capabilities reflect the renderer's reported flags", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const renderer = fakeRenderer({
     capabilities: { kitty_keyboard: true, osc52: true, multiplexer: "tmux", rgb: true },
     useMouse: true,
@@ -210,8 +221,7 @@ test("createPlatform: capabilities reflect the renderer's reported flags", async
 });
 
 test("createPlatform: reports the client runtime, remote path, and terminal identity", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
-  process.env.SSH_CONNECTION = "client server";
+  setEnvironment({ SSH_CONNECTION: "client server" });
   const renderer = fakeRenderer({
     capabilities: { terminal: { name: "kitty", version: "0.42" } },
   });
@@ -220,16 +230,15 @@ test("createPlatform: reports the client runtime, remote path, and terminal iden
   expect(p.capabilities.remote()).toBe(true);
   expect(p.capabilities.terminal()).toEqual({ name: "kitty", version: "0.42" });
   expect(p.capabilities.runtimePlatform()).toBe("linux");
-  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  setPlatform("darwin");
   expect(p.capabilities.runtimePlatform()).toBe("macos");
-  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  setPlatform("win32");
   expect(p.capabilities.runtimePlatform()).toBe("windows");
-  Object.defineProperty(process, "platform", { value: "aix", configurable: true });
+  setPlatform("aix");
   expect(p.capabilities.runtimePlatform()).toBe("unknown");
 });
 
 test("createPlatform: missing capability flags fall back to legacy keyboard, no mouse, no osc52, 'none' multiplexer", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const renderer = fakeRenderer({ capabilities: undefined, useMouse: false });
   const p = createPlatform(renderer);
   expect(p.capabilities.keyboard()).toBe("legacy");
@@ -239,20 +248,18 @@ test("createPlatform: missing capability flags fall back to legacy keyboard, no 
 });
 
 test("createPlatform: colorDepth prefers ansi256 over 16-color, and NO_COLOR forces mono", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const ansi = createPlatform(fakeRenderer({ capabilities: { rgb: false, ansi256: true } }));
   expect(ansi.capabilities.colorDepth()).toBe("256");
 
   const plain = createPlatform(fakeRenderer({ capabilities: { rgb: false, ansi256: false } }));
   expect(plain.capabilities.colorDepth()).toBe("16");
 
-  process.env.NO_COLOR = "1";
+  setEnvironment({ NO_COLOR: "1" });
   const forced = createPlatform(fakeRenderer({ capabilities: { rgb: true } }));
   expect(forced.capabilities.colorDepth()).toBe("mono");
 });
 
 test("createPlatform: themeBg tracks the renderer's 'theme_mode' event", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const renderer = fakeRenderer({ themeMode: "dark" });
   const p = createPlatform(renderer);
   expect(p.capabilities.themeBg()).toBe("dark");
@@ -264,7 +271,6 @@ test("createPlatform: themeBg tracks the renderer's 'theme_mode' event", async (
 });
 
 test("createPlatform: capability revisions and asynchronous theme detection stay live", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const renderer = fakeRenderer({ themeMode: "dark", detectedTheme: "light" });
   const p = createPlatform(renderer);
   expect(p.capabilities.revision()).toBe(0);
@@ -276,7 +282,6 @@ test("createPlatform: capability revisions and asynchronous theme detection stay
 });
 
 test("createPlatform: rejects malformed and non-web URLs and contains an OSC-52 failure", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(fakeRenderer({ throwOnOsc: true }), {
     clipboardProcess: clipboardRunner(() => failResult()),
   });
@@ -286,7 +291,6 @@ test("createPlatform: rejects malformed and non-web URLs and contains an OSC-52 
 });
 
 test("createPlatform: onShutdown registers a hook and its unregister function removes it", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const p = createPlatform(fakeRenderer());
   let called = 0;
@@ -300,7 +304,6 @@ test("createPlatform: onShutdown registers a hook and its unregister function re
 });
 
 test("createPlatform: shutdown runs hooks in reverse-registration order and exits 0 for a non-panic reason", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const renderer = fakeRenderer();
   const destroySpy = spyOn(renderer, "destroy");
@@ -320,7 +323,6 @@ test("createPlatform: shutdown runs hooks in reverse-registration order and exit
 });
 
 test("createPlatform: fatal boot shutdown restores the renderer and exits 1", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const renderer = fakeRenderer();
   const destroySpy = spyOn(renderer, "destroy");
@@ -332,7 +334,6 @@ test("createPlatform: fatal boot shutdown restores the renderer and exits 1", as
 });
 
 test("createPlatform: shutdown tolerates a throwing/rejecting hook without failing the run", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const p = createPlatform(fakeRenderer());
   p.onShutdown(() => {
@@ -347,9 +348,8 @@ test("createPlatform: shutdown tolerates a throwing/rejecting hook without faili
 });
 
 test("createPlatform: shutdown cancels an in-flight clipboard helper", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
-  process.env.DISPLAY = ":0";
+  setEnvironment({ DISPLAY: ":0" });
   let aborted = false;
   const clipboardProcess = mock(
     (request: { signal?: AbortSignal }) =>
@@ -387,7 +387,6 @@ test("createPlatform: shutdown cancels an in-flight clipboard helper", async () 
 });
 
 test("createPlatform: a panic reason with an error writes the stack to stderr and exits 1", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   const p = createPlatform(fakeRenderer());
@@ -399,7 +398,6 @@ test("createPlatform: a panic reason with an error writes the stack to stderr an
 });
 
 test("createPlatform: a panic reason without an error writes nothing extra to stderr and still exits 1", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const errSpy = spyOn(process.stderr, "write").mockImplementation(() => true);
   const p = createPlatform(fakeRenderer());
@@ -411,7 +409,6 @@ test("createPlatform: a panic reason without an error writes nothing extra to st
 });
 
 test("createPlatform: a second concurrent shutdown call short-circuits straight to restore + exit", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const renderer = fakeRenderer();
   const destroySpy = spyOn(renderer, "destroy");
@@ -425,7 +422,6 @@ test("createPlatform: a second concurrent shutdown call short-circuits straight 
 });
 
 test("createPlatform: a concurrent signal cannot downgrade a fatal boot exit", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const callsBefore = exitSpy.mock.calls.length;
   const p = createPlatform(fakeRenderer());
@@ -439,8 +435,7 @@ test("createPlatform: a concurrent signal cannot downgrade a fatal boot exit", a
 });
 
 test("createPlatform: over SSH and a non-panic reason, shutdown drains pending stdin before exiting", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
-  process.env.SSH_TTY = "/dev/pts/4";
+  setEnvironment({ SSH_TTY: "/dev/pts/4" });
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const p = createPlatform(fakeRenderer());
   const start = Date.now();
@@ -451,8 +446,7 @@ test("createPlatform: over SSH and a non-panic reason, shutdown drains pending s
 });
 
 test("createPlatform: over SSH, stdin activity during the drain window resets the quiet timer instead of ending it early", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
-  process.env.SSH_TTY = "/dev/pts/4";
+  setEnvironment({ SSH_TTY: "/dev/pts/4" });
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
   const p = createPlatform(fakeRenderer());
   const start = Date.now();
@@ -464,14 +458,12 @@ test("createPlatform: over SSH, stdin activity during the drain window resets th
 });
 
 test("createPlatform: suspend()/resume() swallow renderer errors instead of throwing", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(fakeRenderer({ throwOnSuspend: true, throwOnResume: true }));
   expect(() => p.suspend()).not.toThrow();
   expect(() => p.resume()).not.toThrow();
 });
 
 test("createPlatform: suspend()/resume() delegate to the renderer when it does not throw", async () => {
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const renderer = fakeRenderer();
   const suspendSpy = spyOn(renderer, "suspend");
   const resumeSpy = spyOn(renderer, "resume");
@@ -484,15 +476,13 @@ test("createPlatform: suspend()/resume() delegate to the renderer when it does n
 
 test("createPlatform: readClipboardImage() delegates to the injectable clipboard runner", async () => {
   const run = clipboardRunner(() => failResult(new Error("ENOENT")));
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(fakeRenderer(), { clipboardProcess: run });
   expect(await p.readClipboardImage()).toBeNull();
 });
 
 test("nativeClipboardCopy: on win32, copyText invokes the PowerShell clipboard candidate", async () => {
-  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  setPlatform("win32");
   const run = clipboardRunner();
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(fakeRenderer(), { clipboardProcess: run });
   expect(await p.copyText("hello")).toBe(true);
   expect(run).toHaveBeenCalledTimes(1);
@@ -502,26 +492,23 @@ test("nativeClipboardCopy: on win32, copyText invokes the PowerShell clipboard c
 });
 
 test("nativeClipboardCopy: a candidate error is treated as a miss, not a crash", async () => {
-  process.env.DISPLAY = ":0";
+  setEnvironment({ DISPLAY: ":0" });
   // Errors surface from runClipboardProcess as result.error; the injectable
   // seam returns that shape rather than throwing through the platform layer.
   const run = clipboardRunner(() => failResult(new Error("spawn EPERM")));
-  const { createPlatform } = await import("../../src/adapters/platform.ts");
   const p = createPlatform(fakeRenderer({ oscResult: false }), { clipboardProcess: run });
   expect(await p.copyText("hello")).toBe(false);
 });
 
 test("readClipboardImage: on win32, the PowerShell image script is attempted", async () => {
-  Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+  setPlatform("win32");
   const run = clipboardRunner(() => okResult(Buffer.from("")));
-  const { readClipboardImage } = await import("../../src/adapters/platform.ts");
   expect(await readClipboardImage(undefined, run)).toBeNull();
   expect(run).toHaveBeenCalledTimes(1);
 });
 
 test("readClipboardImage: a candidate error is skipped, not fatal", async () => {
-  process.env.DISPLAY = ":0";
+  setEnvironment({ DISPLAY: ":0" });
   const run = clipboardRunner(() => failResult(new Error("spawn EPERM")));
-  const { readClipboardImage } = await import("../../src/adapters/platform.ts");
   expect(await readClipboardImage(undefined, run)).toBeNull();
 });

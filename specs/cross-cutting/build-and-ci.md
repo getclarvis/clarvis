@@ -949,6 +949,15 @@ Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native s
 host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
 toolchain through the real native backend`).
 
+Container canaries retain separate Docker and Podman opt-in gates. With neither gate enabled they are
+skipped; after either gate is enabled, an absent executable is reported unavailable and malformed or
+missing digest/context input fails as misconfigured instead of becoming a skip. A complete
+`sha256:` digest and explicit Docker context or Podman connection are required, and enabling both
+engine gates in one process is invalid. Test:
+`packages/kernel/tests/helpers/native-canary.ts`,
+`packages/kernel/tests/unit/native-canary.test.ts`, and the gated `*.e2e.test.ts` files under
+`packages/kernel/tests/integration`.
+
 **BUILD-21.** The crash retry accepts exactly 132/134/139 and never retries 130 or 143.
 Production: `tooling/ci/retry-code-coverage.sh`.
 Unpinned — there is no test for this shell script.

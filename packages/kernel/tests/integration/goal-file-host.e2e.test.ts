@@ -10,28 +10,17 @@ import { createLocalPodmanRuntime } from "../../src/runtime/local-podman-runtime
 import type { ContainerControl } from "../../src/runtime/types.ts";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 import { runGoalFileHostJourney } from "../helpers/goal-file-host-journey.ts";
+import { containerCanaryRequested, requireContainerCanary } from "../helpers/native-canary.ts";
 
-const engine = process.env.CLARVIS_PODMAN_RUNTIME_CANARY === "1" ? "podman" : "docker";
-const imageDigest =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST
-    : process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
-const context =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_CONNECTION
-    : process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
-const enabled =
-  (engine === "podman" || process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1") &&
-  /^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") &&
-  typeof context === "string" &&
-  context.length > 0;
+const enabled = containerCanaryRequested(process.env);
 
 test.skipIf(!enabled)(
   "runs a persistent goal with automatic continuations, a delegated plan and actual container accounting",
   async () => {
-    const executable = Bun.which(engine);
-    if (executable === null || imageDigest === undefined || context === undefined)
-      throw new Error("Goal container canary inputs disappeared");
+    const { engine, executable, imageDigest, context } = requireContainerCanary(
+      process.env,
+      Bun.which,
+    );
     const root = await mkdtemp(join(tmpdir(), "clarvis-goal-container-"));
     const environment = Object.fromEntries(
       ["HOME", "PATH", "XDG_RUNTIME_DIR"].flatMap((name) =>

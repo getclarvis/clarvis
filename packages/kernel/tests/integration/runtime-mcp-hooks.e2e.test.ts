@@ -10,28 +10,17 @@ import { runtimeSettingsSchema, type DockerControl } from "../../src/index.ts";
 import { createNodeDockerControl, createNodePodmanControl } from "../../src/local.ts";
 import { createLocalDockerRuntime } from "../../src/runtime/local-docker-runtime.ts";
 import { createLocalPodmanRuntime } from "../../src/runtime/local-podman-runtime.ts";
+import { containerCanaryRequested, requireContainerCanary } from "../helpers/native-canary.ts";
 
-const engine = process.env.CLARVIS_PODMAN_RUNTIME_CANARY === "1" ? "podman" : "docker";
-const imageDigest =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST
-    : process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
-const context =
-  engine === "podman"
-    ? process.env.CLARVIS_PODMAN_RUNTIME_CONNECTION
-    : process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
-const enabled =
-  (engine === "podman" || process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1") &&
-  /^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") &&
-  typeof context === "string" &&
-  context.length > 0;
+const enabled = containerCanaryRequested(process.env);
 
 test.skipIf(!enabled)(
   "confines stdio MCP hooks to the guest, including early hooks and gate rewrites",
   async () => {
-    const executable = Bun.which(engine);
-    if (executable === null || imageDigest === undefined || context === undefined)
-      throw new Error(`${engine} MCP hook canary inputs disappeared after admission`);
+    const { engine, executable, imageDigest, context } = requireContainerCanary(
+      process.env,
+      Bun.which,
+    );
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-mcp-hooks-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, `${engine}-`));

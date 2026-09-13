@@ -11,18 +11,19 @@ import { resolveDockerRuntimeRecipe } from "../../src/runtime/runtime-recipe.ts"
 
 const baseImageDigest = process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
 const context = process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
-const enabled =
-  process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1" &&
-  /^sha256:[a-f0-9]{64}$/u.test(baseImageDigest ?? "") &&
-  typeof context === "string" &&
-  context.length > 0;
+const enabled = process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1";
 
 test.skipIf(!enabled)(
   "builds and reuses an operator recipe through a real Docker or Colima engine",
   async () => {
     const executable = Bun.which("docker");
-    if (executable === null || baseImageDigest === undefined || context === undefined) {
-      throw new Error("Docker recipe canary inputs disappeared after admission");
+    if (executable === null) throw new Error("[unavailable] docker executable is unavailable");
+    if (
+      baseImageDigest === undefined ||
+      !/^sha256:[a-f0-9]{64}$/u.test(baseImageDigest) ||
+      !context
+    ) {
+      throw new Error("[misconfigured] Docker canary requires a digest and explicit context");
     }
     const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-recipe-e2e-"));
     const recipeDir = join(root, "home", "runtime-recipes");

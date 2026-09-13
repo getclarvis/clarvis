@@ -342,6 +342,25 @@ Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
 `packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
 `packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
 
+Shell, Git, native-sandbox and container canaries separate admission from execution. An absent opt-in
+gate is `skipped`; once a gate is enabled, a missing executable/backend is `unavailable`, malformed
+digest or context is `misconfigured`, and a failure after successful admission is `failed`. None of
+those outcomes is reported as a pass. Docker and Podman use distinct gates and explicit contexts or
+connections; enabling both in one test process is invalid. Container images must use a complete
+`sha256:` digest, non-network scenarios select `network: "none"`, and cleanup targets only names,
+volumes and generations recorded by that case. Shell/Git policy tests use synthetic argv or local
+repositories; physical adapter canaries retain the real executable and an explicit disposable cwd
+and environment.
+
+Production: the process, sandbox and container adapters remain unchanged. Test:
+`packages/kernel/tests/helpers/native-canary.ts` owns the test-only admission/verdict vocabulary;
+`packages/kernel/tests/unit/native-canary.test.ts` pins skip versus pass, listener denial versus bind
+failure, executable absence versus policy denial, engine absence versus admitted-container failure,
+and expected network denial versus an accidental download failure. The gated container journeys in
+`packages/kernel/tests/integration` consume the admission helper, while
+`packages/tools/tests/integration/sandbox.test.ts` supplies the offline native-sandbox proof with
+synthetic sentinels.
+
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
 Records are split on the literal `end_of_record` and only four numeric fields are read, via

@@ -2,8 +2,10 @@
 
 ## Trust boundaries
 
-Workspace instructions and reviewer guidance are data. Authenticated start/continue text and
-applied operator steers are evidence. The reviewer interprets that evidence; the host resolves
+Workspace instructions and reviewer guidance are data. Authenticated start/continue text, applied
+operator steers and accepted entry-agent `ask_user` answers are evidence. For `ask_user`, the
+model-authored question is retained only as untrusted context for interpreting the authenticated
+answer. The reviewer interprets that evidence; the host resolves
 effects and targets and validates every grant. A descriptor, not model prose, defines the maximum
 inference and constraints. The neutral vocabulary belongs to capability, syntax to tools, and the
 registry, ledger, compiler and policy to kernel. `ToolEffect` retains its separate scheduling role.
@@ -24,16 +26,19 @@ message as new evidence; a missing interactive admission supplies no seed. Later
 operator steers can still update that continuation's ledger. Public requests cannot supply this
 substrate. Missing evidence never falls back to filtering an
 assembled transcript. The evidence schema shares the request message-count and
-aggregate-character ceilings from `message-schemas.ts`; its per-entry and aggregate allowances
-include only the newline separators introduced while preserving multipart text boundaries.
+aggregate-character ceilings from `message-schemas.ts`; the aggregate includes both an `ask_user`
+answer and its question context, while the other allowances include only the newline separators
+introduced while preserving multipart text boundaries.
 Therefore every accepted user-message input can become authenticated evidence without a smaller
 authority-only cutoff. Later lifetime overflow still revokes the ledger instead of dropping
 restrictions. Evidence is sanitized and is not written to audit events.
 
 The loop creates the host runtime before capability activation and prepublishes its read-only port.
-Only the loop's private callback admits a steer taken from the root operator queue; child briefs and
-capability lifecycle callbacks cannot create evidence. Snapshots are detached. Every admitted change
-increments revision, so an in-flight compilation or decision cannot authorize the new revision.
+Only the loop's private callbacks admit a steer taken from the root operator queue or an accepted
+answer returned by the entry agent's typed `ask_user` elicitation. Declined, cancelled, malformed and
+non-`ask_user` elicitation results create no evidence. Child briefs and capability lifecycle callbacks
+cannot create evidence. Snapshots are detached. Every admitted change increments revision, so an
+in-flight compilation or decision cannot authorize the new revision.
 
 `ExecutionRecord.operator_authority_state` is versioned transversal state, outside capability slots.
 Continuation restores active state only under identical owner, session, controller epoch and outcome
@@ -65,7 +70,7 @@ Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-aut
 [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts),
 `keeps an admitted prompt larger than the former evidence ceiling active` in that same test, and
 the settled-conversation carry-forward cases in that same test, and
-`prepublishes one authority reader` in
+`prepublishes one authority reader` and `admits an accepted ask_user answer` in
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
 
 ## Analysis and attestation

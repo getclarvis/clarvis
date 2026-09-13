@@ -851,7 +851,9 @@ ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` wi
 and the same host-owned evidence. That verdict is valid only for the exact call and installs no
 descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
 instruction can refer to the authenticated implementation scope from earlier turns, while an old
-publication instruction alone cannot authorize a changed outcome.
+publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
+answers join that evidence before the next review; their model-authored questions are labeled
+untrusted context, and decline, cancel or another elicitation kind grants nothing.
 Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
 LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.

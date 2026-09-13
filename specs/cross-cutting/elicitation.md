@@ -26,6 +26,13 @@ default posture, or a headless `code --prompt` invocation) still gets an answer 
 just always the same one, `decline` or `cancel` — so the engine's control flow never has to special-case
 "nobody is listening."
 
+An accepted entry-agent `ask_user` answer also crosses a private engine-to-host authority callback.
+The host ledger records the operator's answer as authenticated evidence and keeps the model-authored
+question as explicitly untrusted context, so the effect judge can interpret a scoped answer such as
+"yes, those three lines" against the next concrete operation. This does not grant the operation:
+the judge still compiles and decides against host-attested effect facts. Decline, cancel, malformed
+answers and every other elicitation kind add no authority evidence.
+
 ## 2. Surface
 
 The restricted `configure_clarvis` writer uses the existing `configuration_review` bridge for a concrete
@@ -155,7 +162,7 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 | `ElicitCommandDetail` | `packages/code/src/adapters/elicit-types.ts` | `{ command, cwd, reason, warning? }` |
 | `ElicitResult` | `packages/code/src/adapters/elicit-types.ts` | `{ action, content? }` |
 | `ElicitSlot` | `packages/code/src/adapters/elicit-slot.ts` | `{ request, ask(params), resolve(result), cancelPending() }` — single-slot queue |
-| `parseElicitForm(params)` | `packages/code/src/adapters/elicitation.ts` | derives a renderable `ElicitForm` from the wire params |
+| `parseElicitForm(params)` | `packages/code/src/adapters/elicitation.ts` | derives a renderable `ElicitForm` from the wire params and projects recognized iteration-limit copy for the TUI |
 | `ElicitField`/`ElicitFieldKind` | `packages/code/src/adapters/elicitation.ts` | one input field of a parsed form — `{name, title, description?, required, kind: "select"\|"text"\|"number"\|"boolean", options, default?}` |
 | `initialValues`/`ChoiceInitialSelection` | `packages/code/src/adapters/elicitation.ts` | seeds each field's starting string value, per the `"first"`/`"none"` policy (§3.6) |
 | `missingRequired` | `packages/code/src/adapters/elicitation.ts` | names of required fields left blank, or non-numeric for a `number` field |
@@ -172,6 +179,7 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 
 ```jsonc
 {
+  "kind": "ask_user",
   "message": "<question text>",
   "requestedSchema": {
     "type": "object",
@@ -252,6 +260,16 @@ Three decision-relabeling tables — `GUARD_DECISION_LABELS`, `PLAN_DECISION_LAB
 (`"allow_session"`) into user-facing wording (`"allow for this session"`) whenever `kind` is
 `"guard_confirm"`, `"plan_review"` or `"workflow_review"`; `option.value` (what
 is actually sent back) is untouched.
+
+An iteration soft-budget question has no dedicated wire `kind`, so `parseElicitForm` recognizes it
+only when both the message contains `soft iterations limit` and the `continue` field offers the
+`continue`/`stop` pair. That TUI projection renders `iteration limit` in the question and field
+description without modifying the request, response values, engine vocabulary, or token-limit copy.
+Production: `isIterationLimitForm` and `iterationLimitCopy` in
+`packages/code/src/adapters/elicitation.ts`. Test: `parseElicitForm: iteration-limit copy is concise
+only for the matching continue form` in `packages/code/tests/unit/elicitation.test.ts` and `an
+iteration-limit question omits soft wording in the TUI` in
+`packages/code/tests/integration/elicit-block-render.test.tsx`.
 
 `initialValues(fields, choiceInitialSelection)` seeds each field's starting string value.
 Its `ChoiceInitialSelection` parameter defaults to `"first"` (a `select`/`boolean` field with no

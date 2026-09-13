@@ -7,10 +7,8 @@ test("bash renders its command bare — no quotes between the tool name and what
   expect(sig("shell", { command: "bun test" })).toBe("(bun test)");
 });
 
-test("whitelisted secondary args render labelled as key=value after the primaries", () => {
-  expect(sig("shell", { command: "bun test", cwd: "packages/code" })).toBe(
-    "(bun test, cwd=packages/code)",
-  );
+test("shell omits cwd while other whitelisted secondary args remain labelled", () => {
+  expect(sig("shell", { command: "bun test", cwd: "packages/code" })).toBe("(bun test)");
   expect(sig("read_file", { path: "a.ts", offset: 1, limit: 20 })).toBe(
     "(a.ts, offset=1, limit=20)",
   );

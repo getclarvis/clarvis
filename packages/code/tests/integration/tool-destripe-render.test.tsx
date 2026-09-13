@@ -87,7 +87,71 @@ test("a collapsed shell counts hidden output lines, not the JSON envelope", asyn
   expect(rows[1]).toContain("… +3 lines");
 });
 
-test("shell headers state whether the auto-guard judge approved or denied", async () => {
+test("collapsed tool failures keep identity and diagnosis on separate lines", async () => {
+  const shell: FoldFixtureNode = {
+    ...collapsed,
+    key: "shell-denied",
+    status: "error",
+    mcpName: "shell",
+    args: { command: "cd packages/kernel && bun test tests/integration/preparation.test.ts" },
+    error: "denied: command touches paths outside the workspace",
+  };
+  const patch: FoldFixtureNode = {
+    ...collapsed,
+    key: "patch-failed",
+    status: "error",
+    mcpName: "apply_patch",
+    args: { patch: "*** Begin Patch\n*** End Patch" },
+    error: JSON.stringify({
+      error: "patch_failed",
+      message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+      file: "packages/code/tests/unit/isolation.test.ts",
+    }),
+  };
+  const rows = await frame(
+    () => (
+      <box flexDirection="column">
+        <BlockView defaultFolded={() => true} node={shell} />
+        <BlockView defaultFolded={() => true} node={patch} />
+      </box>
+    ),
+    110,
+    20,
+  );
+  expect(rows[1]).toContain("shell");
+  expect(rows[1]).not.toContain("Denied:");
+  expect(rows[2]).toContain("Denied: command touches paths outside the workspace");
+  expect(rows[4]).toContain("apply_patch");
+  expect(rows[4]).not.toContain("patch_failed");
+  expect(rows[5]).toContain(
+    "Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+  );
+  expect(rows.join("\n")).not.toContain('{"error"');
+});
+
+test("a warning shell folds with its exit diagnosis instead of keeping output open", async () => {
+  const warning: FoldFixtureNode = {
+    ...collapsed,
+    key: "shell-warning",
+    status: "ok",
+    warn: true,
+    mcpName: "shell",
+    args: { command: "bun test" },
+    result: JSON.stringify({
+      exit_code: 2,
+      stdout: "protocol build passed\nkernel build passed",
+      stderr: "typecheck failed",
+    }),
+  };
+  const rows = await frame(() => <BlockView defaultFolded={() => true} node={warning} />, 110);
+  expect(rows[1]).toContain("shell(bun test)");
+  expect(rows[1]).toContain("… +3 lines");
+  expect(rows[2]).toContain("exit 2");
+  expect(rows.join("\n")).not.toContain("protocol build passed");
+  expect(rows.join("\n")).not.toContain("typecheck failed");
+});
+
+test("shell headers state the guard verdict and answerer without its mode", async () => {
   const approved: FoldFixtureNode = {
     ...collapsed,
     key: "guard-approved",
@@ -111,8 +175,8 @@ test("shell headers state whether the auto-guard judge approved or denied", asyn
     () => <BlockView defaultFolded={() => denied.collapsed ?? false} node={denied} />,
     110,
   );
-  expect(allowedRows.join("\n")).toContain("auto-guard approved · judge");
-  expect(deniedRows.join("\n")).toContain("auto-guard denied · judge");
+  expect(allowedRows.join("\n")).toContain("approved by judge");
+  expect(deniedRows.join("\n")).toContain("denied by judge");
 });
 
 test("a finished call that ran >= 2s keeps its duration in the header", async () => {
@@ -168,7 +232,8 @@ test("an expanded body renders only its curated result under the header", async 
   expect(rows[1]).toContain("tree");
   expect((rows[2] ?? "").trim()).toBe("");
   expect(rows[3]).toContain("shell");
-  expect(rows[3]).toContain("(ls, cwd=packages/code)");
+  expect(rows[3]).toContain("(ls)");
+  expect(rows[3]).not.toContain("cwd=");
   expect(rows.join("\n")).not.toContain("Arguments");
   expect(rows.join("\n")).not.toContain('"command": "ls"');
   expect(rows.join("\n")).not.toContain('"cwd": "packages/code"');

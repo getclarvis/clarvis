@@ -17,7 +17,7 @@ interface SignatureSpec {
 }
 
 const SIGNATURES: Record<string, SignatureSpec> = {
-  shell: { primary: ["command"], secondary: ["cwd"] },
+  shell: { primary: ["command"] },
   read_file: { primary: ["path"], secondary: ["offset", "limit"] },
   read_files: { primary: ["paths"] },
   read_image: { primary: ["path"] },

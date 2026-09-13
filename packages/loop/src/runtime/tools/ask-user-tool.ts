@@ -136,6 +136,7 @@ export function buildElicitParams(args: AskUserArgs): ElicitParams {
   };
   if (args.options && args.options.length > 0) field.enum = args.options;
   return {
+    kind: "ask_user",
     message: args.question,
     requestedSchema: {
       type: "object",

@@ -41,6 +41,57 @@ test("shell calls and unknown MCP leaves remain individually accessible instead 
   }
 });
 
+test("an exploration header transitions from active to settled wording", async () => {
+  const fixture = await openTranscript();
+  const sink = fixture.store.openRun("lifecycle");
+  try {
+    const events = transcriptToolEvents("call-0");
+    for (const event of events.slice(0, -1)) applyEvent(sink, event, "live");
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain("Exploring · 1 tool");
+    expect(fixture.rendered.captureCharFrame()).not.toContain(" active");
+
+    applyEvent(sink, events.at(-1)!, "live");
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain("Explored · 1 tool");
+    expect(fixture.rendered.captureCharFrame()).not.toContain("Exploring · 1 tool");
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
+});
+
+test("a small failed exploration expands without a redundant failure shortcut", async () => {
+  const fixture = await openTranscript();
+  const sink = fixture.store.openRun("small-issues");
+  try {
+    for (let i = 0; i < 2; i++) {
+      for (const event of transcriptToolEvents(`call-${i}`))
+        applyEvent(
+          sink,
+          event.type === "tool_call" && i === 1
+            ? { ...event, ok: false, error: "READ_FAILED" }
+            : event,
+          "live",
+        );
+    }
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain(
+      "Explored · 2 tools · 1 failed/interrupted",
+    );
+    expect(fixture.rendered.captureCharFrame()).not.toContain("Show first failure");
+    fixture.transcript.toggleAt(fixture.history().snapshot().rowIds[0]!);
+    await fixture.frames();
+    expect(fixture.rendered.captureCharFrame()).toContain("READ_FAILED");
+    expect(
+      transcriptRenderables(fixture.rendered.renderer.root).filter((node) =>
+        node.id.startsWith("transcript-member:"),
+      ),
+    ).toHaveLength(2);
+  } finally {
+    fixture.rendered.renderer.destroy();
+  }
+});
+
 test("a failed exploration member remains discoverable while folded and expansion is paginated", async () => {
   const fixture = await openTranscript();
   const sink = fixture.store.openRun("issues");
@@ -58,7 +109,7 @@ test("a failed exploration member remains discoverable while folded and expansio
     }
     await fixture.frames();
     expect(fixture.rendered.captureCharFrame()).toContain("1 failed/interrupted");
-    expect(fixture.rendered.captureCharFrame()).toContain("Open first issue");
+    expect(fixture.rendered.captureCharFrame()).toContain("Show first failure");
     const id = fixture.history().snapshot().rowIds[0]!;
     fixture.transcript.toggleAt(id);
     await fixture.frames();
@@ -78,7 +129,7 @@ test("a failed exploration member remains discoverable while folded and expansio
       await fixture.rendered.mockMouse.click(lines[y]!.indexOf(label) + 1, y);
       await fixture.frames(5);
     };
-    await click("Open first issue");
+    await click("Show first failure");
     expect(fixture.rendered.captureCharFrame()).toContain("READ_FAILED");
     expect(fixture.rendered.captureCharFrame()).toContain("41–45 / 45");
     expect(

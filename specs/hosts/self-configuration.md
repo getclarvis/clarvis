@@ -164,6 +164,12 @@ fixtures alone do not establish a completed interactive journey or platform qual
 
 Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. Only tools whose mutations reach this callback defer their initial authoring review. The host validates every resulting authored document before reviewing a complete batch, including common workspace targets and any new skill membership. Operational or private destinations cannot enter this path. Review uses the same authority reader and `EffectReviewService` as the restricted writer. Captured revisions are rechecked before staging; drift, invalid content, denial or cancellation leave the batch unapplied. The existing portable parent-directory TOCTOU limitation remains.
 
+When the entry agent first asks the operator about that bounded edit through `ask_user`, an accepted
+answer becomes fresh evidence before the next mutation review. The effect judge receives both the
+authenticated answer and its model-authored question, with the latter marked as untrusted context;
+it must still decide that the answer covers the prepared target and diff. A declined or dismissed
+question grants nothing.
+
 `withOperatorWrite` accepts exact target revisions for synchronous or asynchronous batches. Trust carries only after settlement and only if every unrelated executable input remains unchanged. Skill membership leases cover the async transaction; failures restore companion definition/selection bytes. Successful writes notify the catalog directly, even without a working watcher.
 
 Production: `createAuthoringMutationReview` in [authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), `createConfigurationReview` in [review.ts](../../packages/kernel/src/configuration/review.ts), `MutationReview` in [atomic.ts](../../packages/tools/src/lib/atomic.ts), and `withOperatorWrite` in [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts).

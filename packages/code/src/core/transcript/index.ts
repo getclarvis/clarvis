@@ -15,6 +15,7 @@ export {
   steerQueuedNoticeText,
   steerUndeliveredNoticeText,
   subagentFocusToast,
+  thinkingDisplayText,
   transcriptDisplayText,
   visionNoticeText,
 } from "./presenters.ts";

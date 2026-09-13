@@ -15,6 +15,7 @@ import type {
 import { formatElapsed, tickNow } from "./spinner.ts";
 import { lifecycleLabel, uiLifecycle } from "../ui/presentation.ts";
 import { followSelection } from "../ui/patterns/list-navigation.ts";
+import { compactKey } from "../keys/keyspec.ts";
 import { taskTone } from "./blocks.tsx";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
 
@@ -22,7 +23,24 @@ const CONTEXT_WIDTH = 16;
 const MAX_DISPLAY_ELAPSED_MS = 7 * 24 * 60 * 60 * 1_000;
 export const PLAN_SIDEBAR_TASK_LIMIT = 12;
 
-/** A bounded task slice that always contains the active task. */
+function planTaskPriority(status: string): number {
+  switch (status) {
+    case "in_progress":
+      return 0;
+    case "pending":
+    case "returned":
+      return 1;
+    case "done":
+      return 2;
+    case "failed":
+    case "abandoned":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
+/** A status-prioritized bounded task slice that always contains the active task. */
 export function planTaskWindow(
   plan: PlanActivity,
   limit: number = PLAN_SIDEBAR_TASK_LIMIT,
@@ -35,15 +53,26 @@ export function planTaskWindow(
   const size = Math.max(1, Math.floor(limit));
   const current = currentPlanTask(plan);
   const currentIndex = current ? plan.tasks.indexOf(current) : Math.max(0, plan.tasks.length - 1);
+  const ordered = plan.tasks
+    .map((task, index) => ({ task, index }))
+    .sort(
+      (left, right) =>
+        planTaskPriority(left.task.status) - planTaskPriority(right.task.status) ||
+        left.index - right.index,
+    );
+  const currentPosition = Math.max(
+    0,
+    ordered.findIndex((entry) => entry.index === currentIndex),
+  );
   const start = Math.max(
     0,
-    Math.min(plan.tasks.length - size, currentIndex - Math.floor(size / 2)),
+    Math.min(ordered.length - size, currentPosition - Math.floor(size / 2)),
   );
-  const end = Math.min(plan.tasks.length, start + size);
+  const end = Math.min(ordered.length, start + size);
   return {
-    entries: plan.tasks.slice(start, end).map((task, offset) => ({ task, index: start + offset })),
+    entries: ordered.slice(start, end),
     hiddenBefore: start,
-    hiddenAfter: plan.tasks.length - end,
+    hiddenAfter: ordered.length - end,
     currentIndex,
   };
 }
@@ -161,46 +190,10 @@ function planStatusColor(plan: PlanActivity): string {
   }
 }
 
-function taskStatusLabel(status: string, removed: boolean): string {
-  if (removed) return "Recorded";
-  switch (status) {
-    case "done":
-      return "Done";
-    case "in_progress":
-      return "Running";
-    case "failed":
-      return "Failed";
-    case "abandoned":
-      return "Skipped";
-    case "returned":
-      return "Returned";
-    default:
-      return "Next";
-  }
-}
-
-function PlanSummary(props: {
-  plan: Accessor<PlanActivity>;
-  onOpenDetail?: (detail: ActivityDetail) => void;
-}): JSX.Element {
+function PlanSummary(props: { plan: Accessor<PlanActivity> }): JSX.Element {
   const taskWindow = createMemo(() => planTaskWindow(props.plan()));
   const expectedDiscard = createMemo(() => isExpectedPlanDiscard(props.plan()));
   const currentIndex = createMemo(() => taskWindow().currentIndex);
-  const lastOutcome = createMemo(() =>
-    [...props.plan().tasks]
-      .reverse()
-      .find(
-        (task) =>
-          task.status === "done" ||
-          task.status === "failed" ||
-          task.status === "returned" ||
-          task.status === "abandoned",
-      ),
-  );
-  const outcomeContent = (): string | undefined => {
-    const task = lastOutcome();
-    return task?.error ?? task?.result ?? task?.reason;
-  };
   const [scrollEl, setScrollEl] = createSignal<ScrollBoxRenderable>();
   const scrollCurrent = (): void =>
     scrollEl()?.scrollChildIntoView(`sidebar-plan-${currentIndex()}`);
@@ -213,11 +206,20 @@ function PlanSummary(props: {
         <b>{props.plan().title}</b>
       </text>
       <text fg={planStatusColor(props.plan())} selectable={false} paddingBottom={1}>
-        {expectedDiscard()
-          ? `Completed ${glyph("separator")} ${planProgress(props.plan())} ${glyph("separator")} history discarded`
-          : props.plan().removed
-            ? `Unavailable ${glyph("separator")} ${planProgress(props.plan())}`
-            : `${lifecycleLabel(uiLifecycle(props.plan().status))} ${glyph("separator")} ${planProgress(props.plan())}`}
+        <span>
+          {expectedDiscard()
+            ? `Completed ${glyph("separator")} ${planProgress(props.plan())} ${glyph("separator")} history discarded`
+            : props.plan().removed
+              ? `Unavailable ${glyph("separator")} ${planProgress(props.plan())}`
+              : `${lifecycleLabel(uiLifecycle(props.plan().status))} ${glyph("separator")} ${planProgress(props.plan())}`}
+        </span>
+        <Show when={!props.plan().removed}>
+          <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
+          <span style={{ fg: tokens.accent }}>
+            <b>{`[${compactKey("ctrl+p")}]`}</b>
+          </span>
+          <span style={{ fg: tokens.muted }}> full plan</span>
+        </Show>
       </text>
       <Show when={taskWindow().hiddenBefore > 0}>
         <text fg={tokens.muted} selectable={false}>
@@ -257,26 +259,8 @@ function PlanSummary(props: {
                         ? glyph("separator")
                         : tone().glyph) + " "}
                   </span>
-                  <span style={{ fg: removed() ? tokens.muted : tone().fg }}>
-                    <b>{taskStatusLabel(task.status, removed())}</b>
-                  </span>
-                  <span
-                    style={{ fg: active() ? tokens.fg : tokens.muted }}
-                  >{`  ${task.title}`}</span>
-                  <Show when={task.assignee}>
-                    <span style={{ fg: tokens.muted }}>
-                      {` ${glyph("separator")} ${task.assignee}`}
-                    </span>
-                  </Show>
+                  <span style={{ fg: active() ? tokens.fg : tokens.muted }}>{task.title}</span>
                 </text>
-                <Show when={active() && task.exit_condition}>
-                  <text wrapMode="word">
-                    <span style={{ fg: tokens.accent2 }}>
-                      <b>Exit</b>
-                    </span>
-                    <span style={{ fg: tokens.muted }}>{`  ${task.exit_condition}`}</span>
-                  </text>
-                </Show>
               </box>
             );
           }}
@@ -287,59 +271,13 @@ function PlanSummary(props: {
           {`${glyph("caretDown")} ${taskWindow().hiddenAfter} later tasks`}
         </text>
       </Show>
-      <Show when={lastOutcome()}>
-        <box
-          flexDirection="column"
-          paddingTop={1}
-          onMouseDown={() => {
-            const task = lastOutcome();
-            const content = outcomeContent();
-            if (!task || !content) return;
-            props.onOpenDetail?.({
-              title: task.title,
-              eyebrow: `Plan task ${glyph("separator")} ${lifecycleLabel(uiLifecycle(task.status))}`,
-              content,
-            });
-          }}
-        >
-          <text selectable={false}>
-            <span style={{ fg: tokens.accent2 }}>
-              <b>Last result</b>
-            </span>
-            <Show when={outcomeContent()}>
-              <span style={{ fg: tokens.muted }}> {`${glyph("separator")} click to read`}</span>
-            </Show>
-            <Show when={!outcomeContent()}>
-              <span style={{ fg: tokens.muted }}>
-                {`  ${lifecycleLabel(uiLifecycle(lastOutcome()!.status))}`}
-              </span>
-            </Show>
-          </text>
-          <Show when={outcomeContent()}>
-            <text fg={lastOutcome()!.error ? tokens.del : tokens.muted} wrapMode="none" truncate>
-              {activityPreview(outcomeContent(), 96)}
-            </text>
-          </Show>
-        </box>
+      <Show when={props.plan().removed}>
+        <text fg={expectedDiscard() ? tokens.muted : tokens.del} selectable={false} paddingTop={1}>
+          {expectedDiscard()
+            ? "Plan deleted after success"
+            : "Restore the plan file or create a replacement"}
+        </text>
       </Show>
-      <text
-        fg={props.plan().removed && !expectedDiscard() ? tokens.del : tokens.muted}
-        selectable={false}
-        paddingTop={1}
-      >
-        {expectedDiscard() ? (
-          "Plan deleted after success"
-        ) : props.plan().removed ? (
-          "Restore the plan file or create a replacement"
-        ) : (
-          <>
-            <span style={{ fg: tokens.accent }}>
-              <b>Ctrl+P</b>
-            </span>
-            <span style={{ fg: tokens.muted }}> full plan</span>
-          </>
-        )}
-      </text>
     </box>
   );
 }
@@ -415,7 +353,7 @@ export function Sidebar(props: {
         <Show when={props.activity.plan !== null}>
           <box id="sidebar-section-plan" flexDirection="column">
             <SectionHeader label="Plan" />
-            <PlanSummary plan={() => props.activity.plan!} onOpenDetail={props.onOpenDetail} />
+            <PlanSummary plan={() => props.activity.plan!} />
           </box>
         </Show>
         <Show when={leaders().length > 0 || props.workflow?.()?.sequence !== undefined}>

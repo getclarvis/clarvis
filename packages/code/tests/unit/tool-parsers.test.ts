@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   editsFromArgs,
   parseBash,
+  toolErrorSummaryText,
   parseGrepContent,
   parseJsonObject,
   parseMonitor,
@@ -37,6 +38,22 @@ test("parseBash falls back for a non-JSON result", () => {
   expect(r.parsed).toBe(false);
   expect(r.stdout).toBe("plain output");
   expect(r.exitCode).toBeNull();
+});
+
+test("toolErrorSummaryText humanizes structured codes and preserves plain errors", () => {
+  expect(
+    toolErrorSummaryText(
+      JSON.stringify({
+        error: "patch_failed",
+        message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+        file: "packages/code/tests/unit/isolation.test.ts",
+      }),
+    ),
+  ).toBe("Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts");
+  expect(toolErrorSummaryText("denied: command touches paths outside the workspace")).toBe(
+    "Denied: command touches paths outside the workspace",
+  );
+  expect(toolErrorSummaryText("ENOENT: no such file")).toBe("ENOENT: no such file");
 });
 
 test("parseBash reads a JSON error object (timeout)", () => {

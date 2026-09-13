@@ -8,6 +8,7 @@ import { ConflictError, PersistenceError } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
+import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
 
 const BODY = {
   messages: [{ role: "user", content: "hi" }],
@@ -97,7 +98,12 @@ describe("executeRun (shared engine)", () => {
             state.status = "revoked";
             state.revision++;
           });
-          return { reader, onSteer: () => {}, finalize: () => structuredClone(state) };
+          return {
+            reader,
+            onSteer: () => {},
+            onElicitation: () => {},
+            finalize: () => structuredClone(state),
+          };
         },
         llm: {
           async call() {
@@ -171,6 +177,7 @@ describe("executeRun (shared engine)", () => {
                 state.revision++;
               }
             },
+            onElicitation() {},
             finalize: () => structuredClone(state),
           };
         },
@@ -183,6 +190,134 @@ describe("executeRun (shared engine)", () => {
     expect(closed).toBeTrue();
     expect(traceStore.getById("o", result.executionId)?.operator_authority_state?.revision).toBe(2);
   });
+
+  it("admits an accepted ask_user answer with the model question before the next iteration", async () => {
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "seed", source: "start", text: "Inspect", execution_id: "run" }],
+    };
+    const admitted: Array<{ question: string; answer: string }> = [];
+    const traceStore = makeTestTraceStore();
+    const result = await executeRun({
+      rawBody: {
+        ...BODY,
+        profiles: [
+          {
+            name: "solo",
+            model: "anthropic/x",
+            tools: [],
+            iteration_limit: 3,
+            grants: ["ask_user"],
+          },
+        ],
+      },
+      owner: "o",
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      elicit: async (params) => {
+        expect(params.kind).toBe("ask_user");
+        return { action: "accept", content: { response: "Authorize the three lines" } };
+      },
+      deps: makeDeps({
+        traceStore,
+        capabilities: [createAskUserCapability()],
+        llm: new MockLLM({
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "ask_user",
+                  arguments: { question: "May I update SAFE-09 through SAFE-11?" },
+                },
+              ],
+            },
+            { text: "done" },
+          ],
+        }),
+        operatorAuthority() {
+          return {
+            reader: { snapshot: () => structuredClone(state) },
+            onSteer() {},
+            onElicitation(context) {
+              admitted.push(context);
+              state.revision++;
+              state.evidence.push({
+                id: "elicitation",
+                source: "ask_user",
+                prompt: context.question,
+                text: context.answer,
+                execution_id: "run",
+              });
+            },
+            finalize: () => structuredClone(state),
+          };
+        },
+      }),
+    });
+    expect(result.response.status).toBe("completed");
+    expect(admitted).toEqual([
+      {
+        question: "May I update SAFE-09 through SAFE-11?",
+        answer: "Authorize the three lines",
+      },
+    ]);
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state?.revision).toBe(2);
+  });
+
+  it.each(["decline", "cancel"] as const)(
+    "does not admit a %s ask_user outcome as operator evidence",
+    async (action) => {
+      const state: OperatorAuthorityState = {
+        version: 1,
+        status: "active",
+        revision: 1,
+        binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+        evidence: [{ id: "seed", source: "start", text: "Inspect", execution_id: "run" }],
+      };
+      let admissions = 0;
+      const result = await executeRun({
+        rawBody: {
+          ...BODY,
+          profiles: [
+            {
+              name: "solo",
+              model: "anthropic/x",
+              tools: [],
+              iteration_limit: 3,
+              grants: ["ask_user"],
+            },
+          ],
+        },
+        owner: "o",
+        operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+        elicit: async () => ({ action }),
+        deps: makeDeps({
+          capabilities: [createAskUserCapability()],
+          llm: new MockLLM({
+            script: [
+              { toolCalls: [{ name: "ask_user", arguments: { question: "Proceed?" } }] },
+              { text: "done" },
+            ],
+          }),
+          operatorAuthority() {
+            return {
+              reader: { snapshot: () => structuredClone(state) },
+              onSteer() {},
+              onElicitation() {
+                admissions++;
+              },
+              finalize: () => structuredClone(state),
+            };
+          },
+        }),
+      });
+      expect(result.response.status).toBe("completed");
+      expect(admissions).toBe(0);
+      expect(state.revision).toBe(1);
+    },
+  );
 
   it("runs a subagent-only request to completion and returns an execution id + response", async () => {
     const { executionId, response } = await executeRun({

@@ -176,7 +176,7 @@ const bashCall = (result: string, error: string | null = null): RunEvent =>
     ...(error === null ? {} : { error }),
   });
 
-test("bash exit≠0 is marked warn and never auto-collapses (no green ✓ over a failing command)", () => {
+test("bash exit≠0 is marked warn and defaults folded like other terminal tool errors", () => {
   const store = replayStore([
     ev({ type: "run_started", at: 0 }),
     bashCall(JSON.stringify({ exit_code: 1, stdout: "", stderr: "1 test failed" })),
@@ -184,7 +184,7 @@ test("bash exit≠0 is marked warn and never auto-collapses (no green ✓ over a
   const tool = store.nodes.find((n) => n.kind === "tool_call")!;
   expect(tool.status).toBe("ok");
   expect(tool.warn).toBe(true);
-  expect(store.defaultFolded(tool.key)).toBe(false);
+  expect(store.defaultFolded(tool.key)).toBe(true);
 });
 
 test("bash exit 0 stays a normal collapsed success", () => {
@@ -264,8 +264,10 @@ test("subagent-attributed annotations carry subagentOrder (no Lead flush-barrier
     }),
     ev({ type: "steering_applied", agent: "lead", at: 3, message: "go" }),
   ]);
-  const compaction = nodes.find((n) => n.kind === "annotation" && n.text.startsWith("compaction"))!;
-  expect(compaction.subagentOrder).toBe(0);
+  const shortening = nodes.find(
+    (n) => n.kind === "annotation" && n.text === "tool output shortened · -12k chars",
+  )!;
+  expect(shortening.subagentOrder).toBe(0);
   const steer = nodes.find((n) => n.kind === "annotation" && n.text.includes("Steer"))!;
   expect(steer.subagentOrder).toBeUndefined();
 });

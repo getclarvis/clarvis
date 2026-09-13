@@ -31,13 +31,21 @@ export interface ReviewedEffectTarget {
   labels?: Record<string, string | number | boolean>;
 }
 
-/** Operator text captured before host-generated prompt assembly. Never accepted from rawBody. */
+/** Host-admitted evidence; `text` is operator-authored while an ask_user `prompt` is untrusted. */
 export interface OperatorEvidence {
   id: string;
-  source: "start" | "continue" | "steer" | "inherited";
+  source: "start" | "continue" | "steer" | "ask_user" | "inherited";
+  /** Untrusted model-authored context for an authenticated `ask_user` answer. */
+  prompt?: string;
   text: string;
   execution_id: string;
   agent?: "lead" | "subagent";
+}
+
+/** Accepted entry-agent answer admitted by the host elicitation channel. */
+export interface OperatorElicitationContext {
+  question: string;
+  answer: string;
 }
 
 /** Host-minted conversation identity; every component must match before restoration. */
@@ -129,7 +137,10 @@ export function inheritOperatorAuthority(
         (grant) => grant.effect_id !== "github.actions.rerun_failed",
       ),
     },
-    evidence: state.evidence.map((entry) => ({ ...entry, source: "inherited" })),
+    evidence: state.evidence.map(({ prompt: _prompt, ...entry }) => ({
+      ...entry,
+      source: "inherited",
+    })),
     consumed_effects: state.consumed_effects ?? [],
   };
 }

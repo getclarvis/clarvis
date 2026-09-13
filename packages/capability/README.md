@@ -401,4 +401,8 @@ versioned state, plus `OPERATOR_AUTHORITY_PORT` and its read-only reader. `inher
 projects a compiled parent intersection without promoting leader briefs. Kernel owns the writer and
 semantic policy; the loop transports this substrate. See [effect review](../../specs/execution/effect-review.md).
 
+`OperatorElicitationContext` carries an accepted entry-agent `ask_user` question and answer to that
+private writer. The answer is authenticated operator text; the model-authored question remains
+separate, untrusted context. It is not a capability service and does not itself grant an effect.
+
 `OperatorAuthorityState.denied_effects` carries bounded identities of concrete refused batches at the current evidence revision. It grants no authority; the kernel owns recording and validation, and fresh host-admitted evidence invalidates these exact-review identities. See [self-configuration](../../specs/hosts/self-configuration.md).

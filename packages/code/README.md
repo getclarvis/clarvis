@@ -545,7 +545,7 @@ the draft. From the instant the bootstrap renderer enters raw/alternate-screen m
 lifecycle owner restores it on exit and every platform-supported catchable OpenTUI signal, then
 the platform retains the same ownership; `SIGKILL` is inherently outside this contract. Raw Ctrl+C
 stays owned through complete-keymap mount. The fatal-boot screen takes priority during that interval,
-so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block can also show `[Stop shell]`. Clicking it, or focusing that block and pressing contextual `Ctrl+X`, interrupts only that invocation; the run continues. `Ctrl+X` is not a global cancel: elicitation decline and a manual protected `run.cancel = Ctrl+X` binding still win, and with no interruptible target the key is not consumed. While a workspace runtime is being replaced, the
+so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block shows a compact `[X]` immediately after its elapsed time. Clicking it, or focusing that block and pressing contextual `Ctrl+X`, interrupts only that invocation; the run continues. `Ctrl+X` is not a global cancel: elicitation decline and a manual protected `run.cancel = Ctrl+X` binding still win, and with no interruptible target the key is not consumed. While a workspace runtime is being replaced, the
 mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
 every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
@@ -666,12 +666,11 @@ Isolation `Sandbox`, `Docker` or `Podman` and Review `Auto`; an allowlist is app
 not make repository-controlled build or test code safe to run directly on the host.
 
 After a guarded shell call settles, its transcript header states the durable
-verdict and answerer, for example `auto-guard approved · judge` or
-`auto-guard denied · judge`. The same annotation is included in Markdown export
-and survives reopening the run. When consecutive shell calls collapse into a
-`shell ×N` group, every visible member signature retains its own verdict and
-answerer; a denied member is not hidden by the group's collapsed error body.
-Denied signatures are prioritized ahead of ordinary signatures when the six-row group cap applies.
+verdict and answerer, for example `approved by judge` or `denied by judge`; the
+guard mode and internal review facts do not occupy transcript chrome. The same
+annotation is included in Markdown export and survives reopening the run. Shell
+calls remain individual transcript rows, so each settled call retains its own
+verdict and answerer.
 
 Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
 workspace choice inherits the global policy. Changing Isolation leaves Review and its command
@@ -1006,7 +1005,10 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   native-id allocation ledger across runs.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
-  projection may reveal the Sidebar once for that execution. The fixed Lead activity line reuses the
+  projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows
+  only each status glyph and title, prioritizes running and next work above completed and failed work,
+  omits the result-preview panel, and appends `[^p] full plan` to the progress line; assignee,
+  exit-condition and result detail remain in the full plan surface. The fixed Lead activity line reuses the
   same physical row for `thinking`, `working` and settled `ready`; during a run that row also owns
   elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash autocomplete replaces the whole activity
   band while it is open. Transient activity therefore never enters history or changes transcript
@@ -1036,7 +1038,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Individual user/assistant/reasoning prose nodes retain at most 2 million characters and append an explicit
   truncation notice. This cap is applied before the value enters Solid/OpenTUI state, including the
   authoritative iteration-complete replacement, so one extreme provider response cannot dominate
-  the interactive process.
+  the interactive process. Reasoning shown beneath the `thinking` label removes Markdown presentation
+  delimiters from its plain-text projection; user and assistant presentation paths are unchanged.
 - Mutable user/assistant/reasoning prose also shares a 64 MiB UTF-16 budget. Old settled mutable
   prose is replaced by an explicit `/export` recovery notice; each immutable published copy already
   contains only the at-most-512-Ki-character inline projection and leaves residency only with its
@@ -1051,19 +1054,20 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   any parser or native renderable sees it; immutable publication freezes that bounded projection plus
   its header signature. Collapsed live headers and grouped member lists keep that resident signature
   after the body is dropped, so a still-running sub-agent's finished tools still name their paths.
+  Shell signatures show the command but omit the execution `cwd` from transcript chrome.
   Markdown export includes the bounded, renderer-safe argument projection even
   though the live transcript intentionally mounts no raw argument panel.
 - Successful mutations start folded. Explicit expansion wins over defaults across settlement,
   window disposal and child navigation. Their bounded native diff remains available on demand.
 - Failed tool calls are folded by default: their red failure mark and call identity remain visible,
-  while validation payloads and error text appear only after the user expands the call. A collapsed
-  failed group likewise renders one aggregate failure row rather than repeating each member's error.
-  Nonzero local-shell results remain expanded warnings because their partial stdout/stderr is the
-  result the user asked to inspect, not a rejected tool call.
-- A live controllable builtin shell exposes `[Stop shell]` without folding its row or cancelling
+  with a short sanitized diagnosis on the next row; expansion reveals the bounded full body. A
+  collapsed failed group likewise renders one aggregate failure row rather than repeating each
+  member's error. Nonzero shell results follow the same folded presentation and keep their parsed
+  `exit N` diagnosis visible.
+- A live controllable builtin shell exposes `[X]` immediately after its elapsed time without folding its row or cancelling
   the run. The focused eligible shell also accepts contextual Ctrl+X; elicitation and a rebound
-  protected cancellation shortcut take precedence. `[Stopping…]` waits for the authoritative tool
-  terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
+  protected cancellation shortcut take precedence. After a click, the muted `[X]` remains stable and
+  ignores repeated clicks while waiting for the authoritative tool terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
   renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
   actual diagnostic instead. See [transcript interruption](../../specs/hosts/code-transcript.md#47-provenance-and-interruption)
   and [run hosting](../../specs/hosts/code-run-host.md#selective-shell-interruption).
@@ -1114,6 +1118,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Session browsing and continuation.
 - Command guards and approval flows.
 - User elicitation during a run.
+  An iteration-budget question is presented as `iteration limit` in the modal and its settled
+  transcript notice; the engine's soft-budget vocabulary and non-iteration dimensions remain unchanged.
   If a confirmation arrives while the reader is browsing older history, Clarvis explicitly returns
   that physical reader to the live tail before replacing the composer with the question. The
   composer remains painted but keyboard-inert until the question owns a visible transcript row, so

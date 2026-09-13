@@ -212,6 +212,40 @@ describe("host-validated effect review", () => {
       relation: "bounded_prerequisite",
     });
   });
+  test("sends an authenticated ask_user answer and its untrusted question to the compiler", async () => {
+    const { ledger, registry, batch, envelope } = fixture();
+    ledger.onElicitation({
+      question: "May I update SAFE-09 through SAFE-11?",
+      answer: "Authorize the three lines",
+    });
+    envelope.revision = ledger.reader.snapshot().revision;
+    let compilePayload: Record<string, unknown> | undefined;
+    const service = createEffectReviewService({
+      authority: ledger.reader,
+      registry,
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+      defaultModel: "anthropic/test",
+      llm: {
+        async call(params) {
+          if (params.tools?.[0]?.wireName === "compile") {
+            compilePayload = JSON.parse(params.messages.at(-1)!.content as string);
+            return response("compile", envelope);
+          }
+          return response("decide", {
+            decision: "allow",
+            relation: "direct",
+            grant_ids: ["commit"],
+          });
+        },
+      },
+    });
+    expect(await service.review(batch, {}, "configure_clarvis")).toMatchObject({
+      decision: "allow",
+    });
+    expect(compilePayload?.operator_evidence).toEqual(ledger.reader.snapshot().evidence);
+    expect(JSON.stringify(compilePayload)).toContain("May I update SAFE-09 through SAFE-11?");
+    expect(JSON.stringify(compilePayload)).toContain("Authorize the three lines");
+  });
   test("reserves a CI retry once across concurrent decisions and persisted continuation", async () => {
     const { ledger, registry, batch, envelope } = fixture();
     Object.assign(batch.facts[0]!, {

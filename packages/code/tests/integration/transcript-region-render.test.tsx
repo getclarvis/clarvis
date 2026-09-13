@@ -665,9 +665,8 @@ test("the sidebar renders inline in wide mode when visible and content exists", 
   t.renderer.destroy();
 });
 
-test("the sidebar bounds a plan result and opens its full Markdown detail", async () => {
+test("the sidebar omits plan results and keeps full-plan navigation", async () => {
   const result = `## Conclusion\n\n${"A long finding with evidence. ".repeat(40)}`;
-  let opened = "";
   const t = await mount(
     baseProps({
       activity: activity({
@@ -682,22 +681,13 @@ test("the sidebar bounds a plan result and opens its full Markdown detail", asyn
         },
       }),
       layout: layout({ sidebarVisible: () => true, sidebarWidth: () => 42 }),
-      onOpenDetail: (detail) => (opened = detail.content),
     }),
   );
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Last result");
-  expect(frame).toContain("click to rea");
-  expect(frame).not.toContain(
-    "A long finding with evidence. A long finding with evidence. A long finding",
-  );
-  const rows = frame.split("\n");
-  const row = rows.findIndex((line) => line.includes("Last result"));
-  const x = rows[row]!.indexOf("Last result");
-  expect(x).toBeGreaterThan(-1);
-  await t.mockMouse.click(x + 2, row);
-  await t.renderOnce();
-  expect(opened).toBe(result);
+  expect(frame).toContain("[^p]");
+  expect(frame).not.toContain("Last result");
+  expect(frame).not.toContain("click to rea");
+  expect(frame).not.toContain("A long finding with evidence.");
   t.renderer.destroy();
 });
 

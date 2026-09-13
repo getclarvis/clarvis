@@ -36,6 +36,19 @@ test("reasoning still streaming (not collapsed) shows its label and text", async
   expect(out).toContain("Let me look at the source files");
 });
 
+test("reasoning normalizes Markdown chrome without changing its words", async () => {
+  const out = await frame(
+    reasoning(
+      "**Designing createLocalContainerRuntime test****Planning RuntimeHostInput deprecation test**",
+      false,
+    ),
+  );
+  expect(out).toContain(
+    "Designing createLocalContainerRuntime test Planning RuntimeHostInput deprecation test",
+  );
+  expect(out).not.toContain("**");
+});
+
 test("Ctrl+O force-expands a collapsed reasoning node back into view", async () => {
   const out = await frame(reasoning("As duas apps compilam", true), { expand: true });
   expect(out).toContain("thinking");

@@ -35,6 +35,21 @@ const softLimit: ElicitRequestParams = {
   },
 };
 
+const iterationLimit: ElicitRequestParams = {
+  message: "Used 200 of the soft iterations limit (200). Continue?",
+  requestedSchema: {
+    type: "object",
+    properties: {
+      continue: {
+        type: "string",
+        enum: ["continue", "stop"],
+        description: "Continue past the soft limit, or stop with the partial result?",
+      },
+    },
+    required: ["continue"],
+  },
+};
+
 const planReview: ElicitRequestParams = {
   message: "Approve the plan, request changes, or cancel?",
   requestedSchema: {
@@ -58,6 +73,15 @@ test("parseElicitForm: an enum → a select field with options", () => {
   const form = parseElicitForm(askUserEnum);
   expect(form.fields[0]!.kind).toBe("select");
   expect(form.fields[0]!.options.map((o) => o.value)).toEqual(["a", "b", "c"]);
+});
+
+test("parseElicitForm: iteration-limit copy is concise only for the matching continue form", () => {
+  const form = parseElicitForm(iterationLimit);
+  expect(form.message).toBe("Used 200 of the iteration limit (200). Continue?");
+  expect(form.fields[0]?.description).toBe(
+    "Continue past the iteration limit, or stop with the partial result?",
+  );
+  expect(parseElicitForm(softLimit).message).toContain("soft tokens limit");
 });
 
 test("parseElicitForm: plan-review yields an enum field + an optional text field, in order", () => {

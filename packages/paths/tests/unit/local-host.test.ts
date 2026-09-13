@@ -41,7 +41,7 @@ describe("local host paths", () => {
       ...base,
       endpointRootCandidates: [join("/tmp", "a".repeat(100)), "/tmp"],
     });
-    expect(paths.endpointDirectory).toStartWith(`${resolve("/tmp")}/clv-`);
+    expect(dirname(paths.endpointDirectory!)).toBe(resolve("/tmp"));
     expect(Buffer.byteLength(paths.endpoint, "utf8")).toBeLessThanOrEqual(100);
   });
 
@@ -52,7 +52,7 @@ describe("local host paths", () => {
       ...base,
       endpointRootCandidates: [multibyte, "/tmp"],
     });
-    expect(paths.endpointDirectory).toStartWith(`${resolve("/tmp")}/clv-`);
+    expect(dirname(paths.endpointDirectory!)).toBe(resolve("/tmp"));
   });
 
   test("deduplicates normalized candidates without changing the endpoint", () => {

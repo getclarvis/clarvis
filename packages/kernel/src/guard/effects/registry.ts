@@ -42,21 +42,23 @@ function validConstraints(id: string, value: Record<string, string | number | bo
           ? ["bytes"]
           : id === "git.commit"
             ? ["head_sha"]
-            : [
-                  "workspace.content.write",
-                  "clarvis.authoring.write",
-                  "clarvis.operational_config.write",
-                  "destructive.delete",
-                ].includes(id)
-              ? [
-                  "expected_revision",
-                  "next_revision",
-                  "bytes",
-                  "operation",
-                  "field_class",
-                  "diff_digest",
-                ]
-              : [];
+            : id === "git.push"
+              ? ["head_sha", "set_upstream"]
+              : [
+                    "workspace.content.write",
+                    "clarvis.authoring.write",
+                    "clarvis.operational_config.write",
+                    "destructive.delete",
+                  ].includes(id)
+                ? [
+                    "expected_revision",
+                    "next_revision",
+                    "bytes",
+                    "operation",
+                    "field_class",
+                    "diff_digest",
+                  ]
+                : [];
   if (Object.keys(value).some((key) => !keys.includes(key))) return false;
   if (
     Object.values(value).some((item) =>
@@ -79,6 +81,12 @@ function validConstraints(id: string, value: Record<string, string | number | bo
   if (id === "value.literal_data") return typeof value.bytes === "number" && value.bytes <= 4096;
   if (id === "git.commit")
     return typeof value.head_sha === "string" && /^[a-f0-9]{40,64}$/.test(value.head_sha);
+  if (id === "git.push")
+    return (
+      typeof value.head_sha === "string" &&
+      /^[a-f0-9]{40,64}$/.test(value.head_sha) &&
+      typeof value.set_upstream === "boolean"
+    );
   if (
     [
       "workspace.content.write",

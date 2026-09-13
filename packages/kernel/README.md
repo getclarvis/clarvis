@@ -868,8 +868,11 @@ contained-or-fail-closed, including legacy optional availability; Docker/Podman 
 as contained. Host and disabled native policies do not. Explicit per-call unsandbox is reviewed as
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
 Complete effect attestations refine syntactic opacity into mechanically covered effects after
-deterministic denials. Other ordinary Host/Sandbox asks and allow-list misses can use the call-local
-argv reviewer in Auto, including options, wrappers, dynamic arguments and environment prefixes.
+deterministic denials. This includes an explicit non-forced push of the checked-out branch to a
+resolved GitHub remote and bounded JSON inspection of its current open pull request; ambiguous
+refspecs, force variants and unsupported observation fields remain closed. Other ordinary
+Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
+options, wrappers, dynamic arguments and environment prefixes.
 Review `on`, credential-file asks, forced `rm` and `sudo` remain human decisions. A nonempty deny
 list rejects undecidable commands before any reviewer. No unmatched contained silent-allow rule is
 installed.

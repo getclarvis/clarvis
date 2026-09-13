@@ -39,6 +39,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 - Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
   scope for automatic command review instead of forcing manual approval through missing evidence.
+- Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now
+  reach automatic effect review with repository, branch and HEAD attestation instead of stopping as
+  partial evidence before a reviewer attempt.
 - Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
   the development runtime image, instead of reporting an invalid image id after a successful build.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.

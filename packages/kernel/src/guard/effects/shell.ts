@@ -8,8 +8,8 @@ import {
 } from "@clarvis/tools/guard";
 import type { EffectAttestorDeps, GuardEffectBatch, GuardEffectFact } from "./types.ts";
 import { effectDigest, effectFact } from "./facts.ts";
-import { repository } from "./git.ts";
-import { githubRerun } from "./github-cli.ts";
+import { gitPush, repository } from "./git.ts";
+import { githubCommand } from "./github-cli.ts";
 import { projectLiteralData } from "./literal-data.ts";
 import { resolveEffectEnvironment } from "./environment.ts";
 
@@ -93,26 +93,24 @@ export async function attestShell(
           return unknown();
         facts.push(effectFact(deps, "workspace.inspect", target, {}, true));
       } else if (argv[0] === "git" && argv[1] === "push") {
+        const rewrite = argv.some(
+          (arg) =>
+            arg === "--force" ||
+            arg === "-f" ||
+            arg.startsWith("--force-with-lease") ||
+            arg.startsWith("+"),
+        );
         facts.push(
-          effectFact(
-            deps,
-            argv.some(
-              (arg) =>
-                arg === "--force" ||
-                arg === "-f" ||
-                arg.startsWith("--force-with-lease") ||
-                arg.startsWith("+"),
-            )
-              ? "git.history_rewrite"
-              : "git.push",
-          ),
+          rewrite
+            ? effectFact(deps, "git.history_rewrite")
+            : await gitPush(deps, cwd, argv, ctx.config.workspaceRoot),
         );
       } else if (
         argv[0] === "git" &&
         ["reset", "rebase", "filter-branch", "filter-repo"].includes(argv[1] ?? "")
       ) {
         facts.push(effectFact(deps, "git.history_rewrite"));
-      } else if (argv[0] === "gh") facts.push(await githubRerun(deps, cwd, argv));
+      } else if (argv[0] === "gh") facts.push(await githubCommand(deps, cwd, argv));
       else return unknown();
     }
   } catch {

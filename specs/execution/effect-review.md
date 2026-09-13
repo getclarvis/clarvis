@@ -82,13 +82,18 @@ additional redirection or command, at most 4 KiB of data, and occupy an entire d
 argument. Unquoted substitution, file-reading `cat`, an expandable heredoc, dynamic executable or
 subcommand, redirections, and unknown batch segments cannot receive partial approval.
 
-Git probes resolve repository root, current branch and HEAD. GitHub failed-only rerun probes also
-correlate the canonical origin, run ID, completed failed state, supported event, branch, SHA and open
-PR head. Probes use an injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined
-output cap. They never execute the reviewed operation. The resolver reattests shell effects before
-returning a model allow. Network, authentication, malformed output or target mismatch closes the
-attestation. Unsupported external variants retain human review; registry membership is not proof
-that every CLI spelling has a complete attestor.
+Git probes resolve repository root, current branch and HEAD. An explicit non-forced push of that
+branch to a named GitHub remote also resolves the push URL and binds its repository, destination,
+HEAD and upstream-setting intent; implicit refspecs, another source or destination, additional
+options and every force spelling retain human review. A JSON `gh pr view` observation with the
+supported metadata/check fields resolves the canonical origin and binds the requested open PR to
+the current branch and HEAD. GitHub failed-only rerun probes additionally correlate the canonical
+origin, run ID, completed failed state, supported event, branch, SHA and open PR head. Probes use an
+injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined output cap. They never
+execute the reviewed mutation. The resolver reattests shell effects before returning a model allow.
+Network, authentication, malformed output or target mismatch closes the attestation. Unsupported
+external variants retain human review; registry membership is not proof that every CLI spelling has
+a complete attestor.
 Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
 `resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
 close attestation before any query; arbitrary environment values are not copied into probes. The

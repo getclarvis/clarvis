@@ -884,7 +884,10 @@ retain ordinary matching. Paths still participate in denial.
 
 Operator evidence is captured before synthetic message assembly and transported outside the public
 request. The effect reviewer reads the live revisioned ledger, and does not derive grants from
-assistant text, child briefs, command arguments, justification or role-filtered final context.
+assistant text, child briefs, command arguments, justification or role-filtered final context. Its
+seed accepts the same message-count and character envelope as validated run input, including the
+separator overhead of extracted multipart text, so a valid long operator prompt does not silently
+disable Auto review.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
 the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when

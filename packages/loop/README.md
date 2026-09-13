@@ -421,8 +421,8 @@ The list below is the whole of `package.json`'s `exports` map:
 - `@clarvis/loop/capabilities/tools` — coding tools and guard integration.
 - `@clarvis/loop/host` — the narrow host-composition surface for config,
   provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
-  construction, logger/version bindings and their host-facing types without importing the full
-  execution entry.
+  construction, logger/version bindings, request message ceilings and their host-facing types
+  without importing the full execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow
   implementation needs; shared contracts come directly from `@clarvis/capability`.
 - `@clarvis/loop/testing` — engine-owned `MockLLM`/`MockMCP` doubles plus fresh MCP/trace
@@ -555,6 +555,8 @@ validation and separate deterministic, live-provider and installed-artifact qual
 `ExecuteRunDeps.operatorAuthority` creates one runtime before capability activation. The loop
 prepublishes its reader, admits steers through its private hook, and persists
 `operator_authority_state` separately from capability slots. It never reconstructs evidence from
-`final_context`. See [effect review](../../specs/execution/effect-review.md).
+`final_context`. The host evidence validator reuses this package's exported request message ceilings,
+so accepted user input does not encounter a smaller authority-only text limit. See
+[effect review](../../specs/execution/effect-review.md).
 
 The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.

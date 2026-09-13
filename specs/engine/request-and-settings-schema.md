@@ -155,8 +155,12 @@ Example minimal valid body (from the test fixture, `packages/loop/tests/helpers/
 enforce a whole taxonomy of character/count ceilings:
 `CONTENT_MAX_CHARS = 1,000,000` (one text part), `IMAGE_MAX_CHARS = 10,000,000` (one image part),
 `CONTENT_PARTS_MAX = 100` (parts per message), `MESSAGE_CONTENT_MAX_CHARS = 16,000,000` (aggregate
-per single message, across every part) and `MESSAGES_TOTAL_MAX_CHARS = 16,000,000` (aggregate across
-the whole `messages` array) — all defined at `packages/loop/src/validation/request/message-schemas.ts`. `contentPartSchema` is a
+per single message, across every part), `MESSAGES_MAX_ENTRIES = 10,000`, and
+`MESSAGES_TOTAL_MAX_CHARS = 16,000,000` (aggregate across the whole `messages` array) — all defined
+and exported to host composition at `packages/loop/src/validation/request/message-schemas.ts`.
+The host-attested evidence schema reuses these request ceilings rather than imposing a smaller
+authority-only message limit; multipart separator overhead is accounted for without changing what
+the request accepts. `contentPartSchema` is a
 `discriminatedUnion("type", [textPartSchema, imagePartSchema])`; array (multimodal)
 content is legal only on a `user` message, enforced by `messageSchema`'s own `superRefine`, which also enforces the per-message aggregate cap; `messagesField`'s own
 `superRefine` walks the array and enforces the whole-history aggregate cap. The doc

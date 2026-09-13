@@ -23,9 +23,12 @@ substrate. Automatic goal continuations retain their admitted binding but contri
 message as new evidence; a missing interactive admission supplies no seed. Later authenticated
 operator steers can still update that continuation's ledger. Public requests cannot supply this
 substrate. Missing evidence never falls back to filtering an
-assembled transcript. The limits are 32 entries, 4 KiB UTF-8 per entry and 16 KiB in aggregate.
-Overflow revokes the ledger instead of dropping restrictions. Evidence is sanitized and is not
-written to audit events.
+assembled transcript. The evidence schema shares the request message-count and
+aggregate-character ceilings from `message-schemas.ts`; its per-entry and aggregate allowances
+include only the newline separators introduced while preserving multipart text boundaries.
+Therefore every accepted user-message input can become authenticated evidence without a smaller
+authority-only cutoff. Later lifetime overflow still revokes the ledger instead of dropping
+restrictions. Evidence is sanitized and is not written to audit events.
 
 The loop creates the host runtime before capability activation and prepublishes its read-only port.
 Only the loop's private callback admits a steer taken from the root operator queue; child briefs and
@@ -55,7 +58,8 @@ Production: `createOperatorAuthorityRuntime` in
 Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts) and
 [capability inheritance tests](../../packages/capability/tests/unit/operator-authority.test.ts),
 `captures admitted operator text before skill seeds` in
-[run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts), and
+[run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts),
+`keeps an admitted prompt larger than the former evidence ceiling active` in that same test, and
 `prepublishes one authority reader` in
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).
 

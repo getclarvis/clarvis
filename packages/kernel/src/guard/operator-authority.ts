@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  CONTENT_PARTS_MAX,
+  MESSAGE_CONTENT_MAX_CHARS,
+  MESSAGES_MAX_ENTRIES,
+  MESSAGES_TOTAL_MAX_CHARS,
+} from "@clarvis/loop/host";
 import { authorityEnvelopeSchema } from "./authority-schema.ts";
 import {
   sanitizeText,
@@ -11,6 +17,10 @@ import {
   type OperatorEvidence,
   type UserSteerContext,
 } from "@clarvis/capability";
+
+const EVIDENCE_ENTRY_MAX_CHARS = MESSAGE_CONTENT_MAX_CHARS + CONTENT_PARTS_MAX - 1;
+const EVIDENCE_TOTAL_MAX_CHARS =
+  MESSAGES_TOTAL_MAX_CHARS + MESSAGES_MAX_ENTRIES * (CONTENT_PARTS_MAX - 1);
 
 const identifier = z.string().min(1).max(256);
 const bindingSchema = z
@@ -25,17 +35,17 @@ const evidenceSchema = z
   .object({
     id: identifier,
     source: z.enum(["start", "continue", "steer", "inherited"]),
-    text: z.string().refine((text) => Buffer.byteLength(text, "utf8") <= 4096),
+    text: z.string().max(EVIDENCE_ENTRY_MAX_CHARS),
     execution_id: identifier,
     agent: z.enum(["lead", "subagent"]).optional(),
   })
   .strict();
 const evidenceList = z
   .array(evidenceSchema)
-  .max(32)
+  .max(MESSAGES_MAX_ENTRIES)
   .refine(
     (entries) =>
-      entries.reduce((sum, entry) => sum + Buffer.byteLength(entry.text, "utf8"), 0) <= 16384 &&
+      entries.reduce((sum, entry) => sum + entry.text.length, 0) <= EVIDENCE_TOTAL_MAX_CHARS &&
       new Set(entries.map((entry) => entry.id)).size === entries.length,
   );
 const consumedSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);

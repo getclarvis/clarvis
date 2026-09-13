@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { OperatorAuthoritySeed, OperatorAuthorityState } from "@clarvis/capability";
 import { inheritOperatorAuthority } from "@clarvis/capability";
+import { MESSAGES_MAX_ENTRIES } from "@clarvis/loop/host";
 import {
   createOperatorAuthorityRuntime,
   installAuthorityEnvelope,
@@ -120,19 +121,20 @@ describe("host operator ledger", () => {
       expect(runtime(next, { ...prior, status }).reader.snapshot().evidence).toHaveLength(1);
     }
   });
-  test("revokes instead of losing restrictions at UTF-8 or count bounds", () => {
-    expect(runtime(seed("é".repeat(2049))).reader.snapshot().status).toBe("revoked");
-    const ledger = runtime();
-    for (let index = 0; index < 32; index++) {
-      ledger.onSteer({
-        agent: "lead",
-        iteration: index,
-        id: String(index),
-        message: "Do not push",
-      });
-    }
-    expect(ledger.reader.snapshot().status).toBe("revoked");
-    expect(ledger.reader.snapshot().evidence).toHaveLength(32);
+  test("accepts long user input and applies the request message-count ceiling", () => {
+    const long = seed("é".repeat(20_000));
+    const accepted = runtime(long).reader.snapshot();
+    expect(accepted.status).toBe("active");
+    expect(accepted.evidence[0]?.text).toBe(long.evidence[0]?.text);
+
+    const overflow = seed();
+    overflow.evidence = Array.from({ length: MESSAGES_MAX_ENTRIES + 1 }, (_, index) => ({
+      id: `input-${index}`,
+      source: "start" as const,
+      text: "Inspect",
+      execution_id: "first",
+    }));
+    expect(runtime(overflow).reader.snapshot().status).toBe("revoked");
   });
   test("cancellation revokes and successful finalization settles", () => {
     const signal = new AbortController();

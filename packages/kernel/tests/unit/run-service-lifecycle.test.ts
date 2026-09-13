@@ -4,6 +4,7 @@ import type { ExecuteRunArgs, ExecuteRunDeps } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
+import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { createRunService } from "../../src/runs/run-service.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -159,6 +160,47 @@ describe("run-service lifecycle reservation", () => {
     expect(captured?.externalSignal).not.toBe(controller.signal);
     expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");
     expect(JSON.stringify(captured?.rawBody)).toContain("synthetic skill seed");
+    await handle.closed;
+  });
+  it("keeps an admitted prompt larger than the former evidence ceiling active", async () => {
+    const prompt = "Implement the approved plan. ".repeat(800);
+    let authorityStatus: string | undefined;
+    let evidenceText: string | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        const authority = createOperatorAuthorityRuntime({
+          seed: args.operatorAuthoritySeed,
+          owner: "owner",
+          executionId: "long-authority",
+        }).reader.snapshot();
+        authorityStatus = authority.status;
+        evidenceText = authority.evidence[0]?.text;
+        return {
+          executionId: "long-authority",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "long-authority",
+      messages: [{ role: "user", content: prompt }],
+    });
+    await handle.done;
+    expect(prompt.length).toBeGreaterThan(4_096);
+    expect(authorityStatus).toBe("active");
+    expect(evidenceText).toBe(prompt);
     await handle.closed;
   });
   it.each([

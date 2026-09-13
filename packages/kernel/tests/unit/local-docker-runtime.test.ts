@@ -7,6 +7,7 @@ import {
   type DockerControl,
 } from "../../src/index.ts";
 import { createLocalDockerRuntime } from "../../src/runtime/local-docker-runtime.ts";
+import { containerGuestRawBody } from "../../src/runtime/local-container-runtime.ts";
 
 const digest = `sha256:${"d".repeat(64)}`;
 
@@ -34,8 +35,7 @@ function input(
     project: { id: "project" },
     workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
     workspaceRoot: "/definitely/missing/clarvis-workspace",
-    configurationRevision: "config",
-    extensionRevision: "extensions",
+    gitMetadataMounts: [],
     deps: {} as ExecuteRunDeps,
     settings,
   };
@@ -53,6 +53,48 @@ function control(
 }
 
 describe("local Docker runtime composition", () => {
+  it("discloses only provider routing names to the guest", () => {
+    const raw = {
+      providers: [
+        {
+          name: "main",
+          kind: "openai-compatible",
+          base_url: "https://private.example.test/v1",
+          api_key: "secret",
+          headers: { Authorization: "Bearer secret" },
+        },
+      ],
+      profiles: [],
+      servers: [],
+    };
+    expect(containerGuestRawBody(raw)).toEqual({
+      providers: [
+        {
+          name: "main",
+          kind: "openai-compatible",
+          base_url: "http://runtime-model-broker.invalid",
+        },
+      ],
+      profiles: [],
+      servers: [],
+    });
+    expect(raw.providers[0]!.kind).toBe("openai-compatible");
+    for (const invalid of [null, [], "request"]) {
+      expect(() => containerGuestRawBody(invalid)).toThrow("Container run request is invalid");
+    }
+    expect(containerGuestRawBody({ providers: [null, {}, { name: 1 }, { name: "main" }] })).toEqual(
+      {
+        providers: [
+          {
+            name: "main",
+            kind: "openai-compatible",
+            base_url: "http://runtime-model-broker.invalid",
+          },
+        ],
+      },
+    );
+  });
+
   it("propagates generation cancellation through the image resolver and pull", async () => {
     const controller = new AbortController();
     const entered = Promise.withResolvers<void>();

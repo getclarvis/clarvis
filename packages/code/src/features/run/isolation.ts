@@ -16,11 +16,11 @@ export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
     label: "Sandbox",
     detail: "native Seatbelt or Bubblewrap; host access is requested per command",
   },
-  { value: "docker", label: "Docker", detail: "lazy Linux container with outbound access" },
+  { value: "docker", label: "Docker", detail: "core tools only; lazy Linux container" },
   {
     value: "podman",
     label: "Podman",
-    detail: "lazy Linux container; fails closed if Podman cannot start",
+    detail: "core tools only; fails closed if Podman cannot start",
   },
 ];
 
@@ -88,14 +88,16 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
       ];
     case "docker":
       return [
-        "Agent tools run inside a Linux Docker container.",
-        "The selected workspace is mounted directly; changes appear on the host immediately.",
-        "Docker stays cold until the first run; an operational startup failure requires Sandbox.",
+        "Core tools only: Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+        "Commands run without Command Review; workspace writes and outbound network remain enabled.",
+        "Git metadata is read-only; use Sandbox or Host for commits.",
+        "Docker starts on the first run and fails closed if the engine cannot start.",
       ];
     case "podman":
       return [
-        "Agent tools run inside a Linux Podman container.",
-        "The selected workspace is mounted directly; changes appear on the host immediately.",
+        "Core tools only: Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+        "Commands run without Command Review; workspace writes and outbound network remain enabled.",
+        "Git metadata is read-only; use Sandbox or Host for commits.",
         "Podman starts on the first run and fails closed if the engine cannot start.",
       ];
   }
@@ -109,7 +111,9 @@ export async function applyIsolation(
   const current = settings.effective();
   await settings.write("global", {
     runtime: runtimeFor(isolation),
-    sandbox: nativeSandbox(current.sandbox, isolation !== "host"),
+    ...(isContainerIsolation(isolation)
+      ? {}
+      : { sandbox: nativeSandbox(current.sandbox, isolation === "sandbox") }),
   });
   return deriveIsolation(settings.effective());
 }

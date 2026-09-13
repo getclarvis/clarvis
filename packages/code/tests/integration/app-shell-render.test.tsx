@@ -137,6 +137,7 @@ interface SettingsKnobs {
    * mounting fire the one-time seed notification. */
   memoryUnconfigured?: boolean;
   providers?: unknown[];
+  runtime?: Record<string, unknown>;
   sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
@@ -164,6 +165,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
             enabled: k.memoryEnabled ?? true,
             ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
           },
+      runtime: k.runtime,
       sandbox: k.sandbox,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
@@ -569,6 +571,30 @@ test("a live MCP startup failure appears once as a transient warning outside the
   const frame = await captureUntil(t, "MCP unavailable for this run");
   expect(frame).toContain("docs: missing DOCS_TOKEN");
   expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
+  t.renderer.destroy();
+});
+
+test("Container suppresses MCP degraded presentation defensively", async () => {
+  const store = createTranscriptStore();
+  const [notice, setNotice] =
+    createSignal<ReturnType<NonNullable<AppProps["run"]["mcpStartupNotice"]>>>(null);
+  const t = await mountApp(
+    defaultProps({
+      store,
+      mcpStartupNotice: notice,
+      settingsKnobs: () => ({ runtime: { backend: "docker" } }),
+    }),
+  );
+
+  setNotice({
+    sequence: 1,
+    servers: [{ name: "forged", reason: "must stay hidden" }],
+  });
+  const frame = await captureUntil(t, "Docker");
+  expect(frame).not.toContain("MCP unavailable for this run");
+  expect(frame).not.toContain("must stay hidden");
+  expect(store.nodes.some((node) => node.text.includes("must stay hidden"))).toBe(false);
 
   t.renderer.destroy();
 });

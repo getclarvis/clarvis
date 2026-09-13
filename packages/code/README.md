@@ -509,8 +509,9 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-Isolation and command review are separate controls. `Ctrl+S` opens Host/Sandbox/Docker/Podman isolation
-and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; `Alt+S` and `Alt+G` are their
+Isolation and command review have separate persisted controls. `Ctrl+S` opens Host/Sandbox/Docker/Podman
+isolation and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; under Container the
+review surface reads `Not applicable` and does not overwrite the stored native value. `Alt+S` and `Alt+G` are their
 enhanced-path accelerators. On macOS those enhanced bindings render as Option when the terminal
 delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` expands or collapses
 the Task editor, so `Ctrl+G` has no editing behavior. Clarvis keeps the terminal's native text path
@@ -661,9 +662,10 @@ and type-check commands across the common JavaScript/TypeScript, Python, Rust,
 Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
 interpreters and task runners plus install, publish, deploy and migration
 commands remain reviewable. Existing lists — including an intentionally empty
-one — are never expanded or replaced. For a low-interruption posture with host containment, choose
-Isolation `Sandbox`, `Docker` or `Podman` and Review `Auto`; an allowlist is approval policy and does
-not make repository-controlled build or test code safe to run directly on the host.
+one — are never expanded or replaced. For a low-interruption integrated posture with host
+containment, choose Isolation `Sandbox` and Review `Auto`; Docker/Podman is a separate core-only
+placement which executes ordinary commands without Command Review. An allowlist is approval policy
+and does not make repository-controlled build or test code safe to run directly on the host.
 
 After a guarded shell call settles, its transcript header states the durable
 verdict and answerer, for example `approved by judge` or `denied by judge`; the
@@ -673,12 +675,13 @@ calls remain individual transcript rows, so each settled call retains its own
 verdict and answerer.
 
 Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
-workspace choice inherits the global policy. Changing Isolation leaves Review and its command
-policy untouched. Selecting Host requires an explicit danger confirmation because it removes the
-containment boundary; turning Review off does not itself change isolation. With Review off, a sandboxed run that requests `sandbox_permissions: "require_escalated"` also
-executes that one command on the host without a reviewer. Isolated container runs still cannot reach
-the host this way. The safety explanation always states the selected Review consequence
-for Host, native Sandbox, Docker and Podman placements.
+workspace choice inherits the global policy. Changing Isolation leaves Review and its command policy
+stored, but Docker/Podman makes it inactive. Selecting Host requires an explicit danger confirmation
+because it removes the containment boundary; turning Review off does not itself change isolation.
+With Review off, a Sandbox run that requests `sandbox_permissions: "require_escalated"` executes that
+one command on the host without a reviewer. Container always rejects that request and has no host or
+fallback channel. Its safety explanation states core-only/no Review, writable workspace and outbound
+consequences, plus read-only Git metadata.
 
 In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
 over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
@@ -1348,67 +1351,40 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook/capability projections are withheld.
 
-The workspace header reports Review and effective Isolation as separate chips. A configured Docker
-or Podman choice begins as that engine name and changes to the reported container engine after its
-lazy first-run launch. Docker reads `Sandbox` if an operational startup failure activates the
-required native fallback; Podman stays fail-closed instead of rewriting Isolation to Sandbox.
-`WorkspaceClientManager` supplies the selected local Podman or Docker composition through a dynamic
-`@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
-Container isolation mounts the workspace already selected by Code directly at `/workspace`, so
-changes appear on the host immediately and there is no Clarvis-owned copy/apply prompt. Starting
-Code inside a linked worktree uses that worktree as the separate checkout; Code does not create a
-second copy, commit, merge or remove it. A primary checkout or non-Git directory is edited directly.
-Run Controls states this direct-mount consequence explicitly.
-Settings > Isolation is the dedicated global placement screen for that same Host/Sandbox/Docker/Podman
-choice. Native Sandbox policy stays in Settings > Sandbox. The simple Docker or Podman selection
-persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced settings may override
-the executable, Docker context or Podman connection, digest, network, Docker fallback, resource
-ceilings and an operator-owned Docker image recipe. Recipe scripts live under global `runtime-recipes/` and are referenced
-by an absolute path from global `settings.json`; the TUI has no script editor and the guest has no
-mutation tool for either. For example:
+The workspace header reports stored Review and effective Isolation as separate chips. A configured
+Docker or Podman choice begins as that engine name and changes to its reported Container status after
+lazy first-run launch. There is no fallback chip or rewrite to Sandbox. `WorkspaceClientManager`
+supplies the selected local engine through a dynamic `@clarvis/kernel/local` import; native startup
+neither loads those adapters nor probes an engine.
 
-```json
-{
-  "runtime": {
-    "backend": "docker",
-    "recipe": {
-      "name": "team-tools",
-      "script": "/Users/alice/.clarvis/runtime-recipes/team-tools.sh",
-      "network": "outbound"
-    }
-  }
-}
-```
+Settings > Isolation is the dedicated global placement screen shared with Run Controls and the quick
+picker. Docker/Podman is labelled **Core tools only**: Skills, MCPs, Hooks, Plugins and host-backed
+capabilities are unavailable; commands run without Command Review; workspace writes and outbound
+network remain enabled; Git metadata is read-only. Review reads `Not applicable in Container`, and
+Memory/Plans/Extensions are inactive without overwriting their persisted Host/Sandbox values.
+Profiles supplied by Plugins, carrying MCP/non-core grants or naming an unavailable default delegate
+are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
+refused by the adapter before submission; the kernel still revalidates stale/external requests and
+returns the named `unsupported` failure before engine/model work. No elicitation changes placement.
 
-For example, that operator-owned script can contain:
+Container mounts the selected workspace read-write at `/workspace`, so changes appear on the host
+immediately and there is no Clarvis-owned copy/apply prompt. Complete `.clarvis` and `.agents` roots
+are opaque and Git metadata is overlaid read-only for primary and linked worktrees. Because current
+engines would materialize an absent nested mount target, a workspace missing `.clarvis`, `.agents` or
+`.git` fails before container creation instead of changing the host workspace. The safety promise
+covers the host outside the selected workspace, not workspace destruction or outbound remote effects.
 
-```sh
-apt-get update
-apt-get install -y --no-install-recommends jq shellcheck
-```
+The simple selection persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced
+settings may override executable, Docker context/Podman connection, digest, network and resource
+ceilings. Docker additionally accepts an operator-owned image recipe under global
+`runtime-recipes/`; the TUI has no script editor and the guest cannot mutate it. Recipe content,
+builder policy and exact base form a local cache identity. Failure is visible and remains Container;
+Clarvis does not use an uncustomized image or native fallback. Recipe scripts are not a secret
+channel: their bytes reach the engine and material written into image layers/build output may persist.
 
-The absolute script is captured and run as POSIX `sh -eu` only when the first Docker run needs an
-unseen derived image. Its content, the fixed builder policy and the exact base image form a local
-cache identity, so later Clarvis processes reuse the inspected derived image instead of rebuilding
-it. A ready generation does not watch the script; an edit is captured on the next cold Docker
-generation. Recipe failure is visible and fail-closed; Clarvis does not silently use the
-uncustomized image or Sandbox fallback.
-
-The recipe is not a secret-delivery channel: its captured bytes are sent to the selected Docker
-engine, and secrets written into commands, installed files or build output may persist outside
-Clarvis. Authenticated builds need a future explicit host-owned secret contract.
-
-An uncached recipe publishes `Preparing Docker runtime recipe '<name>' for first use…` through the
-existing transient runtime-placement notice while Isolation remains in `starting`.
-Omitting `network` selects the broader ordinary `outbound` route, not internet-only filtering.
-
-Inside an isolated run, agents with `run_commands` are told that `mise` installs missing toolchains
-outside the workspace and receive `expose_port`. Docker preserves those installations in a labelled
-local volume scoped to that workspace and exact image, including across TUI sessions; Podman still
-uses ephemeral `/mise`. The Docker volume is engine-owned cache rather than host-visible project
-state and is not bounded by `storage_bytes`. `expose_port` returns the actual host-only `127.0.0.1`
-URL chosen by the kernel, so the UI need not infer Docker/Colima forwarding or claim the guest port
-is directly reachable.
+Agents with `run_commands` can use `mise` for missing toolchains in the engine-owned, workspace/image
+partitioned `/mise` cache. The guest receives no `expose_port`, engine socket, host shell or host
+credential helper. Engine correction or selecting Sandbox/Host always requires a new run.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

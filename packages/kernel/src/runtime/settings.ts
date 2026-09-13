@@ -55,7 +55,6 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
       limits: defaultedLimits,
       executable: z.string().min(1).optional(),
       connection: z.string().min(1).optional(),
-      fallback: z.enum(["sandbox", "fail"]).default("sandbox"),
       recipe: runtimeRecipe.optional(),
     })
     .strict(),

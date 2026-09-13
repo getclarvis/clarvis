@@ -51,13 +51,7 @@ const container: RuntimeStatus = {
 test("disk and local-host transport share every runtime variant and lifecycle", async () => {
   const values: RuntimeStatus[] = [
     { kind: "native", host_platform: "linux", isolation: "host", lifecycle: "ready" },
-    {
-      kind: "native",
-      host_platform: "linux",
-      isolation: "sandbox",
-      lifecycle: "fallback",
-      fallback_from: "podman",
-    },
+    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "ready" },
     ...(
       [
         "cold",
@@ -82,6 +76,7 @@ test("disk and local-host transport share every runtime variant and lifecycle", 
     { ...container, lifecycle: "running" },
     { ...container, secret: "extra" },
     { ...container, guest_platform: "windows" },
+    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "fallback" },
   ]) {
     expect(() => persisted(invalid)).toThrow("host state index is invalid");
     await expect(remote(invalid)).rejects.toThrow("invalid local host status");

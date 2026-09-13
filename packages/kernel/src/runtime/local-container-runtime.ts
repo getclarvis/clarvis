@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { MAX_JSON_MESSAGE_BYTES } from "../core/json-message.ts";
 import type { RuntimeToolPolicy } from "./tool-policy.ts";
 import { runtimeLoopPolicy, type RuntimeLoopPolicy } from "./loop-policy.ts";
-import { planRefFromCapabilityState } from "../runs/plan-ref.ts";
 import type { Stats } from "node:fs";
-import { lstat } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { resolveProvider, type RunRequest } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
@@ -16,50 +16,16 @@ import {
   type ModelBroker,
 } from "./authority-brokers.ts";
 import { createIsolatedRunExecutor, type RuntimeAuthorityRouter } from "./isolated-run-executor.ts";
-import { RUNTIME_PREVIEW_METHOD, RUNTIME_PREVIEW_REVISION } from "./preview-capability.ts";
-import { createHostPlansGrant, RUNTIME_PLANS_METHOD } from "./plan-bridge.ts";
-import {
-  createHostSkillsGrant,
-  createRuntimeSkillBootstraps,
-  createRuntimeSkillCatalog,
-  RUNTIME_SKILLS_METHOD,
-  type RuntimeSkillBootstrapEntry,
-  type RuntimeSkillCatalogEntry,
-} from "./skills-bridge.ts";
-import { createHostMemoryBridge, RUNTIME_MEMORY_METHOD } from "./memory-bridge.ts";
-import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import { launchIsolatedRuntime } from "./runtime-controller.ts";
-import {
-  agentsPluginsDir,
-  agentsSkillsDirs,
-  workspacePaths,
-  type RootOptions,
-} from "@clarvis/paths";
-import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
-import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
+import { agentsWorkspaceDir, workspacePaths, type RootOptions } from "@clarvis/paths";
+import { RuntimeLaunchError, type RuntimeBackend, type RuntimeProtectedMount } from "./types.ts";
 import { streamHostModelCall } from "./model-stream.ts";
 import { assertInlineModelMedia } from "./model-media.ts";
-import { createHostRemoteMcpBridge, RUNTIME_MCP_METHOD } from "./remote-mcp.ts";
-import { createHostTasksGrant, RUNTIME_TASKS_METHOD } from "./tasks-bridge.ts";
 import {
-  createHostHooksBridge,
-  RUNTIME_HOOKS_METHOD,
-  type RuntimeHooksDescriptor,
-} from "./hooks-bridge.ts";
-import { workflowContextOf, workflowOutputBudgetOf, type WorkflowCtx } from "@clarvis/workflows";
-import { goalRuntimePortOf } from "@clarvis/goal";
-import {
-  createHostGoalBridge,
-  RUNTIME_GOAL_METHOD,
-  RUNTIME_GOAL_MAX_BYTES,
-  type RuntimeGoalDescriptor,
-} from "./goal-bridge.ts";
-import {
-  consumeGuestWorkflowEvent,
-  createHostWorkflowBridge,
-  RUNTIME_WORKFLOWS_METHOD,
-  type RuntimeWorkflowDescriptor,
-} from "./workflows-bridge.ts";
+  CONTAINER_CORE_CAPABILITY_METHODS,
+  assertContainerCoreRuntimeRequest,
+  containerCorePolicy,
+} from "./container-core-policy.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
 type ResolvedLocalRuntimeInput = Omit<LocalRuntimeInput, "settings"> & {
@@ -120,55 +86,186 @@ export async function inspectReservedWorkspacePath(
   return result;
 }
 
-async function readOnlyWorkspacePaths(
-  input: ResolvedLocalRuntimeInput,
-): Promise<readonly string[]> {
-  const paths = workspacePaths(input.workspaceRoot);
-  const clarvisRoot = await inspectReservedWorkspacePath(paths.clarvisDir, paths.root);
-  if (clarvisRoot !== undefined && !clarvisRoot.isDirectory()) {
+interface PreparedRuntimeMounts {
+  readonly controlRootMasks: readonly RuntimeProtectedMount[];
+  readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
+  cleanup(): Promise<void>;
+}
+
+async function canonicalDirectory(path: string, label: string): Promise<string> {
+  if (!isAbsolute(path) || resolve(path) === resolve(path, "..")) {
     throw new RuntimeLaunchError(
       "unsupported_policy",
-      `reserved workspace path '${paths.clarvisDir}' must be a directory`,
+      `${label} must be an absolute non-root path`,
     );
   }
-  for (const capabilityRoot of [
-    ...(input.planFactory === undefined ? [] : [paths.plansRoot]),
-    ...(input.memoryFactory === undefined ? [] : [paths.memoryRoot]),
-  ]) {
-    try {
-      prepareRuntimeCapabilityRoot(capabilityRoot, paths.root);
-    } catch (cause) {
+  const canonical = await realpath(path).catch((cause: unknown) => {
+    throw new RuntimeLaunchError("unsupported_policy", `${label} is unavailable`, { cause });
+  });
+  const info = await lstat(canonical);
+  if (!info.isDirectory()) {
+    throw new RuntimeLaunchError("unsupported_policy", `${label} must be a directory`);
+  }
+  return canonical;
+}
+
+/** Prepare opaque control masks and the exact read-only Git metadata projection. */
+export async function prepareRuntimeMounts(
+  input: ResolvedLocalRuntimeInput,
+): Promise<PreparedRuntimeMounts> {
+  const workspaceRoot = resolve(input.workspaceRoot);
+  const paths = workspacePaths(workspaceRoot);
+  const agentsRoot = agentsWorkspaceDir(workspaceRoot);
+  for (const controlRoot of [paths.clarvisDir, agentsRoot]) {
+    const info = await inspectReservedWorkspacePath(controlRoot, workspaceRoot);
+    if (info !== undefined && !info.isDirectory()) {
       throw new RuntimeLaunchError(
         "unsupported_policy",
-        `runtime could not prepare host-controlled workspace path '${capabilityRoot}'`,
-        { cause },
+        `reserved workspace path '${controlRoot}' must be a directory`,
       );
     }
   }
-  const sharedSkills = agentsSkillsDirs({ cwd: paths.root, env: {} }).workspace;
-  const candidates = [
-    paths.settingsFile,
-    paths.agentsDir,
-    paths.skillsDir,
-    paths.workflowsDir,
-    paths.pluginsDir,
-    paths.extensionProfilesDir,
-    paths.guardJudgeFile,
-    paths.memoryPolicyFile,
-    paths.plansRoot,
-    paths.memoryRoot,
-    paths.plansRootForOwner(input.ownerId),
-    paths.memoryRootForOwner(input.ownerId),
-    sharedSkills,
-    agentsPluginsDir(paths.root),
-  ];
-  const existing: string[] = [];
-  for (const candidate of candidates) {
-    const info = await inspectReservedWorkspacePath(candidate, paths.root);
-    if (info === undefined) continue;
-    existing.push(candidate);
+  const createdRoot = await mkdtemp(join(tmpdir(), "clarvis-container-masks-"));
+  const privateRoot = await realpath(createdRoot);
+  try {
+    const fromWorkspace = relative(workspaceRoot, privateRoot);
+    if (
+      fromWorkspace === "" ||
+      (fromWorkspace !== ".." &&
+        !fromWorkspace.startsWith(`..${sep}`) &&
+        !isAbsolute(fromWorkspace))
+    ) {
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        "runtime control masks must be outside the selected workspace",
+      );
+    }
+    const clarvisMask = join(privateRoot, "clarvis");
+    const agentsMask = join(privateRoot, "agents");
+    const gitMask = join(privateRoot, "git");
+    await Promise.all(
+      [clarvisMask, agentsMask, gitMask].map((path) => mkdir(path, { mode: 0o700 })),
+    );
+    const guestPaths = workspacePaths("/workspace");
+    const controlRootMasks: readonly RuntimeProtectedMount[] = [
+      {
+        source: clarvisMask,
+        target: guestPaths.clarvisDir,
+        type: "directory",
+        readOnly: true,
+      },
+      {
+        source: agentsMask,
+        target: agentsWorkspaceDir("/workspace"),
+        type: "directory",
+        readOnly: true,
+      },
+    ];
+    const dotGit = join(workspaceRoot, ".git");
+    const dotGitInfo = await inspectReservedWorkspacePath(dotGit, workspaceRoot);
+    let gitMetadataMounts: readonly RuntimeProtectedMount[];
+    if (input.gitMetadataMounts.length === 0) {
+      if (dotGitInfo !== undefined) {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "workspace Git metadata was not admitted by host discovery",
+        );
+      }
+      gitMetadataMounts = [
+        { source: gitMask, target: "/workspace/.git", type: "directory", readOnly: true },
+      ];
+    } else {
+      if (dotGitInfo === undefined) {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "workspace Git metadata discovery is incomplete",
+        );
+      }
+      let expected: readonly RuntimeProtectedMount[];
+      if (input.workspace.kind === "external_worktree") {
+        if (!dotGitInfo.isFile()) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            "linked worktree .git metadata must be a regular file",
+          );
+        }
+        const indirection = (await readFile(dotGit, "utf8")).trim();
+        const declaredGitDir = indirection.startsWith("gitdir: ")
+          ? indirection.slice("gitdir: ".length)
+          : "";
+        if (!isAbsolute(declaredGitDir)) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            "linked worktree .git indirection must name the admitted canonical Git directory",
+          );
+        }
+        const gitDir = await canonicalDirectory(declaredGitDir, "runtime Git directory");
+        const commonReference = (await readFile(join(gitDir, "commondir"), "utf8")).trim();
+        if (commonReference.length === 0) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            "linked worktree common Git directory does not match host discovery",
+          );
+        }
+        const commonDir = await canonicalDirectory(
+          resolve(gitDir, commonReference),
+          "runtime Git common directory",
+        );
+        expected = [
+          { source: dotGit, target: "/workspace/.git", type: "file", readOnly: true },
+          { source: gitDir, target: gitDir, type: "directory", readOnly: true },
+          ...(commonDir === gitDir
+            ? []
+            : [
+                {
+                  source: commonDir,
+                  target: commonDir,
+                  type: "directory" as const,
+                  readOnly: true as const,
+                },
+              ]),
+        ];
+      } else {
+        if (!dotGitInfo.isDirectory()) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            "primary checkout Git metadata does not match host discovery",
+          );
+        }
+        const gitDir = await canonicalDirectory(dotGit, "runtime Git directory");
+        expected = [
+          { source: gitDir, target: "/workspace/.git", type: "directory", readOnly: true },
+        ];
+      }
+      if (
+        input.gitMetadataMounts.length !== expected.length ||
+        input.gitMetadataMounts.some((mount, index) => {
+          const wanted = expected[index];
+          return (
+            wanted === undefined ||
+            mount.source !== wanted.source ||
+            mount.target !== wanted.target ||
+            mount.type !== wanted.type ||
+            mount.readOnly !== true
+          );
+        })
+      ) {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "runtime Git metadata mounts do not match host discovery",
+        );
+      }
+      gitMetadataMounts = expected;
+    }
+    return {
+      controlRootMasks,
+      gitMetadataMounts,
+      cleanup: async () => rm(privateRoot, { recursive: true, force: true }),
+    };
+  } catch (error) {
+    await rm(privateRoot, { recursive: true, force: true });
+    throw error;
   }
-  return [...new Set(existing)];
 }
 
 /** Exact models the assembled request can use, including its resolved auxiliary paths. */
@@ -192,6 +289,29 @@ export function runtimeModelPairs(rawBody: unknown): Set<string> {
 function providerConfig(rawBody: unknown, provider: string): unknown {
   const raw = rawBody as { providers?: Array<{ name?: unknown }> };
   return raw.providers?.find((candidate) => candidate.name === provider);
+}
+
+/** Project only provider routing names into the guest; host configuration and credentials stay host-side. */
+export function containerGuestRawBody(rawBody: unknown): unknown {
+  if (typeof rawBody !== "object" || rawBody === null || Array.isArray(rawBody)) {
+    throw new RuntimeLaunchError("unsupported_policy", "Container run request is invalid");
+  }
+  const body = structuredClone(rawBody) as Record<string, unknown>;
+  const providers = Array.isArray(body.providers) ? body.providers : [];
+  body.providers = providers.flatMap((candidate) => {
+    if (typeof candidate !== "object" || candidate === null) return [];
+    const name = (candidate as { name?: unknown }).name;
+    return typeof name === "string"
+      ? [
+          {
+            name,
+            kind: "openai-compatible" as const,
+            base_url: "http://runtime-model-broker.invalid",
+          },
+        ]
+      : [];
+  });
+  return body;
 }
 
 /** Resolve a model lease to the exact destination admitted by its provider snapshot. */
@@ -293,42 +413,70 @@ export function validElicitArguments(value: unknown): value is {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as { params?: unknown; timeoutMs?: unknown };
   const keys = Object.keys(value);
+  if (typeof record.params !== "object" || record.params === null || Array.isArray(record.params))
+    return false;
+  const params = record.params as {
+    message?: unknown;
+    requestedSchema?: unknown;
+    kind?: unknown;
+  };
+  if (
+    !Object.keys(params).every((key) => ["message", "requestedSchema", "kind"].includes(key)) ||
+    typeof params.message !== "string" ||
+    params.message.length === 0 ||
+    params.message.length > 16 * 1024 ||
+    (params.kind !== undefined && params.kind !== "ask_user") ||
+    typeof params.requestedSchema !== "object" ||
+    params.requestedSchema === null ||
+    Array.isArray(params.requestedSchema)
+  )
+    return false;
+  const schema = params.requestedSchema as {
+    type?: unknown;
+    properties?: unknown;
+    required?: unknown;
+  };
+  if (
+    !Object.keys(schema).every((key) => ["type", "properties", "required"].includes(key)) ||
+    schema.type !== "object" ||
+    typeof schema.properties !== "object" ||
+    schema.properties === null ||
+    Array.isArray(schema.properties) ||
+    !Array.isArray(schema.required)
+  )
+    return false;
+  const properties = Object.entries(schema.properties as Record<string, unknown>);
+  const required = schema.required;
+  if (
+    properties.length === 0 ||
+    properties.length > 16 ||
+    required.some((name) => typeof name !== "string") ||
+    new Set(required).size !== required.length ||
+    required.some((name) => !Object.hasOwn(schema.properties as object, name as PropertyKey))
+  )
+    return false;
+  if (
+    properties.some(([, candidate]) => {
+      if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
+        return true;
+      const field = candidate as { type?: unknown; enum?: unknown; description?: unknown };
+      return (
+        !Object.keys(field).every((key) => ["type", "enum", "description"].includes(key)) ||
+        field.type !== "string" ||
+        (field.description !== undefined && typeof field.description !== "string") ||
+        (field.enum !== undefined &&
+          (!Array.isArray(field.enum) ||
+            field.enum.length === 0 ||
+            field.enum.length > 64 ||
+            field.enum.some((option) => typeof option !== "string")))
+      );
+    })
+  )
+    return false;
   return (
     keys.every((key) => key === "params" || key === "timeoutMs") &&
-    typeof record.params === "object" &&
-    record.params !== null &&
     (record.timeoutMs === undefined ||
       (Number.isSafeInteger(record.timeoutMs) && (record.timeoutMs as number) > 0))
-  );
-}
-
-/** Validate the closed guest-port preview capability envelope. */
-export function validPreviewArguments(value: unknown): value is {
-  port: number;
-  protocol?: "http" | "https" | "tcp";
-} {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const input = value as { port?: unknown; protocol?: unknown };
-  const keys = Object.keys(value);
-  return (
-    keys.every((key) => key === "port" || key === "protocol") &&
-    Number.isSafeInteger(input.port) &&
-    (input.port as number) >= 1 &&
-    (input.port as number) <= 65_535 &&
-    (input.protocol === undefined ||
-      input.protocol === "http" ||
-      input.protocol === "https" ||
-      input.protocol === "tcp")
-  );
-}
-
-function runAllowsCommandExecution(rawBody: unknown): boolean {
-  const body = rawBody as { profiles?: Array<{ grants?: unknown }> };
-  return (
-    Array.isArray(body.profiles) &&
-    body.profiles.some(
-      (profile) => Array.isArray(profile.grants) && profile.grants.includes("run_commands"),
-    )
   );
 }
 
@@ -339,36 +487,24 @@ export async function createLocalContainerRuntime(
   router: RuntimeAuthorityRouter,
   options: LocalContainerRuntimeOptions = {},
 ): Promise<RuntimeHost> {
-  const protectedPaths = await readOnlyWorkspacePaths(input);
-  const controller = await launchIsolatedRuntime({
-    ...input,
-    readOnlyWorkspacePaths: protectedPaths,
-    capabilityMethods: [
-      "runtime.elicit",
-      RUNTIME_MCP_METHOD,
-      RUNTIME_HOOKS_METHOD,
-      RUNTIME_WORKFLOWS_METHOD,
-      RUNTIME_GOAL_METHOD,
-      RUNTIME_PREVIEW_METHOD,
-      ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
-      ...(input.taskResolver === undefined ? [] : [RUNTIME_TASKS_METHOD]),
-      ...(input.skillsProvider === undefined ? [] : [RUNTIME_SKILLS_METHOD]),
-      ...(input.memoryFactory === undefined ? [] : [RUNTIME_MEMORY_METHOD]),
-    ],
-    backend,
-  });
+  const mounts = await prepareRuntimeMounts(input);
+  let controller: Awaited<ReturnType<typeof launchIsolatedRuntime>>;
+  try {
+    controller = await launchIsolatedRuntime({
+      ...input,
+      controlRootMasks: mounts.controlRootMasks,
+      gitMetadataMounts: mounts.gitMetadataMounts,
+      capabilityMethods: CONTAINER_CORE_CAPABILITY_METHODS,
+      backend,
+    });
+  } catch (error) {
+    await mounts.cleanup();
+    throw error;
+  }
   interface RunSnapshot {
     readonly leaseId: string;
     readonly toolPolicy: RuntimeToolPolicy;
     readonly loopPolicy: RuntimeLoopPolicy;
-    readonly hooks?: RuntimeHooksDescriptor;
-    readonly workflow?: RuntimeWorkflowDescriptor;
-    readonly workflowContext?: WorkflowCtx;
-    readonly goal?: RuntimeGoalDescriptor;
-    readonly outputBudgets: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
-    readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
-    readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
-    readonly memory?: MemoryRuntimeDescriptor;
   }
   const snapshots = new Map<string, RunSnapshot>();
   const executeRun = createIsolatedRunExecutor({
@@ -389,162 +525,36 @@ export async function createLocalContainerRuntime(
         priorExecution === undefined || priorExecution === null
           ? undefined
           : Object.fromEntries(
-              Object.entries(priorExecution).filter(([key]) => key !== "operator_authority_state"),
+              Object.entries(priorExecution).filter(
+                ([key]) => key !== "operator_authority_state" && key !== "capability_state",
+              ),
             );
-      const hostCapabilities = [
-        ...(input.planFactory === undefined ? [] : ["plans"]),
-        ...(input.taskResolver === undefined ? [] : ["tasks"]),
-        ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
-        ...(snapshot.memory === undefined ? [] : ["memory"]),
-        ...(snapshot.goal === undefined ? [] : ["goal"]),
-      ];
       return {
+        rawBody: containerGuestRawBody(args.rawBody),
         modelLeaseId: snapshot.leaseId,
         toolPolicy: snapshot.toolPolicy,
         loopPolicy: snapshot.loopPolicy,
-        ...(hostCapabilities.length > 0 ? { hostCapabilities } : {}),
-        ...(snapshot.skillCatalog === undefined
-          ? {}
-          : {
-              skillCatalog: snapshot.skillCatalog,
-              skillBootstraps: snapshot.skillBootstraps ?? [],
-            }),
-        ...(snapshot.memory === undefined ? {} : { memory: snapshot.memory }),
-        ...(snapshot.goal === undefined ? {} : { goal: snapshot.goal }),
-        ...(snapshot.hooks === undefined ? {} : { hooks: snapshot.hooks }),
-        ...(snapshot.workflow === undefined ? {} : { workflow: snapshot.workflow }),
-        ...(args.runtimeParentRunId === undefined ? {} : { parentRunId: args.runtimeParentRunId }),
-        outputBudgets: snapshot.outputBudgets,
         ...(guestPrior === undefined ? {} : { priorExecution: guestPrior }),
       };
     },
     authority: async (args, runId) => {
-      const requestedGuard = (args.rawBody as RunRequest).guard_mode;
-      if (requestedGuard === "on" || requestedGuard === "auto") {
-        throw new RuntimeLaunchError(
-          "unsupported_policy",
-          `guard_mode '${requestedGuard}' is incompatible with ${input.settings.backend} runtime placement`,
-        );
-      }
-      const admittedCapabilities = [
-        ...(args.deps.capabilities ?? []),
-        ...(args.capabilities ?? []),
-      ];
+      assertContainerCoreRuntimeRequest(args.rawBody);
       const toolPolicy: RuntimeToolPolicy = {
-        enabled:
-          args.deps.env.CLARVIS_AGENT_TOOLS_ENABLED &&
-          admittedCapabilities.some((capability) => capability.name === "tools"),
+        enabled: args.deps.env.CLARVIS_AGENT_TOOLS_ENABLED,
         confine: args.deps.env.CLARVIS_AGENT_TOOLS_CONFINE,
         maxGrant: args.deps.env.CLARVIS_AGENT_TOOLS_MAX_GRANT,
       };
-      const hostPreviewEnabled =
-        toolPolicy.enabled &&
-        toolPolicy.maxGrant === "exec" &&
-        runAllowsCommandExecution(args.rawBody);
-      const workflowContext = admittedCapabilities
-        .map(workflowContextOf)
-        .find((context) => context !== undefined);
-      const goalPorts = admittedCapabilities.flatMap((capability) => {
-        const port = goalRuntimePortOf(capability);
-        return port === undefined ? [] : [port];
-      });
-      if (
-        goalPorts.length > 1 ||
-        (goalPorts.length > 0 &&
-          (workflowContext !== undefined ||
-            args.runtimeParentRunId !== undefined ||
-            (args.rawBody as RunRequest).profiles.some((profile) =>
-              profile.grants?.includes("workflow"),
-            )))
-      )
-        throw new RuntimeLaunchError(
-          "unsupported_policy",
-          "Goal requires one ordinary entry capability",
-        );
-      const goal =
-        goalPorts[0] === undefined
-          ? undefined
-          : createHostGoalBridge(goalPorts[0], args.rawBody, runId);
-      for (const capability of admittedCapabilities) {
-        if (
-          ![
-            "hooks",
-            "tools",
-            "ask-user",
-            "skills",
-            "plans",
-            "memory",
-            "tasks",
-            "delegation",
-          ].includes(capability.name) &&
-          workflowContextOf(capability) === undefined &&
-          goalRuntimePortOf(capability) === undefined &&
-          workflowOutputBudgetOf(capability) === undefined
-        ) {
-          throw new RuntimeLaunchError(
-            "unsupported_policy",
-            `runtime cannot preserve capability '${capability.name}'`,
-          );
-        }
-      }
-      const workflow =
-        workflowContext === undefined
-          ? undefined
-          : createHostWorkflowBridge(workflowContext, executeRun);
-      const outputBudgets = admittedCapabilities.flatMap((capability) => {
-        const budget = workflowOutputBudgetOf(capability);
-        if (budget === undefined) return [];
-        const remaining = budget.outputBudget.remaining();
-        return [
-          {
-            tokens: Number.isFinite(remaining) ? remaining : null,
-            maxParallelSubagents: budget.maxParallelSubagents,
-          },
-        ];
+      const policy = containerCorePolicy({
+        toolPolicy,
+        network: input.settings.network === "none" ? "none" : "outbound",
+        gitMetadata: input.gitMetadataMounts.length === 0 ? "absent" : "read-only",
       });
       const leaseId = randomUUID();
-      const hooks = await createHostHooksBridge(args, runId, (call, signal) =>
-        controller.session.callHookMcp(runId, call, signal),
-      );
       const model = hostModelBroker(input, args, runId, leaseId);
-      const skillCatalog =
-        input.skillsProvider === undefined
-          ? undefined
-          : createRuntimeSkillCatalog(input.skillsProvider);
-      const skillBootstraps =
-        input.skillsProvider === undefined
-          ? undefined
-          : createRuntimeSkillBootstraps(
-              input.skillsProvider,
-              input.skillBootstraps,
-              input.deps.logger,
-            );
-      const memory =
-        input.memoryFactory === undefined
-          ? undefined
-          : await createHostMemoryBridge({
-              factory: input.memoryFactory,
-              rawBody: args.rawBody,
-              owner: args.owner,
-              runId,
-              deps: args.deps,
-              ...(args.externalSignal === undefined ? {} : { signal: args.externalSignal }),
-              ...(args.onCapabilityEvent === undefined
-                ? {}
-                : { onCapabilityEvent: args.onCapabilityEvent }),
-            });
-      const remoteMcp = createHostRemoteMcpBridge({
-        servers: (args.rawBody as RunRequest).servers ?? [],
-        owner: args.owner,
-        connections: args.deps.connections,
-        maxLeases: args.deps.env.CLARVIS_MCP_MAX_CONNECTIONS,
-        elicit: (input, signal) => controller.session.elicitMcp(runId, input, signal),
-      });
       const capabilities = createCapabilityBroker({
         generation: input.generation,
         runId,
         grants: [
-          remoteMcp.grant,
           {
             method: "runtime.elicit",
             revision: "v1",
@@ -557,79 +567,14 @@ export async function createLocalContainerRuntime(
               return args.elicit(value.params, { signal, timeoutMs: value.timeoutMs });
             },
           },
-          ...(hostPreviewEnabled
-            ? [
-                {
-                  method: RUNTIME_PREVIEW_METHOD,
-                  revision: RUNTIME_PREVIEW_REVISION,
-                  idempotent: true,
-                  validateArguments: validPreviewArguments,
-                  async invoke(value: unknown, signal: AbortSignal) {
-                    if (!validPreviewArguments(value)) {
-                      throw Object.assign(new Error("runtime preview arguments are invalid"), {
-                        code: "invalid_request",
-                      });
-                    }
-                    return controller.session.exposePort(value.port, value.protocol, signal);
-                  },
-                },
-              ]
-            : []),
-          ...(input.planFactory === undefined
-            ? []
-            : [
-                createHostPlansGrant(input.planFactory, args.owner, {
-                  runId,
-                  priorRef: planRefFromCapabilityState(
-                    typeof (args.rawBody as RunRequest).continue_from === "string"
-                      ? args.deps.traceStore.getById(
-                          args.owner,
-                          (args.rawBody as RunRequest).continue_from!,
-                        )?.capability_state
-                      : undefined,
-                  ),
-                  readTerminalRecord: () => args.deps.traceStore.getById(args.owner, runId),
-                }),
-              ]),
-          ...(input.taskResolver === undefined
-            ? []
-            : [
-                createHostTasksGrant(
-                  input.taskResolver,
-                  args.owner,
-                  runId,
-                  args.rawBody,
-                  typeof (args.rawBody as RunRequest).continue_from === "string"
-                    ? args.deps.traceStore.getById(
-                        args.owner,
-                        (args.rawBody as RunRequest).continue_from!,
-                      )?.capability_state?.tasks
-                    : undefined,
-                ),
-              ]),
-          ...(input.skillsProvider === undefined
-            ? []
-            : [createHostSkillsGrant(input.skillsProvider, skillCatalog ?? [])]),
-          ...(memory === undefined ? [] : [memory.grant]),
-          ...(hooks === undefined ? [] : [hooks.grant]),
-          ...(workflow === undefined ? [] : [workflow.grant]),
-          ...(goal === undefined ? [] : [goal.grant]),
         ],
-        maxArgumentsBytes: goal === undefined ? 256 * 1024 : RUNTIME_GOAL_MAX_BYTES,
-        maxResultBytes: goal === undefined ? 256 * 1024 : RUNTIME_GOAL_MAX_BYTES,
+        maxArgumentsBytes: 256 * 1024,
+        maxResultBytes: 256 * 1024,
       });
       snapshots.set(runId, {
         leaseId,
-        toolPolicy,
+        toolPolicy: policy.toolPolicy,
         loopPolicy: runtimeLoopPolicy(args.deps.env),
-        ...(hooks === undefined ? {} : { hooks: hooks.descriptor }),
-        ...(workflow === undefined ? {} : { workflow: workflow.descriptor }),
-        ...(workflowContext === undefined ? {} : { workflowContext }),
-        ...(goal === undefined ? {} : { goal: goal.descriptor }),
-        outputBudgets,
-        ...(skillCatalog === undefined ? {} : { skillCatalog }),
-        ...(skillBootstraps === undefined ? {} : { skillBootstraps }),
-        ...(memory === undefined ? {} : { memory: memory.descriptor }),
       });
       return {
         model,
@@ -646,14 +591,11 @@ export async function createLocalContainerRuntime(
           },
           { name: "capabilities", async commit() {} },
         ],
-        async dispose() {
+        dispose() {
           snapshots.delete(runId);
-          await remoteMcp.dispose();
         },
       };
     },
-    consumeGuestEvent: (_args, runId, value) =>
-      consumeGuestWorkflowEvent(snapshots.get(runId)?.workflowContext, value),
   });
   return {
     executeRun,
@@ -663,7 +605,11 @@ export async function createLocalContainerRuntime(
     },
     async close() {
       snapshots.clear();
-      await controller.close();
+      try {
+        await controller.close();
+      } finally {
+        await mounts.cleanup();
+      }
     },
   };
 }

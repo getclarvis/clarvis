@@ -35,11 +35,41 @@ const common = {
     kind: "external_worktree" as const,
   },
   workspaceRoot: "/work/tree",
-  readOnlyWorkspacePaths: ["/work/tree/.clarvis/memory"],
-  gitCommonDir: "/repos/project/.git",
-  configurationRevision: "config-1",
-  extensionRevision: "extensions-1",
-  capabilityMethods: ["memory.read"],
+  controlRootMasks: [
+    {
+      source: "/private/masks/clarvis",
+      target: "/workspace/.clarvis",
+      type: "directory" as const,
+      readOnly: true as const,
+    },
+    {
+      source: "/private/masks/agents",
+      target: "/workspace/.agents",
+      type: "directory" as const,
+      readOnly: true as const,
+    },
+  ],
+  gitMetadataMounts: [
+    {
+      source: "/work/tree/.git",
+      target: "/workspace/.git",
+      type: "file" as const,
+      readOnly: true as const,
+    },
+    {
+      source: "/repos/project/.git/worktrees/workspace",
+      target: "/repos/project/.git/worktrees/workspace",
+      type: "directory" as const,
+      readOnly: true as const,
+    },
+    {
+      source: "/repos/project/.git",
+      target: "/repos/project/.git",
+      type: "directory" as const,
+      readOnly: true as const,
+    },
+  ],
+  capabilityMethods: ["runtime.elicit"],
 };
 
 function info(spec: RuntimeLaunchSpec): RuntimeInfo {
@@ -72,16 +102,11 @@ describe("isolated runtime controller", () => {
           closed: false,
           info: info(spec),
           async startRun() {},
-          async callHookMcp() {},
-          async elicitMcp() {},
           async steer() {},
           async interruptTool() {
             return { status: "not_running" };
           },
           async cancel() {},
-          async exposePort() {
-            throw new Error("not exercised");
-          },
           async stop() {
             stops += 1;
           },
@@ -92,8 +117,8 @@ describe("isolated runtime controller", () => {
     const controller = await launchIsolatedRuntime({ ...common, backend });
     expect(launched).toMatchObject({
       workspaceRoot: common.workspaceRoot,
-      readOnlyWorkspacePaths: common.readOnlyWorkspacePaths,
-      gitCommonDir: common.gitCommonDir,
+      controlRootMasks: common.controlRootMasks,
+      gitMetadataMounts: common.gitMetadataMounts,
     });
     await controller.close();
     await controller.close();
@@ -121,16 +146,11 @@ describe("isolated runtime controller", () => {
             closed: false,
             info: info(spec),
             async startRun() {},
-            async callHookMcp() {},
-            async elicitMcp() {},
             async steer() {},
             async interruptTool() {
               return { status: "not_running" };
             },
             async cancel() {},
-            async exposePort() {
-              throw new Error("not exercised");
-            },
             async stop() {
               stopAttempts += 1;
               if (stopAttempts === 1) throw new Error("stop failed");

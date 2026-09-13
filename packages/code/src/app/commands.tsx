@@ -113,7 +113,6 @@ export interface AppCommandDeps {
   refreshAgentProfiles: () => Promise<void>;
   keys: KeysAdapter;
   reconnectBackend: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
-  retryRuntime?: () => void;
   env: EnvView;
   preview: ThemePreview;
   platform: Platform;
@@ -657,7 +656,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           notify,
           runActive: deps.runActive,
           openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
-          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
         });
     }),
   });
@@ -1137,7 +1135,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           notify,
           runActive: deps.runActive,
           openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
-          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
         });
     }),
   });

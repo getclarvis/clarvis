@@ -70,7 +70,13 @@ it("the guest loop executes without a host Guard approval bridge", async () => {
             },
           ],
           entry: "solo",
-          providers: [{ name: "test", kind: "anthropic" }],
+          providers: [
+            {
+              name: "test",
+              kind: "openai-compatible",
+              base_url: "http://runtime-model-broker.invalid",
+            },
+          ],
           budget: { on_exceed: "stop", total_token_limit: 1_000 },
         },
       },

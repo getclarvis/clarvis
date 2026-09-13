@@ -9,6 +9,8 @@ import { detachObserved } from "../../core/tasks.ts";
 import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { ListPicker } from "./ListPicker.tsx";
+import { deriveIsolation } from "../../adapters/execution-safety.ts";
+import { isContainerIsolation } from "../../features/run/isolation.ts";
 
 const CURRENT_COL_WIDTH = glyphColWidth("radioOn");
 const LABEL_COL_WIDTH = 10;
@@ -29,6 +31,13 @@ export function ReviewPicker(props: {
 
   const apply = async (choice: ReviewChoice): Promise<void> => {
     if (applying) return;
+    if (isContainerIsolation(deriveIsolation(props.settings.effective()))) {
+      props.notify(
+        "Command Review is not applicable in Container. Use Isolation Sandbox or Host.",
+        "warn",
+      );
+      return;
+    }
     applying = true;
     try {
       const scope = props.scope();
@@ -66,7 +75,11 @@ export function ReviewPicker(props: {
       confirmLabel="use review"
       onConfirm={(choice) => detachObserved("review_apply", () => apply(choice))}
       onClose={props.onClose}
-      footer={() => `${props.scope()} setting ${glyph("separator")} isolation is unchanged`}
+      footer={() =>
+        isContainerIsolation(deriveIsolation(props.settings.effective()))
+          ? "saved Review unchanged"
+          : `${props.scope()} setting ${glyph("separator")} isolation is unchanged`
+      }
       cells={(choice, selected) => [
         {
           width: CURRENT_COL_WIDTH,
@@ -79,11 +92,13 @@ export function ReviewPicker(props: {
       preview={(choice) => (
         <box flexDirection="column">
           <text fg={choice.value === "off" ? tokens.warn : tokens.fg}>
-            {choice.value === "off"
-              ? `${glyph("warning")} Commands are not reviewed.`
-              : choice.value === "on"
-                ? "Clarvis asks you before risky commands."
-                : "The configured LLM judge reviews commands first."}
+            {isContainerIsolation(deriveIsolation(props.settings.effective()))
+              ? "Not applicable in Container. Commands run without Command Review."
+              : choice.value === "off"
+                ? `${glyph("warning")} Commands are not reviewed.`
+                : choice.value === "on"
+                  ? "Clarvis asks you before risky commands."
+                  : "The configured LLM judge reviews commands first."}
           </text>
           <text fg={tokens.muted}>The selected Isolation boundary does not change.</text>
         </box>

@@ -216,12 +216,6 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         requireLocalHost(services).respondBrowser(p.request_id as string, p.opened as boolean),
     },
-    retryRuntime: {
-      method: "localHost.retryRuntime",
-      metadata: write(),
-      encode: () => ({}),
-      invoke: (services) => requireLocalHost(services).retryRuntime(),
-    },
     requestRestart: {
       method: "localHost.requestRestart",
       metadata: write(),

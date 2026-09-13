@@ -15,7 +15,6 @@ interface BrowserRequest {
 export interface LocalHostOperatorOptions {
   inspect(): LocalHostStatus;
   canControl(peerId: string, sessionId: string): boolean;
-  retryRuntime(): Promise<void>;
   requestRestart(): Promise<void>;
   now?(): number;
   browserTimeoutMs?: number;
@@ -125,10 +124,6 @@ export function createLocalHostOperator(options: LocalHostOperatorOptions) {
           )
             throw kernelError("conflict", "browser handoff changed during response");
           settle(id, opened);
-        },
-        async retryRuntime() {
-          assertPeer();
-          await options.retryRuntime();
         },
         async requestRestart() {
           assertPeer();

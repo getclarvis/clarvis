@@ -3,15 +3,15 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
-import { loadEnv, ValidationError } from "@clarvis/capability";
+import { loadEnv } from "@clarvis/capability";
 import { runtimeLoopPolicy } from "../../src/runtime/loop-policy.ts";
-import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "@clarvis/memory/capability";
 import {
   createGuestLoopExecutor,
   type GuestExecutionBridge,
   type RuntimeCheckpointInput,
 } from "../../src/index.ts";
 import { startGuestMain } from "../../src/runtime/guest-main.ts";
+import { isGuestControlInput } from "../../src/runtime/guest-loop-executor.ts";
 
 const directories: string[] = [];
 
@@ -21,6 +21,47 @@ afterEach(async () => {
 });
 
 describe("runtime guest loop", () => {
+  it("closes steer and compact control payloads without rejecting supported message content", () => {
+    for (const valid of [
+      { kind: "steer", message: { content: "continue" } },
+      { kind: "steer", message: { id: "message-1", content: [{ type: "text", text: "hi" }] } },
+      {
+        kind: "steer",
+        message: {
+          content: [
+            { type: "image", image: "aGVsbG8=", mediaType: "image/png" },
+            { type: "image", image: "aGVsbG8=" },
+          ],
+        },
+      },
+      { kind: "compact", request: {} },
+      { kind: "compact", request: { request: "preserve failures" } },
+    ]) {
+      expect(isGuestControlInput(valid)).toBe(true);
+    }
+    for (const invalid of [
+      null,
+      [],
+      { kind: "other" },
+      { kind: "steer", message: null },
+      { kind: "steer", message: { content: 1 } },
+      { kind: "steer", message: { content: [null] } },
+      { kind: "steer", message: { content: [{ type: "text" }] } },
+      { kind: "steer", message: { content: [{ type: "image", image: 1 }] } },
+      {
+        kind: "steer",
+        message: { content: [{ type: "image", image: "aGVsbG8=", mediaType: 1 }] },
+      },
+      { kind: "steer", message: { content: "hi", id: 1 } },
+      { kind: "steer", message: { content: "hi", extra: true } },
+      { kind: "compact", request: null },
+      { kind: "compact", request: { request: 1 } },
+      { kind: "compact", request: { request: "now", extra: true } },
+    ]) {
+      expect(isGuestControlInput(invalid)).toBe(false);
+    }
+  });
+
   it("rejects malformed interrupt payloads and reports not_running for unknown runs", async () => {
     const executor = createGuestLoopExecutor();
     await expect(executor.interruptTool?.("missing", {})).rejects.toMatchObject({
@@ -65,58 +106,85 @@ describe("runtime guest loop", () => {
     ).rejects.toThrow("guest run envelope is invalid");
   });
 
-  it.each([{ servers: {} }, { servers: [null] }])(
-    "retains request validation and closes MCP hooks for malformed servers %j",
-    async ({ servers }) => {
-      const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-invalid-mcp-"));
-      directories.push(root);
-      const executor = createGuestLoopExecutor({
-        workspaceRoot: root,
-        scratchRoot: join(root, "scratch"),
-      });
-      const bridge: GuestExecutionBridge = {
-        model: async () => {
-          throw new Error("invalid requests must not call the model");
+  it.each([
+    "hostCapabilities",
+    "skillCatalog",
+    "skillBootstraps",
+    "memory",
+    "hooks",
+    "workflow",
+    "goal",
+    "parentRunId",
+    "outputBudgets",
+  ])("rejects obsolete feature envelope field %s", async (field) => {
+    const executor = createGuestLoopExecutor();
+    await expect(
+      executor.execute(
+        "invalid-feature-envelope",
+        {
+          owner: "owner",
+          modelLeaseId: "lease",
+          rawBody: {},
+          toolPolicy: { enabled: true, confine: true, maxGrant: "exec" },
+          loopPolicy: runtimeLoopPolicy(loadEnv({})),
+          [field]: field === "outputBudgets" ? [] : {},
         },
-        capability: async () => {
-          throw new Error("invalid requests must not invoke hooks");
+        {
+          model: async () => {
+            throw new Error("must not call model");
+          },
+          capability: async () => {
+            throw new Error("must not invoke host authority");
+          },
+          event: async () => {},
+          checkpoint: async () => {},
         },
-        event: async () => undefined,
-        checkpoint: async () => undefined,
-      };
-      const signal = new AbortController().signal;
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("guest run envelope is invalid");
+  });
+
+  it.each(["plans", "memory", "task", "skill", "guard_mode", "guard_judge"])(
+    "rejects obsolete feature request field %s before execution",
+    async (field) => {
+      const executor = createGuestLoopExecutor();
       await expect(
         executor.execute(
-          "invalid-mcp",
+          "invalid-feature-request",
           {
             owner: "owner",
             modelLeaseId: "lease",
-            toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-            loopPolicy: runtimeLoopPolicy(loadEnv({})),
             rawBody: {
-              execution_id: "invalid-mcp",
-              servers,
+              execution_id: "invalid-feature-request",
               messages: [{ role: "user", content: "hi" }],
-              providers: [{ name: "test", kind: "anthropic" }],
-              profiles: [{ name: "solo", model: "test/model", tools: [], iteration_limit: 3 }],
+              servers: [],
+              profiles: [{ name: "solo", model: "main/model", tools: [] }],
+              providers: [
+                {
+                  name: "main",
+                  kind: "openai-compatible",
+                  base_url: "http://runtime-model-broker.invalid",
+                },
+              ],
               entry: "solo",
-              budget: { on_exceed: "stop", total_token_limit: 1_000 },
+              [field]: "forged",
             },
+            toolPolicy: { enabled: true, confine: true, maxGrant: "exec" },
+            loopPolicy: runtimeLoopPolicy(loadEnv({})),
           },
-          bridge,
-          signal,
+          {
+            model: async () => {
+              throw new Error("must not call model");
+            },
+            capability: async () => {
+              throw new Error("must not invoke host authority");
+            },
+            event: async () => {},
+            checkpoint: async () => {},
+          },
+          new AbortController().signal,
         ),
-      ).rejects.toBeInstanceOf(ValidationError);
-      await expect(
-        executor.callHookMcp!(
-          "invalid-mcp",
-          { server: "review", tool: "inspect", input: {} },
-          signal,
-        ),
-      ).rejects.toMatchObject({ code: "not_found" });
-      await expect(executor.elicitMcp!("invalid-mcp", {}, signal)).rejects.toMatchObject({
-        code: "not_found",
-      });
+      ).rejects.toThrow("guest run envelope is invalid");
     },
   );
 
@@ -201,7 +269,13 @@ describe("runtime guest loop", () => {
             servers: [],
             profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
             entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
+            providers: [
+              {
+                name: "anthropic",
+                kind: "openai-compatible",
+                base_url: "http://runtime-model-broker.invalid",
+              },
+            ],
             budget: { on_exceed: "stop", total_token_limit: 1_000 },
           },
         },
@@ -222,411 +296,6 @@ describe("runtime guest loop", () => {
     } finally {
       delete process.env.CLARVIS_RUNTIME_HOST_SECRET;
     }
-  });
-
-  it("accepts the host plans request block and resolves its canonical provider", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-plans-"));
-    directories.push(root);
-    const workspaceRoot = join(root, "workspace");
-    await mkdir(workspaceRoot);
-    const calls: unknown[] = [];
-    const bridge: GuestExecutionBridge = {
-      async model() {
-        return {
-          events: [
-            {
-              type: "result",
-              result: {
-                text: "planned",
-                usage: {
-                  input_tokens: 1,
-                  output_tokens: 1,
-                  cached_tokens: 0,
-                  cache_write_tokens: 0,
-                },
-              },
-            },
-          ],
-          outputBytes: 64,
-        };
-      },
-      async capability(_callId, request) {
-        calls.push(request);
-        if (
-          request.method === "runtime.plans" &&
-          (request.arguments as { operation?: unknown }).operation === "resolve"
-        ) {
-          return { key: "markdown:host", providerKind: "markdown" };
-        }
-        throw new Error("unexpected host capability");
-      },
-      async event() {},
-      async checkpoint() {},
-    };
-
-    await expect(
-      createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
-        "exec_guest_plans",
-        {
-          owner: "owner",
-          modelLeaseId: "lease",
-          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-          loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          hostCapabilities: ["plans"],
-          rawBody: {
-            execution_id: "exec_guest_plans",
-            messages: [{ role: "user", content: "hi" }],
-            servers: [],
-            profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            budget: { on_exceed: "stop", total_token_limit: 1_000 },
-            plans: { mode: "on", retention: "keep", pending_task_nudges: 3 },
-          },
-        },
-        bridge,
-        new AbortController().signal,
-      ),
-    ).resolves.toMatchObject({
-      executionId: "exec_guest_plans",
-      response: { status: "completed", result: "planned" },
-    });
-    expect(calls).toEqual([
-      {
-        method: "runtime.plans",
-        revision: "v2",
-        arguments: { operation: "resolve" },
-      },
-    ]);
-  });
-
-  it("accepts use_skills and loads an admitted skill through host authority", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-skills-"));
-    directories.push(root);
-    const workspaceRoot = join(root, "workspace");
-    await mkdir(workspaceRoot);
-    const capabilityCalls: unknown[] = [];
-    const modelBodies: unknown[] = [];
-    const guestEvents: unknown[] = [];
-    let markFirstModelStarted!: () => void;
-    const firstModelStarted = new Promise<void>((resolve) => {
-      markFirstModelStarted = resolve;
-    });
-    let releaseFirstModel!: () => void;
-    const firstModelGate = new Promise<void>((resolve) => {
-      releaseFirstModel = resolve;
-    });
-    let modelCall = 0;
-    const bridge: GuestExecutionBridge = {
-      async model(_callId, request) {
-        modelCall += 1;
-        modelBodies.push(request.body);
-        if (modelCall === 1) {
-          markFirstModelStarted();
-          await firstModelGate;
-        }
-        return {
-          events: [
-            {
-              type: "result",
-              result:
-                modelCall === 1
-                  ? {
-                      toolCalls: [
-                        {
-                          id: "invalid-load-skill",
-                          name: "load_skill",
-                          arguments: {
-                            name: "container-review",
-                            resource: "/dev/null? no resource omitted actually.",
-                          },
-                        },
-                      ],
-                      usage: {
-                        input_tokens: 1,
-                        output_tokens: 1,
-                        cached_tokens: 0,
-                        cache_write_tokens: 0,
-                      },
-                    }
-                  : modelCall === 2
-                    ? {
-                        toolCalls: [
-                          {
-                            id: "load-skill-1",
-                            name: "load_skill",
-                            arguments: { name: "container-review" },
-                          },
-                        ],
-                        usage: {
-                          input_tokens: 1,
-                          output_tokens: 1,
-                          cached_tokens: 0,
-                          cache_write_tokens: 0,
-                        },
-                      }
-                    : {
-                        text: "skill loaded",
-                        usage: {
-                          input_tokens: 1,
-                          output_tokens: 1,
-                          cached_tokens: 0,
-                          cache_write_tokens: 0,
-                        },
-                      },
-            },
-          ],
-          outputBytes: 128,
-        };
-      },
-      async capability(_callId, request) {
-        capabilityCalls.push(request);
-        return {
-          kind: "skill",
-          name: "container-review",
-          text: "Skill 'container-review' — Review a container change\n\nInspect the proposed change.",
-        };
-      },
-      async event(event) {
-        guestEvents.push(event);
-      },
-      async checkpoint() {},
-    };
-
-    const executor = createGuestLoopExecutor({
-      workspaceRoot,
-      scratchRoot: join(root, "scratch"),
-    });
-    const run = executor.execute(
-      "exec_guest_skills",
-      {
-        owner: "owner",
-        modelLeaseId: "lease",
-        toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-        loopPolicy: runtimeLoopPolicy(loadEnv({})),
-        hostCapabilities: ["skills"],
-        skillCatalog: [
-          {
-            name: "container-review",
-            description: "Review a container change",
-            scope: "user",
-            source: "runtime",
-          },
-        ],
-        rawBody: {
-          execution_id: "exec_guest_skills",
-          messages: [{ role: "user", content: "review it" }],
-          servers: [],
-          profiles: [
-            {
-              name: "solo",
-              model: "anthropic/x",
-              tools: [],
-              grants: ["use_skills"],
-              iteration_limit: 4,
-            },
-          ],
-          entry: "solo",
-          providers: [{ name: "anthropic", kind: "anthropic" }],
-          budget: { on_exceed: "stop", total_token_limit: 1_000 },
-        },
-      },
-      bridge,
-      new AbortController().signal,
-    );
-    await firstModelStarted;
-    await expect(
-      executor.steer!(
-        "exec_guest_skills",
-        {
-          kind: "steer",
-          message: { content: "Also verify the strict contract." },
-          unexpected: true,
-        },
-        new AbortController().signal,
-      ),
-    ).rejects.toMatchObject({ code: "invalid_request" });
-    await expect(
-      executor.steer!(
-        "exec_guest_skills",
-        { kind: "compact", request: {} },
-        new AbortController().signal,
-      ),
-    ).resolves.toBeUndefined();
-    const steer = executor.steer!(
-      "exec_guest_skills",
-      { kind: "steer", message: { content: "Also verify the strict contract." } },
-      new AbortController().signal,
-    );
-    const stillQueued = Promise.resolve("queued");
-    await expect(Promise.race([steer.then(() => "drained"), stillQueued])).resolves.toBe("queued");
-    releaseFirstModel();
-    await expect(steer).resolves.toBeUndefined();
-    await expect(run).resolves.toMatchObject({
-      executionId: "exec_guest_skills",
-      response: { status: "completed", result: "skill loaded" },
-    });
-    await expect(
-      executor.steer!(
-        "exec_guest_skills",
-        { kind: "steer", message: { content: "late" } },
-        new AbortController().signal,
-      ),
-    ).rejects.toMatchObject({ code: "not_found" });
-    expect(JSON.stringify(modelBodies[0])).toContain(
-      "remote; load by name; resources via read_skill_resource",
-    );
-    expect(JSON.stringify(modelBodies[0])).not.toContain("/runtime/skills/");
-    expect(JSON.stringify(modelBodies[1])).toContain("Also verify the strict contract.");
-    expect(JSON.stringify(modelBodies[1])).toContain("InputValidationError");
-    expect(JSON.stringify(guestEvents)).toContain("compaction_started");
-    const firstTools = (
-      modelBodies[0] as { tools: Array<{ wireName: string; inputSchema: unknown }> }
-    ).tools;
-    expect(firstTools.map((tool) => tool.wireName)).toContain("read_skill_resource");
-    expect(firstTools.find((tool) => tool.wireName === "load_skill")?.inputSchema).toMatchObject({
-      additionalProperties: false,
-      required: ["name"],
-      properties: { name: expect.anything() },
-    });
-    expect(
-      Object.keys(
-        (
-          firstTools.find((tool) => tool.wireName === "load_skill")?.inputSchema as {
-            properties: Record<string, unknown>;
-          }
-        ).properties,
-      ),
-    ).toEqual(["name"]);
-    expect(capabilityCalls).toEqual([
-      {
-        method: "runtime.skills",
-        revision: "v2",
-        arguments: { operation: "load", name: "container-review" },
-      },
-    ]);
-  });
-
-  it("projects host memory into the prompt, proxies tools, and finalizes after host persistence", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-memory-"));
-    directories.push(root);
-    const workspaceRoot = join(root, "workspace");
-    await mkdir(workspaceRoot);
-    const capabilityCalls: unknown[] = [];
-    const modelBodies: unknown[] = [];
-    let tracePersisted = false;
-    let modelCall = 0;
-    const bridge: GuestExecutionBridge = {
-      async model(_callId, request) {
-        modelCall += 1;
-        modelBodies.push(request.body);
-        return {
-          events: [
-            {
-              type: "result",
-              result:
-                modelCall === 1
-                  ? {
-                      toolCalls: [
-                        {
-                          id: "read-memory-1",
-                          name: "read_memory",
-                          arguments: { paths: ["PROFILE.md"] },
-                        },
-                      ],
-                      usage: {
-                        input_tokens: 1,
-                        output_tokens: 1,
-                        cached_tokens: 0,
-                        cache_write_tokens: 0,
-                      },
-                    }
-                  : {
-                      text: "memory loaded",
-                      usage: {
-                        input_tokens: 1,
-                        output_tokens: 1,
-                        cached_tokens: 0,
-                        cache_write_tokens: 0,
-                      },
-                    },
-            },
-          ],
-          outputBytes: 128,
-        };
-      },
-      async capability(_callId, request) {
-        capabilityCalls.push(request);
-        const args = request.arguments as { operation?: unknown };
-        if (args.operation === "seed") return { kind: "seed", value: "HOST_MEMORY_SEED" };
-        if (args.operation === "call") {
-          return { kind: "result", text: "HOST_MEMORY_DOCUMENT", isError: false };
-        }
-        if (args.operation === "finish") {
-          expect(tracePersisted).toBe(true);
-          return { kind: "finished" };
-        }
-        throw new Error("unexpected memory operation");
-      },
-      async event(event) {
-        if (
-          typeof event === "object" &&
-          event !== null &&
-          (event as { channel?: unknown }).channel === "trace_record"
-        ) {
-          tracePersisted = true;
-        }
-      },
-      async checkpoint() {},
-    };
-
-    await expect(
-      createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
-        "exec_guest_memory",
-        {
-          owner: "owner",
-          modelLeaseId: "lease",
-          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-          loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          hostCapabilities: ["memory"],
-          memory: {
-            providerDigest: "a".repeat(64),
-            seedMaxChars: 6_000,
-            readTools: ["list_memories", "read_memory", "grep_memories", "query_memories"],
-          },
-          rawBody: {
-            execution_id: "exec_guest_memory",
-            messages: [{ role: "user", content: "use memory" }],
-            servers: [],
-            profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            memory: "on",
-            budget: { on_exceed: "stop", total_token_limit: 1_000 },
-          },
-        },
-        bridge,
-        new AbortController().signal,
-      ),
-    ).resolves.toMatchObject({
-      executionId: "exec_guest_memory",
-      response: { status: "completed", result: "memory loaded" },
-    });
-    expect(JSON.stringify(modelBodies[0])).toContain("HOST_MEMORY_SEED");
-    expect(JSON.stringify(modelBodies[0])).toContain("## Memory");
-    expect(JSON.stringify(modelBodies[0])).toContain("read_memory");
-    expect(JSON.stringify(modelBodies[0])).not.toContain("write_memory");
-    const guestToolNames = (modelBodies[0] as { tools: Array<{ wireName: string }> }).tools.map(
-      (tool) => tool.wireName,
-    );
-    for (const name of MEMORY_READ_TOOL_NAMES) expect(guestToolNames).toContain(name);
-    for (const name of MEMORY_WRITE_TOOL_NAMES) expect(guestToolNames).not.toContain(name);
-    expect(JSON.stringify(modelBodies[1])).toContain("HOST_MEMORY_DOCUMENT");
-    expect(
-      capabilityCalls.map(
-        (request) => (request as { arguments: { operation: string } }).arguments.operation,
-      ),
-    ).toEqual(["seed", "call", "finish"]);
   });
 
   it("routes ask_user through the exact host capability and refuses a missing model result", async () => {
@@ -690,7 +359,13 @@ describe("runtime guest loop", () => {
         },
       ],
       entry: "solo",
-      providers: [{ name: "anthropic", kind: "anthropic" }],
+      providers: [
+        {
+          name: "anthropic",
+          kind: "openai-compatible",
+          base_url: "http://runtime-model-broker.invalid",
+        },
+      ],
       budget: { on_exceed: "stop", total_token_limit: 1_000 },
     };
     await expect(
@@ -780,7 +455,13 @@ describe("runtime guest loop", () => {
                 },
               ],
               entry: "solo",
-              providers: [{ name: "anthropic", kind: "anthropic" }],
+              providers: [
+                {
+                  name: "anthropic",
+                  kind: "openai-compatible",
+                  base_url: "http://runtime-model-broker.invalid",
+                },
+              ],
               budget: { on_exceed: "stop", total_token_limit: 1000 },
             },
           },
@@ -790,116 +471,4 @@ describe("runtime guest loop", () => {
       ).rejects.toThrow("guest run envelope is invalid");
     },
   );
-
-  it("executes guest shell and exposes a granted service through host authority", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-preview-"));
-    directories.push(root);
-    const workspaceRoot = join(root, "workspace");
-    await mkdir(workspaceRoot);
-    let modelCall = 0;
-    const modelBodies: unknown[] = [];
-    const capabilities: unknown[] = [];
-    const events: unknown[] = [];
-    const bridge: GuestExecutionBridge = {
-      async model(_callId, request) {
-        modelCall += 1;
-        modelBodies.push(request.body);
-        const result =
-          modelCall === 1
-            ? {
-                toolCalls: [
-                  {
-                    id: "shell-1",
-                    name: "shell",
-                    arguments: { command: "printf guest-shell" },
-                  },
-                ],
-              }
-            : modelCall === 2
-              ? {
-                  toolCalls: [
-                    {
-                      id: "preview-1",
-                      name: "expose_port",
-                      arguments: { port: 9090 },
-                    },
-                  ],
-                }
-              : { text: "preview ready" };
-        return {
-          events: [
-            {
-              type: "result",
-              result: {
-                ...result,
-                usage: {
-                  input_tokens: 1,
-                  output_tokens: 1,
-                  cached_tokens: 0,
-                  cache_write_tokens: 0,
-                },
-              },
-            },
-          ],
-          outputBytes: 128,
-        };
-      },
-      async capability(_callId, request) {
-        capabilities.push(request);
-        if (request.method !== "runtime.preview") throw new Error("unexpected capability");
-        return {
-          guestPort: 9090,
-          host: "127.0.0.1",
-          hostPort: 19_090,
-          protocol: "http",
-          url: "http://127.0.0.1:19090/",
-        };
-      },
-      async event(event) {
-        events.push(event);
-      },
-      async checkpoint() {},
-    };
-    await expect(
-      createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
-        "exec_guest_preview",
-        {
-          owner: "owner",
-          modelLeaseId: "lease",
-          toolPolicy: { enabled: true, maxGrant: "exec", confine: true },
-          loopPolicy: runtimeLoopPolicy(loadEnv({})),
-          rawBody: {
-            execution_id: "exec_guest_preview",
-            messages: [{ role: "user", content: "start a service" }],
-            servers: [],
-            profiles: [
-              {
-                name: "solo",
-                model: "anthropic/x",
-                tools: [],
-                grants: ["run_commands"],
-                iteration_limit: 5,
-              },
-            ],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            budget: { on_exceed: "stop", total_token_limit: 1_000 },
-          },
-        },
-        bridge,
-        new AbortController().signal,
-      ),
-    ).resolves.toMatchObject({
-      response: { status: "completed", result: "preview ready" },
-    });
-    expect(capabilities).toEqual([
-      {
-        method: "runtime.preview",
-        revision: "v1",
-        arguments: { port: 9090 },
-      },
-    ]);
-    expect(JSON.stringify(modelBodies)).toContain("mise x <tool>@<version>");
-    expect(events.some((event) => JSON.stringify(event).includes("guard"))).toBe(false);
-  });
 });

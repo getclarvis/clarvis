@@ -33,13 +33,18 @@ import type { AgentsStore } from "../adapters/agents-store.ts";
 import type { SettingsAdapter } from "../adapters/settings.ts";
 import { resolveContextWindow } from "../adapters/settings.ts";
 import type { ModelsCatalog } from "../adapters/models-catalog.ts";
-import type { ClarvisDirs } from "../adapters/agents.ts";
+import { isContainerCompatibleProfile, type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-safety.ts";
+import {
+  deriveIsolation,
+  deriveRunControls,
+  effectiveRunIsolation,
+} from "../adapters/execution-safety.ts";
+import { isContainerIsolation } from "../features/run/isolation.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -245,7 +250,7 @@ export interface AppRunControls {
     name: string;
     source?: string;
   } | null>;
-  /** Latest one-shot Docker-to-Sandbox fallback explanation from the host. */
+  /** Latest bounded runtime preparation or failure notice from the host. */
   runtimePlacementNotice?: Accessor<{ sequence: number; message: string } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
@@ -313,8 +318,6 @@ export interface AppBackend {
   storage: StorageService;
   /** Host-reported execution placement and effective container policy. */
   runtime?: () => RuntimeStatus | undefined;
-  /** Clear a session-latched Docker fallback; the next run starts it lazily again. */
-  retryRuntime: () => void;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
 }
 
@@ -370,6 +373,8 @@ export function App(props: AppProps): JSX.Element {
     if (notice === undefined || notice === null || notice.sequence === shownMcpStartupNotice)
       return;
     shownMcpStartupNotice = notice.sequence;
+    props.fleet.settings.version();
+    if (isContainerIsolation(deriveIsolation(props.fleet.settings.effective()))) return;
     notify(
       `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
         .map((server) => `${server.name}: ${server.reason}`)
@@ -981,7 +986,6 @@ export function App(props: AppProps): JSX.Element {
     refreshAgentProfiles: props.fleet.refreshAgentProfiles,
     keys: props.fleet.keys,
     reconnectBackend: props.backend.reconnect,
-    retryRuntime: props.backend.retryRuntime,
     env,
     preview: props.fleet.preview,
     platform: props.shell.platform,
@@ -1126,7 +1130,6 @@ export function App(props: AppProps): JSX.Element {
       review: runControls().guardMode,
       sandboxUnavailable:
         effectiveIsolation() === "sandbox" &&
-        props.backend.runtime?.()?.lifecycle !== "fallback" &&
         appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
@@ -1191,15 +1194,17 @@ export function App(props: AppProps): JSX.Element {
 
   const skillMentionProvider = createSkillMentionProvider({
     skills: () =>
-      commands
-        .entries()
-        .filter((entry) => entry.namespace === "skills")
-        .map((entry) => ({
-          name:
-            entry.slashes[0]?.replace(/^\//, "") ||
-            (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
-          description: entry.desc,
-        })),
+      isContainerIsolation(runControls().isolation)
+        ? []
+        : commands
+            .entries()
+            .filter((entry) => entry.namespace === "skills")
+            .map((entry) => ({
+              name:
+                entry.slashes[0]?.replace(/^\//, "") ||
+                (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
+              description: entry.desc,
+            })),
   });
 
   const argHintProviders = (): CompleteProvider[] =>
@@ -1563,7 +1568,11 @@ export function App(props: AppProps): JSX.Element {
               enabled={lifecycle.active}
               list={props.fleet.agents.list}
               active={props.fleet.agents.active}
-              isRunnable={(name) => props.fleet.agents.isRunnable(name)}
+              isRunnable={(name) =>
+                props.fleet.agents.isRunnable(name) &&
+                (!isContainerIsolation(runControls().isolation) ||
+                  isContainerCompatibleProfile(name, props.fleet.agents.list()))
+              }
               defaults={() => {
                 const global = props.fleet.code.read("global").agent?.default;
                 const workspace = props.fleet.code.read("workspace").agent?.default;
@@ -1625,7 +1634,6 @@ export function App(props: AppProps): JSX.Element {
                 settings={props.fleet.settings}
                 runActive={props.run.active}
                 active={lifecycle.active}
-                retryRuntime={props.backend.retryRuntime}
                 notify={notify}
                 onClose={() => overlays.dismissTop()}
                 onApplied={() => overlays.dismissTop()}

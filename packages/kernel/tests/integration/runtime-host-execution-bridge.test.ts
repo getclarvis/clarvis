@@ -16,7 +16,7 @@ afterEach(async () => {
     await rm(directory, { recursive: true, force: true });
 });
 
-describe("runtime host execution bridge", () => {
+describe("runtime core authority broker", () => {
   it("validates identities and payloads before dispatching any authority", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-host-bridge-"));
     directories.push(root);
@@ -45,7 +45,7 @@ describe("runtime host execution bridge", () => {
       maxResultBytes: 128,
       grants: [
         {
-          method: "memory.read",
+          method: "runtime.elicit",
           revision: "v1",
           idempotent: true,
           validateArguments: () => true,
@@ -97,9 +97,17 @@ describe("runtime host execution bridge", () => {
         ...base,
         method: "host.capability",
         callId: "call-1",
-        payload: { method: "memory.read", revision: "v1", arguments: {} },
+        payload: { method: "runtime.elicit", revision: "v1", arguments: {} },
       }),
     ).resolves.toEqual({ ok: true });
+    await expect(
+      handlers["host.capability"]!({
+        ...base,
+        method: "host.capability",
+        callId: "call-feature",
+        payload: { method: "memory.read", revision: "v1", arguments: {} },
+      }),
+    ).rejects.toMatchObject({ code: "unauthorized" });
     await expect(
       handlers["host.event"]!({
         method: "host.event",

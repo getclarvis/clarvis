@@ -32,7 +32,6 @@ export function IsolationPicker(props: {
   settings: SettingsAdapter;
   runActive: () => boolean;
   active: Accessor<boolean>;
-  retryRuntime: () => void;
   notify: (message: string, tone?: "info" | "success" | "warn" | "error") => void;
   onClose: () => void;
   onApplied: () => void;
@@ -45,7 +44,6 @@ export function IsolationPicker(props: {
     applying = true;
     try {
       const effective = await applyIsolation(isolation, props.settings);
-      if (isContainerIsolation(isolation)) props.retryRuntime();
       props.notify(
         `isolation: ${effective} (global)${props.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
         "success",
@@ -114,14 +112,14 @@ export function IsolationPicker(props: {
                   {choice.value === "host"
                     ? `${glyph("warning")} No containment boundary.`
                     : isContainerIsolation(choice.value)
-                      ? "The managed Linux runtime is resolved lazily."
+                      ? "Core tools only; the managed Linux runtime is resolved lazily."
                       : "Uses the native host sandbox."}
                 </text>
                 <text fg={tokens.muted}>
                   {choice.value === "docker"
-                    ? "If Docker cannot start, Clarvis reports it and requires Sandbox for this session."
+                    ? "If Docker cannot start, Clarvis reports the failure and does not run natively."
                     : choice.value === "podman"
-                      ? "If Podman cannot start, Clarvis reports it and does not fall back to Sandbox."
+                      ? "If Podman cannot start, Clarvis reports the failure and does not run natively."
                       : choice.detail}
                 </text>
               </>

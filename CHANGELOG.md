@@ -15,14 +15,23 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   Podman. Native Sandbox details stay in Settings > Sandbox. Run Controls and `Ctrl+S` share the
   same writer; a workspace cannot choose a runtime.
 - Simple Podman isolation now accepts `{ "backend": "podman" }` with the same product-owned limits
-  and outbound default as Docker. Podman has no recipe and no Sandbox fallback: an operational
-  startup failure fails closed.
+  and outbound default as Docker. Podman has no recipe; both Container engines fail closed.
 - `./dev-install.sh` now builds the local `clarvis-runtime:development` image for each of Docker and
   Podman that is installed. A missing engine is skipped, so a Docker-only or Podman-only host still
   completes; native mode remains available when neither engine is present.
 
 ### Changed
 
+- **Breaking:** Docker/Podman Isolation is now a host-enforced **Core tools only** placement. It runs
+  shell/file tools without Command Review; exposes no Skills, MCPs, Hooks, Plugin contributions,
+  Plans, Memory, Tasks, Workflows, Goal, host configuration or preview; keeps provider configuration
+  and credentials in the host model broker; and never falls back to Sandbox/Host. Explicit
+  incompatible requests fail before engine/model work. The workspace remains writable and outbound
+  may reach remote/host/LAN destinations, so the guarantee is integrity of the host outside the
+  selected workspace rather than workspace or network hermeticity. Complete `.clarvis`/`.agents`
+  roots are opaque and Git metadata is read-only; engines that would materialize an absent nested
+  protected target refuse workspaces missing `.clarvis`, `.agents` or `.git` before container
+  creation. Private runtime protocol revision 14 requires rebuilt Docker/Podman images.
 - The interactive TUI now recovers from high process RSS locally and silently. Sustained pressure
   drops reconstructible completed tool bodies; the 2 GiB limit only blocks expensive new admissions.
   `/recover-memory`, the memory banner, and host rebuilds are gone. The footer may show
@@ -47,6 +56,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   independent startup, discovery and reconnection without changing run scratch paths.
 - Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
   the development runtime image, instead of reporting an invalid image id after a successful build.
+- Runtime carrier and final-image builds bypass OCI builder caches so a current-source or release
+  build cannot silently retain an older compiled guest through a stale cross-stage `COPY` layer.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
 
 ## [0.2.0] - 2026-09-07

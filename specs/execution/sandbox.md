@@ -468,23 +468,23 @@ Production: `packages/code/src/views/config/SandboxConfigPanel.tsx` (`SandboxCon
 `packages/code/tests/integration/run-controls-render.test.tsx`, and
 `packages/code/tests/integration/doctor.test.ts`.
 
-### 4.6 Required fallback for simple Docker isolation
+### 4.6 Native Sandbox and Container are separate placements
 
-When effective runtime settings select Docker with `fallback: "sandbox"`, the kernel materializes a
-native Sandbox policy even if the authored Sandbox block is absent, disabled or optional. It keeps
-custom filesystem, network, environment and toolchain tuning but forces `enabled: true` and
-`availability: "required"`. The lazy runtime coordinator probes that policy after an operational
-Docker startup failure and before executing the run; an unavailable native backend fails closed
-instead of degrading to bare host execution. Image-integrity, policy and handshake failures do not
-enter this fallback, and a failure after guest execution starts is never replayed. Simple Podman
-selection has no `fallback` field and never enters this path; an operational Podman startup failure
-fails closed.
+Native Sandbox keeps the integrated host composition described in this document. Docker and Podman
+instead select the core-only Container contract in
+[isolated-agent-runtime.md](../hosts/isolated-agent-runtime.md): no Command Review, extensions or
+host-backed capability crosses that boundary, while the selected workspace remains writable and Git
+metadata is read-only. Selecting Container does not strengthen, enable or otherwise rewrite the
+persisted native Sandbox policy.
 
-Production: `packages/kernel/src/sandbox/policy.ts` (`effectiveSandboxSettings`),
-`packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`), and
-`packages/kernel/src/file-kernel.ts` (`assertFallbackSandbox`). Tests:
-`packages/kernel/tests/integration/sandbox-policy.test.ts` and
-`packages/kernel/tests/unit/lazy-runtime.test.ts`.
+Neither engine falls back to Sandbox or Host. Engine acquisition, image, policy, mount, handshake or
+guest failures are returned from the selected Container placement. The operator must explicitly
+select Sandbox/Host and begin a new run; a Container run is never replayed natively.
+
+Production: `packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`) and
+`packages/kernel/src/sandbox/policy.ts` (`effectiveSandboxSettings`). Tests:
+`packages/kernel/tests/unit/lazy-runtime.test.ts` and
+`packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 ## 5. Invariants
 
@@ -641,14 +641,13 @@ macOS canary packs a local package fixture outside the sandbox, then requires np
 execute, and materialize its output inside Seatbelt with `network: "none"`. Network enforcement is
 proved independently by INV-S14, so public-registry latency cannot fail this package-execution gate.
 
-**INV-S16 — Docker fallback means required native Sandbox, never direct host execution.** A disabled
-or optional authored Sandbox is strengthened for a Docker selection. The operational fallback path
-must prove that backend available before it invokes native execution; failure remains fail-closed.
+**INV-S16 — Container selection never changes or invokes native Sandbox.** Docker/Podman failure is
+reported in place. Only a new explicit operator selection can place a later run in native Sandbox.
 
-- Production: `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts` and
-  `runFallback` in `packages/kernel/src/runtime/lazy-runtime.ts`.
-- Test: `packages/kernel/tests/integration/sandbox-policy.test.ts` and
-  `packages/kernel/tests/unit/lazy-runtime.test.ts`.
+- Production: `createLazyRuntimeCoordinator` in `packages/kernel/src/runtime/lazy-runtime.ts` and
+  `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts`.
+- Test: `packages/kernel/tests/unit/lazy-runtime.test.ts` and
+  `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
   `SEATBELT_SYSTEM_READ_FILTERS`, `SEATBELT_SYSTEM_METADATA_FILTERS`) and
@@ -670,8 +669,7 @@ must prove that backend available before it invokes native execution; failure re
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
 | Required backend unavailable | `ToolError("io_error")`; no command spawn |
-| Docker fails before guest execution and fallback Sandbox is available | One visible placement notice; this session latches required native Sandbox for later runs |
-| Docker fails before guest execution and fallback Sandbox is unavailable | `RuntimeLaunchError("operational_failure")`; no bare-host execution |
+| Docker or Podman fails before guest execution | Original bounded Container failure; no native execution, latch or replay |
 | Relative, broad, canonically broad, or workspace-containing mechanism path | `ToolError("invalid_input")` |
 | Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned |
 | Missing configured extra path | Omitted from resolved roots and surfaced unavailable in inspection |

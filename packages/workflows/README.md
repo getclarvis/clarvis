@@ -41,14 +41,13 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-For container placement, the kernel keeps the native manager scheduler, supervision registry and
-shared subtree output budget together in the guest. The host still assembles each leader's canonical
-request, owns provider credentials and persists workflow progress. `LeaderRequestAssembler` may be
-asynchronous and receives both parent and child run identities. The root entry also exposes
-`workflowContextOf`, `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` as trusted host
-composition seams; lookup recognizes factory-created capability objects by identity, not guest names.
-The [isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns this projection and its
-fail-closed behavior.
+Workflow scheduling is composed only for native Host/Sandbox. Core-only Docker/Podman has no
+manager scheduler, workflow registry, leader request, shared workflow budget or host bridge.
+Selecting `admiral`, carrying the `workflow` grant or preparing Workflow execution fails before
+manager-path selection, engine or model work and recommends Sandbox or Host. The root entry still
+exposes `workflowContextOf`, `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for
+trusted native host composition. The
+[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns this fail-fast boundary.
 
 In ascending order of how much structure they assume:
 

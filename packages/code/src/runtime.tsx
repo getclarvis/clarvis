@@ -1598,7 +1598,6 @@ async function runApp(
       return runClient.storage;
     },
     runtime: runtimeStatus,
-    retryRuntime: () => workspaceManager.retryRuntime(),
     reconnect: reconnectBackend,
   };
 

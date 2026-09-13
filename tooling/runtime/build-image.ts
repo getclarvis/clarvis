@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const RUNTIME_PROTOCOL_REVISION = "13";
+export const RUNTIME_PROTOCOL_REVISION = "14";
 export const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
 export const RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY =
   "ghcr.io/getclarvis/clarvis-runtime-candidate-artifact";
@@ -67,6 +67,7 @@ function finalImageBuildArgs(
   assertLocalImage(outputImage);
   return [
     "build",
+    "--no-cache",
     "--file",
     "Containerfile.runtime",
     "--build-arg",
@@ -110,6 +111,7 @@ export function runtimeArtifactBuildArgs(
   assertLocalImage(outputImage);
   return [
     "build",
+    "--no-cache",
     "--file",
     "Containerfile.runtime-development",
     "--build-arg",

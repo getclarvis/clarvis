@@ -823,8 +823,10 @@ catalog case).
   exact provider/model admission, so raw snake-case settings never masquerade as the adapter's
   resolved configuration. Production: `hostModelBroker` in
   [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
-  Test: model override and real OpenAI-compatible SDK endpoint/authentication cases in
-  [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+  Test: exact profile/vision model admission and host-stream behavior in
+  [`runtime-model-stream.test.ts`](../../packages/kernel/tests/integration/runtime-model-stream.test.ts),
+  plus provider-routing-only guest projection in
+  [`local-docker-runtime.test.ts`](../../packages/kernel/tests/unit/local-docker-runtime.test.ts).
   The wire boundary is owned by [isolated-agent-runtime](isolated-agent-runtime.md).
 
 ## 8. Open questions

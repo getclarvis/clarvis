@@ -157,15 +157,19 @@ interface ProtoRunHandle extends ProtocolRunHandle {
   settleObservation?(consumed: Promise<unknown>): Promise<void>;
 }
 
-function toStartParams(input: StartRunInput, executionId: string): StartRunParams {
+function toStartParams(
+  input: StartRunInput,
+  executionId: string,
+  container: boolean,
+): StartRunParams {
   return {
     execution_id: executionId,
     messages: input.messages ?? [],
     ...(input.profile ? { agent: input.profile } : {}),
     ...(input.continueFrom ? { continue_from: input.continueFrom } : {}),
     ...(input.sessionId ? { session_id: input.sessionId } : {}),
-    ...(input.guardMode ? { guard_mode: input.guardMode } : {}),
-    ...(input.guardJudge
+    ...(!container && input.guardMode ? { guard_mode: input.guardMode } : {}),
+    ...(!container && input.guardJudge
       ? {
           guard_judge: {
             prompt: input.guardJudge.prompt,
@@ -179,10 +183,10 @@ function toStartParams(input: StartRunInput, executionId: string): StartRunParam
           },
         }
       : {}),
-    ...(input.memory ? { memory: input.memory } : {}),
-    ...(input.plans ? { plans: input.plans } : {}),
-    ...(input.task ? { task: input.task } : {}),
-    ...(input.skill ? { skill: input.skill } : {}),
+    ...(!container && input.memory ? { memory: input.memory } : {}),
+    ...(!container && input.plans ? { plans: input.plans } : {}),
+    ...(!container && input.task ? { task: input.task } : {}),
+    ...(!container && input.skill ? { skill: input.skill } : {}),
   };
 }
 
@@ -255,11 +259,14 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     const agents = resolveAgentsByName(prefetched ?? (await requireKernel().config.listAgents()));
     return agents.map((a) => ({
       name: a.name,
+      scope: a.scope,
       ...(a.description !== undefined ? { description: a.description } : {}),
       ...(a.model !== undefined ? { model: a.model } : {}),
       ...(a.can_spawn !== undefined ? { canSpawn: a.can_spawn } : {}),
+      ...(a.default_spawn !== undefined ? { defaultSpawn: a.default_spawn } : {}),
       ...(a.budget !== undefined ? { budget: a.budget } : {}),
       ...(a.grants !== undefined ? { grants: a.grants } : {}),
+      ...(a.tools !== undefined ? { tools: a.tools } : {}),
     }));
   }
 
@@ -456,7 +463,16 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   function startRun(input: StartRunInput): RunHandle {
     const executionId = input.executionId ?? "exec_" + crypto.randomUUID();
     const current = requireKernel();
-    const params = toStartParams(input, executionId);
+    const container = current.capabilities?.runtime?.kind === "container";
+    if (container && input.task !== undefined)
+      throw new Error(
+        "Tasks is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
+      );
+    if (container && input.skill !== undefined)
+      throw new Error(
+        "Skills is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
+      );
+    const params = toStartParams(input, executionId, container);
     if (current.hosting === undefined) return driveHandle(executionId, current.runs.start(params));
     const service = current.hosting;
     const handle =

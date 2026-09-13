@@ -1074,9 +1074,8 @@ version after one gutter column. It is a pure projection of `HeaderPlan`, comput
 #### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
 
 App's `effectiveRunIsolation` projection uses host-reported native placement during an active run,
-and keeps configured next-run preferences
-when the native host is idle. A latched sandbox fallback and container status retain their existing
-projection. Production: `effectiveRunIsolation` in
+and keeps configured next-run preferences when the native host is idle. Container status retains the
+selected Docker/Podman projection; no native fallback state exists. Production: `effectiveRunIsolation` in
 [execution-safety.ts](../../packages/code/src/adapters/execution-safety.ts), used by `App`.
 Test: `shows active host placement without replacing the idle next-run preference` in
 [execution-safety.test.ts](../../packages/code/tests/unit/execution-safety.test.ts).

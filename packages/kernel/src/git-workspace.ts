@@ -3,8 +3,9 @@ import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
+import type { RuntimeProtectedMount } from "./runtime/types.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +15,47 @@ export interface GitWorkspaceContext {
   worktreeRoot: string;
   gitDir?: string;
   commonDir?: string;
+}
+
+/** Project host-discovered Git metadata onto the exact read-only runtime mounts. */
+export function runtimeGitMetadataMounts(
+  context: GitWorkspaceContext,
+): readonly RuntimeProtectedMount[] {
+  if (context.gitDir === undefined || context.commonDir === undefined) return [];
+  if (context.workspace.kind !== "external_worktree") {
+    return [
+      {
+        source: context.gitDir,
+        target: "/workspace/.git",
+        type: "directory",
+        readOnly: true,
+      },
+    ];
+  }
+  return [
+    {
+      source: join(context.worktreeRoot, ".git"),
+      target: "/workspace/.git",
+      type: "file",
+      readOnly: true,
+    },
+    {
+      source: context.gitDir,
+      target: context.gitDir,
+      type: "directory",
+      readOnly: true,
+    },
+    ...(context.commonDir === context.gitDir
+      ? []
+      : [
+          {
+            source: context.commonDir,
+            target: context.commonDir,
+            type: "directory" as const,
+            readOnly: true as const,
+          },
+        ]),
+  ];
 }
 
 function digest(value: string): string {

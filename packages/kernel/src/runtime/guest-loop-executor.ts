@@ -11,47 +11,23 @@ import {
   type SteerMessage,
 } from "@clarvis/capability";
 import { buildExecuteRunDeps } from "@clarvis/loop/host";
-import { executeRun, type ExecuteRunArgs } from "@clarvis/loop";
+import { executeRun } from "@clarvis/loop";
 import type { StoredExecution, TraceStore } from "@clarvis/trace";
 import type { GuestExecutionBridge, GuestRunExecutor } from "./execution-worker.ts";
-import { createRuntimePreviewCapability } from "./preview-capability.ts";
-import { createGuestPlanFactory } from "./plan-bridge.ts";
-import { createPlansCapability } from "@clarvis/plan/capability";
-import { plansSettingsSpec } from "@clarvis/plan/settings";
-import { memorySettingsSpec } from "@clarvis/memory/settings";
-import { createTasksCapability } from "@clarvis/tasks/capability";
-import { tasksSettingsSpec } from "@clarvis/tasks/settings";
-import { createGuestTaskResolver } from "./tasks-bridge.ts";
-import { createGuestHooksCapabilities, type RuntimeHooksDescriptor } from "./hooks-bridge.ts";
-import {
-  createGuestWorkflowCapabilities,
-  type RuntimeWorkflowDescriptor,
-} from "./workflows-bridge.ts";
-import { createLeaderOutputBudgetCapability, createWorkflowLedger } from "@clarvis/workflows";
-import {
-  createGuestSkillsCapability,
-  type RuntimeSkillBootstrapEntry,
-  type RuntimeSkillCatalogEntry,
-} from "./skills-bridge.ts";
-import { createGuestMemoryCapability, validRuntimeMemoryDescriptor } from "./memory-bridge.ts";
-import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-queue.ts";
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
 import { createToolInterruptChannel, TOOL_EXECUTION_ID } from "../runs/tool-interrupt-channel.ts";
 import type { ToolInterruptChannel } from "../runs/tool-interrupt-channel.ts";
-import { createGuestHookMcpCaller } from "./hook-mcp.ts";
-import { createGuestMcpConnections } from "./remote-mcp.ts";
 import { validRuntimeToolPolicy, type RuntimeToolPolicy } from "./tool-policy.ts";
-import {
-  createGuestGoalCapability,
-  validRuntimeGoalDescriptor,
-  type RuntimeGoalDescriptor,
-} from "./goal-bridge.ts";
 import {
   guestLoopEnvironment,
   validRuntimeLoopPolicy,
   type RuntimeLoopPolicy,
 } from "./loop-policy.ts";
+import {
+  CONTAINER_CORE_GRANTS,
+  CONTAINER_FORBIDDEN_REQUEST_FIELDS,
+} from "./container-core-policy.ts";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
@@ -60,24 +36,12 @@ interface GuestRunEnvelope {
   readonly toolPolicy: RuntimeToolPolicy;
   readonly loopPolicy: RuntimeLoopPolicy;
   readonly priorExecution?: StoredExecution;
-  readonly hostCapabilities?: readonly string[];
-  readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
-  readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
-  readonly memory?: MemoryRuntimeDescriptor;
-  readonly hooks?: RuntimeHooksDescriptor;
-  readonly workflow?: RuntimeWorkflowDescriptor;
-  readonly goal?: RuntimeGoalDescriptor;
-  readonly parentRunId?: string;
-  readonly outputBudgets?: ReadonlyArray<{ tokens: number | null; maxParallelSubagents: number }>;
 }
 
 interface GuestRunControl {
   readonly steer: SteerQueue;
   readonly compaction: CompactionQueue;
   readonly toolInterrupts: ToolInterruptChannel;
-  readonly hookCalls: AbortController;
-  callHookMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
-  elicitMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
 }
 
 type GuestControlInput =
@@ -132,7 +96,8 @@ function validCompactionRequest(value: unknown): value is CompactionRequest {
   );
 }
 
-function validControlInput(value: unknown): value is GuestControlInput {
+/** Validate the closed steer/compact payload accepted by a running guest. */
+export function isGuestControlInput(value: unknown): value is GuestControlInput {
   const input = record(value);
   if (input?.kind === "steer") {
     return exactKeys(input, ["kind", "message"]) && validSteerMessage(input.message);
@@ -200,15 +165,6 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
       "toolPolicy",
       "loopPolicy",
       "priorExecution",
-      "hostCapabilities",
-      "skillCatalog",
-      "skillBootstraps",
-      "memory",
-      "hooks",
-      "workflow",
-      "goal",
-      "parentRunId",
-      "outputBudgets",
     ]) ||
     typeof (value as GuestRunEnvelope).owner !== "string" ||
     typeof (value as GuestRunEnvelope).modelLeaseId !== "string" ||
@@ -218,19 +174,42 @@ function validEnvelope(value: unknown): value is GuestRunEnvelope {
   ) {
     return false;
   }
-  const envelope = value as GuestRunEnvelope;
+  const raw = record((value as GuestRunEnvelope).rawBody);
+  const profiles = raw?.profiles;
+  const providers = raw?.providers;
   return (
-    (envelope.hostCapabilities === undefined ||
-      (Array.isArray(envelope.hostCapabilities) &&
-        envelope.hostCapabilities.every((name) => typeof name === "string"))) &&
-    (envelope.goal === undefined
-      ? envelope.hostCapabilities?.includes("goal") !== true
-      : envelope.hostCapabilities?.includes("goal") === true &&
-        validRuntimeGoalDescriptor(envelope.goal, envelope.rawBody) &&
-        envelope.workflow === undefined &&
-        envelope.parentRunId === undefined) &&
-    (envelope.memory === undefined || validRuntimeMemoryDescriptor(envelope.memory)) &&
-    (envelope.memory === undefined || envelope.hostCapabilities?.includes("memory") === true)
+    raw !== undefined &&
+    CONTAINER_FORBIDDEN_REQUEST_FIELDS.every((key) => !(key in raw)) &&
+    Array.isArray(raw.servers) &&
+    raw.servers.length === 0 &&
+    Array.isArray(profiles) &&
+    profiles.every((candidate) => {
+      const profile = record(candidate);
+      return (
+        profile !== undefined &&
+        Array.isArray(profile.tools) &&
+        profile.tools.length === 0 &&
+        (profile.grants === undefined ||
+          (Array.isArray(profile.grants) &&
+            profile.grants.every(
+              (grant) =>
+                typeof grant === "string" &&
+                (CONTAINER_CORE_GRANTS as readonly string[]).includes(grant),
+            )))
+      );
+    }) &&
+    Array.isArray(providers) &&
+    providers.length > 0 &&
+    providers.every((candidate) => {
+      const provider = record(candidate);
+      return (
+        provider !== undefined &&
+        exactKeys(provider, ["name", "kind", "base_url"]) &&
+        typeof provider.name === "string" &&
+        provider.kind === "openai-compatible" &&
+        provider.base_url === "http://runtime-model-broker.invalid"
+      );
+    })
   );
 }
 
@@ -314,28 +293,14 @@ export function createGuestLoopExecutor(
   const workspaceRoot = options.workspaceRoot ?? "/workspace";
   const scratchRoot = options.scratchRoot ?? "/tmp/clarvis-runtime";
   const controls = new Map<string, GuestRunControl>();
-  const children = new Map<string, { parentRunId: string; args: ExecuteRunArgs }>();
   return {
     async execute(runId, envelope, bridge, signal) {
       if (!validEnvelope(envelope)) throw new Error("guest run envelope is invalid");
-      if (envelope.goal !== undefined && envelope.goal.binding.execution_id !== runId)
-        throw guestControlError("unauthorized", "guest goal execution identity mismatches");
-      const child = children.get(runId);
-      if (
-        envelope.parentRunId !== undefined &&
-        (child === undefined || child.parentRunId !== envelope.parentRunId)
-      ) {
-        throw guestControlError("unauthorized", "guest workflow child composition is not admitted");
-      }
-      if (child !== undefined && child.parentRunId !== envelope.parentRunId) {
-        throw guestControlError("unauthorized", "guest workflow parent identity mismatches");
-      }
       if (controls.has(runId)) throw guestControlError("conflict", "guest run already exists");
       const control: GuestRunControl = {
         steer: createSteerQueue(),
         compaction: createCompactionQueue(),
         toolInterrupts: createToolInterruptChannel(),
-        hookCalls: new AbortController(),
       };
       controls.set(runId, control);
       try {
@@ -346,25 +311,6 @@ export function createGuestLoopExecutor(
           eventTail = eventTail.then(() => bridge.event(event));
         };
         const env = guestLoopEnvironment(envelope.loopPolicy, envelope.toolPolicy);
-        const plans = envelope.hostCapabilities?.includes("plans")
-          ? createPlansCapability({
-              factory: createGuestPlanFactory(bridge, signal),
-              defaultPendingTaskNudges: env.CLARVIS_DEFAULT_PENDING_TASK_NUDGES,
-              defaultElicitWaitMs: env.CLARVIS_DEFAULT_ELICIT_WAIT_MS,
-              logger: NOOP_LOGGER,
-            })
-          : undefined;
-        const skills = envelope.hostCapabilities?.includes("skills")
-          ? createGuestSkillsCapability(
-              envelope.skillCatalog ?? [],
-              bridge,
-              envelope.skillBootstraps ?? [],
-            )
-          : undefined;
-        const memory = createGuestMemoryCapability(
-          envelope.hostCapabilities?.includes("memory") === true ? envelope.memory : undefined,
-          bridge,
-        );
         const built = await buildExecuteRunDeps({
           env,
           environment: {
@@ -378,100 +324,19 @@ export function createGuestLoopExecutor(
           builtins: { tools: envelope.toolPolicy.enabled, skills: false, hooks: false },
           resolveSecretNames: () => [],
           allowHostEscalation: false,
-          capabilities: [
-            ...(envelope.toolPolicy.enabled && envelope.toolPolicy.maxGrant === "exec"
-              ? [createRuntimePreviewCapability(bridge)]
-              : []),
-            ...(plans === undefined ? [] : [plans]),
-            ...(skills === undefined ? [] : [skills]),
-            memory,
-            ...(envelope.hooks === undefined
-              ? []
-              : createGuestHooksCapabilities(envelope.hooks, bridge)),
-            createTasksCapability({
-              ...(envelope.hostCapabilities?.includes("tasks") === true
-                ? { resolver: createGuestTaskResolver(bridge) }
-                : {}),
-            }),
-          ],
+          capabilities: [],
         });
-        built.deps.capabilityRegistry?.register(plansSettingsSpec);
-        built.deps.capabilityRegistry?.register(memorySettingsSpec);
-        built.deps.capabilityRegistry?.register(tasksSettingsSpec);
         built.deps.llm = guestModelProvider(runId, envelope.modelLeaseId, bridge);
-        const connections = createGuestMcpConnections({
-          local: built.deps.connections,
-          bridge,
-          signal,
-        });
-        built.deps.connections = connections;
-        control.elicitMcp = (input, signal) => connections.elicit(input, signal);
         built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
-        const extraCapabilities = [
-          ...(envelope.goal === undefined
-            ? []
-            : [
-                createGuestGoalCapability(
-                  envelope.goal,
-                  {
-                    ...bridge,
-                    async capability(...args) {
-                      await eventTail;
-                      return bridge.capability(...args);
-                    },
-                  },
-                  signal,
-                ),
-              ]),
-          ...(child?.args.capabilities ?? []),
-          ...(envelope.outputBudgets ?? []).map((budget) =>
-            createLeaderOutputBudgetCapability(
-              createWorkflowLedger(budget.tokens),
-              budget.maxParallelSubagents,
-            ),
-          ),
-          ...(envelope.workflow === undefined
-            ? []
-            : createGuestWorkflowCapabilities({
-                descriptor: envelope.workflow,
-                bridge,
-                runId,
-                owner: envelope.owner,
-                deps: built.deps,
-                signal,
-                enqueueEvent,
-                registerChild(childRunId, args) {
-                  if (children.has(childRunId) || controls.has(childRunId))
-                    throw new Error("duplicate guest workflow child");
-                  const admission = { parentRunId: runId, args };
-                  children.set(childRunId, admission);
-                  return () => {
-                    if (children.get(childRunId) === admission) children.delete(childRunId);
-                  };
-                },
-              })),
-        ];
         let sequence = 0;
         try {
-          const servers = record(envelope.rawBody)?.servers;
-          control.callHookMcp = createGuestHookMcpCaller({
-            servers: Array.isArray(servers) ? servers : [],
-            owner: envelope.owner,
-            connections: built.deps.connections,
-            signal: AbortSignal.any([signal, control.hookCalls.signal]),
-          });
           const outcome = await executeRun({
             rawBody: envelope.rawBody,
             owner: envelope.owner,
             deps: built.deps,
-            capabilities: extraCapabilities,
+            capabilities: [],
             externalSignal: signal,
-            steer:
-              child?.args.steer === undefined
-                ? control.steer
-                : {
-                    drain: () => [...control.steer.drain(), ...child.args.steer!.drain()],
-                  },
+            steer: control.steer,
             compaction: control.compaction,
             toolInterrupts: control.toolInterrupts,
             elicit: (params, opts) =>
@@ -485,7 +350,6 @@ export function createGuestLoopExecutor(
                 opts.signal,
               ) as ReturnType<NonNullable<Parameters<typeof executeRun>[0]["elicit"]>>,
             onEvent: (event) => {
-              child?.args.onEvent?.(event);
               enqueueEvent({ channel: "trace", event });
             },
             onCapabilityEvent: (event) => {
@@ -497,38 +361,18 @@ export function createGuestLoopExecutor(
           await bridge.checkpoint({ sequence, terminal: false, state: { outcome } });
           return outcome;
         } finally {
-          control.hookCalls.abort(new Error("guest run MCP hooks closed"));
           try {
             await eventTail;
           } finally {
-            try {
-              await connections.closeAll();
-            } finally {
-              await built.dispose();
-            }
+            await built.dispose();
           }
         }
       } finally {
-        control.hookCalls.abort(new Error("guest run MCP hooks closed"));
         control.steer.close();
         control.compaction.close();
         control.toolInterrupts.close();
         if (controls.get(runId) === control) controls.delete(runId);
       }
-    },
-    async callHookMcp(runId, input, signal) {
-      const control = controls.get(runId);
-      if (control?.callHookMcp === undefined) {
-        throw guestControlError("not_found", "run MCP hooks are unavailable");
-      }
-      return control.callHookMcp(input, signal);
-    },
-    async elicitMcp(runId, input, signal) {
-      const control = controls.get(runId);
-      if (control?.elicitMcp === undefined) {
-        throw guestControlError("not_found", "run MCP elicitation is unavailable");
-      }
-      return control.elicitMcp(input, signal);
     },
     async interruptTool(runId, payload) {
       const control = controls.get(runId);
@@ -552,7 +396,7 @@ export function createGuestLoopExecutor(
       if (control === undefined) {
         throw guestControlError("not_found", "run cannot be steered");
       }
-      if (!validControlInput(input)) {
+      if (!isGuestControlInput(input)) {
         throw guestControlError("invalid_request", "runtime control input is invalid");
       }
       if (input.kind === "compact") {

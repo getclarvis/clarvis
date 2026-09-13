@@ -172,7 +172,7 @@ Memory and plans do not use invented memory/plans grants. A skill itself never a
 Installing a plugin adds it to inventory. Activating it chooses its exact installation. A plugin
 reference is {scope: global|workspace, source: agents|clarvis, name}. builtin:default activates
 enabledPlugins and the four standard skill roots. Custom Extension Profiles are complete allow-lists;
-they do not inherit builtin:default's installed plugin or standalone skill selection.
+they do not inherit builtin:default's installed plugin or standalone skill selection. Container keeps Extensions inactive; use Sandbox/Host.
 
 The following GLOBAL definition assumes the exact global review-tools plugin and the global
 review-project standalone skill shown below have been authored or installed. Inventory them first;
@@ -232,6 +232,8 @@ entry still listed in the UI. CLARVIS_SKILLS_ENABLED=false or host opt-out also 
 
 ## MCP and lifecycle hooks
 
+Container has no MCP or Hooks; use Sandbox/Host.
+
 settings.mcpServers is a record keyed by server name, not an array. A stdio entry uses
 {type: stdio, command, args, env?, cwd?}; an HTTP/SSE entry uses {type: http|sse, url, headers?}.
 Declare env/header secret references using \${VAR}, bearer_token_env_var or env_http_headers, not
@@ -262,10 +264,11 @@ plugin contribution changes may still require /reconnect reload.
 
 ## Memory, plans, goals and tasks
 
+These capabilities are inactive in Container; explicit use fails before inference.
+
 - memory: {enabled: true} configures execution memory; model can select an indexer model. The host
   must compose memory, and a run's memory: off disables it. The wiki, provider and editorial policies
-  are separate. Use memory tools for wiki changes rather than editing indexes or queues. Container
-  agents currently receive host-mediated memory reads; post-run indexing stays on the host.
+  are separate. Use memory tools for wiki changes rather than editing indexes or queues.
 - plans: {mode: on|off|review, retention: keep|discard} controls planning. review adds human plan
   approval before execution. Plans are kept by default; do not delete them as routine cleanup.
   Memory providers are wiki, file (paths), mcp, executable or plugin; plan providers are markdown,
@@ -385,8 +388,8 @@ An ACK does not prove physical closure. Reattach observes the same execution/con
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
 exit policy. Local !commands cannot detach. Questions still need a person
 and retain timeouts; detach never approves them or restores authority on attachment.
-Detach, takeover, disconnect and conversation close revoke native and container allow_session command
-approvals. Reattach needs fresh approval when asked.
+Detach, takeover, disconnect and conversation close revoke native allow_session approvals.
+Container has no Command Review. Reattach needs fresh native approval when asked.
 Normal isolation remains. The host must stay alive: crashes/reboots do not checkpoint-resume runs.
 Reconcile uncertain results before retrying. For /loop, only an admitted run can continue;
 the recurring schedule ends with the TUI.
@@ -399,12 +402,11 @@ Reload creates a new host generation, not a continuation of a run after host res
 ## Runtime, guard, environment and diagnosis
 
 runtime is global-only: native, docker or podman. {backend: docker} or {backend: podman} uses
-product defaults. Use only qualified images/digests and supported network modes. none is offline;
-outbound permits public, host and LAN destinations; internet is currently refused. Docker may use
-native Sandbox fallback after an operational startup failure; Podman has no fallback or recipe and
-fails closed. Integrity/policy/recipe failures stay closed. A started run is never replayed on the
-host. Docker recipes use name, an absolute script under global runtime-recipes, and build network
-none|outbound; save the script then bind it.
+product defaults. Docker/Podman is Core tools only: no Extensions, host capabilities, preview or
+Command Review. Workspace files stay writable; .clarvis/.agents are opaque and Git metadata is read-only. none is
+offline; outbound may exfiltrate workspace content. Both engines fail closed without native fallback.
+Select Sandbox/Host for integrated features or Git mutation. Docker recipes use name, an absolute script under global
+runtime-recipes, and build network none|outbound; save the script then bind it.
 
 ${configurationExample("runtime")}
 
@@ -412,9 +414,9 @@ sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
 guard.mode is on, off or auto. off skips command review. With on or auto, denied_commands wins
 and a judge cannot override a deny. auto needs a resolved judge; otherwise follow human/deny
-policy. Isolation Sandbox require_escalated is a host_command ask (on=human, auto may judge).
-No allow_session. Containers reject it; Isolation Host is already unsandboxed. Never describe
-guard.off as turning off filesystem or container isolation.
+policy. Guard is Host/Sandbox-only; Container ignores inherited settings and rejects explicit
+on/auto or guard_judge. Sandbox require_escalated may ask or auto-review; Container denies it and Host
+is unsandboxed. guard.off never disables isolation.
 effect_review sets model, timeout_ms, max_retries and on_unsure. Only operator/global settings
 choose model or rollout (shadow|local|ci_retry). Workspace guidance grants no authority.
 Auto needs no prompt; unknown effects and incomplete or mismatched targets stay closed.

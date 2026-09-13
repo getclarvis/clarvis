@@ -7,6 +7,7 @@ import type {
 } from "./authority-brokers.ts";
 import type { RuntimeCheckpointInput } from "./runtime-checkpoints.ts";
 import { RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
+import { CONTAINER_CORE_CAPABILITY_METHODS } from "./container-core-policy.ts";
 
 /** Narrow host authority visible to guest execution code. */
 export interface GuestExecutionBridge {
@@ -35,10 +36,6 @@ export interface GuestRunExecutor {
   ): Promise<unknown>;
   steer?(runId: string, input: unknown, signal: AbortSignal): Promise<void>;
   interruptTool?(runId: string, payload: unknown): Promise<unknown>;
-  /** Execute a bounded hook call using only a live run's guest MCP configuration. */
-  callHookMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
-  /** Deliver remote elicitation without moving its authenticated connection into the guest. */
-  elicitMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
 }
 
 /** Serve the disposable worker over attached stdin/stdout without exposing a public kernel. */
@@ -62,11 +59,26 @@ export function serveExecutionWorker(options: {
           generation?: unknown;
           imageDigest?: unknown;
           runtimeProtocolRevision?: unknown;
+          capabilityMethods?: unknown;
         };
         if (
+          typeof request !== "object" ||
+          request === null ||
+          Object.keys(request).some(
+            (key) =>
+              ![
+                "generation",
+                "imageDigest",
+                "runtimeProtocolRevision",
+                "capabilityMethods",
+              ].includes(key),
+          ) ||
           request?.generation !== options.generation ||
           request?.imageDigest !== options.imageDigest ||
-          request?.runtimeProtocolRevision !== RUNTIME_PROTOCOL_REVISION
+          request?.runtimeProtocolRevision !== RUNTIME_PROTOCOL_REVISION ||
+          !Array.isArray(request.capabilityMethods) ||
+          request.capabilityMethods.length !== 1 ||
+          request.capabilityMethods[0] !== CONTAINER_CORE_CAPABILITY_METHODS[0]
         ) {
           throw Object.assign(new Error("bootstrap identity mismatch"), {
             code: "handshake_mismatch",
@@ -129,30 +141,6 @@ export function serveExecutionWorker(options: {
           throw Object.assign(new Error("run cannot interrupt a tool"), { code: "not_found" });
         }
         return options.executor.interruptTool(runId, payload);
-      },
-      "runtime.hook_mcp": async ({ runId, payload, signal }) => {
-        const run = runId === undefined ? undefined : runs.get(runId);
-        if (
-          runId === undefined ||
-          run === undefined ||
-          options.executor.callHookMcp === undefined
-        ) {
-          throw Object.assign(new Error("run MCP hooks are unavailable"), { code: "not_found" });
-        }
-        const combined = AbortSignal.any([run.signal, signal]);
-        combined.throwIfAborted();
-        return options.executor.callHookMcp(runId, payload, combined);
-      },
-      "runtime.mcp_elicit": async ({ runId, payload, signal }) => {
-        const run = runId === undefined ? undefined : runs.get(runId);
-        if (runId === undefined || run === undefined || options.executor.elicitMcp === undefined) {
-          throw Object.assign(new Error("run MCP elicitation is unavailable"), {
-            code: "not_found",
-          });
-        }
-        const combined = AbortSignal.any([run.signal, signal]);
-        combined.throwIfAborted();
-        return options.executor.elicitMcp(runId, payload, combined);
       },
       "runtime.cancel": async ({ runId }) => {
         if (runId === undefined)

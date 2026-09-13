@@ -336,7 +336,10 @@ function budgetFrom(fm: Record<string, unknown>): AgentSummary["budget"] {
 /** Project a stored {@link AgentRecord} into the list-projection {@link AgentSummary}. */
 function recordToSummary(r: AgentRecord): AgentSummary {
   const grants = strArray(r.frontmatter.grants);
+  const tools = strArray(r.frontmatter.tools);
   const canSpawn = strArray(r.frontmatter.can_spawn);
+  const defaultSpawn =
+    typeof r.frontmatter.default_spawn === "string" ? r.frontmatter.default_spawn : undefined;
   const budget = budgetFrom(r.frontmatter);
   return {
     name: r.name,
@@ -345,7 +348,9 @@ function recordToSummary(r: AgentRecord): AgentSummary {
     ...(r.description !== undefined ? { description: r.description } : {}),
     ...(r.plugin !== undefined ? { plugin: r.plugin } : {}),
     ...(grants !== undefined ? { grants } : {}),
+    ...(tools !== undefined ? { tools } : {}),
     ...(canSpawn !== undefined ? { can_spawn: canSpawn } : {}),
+    ...(defaultSpawn !== undefined ? { default_spawn: defaultSpawn } : {}),
     ...(budget !== undefined ? { budget } : {}),
     ...(r.overlay !== undefined ? { overlay: r.overlay } : {}),
   };

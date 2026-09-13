@@ -18,8 +18,6 @@ export const HOST_EXECUTION_METHODS = [
   "runtime.start",
   "runtime.steer",
   "runtime.interrupt_tool",
-  "runtime.hook_mcp",
-  "runtime.mcp_elicit",
   "runtime.cancel",
   "runtime.shutdown",
 ] as const;

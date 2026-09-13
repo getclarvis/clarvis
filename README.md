@@ -105,21 +105,21 @@ Essential controls:
 Other shortcuts depend on the terminal keyboard profile and appear in the footer and `/help`; the
 README does not duplicate a keymap that the application generates dynamically.
 
-Isolation and command review are independent. Settings > Isolation, Run Controls, and `Ctrl+S`
-share the same global Host/Sandbox/Docker/Podman writer. Docker or Podman starts only when the
-first run needs it; the simple TUI choice uses product-owned limits and ordinary outbound
-networking. Docker falls back to a required native Sandbox after an operational startup failure;
-Podman fails closed if the engine cannot start. Image-integrity, policy, recipe, and
-guest-handshake failures remain fail-closed. Docker Desktop and Colima satisfy the same Docker
-Engine contract on macOS.
+Settings > Isolation, Run Controls, and `Ctrl+S` share the same global
+Host/Sandbox/Docker/Podman writer. Docker or Podman starts only when the first run needs it; the
+simple TUI choice uses product-owned limits and ordinary outbound networking. Both Container
+placements are **Core tools only**: they run without Command Review, extensions or host-backed
+capabilities. Any admission, engine, image, policy, recipe, mount or guest-handshake failure remains
+in Container; Clarvis never replays it in Sandbox/Host. Docker Desktop and Colima satisfy the same
+Docker Engine contract on macOS.
 
 An isolated container mounts the already-selected workspace read-write at `/workspace`, so guest
 changes appear on the host immediately. Start Clarvis in a Git worktree when you want that mount to
-be a separate checkout; Clarvis does not commit, merge, or remove it. The guest has no engine socket,
-and Clarvis-owned workspace control paths are overlaid read-only, but ordinary project files remain
-writable. Agents with command access can install missing toolchains through `mise`; Docker retains
-that tool cache for the same workspace and image across sessions. Guest services are not broadly
-published: the `expose_port` tool creates a bounded loopback-only host URL when requested.
+be a separate checkout; Clarvis does not commit, merge, or remove it. Complete workspace `.clarvis`
+and `.agents` roots are replaced by empty read-only masks. Git metadata is mounted read-only, so
+status/diff/log/show remain available but staging or committing requires Sandbox/Host. The guest has
+no engine socket, host shell, credentials or port-preview bridge. Agents with command access can
+install missing toolchains through the private engine-owned `/mise` cache.
 
 ## Common commands
 
@@ -162,9 +162,10 @@ isolation is a complete security boundary:
 - Docker or Podman isolation leaves the selected workspace writable and enables ordinary outbound
   networking by default. A guest can therefore modify that checkout and transmit readable workspace
   content or reach host/LAN services; use `network: "none"` when the run must be offline;
-- Container isolation keeps model credentials, host skill paths, Plans, and Memory stores behind
-  narrow host bridges, but anything deliberately committed or copied into the mounted workspace is
-  guest-readable;
+- Container isolation keeps provider configuration/credentials on the host and exposes no Skills,
+  MCPs, Hooks, Plugins, Plans, Memory, Tasks, Workflows, Goal, configuration or preview bridge. It
+  protects the host outside the selected workspace; it does not protect workspace contents or
+  prevent outbound remote effects;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and

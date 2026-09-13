@@ -30,6 +30,18 @@ than an Extension Profile domain object. (`skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `HostRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
+Extension Profile selection remains persisted and effective for Host/Sandbox, but all of its Plugin
+and standalone-Skill contributions are inactive in core-only Container. The Container assembler
+uses the operator-only settings projection, does not include Extension Profile fingerprint/revision
+in generation identity and admits no Plugin Agent. A profile can remain selected without blocking a
+core run because registration/selection is not an explicit request to use each contribution.
+
+Production: `ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
+`runtimeSelection` in `packages/kernel/src/file-kernel.ts`, and `admitContainerCoreRun` in
+`packages/kernel/src/runs/prepare-run.ts`. Test:
+`packages/kernel/tests/unit/container-core-policy.test.ts` and
+`packages/kernel/tests/unit/lazy-runtime.test.ts`.
+
 ## 2. Surface
 
 `@clarvis/protocol` publishes the complete transport-neutral surface in

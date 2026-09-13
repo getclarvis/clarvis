@@ -11,7 +11,6 @@ import {
 } from "../../src/index.ts";
 
 import { miseCacheIdentity } from "../../src/runtime/container-mise-cache.ts";
-import { guestWorkspacePath } from "../../src/runtime/container-policy.ts";
 
 const digest = `sha256:${"b".repeat(64)}`;
 const spec: RuntimeLaunchSpec = {
@@ -25,11 +24,31 @@ const spec: RuntimeLaunchSpec = {
     kind: "external_worktree",
   },
   workspaceRoot: "/work/tree",
-  readOnlyWorkspacePaths: ["/work/tree/.clarvis/memory"],
-  gitCommonDir: "/repo/.git",
+  controlRootMasks: [
+    {
+      source: "/private/masks/clarvis",
+      target: "/workspace/.clarvis",
+      type: "directory",
+      readOnly: true,
+    },
+    {
+      source: "/private/masks/agents",
+      target: "/workspace/.agents",
+      type: "directory",
+      readOnly: true,
+    },
+  ],
+  gitMetadataMounts: [
+    { source: "/work/tree/.git", target: "/workspace/.git", type: "file", readOnly: true },
+    {
+      source: "/repo/.git/worktrees/feature",
+      target: "/repo/.git/worktrees/feature",
+      type: "directory",
+      readOnly: true,
+    },
+    { source: "/repo/.git", target: "/repo/.git", type: "directory", readOnly: true },
+  ],
   imageDigest: digest,
-  configurationRevision: "config-1",
-  extensionRevision: "extensions-1",
   network: "none",
   limits: {
     cpuCount: 1,
@@ -38,7 +57,7 @@ const spec: RuntimeLaunchSpec = {
     outputBytes: 1024,
     storageBytes: 2 * 1024 * 1024,
   },
-  capabilityMethods: ["memory.search"],
+  capabilityMethods: ["runtime.elicit"],
 };
 
 function fakeControl(
@@ -146,21 +165,14 @@ function fakeControl(
                     Destination: "/workspace",
                     RW: true,
                   },
-                  {
-                    Type: "bind",
-                    Source: runtimeSpec.readOnlyWorkspacePaths[0],
-                    Destination: guestWorkspacePath(
-                      runtimeSpec,
-                      runtimeSpec.readOnlyWorkspacePaths[0]!,
-                    ),
-                    RW: false,
-                  },
-                  {
-                    Type: "bind",
-                    Source: runtimeSpec.gitCommonDir,
-                    Destination: runtimeSpec.gitCommonDir,
-                    RW: true,
-                  },
+                  ...[...runtimeSpec.controlRootMasks, ...runtimeSpec.gitMetadataMounts].map(
+                    (mount) => ({
+                      Type: "bind",
+                      Source: mount.source,
+                      Destination: mount.target,
+                      RW: false,
+                    }),
+                  ),
                 ],
               };
               overrides.effective?.(value);
@@ -197,8 +209,6 @@ function fakeControl(
               runtimeProtocolRevision: overrides.protocolRevision ?? RUNTIME_PROTOCOL_REVISION,
             })),
           "runtime.start": async ({ runId }) => ({ runId, status: "done" }),
-          "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
-          "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -318,6 +328,32 @@ describe("Podman runtime backend", () => {
     },
   );
 
+  it.each(["missing", "writable", "additional"] as const)(
+    "refuses %s protected metadata mounts before attachment",
+    async (drift) => {
+      const fake = fakeControl({
+        effective: (inspection) => {
+          const mounts = inspection.Mounts as Array<Record<string, unknown>>;
+          const git = mounts.find((mount) => mount.Destination === "/repo/.git")!;
+          if (drift === "missing") mounts.splice(mounts.indexOf(git), 1);
+          if (drift === "writable") git.RW = true;
+          if (drift === "additional")
+            mounts.push({
+              Type: "bind",
+              Source: "/host/extra",
+              Destination: "/workspace/extra",
+              RW: false,
+            });
+        },
+      });
+      const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+      fake.close();
+    },
+  );
+
   it.each(["EffectiveCaps", "BoundingCaps"])("rejects widened or missing %s", async (field) => {
     for (const value of [["CAP_SYS_ADMIN"], undefined]) {
       const fake = fakeControl({
@@ -391,18 +427,15 @@ describe("Podman runtime backend", () => {
       `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true,relabel=shared`,
     );
     expect(fake.calls.find((args) => args[0] === "create")).toContain(
-      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,ro=true,relabel=shared",
+      "type=bind,source=/private/masks/clarvis,target=/workspace/.clarvis,ro=true,relabel=shared",
     );
     expect(fake.calls.find((args) => args[0] === "create")).toContain(
-      "type=bind,source=/repo/.git,target=/repo/.git,rw=true,relabel=shared",
+      "type=bind,source=/repo/.git,target=/repo/.git,ro=true,relabel=shared",
     );
     await expect(session.startRun("run-1", {})).resolves.toEqual({
       runId: "run-1",
       status: "done",
     });
-    const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
-    await expect(session.callHookMcp("run-1", call)).resolves.toEqual({ runId: "run-1", call });
-    await expect(session.elicitMcp("run-1", call)).resolves.toEqual({ runId: "run-1", call });
     await session.steer("run-1", { message: "next" });
     await session.cancel("run-1");
     await session.stop();
@@ -416,8 +449,19 @@ describe("Podman runtime backend", () => {
     const commaSpec: RuntimeLaunchSpec = {
       ...spec,
       workspaceRoot: "/work/tree,one",
-      readOnlyWorkspacePaths: ["/work/tree,one/.clarvis/memory,cache"],
-      gitCommonDir: "/repo,shared/.git",
+      controlRootMasks: [
+        { ...spec.controlRootMasks[0]!, source: "/private/masks,one/clarvis" },
+        spec.controlRootMasks[1]!,
+      ],
+      gitMetadataMounts: [
+        { ...spec.gitMetadataMounts[0]!, source: "/work/tree,one/.git" },
+        {
+          ...spec.gitMetadataMounts[1]!,
+          source: "/repo,shared/.git/worktrees/feature",
+          target: "/repo,shared/.git/worktrees/feature",
+        },
+        { ...spec.gitMetadataMounts[2]!, source: "/repo,shared/.git", target: "/repo,shared/.git" },
+      ],
     };
     const fake = fakeControl({}, commaSpec);
     const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
@@ -428,17 +472,17 @@ describe("Podman runtime backend", () => {
       'type=bind,"source=/work/tree,one",target=/workspace,rw=true,relabel=shared',
     );
     expect(create).toContain(
-      'type=bind,"source=/work/tree,one/.clarvis/memory,cache","target=/workspace/.clarvis/memory,cache",ro=true,relabel=shared',
+      'type=bind,"source=/private/masks,one/clarvis",target=/workspace/.clarvis,ro=true,relabel=shared',
     );
     expect(create).toContain(
-      'type=bind,"source=/repo,shared/.git","target=/repo,shared/.git",rw=true,relabel=shared',
+      'type=bind,"source=/repo,shared/.git","target=/repo,shared/.git",ro=true,relabel=shared',
     );
     await session.stop();
     fake.close();
   });
 
-  it("refuses an image built for another private runtime protocol", async () => {
-    const fake = fakeControl({ protocolRevision: "999" });
+  it("refuses an image built for the previous private runtime protocol", async () => {
+    const fake = fakeControl({ protocolRevision: "13" });
     const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
     await backend.inspect();
     await expect(backend.start(spec)).rejects.toMatchObject({ code: "handshake_mismatch" });

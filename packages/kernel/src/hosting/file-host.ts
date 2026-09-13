@@ -242,7 +242,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         restart_requested: restartRequested,
       }),
       canControl: (peerId, sessionId) => owned.controlsConversation(peerId, sessionId),
-      retryRuntime: () => exclusive(async () => kernel.retryRuntime()),
       requestRestart: () =>
         exclusive(async () => {
           restartRequested = true;

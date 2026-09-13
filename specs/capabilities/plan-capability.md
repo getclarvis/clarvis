@@ -696,18 +696,17 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-In isolated execution, the host independently enforces this retention path. Mutation authority is
-bound to a plan created through that run's grant or its host-selected continuation ref. Read/list
-do not rebind it. Deletion requires the current owner's durable completed run record and matching
-provider/id/final revisions, plus canonical `completed`/`discard` state. The host supplies CAS from
-its own read, so a concurrent retention change prevents deletion even if the guest omitted CAS.
-Production: `createHostPlansGrant` in
-[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createLocalContainerRuntime`
-in [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
-Test: foreign-plan, retained/active-plan, trace identity and CAS refusals in
-[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts), and
-real guest keep/discard lifecycle in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+Plans remain a native Host/Sandbox capability. Container projects inherited plan settings inactive
+and carries no plan descriptor, tool, lifecycle callback or retention bridge. An explicit `plans`
+request, continuation requiring a plan, or profile grant which depends on Plans fails before run
+reservation and inference with guidance to use Sandbox or Host; Container never executes a partial
+run with the plan silently omitted.
+
+Production: `admitContainerCoreRun` in
+[`prepare-run.ts`](../../packages/kernel/src/runs/prepare-run.ts) and `createGuestLoopExecutor` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
+[`container-core-policy.test.ts`](../../packages/kernel/tests/unit/container-core-policy.test.ts)
+and [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits

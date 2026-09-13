@@ -1,6 +1,6 @@
 import { createRuntimeSupervisor } from "./supervisor.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
-import type { RuntimeBackend, RuntimeInfo, RuntimeSession } from "./types.ts";
+import type { RuntimeBackend, RuntimeInfo, RuntimeLaunchSpec, RuntimeSession } from "./types.ts";
 import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
 
 /** Live isolated generation returned to the host composition layer. */
@@ -18,10 +18,8 @@ export async function launchIsolatedRuntime(options: {
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
   readonly workspaceRoot: string;
-  readonly readOnlyWorkspacePaths?: readonly string[];
-  readonly gitCommonDir?: string;
-  readonly configurationRevision: string;
-  readonly extensionRevision: string;
+  readonly controlRootMasks: RuntimeLaunchSpec["controlRootMasks"];
+  readonly gitMetadataMounts: RuntimeLaunchSpec["gitMetadataMounts"];
   readonly capabilityMethods: readonly string[];
   readonly backend: RuntimeBackend;
 }): Promise<IsolatedRuntimeController> {
@@ -32,11 +30,9 @@ export async function launchIsolatedRuntime(options: {
     project: options.project,
     workspace: options.workspace,
     workspaceRoot: options.workspaceRoot,
-    readOnlyWorkspacePaths: options.readOnlyWorkspacePaths ?? [],
-    ...(options.gitCommonDir === undefined ? {} : { gitCommonDir: options.gitCommonDir }),
+    controlRootMasks: options.controlRootMasks,
+    gitMetadataMounts: options.gitMetadataMounts,
     imageDigest: options.settings.image_digest,
-    configurationRevision: options.configurationRevision,
-    extensionRevision: options.extensionRevision,
     network: options.settings.network,
     limits: {
       cpuCount: options.settings.limits.cpu_count,

@@ -22,11 +22,31 @@ const spec: RuntimeLaunchSpec = {
     kind: "external_worktree",
   },
   workspaceRoot: "/work/tree",
-  readOnlyWorkspacePaths: ["/work/tree/.clarvis/memory", "/work/tree/.agents/skills"],
-  gitCommonDir: "/repo/.git",
+  controlRootMasks: [
+    {
+      source: "/private/masks/clarvis",
+      target: "/workspace/.clarvis",
+      type: "directory",
+      readOnly: true,
+    },
+    {
+      source: "/private/masks/agents",
+      target: "/workspace/.agents",
+      type: "directory",
+      readOnly: true,
+    },
+  ],
+  gitMetadataMounts: [
+    { source: "/work/tree/.git", target: "/workspace/.git", type: "file", readOnly: true },
+    {
+      source: "/repo/.git/worktrees/feature",
+      target: "/repo/.git/worktrees/feature",
+      type: "directory",
+      readOnly: true,
+    },
+    { source: "/repo/.git", target: "/repo/.git", type: "directory", readOnly: true },
+  ],
   imageDigest: digest,
-  configurationRevision: "config",
-  extensionRevision: "extensions",
   network: "none",
   limits: {
     cpuCount: 1,
@@ -168,22 +188,14 @@ function fixture(
                     Destination: "/workspace",
                     RW: true,
                   },
-                  ...runtimeSpec.readOnlyWorkspacePaths.map((path) => ({
-                    Type: "bind",
-                    Source: path,
-                    Destination: path.replace(runtimeSpec.workspaceRoot, "/workspace"),
-                    RW: false,
-                  })),
-                  ...(runtimeSpec.gitCommonDir === undefined
-                    ? []
-                    : [
-                        {
-                          Type: "bind",
-                          Source: runtimeSpec.gitCommonDir,
-                          Destination: runtimeSpec.gitCommonDir,
-                          RW: true,
-                        },
-                      ]),
+                  ...[...runtimeSpec.controlRootMasks, ...runtimeSpec.gitMetadataMounts].map(
+                    (mount) => ({
+                      Type: "bind",
+                      Source: mount.source,
+                      Destination: mount.target,
+                      RW: false,
+                    }),
+                  ),
                   {
                     Type: "volume",
                     Name: miseCacheName,
@@ -226,8 +238,6 @@ function fixture(
                 RUNTIME_PROTOCOL_REVISION,
             })),
           "runtime.start": async ({ runId }) => ({ runId }),
-          "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
-          "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -417,14 +427,11 @@ describe("Docker runtime backend", () => {
     const workspaceMount = create.find((value) => value.includes("target=/workspace"));
     expect(workspaceMount).toBe(`type=bind,source=${spec.workspaceRoot},target=/workspace`);
     expect(create).toContain(
-      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,readonly",
+      "type=bind,source=/private/masks/clarvis,target=/workspace/.clarvis,readonly",
     );
-    expect(create).toContain("type=bind,source=/repo/.git,target=/repo/.git");
+    expect(create).toContain("type=bind,source=/repo/.git,target=/repo/.git,readonly");
     const signal = new AbortController().signal;
     await expect(session.startRun("run", {}, signal)).resolves.toEqual({ runId: "run" });
-    const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
-    await expect(session.callHookMcp("run", call, signal)).resolves.toEqual({ runId: "run", call });
-    await expect(session.elicitMcp("run", call, signal)).resolves.toEqual({ runId: "run", call });
     await expect(session.steer("run", { text: "continue" }, signal)).resolves.toBeUndefined();
     await expect(session.cancel("run")).resolves.toBeUndefined();
     await session.stop();
@@ -439,8 +446,19 @@ describe("Docker runtime backend", () => {
     const commaSpec: RuntimeLaunchSpec = {
       ...spec,
       workspaceRoot: "/work/tree,one",
-      readOnlyWorkspacePaths: ["/work/tree,one/.clarvis/memory,cache"],
-      gitCommonDir: "/repo,shared/.git",
+      controlRootMasks: [
+        { ...spec.controlRootMasks[0]!, source: "/private/masks,one/clarvis" },
+        spec.controlRootMasks[1]!,
+      ],
+      gitMetadataMounts: [
+        { ...spec.gitMetadataMounts[0]!, source: "/work/tree,one/.git" },
+        {
+          ...spec.gitMetadataMounts[1]!,
+          source: "/repo,shared/.git/worktrees/feature",
+          target: "/repo,shared/.git/worktrees/feature",
+        },
+        { ...spec.gitMetadataMounts[2]!, source: "/repo,shared/.git", target: "/repo,shared/.git" },
+      ],
     };
     const fake = fixture({}, commaSpec);
     const backend = createDockerRuntimeBackend({ control: fake.control });
@@ -449,9 +467,11 @@ describe("Docker runtime backend", () => {
     const create = fake.calls.find((call) => call[0] === "create")!;
     expect(create).toContain('type=bind,"source=/work/tree,one",target=/workspace');
     expect(create).toContain(
-      'type=bind,"source=/work/tree,one/.clarvis/memory,cache","target=/workspace/.clarvis/memory,cache",readonly',
+      'type=bind,"source=/private/masks,one/clarvis",target=/workspace/.clarvis,readonly',
     );
-    expect(create).toContain('type=bind,"source=/repo,shared/.git","target=/repo,shared/.git"');
+    expect(create).toContain(
+      'type=bind,"source=/repo,shared/.git","target=/repo,shared/.git",readonly',
+    );
     await session.stop();
     fake.close();
   });
@@ -469,6 +489,32 @@ describe("Docker runtime backend", () => {
       await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
       expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
       expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    },
+  );
+
+  it.each(["missing", "writable", "additional"] as const)(
+    "refuses %s protected metadata mounts before attachment",
+    async (drift) => {
+      const fake = fixture({
+        effective: (inspection) => {
+          const mounts = inspection.Mounts as Array<Record<string, unknown>>;
+          const git = mounts.find((mount) => mount.Destination === "/repo/.git")!;
+          if (drift === "missing") mounts.splice(mounts.indexOf(git), 1);
+          if (drift === "writable") git.RW = true;
+          if (drift === "additional")
+            mounts.push({
+              Type: "bind",
+              Source: "/host/extra",
+              Destination: "/workspace/extra",
+              RW: false,
+            });
+        },
+      });
+      const backend = createDockerRuntimeBackend({ control: fake.control });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+      fake.close();
     },
   );
 

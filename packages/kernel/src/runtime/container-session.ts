@@ -12,7 +12,6 @@ import {
   type RuntimeSession,
 } from "./types.ts";
 import { RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
-import { createContainerRuntimePortPreview } from "./port-preview.ts";
 
 /** Engine-neutral lifecycle inputs after image and effective isolation-policy admission. */
 export interface ContainerSessionOptions {
@@ -139,8 +138,6 @@ export async function connectContainerSession(
         generation: spec.generation,
         imageDigest: spec.imageDigest,
         runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
-        configurationRevision: spec.configurationRevision,
-        extensionRevision: spec.extensionRevision,
         capabilityMethods: spec.capabilityMethods,
       },
       { signal },
@@ -174,7 +171,6 @@ export async function connectContainerSession(
     limits: spec.limits,
     lifecycle: "ready",
   };
-  const previews = createContainerRuntimePortPreview(options.control, name);
   return {
     info,
     get closed() {
@@ -182,14 +178,6 @@ export async function connectContainerSession(
     },
     startRun: (runId, envelope, signal) =>
       peer.request("runtime.start", { generation: spec.generation, runId }, envelope, {
-        ...(signal === undefined ? {} : { signal }),
-      }),
-    callHookMcp: (runId, call, signal) =>
-      peer.request("runtime.hook_mcp", { generation: spec.generation, runId }, call, {
-        ...(signal === undefined ? {} : { signal }),
-      }),
-    elicitMcp: (runId, input, signal) =>
-      peer.request("runtime.mcp_elicit", { generation: spec.generation, runId }, input, {
         ...(signal === undefined ? {} : { signal }),
       }),
     async steer(runId, input, signal) {
@@ -204,12 +192,10 @@ export async function connectContainerSession(
     async cancel(runId) {
       await peer.request("runtime.cancel", { generation: spec.generation, runId });
     },
-    exposePort: (guestPort, protocol, signal) => previews.expose(guestPort, protocol, signal),
     async stop() {
       if (removed) return;
       if (!stopped) {
         stopped = true;
-        await previews.close();
         peer.close();
         await options.control
           .run(["stop", "--time", String(stopSeconds), name])

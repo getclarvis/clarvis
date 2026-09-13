@@ -102,16 +102,21 @@ this document covers only the grant string that gates them.
 `process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts`).
 
-Container execution captures that host policy rather than introducing another default. The guest
-receives only enabled/confinement/ceiling fields and keeps the same shared per-agent grant checks;
-a host composition without the `tools` capability also disables guest tools. Preview additionally
-requires enabled tools, an `exec` ceiling and `run_commands` on the requesting profile.
-Production: `createLocalContainerRuntime` in
+Container execution is a closed core policy rather than generic grant parity. The guest receives the
+captured builtin-tool enablement/confinement/ceiling, but admission permits only `ask_user`,
+`read_workspace`, `edit_workspace` and `run_commands`. Unmodified `marshall`, `coder`, `explorer` and
+`planner` receive an explicit host-owned projection without their builtin `use_skills`; `admiral`,
+Plugin Agents and custom profiles carrying MCP tools or any non-core grant are refused. There is no
+preview grant or host capability executable in Container.
+
+Production: `admitContainerCoreRun` in
+[`prepare-run.ts`](../../packages/kernel/src/runs/prepare-run.ts),
+`createLocalContainerRuntime` in
 [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts), and
 `createGuestLoopExecutor` in
-[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts).
-Test: host/native/guest policy parity and tools opt-out in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
+[`container-core-policy.test.ts`](../../packages/kernel/tests/unit/container-core-policy.test.ts)
+and [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 

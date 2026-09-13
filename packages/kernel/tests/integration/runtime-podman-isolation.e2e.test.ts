@@ -40,10 +40,15 @@ test.skipIf(!enabled)(
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, "podman-isolation-"));
-    const protectedRoot = join(root, "protected");
-    await mkdir(protectedRoot);
+    const masks = await mkdtemp(join(buildRoot, "podman-masks-"));
+    for (const name of ["clarvis", "agents"]) await mkdir(join(masks, name));
+    const initialized = Bun.spawnSync(["git", "init", "--quiet", root]);
+    if (initialized.exitCode !== 0) throw new Error("Git fixture initialization failed");
+    await mkdir(join(root, ".clarvis", "future"), { recursive: true });
+    await mkdir(join(root, ".agents", "future"), { recursive: true });
     await writeFile(join(root, "existing"), "initial", { mode: 0o644 });
-    await writeFile(join(protectedRoot, "proof"), "protected");
+    await writeFile(join(root, ".clarvis", "future", "proof"), "clarvis-secret");
+    await writeFile(join(root, ".agents", "future", "proof"), "agents-secret");
     const ownerId = randomUUID();
     const caches = new Set<string>();
     const sessions: RuntimeSession[] = [];
@@ -74,12 +79,31 @@ test.skipIf(!enabled)(
             kind: "primary",
           },
           workspaceRoot: root,
-          readOnlyWorkspacePaths: [protectedRoot],
+          controlRootMasks: [
+            {
+              source: join(masks, "clarvis"),
+              target: "/workspace/.clarvis",
+              type: "directory",
+              readOnly: true,
+            },
+            {
+              source: join(masks, "agents"),
+              target: "/workspace/.agents",
+              type: "directory",
+              readOnly: true,
+            },
+          ],
+          gitMetadataMounts: [
+            {
+              source: join(root, ".git"),
+              target: "/workspace/.git",
+              type: "directory",
+              readOnly: true,
+            },
+          ],
           imageDigest: imageDigest!,
-          configurationRevision: "test",
-          extensionRevision: "test",
           network: "none",
-          capabilityMethods: [],
+          capabilityMethods: ["runtime.elicit"],
           limits: {
             cpuCount: 1,
             memoryBytes: 256 * 1024 * 1024,
@@ -111,7 +135,10 @@ test.skipIf(!enabled)(
           "test ! -S /var/run/docker.sock && test ! -S /run/podman/podman.sock",
           "test ! -e /cache/ready && test ! -e /mise/ready && test ! -e /mise/data",
           "if (printf forbidden > /rootfs-write) 2>/dev/null; then exit 1; fi",
-          "if (printf forbidden > /workspace/protected/proof) 2>/dev/null; then exit 1; fi",
+          "test ! -e /workspace/.clarvis/future/proof && test ! -e /workspace/.agents/future/proof",
+          "if (printf forbidden > /workspace/.clarvis/proof) 2>/dev/null; then exit 1; fi",
+          "if (printf forbidden > /workspace/.agents/proof) 2>/dev/null; then exit 1; fi",
+          "if git add /workspace/existing 2>/dev/null; then exit 1; fi",
           "printf '#!/bin/sh\\nexit 0\\n' > /tmp/noexec; chmod +x /tmp/noexec",
           "if /tmp/noexec 2>/dev/null; then exit 1; fi",
           "printf '#!/bin/sh\\nexit 0\\n' > /mise/executable; chmod +x /mise/executable; /mise/executable",
@@ -126,13 +153,20 @@ test.skipIf(!enabled)(
         await session.stop();
         expect((await control.run(["container", "exists", name])).exitCode).toBe(1);
       }
-      expect(await readFile(join(protectedRoot, "proof"), "utf8")).toBe("protected");
+      expect(await readFile(join(root, ".clarvis", "future", "proof"), "utf8")).toBe(
+        "clarvis-secret",
+      );
+      expect(await readFile(join(root, ".agents", "future", "proof"), "utf8")).toBe(
+        "agents-secret",
+      );
       expect((await stat(join(root, "new"))).uid).toBe(process.getuid!());
+      await expect(stat(join(root, ".git", "index"))).rejects.toMatchObject({ code: "ENOENT" });
     } finally {
       for (const session of sessions) await session.stop();
       for (const name of names) await control.run(["rm", "--force", name]);
       for (const cache of caches) await run(["volume", "rm", cache]);
       await rm(root, { recursive: true, force: true });
+      await rm(masks, { recursive: true, force: true });
     }
   },
   120_000,

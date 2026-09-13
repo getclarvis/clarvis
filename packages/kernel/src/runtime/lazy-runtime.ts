@@ -2,16 +2,10 @@ import { randomUUID } from "node:crypto";
 
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import type { PluginBootstrapSkill } from "@clarvis/loop/host";
-import type { MemoryFactory } from "@clarvis/memory/capability";
-import type { PlanFactory } from "@clarvis/plan";
-import type { TaskProviderResolver } from "@clarvis/tasks";
-import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { ProjectRef, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
-import type { GuardResolverDeps, GuardSettings } from "../guard/resolver.ts";
 import type { RunExecutor } from "../runs/run-service.ts";
 import type { RuntimeSettingsBlock } from "./settings.ts";
-import { RuntimeLaunchError, type RuntimeInfo } from "./types.ts";
+import { RuntimeLaunchError, type RuntimeInfo, type RuntimeProtectedMount } from "./types.ts";
 
 /** Inputs a host adapter needs to construct one isolated runtime generation. */
 export interface RuntimeHostInput {
@@ -23,29 +17,9 @@ export interface RuntimeHostInput {
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
   readonly workspaceRoot: string;
-  /** External common Git directory needed only by a linked worktree. */
-  readonly gitCommonDir?: string;
-  readonly configurationRevision: string;
-  readonly extensionRevision: string;
+  /** Closed Git metadata projection discovered by the host; every item must be read-only. */
+  readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
   readonly deps: ExecuteRunDeps;
-  /** Canonical host plan provider exposed to the guest through an exact per-run bridge. */
-  readonly planFactory?: PlanFactory;
-  /** Shared host selector used by the native and guest Tasks capabilities. */
-  readonly taskResolver?: TaskProviderResolver;
-  /** Immutable host-admitted skill view disclosed through a read-only runtime bridge. */
-  readonly skillsProvider?: SkillsProvider;
-  /** Active plugins' bootstrap declarations, resolved against the admitted skill snapshot. */
-  readonly skillBootstraps?: () => readonly PluginBootstrapSkill[];
-  /** Canonical host memory factory; stores, providers and policy never enter the guest. */
-  readonly memoryFactory?: MemoryFactory;
-  /** Fresh host policy snapshot serialized into each guest run. */
-  readonly loadGuardSettings?: () => GuardSettings;
-  /** Dedicated host audit sink for validated guard records returned by the guest. */
-  readonly guardAudit?: Logger;
-  /** Dynamic consent shared with the native resolver and revoked by interactive ownership. */
-  readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
-  /** Fresh names of host credentials withheld from host-owned command fallbacks. */
-  readonly loadSecretNames?: () => readonly string[];
 }
 
 /** One ready host runtime and its placement-neutral run executor. */
@@ -71,7 +45,6 @@ export interface RuntimePlacementNotice {
 interface RuntimeSelection {
   readonly settings: RuntimeSettingsBlock;
   readonly configurationRevision: string;
-  readonly extensionRevision: string;
 }
 
 interface RuntimeSlot {
@@ -83,14 +56,13 @@ interface RuntimeSlot {
 }
 
 function selectionKey(selection: RuntimeSelection): string {
-  return `${selection.configurationRevision}\0${selection.extensionRevision}`;
+  return selection.configurationRevision;
 }
 
 /** Lazy runtime state machine shared by ordinary runs and workflows. */
 export interface LazyRuntimeCoordinator {
   readonly executeRun: RunExecutor;
   current(): RuntimeStatus;
-  retry(): void;
   close(): Promise<void>;
 }
 
@@ -121,16 +93,6 @@ function readyStatus(info: RuntimeInfo): Extract<RuntimeStatus, { kind: "contain
     network: info.network,
     lifecycle: info.lifecycle,
   };
-}
-
-function operationalFailure(error: unknown): boolean {
-  return (
-    !(error instanceof RuntimeLaunchError) ||
-    error.code === "engine_missing" ||
-    error.code === "engine_stopped" ||
-    error.code === "unsupported_platform" ||
-    error.code === "operational_failure"
-  );
 }
 
 function failureDetail(error: unknown): string {
@@ -174,10 +136,8 @@ function waitForInitialization<T>(work: Promise<T>, signal: AbortSignal): Promis
  * Select native or container execution at run time, starting a container only
  * when the first run actually needs it.
  *
- * @remarks Docker operational failures latch to a required native-sandbox
- * fallback for the lifetime of this coordinator. Integrity, handshake and
- * effective-policy failures remain fail-closed. A failure after guest execution
- * begins is never replayed natively because the run may already have effects.
+ * Container acquisition and execution fail closed. A selected container is never
+ * replayed through native Host or Sandbox because either placement may already have effects.
  */
 export function createLazyRuntimeCoordinator(options: {
   readonly selection: () => RuntimeSelection;
@@ -188,18 +148,8 @@ export function createLazyRuntimeCoordinator(options: {
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
   readonly workspaceRoot: string;
-  readonly gitCommonDir?: string;
+  readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
   readonly deps: ExecuteRunDeps;
-  readonly planFactory?: PlanFactory;
-  readonly skillsProvider?: SkillsProvider;
-  readonly taskResolver?: TaskProviderResolver;
-  readonly skillBootstraps?: () => readonly PluginBootstrapSkill[];
-  readonly memoryFactory?: MemoryFactory;
-  readonly loadGuardSettings?: () => GuardSettings;
-  readonly guardAudit?: Logger;
-  readonly sessionAllowlistFor?: GuardResolverDeps["sessionAllowlistFor"];
-  readonly loadSecretNames?: () => readonly string[];
-  readonly assertFallbackSandbox?: () => Promise<void>;
   readonly onPlacement?: (notice: RuntimePlacementNotice) => void;
   readonly logger?: Logger;
 }): LazyRuntimeCoordinator {
@@ -208,7 +158,6 @@ export function createLazyRuntimeCoordinator(options: {
   const ownedSlots = new Set<RuntimeSlot>();
   const launches = new Map<string, Promise<RuntimeSlot>>();
   const initialization = new AbortController();
-  const fallback = new Map<string, string>();
   let closed = false;
   let closing: Promise<void> | undefined;
   let status: RuntimeStatus = (() => {
@@ -269,27 +218,8 @@ export function createLazyRuntimeCoordinator(options: {
       project: options.project,
       workspace: options.workspace,
       workspaceRoot: options.workspaceRoot,
-      ...(options.gitCommonDir === undefined ? {} : { gitCommonDir: options.gitCommonDir }),
-      configurationRevision: selection.configurationRevision,
-      extensionRevision: selection.extensionRevision,
+      gitMetadataMounts: options.gitMetadataMounts,
       deps: options.deps,
-      ...(options.planFactory === undefined ? {} : { planFactory: options.planFactory }),
-      ...(options.taskResolver === undefined ? {} : { taskResolver: options.taskResolver }),
-      ...(options.skillsProvider === undefined ? {} : { skillsProvider: options.skillsProvider }),
-      ...(options.skillBootstraps === undefined
-        ? {}
-        : { skillBootstraps: options.skillBootstraps }),
-      ...(options.memoryFactory === undefined ? {} : { memoryFactory: options.memoryFactory }),
-      ...(options.loadGuardSettings === undefined
-        ? {}
-        : { loadGuardSettings: options.loadGuardSettings }),
-      ...(options.guardAudit === undefined ? {} : { guardAudit: options.guardAudit }),
-      ...(options.sessionAllowlistFor === undefined
-        ? {}
-        : { sessionAllowlistFor: options.sessionAllowlistFor }),
-      ...(options.loadSecretNames === undefined
-        ? {}
-        : { loadSecretNames: options.loadSecretNames }),
     });
     const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0, retire: false };
     ownedSlots.add(slot);
@@ -328,49 +258,8 @@ export function createLazyRuntimeCoordinator(options: {
     return next;
   };
 
-  const runFallback = async (
-    selected: Extract<RuntimeSettingsBlock, { backend: "docker" }>,
-    key: string,
-    args: Parameters<RunExecutor>[0],
-    detail: string,
-    announce: boolean,
-  ): ReturnType<RunExecutor> => {
-    await options.assertFallbackSandbox?.();
-    const next: RuntimeStatus = {
-      kind: "native",
-      host_platform: process.platform,
-      isolation: "sandbox",
-      lifecycle: "fallback",
-      fallback_from: selected.backend,
-    };
-    publish(
-      next,
-      announce
-        ? `Docker could not start (${detail || "operational failure"}). Isolation switched to Sandbox for this Clarvis session.`
-        : undefined,
-    );
-    if (announce) {
-      logger.warn(
-        {
-          event: "runtime.docker_fallback",
-          engine: selected.backend,
-          reason: "operational_failure",
-        },
-        "the selected Docker runtime failed before execution; this session uses the required native sandbox",
-      );
-    }
-    fallback.set(key, detail);
-    return options.nativeExecuteRun(args);
-  };
-
   return {
     current: () => status,
-    retry(): void {
-      const selected = options.selection();
-      if (selected.settings.backend === "native") return;
-      fallback.delete(selectionKey(selected));
-      publish(containerStatus(selected.settings, "cold"));
-    },
     async executeRun(args) {
       if (closed) throw new Error("runtime coordinator is closed");
       args.externalSignal?.throwIfAborted();
@@ -390,28 +279,7 @@ export function createLazyRuntimeCoordinator(options: {
         return options.nativeExecuteRun(args);
       }
       const key = selectionKey(selected);
-      const priorFailure = fallback.get(key);
-      if (
-        selected.settings.backend === "docker" &&
-        selected.settings.fallback === "sandbox" &&
-        priorFailure !== undefined
-      ) {
-        return runFallback(selected.settings, key, args, priorFailure, false);
-      }
-      let slot: RuntimeSlot;
-      try {
-        slot = await waitForInitialization(slotFor(selected.settings, selected), waitingSignal);
-      } catch (error) {
-        waitingSignal.throwIfAborted();
-        if (
-          selected.settings.backend === "docker" &&
-          selected.settings.fallback === "sandbox" &&
-          operationalFailure(error)
-        ) {
-          return runFallback(selected.settings, key, args, failureDetail(error), true);
-        }
-        throw error;
-      }
+      const slot = await waitForInitialization(slotFor(selected.settings, selected), waitingSignal);
       await retireIdleSlots(key);
       waitingSignal.throwIfAborted();
       slot.active += 1;

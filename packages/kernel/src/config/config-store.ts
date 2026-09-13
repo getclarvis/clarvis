@@ -206,6 +206,12 @@ export interface ConfigStore {
 export interface SettingsSnapshot {
   /** Effective settings after the plugin ← global ← workspace merge. */
   merged: SettingsData;
+  /**
+   * Effective trust-filtered operator settings before Plugin fragments are applied.
+   * Container admission uses this provenance-preserving view so inactive guest extensions cannot
+   * influence models, prompts, budgets, hooks, servers, or another request field.
+   */
+  operator_merged?: SettingsData;
   /** Raw per-scope contents, unmerged, as they sit on disk. */
   scopes: Partial<Record<Scope, SettingsData>>;
   /** Provenance (path/exists/parse-error) of each scope layer. */

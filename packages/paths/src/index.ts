@@ -64,6 +64,7 @@ export {
   agentsPluginsDir,
   agentsPluginsDirs,
   agentsSkillsDirs,
+  agentsWorkspaceDir,
   isAgentsMarketplaceFile,
   workspacePaths,
   type WorkspacePaths,

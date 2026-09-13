@@ -141,8 +141,7 @@ current session_id and revision with workflow_decide at any checkpoint. Report a
     path: "settings.json",
     language: "json",
     content: `{
-  "runtime": {"backend": "docker"},
-  "guard": {"type": "shell", "mode": "on"}
+  "runtime": {"backend": "docker", "network": "outbound"}
 }`,
   },
 } as const;

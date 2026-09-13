@@ -876,16 +876,14 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss.
 
-For container placement, `createFileKernel` passes the active selection's `skillBootstraps` thunk
-beside the same admitted `SkillsProvider` snapshot used by the run. `createRuntimeSkillBootstraps`
-resolves those references through the canonical `resolveBootstrapSkills` gate, then serializes only
-`plugin`, `skill` and bounded `body`. It never serializes or mounts the declaring roots, and an
-inactive, unavailable or foreign-root skill cannot become a guest bootstrap. Production:
-`pluginSkillBootstraps` in `packages/kernel/src/file-kernel.ts`;
-`createRuntimeSkillBootstraps` in `packages/kernel/src/runtime/skills-bridge.ts`; and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
-`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (`projects active plugin bootstraps as
-bodies without disclosing their host roots`) and
+For Container placement, the active Plugin selection is deliberately ignored by request assembly:
+no bootstrap, Skill, Agent, MCP server, Hook, settings fragment or capability executable contributes
+to the guest. A selected Plugin Agent is an explicit incompatible dependency and fails admission;
+merely having Plugins enabled remains inactive and does not block the core run. Production:
+`ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
+`createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts`, and
+`admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts`. Test:
+`packages/kernel/tests/unit/container-core-policy.test.ts` and
 `packages/kernel/tests/integration/local-podman-runtime.test.ts`.
 - **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
   `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
@@ -1424,13 +1422,12 @@ All of the following are derived directly from this document's own source and te
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
-44c. **An isolated guest receives only active plugin bootstrap bodies resolved against the same
-    admitted skill snapshot; it never receives plugin or skill roots.** Production:
-    `pluginSkillBootstraps` in `packages/kernel/src/file-kernel.ts` and
-    `createRuntimeSkillBootstraps`/`createGuestSkillsCapability` in
-    `packages/kernel/src/runtime/skills-bridge.ts`. Test:
-    `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` and
-    `packages/kernel/tests/integration/local-podman-runtime.test.ts`.
+44c. **A Container guest receives no Plugin contribution.** The operator-only settings view excludes
+    Plugin fragments before assembly, and kernel admission refuses Plugin Agents or non-core profile
+    graphs before engine/model work. Production: `operator_merged` in
+    `packages/kernel/src/config/config-store.ts` and `admitContainerCoreRun` in
+    `packages/kernel/src/runs/prepare-run.ts`. Test:
+    `packages/kernel/tests/unit/container-core-policy.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Extension Profiles are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before

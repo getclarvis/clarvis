@@ -37,6 +37,7 @@ describe("runtime image build command", () => {
   it("builds the runnable image only from the canonical immutable artifact", () => {
     expect(runtimeImageBuildArgs(artifact, "clarvis-runtime:local", metadata)).toEqual([
       "build",
+      "--no-cache",
       "--file",
       "Containerfile.runtime",
       "--build-arg",
@@ -68,6 +69,7 @@ describe("runtime image build command", () => {
     expect(plan.commands).toEqual([
       runtimeArtifactBuildArgs(carrier, metadata),
       expect.arrayContaining([
+        "--no-cache",
         "--file",
         "Containerfile.runtime",
         `RUNTIME_ARTIFACT=${carrier}`,
@@ -87,6 +89,7 @@ describe("runtime image build command", () => {
       outputImage: "clarvis-runtime-artifact:release",
       commands: [
         expect.arrayContaining([
+          "--no-cache",
           "--file",
           "Containerfile.runtime-development",
           `BUILD_IMAGE=${RUNTIME_BUILD_IMAGE}`,

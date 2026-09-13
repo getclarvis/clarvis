@@ -22,7 +22,6 @@ test("the isolation picker selects minimal lazy Docker without changing review",
   const writes: Array<{ scope: string; patch: unknown }> = [];
   const notices: string[] = [];
   const applied: true[] = [];
-  const retries: true[] = [];
   const effective = {
     guard: { type: "shell", mode: "auto" as const, allowed_commands: ["git status"] },
     sandbox: {
@@ -48,7 +47,6 @@ test("the isolation picker selects minimal lazy Docker without changing review",
         settings={settings}
         runActive={() => true}
         active={() => true}
-        retryRuntime={() => retries.push(true)}
         notify={(message) => notices.push(message)}
         onClose={() => {}}
         onApplied={() => applied.push(true)}
@@ -72,18 +70,9 @@ test("the isolation picker selects minimal lazy Docker without changing review",
       scope: "global",
       patch: {
         runtime: { backend: "docker" },
-        sandbox: {
-          type: "native",
-          enabled: true,
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "host",
-          toolchains: { mode: "auto" },
-        },
       },
     },
   ]);
-  expect(retries).toEqual([true]);
   expect(notices).toEqual(["isolation: docker (global) — applies to the next run"]);
   expect(applied).toEqual([true]);
   rendered.renderer.destroy();
@@ -92,7 +81,6 @@ test("the isolation picker selects minimal lazy Docker without changing review",
 test("the isolation picker selects minimal lazy Podman without Docker fallback", async () => {
   const { keymap, press } = createFakeKeymap();
   const writes: Array<{ scope: string; patch: unknown }> = [];
-  const retries: true[] = [];
   const effective = {
     sandbox: {
       type: "native" as const,
@@ -117,7 +105,6 @@ test("the isolation picker selects minimal lazy Podman without Docker fallback",
         settings={settings}
         runActive={() => false}
         active={() => true}
-        retryRuntime={() => retries.push(true)}
         notify={() => {}}
         onClose={() => {}}
         onApplied={() => {}}
@@ -135,22 +122,13 @@ test("the isolation picker selects minimal lazy Podman without Docker fallback",
       scope: "global",
       patch: {
         runtime: { backend: "podman" },
-        sandbox: {
-          type: "native",
-          enabled: true,
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "host",
-          toolchains: { mode: "auto" },
-        },
       },
     },
   ]);
-  expect(retries).toEqual([true]);
   rendered.renderer.destroy();
 });
 
-test("the review picker changes approval independently from isolation", async () => {
+test("the review picker preserves saved approval while Container makes it inapplicable", async () => {
   const { keymap, press } = createFakeKeymap();
   const writes: Array<{ scope: string; patch: unknown }> = [];
   const modes: string[] = [];
@@ -189,24 +167,15 @@ test("the review picker changes approval independently from isolation", async ()
 
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Select command review");
-  expect(frame).toContain("isolation is unchanged");
+  expect(frame).toContain("Not applicable in Container");
 
   press("down");
   press("return");
   await tick();
-  expect(writes).toEqual([
-    {
-      scope: "workspace",
-      patch: {
-        guard: {
-          type: "shell",
-          mode: "on",
-          allowed_commands: ["git status"],
-        },
-      },
-    },
+  expect(writes).toEqual([]);
+  expect(modes).toEqual([]);
+  expect(notices).toEqual([
+    "Command Review is not applicable in Container. Use Isolation Sandbox or Host.",
   ]);
-  expect(modes).toEqual(["on"]);
-  expect(notices).toEqual(["review: approval (workspace)"]);
   rendered.renderer.destroy();
 });

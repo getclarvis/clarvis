@@ -618,7 +618,6 @@ const cases: SoakCase[] = [
             settings={safetySettings}
             runActive={() => false}
             active={lifecycle.active}
-            retryRuntime={() => {}}
             notify={() => {}}
             onClose={() => {}}
             onApplied={() => {}}

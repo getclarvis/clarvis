@@ -281,22 +281,21 @@ It is absent for older and unguarded calls and is part of replay when present.
 
 ## Runtime projection
 
-The optional handshake runtime projection reports effective native or container placement. Native
-status identifies Host versus Sandbox and whether Docker fell back to required Sandbox; Podman does
-not fall back. Container status always reports
-the engine, Linux guest, effective network and lifecycle, while generation, engine version, image
-digest and private protocol revision appear once known. It is informational only: runtime selection
-and the private guest protocol remain host/kernel contracts.
+The optional handshake runtime projection reports effective native or Container placement. Native
+status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
+Linux guest, effective network and lifecycle, while generation, engine version, image digest and
+private protocol revision appear once known. It has no fallback origin/status. This projection is
+informational only: runtime selection and the private guest protocol remain host/kernel contracts.
 
 `SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` or Podman
-`{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned
-defaults; an omitted network selects ordinary routable `outbound` access. Podman has no fallback
-field and no recipe. The optional Docker `recipe` DTO
-carries only a safe name, an absolute script path under the global operator recipe directory and
-optional `none`/`outbound` build networking; it is operator configuration, not a guest grant or an
-image-build protocol operation. `RuntimeStatus.network` is never omitted for a container because it
-reports the effective policy; `outbound` may reach host/LAN peers and must not be presented as
-public-only internet access.
+`{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned defaults;
+an omitted network selects ordinary routable `outbound` access. Neither engine has a fallback field;
+Podman has no recipe. The optional Docker `recipe` DTO carries only a safe name, an absolute script
+path under the global operator recipe directory and optional `none`/`outbound` build networking; it
+is operator configuration, not a guest grant or image-build protocol operation.
+`RuntimeStatus.network` is never omitted for a Container because it reports the effective policy;
+`outbound` may reach host/LAN peers and must not be presented as public-only internet access. Private
+runtime revision 14 is core-only and remains outside this type-only package.
 
 ## Development
 

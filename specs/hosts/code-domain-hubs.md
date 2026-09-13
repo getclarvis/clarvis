@@ -577,9 +577,10 @@ host-global placement choice and always writes global settings; memory remains s
 
 Run Controls, Settings > Isolation and the `Ctrl+S`/`Alt+S` quick picker share `applyIsolation`. Host requires an explicit
 danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
-global runtime choice. Docker keeps a required native fallback and remains cold until the first run;
-Podman starts on first run and fails closed if the engine cannot start. Run Controls
-and the `Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
+global runtime choice and remain cold until the first run. Both are core-only and fail closed if the
+engine cannot start; neither invokes native Sandbox/Host. Container renders Command Review as not
+applicable and Memory/Plans inactive without overwriting their native values. Run Controls and the
+`Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
 allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
 last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
 Approval. Neither path changes the other axis.

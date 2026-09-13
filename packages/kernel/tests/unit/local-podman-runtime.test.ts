@@ -24,8 +24,7 @@ function input(
     project: { id: "project" },
     workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
     workspaceRoot: "/definitely/missing/clarvis-workspace",
-    configurationRevision: "config",
-    extensionRevision: "extensions",
+    gitMetadataMounts: [],
     deps: {} as ExecuteRunDeps,
     settings,
   };

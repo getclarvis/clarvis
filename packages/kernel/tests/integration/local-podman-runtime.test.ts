@@ -6,19 +6,8 @@ import { join } from "node:path";
 import { loadEnv, type ExecutionRecord, type LLMProvider } from "@clarvis/capability";
 import { HOME_ENV } from "@clarvis/paths";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
-import type { Memory } from "@clarvis/memory";
-import {
-  MEMORY_READ_TOOL_NAMES,
-  MEMORY_TOOL_CONTRACTS,
-  memoryToolParameters,
-  type MemoryFactory,
-  type MemoryToolName,
-} from "@clarvis/memory/capability";
-import type { SkillContent, SkillInfo } from "@clarvis/skills";
 import type { TraceStore } from "@clarvis/trace";
 import type { ExecuteRunDeps } from "@clarvis/loop";
-import { createPlanStore, type PlanFactory } from "@clarvis/plan";
-import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import {
   createGuestLoopExecutor,
   RUNTIME_PROTOCOL_REVISION,
@@ -31,7 +20,6 @@ import {
   inspectReservedWorkspacePath,
   modelDestination,
   validElicitArguments,
-  validPreviewArguments,
 } from "../../src/runtime/local-container-runtime.ts";
 
 const directories: string[] = [];
@@ -95,19 +83,22 @@ describe("local Podman runtime composition", () => {
       message: expect.stringContaining("regular file or directory"),
     });
 
-    expect(validElicitArguments({ params: {} })).toBe(true);
-    expect(validElicitArguments({ params: {}, timeoutMs: 1 })).toBe(true);
-    expect(validElicitArguments({ params: {}, unexpected: true })).toBe(false);
+    const params = {
+      message: "Continue?",
+      requestedSchema: {
+        type: "object",
+        properties: { response: { type: "string", enum: ["yes", "no"] } },
+        required: ["response"],
+      },
+      kind: "ask_user",
+    } as const;
+    expect(validElicitArguments({ params })).toBe(true);
+    expect(validElicitArguments({ params, timeoutMs: 1 })).toBe(true);
+    expect(validElicitArguments({ params, unexpected: true })).toBe(false);
+    expect(validElicitArguments({ params: { ...params, kind: "guard_confirm" } })).toBe(false);
+    expect(validElicitArguments({ params: { ...params, requestedSchema: {} } })).toBe(false);
     expect(validElicitArguments({ params: null })).toBe(false);
     expect(validElicitArguments([])).toBe(false);
-    expect(validPreviewArguments({ port: 9090 })).toBe(true);
-    expect(validPreviewArguments({ port: 9090, protocol: "http" })).toBe(true);
-    expect(validPreviewArguments({ port: 0 })).toBe(false);
-    expect(validPreviewArguments({ port: 65_536 })).toBe(false);
-    expect(validPreviewArguments({ port: 9090, protocol: "udp" })).toBe(false);
-    expect(validPreviewArguments({ port: 9090, host: "0.0.0.0" })).toBe(false);
-    expect(validPreviewArguments(null)).toBe(false);
-
     expect(
       modelDestination(
         {
@@ -179,8 +170,7 @@ describe("local Podman runtime composition", () => {
           project: { id: "project" },
           workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
           workspaceRoot,
-          configurationRevision: "config",
-          extensionRevision: "extensions",
+          gitMetadataMounts: [],
           deps,
           settings: {
             backend: "podman",
@@ -212,8 +202,8 @@ describe("local Podman runtime composition", () => {
     const workspaceRoot = join(root, "workspace");
     await mkdir(workspaceRoot);
     await writeFile(join(workspaceRoot, "README.md"), "fixture\n");
-    const plansRoot = join(workspaceRoot, ".clarvis", "plans");
-    const memoryRoot = join(workspaceRoot, ".clarvis", "memory");
+    await mkdir(join(workspaceRoot, ".git"));
+    await mkdir(join(workspaceRoot, ".clarvis"));
     const sharedSkillsRoot = join(workspaceRoot, ".agents", "skills");
     await mkdir(sharedSkillsRoot, { recursive: true });
     const digest = `sha256:${"d".repeat(64)}`;
@@ -353,63 +343,14 @@ describe("local Podman runtime composition", () => {
     const llm: LLMProvider = {
       async call(params) {
         const prompt = JSON.stringify(params.messages);
-        expect(prompt).toContain("LOCAL_RUNTIME_MEMORY_SEED");
-        expect(prompt).toContain("LOCAL_RUNTIME_BOOTSTRAP");
+        expect(prompt).not.toContain("LOCAL_RUNTIME_MEMORY_SEED");
+        expect(prompt).not.toContain("LOCAL_RUNTIME_BOOTSTRAP");
         params.onStreamDelta?.({ channel: "text", text: "done", reset: true });
         return {
           text: "done",
           usage: { input_tokens: 8, output_tokens: 2, cached_tokens: 0, cache_write_tokens: 0 },
         };
       },
-    };
-    const skillRoot = join(root, "host-plugin-skills");
-    const skillInfo: SkillInfo = {
-      name: "runtime-method",
-      description: "Runtime method",
-      metadata: { name: "runtime-method", description: "Runtime method" },
-      userInvocable: true,
-      scope: "user",
-      source: "plugin:runtime-tools",
-      root: skillRoot,
-      dir: join(skillRoot, "runtime-method"),
-      path: join(skillRoot, "runtime-method", "SKILL.md"),
-    };
-    const skillContent: SkillContent = {
-      ...skillInfo,
-      body: "LOCAL_RUNTIME_BOOTSTRAP",
-      resources: [],
-    };
-    const memory = {} as Memory;
-    const memoryFactory: MemoryFactory = {
-      forOwner: () => memory,
-      forOwnerControlPlane: () => memory,
-      providerFor: async () => ({
-        ok: true,
-        provider: {
-          kind: "read-only-fixture",
-          readTools: MEMORY_READ_TOOL_NAMES.map((name) => ({
-            name,
-            description: MEMORY_TOOL_CONTRACTS[name as MemoryToolName].description,
-            parameters: memoryToolParameters(name as MemoryToolName),
-            execute: async () => ({ text: "unused", isError: false }),
-          })),
-          seed: async () => "LOCAL_RUNTIME_MEMORY_SEED",
-        },
-        key: `fixture:${"b".repeat(64)}`,
-        seedMaxChars: 6_000,
-      }),
-      start() {},
-      poke() {},
-      async stop() {},
-      subscribeToRun: () => () => undefined,
-    };
-    const planStore = createPlanStore({ repository: createInMemoryPlanRepository() });
-    const planFactory: PlanFactory = {
-      storeFor: async () => ({
-        key: "memory:local-runtime-fixture",
-        providerKind: "memory",
-        store: planStore,
-      }),
     };
     const store = traceStore();
     const deps = { env: loadEnv({}), llm, traceStore: store } as ExecuteRunDeps;
@@ -420,21 +361,15 @@ describe("local Podman runtime composition", () => {
         project: { id: "project" },
         workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
         workspaceRoot,
-        configurationRevision: "config",
-        extensionRevision: "extensions",
-        deps,
-        skillsProvider: {
-          listSkills: () => [skillInfo],
-          loadSkill: (name) => (name === skillInfo.name ? skillContent : undefined),
-          readResource: () => {
-            throw new Error("no resource");
+        gitMetadataMounts: [
+          {
+            source: join(workspaceRoot, ".git"),
+            target: "/workspace/.git",
+            type: "directory",
+            readOnly: true,
           },
-        },
-        skillBootstraps: () => [
-          { plugin: "runtime-tools", skill: skillInfo.name, roots: [skillRoot] },
         ],
-        planFactory,
-        memoryFactory,
+        deps,
         settings: {
           backend: "podman",
           image_digest: digest,
@@ -454,22 +389,17 @@ describe("local Podman runtime composition", () => {
     );
     expect(runtime.closed).toBe(false);
     expect(mountedRoot).toBe(workspaceRoot);
-    expect(effectiveMounts).toContainEqual({
+    for (const destination of ["/workspace/.clarvis", "/workspace/.agents"]) {
+      const mount = effectiveMounts.find((candidate) => candidate.Destination === destination);
+      expect(mount).toMatchObject({ Type: "bind", Destination: destination, RW: false });
+      expect(String(mount?.Source).startsWith(workspaceRoot)).toBe(false);
+    }
+    expect(
+      effectiveMounts.find((candidate) => candidate.Destination === "/workspace/.git"),
+    ).toMatchObject({
       Type: "bind",
-      Source: plansRoot,
-      Destination: "/workspace/.clarvis/plans",
-      RW: false,
-    });
-    expect(effectiveMounts).toContainEqual({
-      Type: "bind",
-      Source: memoryRoot,
-      Destination: "/workspace/.clarvis/memory",
-      RW: false,
-    });
-    expect(effectiveMounts).toContainEqual({
-      Type: "bind",
-      Source: sharedSkillsRoot,
-      Destination: "/workspace/.agents/skills",
+      Source: join(workspaceRoot, ".git"),
+      Destination: "/workspace/.git",
       RW: false,
     });
 
@@ -487,13 +417,12 @@ describe("local Podman runtime composition", () => {
               name: "solo",
               model: "anthropic/x",
               tools: [],
-              grants: ["use_skills"],
+              grants: ["run_commands"],
               iteration_limit: 3,
             },
           ],
           entry: "solo",
           providers: [{ name: "anthropic", kind: "anthropic" }],
-          memory: "on",
           budget: { on_exceed: "stop", total_token_limit: 1_000 },
         },
         onCapabilityEvent: (event) => capabilityEvents.push(event),
@@ -503,16 +432,7 @@ describe("local Podman runtime composition", () => {
         response: { status: "completed" },
       });
       expect(store.existsForOwner("owner", "exec_local_1")).toBe(true);
-      expect(capabilityEvents).toContainEqual({
-        capability: "memory",
-        kind: "ingest",
-        detail: {
-          execution_id: "exec_local_1",
-          phase: "done",
-          skipped: true,
-          note: "provider-read-only",
-        },
-      });
+      expect(capabilityEvents).toEqual([]);
       await expect(
         runtime.executeRun({
           owner: "owner",
@@ -526,7 +446,7 @@ describe("local Podman runtime composition", () => {
                 name: "solo",
                 model: "custom/x",
                 tools: [],
-                grants: ["use_skills"],
+                grants: ["run_commands"],
                 iteration_limit: 3,
               },
             ],

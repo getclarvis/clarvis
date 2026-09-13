@@ -702,7 +702,7 @@ without the `readableAll`/`writableAll` relaxations. A local host composition mu
 placement by itself is not authorization. This adapter alone does not detach or preserve a run.
 
 RPC defines the calls and notifications; local IPC supplies their byte streams. The adapter never
-forwards kernel frames to the guest's [private execution RPC](isolated-agent-runtime.md#5-private-execution-and-authority).
+forwards kernel frames to the guest's [private execution RPC](isolated-agent-runtime.md#5-private-protocol-and-image-identity).
 `createKernelServer` accepts the kernel catalog only; the local-transport service test rejects
 `host.capability` on this endpoint. Hosted-run ownership, durable handoff and observation recovery
 belong to [the hosting service](hosted-runs.md#hosted-kernel-rpc), independently of the socket lifetime.

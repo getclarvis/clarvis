@@ -1187,9 +1187,9 @@ Production: `hostModelBroker` in
 in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
 `encodeRuntimeProviderError` in
 [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts).
-Test: real host SDK and retry-decorator cases in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
-and typed provider error round-trips in
+Test: admitted model pairs and streamed host-broker behavior in
+[`runtime-model-stream.test.ts`](../../packages/kernel/tests/integration/runtime-model-stream.test.ts),
+plus typed provider error round-trips in
 [`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts).
 
 ### 7.1 What this package depends on

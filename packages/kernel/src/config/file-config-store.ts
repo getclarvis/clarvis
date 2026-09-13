@@ -797,12 +797,19 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const pluginScopes =
       opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledPlugins) : [];
     const mergeScopes = [...pluginScopes, ...operatorScopes];
+    const operatorMerged = mergeSettings(
+      operatorScopes,
+      kernelCapabilityRegistry,
+    ) as unknown as SettingsData;
     const merged = mergeSettings(mergeScopes, kernelCapabilityRegistry) as unknown as SettingsData;
     const effectReview = resolveEffectReviewSettings(
       global?.effect_review,
       workspace?.effect_review,
     );
-    if (effectReview !== undefined) merged.effect_review = effectReview;
+    if (effectReview !== undefined) {
+      operatorMerged.effect_review = effectReview;
+      merged.effect_review = effectReview;
+    }
     const scopes: Partial<Record<Scope, SettingsData>> = {
       ...(global !== undefined ? { global } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -831,6 +838,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     ];
     return {
       merged,
+      operator_merged: operatorMerged,
       scopes,
       sources,
       ...(withheld.length > 0 ? { withheld_workspace_fields: withheld } : {}),

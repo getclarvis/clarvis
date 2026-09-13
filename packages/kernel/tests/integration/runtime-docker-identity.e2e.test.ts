@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { createDockerRuntimeBackend, type RuntimeLaunchSpec } from "../../src/index.ts";
 import { createNodeDockerControl } from "../../src/local.ts";
@@ -26,6 +29,8 @@ test.skipIf(!enabled)(
     });
     const volume = `clarvis-uid-e2e-${randomUUID()}`;
     const caches = new Set<string>();
+    const masks = mkdtempSync(join(tmpdir(), "clarvis-docker-e2e-masks-"));
+    for (const name of ["clarvis", "agents", "git"]) mkdirSync(join(masks, name));
     const sessions: Array<{ stop(): Promise<void> }> = [];
     const run = async (args: string[]): Promise<string> => {
       const result = await control.run(args);
@@ -86,12 +91,31 @@ test.skipIf(!enabled)(
           project: { id: volume },
           workspace: { id: volume, projectId: volume, label: "DAC canary", kind: "primary" },
           workspaceRoot,
-          readOnlyWorkspacePaths: [],
+          controlRootMasks: [
+            {
+              source: join(masks, "clarvis"),
+              target: "/workspace/.clarvis",
+              type: "directory",
+              readOnly: true,
+            },
+            {
+              source: join(masks, "agents"),
+              target: "/workspace/.agents",
+              type: "directory",
+              readOnly: true,
+            },
+          ],
+          gitMetadataMounts: [
+            {
+              source: join(masks, "git"),
+              target: "/workspace/.git",
+              type: "directory",
+              readOnly: true,
+            },
+          ],
           imageDigest: image,
-          configurationRevision: "test",
-          extensionRevision: "test",
           network: "none",
-          capabilityMethods: [],
+          capabilityMethods: ["runtime.elicit"],
           limits: {
             cpuCount: 1,
             memoryBytes: 256 * 1024 * 1024,
@@ -129,6 +153,7 @@ test.skipIf(!enabled)(
       for (const session of sessions) await session.stop();
       for (const cache of caches) await run(["volume", "rm", cache]);
       await run(["volume", "rm", volume]);
+      rmSync(masks, { recursive: true, force: true });
     }
   },
   120_000,

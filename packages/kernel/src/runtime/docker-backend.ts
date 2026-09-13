@@ -1,6 +1,6 @@
 import {
+  assertMaterializedProtectedTargets,
   containerMountField,
-  guestWorkspacePath,
   noContainerCapabilities,
   readContainerInspection,
   validContainerPolicy,
@@ -77,16 +77,10 @@ function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
   return [
     "--mount",
     `type=bind,${containerMountField("source", spec.workspaceRoot)},target=/workspace`,
-    ...spec.readOnlyWorkspacePaths.flatMap((path) => [
+    ...[...spec.controlRootMasks, ...spec.gitMetadataMounts].flatMap((mount) => [
       "--mount",
-      `type=bind,${containerMountField("source", path)},${containerMountField("target", guestWorkspacePath(spec, path))},readonly`,
+      `type=bind,${containerMountField("source", mount.source)},${containerMountField("target", mount.target)},readonly`,
     ]),
-    ...(spec.gitCommonDir === undefined
-      ? []
-      : [
-          "--mount",
-          `type=bind,${containerMountField("source", spec.gitCommonDir)},${containerMountField("target", spec.gitCommonDir)}`,
-        ]),
   ];
 }
 function createArgs(
@@ -224,6 +218,7 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
           "operational_failure",
           "Docker must be inspected before start",
         );
+      await assertMaterializedProtectedTargets(spec);
       const name = nameFor(spec.generation);
       network(spec);
       const uid = rootless ? 0 : (options.hostUser?.uid ?? process.getuid?.());

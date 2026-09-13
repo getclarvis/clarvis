@@ -211,6 +211,10 @@ The public settled-context helpers can estimate a persisted snapshot, run the sa
 compaction without another agent iteration, or mechanically fit it to a smaller model window.
 Mechanical fitting preserves retained entries byte-for-byte, including opaque provider metadata;
 the caller owns the explicit persisted replacement and its cache-breaking consequences.
+The host chooses which capabilities reach a run. Core-only Container builds this loop with builtin
+coding tools and no Skills, MCP, Hooks, Plans, Memory, Tasks, Workflow or Goal; the loop does not
+create a fallback or host bridge for an omitted capability.
+
 Built-ins cover:
 
 - coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a

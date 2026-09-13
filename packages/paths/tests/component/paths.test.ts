@@ -9,6 +9,7 @@ import {
   agentsPluginsDir,
   agentsPluginsDirs,
   agentsSkillsDirs,
+  agentsWorkspaceDir,
   CLARVIS_DIR,
   isAgentsMarketplaceFile,
   MARKETPLACE_FILE,
@@ -206,6 +207,12 @@ describe("agentsSkillsDirs", () => {
     expect(isAbsolute(dirs.user)).toBe(true);
     expect(isAbsolute(dirs.workspace)).toBe(true);
   });
+});
+
+test("agentsWorkspaceDir resolves the complete shared control root", () => {
+  expect(agentsWorkspaceDir("relative-workspace")).toBe(
+    join(resolve("relative-workspace"), AGENTS_DIR),
+  );
 });
 
 describe("agentsPluginsDir", () => {

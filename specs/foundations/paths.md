@@ -223,6 +223,10 @@ builder tests do not qualify native IPC behavior.
 | `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts` |
 
+`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root. Container mount policy
+uses this root together with `workspacePaths(root).clarvisDir`; it does not reconstruct either
+literal or enumerate their children outside `@clarvis/paths`.
+
 Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
 than deprecated so that writing generated bookkeeping into someone's working tree is a compile
 error rather than a convention." (`packages/paths/src/workspace.ts`). The one residue kept is transient: an
@@ -417,6 +421,14 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
 `extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
+
+That writer inventory is not a Container visibility allow-list. Docker/Podman replaces the complete
+`<ws>/.clarvis` and `<ws>/.agents` roots with two private empty read-only directory masks, so a new or
+unknown descendant is opaque without a runtime-policy edit. Mask sources are host-created outside
+the selected workspace and removed after launch failure or teardown. Production:
+`agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
+`packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`packages/kernel/tests/unit/runtime-mounts.test.ts`.
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
 ```

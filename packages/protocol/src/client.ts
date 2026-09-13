@@ -56,8 +56,7 @@ export type RuntimeStatus =
       kind: "native";
       host_platform: string;
       isolation: "host" | "sandbox";
-      lifecycle: "ready" | "fallback";
-      fallback_from?: "docker" | "podman";
+      lifecycle: "ready";
     }
   | {
       kind: "container";

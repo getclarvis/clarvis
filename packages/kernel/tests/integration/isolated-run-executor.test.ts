@@ -62,13 +62,8 @@ describe("isolated run executor", () => {
             });
           },
           async steer() {},
-          async callHookMcp() {},
-          async elicitMcp() {},
           async stop() {},
           async cancel() {},
-          async exposePort() {
-            throw new Error("not exercised");
-          },
         },
         authority: () => ({
           model: {
@@ -143,14 +138,9 @@ describe("isolated run executor", () => {
         async interruptTool() {
           return { status: "not_running" };
         },
-        async callHookMcp() {},
-        async elicitMcp() {},
         async stop() {},
         async cancel() {
           cancelled = true;
-        },
-        async exposePort() {
-          throw new Error("not exercised");
         },
       },
       authority: () => ({
@@ -218,8 +208,6 @@ describe("isolated run executor", () => {
             });
             return { executionId: runId, response: { status: "completed" } };
           },
-          async callHookMcp() {},
-          async elicitMcp() {},
           async steer() {
             received.resolve();
             await deliver.promise;
@@ -234,9 +222,6 @@ describe("isolated run executor", () => {
           },
           async cancel() {},
           async stop() {},
-          async exposePort() {
-            throw new Error("not exercised");
-          },
         },
         authority: () => ({
           model: {
@@ -403,16 +388,11 @@ describe("isolated run executor", () => {
         });
         return { executionId: runId, response: { status: "done" } };
       },
-      async callHookMcp() {},
-      async elicitMcp() {},
       async steer() {},
       async interruptTool() {
         return { status: "not_running" };
       },
       async cancel() {},
-      async exposePort() {
-        throw new Error("not exercised");
-      },
       async stop() {},
     };
     const executor = createIsolatedRunExecutor({
@@ -547,12 +527,9 @@ describe("isolated run executor", () => {
         closed: false,
         info,
         startRun: async () => null,
-        callHookMcp: async () => undefined,
-        elicitMcp: async () => undefined,
         steer: async () => undefined,
         interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
-        exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
@@ -574,12 +551,9 @@ describe("isolated run executor", () => {
         closed: false,
         info,
         startRun: async (runId) => ({ executionId: runId, response: { status: "done" } }),
-        callHookMcp: async () => undefined,
-        elicitMcp: async () => undefined,
         steer: async () => undefined,
         interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => undefined,
-        exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
@@ -604,14 +578,11 @@ describe("isolated run executor", () => {
           boundaryController.abort();
           return null;
         },
-        callHookMcp: async () => undefined,
-        elicitMcp: async () => undefined,
         steer: async () => undefined,
         interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           boundaryOrder.push("cancel");
         },
-        exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
@@ -646,14 +617,11 @@ describe("isolated run executor", () => {
           await startGate;
           return null;
         },
-        callHookMcp: async () => undefined,
-        elicitMcp: async () => undefined,
         steer: async () => undefined,
         interruptTool: async () => ({ status: "not_running" }),
         cancel: async () => {
           cancelled = true;
         },
-        exposePort: async () => Promise.reject(new Error("not exercised")),
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
@@ -699,12 +667,9 @@ describe("isolated run executor", () => {
               signal,
             });
           },
-          callHookMcp: async () => undefined,
-          elicitMcp: async () => undefined,
           steer: async () => undefined,
           interruptTool: async () => ({ status: "not_running" }),
           cancel: async () => undefined,
-          exposePort: async () => Promise.reject(new Error("not exercised")),
           stop: async () => undefined,
         },
         authority: (_value, runId) => authority(runId),

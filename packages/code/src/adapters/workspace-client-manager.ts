@@ -301,31 +301,6 @@ export class WorkspaceClientManager {
     this.timer.unref?.();
   }
 
-  /** Retry placement only through the host's quiescent operator admission. */
-  retryRuntime(): void {
-    if (this.closed) return;
-    if (this.kernel.localHost === undefined) {
-      const status = this.kernel.capabilities.runtime;
-      if (status !== undefined)
-        for (const listener of this.runtimeListeners)
-          listener({
-            status,
-            message: "Remote runtime retry requires reconnecting to the remote host",
-          });
-      return;
-    }
-    detachObserved("hosting.runtime.retry", async () => {
-      try {
-        await this.kernel.localHost!.retryRuntime();
-        await this.refresh();
-      } catch (error) {
-        if (this.status !== undefined)
-          for (const listener of this.runtimeListeners)
-            listener({ status: this.status.runtime, message: sanitizeErrorMessage(String(error)) });
-      }
-    });
-  }
-
   /** Replace a lost connection without requesting restart, runtime retry or execution replay. */
   recover(workspaceId: string): Promise<void> {
     return this.reconnect(workspaceId, "connection");

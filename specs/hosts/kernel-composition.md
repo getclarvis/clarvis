@@ -149,6 +149,20 @@ capability executables, and plugin skill roots are composed. Standalone skill se
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
+That is the native Host/Sandbox composition. For Docker/Podman, `prepareKernelRun` instead admits a
+closed core request before Workflow/Goal routing, lease reservation or engine acquisition. It uses
+the operator-only settings projection, strips `use_skills` only from unmodified compatible builtins,
+refuses incompatible custom/Plugin profiles and explicit feature requests, and supplies no generic
+host capability registry to the runtime. The Container host creates only model, `runtime.elicit`,
+lifecycle, event, trace and checkpoint channels. Registration of a native capability is neither an
+implicit request nor authority to cross the guest boundary.
+
+Production: `admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts`,
+`createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts`, and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`packages/kernel/tests/unit/container-core-policy.test.ts` and
+`packages/kernel/tests/unit/local-docker-runtime.test.ts`.
+
 The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
 environment names. It creates the run-owned scratch and appends host system temporary access inside
 the optional tools capability. The kernel guard makes Isolation Sandbox `require_escalated` an `ask`

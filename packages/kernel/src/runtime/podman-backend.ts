@@ -1,6 +1,6 @@
 import {
+  assertMaterializedProtectedTargets,
   containerMountField,
-  guestWorkspacePath,
   noContainerCapabilities,
   readContainerInspection,
   validContainerPolicy,
@@ -95,16 +95,10 @@ function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
   return [
     "--mount",
     `type=bind,${containerMountField("source", spec.workspaceRoot)},target=/workspace,rw=true,relabel=shared`,
-    ...spec.readOnlyWorkspacePaths.flatMap((path) => [
+    ...[...spec.controlRootMasks, ...spec.gitMetadataMounts].flatMap((mount) => [
       "--mount",
-      `type=bind,${containerMountField("source", path)},${containerMountField("target", guestWorkspacePath(spec, path))},ro=true,relabel=shared`,
+      `type=bind,${containerMountField("source", mount.source)},${containerMountField("target", mount.target)},ro=true,relabel=shared`,
     ]),
-    ...(spec.gitCommonDir === undefined
-      ? []
-      : [
-          "--mount",
-          `type=bind,${containerMountField("source", spec.gitCommonDir)},${containerMountField("target", spec.gitCommonDir)},rw=true,relabel=shared`,
-        ]),
   ];
 }
 
@@ -240,6 +234,7 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
           "Podman must be inspected before start",
         );
       }
+      await assertMaterializedProtectedTargets(spec);
       const name = containerName(spec.generation);
       const cache = miseCacheIdentity(spec, "0:0");
       let created = false;

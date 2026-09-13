@@ -77,6 +77,14 @@ export interface RuntimeLimits {
   readonly storageBytes: number;
 }
 
+/** One host-resolved bind whose source, destination, kind and mutability are closed by policy. */
+export interface RuntimeProtectedMount {
+  readonly source: string;
+  readonly target: string;
+  readonly type: "directory" | "file";
+  readonly readOnly: true;
+}
+
 /** Immutable launch authority; guest input can neither construct nor widen it. */
 export interface RuntimeLaunchSpec {
   readonly generation: string;
@@ -85,13 +93,11 @@ export interface RuntimeLaunchSpec {
   readonly workspace: WorkspaceRef;
   /** Canonical host workspace mounted read-write at `/workspace`. */
   readonly workspaceRoot: string;
-  /** Existing host-control paths overlaid read-only at their workspace-relative guest paths. */
-  readonly readOnlyWorkspacePaths: readonly string[];
-  /** Linked-worktree Git metadata mounted at the same absolute path so `.git` remains valid. */
-  readonly gitCommonDir?: string;
+  /** Exact empty private masks over both workspace control roots. */
+  readonly controlRootMasks: readonly RuntimeProtectedMount[];
+  /** Exact Git metadata projection; an absent nested target is refused before engine creation. */
+  readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
   readonly imageDigest: string;
-  readonly configurationRevision: string;
-  readonly extensionRevision: string;
   readonly network: RuntimeNetworkMode;
   readonly limits: RuntimeLimits;
   readonly capabilityMethods: readonly string[];
@@ -112,43 +118,15 @@ export interface RuntimeInfo {
   readonly lifecycle: RuntimeLifecycleState;
 }
 
-/** Application protocol used to present one guest TCP listener to the user. */
-export type RuntimePreviewProtocol = "http" | "https" | "tcp";
-
-/** Loopback-only host endpoint backed by one guest TCP listener. */
-export interface RuntimePortPreview {
-  readonly guestPort: number;
-  readonly host: "127.0.0.1";
-  readonly hostPort: number;
-  readonly protocol: RuntimePreviewProtocol;
-  readonly url: string;
-}
-
-/** One admitted stdio MCP hook call, without process configuration or host credentials. */
-export interface RuntimeHookMcpCall {
-  readonly server: string;
-  readonly tool: string;
-  readonly input: unknown;
-}
-
 /** Started execution session owned by the host. */
 export interface RuntimeSession {
   readonly info: RuntimeInfo;
   /** True once the private channel or attached engine process cannot accept another request. */
   readonly closed: boolean;
   startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
-  /** Execute a hook through the active run's guest-owned stdio MCP connection. */
-  callHookMcp(runId: string, call: RuntimeHookMcpCall, signal?: AbortSignal): Promise<unknown>;
-  /** Deliver a host remote server's elicitation to its active guest-owned relay. */
-  elicitMcp(runId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
   interruptTool(runId: string, payload: unknown, signal?: AbortSignal): Promise<unknown>;
   cancel(runId: string): Promise<void>;
-  exposePort(
-    guestPort: number,
-    protocol?: RuntimePreviewProtocol,
-    signal?: AbortSignal,
-  ): Promise<RuntimePortPreview>;
   stop(): Promise<void>;
 }
 

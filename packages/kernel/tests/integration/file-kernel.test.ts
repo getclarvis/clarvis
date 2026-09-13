@@ -63,10 +63,7 @@ describe("createFileKernel", () => {
   it("retries failed container removal through the public kernel close path", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global-runtime-retry");
-    seedFile(
-      join(globalDir, "settings.json"),
-      JSON.stringify({ runtime: { backend: "docker", fallback: "fail" } }),
-    );
+    seedFile(join(globalDir, "settings.json"), JSON.stringify({ runtime: { backend: "docker" } }));
     let closes = 0;
     const kernel = await createFileKernel({
       workspaceRoot: ws,

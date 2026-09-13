@@ -195,6 +195,49 @@ describe("prepared kernel execution", () => {
     expect(JSON.stringify(f.llm.calls)).toContain("The original worker.");
   });
 
+  test("refuses Container feature requests before workflow routing, lease acquisition or inference", async () => {
+    const f = await fixture();
+    f.store.writeSettings("global", {
+      ...f.store.readSettings().merged,
+      runtime: { backend: "docker" },
+    });
+    for (const request of [
+      { plans: "off" as const },
+      { memory: "off" as const },
+      { guard_mode: "on" as const },
+      { skill: { name: "test-flow", task: "Run it" } },
+    ]) {
+      expect(() =>
+        f.kernel.prepareRun({
+          execution_id: `refused-${Object.keys(request)[0]}`,
+          agent: "worker",
+          messages: [{ role: "user", content: "Go" }],
+          ...request,
+        }),
+      ).toThrow("Use Isolation Sandbox or Host");
+      expect(f.leases()).toBe(0);
+      expect(f.llm.calls).toHaveLength(0);
+    }
+    (f.skill.metadata as { agent?: string }).agent = undefined;
+    expect(() =>
+      f.kernel.prepareRun({
+        execution_id: "refused-dollar-skill",
+        agent: "worker",
+        messages: [{ role: "user", content: "Use $test-flow" }],
+      }),
+    ).toThrow("Skills is unavailable in Isolation Container");
+    expect(f.leases()).toBe(0);
+    expect(f.llm.calls).toHaveLength(0);
+    const compatible = f.kernel.prepareRun({
+      execution_id: "container-core-compatible",
+      agent: "worker",
+      messages: [{ role: "user", content: "Inspect the workspace" }],
+    });
+    expect(compatible).toMatchObject({ agent: "worker", model: "anthropic/original" });
+    expect(f.leases()).toBe(0);
+    expect(f.llm.calls).toHaveLength(0);
+  });
+
   test("does not resurrect a retired owner generation through a prepared start", async () => {
     const f = await fixture();
     const lease = await f.kernel.acquireOwner("secondary");

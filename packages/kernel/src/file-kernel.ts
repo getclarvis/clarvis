@@ -101,7 +101,7 @@ import {
 import { sweepMonitors } from "@clarvis/tools/monitor";
 import { WorkspaceHousekeeping } from "./application/workspace-housekeeping.ts";
 import { referencedSessionExecutionIds } from "./sessions/session-service.ts";
-import { discoverGitWorkspace } from "./git-workspace.ts";
+import { discoverGitWorkspace, runtimeGitMetadataMounts } from "./git-workspace.ts";
 import { SubscriptionManager } from "./subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "./subscriptions/store.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
@@ -118,7 +118,6 @@ import {
   type FileKernelRuntimeFactory,
   type RuntimePlacementNotice,
 } from "./runtime/lazy-runtime.ts";
-import { RuntimeLaunchError } from "./runtime/types.ts";
 
 export type { FileKernelRuntimeFactory, RuntimePlacementNotice } from "./runtime/lazy-runtime.ts";
 
@@ -238,8 +237,6 @@ export interface FileKernel extends InProcessKernel {
   readonly runtime: RuntimeStatus;
   /** Physical execution leases, including background memory work; independent of UI connections. */
   activeExecutionLeases(): number;
-  /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
-  retryRuntime(): void;
 }
 
 /**
@@ -1005,7 +1002,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     return {
       settings: configured,
       configurationRevision: settingsDocumentRevision(JSON.stringify(configured)),
-      extensionRevision: extensionProfileManager.runRef().fingerprint,
     };
   };
   const nativeIsolation = (): "host" | "sandbox" => {
@@ -1014,6 +1010,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
   const nativeExecuteRun: RunExecutor =
     opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  const gitMetadataMounts = runtimeGitMetadataMounts(gitWorkspace);
   const runtimeCoordinator = createLazyRuntimeCoordinator({
     selection: runtimeSelection,
     nativeIsolation,
@@ -1023,29 +1020,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     project: gitWorkspace.project,
     workspace: gitWorkspace.workspace,
     workspaceRoot: gitWorkspace.worktreeRoot,
-    ...(gitWorkspace.workspace.kind === "external_worktree" && gitWorkspace.commonDir !== undefined
-      ? { gitCommonDir: gitWorkspace.commonDir }
-      : {}),
+    gitMetadataMounts,
     deps,
-    planFactory: planning.planFactory,
-    ...(tasksEnabled ? { taskResolver: taskProviderFactory } : {}),
-    ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
-    ...(built.skills === undefined ? {} : { skillBootstraps: pluginSkillBootstraps }),
-    ...(memoryFactory === undefined ? {} : { memoryFactory }),
-    loadGuardSettings,
-    guardAudit: auditLogger,
-    sessionAllowlistFor,
-    loadSecretNames,
     logger: componentLogger("runtime"),
-    assertFallbackSandbox: async () => {
-      const inspection = await sandboxPolicy.inspect({ refresh: true });
-      if (!inspection.backend.available) {
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          `Docker failed and the required native sandbox is unavailable (${inspection.backend.reason})`,
-        );
-      }
-    },
     onPlacement: (notice) => {
       if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
       opts.onRuntimePlacement?.(notice);
@@ -1146,7 +1123,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   return Object.defineProperties(
     Object.assign(kernel, {
       workspaceHooks,
-      retryRuntime: () => runtimeCoordinator.retry(),
       activeExecutionLeases: () => extensionProfileRunRefs,
     }),
     {

@@ -11,8 +11,7 @@ export function runtimeStatusSchema(fields: {
       kind: z.literal("native"),
       host_platform: fields.identifier,
       isolation: z.enum(["host", "sandbox"]),
-      lifecycle: z.enum(["ready", "fallback"]),
-      fallback_from: z.enum(["docker", "podman"]).optional(),
+      lifecycle: z.literal("ready"),
     }),
     z.strictObject({
       kind: z.literal("container"),

@@ -694,17 +694,21 @@ unavailable and timed-out preflights start nothing).
 
 ## 7. Coupling
 
-For container runs, authenticated remote MCP connections remain on the host. Their relay crosses
-the closed `runtime.mcp_elicit` operation to the matching live guest lease and then uses the same
-engine serializer and compute-clock pause before reaching the host input port. Run or lease
-cancellation cannot deliver a question into a later run. Production: `createHostRemoteMcpBridge`
-and `createGuestMcpConnections` in
-[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts), and `serveExecutionWorker` in
-[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts).
-Test: remote guest-relay integration in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
-and live-run routing/cancellation in
-[`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts).
+Container admits no MCP server or MCP elicitation relay. Its sole capability method,
+`runtime.elicit`, carries intentional agent questions such as `ask_user` from the matching live guest
+lease through the engine serializer and compute-clock pause to the host input port. Its wire validator
+accepts only a bounded string-form schema, a coherent required-field list and absent/`ask_user` kind;
+`guard_confirm`, feature review kinds, extra keys and malformed schemas are rejected before the host
+input callback. It is not Command Review and cannot select placement or invoke host execution. Run
+cancellation prevents delivery into a later run. Production: `validElicitArguments` and
+`createCapabilityBroker` in
+[`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts),
+`createGuestLoopExecutor` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
+`serveExecutionWorker` in
+[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts). Test:
+[`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts)
+and [`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts).
 The private protocol and lifetime contract belongs to
 [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 

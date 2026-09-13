@@ -241,9 +241,10 @@ Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-re
 
 Operator authority and effect review are Host/Sandbox-only and do not cross the private runtime
 protocol. Docker/Podman guests receive no evidence, binding, epoch, envelope, reviewer settings,
-approval bridge or guard audit channel. Explicit `guard_mode: "on" | "auto"` is rejected before the
-guest starts; absent/`off` container runs keep the core-only boundary. This change therefore does not
-advance the private runtime protocol revision.
+approval bridge or guard audit channel. Explicit `guard_mode: "on" | "auto"` or any `guard_judge` is
+rejected before lease, engine or model work; absent fields keep the core-only boundary. Private
+protocol revision 14 reflects the wider core-only envelope reduction, not an effect-review wire
+shape; effect review still has no Container method or descriptor.
 
 The public elicitation detail has optional analysis, effect, authority and reviewer fields. Older
 details still validate. The UI shows a one-based segment, affected argument position, effect and
@@ -254,6 +255,7 @@ Production: [review-detail-schema.ts](../../packages/kernel/src/guard/review-det
 [isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts), and
 [effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts).
 Test: [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts),
+[container-core-policy.test.ts](../../packages/kernel/tests/unit/container-core-policy.test.ts),
 [isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts),
 and [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 DTO discriminator drift is checked by

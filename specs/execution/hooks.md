@@ -34,21 +34,16 @@ plugin / request schemas) even when the optional `@clarvis/hooks` package itself
 
 ## 2. Surface
 
-Docker and Podman retain the admitted host hook callbacks through the kernel's private
-`runtime.hooks` bridge. Command hooks, plugin environment filtering and hook policy remain on the
-host. A `stdio` MCP hook instead returns through `runtime.hook_mcp` to an owner-scoped connection in
-the active guest run; HTTP/SSE MCP hooks retain host connections and remote effects. A failed guest
-call never acquires a host `stdio` connection. The guest can invoke only configured lifecycle
-indices/methods with strict event contexts; it cannot submit a hook command or replace the resolver.
-Native ordering, blocking
-verdicts, rewrites and subsequent tool-schema/guard checks remain effective. The guest's disabled
-local hook built-in avoids executing host commands there; it does not disable the projected policy.
+Hooks are a native Host/Sandbox capability. Docker/Podman does not construct host callbacks or a
+guest hook capability, does not connect Hook MCP and does not invoke `session_start`, `run_start`,
+tool gates, terminal hooks or Plugin Hooks. Inherited Hook configuration is inactive rather than an
+admission error; an explicit profile/feature dependency is refused before engine/model work. No
+`runtime.hooks` or `runtime.hook_mcp` method exists in the private Container protocol.
 
-Production: `createHostHooksBridge` and `createGuestHooksCapabilities` in
-`packages/kernel/src/runtime/hooks-bridge.ts`; `createGuestLoopExecutor` in
-`packages/kernel/src/runtime/guest-loop-executor.ts`.
-Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
-(`enforces the same configured blocking hook natively and through guest dispatch`).
+Production: `admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts` and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`packages/kernel/tests/unit/container-core-policy.test.ts` and
+`packages/kernel/tests/unit/local-docker-runtime.test.ts`.
 
 ### 2.1 `@clarvis/hooks` entrypoint `.` (`src/index.ts`)
 
@@ -486,24 +481,18 @@ into the transcript. Production: `scheduleBackground` and `run` in
 `packages/hooks/src/runner.ts`. Test: async, SessionEnd and plugin-environment cases in
 `packages/hooks/tests/component/runner.test.ts`.
 
-An `mcp_tool` hook calls the run-scoped `MCP_HOOK_TOOL_PORT`. Native runs populate it after the MCP
-pool opens. Container runs instead supply the host policy bridge at activation: `stdio` calls return
-to the guest, whose dedicated hook caller may acquire an owner-scoped lease before the ordinary pool
-opens and releases it after each call. Only enabled `stdio` declarations from that guest run's
-snapshot are accepted; call and run cancellation propagate to acquisition and tool execution.
-It does not traverse the model's tool dispatcher and therefore cannot recursively fire tool hooks.
-MCP absence, tool failure, cancellation and timeout become ordinary `HookResult` failures; schema
-policy makes them fail open. Portable SessionEnd MCP entries are skipped during dialect conversion.
-Production: `MCP_HOOK_TOOL_PORT` in `packages/capability/src/hooks-config.ts`, its provider in
+An `mcp_tool` hook calls the run-scoped `MCP_HOOK_TOOL_PORT` in native Host/Sandbox after the MCP pool
+opens. It does not traverse the model's tool dispatcher and therefore cannot recursively fire tool
+hooks. MCP absence, tool failure, cancellation and timeout become ordinary `HookResult` failures;
+schema policy makes them fail open. Portable SessionEnd MCP entries are skipped during dialect
+conversion. Container constructs neither Hooks nor this port and starts no MCP transport.
+Production: `MCP_HOOK_TOOL_PORT` in `packages/capability/src/hooks-config.ts`, its native provider in
 `packages/loop/src/runtime/orchestrator.ts`, `createWorkspaceHooksCapability` in
 `packages/hooks/src/capability.ts`, and `convertHooksDocument` in
-`packages/kernel/src/plugins/hook-dialects.ts`, and `createGuestHookMcpCaller` in
-[`packages/kernel/src/runtime/hook-mcp.ts`](../../packages/kernel/src/runtime/hook-mcp.ts). Test: direct MCP cases in
-`packages/hooks/tests/component/runner.test.ts` and conversion cases in
-`packages/kernel/tests/integration/plugin-manifest.test.ts`, guest lease/cancellation cases in
-[`packages/kernel/tests/unit/runtime-hook-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-hook-mcp.test.ts),
-and early-hook/rewriting cases in
-[`packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts`](../../packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts).
+`packages/kernel/src/plugins/hook-dialects.ts`. Test: direct MCP cases in
+`packages/hooks/tests/component/runner.test.ts`, conversion cases in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`, and Container absence in
+`packages/kernel/tests/unit/local-docker-runtime.test.ts`.
 
 ### 4.4 `runHookCommand` — spawn/bound/kill state machine
 
@@ -853,16 +842,11 @@ The following invariants govern the behaviour covered above.
     `createHookRunner`. Test: direct MCP cases in
     `packages/hooks/tests/component/runner.test.ts`.
 
-28. **Container `stdio` MCP hooks cannot execute on the host, including when guest execution is
-    unavailable.** The hook keeps its ordinary fail-open error semantics without replaying the call
-    elsewhere. HTTP/SSE hooks and command hooks retain host placement. Production:
-    `createHostHooksBridge` in
-    [`packages/kernel/src/runtime/hooks-bridge.ts`](../../packages/kernel/src/runtime/hooks-bridge.ts)
-    and `createGuestHookMcpCaller` in
-    [`packages/kernel/src/runtime/hook-mcp.ts`](../../packages/kernel/src/runtime/hook-mcp.ts).
-    Test: `routes stdio hooks only to the guest and never falls back to a host connection` and the
-    HTTP/SSE lease cases in
-    [`packages/kernel/tests/integration/runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+28. **Container executes no Hook callback or Hook MCP transport.** Configured native Hooks are
+    inactive in that placement and create no host command, HTTP/SSE connection or guest stdio
+    process. Production: `createLocalContainerRuntime` in
+    [`packages/kernel/src/runtime/local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
+    Test: [`packages/kernel/tests/unit/local-docker-runtime.test.ts`](../../packages/kernel/tests/unit/local-docker-runtime.test.ts).
 
 ## 6. Failure modes and degradation
 

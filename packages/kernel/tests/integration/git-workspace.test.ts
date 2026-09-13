@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
-import { discoverGitWorkspace } from "../../src/git-workspace.ts";
+import { discoverGitWorkspace, runtimeGitMetadataMounts } from "../../src/git-workspace.ts";
 
 const roots: string[] = [];
 
@@ -39,6 +39,14 @@ describe("discoverGitWorkspace", () => {
 
     const a = await discoverGitWorkspace(primary);
     const b = await discoverGitWorkspace(linked);
+    if (
+      a.gitDir === undefined ||
+      a.commonDir === undefined ||
+      b.gitDir === undefined ||
+      b.commonDir === undefined
+    ) {
+      throw new Error("Git fixture metadata was not discovered");
+    }
     expect(a.project.id).toBe(b.project.id);
     expect(a.workspace.id).not.toBe(b.workspace.id);
     expect(a.workspace.kind).toBe("primary");
@@ -46,6 +54,24 @@ describe("discoverGitWorkspace", () => {
     expect(a.commonDir).toBe(a.gitDir);
     expect(b.commonDir).toBe(a.commonDir);
     expect(b.gitDir).not.toBe(b.commonDir);
+    expect(runtimeGitMetadataMounts(a)).toEqual([
+      {
+        source: a.gitDir,
+        target: "/workspace/.git",
+        type: "directory",
+        readOnly: true,
+      },
+    ]);
+    expect(runtimeGitMetadataMounts(b)).toEqual([
+      {
+        source: join(linked, ".git"),
+        target: "/workspace/.git",
+        type: "file",
+        readOnly: true,
+      },
+      { source: b.gitDir, target: b.gitDir, type: "directory", readOnly: true },
+      { source: b.commonDir, target: b.commonDir, type: "directory", readOnly: true },
+    ]);
   });
 
   it("falls back deterministically outside Git", async () => {
@@ -56,5 +82,6 @@ describe("discoverGitWorkspace", () => {
     expect(second).toEqual(first);
     expect(first.workspace.kind).toBe("primary");
     expect(first.workspace.path).toBe(root);
+    expect(runtimeGitMetadataMounts(first)).toEqual([]);
   });
 });

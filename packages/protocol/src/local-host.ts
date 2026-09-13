@@ -32,7 +32,6 @@ export interface LocalHostService {
   /** Claims one pending request for this connection's current interactive authority. */
   takeBrowserRequest(): Promise<LocalHostBrowserRequest | null>;
   respondBrowser(requestId: string, opened: boolean): Promise<void>;
-  retryRuntime(): Promise<void>;
   /** Refuses while physical work is active; admission closes before a restart is acknowledged. */
   requestRestart(): Promise<void>;
 }

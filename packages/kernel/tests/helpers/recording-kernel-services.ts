@@ -30,7 +30,6 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       inspect: record("localHost.inspect"),
       takeBrowserRequest: record("localHost.takeBrowserRequest"),
       respondBrowser: record("localHost.respondBrowser"),
-      retryRuntime: record("localHost.retryRuntime"),
       requestRestart: record("localHost.requestRestart"),
     },
     hosting: {

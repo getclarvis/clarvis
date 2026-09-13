@@ -6,7 +6,11 @@ import {
   type RuntimeHostInput,
 } from "../../src/runtime/lazy-runtime.ts";
 import { runtimeSettingsSchema, type RuntimeSettingsBlock } from "../../src/runtime/settings.ts";
-import { RuntimeLaunchError, type RuntimeInfo } from "../../src/runtime/types.ts";
+import {
+  RuntimeLaunchError,
+  type RuntimeInfo,
+  type RuntimeProtectedMount,
+} from "../../src/runtime/types.ts";
 import type { RunExecutor } from "../../src/runs/run-service.ts";
 
 const project = { id: "project" };
@@ -51,23 +55,17 @@ function coordinator(options: {
   factory?: (input: RuntimeHostInput) => Promise<RuntimeHost>;
   native?: RunExecutor;
   notices?: Array<{ status: { lifecycle: string }; message?: string }>;
-  assertFallbackSandbox?: () => Promise<void>;
-  gitCommonDir?: string;
+  gitMetadataMounts?: readonly RuntimeProtectedMount[];
 }) {
   let settings = options.settings ?? docker();
-  let extensionRevision = "extension-1";
   return {
     setSettings(next: RuntimeSettingsBlock) {
       settings = next;
-    },
-    setExtensionRevision(next: string) {
-      extensionRevision = next;
     },
     value: createLazyRuntimeCoordinator({
       selection: () => ({
         settings,
         configurationRevision: JSON.stringify(settings),
-        extensionRevision,
       }),
       nativeIsolation: () => "sandbox",
       nativeExecuteRun: options.native ?? (async () => outcome),
@@ -76,17 +74,48 @@ function coordinator(options: {
       project,
       workspace,
       workspaceRoot: "/workspace",
-      ...(options.gitCommonDir === undefined ? {} : { gitCommonDir: options.gitCommonDir }),
+      gitMetadataMounts: options.gitMetadataMounts ?? [],
       deps: {} as never,
-      ...(options.assertFallbackSandbox === undefined
-        ? {}
-        : { assertFallbackSandbox: options.assertFallbackSandbox }),
       onPlacement: (notice) => options.notices?.push(notice),
     }),
   };
 }
 
 describe("lazy runtime coordinator", () => {
+  it("fails closed when container support is absent", async () => {
+    const absent = coordinator({});
+    await expect(absent.value.executeRun(args)).rejects.toMatchObject({
+      code: "operational_failure",
+    });
+    await absent.value.close();
+  });
+
+  it("closes a generation that becomes ready after coordinator shutdown", async () => {
+    const entered = Promise.withResolvers<void>();
+    const ready = Promise.withResolvers<RuntimeHost>();
+    let closes = 0;
+    const c = coordinator({
+      factory: async () => {
+        entered.resolve();
+        return ready.promise;
+      },
+    });
+    const run = c.value.executeRun(args);
+    await entered.promise;
+    const closing = c.value.close();
+    ready.resolve({
+      closed: false,
+      info: info("late"),
+      executeRun: async () => outcome,
+      close: async () => {
+        closes += 1;
+      },
+    });
+    await expect(run).rejects.toThrow("runtime coordinator is closed");
+    await closing;
+    expect(closes).toBe(1);
+  });
+
   it("cancels one waiter while another retains the shared initializing generation", async () => {
     const entered = Promise.withResolvers<RuntimeHostInput>();
     const ready = Promise.withResolvers<RuntimeHost>();
@@ -230,12 +259,32 @@ describe("lazy runtime coordinator", () => {
     });
   });
 
-  it("forwards linked-worktree Git metadata only when the host discovered it", async () => {
-    let commonDir: string | undefined;
+  it("forwards only the host-discovered Git metadata projection", async () => {
+    const mounts: readonly RuntimeProtectedMount[] = [
+      {
+        source: "/workspace/.git",
+        target: "/workspace/.git",
+        type: "file",
+        readOnly: true,
+      },
+      {
+        source: "/repository/.git/worktrees/feature",
+        target: "/repository/.git/worktrees/feature",
+        type: "directory",
+        readOnly: true,
+      },
+      {
+        source: "/repository/.git",
+        target: "/repository/.git",
+        type: "directory",
+        readOnly: true,
+      },
+    ];
+    let received: readonly RuntimeProtectedMount[] = [];
     const c = coordinator({
-      gitCommonDir: "/repository/.git",
+      gitMetadataMounts: mounts,
       factory: async (input) => {
-        commonDir = input.gitCommonDir;
+        received = input.gitMetadataMounts;
         return {
           closed: false,
           info: info("generation-worktree"),
@@ -245,7 +294,7 @@ describe("lazy runtime coordinator", () => {
       },
     });
     await c.value.executeRun(args);
-    expect(commonDir).toBe("/repository/.git");
+    expect(received).toEqual(mounts);
     await c.value.close();
   });
 
@@ -289,69 +338,12 @@ describe("lazy runtime coordinator", () => {
     expect(closes).toBe(1);
   });
 
-  it("starts a new generation when the extension revision changes", async () => {
-    let creates = 0;
-    let closes = 0;
-    const c = coordinator({
-      factory: async () => {
-        creates += 1;
-        return {
-          closed: false,
-          info: info(`generation-${String(creates)}`),
-          executeRun: async () => outcome,
-          close: async () => {
-            closes += 1;
-          },
-        };
-      },
-    });
-    await c.value.executeRun(args);
-    c.setExtensionRevision("extension-2");
-    await c.value.executeRun(args);
-    expect({ creates, closes }).toEqual({ creates: 2, closes: 1 });
-    expect(c.value.current()).toMatchObject({ generation: "generation-2" });
-    await c.value.close();
-    expect(closes).toBe(2);
-  });
-
-  it("latches an operational Docker failure to required Sandbox and announces it once", async () => {
-    let creates = 0;
-    let nativeRuns = 0;
-    let sandboxChecks = 0;
-    const notices: Array<{ status: { lifecycle: string }; message?: string }> = [];
-    const c = coordinator({
-      notices,
-      factory: async () => {
-        creates += 1;
-        throw new RuntimeLaunchError("engine_stopped", "Docker Desktop is stopped");
-      },
-      native: async () => {
-        nativeRuns += 1;
-        return outcome;
-      },
-      assertFallbackSandbox: async () => {
-        sandboxChecks += 1;
-      },
-    });
-    await c.value.executeRun(args);
-    await c.value.executeRun(args);
-    expect({ creates, nativeRuns, sandboxChecks }).toEqual({
-      creates: 1,
-      nativeRuns: 2,
-      sandboxChecks: 2,
-    });
-    expect(notices.filter((notice) => notice.message !== undefined)).toHaveLength(1);
-    expect(c.value.current()).toMatchObject({
-      kind: "native",
-      isolation: "sandbox",
-      lifecycle: "fallback",
-      fallback_from: "docker",
-    });
-  });
-
-  it("fails closed on image, recipe or handshake integrity errors", async () => {
+  it("fails closed on every container acquisition error without native execution", async () => {
     let nativeRuns = 0;
     for (const code of [
+      "engine_missing",
+      "engine_stopped",
+      "operational_failure",
       "invalid_launch_spec",
       "runtime_recipe_invalid",
       "runtime_recipe_failed",
@@ -491,53 +483,6 @@ describe("lazy runtime coordinator", () => {
       lifecycle: "ready",
       generation: "generation-ready",
     });
-    await c.value.close();
-  });
-
-  it("does not fall back when the required native sandbox is unavailable", async () => {
-    let nativeRuns = 0;
-    const c = coordinator({
-      factory: async () => {
-        throw new RuntimeLaunchError("engine_missing", "Docker is missing");
-      },
-      native: async () => {
-        nativeRuns += 1;
-        return outcome;
-      },
-      assertFallbackSandbox: async () => {
-        throw new Error("Seatbelt is unavailable");
-      },
-    });
-    await expect(c.value.executeRun(args)).rejects.toThrow("Seatbelt is unavailable");
-    expect(nativeRuns).toBe(0);
-  });
-
-  it("retries Docker explicitly after a latched fallback", async () => {
-    let creates = 0;
-    let nativeRuns = 0;
-    const c = coordinator({
-      factory: async () => {
-        creates += 1;
-        if (creates === 1) throw new RuntimeLaunchError("engine_stopped", "stopped");
-        return {
-          closed: false,
-          info: info("generation-2"),
-          executeRun: async () => outcome,
-          close: async () => {},
-        };
-      },
-      native: async () => {
-        nativeRuns += 1;
-        return outcome;
-      },
-      assertFallbackSandbox: async () => {},
-    });
-    await c.value.executeRun(args);
-    c.value.retry();
-    expect(c.value.current()).toMatchObject({ kind: "container", lifecycle: "cold" });
-    await c.value.executeRun(args);
-    expect({ creates, nativeRuns }).toEqual({ creates: 2, nativeRuns: 1 });
-    expect(c.value.current()).toMatchObject({ kind: "container", lifecycle: "ready" });
     await c.value.close();
   });
 });

@@ -6,7 +6,7 @@ import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createSandboxPolicyResolver } from "../../src/sandbox/policy.ts";
 
 describe("sandbox host policy", () => {
-  it("strengthens Docker fallback to a required native sandbox without discarding tuning", () => {
+  it("does not change native Sandbox settings when Container is selected", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-docker-fallback-policy-"));
     const globalDir = join(root, "global");
     const workspace = join(root, "workspace");
@@ -24,8 +24,8 @@ describe("sandbox host policy", () => {
     });
     expect(createSandboxPolicyResolver(store, workspace).resolve()).toMatchObject({
       type: "native",
-      enabled: true,
-      availability: "required",
+      enabled: false,
+      availability: "optional",
       filesystem: "workspace-read-only",
       network: "none",
     });

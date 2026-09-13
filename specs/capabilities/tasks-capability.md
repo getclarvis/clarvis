@@ -793,22 +793,16 @@ array copies: `taskRefFromDto`, `taskRefDto`, `taskActorDto`, `taskSummaryDto`, 
 
 ### 4.13 Host composition
 
-Docker/Podman placement registers the same canonical Tasks capability and strict `task` request
-schema in the guest. Its provider resolver proxies only exact `runtime.tasks` operations; provider
-connections and credentials remain on the host. Host admission binds provider identity, run/owner,
-continuation state, write settings and grants. Lifecycle writes target the active binding, including
-review's composed comment/artifact writes; a continuation cannot turn inspect mode into work mode.
-Provider errors retain their typed code, current revision and task so conflict and uncertain-write
-handling still runs in the native capability. No permissive schema or second Tasks implementation is
-introduced.
+Tasks remains a native Host/Sandbox capability and control plane. Docker/Podman registers no Tasks
+capability, schema, provider resolver or lifecycle callback in the guest. An explicit `task`, a
+continuation with an active task binding, or a profile carrying `tasks.*` grants is incompatible and
+fails before engine/model work with guidance to use Sandbox or Host. Merely registering Tasks on the
+file kernel does not block or widen a core-only Container run.
 
-Production: `createHostTasksGrant` and `createGuestTaskResolver` in
-`packages/kernel/src/runtime/tasks-bridge.ts`; `createGuestLoopExecutor` in
-`packages/kernel/src/runtime/guest-loop-executor.ts`; `createFileKernel` in
-`packages/kernel/src/file-kernel.ts`.
-Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (bound Tasks run);
-`packages/kernel/tests/unit/runtime-tasks-bridge.test.ts` (strict inputs, provider identity, grants,
-review composition and continuation mode).
+Production: `admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts` and
+`createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`. Test:
+`packages/kernel/tests/unit/container-core-policy.test.ts` and
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
 
 `createFileKernel` computes `tasksEnabled = opts.builtins?.tasks !== false`
 (`packages/kernel/src/file-kernel.ts`), then, in order: builds the server port over the shared MCP

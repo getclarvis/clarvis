@@ -458,7 +458,11 @@ with or without `sha256:`, and emits canonical prefixed identities; it rejects s
 Bun and Debian references are immutable; mise's version and both architecture checksums
 are source constants forwarded as build arguments. Both carrier and final image label the root
 product version, full source revision, protocol revision, source URL and MIT license, while the final
-image additionally labels its mise version.
+image additionally labels its mise version. Revision 14 is the core-only wire; both Containerfiles,
+the build helper and kernel constant must move together and older images fail handshake. Image
+qualification uses `tooling/ci/qualify-runtime.sh` for each available engine plus the opt-in kernel
+canaries; a skipped engine test proves compilation/admission only, not an actual Docker/Podman mount
+or network result.
 
 Production: both root runtime Containerfiles; `runtimeImageBuildPlan` and image constants in
 `tooling/runtime/build-image.ts`; `tooling/runtime/guest-entry.ts`; `RUNTIME_PROTOCOL_REVISION` in
@@ -1104,9 +1108,11 @@ monorepo`).
 released carrier at an immutable digest. Repository source compilation is confined to
 `Containerfile.runtime-development`; that development carrier must use the same exact Bun version as
 `mise.toml` through a digest-pinned build image, and both paths must advertise the kernel-owned
-private protocol revision. The final image uses a digest-pinned Debian slim base and may acquire mise
-only from the exact versioned amd64/arm64 archives after matching their source-owned SHA-256 values;
-curl, archive utilities, language runtimes and compilers remain outside the final stage. Production:
+private protocol revision. Carrier and final-image commands bypass builder caches so a stale
+cross-stage `COPY` cannot substitute an older guest binary for current source or an approved release
+artifact. The final image uses a digest-pinned Debian slim base and may acquire mise only from the
+exact versioned amd64/arm64 archives after matching their source-owned SHA-256 values; curl, archive
+utilities, language runtimes and compilers remain outside the final stage. Production:
 both root runtime Containerfiles;
 `runtimeImageBuildArgs`, `runtimeArtifactBuildArgs`, and `runtimeImageBuildPlan` in
 `tooling/runtime/build-image.ts`; `RUNTIME_PROTOCOL_REVISION` in

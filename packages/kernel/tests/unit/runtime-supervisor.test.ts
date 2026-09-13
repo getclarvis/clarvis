@@ -15,10 +15,24 @@ const spec: RuntimeLaunchSpec = {
   project: { id: "project-1" },
   workspace: { id: "workspace-1", projectId: "project-1", label: "primary", kind: "primary" },
   workspaceRoot: "/work/source",
-  readOnlyWorkspacePaths: [],
+  controlRootMasks: [
+    {
+      source: "/private/masks/clarvis",
+      target: "/workspace/.clarvis",
+      type: "directory",
+      readOnly: true,
+    },
+    {
+      source: "/private/masks/agents",
+      target: "/workspace/.agents",
+      type: "directory",
+      readOnly: true,
+    },
+  ],
+  gitMetadataMounts: [
+    { source: "/private/masks/git", target: "/workspace/.git", type: "directory", readOnly: true },
+  ],
   imageDigest: digest,
-  configurationRevision: "config-1",
-  extensionRevision: "extensions-1",
   network: "none",
   limits: {
     cpuCount: 1,
@@ -27,7 +41,7 @@ const spec: RuntimeLaunchSpec = {
     outputBytes: 1024,
     storageBytes: 2048,
   },
-  capabilityMethods: ["memory.search"],
+  capabilityMethods: ["runtime.elicit"],
 };
 
 function info(overrides: Partial<RuntimeInfo> = {}): RuntimeInfo {
@@ -50,22 +64,11 @@ function info(overrides: Partial<RuntimeInfo> = {}): RuntimeInfo {
 const sessionMethods = {
   closed: false,
   async startRun() {},
-  async callHookMcp() {},
-  async elicitMcp() {},
   async steer() {},
   async interruptTool() {
     return { status: "not_running" };
   },
   async cancel() {},
-  async exposePort(guestPort: number, protocol: "http" | "https" | "tcp" = "http") {
-    return {
-      guestPort,
-      host: "127.0.0.1" as const,
-      hostPort: guestPort,
-      protocol,
-      url: `${protocol}://127.0.0.1:${String(guestPort)}/`,
-    };
-  },
 };
 
 describe("createRuntimeSupervisor", () => {
@@ -126,14 +129,7 @@ describe("createRuntimeSupervisor", () => {
     };
     const supervisor = createRuntimeSupervisor(backend);
     const session = await supervisor.launch(spec);
-    await expect(
-      session.elicitMcp("run", {}, new AbortController().signal),
-    ).resolves.toBeUndefined();
     await expect(supervisor.launch(spec)).rejects.toBeInstanceOf(RuntimeLaunchError);
-    await expect(session.exposePort(9090)).resolves.toMatchObject({
-      guestPort: 9090,
-      hostPort: 9090,
-    });
     await session.stop();
     await session.stop();
     expect(stops).toBe(1);

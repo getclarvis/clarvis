@@ -346,13 +346,10 @@ export async function connectKernelClient(
     runtime === undefined ||
     (isRecord(runtime) &&
       ((runtime.kind === "native" &&
-        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle", "fallback_from"]) &&
+        hasOnly(runtime, ["kind", "host_platform", "isolation", "lifecycle"]) &&
         typeof runtime.host_platform === "string" &&
         (runtime.isolation === "host" || runtime.isolation === "sandbox") &&
-        (runtime.lifecycle === "ready" || runtime.lifecycle === "fallback") &&
-        (runtime.fallback_from === undefined ||
-          runtime.fallback_from === "docker" ||
-          runtime.fallback_from === "podman")) ||
+        runtime.lifecycle === "ready") ||
         (runtime.kind === "container" &&
           hasOnly(runtime, [
             "kind",

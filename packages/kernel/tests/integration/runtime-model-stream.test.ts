@@ -177,23 +177,13 @@ describe("runtime model stream", () => {
     gate.resolve();
   });
 
-  it("admits only profile and vision models, never a host reviewer model", () => {
+  it("admits only the core request's profile and vision models", () => {
     const body = {
       profiles: [{ model: "chat/main" }],
       vision_model: "vision/image/model",
-      guard_mode: "auto",
-      guard_judge: { prompt: "review" },
     };
     expect([...runtimeModelPairs(body)]).toEqual(["chat\0main", "vision\0image/model"]);
-    expect([...runtimeModelPairs({ ...body, guard_judge: { model: "judge/override" } })]).toEqual([
-      "chat\0main",
-      "vision\0image/model",
-    ]);
-    expect([...runtimeModelPairs({ ...body, guard_mode: "on" })]).toEqual([
-      "chat\0main",
-      "vision\0image/model",
-    ]);
     expect([...runtimeModelPairs({ profiles: [{ model: "invalid" }, {}] })]).toEqual([]);
-    expect([...runtimeModelPairs({ profiles: [], guard_mode: "auto" })]).toEqual([]);
+    expect([...runtimeModelPairs({ profiles: [] })]).toEqual([]);
   });
 });

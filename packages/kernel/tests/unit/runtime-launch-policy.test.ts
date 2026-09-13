@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { dirname, join, parse, resolve } from "node:path";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, parse, resolve } from "node:path";
 
 import {
   assertRuntimeLaunchSpec,
   RuntimeLaunchError,
   type RuntimeLaunchSpec,
 } from "../../src/index.ts";
+import { assertMaterializedProtectedTargets } from "../../src/runtime/container-policy.ts";
 
 const digest = `sha256:${"a".repeat(64)}`;
 const workspaceRoot = resolve("runtime-test-workspace");
-const gitCommonDir = resolve("runtime-test-git");
+const maskRoot = resolve("runtime-test-masks");
 
 function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSpec {
   return {
@@ -23,11 +26,29 @@ function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSp
       kind: "primary",
     },
     workspaceRoot,
-    readOnlyWorkspacePaths: [join(workspaceRoot, ".clarvis", "memory")],
-    gitCommonDir,
+    controlRootMasks: [
+      {
+        source: join(maskRoot, "clarvis"),
+        target: "/workspace/.clarvis",
+        type: "directory",
+        readOnly: true,
+      },
+      {
+        source: join(maskRoot, "agents"),
+        target: "/workspace/.agents",
+        type: "directory",
+        readOnly: true,
+      },
+    ],
+    gitMetadataMounts: [
+      {
+        source: join(maskRoot, "git"),
+        target: "/workspace/.git",
+        type: "directory",
+        readOnly: true,
+      },
+    ],
     imageDigest: digest,
-    configurationRevision: "config-1",
-    extensionRevision: "extensions-1",
     network: "none",
     limits: {
       cpuCount: 2,
@@ -36,36 +57,98 @@ function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSp
       outputBytes: 4096,
       storageBytes: 8192,
     },
-    capabilityMethods: ["memory.search", "plans.get"],
+    capabilityMethods: ["runtime.elicit"],
     ...overrides,
   };
 }
 
+function linkedSpec(): RuntimeLaunchSpec {
+  const common = resolve("runtime-test-repository", ".git");
+  const gitDir = join(common, "worktrees", "feature");
+  return launchSpec({
+    workspace: { ...launchSpec().workspace, kind: "external_worktree" },
+    gitMetadataMounts: [
+      {
+        source: join(workspaceRoot, ".git"),
+        target: "/workspace/.git",
+        type: "file",
+        readOnly: true,
+      },
+      { source: gitDir, target: gitDir, type: "directory", readOnly: true },
+      { source: common, target: common, type: "directory", readOnly: true },
+    ],
+  });
+}
+
 describe("assertRuntimeLaunchSpec", () => {
-  test("accepts a direct workspace mount with bounded overlays and linked Git metadata", () => {
+  test("refuses absent protected roots without materializing nested mount targets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-non-git-"));
+    try {
+      const spec = launchSpec({ workspaceRoot: root });
+      await expect(assertMaterializedProtectedTargets(spec)).rejects.toMatchObject({
+        code: "unsupported_policy",
+        message: expect.stringContaining("Use Isolation Sandbox or Host"),
+      });
+      for (const name of [".clarvis", ".agents", ".git"]) {
+        await expect(stat(join(root, name))).rejects.toMatchObject({ code: "ENOENT" });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts exact private control masks and primary or linked Git projections", () => {
     expect(() => assertRuntimeLaunchSpec(launchSpec())).not.toThrow();
+    expect(() => assertRuntimeLaunchSpec(linkedSpec())).not.toThrow();
   });
 
-  test.each([
-    ["same", workspaceRoot],
-    ["outside", resolve("runtime-test-other", "memory")],
-    ["parent", dirname(workspaceRoot)],
-    ["relative", join("relative", "memory")],
-  ])("rejects a %s read-only workspace path", (_name, path) => {
-    expect(() => assertRuntimeLaunchSpec(launchSpec({ readOnlyWorkspacePaths: [path] }))).toThrow(
-      RuntimeLaunchError,
-    );
-  });
-
-  test("rejects duplicate overlays and Git metadata that overlaps the workspace", () => {
-    const protectedPath = join(workspaceRoot, ".clarvis", "memory");
+  test("rejects missing, reordered, writable or workspace-backed control masks", () => {
+    const base = launchSpec();
     for (const spec of [
-      launchSpec({ readOnlyWorkspacePaths: [protectedPath, protectedPath] }),
-      launchSpec({ gitCommonDir: workspaceRoot }),
-      launchSpec({ gitCommonDir: join(workspaceRoot, ".git") }),
-      launchSpec({ gitCommonDir: dirname(workspaceRoot) }),
-      launchSpec({ gitCommonDir: parse(workspaceRoot).root }),
-      launchSpec({ gitCommonDir: join("relative", ".git") }),
+      launchSpec({ controlRootMasks: base.controlRootMasks.slice(0, 1) }),
+      launchSpec({ controlRootMasks: [...base.controlRootMasks].reverse() }),
+      launchSpec({
+        controlRootMasks: [
+          { ...base.controlRootMasks[0]!, readOnly: false as true },
+          base.controlRootMasks[1]!,
+        ],
+      }),
+      launchSpec({
+        controlRootMasks: [
+          { ...base.controlRootMasks[0]!, source: join(workspaceRoot, "mask") },
+          base.controlRootMasks[1]!,
+        ],
+      }),
+    ]) {
+      expect(() => assertRuntimeLaunchSpec(spec)).toThrow(RuntimeLaunchError);
+    }
+  });
+
+  test("rejects extra, writable, duplicate, root or malformed Git projections", () => {
+    const base = launchSpec();
+    const linked = linkedSpec();
+    for (const spec of [
+      launchSpec({ gitMetadataMounts: [] }),
+      launchSpec({
+        gitMetadataMounts: [{ ...base.gitMetadataMounts[0]!, readOnly: false as true }],
+      }),
+      launchSpec({
+        gitMetadataMounts: [base.gitMetadataMounts[0]!, base.gitMetadataMounts[0]!],
+      }),
+      launchSpec({
+        gitMetadataMounts: [{ ...base.gitMetadataMounts[0]!, source: parse(workspaceRoot).root }],
+      }),
+      launchSpec({
+        gitMetadataMounts: [{ ...base.gitMetadataMounts[0]!, target: "/workspace/other" }],
+      }),
+      { ...linked, gitMetadataMounts: linked.gitMetadataMounts.slice(1) },
+      {
+        ...linked,
+        gitMetadataMounts: [
+          linked.gitMetadataMounts[0]!,
+          { ...linked.gitMetadataMounts[1]!, target: "/different" },
+        ],
+      },
     ]) {
       expect(() => assertRuntimeLaunchSpec(spec)).toThrow(RuntimeLaunchError);
     }

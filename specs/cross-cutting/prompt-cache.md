@@ -176,14 +176,13 @@ Workflow manager/leader separation, SDK-serialized keys and
 continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
-The guest goal bridge keeps this same session/instance affinity through checkpoint continuation;
-its binding never substitutes the new execution ID or goal ID for the agent identity.
-Production: [goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts) and
-[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts).
-Test: `preserves goal authority, plan checkpoint and SDK prefix across guest continuation` in
-[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
-compares SDK-serialized messages, catalogs and keys. Controlled responses prove prefix preservation,
-not backend cache reuse.
+Native Goal continuation keeps this same session/instance affinity; its binding never substitutes
+the new execution ID or goal ID for the agent identity. Goal is unavailable in core-only Container,
+so no guest Goal bridge or alternate cache identity exists. Production:
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and
+[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts). Test:
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+and [container-core-policy.test.ts](../../packages/kernel/tests/unit/container-core-policy.test.ts).
 
 ## Provider wire and replay
 

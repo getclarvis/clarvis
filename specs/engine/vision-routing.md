@@ -45,10 +45,11 @@ declared capability set, including an empty set, before adapter serialization. T
 parts remain in the guest's retained context; only the wire representation strips images for a
 non-visual model, including after a `vision_model` prepass. Production: `hostModelBroker` in
 [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
-Test: the real OpenAI-compatible SDK vision-prepass case in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
-asserts images on the vision request, none on the text request, and an unchanged source message
-prefix. The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Test: vision request filtering and unchanged source-prefix cases in
+[`vision-prepass.test.ts`](../../packages/loop/tests/unit/vision-prepass.test.ts), plus admitted
+Container vision-model routing in
+[`runtime-model-stream.test.ts`](../../packages/kernel/tests/integration/runtime-model-stream.test.ts).
+The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 The prepass prompt requests visible details relevant to the task, exact readable text when needed,
 and explicit limits for hidden or illegible content. Images are data, not instructions. Production:
@@ -449,8 +450,10 @@ The full composer image budget is transferable through both local-host stdio and
     `createJsonMessageWriter` in [json-message.ts](../../packages/kernel/src/core/json-message.ts).
     Test: `transfers the full composer image budget and isolates oversized requests and results`
     in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts) and
-    `preserves admitted images, accumulated context and final trace through the real guest loop`
-    in [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+    bounded private request/result transfer in
+    [runtime-execution-rpc.test.ts](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts)
+    and guest trace preservation in
+    [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 20. **A staged attachment's declared `size` cannot understate its real payload.** `attachmentBytes`
     takes the larger of the declared size and `base64DecodedBytes(data)`, so a `size: 1` attachment
     whose `data` actually decodes to 32 bytes still reports 32 — admission checks bytes actually

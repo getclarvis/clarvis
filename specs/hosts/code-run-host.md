@@ -301,6 +301,13 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `task` | `task` | truthy |
 | `skill` | `skill` | truthy |
 
+When `KernelCapabilities.runtime.kind === "container"`, `toStartParams` omits Guard judge/mode,
+Memory and Plans projections. An explicit Task or Skill is rejected synchronously before
+`runs.start`/`hosting.start` instead of being omitted and silently degraded. Production:
+`packages/code/src/adapters/kernel-run-client.ts` (`toStartParams`, `startRun`). Test:
+`packages/code/tests/component/kernel-run-client.test.ts` (Container payload and explicit feature
+refusal cases).
+
 `workspace` is *not* a start parameter — `packages/code/tests/component/kernel-run-client.test.ts`
 asserts `expect(captured).not.toHaveProperty("workspace")`.
 
@@ -996,16 +1003,17 @@ Pure functions of `RunControlsState`, no state of their own.
 
 `deriveIsolation` gives an explicit Docker or Podman runtime precedence over the native Sandbox
 block; without a container runtime it returns Sandbox when that block is enabled and Host otherwise.
-`deriveRunControls` then projects Review, Memory and Plans independently from that isolation choice.
+`deriveRunControls` then projects stored Review, Memory and Plans independently from that isolation
+choice while marking their effective availability for Container.
 
-`safetyDescription` branches first on container isolation. Docker and Podman describe the directly
-mounted selected workspace plus either disabled networking or outbound access with explicit service
-exposure. It states that guest changes appear on the host immediately rather than promising a hidden
-copy or apply phase, then states whether commands run without review, use model review, or ask before
-running. Container placement does not hide the independently selected Review mode.
-Native Sandbox describes required versus optional confinement, filesystem and network policy; Host
-describes direct execution. Review changes the consequence text inside either native placement but
-never changes which placement was selected.
+`safetyDescription` branches first on container isolation. Docker and Podman describe **Core tools
+only**, the directly mounted writable selected workspace, either disabled networking or outbound
+access with explicit service exposure, and read-only Git metadata. They state that commands run
+without Command Review and that extensions/host-backed capabilities are unavailable; they do not
+promise a hidden copy, workspace protection or remote-effect containment. Native Sandbox describes
+required versus optional confinement, filesystem and network policy; Host describes direct
+execution. Stored Review changes consequences only inside native placement and never changes which
+placement was selected.
 
 `memoryDescription` is a three-way switch on `state.memory`: `"on"` reads before/after, "no
 extraction model resolves" for `"inert"`, otherwise disabled-for-this-session.
@@ -1018,9 +1026,10 @@ TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
 `applyIsolation` maps Host/Sandbox/Docker/Podman to an explicit global `{runtime, sandbox}` patch.
-Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both keep the native
-Sandbox enabled; Docker uses it as the required operational fallback, while Podman fails closed if
-the engine cannot start. Guard policy is untouched. Settings > Isolation, Run Controls and the
+Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both leave the native
+Sandbox setting intact but never invoke it as fallback; engine failure remains a Container failure
+until a new explicit placement/run. Guard policy is untouched and becomes effective again only in
+native placement. Settings > Isolation, Run Controls and the
 `Ctrl+S` picker share that writer. `applyReviewMode` separately maps Off/Approval/Auto to
 the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
 workspace with no local policy; it writes no runtime or Sandbox field. Production:
@@ -1047,7 +1056,10 @@ mutate that configuration. Production: `main` in
 
 Code supplies the workspace it already owns to the lazy container runtime. In a linked Git worktree,
 that worktree is the separate checkout and Clarvis does not create a second copy, pause for apply,
-commit, merge or remove it. A primary checkout or non-Git directory is mounted directly as well.
+commit, merge or remove it. A primary checkout is mounted directly as well. Worktree files remain
+writable, while discovered primary/linked Git metadata is overlaid read-only. Current engines would
+materialize an absent nested protected target, so a workspace missing `.clarvis`, `.agents` or `.git`
+fails before container creation. Commits and incompatible workspaces require a new Sandbox/Host run.
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `discoverGitWorkspace` and the runtime
 composition in `packages/kernel/src/file-kernel.ts`; `safetyDescription` in
@@ -1169,8 +1181,8 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/run-host.test.ts`.
 
 16. **`Work on task` carries only `{id, provider_key, mode}` — never a workspace or repository.**
-    `packages/code/src/run-host.ts`, and `toStartParams` passes `task` through verbatim
-    (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
+    `packages/code/src/run-host.ts`, and native `toStartParams` passes `task` through verbatim while
+    Container refuses it before submission (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
     `packages/code/tests/component/run-host.test.ts`.
 
 17. **The resumed active-task binding survives a continuation fallback.** `sessionTask` is set from
@@ -1389,11 +1401,13 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/session-store.test.ts`, which always supplies one — the throw
     itself is unpinned.
 
-56. **Isolation and command review are independently derived: an explicit Docker or Podman runtime
-    wins over the native Sandbox block, while `guardMode` remains an orthogonal field; every
-    container safety description includes that guard consequence.** Production:
-    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`,
-    `safetyDescription`). Pinned: `packages/code/tests/unit/execution-safety.test.ts`.
+56. **Isolation choice and persisted command-review policy remain independently stored, but Review
+    is not effective in Container.** Docker/Podman wins over the native Sandbox block; every Container
+    safety description states core-only, no Command Review, writable workspace/outbound consequences
+    and read-only Git metadata. Switching back restores the persisted native Review value.
+    Production: `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`,
+    `deriveRunControls`, `safetyDescription`). Pinned:
+    `packages/code/tests/unit/execution-safety.test.ts`.
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**

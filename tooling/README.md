@@ -55,12 +55,12 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
-Both Containerfiles and the build helper carry private protocol revision 13, matching the kernel
-worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
-model policy, resolved operator loop defaults/ceilings and the bound goal capability projection.
-Operator authority and effect review remain outside the guest protocol.
-Older images are refused at admission and must be rebuilt; changing an active runtime
-image remains an operator choice.
+Both Containerfiles and the build helper carry private protocol revision 14, matching the kernel
+worker. The closed core wire contains lifecycle/model/capability/event/checkpoint operations and
+`runtime.elicit` as its sole capability method. It carries no MCP, Hook, extension, host-backed
+capability, Command Review or reviewer projection; real provider configuration/credentials remain in
+the host broker. Older images are refused at admission and must be rebuilt; changing an active
+runtime image remains an operator choice.
 
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
 source commit to the two released OCI digests, the private guest protocol revision, the supported

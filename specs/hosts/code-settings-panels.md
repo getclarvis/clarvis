@@ -156,12 +156,18 @@ write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Product
 
 `IsolationConfigPanel` is the dedicated global placement screen for Host, Sandbox, Docker or Podman.
 It writes through shared `applyIsolation` and drills to `sandbox.config` for native Sandbox fields
-rather than cloning them. Workspace settings cannot contribute a runtime. Docker copy states the
-required-Sandbox operational fallback; Podman copy states fail-closed startup. Production:
-`packages/code/src/views/config/IsolationConfigPanel.tsx` and
-`packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`). Test:
-`packages/code/tests/integration/isolation-config-render.test.tsx` and
-`packages/code/tests/unit/isolation.test.ts`.
+rather than cloning them. Workspace settings cannot contribute a runtime. Docker/Podman copy states
+**Core tools only**, no extensions/host-backed capabilities/Command Review, writable workspace and
+outbound consequences, read-only Git metadata and fail-closed startup with no native fallback.
+Review renders `Not applicable in Container`, while Memory/Plans/Extensions are visibly inactive;
+their persisted native settings are not overwritten. Production:
+`packages/code/src/views/config/IsolationConfigPanel.tsx`,
+`packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
+`packages/code/src/views/config/RunControlsPanel.tsx`. Test:
+`packages/code/tests/integration/isolation-config-render.test.tsx`,
+`packages/code/tests/unit/isolation.test.ts`,
+`packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
+`packages/code/tests/integration/run-controls-render.test.tsx`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global

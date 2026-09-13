@@ -478,8 +478,9 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-Native and compatible container hosts advertise the service; headless kernels do not. Container
-admission requires the current private protocol, which includes the goal bridge.
+Native Host/Sandbox file hosts advertise the service; headless and Container placements do not.
+An explicit Goal policy or goal-owned continuation is incompatible with core-only Container and is
+refused before engine acquisition or inference.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),
 [file-host.ts](../../packages/kernel/src/hosting/file-host.ts), and
@@ -518,12 +519,9 @@ Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/ca
 `attemptCompaction` in [llm-compaction.ts](../../packages/loop/src/runtime/context/llm-compaction.ts),
 `createGoalUsageTracker` in [usage.ts](../../packages/kernel/src/goals/usage.ts), and
 `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
-The same `runGoalFileHostJourney` assertion helper is exercised by the optional
-[goal-file-host.e2e.test.ts](../../packages/kernel/tests/integration/goal-file-host.e2e.test.ts)
-against the actual Docker/Podman runtime factory. It verifies the guest executable through a
-delegated tool, records its hash, and checks container/fixture-volume cleanup after host shutdown.
-Its controlled HTTP transport is independent of live-provider qualification. Missing opt-in or
-engine inputs skip this test; a skip is no engine evidence.
+Goal journey coverage is native Host/Sandbox coverage. Container qualification instead proves that
+an explicit Goal request is rejected before engine/model work; it does not attempt automatic
+continuation in a guest.
 
 The local `tooling/goal/live.ts` command qualifies the native file host with the existing global
 subscription through the kernel's production resolver. A Linux host mount view retains renewable
@@ -572,41 +570,14 @@ owned by the planning capability. A checkpoint preserves open tasks; a final con
 normal plan gates. Goal context uses preserved append-only blocks and never a second compaction
 anchor or output budget. Session/agent cache identities survive runs; a goal ID is not cache affinity.
 
-Local and remote TUI controls require the same authenticated conversation/controller guarantees.
-`goalRuntimePortOf` projects only factory-created capability authority. The kernel pins one ordinary
-entry binding in the private guest envelope and refuses duplicate goal capabilities, workflow
-composition and objects forged by name. `runtime.goal` admits only read, progress, checkpoint,
-candidate, validation and blocked operations with strict bounded arguments. Generation and physical
-call identity are broker-owned; session, instance, execution, objective revision and entry role must
-match the admitted binding. The canonical host port rechecks state after evidence reads and inside
-the durable transaction. Operation cancellation or revocation before that transaction prevents a
-late write; cancellation after a durable write does not undo it or authorize replay.
+Local and remote TUI controls require the same authenticated conversation/controller guarantees in
+native placement. Container has no Goal descriptor, runtime port, guest tool or host callback. The
+kernel refuses a forged or explicit Goal dependency with `unsupported` before Workflow/Goal routing,
+lease reservation, engine acquisition or model calls and recommends Sandbox or Host. It never runs a
+partial stage or converts a Goal into an ordinary Container conversation.
 
-The guest executes the same capability and finalization gates. Goal calls await preceding guest
-trace publications before reading host evidence. The model never supplies user controls, ownership,
-run admission or token limits through this bridge. Only the bounded current goal and reference
-catalog cross; archives and operation receipts remain in the private host session. A goal run admits
-at most 1152 KiB per capability request/result, retaining the broker's call-count, aggregate replay
-and RPC bounds. The guest validates response schemas and refuses an absent, stale, contradictory or
-foreign descriptor before inference. Compatible images use private protocol revision 13.
-
-Production: `goalRuntimePortOf` in [capability.ts](../../packages/goal/src/capability.ts),
-[goal-bridge.ts](../../packages/kernel/src/runtime/goal-bridge.ts),
-[runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts),
-[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts) and
-[guest-loop-executor.ts](../../packages/kernel/src/runtime/guest-loop-executor.ts).
-Test: [runtime-goal-bridge.test.ts](../../packages/kernel/tests/integration/runtime-goal-bridge.test.ts)
-checks private durability, forged identities, replay, cancellation/revocation during queued mutation,
-large bounded state, malformed responses and missing projection. The `preserves goal authority, plan
-checkpoint and SDK prefix across guest continuation` test in
-[runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
-uses the real worker RPC, guest loop, host goal/plan stores and SDK with controlled responses. It
-checks plan retention, persisted checkpoint disposition, continued candidate validation and serialized
-prefix/catalog/affinity. Manual test admission does not prove automatic hosted continuation or a real
-Docker/Podman engine journey.
-
-Unsupported headless, MCP and workflow combinations must be explicit. Guest runtimes require a
-bounded host bridge and cannot fall back to host execution when that bridge is absent. Publishing
-the complete feature requires controlled-loop continuation, race and reconciliation tests, actual
-local/remote PTY journeys, native/Docker/Podman placement evidence, bounded real-provider trials and
-the same short journey on the final installed artifact. Lower-level tests prove only their scope.
+Production: `prepareKernelRun` and `admitContainerCoreRun` in
+[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts), and the native `goalRuntimePortOf` in
+[capability.ts](../../packages/goal/src/capability.ts). Test:
+[container-core-policy.test.ts](../../packages/kernel/tests/unit/container-core-policy.test.ts)
+and native Goal suites cited above. Lower-level native tests do not establish a Container journey.

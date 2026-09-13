@@ -161,7 +161,7 @@ optional hosted-run ownership and a close method:
 
 `KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
-`host_platform`, effective isolation, lifecycle and optional fallback origin.
+`host_platform`, effective isolation and lifecycle.
 Container placement additionally reports generation, selected Docker/Podman engine and version,
 host/guest platform, local immutable image digest, private runtime protocol revision, effective
 network grant and lifecycle. This is an informational projection, not a client-controlled launch
@@ -712,7 +712,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
 | `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
-| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add `fallback` and optional `recipe` | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
+| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add an optional `recipe`; neither engine has fallback placement | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
@@ -725,9 +725,14 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 omit image, executable, connection and limits; the kernel fills product-owned defaults. Omitting a
 container `network` selects
 the kernel's ordinary routable `outbound` default; this may reach host and LAN peers as well as the
-public internet. Podman has no `fallback` or `recipe` field. `RuntimeStatus.network` in `client.ts` is required for container placement because
-it reports the effective value after the kernel has resolved defaults. Neither type calls
-`outbound` internet-only, and the protocol exposes no host-port or engine-argument mutation method.
+public internet. Podman has no `recipe` field. `RuntimeStatus.network` in `client.ts` is required for
+container placement because it reports the effective value after the kernel has resolved defaults.
+Neither type calls `outbound` internet-only, and the protocol exposes no host-port or engine-argument
+mutation method. Docker and Podman have no fallback field: either engine reports its own bounded
+failure and changing to Sandbox/Host requires a new explicit selection and run. The private
+execution protocol is revision 14 with exact lifecycle/model/capability/event/checkpoint methods and
+`runtime.elicit` as its sole capability; that wire is kernel-private and not part of
+`@clarvis/protocol`.
 Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
 name, an absolute path under the global operator recipe directory and `none`/`outbound` build
 networking. It is persisted operator input;
@@ -759,8 +764,8 @@ field-level repair could be produced" (`packages/protocol/src/config.ts`). The p
 
 `AgentBudget` (`packages/protocol/src/config.ts`) is `{ on_exceed?: string; total_token_limit?: number }`.
 `AgentSummary` (`packages/protocol/src/config.ts`) is `{ name; scope: Scope | "plugin" | "builtin"; model?;
-description?; plugin?; grants?: string[]; can_spawn?: string[]; budget?: AgentBudget; overlay?:
-AgentOverlay }` — `grants` being `undefined` specifically means "the frontmatter
+description?; plugin?; grants?: string[]; can_spawn?: string[]; default_spawn?: string; budget?: AgentBudget;
+overlay?: AgentOverlay }` — `grants` being `undefined` specifically means "the frontmatter
 could not be parsed" (`packages/protocol/src/config.ts`).
 
 `SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts`) lists "every capability grant an

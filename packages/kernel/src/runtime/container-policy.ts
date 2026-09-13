@@ -1,6 +1,7 @@
-import { posix, relative, sep } from "node:path";
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import type { MiseCacheIdentity } from "./container-mise-cache.ts";
-import type { RuntimeLaunchSpec } from "./types.ts";
+import { RuntimeLaunchError, type RuntimeLaunchSpec } from "./types.ts";
 
 type RecordValue = Record<string, unknown>;
 
@@ -70,11 +71,6 @@ export function readContainerInspection(value: unknown):
   };
 }
 
-/** The selected workspace and read-only overlays have the same targets on every engine. */
-export function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): string {
-  return posix.join("/workspace", relative(spec.workspaceRoot, hostPath).split(sep).join("/"));
-}
-
 /** Encode one `--mount` key/value as a field for the engines' outer CSV parser. */
 export function containerMountField(name: string, value: string): string {
   const field = `${name}=${value}`;
@@ -84,6 +80,40 @@ export function containerMountField(name: string, value: string): string {
 /** Empty capability arrays and the engine's explicit null representation carry no privilege. */
 export function noContainerCapabilities(value: unknown): boolean {
   return value === null || (Array.isArray(value) && value.length === 0);
+}
+
+/** Refuse nested protected targets an OCI engine would otherwise materialize in the host bind. */
+export async function assertMaterializedProtectedTargets(spec: RuntimeLaunchSpec): Promise<void> {
+  try {
+    await lstat(spec.workspaceRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw error;
+  }
+  for (const mount of [
+    ...spec.controlRootMasks,
+    ...spec.gitMetadataMounts.filter((candidate) => candidate.target === "/workspace/.git"),
+  ]) {
+    const target = join(spec.workspaceRoot, mount.target.slice("/workspace/".length));
+    try {
+      const info = await lstat(target);
+      if (
+        info.isSymbolicLink() ||
+        (mount.type === "directory" ? !info.isDirectory() : !info.isFile())
+      ) {
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          `Protected target '${mount.target}' does not match the admitted mount type. Use Isolation Sandbox or Host.`,
+        );
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        `Protected target '${mount.target}' is absent and cannot be masked without changing the workspace. Use Isolation Sandbox or Host.`,
+      );
+    }
+  }
 }
 
 /** Apply the shared launch invariants to an engine's normalized effective inspection. */
@@ -102,14 +132,11 @@ export function validContainerPolicy(
   const scratch = typeof tmpfs?.["/tmp"] === "string" ? tmpfs["/tmp"].split(",") : [];
   const expectedBinds = [
     { source: spec.workspaceRoot, destination: "/workspace", writable: true },
-    ...spec.readOnlyWorkspacePaths.map((path) => ({
-      source: path,
-      destination: guestWorkspacePath(spec, path),
+    ...[...spec.controlRootMasks, ...spec.gitMetadataMounts].map((mount) => ({
+      source: mount.source,
+      destination: mount.target,
       writable: false,
     })),
-    ...(spec.gitCommonDir === undefined
-      ? []
-      : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
   ];
   const mise = policy.mounts.filter((mount) => mount.Destination === "/mise");
   return (

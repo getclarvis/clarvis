@@ -25,7 +25,7 @@ it.each(["docker", "podman"] as const)(
       JSON.stringify({
         default_model: "anthropic/test",
         providers: [{ name: "anthropic", kind: "anthropic" }],
-        runtime: { backend, ...(backend === "docker" ? { fallback: "fail" } : {}) },
+        runtime: { backend },
       }),
     );
     let nativeRuns = 0;

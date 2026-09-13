@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,8 +16,8 @@ export interface LocalHostPathOptions {
   operatorId: string;
   /** Injectable platform for endpoint qualification. */
   platform?: NodeJS.Platform;
-  /** Injectable short temporary directory; never derived from the workspace. */
-  temporaryRoot?: string;
+  /** Ordered host-owned roots considered only for the reconnectable local-host endpoint. */
+  endpointRootCandidates?: readonly string[];
 }
 
 /** Private discovery, handoff and projection paths, separate from agent scratch. */
@@ -48,7 +49,8 @@ function identityOf(parts: readonly string[]): string {
  *
  * Paths do not confer authority: the host must authenticate the peer, verify directory ownership
  * and hold the local lease. Keeping the socket under a short temporary root makes a long HOME
- * irrelevant to Unix socket limits. An excessively long temporary root is rejected explicitly.
+ * irrelevant to Unix socket limits. POSIX selection considers the complete endpoint's UTF-8 byte
+ * length and has no filesystem effects; the transport remains responsible for preparing its root.
  */
 export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
   if (!options.owner || !options.operatorId) {
@@ -63,18 +65,45 @@ export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
   ]);
   const root = join(globalPaths(globalDir).state, "hosts", identity);
   const usesNamedPipe = (options.platform ?? process.platform) === "win32";
-  const endpointDirectory = usesNamedPipe
-    ? undefined
-    : join(
-        resolve(options.temporaryRoot ?? tmpdir()),
-        `clv-${identityOf([options.operatorId, globalDir]).slice(0, 12)}`,
-      );
-  const endpoint = usesNamedPipe
-    ? `\\\\.\\pipe\\clarvis-${identity}`
-    : join(endpointDirectory!, identity.slice(0, 32));
-  if (!usesNamedPipe && Buffer.byteLength(endpoint, "utf8") > 100) {
-    throw new Error("local host socket path exceeds 100 bytes; select a shorter temporary root");
+  if (usesNamedPipe) {
+    return {
+      identity,
+      root,
+      leaseFile: join(root, "host.lock"),
+      connectionFile: join(root, "connection.json"),
+      registryFile: join(root, "runs.json"),
+      endpoint: `\\\\.\\pipe\\clarvis-${identity}`,
+      projectionFile: (generation, executionId) =>
+        join(root, "projections", `${identityOf([generation, executionId])}.jsonl`),
+    };
   }
+  const suppliedCandidates = options.endpointRootCandidates;
+  if (suppliedCandidates?.length === 0)
+    throw new Error("local host endpoint root candidates must not be empty");
+  const rawCandidates = suppliedCandidates ?? [tmpdir(), "/tmp"];
+  if (rawCandidates.some((candidate) => candidate.length === 0 || candidate.includes("\0")))
+    throw new Error("local host endpoint root candidates contain an invalid path");
+  const candidates = [...new Set(rawCandidates.map((candidate) => resolve(candidate)))];
+  const accountDirectory = `clv-${identityOf([options.operatorId, globalDir]).slice(0, 12)}`;
+  let endpointDirectory: string | undefined;
+  let endpoint: string | undefined;
+  for (const candidate of candidates) {
+    const directory = join(candidate, accountDirectory);
+    const candidateEndpoint = join(directory, identity.slice(0, 32));
+    if (Buffer.byteLength(candidateEndpoint, "utf8") <= 100) {
+      endpointDirectory = directory;
+      endpoint = candidateEndpoint;
+      break;
+    }
+  }
+  if (endpointDirectory === undefined || endpoint === undefined)
+    throw new Error(
+      `no local host socket endpoint candidate fits within 100 UTF-8 bytes (${candidates.length} candidates)`,
+    );
+  assert(
+    Buffer.byteLength(endpoint, "utf8") <= 100,
+    "local host socket endpoint exceeds 100 UTF-8 bytes",
+  );
   return {
     identity,
     root,
@@ -82,7 +111,7 @@ export function localHostPaths(options: LocalHostPathOptions): LocalHostPaths {
     connectionFile: join(root, "connection.json"),
     registryFile: join(root, "runs.json"),
     endpoint,
-    ...(endpointDirectory === undefined ? {} : { endpointDirectory }),
+    endpointDirectory,
     projectionFile: (generation, executionId) =>
       join(root, "projections", `${identityOf([generation, executionId])}.jsonl`),
   };

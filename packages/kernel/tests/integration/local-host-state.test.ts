@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
   acquireLocalHostState,
+  localHostEndpointRootCandidates,
   localHostProcessAlive,
   readLocalHostConnection,
   resolveLocalHostIdentity,
@@ -35,6 +36,64 @@ async function fixture() {
 }
 
 describe("private local host state", () => {
+  test("derives ordered endpoint roots from only absolute temp variables", () => {
+    expect(
+      localHostEndpointRootCandidates({ TMPDIR: "/tmpdir", TMP: "/tmp-value", TEMP: "/temp" }),
+    ).toEqual(["/tmpdir", "/tmp"]);
+    expect(
+      localHostEndpointRootCandidates({ TMPDIR: "", TMP: "/tmp-value", TEMP: "/temp" }),
+    ).toEqual(["/tmp-value", "/tmp"]);
+    expect(localHostEndpointRootCandidates({ TMPDIR: "relative", TMP: "", TEMP: "/temp" })).toEqual(
+      ["/temp", "/tmp"],
+    );
+    expect(localHostEndpointRootCandidates({ TMPDIR: "relative", TMP: "also-relative" })).toEqual([
+      "/tmp",
+    ]);
+    expect(localHostEndpointRootCandidates({ TMPDIR: "/tmp", TMP: "/ignored" })).toEqual(["/tmp"]);
+    expect(
+      localHostEndpointRootCandidates({
+        CLARVIS_HOME: "/unrelated",
+        HOME: "/also-unrelated",
+        PATH: "/bin",
+      }),
+    ).toEqual(["/tmp"]);
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "keeps identity stable for one snapshot and publishes a long-temp fallback record",
+    async () => {
+      const f = await fixture();
+      const environment = {
+        TMPDIR: join("/tmp", "incident-" + "a".repeat(168)),
+        TMP: join("/tmp", "other-" + "b".repeat(168)),
+        TEMP: join("/tmp", "third-" + "c".repeat(168)),
+        UNRELATED_SECRET: "does-not-select-an-endpoint",
+      };
+      const input = {
+        workspaceRoot: f.workspaceRoot,
+        globalDir: join(f.root, "snapshot-global"),
+        owner: "operator",
+        endpointRootCandidates: localHostEndpointRootCandidates(environment),
+      };
+      const first = await resolveLocalHostIdentity(input);
+      const second = await resolveLocalHostIdentity({
+        ...input,
+        endpointRootCandidates: localHostEndpointRootCandidates({
+          ...environment,
+          UNRELATED_SECRET: "changed",
+        }),
+      });
+      expect(second.paths.endpoint).toBe(first.paths.endpoint);
+      expect(first.paths.endpointDirectory).toStartWith(`${resolve("/tmp")}/clv-`);
+      expect(Buffer.byteLength(first.paths.endpoint, "utf8")).toBeLessThanOrEqual(100);
+      const state = await acquireLocalHostState(first, "test-artifact", "0".repeat(64));
+      if (state === null) throw new Error("snapshot fixture unexpectedly contended");
+      cleanups.push(() => state.close());
+      await state.publish("workspace");
+      expect((await readLocalHostConnection(first))?.endpoint).toBe(first.paths.endpoint);
+    },
+  );
+
   test("projection storage is generation-owned and terminal reclamation is idempotent", async () => {
     const f = await fixture();
     const state = await f.acquire();

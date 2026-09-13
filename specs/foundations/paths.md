@@ -182,14 +182,21 @@ untrusted dynamic path component. Production: `GlobalPaths.runtimeRecipesDir`,
 and data owner into a private `state/hosts/` namespace. The builder names the cross-process lease,
 connection record, run index and generation/execution-specific observation projection files. Input
 ids are hashed rather than interpreted as path segments. Its Unix socket endpoint uses a separate,
-short temporary directory and rejects paths exceeding 100 UTF-8 bytes; Windows uses a named pipe.
-The builder performs no filesystem mutation or authentication. The hosting composition must protect
-the namespace and exclude its credentials from agent-readable roots.
+short temporary directory. Ordered `LocalHostPathOptions.endpointRootCandidates` are normalized and
+deduplicated in order; when omitted they default to the effective process temp followed by `/tmp`.
+The first candidate whose **complete endpoint** fits the conservative 100-byte UTF-8 budget wins,
+so multibyte roots are measured by bytes rather than characters. Explicit empty lists, empty strings
+and NUL are rejected, and failure reports only the budget and candidate count. Selection performs no
+filesystem mutation, canonicalization, access probe or authentication; transport remains responsible
+for preparing and validating the chosen directory. Windows uses the unchanged named pipe and ignores
+filesystem candidates.
 
 Production: `LocalHostPaths`, `LocalHostPathOptions` and `localHostPaths` in
 [local-host.ts](../../packages/paths/src/local-host.ts). Test:
-[local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts). Its kernel consumer is
-specified by [hosted runs](../hosts/hosted-runs.md); builder tests do not qualify native IPC behavior.
+[local-host.test.ts](../../packages/paths/tests/unit/local-host.test.ts) covers ordered selection,
+fallback, UTF-8 byte measurement, invalid inputs, sanitized failure, hostile identities and the
+Windows named pipe. Its kernel consumer is specified by [hosted runs](../hosts/hosted-runs.md);
+builder tests do not qualify native IPC behavior.
 
 ### 2.5 Workspace paths (`packages/paths/src/workspace.ts`)
 

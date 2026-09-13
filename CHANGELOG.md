@@ -37,6 +37,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- POSIX local hosts now fall back to the private account-scoped namespace under `/tmp` when the
+  operator environment's temporary root would make the Unix socket exceed its byte limit, preserving
+  independent startup, discovery and reconnection without changing run scratch paths.
 - Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
   the development runtime image, instead of reporting an invalid image id after a successful build.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.

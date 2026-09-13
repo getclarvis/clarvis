@@ -757,7 +757,13 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 - A `SkillRootSnapshotProvider` instead produces `snapshotSkills`: roots are consumed while
   dependencies are built, catalog bodies are materialized, resources are limited to the captured
   relative-path allow-list, and the host arms identity-file monitoring before verifying those bytes
-  against its pin. Later calls only test the host's memory-only `available(skill)` predicate. A
+  against its pin. `captureSkillExecution` copies the admitted manifests and enumerated resources
+  into a bounded execution revision; helpers and resource tools use these same bytes. A second
+  verification checks drift during copying. Failed verification closes the candidate; owner disposal
+  closes the active capture. Full reads retain full-file bounds, and chunked reads retain pagination.
+  Test: helper byte consistency and full-read limits in
+  [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts).
+  Later calls only test the host's memory-only `available(skill)` predicate. A
   withdrawn skill disappears from the catalog, returns no body, and refuses resource reads without
   rebuilding the registry or rejecting a run. An optional idle trust-change subscription atomically
   replaces the complete captured provider; it is never consulted by run admission. Production:
@@ -778,7 +784,7 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 
 The file kernel composes `clarvis-configure` from TypeScript data with the scanned provider.
 It appears in a clean installation and in an empty custom Extension Profile without creating
-`SKILL.md`, skill directories or resource files. It is user-invocable as a dedicated native skill run and
+`SKILL.md`, skill directories or resource files. It is user-invocable in an ordinary skill turn and
 model-loadable only with the existing `use_skills` grant. Host or environment skill opt-out removes
 it with the rest of the skill surface. The name is reserved: installed content cannot replace
 these instructions, while other names retain their discovered provider and resource behavior.
@@ -796,8 +802,9 @@ discovery, Extension Profile resolution/selection and workflow loading/execution
 examples in [configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
 The on-demand body has a 32,768-character regression ceiling; the initial catalog still discloses
 only metadata. Loading instructions is informational and grants no write or credential access.
-Its builtin `agent` metadata selects the host's dedicated configuration route; ordinary `load_skill`
-does not switch placement. The live-session elicitation and native file tools are owned by
+The builtin has no agent override and does not change placement. The host-installed restricted
+writer uses the current effect review policy in the same conversation. Its admission and file
+operations are owned by
 [self-configuration.md](../hosts/self-configuration.md).
 
 Production: `withBuiltinSkills` in
@@ -1326,3 +1333,7 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts` and owned
    (`packages/skills/src/scan.ts`), but `packages/skills/package.json` is not referenced by any
    Windows-scoped CI configuration in scope, and several tests use `symlinkSync` unconditionally
    (e.g. `packages/skills/tests/integration/symlink.test.ts`).
+
+The host may observe directories visited by `listSkillDirs`, including empty candidates, to arm catalog monitors. Observation follows the existing discovery budgets and does not traverse resource subtrees as additional skills. Prospective manifests use `validateSkillDocument` with the owning root validation mode, preserving the distinction between Clarvis naming defaults and shared Agent Skills requirements.
+Production: `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts), `validateSkillDocument` in [registry.ts](../../packages/skills/src/registry.ts), and `configurationSkillRef` in [files.ts](../../packages/kernel/src/configuration/files.ts).
+Test: delayed manifest discovery in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts), root validation in [execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts), and metadata-name membership in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).

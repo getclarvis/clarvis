@@ -70,7 +70,6 @@ function fixture(initialState = state()) {
     async removeProjection(id, generation) {
       removed.push([id, generation]);
     },
-    retireConfigurationSession() {},
   });
   return {
     gateArchive: (gate: Promise<void>) => {
@@ -180,7 +179,6 @@ describe("host generation recovery", () => {
         },
         commit: async () => {},
         removeProjection: async () => {},
-        retireConfigurationSession: () => {},
       });
       expect(restarted.stats().unresolved).toBe(0);
       await restarted.close();

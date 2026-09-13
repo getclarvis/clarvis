@@ -2,7 +2,7 @@ import { describe, it, expect } from "../bun-test.ts";
 import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
 import { OPERATOR_AUTHORITY_PORT, type OperatorAuthorityState } from "@clarvis/capability";
-import type { Capability, TraceEvent } from "@clarvis/capability";
+import type { Capability, TraceEvent, SteerMessage } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import { ConflictError, PersistenceError } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
@@ -118,6 +118,72 @@ describe("executeRun (shared engine)", () => {
       revision: 2,
     });
   });
+  it("publishes pending steer intent before capability activation and preserves its delivery identity", async () => {
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "seed", source: "start", text: "Create a skill", execution_id: "run" }],
+    };
+    const pending: SteerMessage[] = [{ content: "Do not write settings" }];
+    const received: string[] = [];
+    const unique = new Set<string>();
+    let unsubscribed = false;
+    let closed = false;
+    const traceStore = makeTestTraceStore();
+    const result = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      steer: {
+        onPending(listener) {
+          for (const message of pending) listener(message);
+          return () => {
+            unsubscribed = true;
+          };
+        },
+        drain: () => pending.splice(0),
+        close: () => {
+          closed = true;
+        },
+      },
+      deps: makeDeps({
+        traceStore,
+        capabilities: [
+          {
+            name: "observer",
+            forRun(ctx) {
+              expect(received).toHaveLength(1);
+              expect(ctx.services.get(OPERATOR_AUTHORITY_PORT)?.snapshot().revision).toBe(2);
+              return { name: "observer", forAgent: () => null };
+            },
+          },
+        ],
+        operatorAuthority() {
+          return {
+            reader: { snapshot: () => structuredClone(state) },
+            onSteer(context) {
+              expect(context.message).toBe("Do not write settings");
+              received.push(context.id!);
+              if (!unique.has(context.id!)) {
+                unique.add(context.id!);
+                state.revision++;
+              }
+            },
+            finalize: () => structuredClone(state),
+          };
+        },
+      }),
+    });
+    expect(result.response.status).toBe("completed");
+    expect(received.length).toBeGreaterThanOrEqual(2);
+    expect(unique.size).toBe(1);
+    expect(unsubscribed).toBeTrue();
+    expect(closed).toBeTrue();
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state?.revision).toBe(2);
+  });
+
   it("runs a subagent-only request to completion and returns an execution id + response", async () => {
     const { executionId, response } = await executeRun({
       rawBody: BODY,

@@ -88,21 +88,21 @@ test("parseElicitForm: guard decisions keep deny-first order and gain scope labe
   expect(initialValues(form.fields)).toEqual({ decision: "deny" });
 });
 
-test("native configuration consent has a live-session label and defaults to denial", () => {
+test("configuration effects offer only the concrete allow or deny decision", () => {
   const form = parseElicitForm({
-    message: "Allow native configuration?",
-    kind: "configuration_access",
+    message: "Review configuration write: settings.json",
+    kind: "configuration_review",
     requestedSchema: {
       type: "object",
-      properties: { answer: { type: "string", enum: ["deny", "allow_session"] } },
-      required: ["answer"],
+      properties: { decision: { type: "string", enum: ["deny", "allow"] } },
+      required: ["decision"],
     },
   });
   expect(form.fields[0]!.options).toEqual([
     { value: "deny", label: "deny" },
-    { value: "allow_session", label: "allow while this session is open" },
+    { value: "allow", label: "allow once" },
   ]);
-  expect(initialValues(form.fields)).toEqual({ answer: "deny" });
+  expect(initialValues(form.fields)).toEqual({ decision: "deny" });
 });
 
 test("parseElicitForm: the command detail rides the form; a blank command falls back to prose", () => {

@@ -204,10 +204,10 @@ through `withBuiltinSkills`. It is independent of Extension Profile selection an
 with an empty custom profile while skills are enabled. Production:
 [builtin-skills.ts](../../packages/kernel/src/skills/builtin-skills.ts). Test:
 [builtin-skills.test.ts](../../packages/kernel/tests/integration/builtin-skills.test.ts).
-The dedicated [native configuration route](self-configuration.md) executes no extensions and does
-not acquire their run lease; ordinary execution retains the pinned snapshot contract below.
-Its shipped guide demonstrates exact plugin versus standalone skill scopes with a nonempty
-definition. Native file authoring does not select that definition: activation still uses the
+[Direct configuration](self-configuration.md) uses the ordinary run lease. Authoring changes queue
+an idle catalog refresh; the active run retains its bounded execution snapshot.
+The shipped guide demonstrates exact plugin versus standalone skill scopes with a nonempty
+definition. File authoring does not select that definition: activation still uses the
 preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
 of this selection; a standalone workflow launcher follows the normal skill allow-list.
 Production: `CONFIGURATION_EXAMPLES` in
@@ -270,8 +270,8 @@ manifest; `standaloneCatalog` hashes each resource through the same raw streamin
 `hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
 standalone skill. Plugin skill digests include the same dependency projection. Those digests define
 the version recorded by the process fingerprint; later sidecar changes do not alter the in-memory
-catalog, and later identity-file changes cause withdrawal when the asynchronous monitor observes
-them. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
+catalog of an active run. Standalone changes queue a coalesced idle recapture, while plugin changes
+retain the existing withdrawal boundary. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
 `verifySkillCatalog`, `skillAvailable`, and `onSkillRootsChanged` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `skillSurface`,
 `verifyPinnedSkillCatalog`, and `pinnedSkillRoots` in
@@ -407,25 +407,34 @@ falls back to builtin.
   definition fall through a bare CLI selector` in
   `packages/kernel/tests/integration/extension-profile-manager.test.ts` pin both invalid cases.
 
-### INV-317 — A kernel uses one immutable resolved snapshot
+### INV-317 — Each execution retains one immutable resolved snapshot
 
-Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, and an already running kernel retains its original fingerprint except for the explicit idle
-trust recomposition. Run admission is deliberately
+General definition/selection changes use explicit recomposition; a stale preview cannot authorize
+different bytes. Standalone authorship and its host-prepared new-skill membership use automatic idle
+generations. Existing runs keep their captured revision. Run admission is deliberately
 independent of extension filesystem size: it does not discover, stat, or hash skills. Only atomically
 captured plugin skill surfaces and exact builtin/custom standalone includes enter the one registry
 owned by the dependencies; catalog bodies are materialized there, and resource names are constrained
 to that captured allow-list. The host arms monitoring for manifest, selected sidecar, and resources
-before verifying the capture against the pin. A capture-window mismatch or later asynchronous change
-withdraws one skill by flipping a memory latch. Withdrawal never makes the Extension Profile or run
-admission unavailable; Code informs the user outside transcript history, unaffected skills continue,
-and reconnect captures the changed version. Skill resources enter initial identity through raw
+before verifying the capture against the pin. Plugin mismatch withdraws the affected skill without
+blocking unrelated runs. Standalone changes recapture automatically after resource users settle;
+failed replacements preserve the last valid catalog and monitors. Writer notifications do not depend
+on filesystem watcher availability. Root watchers observe initially absent directories. Skill resources enter initial identity through raw
 streaming hashes capped at 8 MiB per file and 32 MiB aggregate (per plugin for packaged skills, per
 skill for standalone inventory), and an approved plugin root exposes only each discovered skill
 directory for helper execution. Read-only/control-plane projections use the pinned parse. Trust transitions may recompose
 only at an idle boundary and synchronously replace the exact skill catalog; explicit approval
 refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
 settings reads reuse its cached process snapshot.
+
+New-skill creation through the writer prepares `prepareSkillInclusion` with the exact definition
+and selection revisions. A workspace custom profile gains only that skill; a global profile is
+copied to a workspace definition and selected locally. Its plugin references and existing skill
+exclusions are preserved. The file and membership share one review; a conflict prevents the skill
+write. The saved selection is effective in the next idle generation and survives reopening.
+Production: `prepareSkillInclusion` and `flushSkillRefresh` in
+[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
+Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
@@ -576,7 +585,8 @@ and cannot remove bytes other than the revision the caller inspected.
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
 | Workspace approval storage fails during composition | the exact prior definition and selection are restored and the approval error is returned. |
-| A selected skill manifest or captured resource changes after snapshot resolution | the asynchronous monitor withdraws that skill when observed, Code shows an informational transient warning, unaffected skills remain available, and runs are never rejected or delayed; reconnect captures the new version. |
+| A standalone skill changes after snapshot resolution | queue a validated idle generation; captured executions keep their resource bytes and an invalid replacement retains the prior catalog. |
+| A selected plugin skill changes after snapshot resolution | withdraw the affected plugin skill; existing plugin trust/recomposition policy applies. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
 | A selected plugin update/uninstall completed but the kernel was not reconnected | the old parsed process snapshot remains active; changed monitored skills are withdrawn when observed, and reconnect activates the new selection bytes. |
 | Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |
@@ -615,3 +625,7 @@ partial plugin contribution masks, model/provider selection, Agent Profiles, gra
 memory, secrets, and automatic repository activation are deliberately out of scope. A user who
 needs a variation clones an Extension Profile and edits the complete allow-list; any expansion of that
 scope requires a new schema version and an explicit product decision.
+
+Standalone refresh arms directory monitors through the skills package’s bounded discovery walk, including newly created empty directories. A manifest written later therefore schedules another generation without requiring an unrelated filesystem event. This scan runs on catalog observation/invalidated idle refresh, never on every submission.
+Production: `observeSkillRoots` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
+Test: delayed-manifest directory observation in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).

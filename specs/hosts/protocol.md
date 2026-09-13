@@ -582,7 +582,6 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts`) |
 | `continue_from?` | `string` | resume / steer-after-end |
 | `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
-| `configuration_session_id?` | `string` | volatile owner-scoped nonce for the currently open session; generate anew on open/resume, never persist or derive from cache/continuation ids; omission requires consent per run |
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
 | `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |
 | `guard_judge?` | `GuardJudge` | caller-owned judge prompt/model/timeout |
@@ -592,13 +591,13 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
 | `output_schema?` | `JsonSchema` | structured-output request |
 
-The configuration nonce stays on the host side of run admission. Its lifecycle and
-`configuration_access` elicitation are specified in [self-configuration.md](self-configuration.md).
-Production: `StartRunParams` in [runs.ts](../../packages/protocol/src/runs.ts) and
-`createNativeConfigurationRuns` in
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts).
-Test: [native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts)
-and the live-session/resume test in [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+Configuration uses ordinary run parameters and tool events. The host owns authority bindings;
+clients do not supply a configuration consent nonce. Production: `StartRunParams` in
+[runs.ts](../../packages/protocol/src/runs.ts) and `createDirectConfigurationCapability` in
+[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts).
+Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+and [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+See [self-configuration.md](self-configuration.md).
 
 ### 3.5 `PlanProjection` and CAS revision pair
 

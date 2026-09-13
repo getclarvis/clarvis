@@ -226,20 +226,30 @@ One entry compiles to one predicate over a segment's `normalized`
 The same `*`-glob implementation backs `@clarvis/hooks`' `match.tool`, so "the anchoring and
 escaping rules can only be right or wrong once" (`packages/capability/src/glob.ts`).
 
-### 3.4 `guard_judge` guidance and host-validated decisions
+### 3.4 `guard_judge` guidance and automatic decisions
 
 `guard_judge.prompt` remains a deprecated alias for bounded additional guidance; `guidance` is the
-typed field. Code composes operator-global guidance before workspace guidance. The kernel always
-places `EFFECT_REVIEW_POLICY` first, and the model receives only host-attested effects and the live
-operator-authority envelope. A returned `allow` executes only after the named grants cover every
-exact fact through the registered descriptor. Missing facts, invalid output, stale revisions and
-uncovered grants become `unsure` and use the configured human/deny fallback.
+typed field. Code composes operator-global guidance before workspace guidance. Complete registered
+effects use `EFFECT_REVIEW_POLICY`, the live authority envelope and mechanical descriptor coverage.
+An ordinary shell ask that cannot produce such an effect uses the call-local reviewer in `judge.ts`:
+it receives the complete command and host guard facts plus only host-owned operator evidence. Its
+verdict applies to that exact call and cannot register an effect, install an authority grant or add
+session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
+parameter list, environment bindings split at their first `=`, and structured analysis issues. This
+lets the reviewer assess options, wrappers, `NAME=value`, `env NAME=value command` and dynamic values
+without treating parameter syntax alone as uncertainty. Both paths recheck the authority revision after inference. Missing evidence,
+invalid output and stale revisions become `unsure` and use the configured human/deny fallback.
+Both paths set the auxiliary agent instance to `judge` on the run-decorated provider. The common
+prompt-cache composer consequently emits the current session's canonical `<session>_judge` key and
+retains the run TTL. Breakpoints cover only stable policy and optional stable guidance, never the
+variable evidence/effect/call payload.
 
 Production: `createEffectReviewService` in
 [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts) and
+`createJudgeElicit` in [judge.ts](../../packages/kernel/src/guard/judge.ts), composed by
 `createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
-[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts), and
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
 [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ### 3.5 Elicitation payload for a `guard_confirm`
@@ -391,8 +401,8 @@ delegates everything syntactic:
 command/subcommand/path, opaque command/path, unbalanced syntax and tokenizer gaps.
 `ShellAnalysisImpact` distinguishes value, executable, subcommand, path, environment and control
 flow. These are syntax facts, never permission. `GuardReviewability` reserves `judgeable` for a
-host effect attestor; this analyzer change enables no new Auto approval. POSIX assignment values
-are classified as paths separately from their variable names. Production:
+host effect attestor; the call-local reviewer may use these facts only for its exact command verdict.
+POSIX assignment values are classified as paths separately from their variable names. Production:
 [analyzer](../../packages/tools/src/guard/analyze-shell.ts) (`analyzeShell`) and
 [dialects](../../packages/tools/src/guard/dialects/index.ts). Test:
 [issue corpus](../../packages/tools/tests/unit/analysis-issues.test.ts).
@@ -523,15 +533,17 @@ Evaluated top-down; the first match returns (`packages/kernel/src/guard/shell-gu
 | 1 | `shell` present, deny list configured, **any** segment's `normalized` matches | `deny_list` | `deny` |
 | 2a | `shell.undecidable` and deny list **non-empty** | `undecidable` | `deny` |
 | 2b | `sandboxPermissions === "require_escalated"` and Isolation is Sandbox (`config.sandbox` present) | `host_command` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
-| 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask` + `escalate: "human"` |
+| 3a | `shell.undecidable`, no/empty deny list, placement Host | `undecidable` | `ask`; `escalate: "human"` unless `allowHostJudge` is true (Auto only) |
 | 3b | `shell.undecidable`, no/empty deny list, placement contained | `undecidable` | `ask`, no escalation restriction |
 | 4 | `touchesOutside(ctx)` — some resolved path escapes | `outside_workspace` | `deny` |
 | 5 | some path's `raw` matches a credential pattern and no exception | `credential_file` | `ask` |
 | 6 | `ctx.shell === undefined` (a non-command tool) | `non_bash` | `allow` |
-| 7 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
-| 7a | forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | `ask`, no escalation restriction |
-| 8 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
-| 9 | otherwise | `default` | `ask` |
+| 7a | an environment-prefixed command is forced `rm` (`-f`, `--force`, short cluster containing `f`) or `sudo` | `dangerous` | `ask`, human-only |
+| 7b | any segment has a preserved environment assignment | `default` | `ask`; `escalate: "human"` on Host unless `allowHostJudge` is true |
+| 8 | allow list configured and **every** comparison segment matches, ignoring validated POSIX `cd` | `allow_list` | `allow` |
+| 8a | forced `rm` or `sudo` without an environment prefix | `dangerous` | `ask`, human-only |
+| 9 | `!withinWorkspace(ctx)` — i.e. no resolved paths at all | `outside_workspace` | `ask` |
+| 10 | otherwise | `default` | `ask` |
 
 The original adjacent-pair ordering cases live in `packages/kernel/tests/unit/guard.test.ts`.
 Placement, dangerous precedence and comparison-only POSIX directory handling are pinned by
@@ -611,24 +623,29 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 ### 4.6 Resolving a run's guard
 
 `createGuardResolver` resolves the effective mode and native Host/Sandbox placement, builds the
-immutable effect registry, and creates the shared `EffectReviewService` over the run's authority
-reader. Review `off` returns no guard. Review `on` preserves the human channel. Review `auto`
-attests every nondeterministic call and sends it to the shared reviewer; absence of a model/provider
-is a structured admission failure and follows `on_unsure`. Deterministic denies and exact static
-allows finish before any model call. Shadow mode computes review evidence but preserves the current
-human result.
+immutable effect registry, creates the shared `EffectReviewService` over the run's authority reader,
+and creates one call-local argv reviewer for generic shell asks. Review `off` returns no guard.
+Review `on` preserves the human channel. Review `auto` prefers complete effect attestation; a sole
+`external.unknown` from an ordinary shell miss goes to the argv reviewer. Known credential and
+dangerous asks, explicit human escalation and human-only registered effects stay on the human path.
+Absence of a model/provider follows the human fallback. Deterministic denies and exact static allows
+finish before any model call. Shadow mode computes effect evidence while preserving the existing
+call-local Auto or human result.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
-[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
+[guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
 [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 
 ### 4.7 Answering an `ask`
 
 The composed elicit applies session coverage only to the exact analyzable non-host command. Auto
-then calls `EffectReviewService.review`; an `allow` or `deny` is accepted only after the service
-validates the live revision and exact descriptor coverage. `unsure` goes to the human channel when
-`on_unsure` is `ask`, otherwise it denies. Human answers and operational failures are not cached as
-clean verdicts. `matched: "host_command"` never receives sticky session consent.
+uses `EffectReviewService.review` for a complete registered effect and `createJudgeElicit` for an
+ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
+keyed by the authority revision and complete guard request, including the raw command, and install no
+grant. `unsure` goes to the human channel when `on_unsure` is `ask`, otherwise it denies. Human
+answers and operational failures are not cached as clean verdicts. `matched: "host_command"` never
+receives sticky session consent.
 
 `createGuardHumanApproval` reads the current allowlist before and after the question. It refuses late
 answers after the controller or scope is retired. `humanApprovalFor` is available only to native
@@ -636,8 +653,10 @@ Host/Sandbox runs; Container guests receive no approval port.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
 [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts), and
+[judge.ts](../../packages/kernel/src/guard/judge.ts),
 [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), and
 [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
 
@@ -666,18 +685,20 @@ discarded rather than racing or double-firing.
 Because the guard is resolved per **run** and threaded into every agent's toolset, it applies to
 lead-spawned subagents too (`packages/loop/tests/integration/command-guard-wiring.test.ts`).
 
-### 4.9 Host-validated automatic review
+### 4.9 Automatic review boundaries
 
-Review `auto` uses the shared effect-review service for every nondeterministic decision. The service
-compiles authority lazily, validates effect IDs, evidence IDs, targets, constraints and inference
-ceilings, then validates every decision through `descriptor.covers`. Its cache key includes the
-ledger revision and exact facts; a steer invalidates an in-flight result. Shadow mode records the
-same analysis while preserving the current human outcome. There is no compatibility judge that can
-turn model text directly into execution authority.
+Review `auto` first uses the shared effect-review service when the host can identify a registered
+effect. The service compiles authority lazily, validates effect IDs, evidence IDs, targets,
+constraints and inference ceilings, then validates every decision through `descriptor.covers`.
+When the only attestation is `external.unknown`, the call-local argv reviewer can answer the exact
+shell ask without converting its verdict into authority. Its payload labels command arguments as
+untrusted data and supplies authenticated intent separately. Both cache keys include the ledger
+revision; a steer invalidates an in-flight result. Shadow mode records effect analysis while
+preserving the existing call-local Auto or human outcome.
 
-Production: `createGuardResolver` and `createEffectReviewService`. Test:
+Production: `createGuardResolver`, `createEffectReviewService` and `createJudgeElicit`. Test:
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
 
 ### 4.10 Prompt-cache TTL side effect
 
@@ -838,9 +859,9 @@ broken.
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "fails closed when the guard throws".
 
 19. **The rule cascade's order is fixed: deny list → undecidable with nonempty deny list →
-    guarded host-command review → generic undecidable →
-    outside-workspace → credential file → non-shell allow → allow list → dangerous ask → unbounded-paths ask →
-    default ask.**
+    guarded host-command review → generic undecidable → outside-workspace → credential file →
+    non-shell allow → environment-prefixed dangerous ask → environment review → allow list →
+    dangerous ask → unbounded-paths ask → default ask.**
     `packages/kernel/src/guard/shell-guard.ts`. Pinned pair-by-pair:
     `packages/kernel/tests/unit/guard.test.ts`, plus
     `packages/kernel/tests/unit/guard.test.ts` for the credential-file position.
@@ -866,9 +887,10 @@ broken.
     `packages/kernel/src/guard/shell-guard.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`, and as a property over six commands.
 
-23. **An `undecidable` ask carries `escalate: "human"` only on Host.** Contained undecidability
-    remains an ordinary ask, never a silent policy allow. Explicit unsandbox matches `host_command`
-    first and is reviewable by Auto, unless a deny-list rule already refused it.
+23. **An `undecidable` ask carries `escalate: "human"` on Host except when Auto supplied
+    `allowHostJudge`.** Contained undecidability and Host Auto remain ordinary asks, never silent
+    policy allows. Explicit unsandbox matches `host_command` first and is reviewable by Auto, unless
+    a deny-list rule already refused it.
     Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts`. Test:
     `packages/kernel/tests/integration/guard-auto-review.test.ts` (placement and dangerous cascade)
     and `packages/kernel/tests/unit/guard-audit.test.ts`.
@@ -882,14 +904,14 @@ broken.
     in silence. `packages/kernel/src/guard/resolver.ts`. Pinned:
     `packages/kernel/tests/unit/guard-audit.test.ts`.
 
-26. **Allow/deny entries use normalized/comparison forms**, never raw segment
-    text. In-workspace POSIX directory handling follows §4.5. Normalization strips env-assignment
-    prefixes, so neither list can
-    see them: an allow entry `git status` is satisfied by `LD_PRELOAD=/evil.so git status` exactly
-    as it is by the bare command. `packages/kernel/src/guard/shell-guard.ts`.
-    Pinned indirectly by the substitution case, which now resolves through the undecidable rule
-    (`packages/kernel/tests/unit/guard.test.ts`); the env-assignment blind spot itself is
-    unpinned in this document's scope.
+26. **Allow/deny entries use normalized/comparison forms**, never raw segment text. In-workspace
+    POSIX directory handling follows §4.5. Normalization strips env-assignment prefixes but preserves
+    them separately: deny matching still sees the bare command, while any prefix prevents static
+    allow-list approval. Credential and dangerous classifications run before environment review, so
+    `CI=1 cat .env` and `CI=1 rm -rf build` cannot acquire the generic environment route.
+    `packages/kernel/src/guard/shell-guard.ts`. Pinned by
+    `packages/kernel/tests/integration/guard-auto-review.test.ts` and
+    `packages/kernel/tests/unit/guard.test.ts`.
 
 27. **An entry containing `*` is an anchored full-string glob; one without is an exact-or-space-
     boundary prefix; a blank entry never matches.**
@@ -1307,10 +1329,11 @@ separately postures guard confirmations per principal
   behind the `1h` TTL ([prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md)).
 ## Host-attested rollout
 
-The host-validated path above is the only automatic reviewer. With operator-owned
-`effect_review.rollout` set to `local` or `ci_retry`, complete effect attestation may
-refine the global undecidable route into a judgeable ask; it never overrides a deterministic deny.
-Syntax issues remain available for presentation and do not themselves prove confinement. The
-compiler, ledger, composition, target checks, exact grants and structured failures are owned by
-[effect review](effect-review.md). Production: `createGuardResolver` and `attestShell`. Test:
-[effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
+Complete effect attestation may refine the global undecidable route into a judgeable effect; it never
+overrides a deterministic deny. An ordinary shell call that remains `external.unknown` may instead
+receive an exact-call Auto verdict from `createJudgeElicit`, without entering the effect registry or
+authority envelope. Syntax issues remain available for both review paths and do not themselves prove
+confinement. The compiler, ledger, composition, target checks, exact grants and structured failures
+are owned by [effect review](effect-review.md). Production: `createGuardResolver`, `attestShell` and
+`createJudgeElicit`. Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts)
+and [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).

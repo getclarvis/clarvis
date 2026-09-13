@@ -116,7 +116,7 @@ export interface ConfigStore {
   withOperatorWrite?<T>(
     scope: Scope,
     write: () => T,
-    target: (result: T) => OperatorWriteTarget,
+    target: (result: Awaited<T>) => OperatorWriteTarget | readonly OperatorWriteTarget[],
   ): T;
 
   /**

@@ -43,6 +43,8 @@ export interface ToolDef {
    * text parts are truncated to that limit.
    */
   bounded?: boolean;
+  /** Every mutation passes its complete batch through the host review hook before committing. */
+  atomicMutation?: boolean;
 
   /**
    * Execute the tool.

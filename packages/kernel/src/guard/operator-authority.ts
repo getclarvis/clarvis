@@ -79,6 +79,17 @@ const consumers = new WeakMap<
   (revision: number, keys: string[]) => boolean
 >();
 
+const refusals = new WeakMap<OperatorAuthorityReader, (revision: number, key: string) => boolean>();
+
+/** Retain an exact host-reviewed refusal under the current evidence revision. */
+export function denyAuthorityEffect(
+  reader: OperatorAuthorityReader,
+  revision: number,
+  key: string,
+): boolean {
+  return refusals.get(reader)?.(revision, key) ?? false;
+}
+
 /** Reserve bounded one-attempt effects before execution; failed execution does not refund authority. */
 export function consumeAuthorityEffects(
   reader: OperatorAuthorityReader,
@@ -147,6 +158,7 @@ export function createOperatorAuthorityRuntime(input: {
     state = {
       ...state,
       revision: state.revision + 1,
+      denied_effects: [],
       evidence: next.data.map((entry) => ({ ...entry, text: sanitizeText(entry.text) })),
     };
   };
@@ -164,12 +176,19 @@ export function createOperatorAuthorityRuntime(input: {
     const envelope =
       prior.envelope === undefined ? undefined : authorityEnvelopeSchema.safeParse(prior.envelope);
     const consumed = consumedSchema.safeParse(prior.consumed_effects ?? []);
-    if (evidence.success && consumed.success && (envelope === undefined || envelope.success))
+    const denied = consumedSchema.safeParse(prior.denied_effects ?? []);
+    if (
+      evidence.success &&
+      consumed.success &&
+      denied.success &&
+      (envelope === undefined || envelope.success)
+    )
       state = {
         ...state,
         revision: prior.revision,
         evidence: evidence.data,
         consumed_effects: consumed.data,
+        denied_effects: denied.data,
         ...(envelope?.success ? { envelope: envelope.data } : {}),
       };
     else revoke();
@@ -227,6 +246,16 @@ export function createOperatorAuthorityRuntime(input: {
       return false;
     }
     state = { ...state, consumed_effects: next.data };
+    return true;
+  });
+  refusals.set(reader, (revision, key) => {
+    if (reader.snapshot().status !== "active" || state.revision !== revision) return false;
+    const next = consumedSchema.safeParse([...new Set([...(state.denied_effects ?? []), key])]);
+    if (!next.success) {
+      revoke();
+      return false;
+    }
+    state = { ...state, denied_effects: next.data };
     return true;
   });
   const seenSteers = new Set<string>();

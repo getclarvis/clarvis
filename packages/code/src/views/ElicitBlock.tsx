@@ -62,7 +62,7 @@ export function ElicitBlock(props: {
   const form = parseElicitForm(props.request);
   const fields = form.fields;
   const isGuard = props.request.kind === "guard_confirm";
-  const isConfiguration = props.request.kind === "configuration_access";
+  const isConfiguration = props.request.kind === "configuration_review";
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
   const accent = (): string =>
@@ -327,10 +327,10 @@ export function ElicitBlock(props: {
       backgroundColor={tokens.bg}
     >
       <text fg={accent()} flexShrink={0}>
-        {isConfiguration
-          ? glyph("warning") + " Native configuration access"
-          : isGuard
-            ? glyph("warning") + " Command approval"
+        {isGuard
+          ? glyph("warning") + " Command approval"
+          : isConfiguration
+            ? "Configuration review"
             : isPlanReview
               ? "Plan approval required"
               : isWorkflowReview

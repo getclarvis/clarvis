@@ -1,142 +1,74 @@
-# Builtin guidance and native self configuration
+# Direct self configuration
 
-## 1. Ownership and entry
+## Ownership and admission
 
-Clarvis ships `clarvis-configure` as TypeScript data embedded in the kernel and application bundle.
-It needs no generated `SKILL.md`, source checkout or separately installed extension. Its guide covers
-settings precedence, providers, Agent Profiles, subagents, grants, optional capabilities, Extension
-Profiles, plugins, skills, MCP, hooks, memory, plans, goals, tasks, workflows, trust, runtime settings,
-remote SSH connections, TUI loop scheduling, background runs and configuration reload.
-The ordinary `load_skill` tool discloses these instructions under `use_skills`; it grants no access.
-When loaded in an ordinary turn, the guide directs a requested configuration mutation to the exact
-`/clarvis-configure <requested change>` command and stops. Ordinary native file-mutation tools reject
-operational configuration before guard review. Canonical authoring files can reach effect review,
-but require a complete `clarvis.authoring.write` fact and an explicit review approval; loading the
-guide grants no authority. Reads remain available for diagnosis. Command tools retain
-their separately documented shell/sandbox boundary, and the guide forbids using them as an
-alternate writer.
-Container disclosure retains builtin provenance and priority, and uses the same canonical embedded
-instruction text without inventing a `SKILL.md` path or execution directory. The background guidance
-states that detach, takeover, connection loss and leaving the live conversation revoke command
-`allow_session` approvals in native and container execution.
-Production: [skills-bridge.ts](../../packages/kernel/src/runtime/skills-bridge.ts),
-[disclosure.ts](../../packages/skills/src/disclosure.ts) and
-[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts), plus
-`protectWorkspaceConfiguration` in [tools core](../../packages/tools/src/core.ts).
-Test: native/guest builtin conformance in
-[runtime-skills-bridge.test.ts](../../packages/kernel/tests/unit/runtime-skills-bridge.test.ts) and
-controller revocation in
-[runtime-guard-approval.test.ts](../../packages/kernel/tests/component/runtime-guard-approval.test.ts),
-plus the authored-configuration mutation case in
-[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
+The operator requests configuration changes in the ordinary conversation. The file kernel installs
+`configure_clarvis` under the run's editing ceiling; an editable Agent Profile cannot install this
+capability. Host and Sandbox retain their configured runtime and entry agent. The builtin
+`clarvis-configure` skill is optional guidance with no agent override. Loading its body neither grants
+access nor requires the operator to repeat the request as a slash command. Host/environment skill
+gates still apply, including to this embedded guide.
 
-The file kernel reserves this skill's name and composes it after extension discovery. Disabling
-skills at the host or environment level removes it too. A custom empty Extension Profile excludes
-scanned extensions but retains this product-owned guide. Production: `CLARVIS_CONFIGURE_SKILL` and
-`withBuiltinSkills` in [kernel skills](../../packages/kernel/src/skills/builtin-skills.ts);
-the content is [clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
-Test: `builtin skill distribution and run composition` in
-[builtin-skills.test.ts](../../packages/kernel/tests/integration/builtin-skills.test.ts), and
-`shipped configuration skill` in
-[builtin-skills.test.ts](../../packages/kernel/tests/component/builtin-skills.test.ts).
+An explicit configuration skill request in Docker/Podman fails during settings assembly before
+inference. It directs the operator to Isolation Sandbox or Host and does not switch placement.
+The direct capability does not bind in a container run. This feature adds no container bridge or
+runtime protocol revision.
 
-Invoking `/clarvis-configure <task>` uses the skill's builtin `agent` metadata to start a standalone
-transcript turn. The file kernel recognizes the reserved name and builtin provenance before ordinary
-Agent Profile assembly or workflow routing. It supplies a dedicated profile for that run; this
-profile is not a sixth editable member of the shipped agent fleet. Loading the guide inside an
-ordinary turn does not switch placement; the guide directs the operator to the slash command.
-The loop may internally execute a leaf entry through its subagent-only strategy, but the kernel
-projects this reserved native route as its standalone agent: tool calls and iterations are attributed
-to `lead`, and the implicit leaf delegation lifecycle is omitted. Code therefore publishes every
-`configure_clarvis` read and mutation in the main transcript, with the same projection after stored
-reconciliation; no child agent was created or granted. Its safe projection retains the concrete
-operation, configuration root and relative path so Code can render action-specific tool rows while
-content, expected revisions and edit snippets remain absent from the trace.
-
-Production: `withBuiltinSkills`, `createRunService` in
-[run-service.ts](../../packages/kernel/src/runs/run-service.ts), `createNativeConfigurationRuns`
-in [native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), and
-`nativeConfigurationEventToProto` plus `nativeConfigurationResultToProto` in the run mappers.
-Test: `elicits before native configuration, edits through the real loop, and preserves ordinary
-Docker placement` in
+Production: `createDirectConfigurationCapability` in
+[direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts),
+`createFileKernel` in [file-kernel.ts](../../packages/kernel/src/file-kernel.ts),
+`withBuiltinSkills` in [builtin-skills.ts](../../packages/kernel/src/skills/builtin-skills.ts),
+and the configuration admission check in
+[settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).
+Test: ordinary creation/use/edit in all guard modes in
+[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts),
+and pre-inference container rejection in
 [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts).
 
-## 2. Consent and live session lifetime
+## Authority and review
 
-Before native model execution or configuration tool access, the host emits `configuration_access`
-through the run's elicitation bridge. The prompt names all four resolved roots, native execution
-without sandbox or container, permitted mutations, credential exclusions and consent lifetime. Only
-`action: accept` with `content.answer: allow_session` grants access. Denial, cancellation, timeout,
-missing elicitation, malformed answers and late approval after abort or closure fail closed. Guard
-auto mode and a model's `ask_user` answer cannot authorize this route.
+The writer consumes the run's `OPERATOR_AUTHORITY_PORT` and the same `EffectReviewService` as the
+command guard. Skill text, tool arguments and model justification cannot manufacture operator
+evidence. A missing authority seed does not fall back to user-role transcript scraping: automatic
+review cannot authorize that operation. The host owns evidence, binding and revocation as specified
+by [command guard](../execution/command-guard.md).
 
-`StartRunParams.configuration_session_id` is a volatile nonce scoped to the authenticated owner and
-the current file kernel/workspace. Code creates it in a `WeakMap` keyed by the live `Session` object.
-Repeated configuration turns in that object reuse consent. Closing/clearing/switching the session
-discards its identity; resume constructs another `Session` and receives another nonce, even for the
-same saved session id. Kernel reconnect and owner retirement discard host approvals. Neither the
-nonce nor consent enters engine requests, saved session metadata, continuation state or trace records.
-Other clients must generate a new nonce on every open/resume and never persist it. Omitting it
-limits approval to one run. Provider cache hints and `continue_from` never supply authorization.
+Before mutation, the restricted writer validates the target, schema and expected revision, then
+attests an effect. Authoring and operational writes use separate descriptors; operational authority
+never follows implicitly from permission to edit a skill. The reviewer receives the prepared
+sanitized request and current document, operation, document class and the digest of the before/after revisions. Human mode elicits one concrete `configuration_review` for that operation;
+auto mode can allow a covered effect. Command guard `off` does not disable restricted-writer
+validation or operational review. There is no general self-configuration consent setting. A human refusal rejects the concrete prepared change; it does not prohibit every future revision of the same target. The shared authority state retains a bounded identity for the complete refused batch, including target and before/after revisions. Switching between `edit` and `write` with identical resulting bytes does not open another prompt at the same evidence revision. A corrected proposal must undergo its own policy decision, while an authenticated steer can restrict or revoke the broader effect. Human prompts identify why the current policy requires intervention when automatic review cannot authorize the effect.
 
-Concurrent requests sharing a live nonce share one pending prompt. The host retains at most 128
-consent entries per resident owner. `retireSession(owner, nonce)` revokes one live instance without
-retiring other conversations or owners. Retirement, eviction and host closure abort the consent's
-signal, including pending elicitation and active native execution; a late approval cannot revive it.
-Every tool operation rechecks consent and cancellation. Native placement stays active until the last
-overlapping native run settles. Production: `createNativeConfigurationRuns`;
-`configurationSessions` in [run-host.ts](../../packages/code/src/run-host.ts); `toStartParams` in
-[kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts); `StartRunParams` in
-[runs.ts](../../packages/protocol/src/runs.ts). Test: `native configuration consent` in
-[native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts);
-`configuration consent identity lives only in the open TUI session, never in resume` in
-[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
-Test: the single-conversation retirement, pending-approval and overlapping-native-work cases in
-[native-configuration.test.ts](../../packages/kernel/tests/unit/native-configuration.test.ts).
+Production: `denyAuthorityEffect` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts) and `createEffectReviewService` in [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts). Test: exact refusal, equivalent edit/write, corrected bytes, continuation and fresh intent in [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), bounded and revision-fenced storage in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
 
-## 3. Native execution boundary
+Host-admitted steer arrival updates authority while a review is open, without prematurely
+acknowledging model delivery. After asynchronous review, cancellation and authority revision are
+checked again. The real writer
+then rechecks the expected document revision. Drift while a prompt is open returns conflict and
+requires preparing against current bytes; an old approval cannot overwrite the new document.
+Workspace writes use `withOperatorWrite`: only the authorized target revision carries prior
+trusted/inert status, with all other executable inputs unchanged. This does not approve an
+untrusted workspace or unrelated external changes.
 
-Approved configuration runs call the host's native loop executor directly. They never initialize a
-container, invoke the sandbox launcher, or change the configured placement for subsequent ordinary
-runs. They carry a fresh request with one dedicated profile, no MCP servers, no continuation,
-no spawn graph, and only the `ask-user` and `native-configuration` capabilities. Hooks, plugins,
-shell, normal filesystem tools, memory, plans, tasks and workflows cannot execute in this run.
-The configured provider still serves the model using the host's normal authentication; credentials
-are not exposed to the model as configuration documents.
+Production: `createDirectConfigurationCapability`, `configurationFileMutationFacts` and
+`configurationFileOperation` in [files.ts](../../packages/kernel/src/configuration/files.ts),
+`attestConfiguration` in [configuration.ts](../../packages/kernel/src/guard/effects/configuration.ts),
+and `withOperatorWrite` in [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts).
+Test: prompt counts, human denial, independently reviewed corrected proposals, drift during review and exact trust carry in
+[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+and [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
 
-Because this route executes no extensions, it does not acquire an Extension Profile run lease or
-run its assembly hooks. This permits changes to authored configuration without pinning the very
-snapshot being edited. A native workspace mutation carries trust only when the pre-write workspace
-was already trusted or inert, its final bytes match the revision returned by the authorized
-operation, and every other executable input remains unchanged. The store records the fingerprint
-of that verified snapshot; concurrent drift leaves the resulting surface withheld. It does not
-approve a workspace whose pre-write verdict was unapproved or changed. Extension selection
-remains a separate operator decision. Ordinary and workflow runs retain their normal admission and
-placement. Production: `createNativeConfigurationRuns`, `ConfigStore.withOperatorWrite`,
-`createConfigurationCapability` in
-[capability.ts](../../packages/kernel/src/configuration/capability.ts), and the `runs.start` wrapper
-in [kernel.ts](../../packages/kernel/src/kernel.ts). Test: native-configuration integration and
-unit tests cited above assert native routing, capability narrowing, no continuation and ordinary
-Docker admission after configuration; the integration test also asserts trust carry and identical
-live/replayed standalone tool attribution. The workspace-trust integration test asserts that an
-unrelated concurrent executable mutation cannot ride on the authorized write.
+## File operations
 
-The file kernel publishes `RuntimeStatus` as native/host while approved configuration executes and
-restores the coordinator's status on settlement. Code's header therefore displays actual host
-execution during that turn. Its elicitation has a warning title, a readable live-session label and
-denial selected initially. Production: `currentRuntime` in
-[file-kernel.ts](../../packages/kernel/src/file-kernel.ts), `ElicitBlock` in
-[ElicitBlock.tsx](../../packages/code/src/views/ElicitBlock.tsx), and `DECISION_LABELS` in
-[elicitation.ts](../../packages/code/src/adapters/elicitation.ts). Test: the native integration test
-asserts host placement and restoration; `native configuration consent has a live-session label and
-defaults to denial` in [elicitation.test.ts](../../packages/code/tests/unit/elicitation.test.ts).
-
-## 4. File operations
-
-`configurationRoots` in [configuration.ts](../../packages/paths/src/configuration.ts) owns the four
-root names: `global_clarvis`, `workspace_clarvis`, `global_agents`, `workspace_agents`. It honors the
-file kernel's global directory, including `CLARVIS_HOME`, and resolves the shared roots under the
-user home and workspace. It creates no directories and grants no access by itself.
+`configurationRoots` resolves the four existing global/workspace Clarvis/shared roots without
+creating or authorizing them. `configurationPathClass` owns the common authoring, operational and
+private vocabulary. File tools consume it through `isCanonicalAuthoringPath`; the writer consumes
+it directly. Classification grants nothing and does not replace canonical target or link checks.
+Production: [paths configuration](../../packages/paths/src/configuration.ts) and
+[authoring-path.ts](../../packages/tools/src/guard/authoring-path.ts).
+Test: [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts) and
+[api.test.ts](../../packages/tools/tests/integration/api.test.ts).
 
 `configure_clarvis` accepts these operations:
 
@@ -149,7 +81,8 @@ user home and workspace. It creates no directories and grants no access by itsel
 | `delete` | `expected_revision` | remove one existing regular file |
 
 Stale or omitted revisions, empty/ambiguous/missing edit matches, malformed settings JSON and settings
-schema violations reject without writing. Settings validation uses the owning kernel schema. Other
+schema violations reject without writing. Settings validation uses the owning kernel schema. Agent Profile frontmatter rejects unknown fields; skill manifests use the same bounded parser as
+discovery before any mutation. Other
 authored formats retain their normal loader validation and trust checks. File reads and writes are
 bounded to 256 KiB; new parents and files use the shared private modes.
 
@@ -163,116 +96,75 @@ are checked against the inspected inode and decoded as strict UTF-8. Writes use 
 replacement helper. Tool envelopes persist operation, root and relative path instead of raw file
 content, expected revisions or edit snippets.
 
-This is mediated native file access, not an OS isolation boundary. Another process replacing a
+This is mediated file access, not an OS isolation boundary. Another process replacing a
 parent between validation and mutation remains the documented portable filesystem TOCTOU limit.
 Revision checking detects an already changed source; it does not lock out an unrelated external
 editor between comparison and replacement. Filename exclusions do not detect every secret an
 operator embeds inside an allowed authored document. Changing executable declarations can affect
-future authorized runs; this mode never executes them to validate a change.
+future authorized runs; the writer never executes them to validate a change.
 
 Production: `configurationFileOperation` in [files.ts](../../packages/kernel/src/configuration/files.ts)
 and `createConfigurationCapability`. Test: `native configuration files` in
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts) covers
 all four roots, edits, stale revisions, settings validation, private paths, traversal, links and
-bounded reads; the native integration test exercises the tool through the real loop.
+bounded reads; the direct-configuration integration test exercises the tool through the real loop.
 
-## 5. Configuration coverage and activation
+## Catalog generations and execution resources
 
-The guide's examples are TypeScript data in `CONFIGURATION_EXAMPLES`, rendered verbatim by
-`configurationExample` in
-[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts). They are
-fragments to adapt and merge, never instructions to overwrite unrelated configuration. Its body
-remains below the 32,768-character regression ceiling and is disclosed on demand.
+Authorized writer completion notifies the Extension Profile manager directly. Standalone source
+watchers request the same coalesced refresh. Refresh waits until captured resource users settle;
+it does not wait for its own run inside a tool or cancel background work. The writer returns
+`application: pending` for skill changes and explains that the current turn retains its catalog,
+with automatic application after captured users settle. Invalid replacement
+metadata preserves the previous catalog. Creation prepares the exact new-skill membership alongside
+the file effect. A workspace custom profile gains only that skill; a global custom profile is copied
+and selected for this workspace without changing global defaults. The same review covers the file
+and membership, with revision conflicts checked before either lands. Existing exclusions remain.
+An explicit global command-line selector cannot be silently replaced. `prepareSkillInclusion`
+uses the existing definition and selection leases and rolls back its companion writes if the skill
+write fails. The next idle generation and a newly opened kernel both see the saved membership.
+Agent Profiles enter the next applicable assembly, without enlarging an already-running ceiling.
 
-| Flow | Authored configuration and validation | Activation or remaining operator action |
-| --- | --- | --- |
-| Models, budgets, MCP, hooks, capabilities and runtime | Settings fragments pass `kernelSettingsSchema` and the real file store | Existing runs retain their resolved settings; host-pinned configuration requires `/reconnect reload` with an idle host; authentication and dependency installation are separate |
-| Agent Profiles and subagents | Reviewer plus Marshall overlay assemble into the reachable profile graph | Next ordinary run, with workspace trust for workspace declarations |
-| Goal defaults | The capability fragment validates `goals` with a finite total and bounded continuation/progress counts | Only creation/replacement reads these defaults; changing an existing goal requires its explicit user control |
-| Remote VPS connection | The guide names paired `--remote`/`--remote-workspace`, remote ownership, SSH authentication sources, forwarding policy and the interactive-login limit | OpenSSH configuration and host-key/login preparation remain operator-owned; configuration mode neither opens SSH nor stores a password |
-| Workflows | Complete `WORKFLOW.md`, relative brief, args, round type/profile, selectors and synthesis | Reloaded each manager run; Admiral or another `workflow` entry invokes the normal preview/preflight and checkpoints |
-| Workflow slash launcher | A separate `SKILL.md` declares `agent: admiral` | Normal skill discovery; custom Extension Profiles must select the standalone launcher |
-| Plugins and Extension Profiles | A manifest and a nonempty strict definition use exact plugin `global/workspace` and skill `user/workspace` identities | Operator inventories, previews, selects and uses `/reconnect reload` when idle; native file authoring never writes selection state, and only carries a prior trusted/inert verdict across its own workspace mutation |
-| Loop scheduling and background runs | User-operated TUI commands; no new settings fields, grants or native configuration file operations | `/loop` creates in-memory conversation jobs; `/background` hands off an eligible run, `/attach` reattaches and explicit controls manage cancellation |
-| Context and policy prompts | Global context plus `shared-agent.md`, `guard-judge.md`, and `memory-policy.md` | Workspace `CLARVIS.md`/`AGENTS.md` belong at the workspace root, requiring ordinary authorized workspace editing |
-| Credentials, subscriptions, workspace trust and UI preferences | Trust records stay outside the configuration file tool; an existing trusted/inert verdict is carried across its approved workspace mutation | Operator controls establish or revoke trust; a functioning default model/provider is a prerequisite for this agent mode |
+The loop materializes bounded skill manifests and enumerated resources. Helper paths and resource
+reads use the same captured bytes. Source editing does not rewrite already-sent instructions.
+Verification surrounds materialization; disposal releases captured files. Full resource reads
+preserve their size errors and chunked reads preserve pagination. A failed candidate does not leak
+its execution files. Ordinary standalone refresh keeps the host process alive.
 
-Custom Extension Profiles select installed plugins and standalone skills; they do not contain
-workflow definitions, models or Agent Profiles. An empty custom profile retains product-owned
-guidance and workflow definitions while excluding scanned extensions. Creating, selecting and
-making a profile effective are separate outcomes. The guide also distinguishes a launch override
-from persisted selection, stale preview recovery, safe rename/deletion sequencing, complete
-workflow overrides and the possible reappearance of a lower-precedence definition after removal.
-Plugin hooks activate with their plugin; there is no separate per-hook approval record.
+`LocalHostStatus.skills_revision` notifies Code of catalog generations. The workspace client
+publishes this revision to command discovery; connection identity stays unchanged.
 
-The guide follows the [loop scheduling](loop-scheduling.md) and [hosted runs](hosted-runs.md)
-contracts for user commands, interval/calendar semantics, limits, pausing, handoff and recovery.
-Closing the TUI forgets loop registrations; only an admitted occurrence can continue in background.
-Reattachment does not replay a prompt or restore configuration consent. Native configuration runs
-cannot detach. Plain `/reconnect` recovers the same host connection; `/reconnect reload` requires an
-idle host to apply pinned configuration. These are operator actions after the configuration turn,
-not tools exposed by loading this guide. The command behavior and its executable evidence remain
-owned by those contracts; the builtin distribution checks do not execute TUI journeys.
+Production: `requestSkillRefresh` and `flushSkillRefresh` in
+[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts),
+`snapshotSkills` in [build-run-deps.ts](../../packages/loop/src/runtime/build-run-deps.ts),
+`captureSkillExecution` in [execution-snapshot.ts](../../packages/skills/src/execution-snapshot.ts),
+and [workspace-client-manager.ts](../../packages/code/src/adapters/workspace-client-manager.ts).
+Test: [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts),
+[execution-snapshot.test.ts](../../packages/skills/tests/unit/execution-snapshot.test.ts), and
+[execute-run-entrypoints.test.ts](../../packages/loop/tests/integration/execute-run-entrypoints.test.ts).
 
-Its remote guidance follows [Code bootstrap](code-bootstrap.md) and the
-[security contract](../cross-cutting/security.md): it teaches the paired flags and operator actions
-without claiming that configuration mode establishes SSH or stores authentication. Production:
-`CLARVIS_CONFIGURE_SKILL` in
-[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts) and
-`connectRemoteKernelOverSsh` in
-[connect-remote-ssh.ts](../../packages/kernel/src/hosting/connect-remote-ssh.ts). Test:
-[remote-ssh.test.ts](../../packages/kernel/tests/integration/remote-ssh.test.ts) pins the hardened
-argv/wire boundary; builtin distribution and body bounds remain covered by the tests cited above.
+## Coupling and validation
 
-Production: `CLARVIS_CONFIGURE_SKILL` in
-[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts), `CONFIGURATION_EXAMPLES`,
-the profile manager and workflow loader linked in the owning
-[Extension Profile](extension-profiles.md) and [workflow](../capabilities/workflows-service.md) contracts.
-Test: `configuration guide against product loaders` in
-[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts)
-uses native file operations, actual settings/agent/skill/plugin/workflow loaders and Extension
-Profile preview/selection/reconnection. It rejects incorrect skill scopes, forbidden global
-references and duplicate names, and diagnoses missing briefs. Its real-loop test authors a workflow
-in an approved native run, then executes its explorer leader through Admiral with an independent
-workflow preflight. The model is scripted; this proves configuration composition and tool behavior,
-not a real provider's ability to follow the guide or execute every documented option.
-`shipped configuration skill` in
-[builtin-skills.test.ts](../../packages/kernel/tests/component/builtin-skills.test.ts) pins verbatim
-example embedding and the body budget. `preserves a UTF-8 BOM and CRLF when editing an authored
-workflow brief` in
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts) covers
-byte preservation outside an edited snippet.
+Settings and host-pinned services retain their owning application boundaries in
+[kernel config](kernel-config.md), [Extension Profiles](extension-profiles.md),
+[skills](../execution/skills.md), [capability composition](../engine/capability-composition.md),
+[grants](../cross-cutting/grants.md), [elicitation](../cross-cutting/elicitation.md),
+and [isolated runtime](isolated-agent-runtime.md). Saving an operational document does not mutate
+an active run's captured settings, credentials, mounts or placement. Credentials remain managed by
+host services, not this writer. No secret may be inferred from loading guidance.
 
-## 6. Coupling
+Builtin configuration examples remain owned by `CONFIGURATION_EXAMPLES` in
+[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
+Their syntax and loader behavior are tested in
+[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
+The real interface evidence contract is the repository's PTY validation workflow; deterministic
+fixtures alone do not establish a completed interactive journey or platform qualification.
 
-The kernel owns the embedded guide, consent, native routing and file policy. Paths owns root
-construction and atomic replacement. Protocol carries only the optional volatile identity; Code
-owns its open-session lifetime and uses the existing skill/elicitation UI. The loop stays unaware of
-this product mode and composes the host-supplied capabilities normally. Skills owns catalog and
-on-demand presentation, including the builtin label instead of a fictitious file path. Runtime
-bridges never acquire configuration mutation authority.
-## Effect attribution
+## Prepared file-tool batches
 
-The restricted writer emits effect facts only after resolving its canonical target, validating
-content and checking the expected revision. Facts include revision digests and byte bounds, never
-free-form model claims. Canonical authoring and operational configuration are distinct descriptors
-in the same registry as command review. The existing native human-consent route remains explicit;
-approval does not add semantic evidence to the operator ledger. Native ordinary tools may write
-only canonical authoring Markdown after host effect review; operational files still require this
-restricted writer. Production: [files.ts](../../packages/kernel/src/configuration/files.ts),
-[configuration.ts](../../packages/kernel/src/guard/effects/configuration.ts), and
-[tools core](../../packages/tools/src/core.ts). Test:
-[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
-See [effect review](../execution/effect-review.md).
-The configuration capability reads the prepublished authority reader at attach. Both consumers
-resolve `effectReviewServiceFor` by that reader identity, sharing reviewer configuration, registry
-policy, compilation, decisions and telemetry. The writer first validates a mutation into a complete
-revision-bound fact without applying it. A reviewer denial stops the write; a validated allow
-proceeds, while `unsure` falls back to the already active, explicit native configuration consent.
-The writer then revalidates CAS and path constraints while applying the mutation. Reads and lists do
-not invoke the reviewer.
-Production: [capability.ts](../../packages/kernel/src/configuration/capability.ts) and
-[native-configuration.ts](../../packages/kernel/src/configuration/native-configuration.ts), and
-[files.ts](../../packages/kernel/src/configuration/files.ts).
-Test: [native-configuration.test.ts](../../packages/kernel/tests/integration/native-configuration.test.ts)
-and [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
+Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. Only tools whose mutations reach this callback defer their initial authoring review. The host validates every resulting authored document before reviewing a complete batch, including common workspace targets and any new skill membership. Operational or private destinations cannot enter this path. Review uses the same authority reader and `EffectReviewService` as the restricted writer. Captured revisions are rechecked before staging; drift, invalid content, denial or cancellation leave the batch unapplied. The existing portable parent-directory TOCTOU limitation remains.
+
+`withOperatorWrite` accepts exact target revisions for synchronous or asynchronous batches. Trust carries only after settlement and only if every unrelated executable input remains unchanged. Skill membership leases cover the async transaction; failures restore companion definition/selection bytes. Successful writes notify the catalog directly, even without a working watcher.
+
+Production: `createAuthoringMutationReview` in [authoring-mutations.ts](../../packages/kernel/src/configuration/authoring-mutations.ts), `createConfigurationReview` in [review.ts](../../packages/kernel/src/configuration/review.ts), `MutationReview` in [atomic.ts](../../packages/tools/src/lib/atomic.ts), and `withOperatorWrite` in [file-config-store.ts](../../packages/kernel/src/config/file-config-store.ts).
+Test: file-tool journeys, custom membership and mixed-patch denial/drift in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts); asynchronous trust carry and unrelated drift in [workspace-trust.test.ts](../../packages/kernel/tests/integration/workspace-trust.test.ts).

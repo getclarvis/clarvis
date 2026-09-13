@@ -2,6 +2,7 @@ import { PLANS_DEFAULTS } from "@clarvis/plan/settings";
 import { parseModelRef, resolveProvider, type ProviderConfig } from "@clarvis/capability";
 import {
   agentPromptOf,
+  agentFrontmatterSchema,
   mcpServerSettingsSchema,
   normalizeTools,
   settingsServerToEngine,
@@ -266,7 +267,10 @@ function buildProfile(
   entry: boolean,
   contexts: readonly ContextRecord[] = [],
 ): AgentProfile {
-  const fm = record.frontmatter;
+  const parsed = agentFrontmatterSchema.safeParse(record.frontmatter);
+  if (record.malformed !== undefined || !parsed.success)
+    throw kernelError("invalid_request", `agent '${record.name}' has invalid frontmatter`);
+  const fm = parsed.data;
   const agentModel = typeof fm.model === "string" ? fm.model : undefined;
   const model = entry
     ? (merged.default_model ?? agentModel ?? options.defaultModel)
@@ -290,7 +294,7 @@ function buildProfile(
     }),
   ].filter((part): part is string => part !== undefined && part.length > 0);
   const basePrompt = promptParts.length === 0 ? undefined : promptParts.join("\n\n");
-  const tools = normalizeTools(fm.tools as string[] | string | undefined);
+  const tools = normalizeTools(fm.tools);
   const iterationLimit =
     typeof fm.iteration_limit === "number"
       ? fm.iteration_limit
@@ -305,8 +309,8 @@ function buildProfile(
     model,
     tools,
     iteration_limit: iterationLimit,
-    ...(Array.isArray(fm.grants) ? { grants: fm.grants as AgentProfile["grants"] } : {}),
-    ...(Array.isArray(fm.can_spawn) ? { can_spawn: (fm.can_spawn as unknown[]).map(String) } : {}),
+    ...(Array.isArray(fm.grants) ? { grants: fm.grants } : {}),
+    ...(Array.isArray(fm.can_spawn) ? { can_spawn: fm.can_spawn } : {}),
     ...(typeof fm.default_spawn === "string" ? { default_spawn: fm.default_spawn } : {}),
     ...(fm.orchestration && typeof fm.orchestration === "object"
       ? { orchestration: fm.orchestration }
@@ -317,7 +321,7 @@ function buildProfile(
       ? { reasoning_effort: reasoningEffort as AgentProfile["reasoning_effort"] }
       : {}),
     ...(typeof fm.reasoning_summary === "string"
-      ? { reasoning_summary: fm.reasoning_summary as AgentProfile["reasoning_summary"] }
+      ? { reasoning_summary: fm.reasoning_summary }
       : {}),
     ...(fm.retry && typeof fm.retry === "object" ? { retry: fm.retry } : {}),
     ...(fm.compaction && typeof fm.compaction === "object" ? { compaction: fm.compaction } : {}),
@@ -404,6 +408,15 @@ export function createSettingsRunAssembler(
   };
   return (params) => {
     const settings = store.readSettings();
+    if (
+      params.skill?.name === "clarvis-configure" &&
+      (settings.merged.runtime?.backend === "docker" ||
+        settings.merged.runtime?.backend === "podman")
+    )
+      throw kernelError(
+        "unsupported",
+        "Direct self-configuration requires Isolation Sandbox or Host; containers cannot configure the host.",
+      );
     const merged = settings.merged as unknown as EngineSettings;
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);

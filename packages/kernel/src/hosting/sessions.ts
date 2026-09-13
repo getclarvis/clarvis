@@ -208,7 +208,6 @@ export function createHostedSessionCoordinator(
       const agentInstanceId = current.agent_instance_id ?? randomUUID();
       params.session_id = current.id;
       params.agent_instance_id = input.kind === "conversation" ? agentInstanceId : randomUUID();
-      params.configuration_session_id = authority.scope;
       if (input.kind === "conversation" && current.pending !== undefined) {
         const insertion =
           params.skill === undefined && params.messages.at(-1)?.role === "user"

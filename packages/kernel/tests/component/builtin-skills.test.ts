@@ -20,7 +20,7 @@ describe("shipped configuration skill", () => {
     ]);
     expect((await service.getPrompt("clarvis-configure"))[0]?.content).toContain("can_spawn");
     expect((await service.getPrompt("clarvis-configure"))[0]?.content).toContain(
-      "/clarvis-configure <requested change>",
+      "Complete authorized configuration changes in this conversation",
     );
     expect(renderSkillCatalog(skills.listSkills())).not.toContain("## Working procedure");
     expect(skills.loadSkill("missing")).toBeUndefined();

@@ -1,3 +1,4 @@
+import type { MutationReview } from "@clarvis/tools";
 /**
  * The built-in coding toolset (@clarvis/tools) packaged as a capability:
  * per-run enablement via env, per-agent capability ceiling from grants, and
@@ -49,6 +50,8 @@ export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
 /** What a host's guard resolver yields for one run: the guard itself and,
  * optionally, the raw ask channel that answers its 'ask' verdicts. */
 export interface GuardResolution {
+  /** Host-owned prepared mutation reviewer, admitted only to the entry agent. */
+  reviewMutation?: MutationReview;
   guard?: Guard;
   elicit?: GuardElicit;
 }
@@ -223,6 +226,9 @@ function createAgentToolsRunCapability(
           : undefined;
       const toolset = createAgentToolset({
         workspaceRoot: ctx.workspaceRoot,
+        ...(scope.entry && resolution?.reviewMutation !== undefined
+          ? { reviewMutation: resolution.reviewMutation }
+          : {}),
         canMutate: caps.canMutate,
         canExec: caps.canExec,
         confineToWorkspace: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,

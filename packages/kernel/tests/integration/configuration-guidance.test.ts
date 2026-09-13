@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
-import { buildExecuteRunDeps, executeRun, type AgentProfile } from "@clarvis/loop";
+import { buildExecuteRunDeps, type AgentProfile } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import { configurationRoots, globalPaths, type ConfigurationRoot } from "@clarvis/paths";
 import { createAgentSkills } from "@clarvis/skills";
@@ -15,7 +15,7 @@ import {
   configurationFileOperation,
   type ConfigurationFileRequest,
 } from "../../src/configuration/files.ts";
-import { createNativeConfigurationRuns } from "../../src/configuration/native-configuration.ts";
+import { createDirectConfigurationCapability } from "../../src/configuration/direct-configuration.ts";
 import { createExtensionProfileManager } from "../../src/extension-profiles/extension-profile-manager.ts";
 import { createInProcessKernel } from "../../src/kernel.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
@@ -237,7 +237,7 @@ describe("configuration guide against product loaders", () => {
     expect(broken.workflows[0]?.rounds[0]?.brief).toBe(EXAMPLES.workflowBrief.content);
   });
 
-  it("creates a workflow in native mode and runs it through Admiral with an independent preflight", async () => {
+  it("creates a workflow in the ordinary conversation and runs it through Admiral with an independent preflight", async () => {
     const f = fixture();
     f.write("model");
     const llm = new MockLLM({
@@ -245,7 +245,11 @@ describe("configuration guide against product loaders", () => {
       routes: [
         {
           name: "configure",
-          when: (call) => call.tools.some((tool) => tool.wireName === "configure_clarvis"),
+          when: (call) =>
+            call.tools.some((tool) => tool.wireName === "configure_clarvis") &&
+            call.messages.some((message) =>
+              contentToText(message.content).includes("Author the review-project"),
+            ),
           script: [
             ...(["workflowBrief", "workflow"] as const).map((name) => ({
               toolCalls: [
@@ -312,13 +316,14 @@ describe("configuration guide against product loaders", () => {
       skillRoots: [],
       composeSkills: withBuiltinSkills,
     });
-    const deps = { ...built.deps, llm };
-    const native = createNativeConfigurationRuns({
-      roots: f.roots,
-      store: f.store,
-      skills: built.skills,
-      nativeExecuteRun: executeRun,
-    });
+    const deps = {
+      ...built.deps,
+      llm,
+      capabilities: [
+        ...(built.deps.capabilities ?? []),
+        createDirectConfigurationCapability({ roots: f.roots, store: f.store, enabled: true }),
+      ],
+    };
     const kernel = createInProcessKernel({
       workspaceRoot: f.workspaceRoot,
       globalConfigDir: f.globalDir,
@@ -326,26 +331,28 @@ describe("configuration guide against product loaders", () => {
       configStore: f.store,
       deps,
       skillsProvider: built.skills,
-      nativeConfiguration: native,
       logger: NOOP_LOGGER,
       assemblerOptions: { defaultAgent: "marshall" },
     });
     try {
       const configure = await kernel.runs.start({
-        messages: [],
+        messages: [{ role: "user", content: "Author the review-project workflow and its brief" }],
         skill: { name: "clarvis-configure", task: "Author review-project" },
-        configuration_session_id: "guide-live",
+        guard_mode: "on",
       });
+      let configurationReviews = 0;
       configure.onElicit((request) => {
-        expect(request.kind).toBe("configuration_access");
+        configurationReviews++;
+        expect(request.kind).toBe("configuration_review");
         void configure.respond({
           id: request.id,
           action: "accept",
-          content: { answer: "allow_session" },
+          content: { decision: "allow" },
         });
       });
       expect(await configure.done).toMatchObject({ status: "completed" });
       expect(llm.calls).toHaveLength(3);
+      expect(configurationReviews).toBe(2);
       expect(await kernel.workflows.list()).toMatchObject({ items: [] });
       const manager = await kernel.runs.start({
         agent: "admiral",
@@ -374,13 +381,9 @@ describe("configuration guide against product loaders", () => {
       const managerCalls = llm.calls.filter((call) =>
         call.tools.some((tool) => tool.wireName === "run_workflow"),
       );
-      expect(
-        managerCalls.every((call) =>
-          call.tools.every((tool) => tool.wireName !== "configure_clarvis"),
-        ),
-      ).toBe(true);
+      expect(managerCalls.length).toBeGreaterThan(0);
+      expect(configurationReviews).toBe(2);
     } finally {
-      native.close();
       await kernel.close();
       await built.dispose();
     }

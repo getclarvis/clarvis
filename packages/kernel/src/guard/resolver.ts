@@ -8,7 +8,7 @@ import type { ProcessRunner } from "../ports/process-runner.ts";
 import { createGuardEffectRegistry } from "./effects/registry.ts";
 import { attestShell } from "./effects/shell.ts";
 import { attestWorkspace } from "./effects/workspace.ts";
-import type { GuardEffectBatch } from "./effects/types.ts";
+import type { EffectEnvironmentResolver, GuardEffectBatch } from "./effects/types.ts";
 import { effectReviewServiceFor } from "./effect-review-service.ts";
 import type {
   Guard,
@@ -29,6 +29,7 @@ import {
 } from "./shell-guard.ts";
 import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "./guard-elicit.ts";
 import { createGuardHumanApproval, type GuardHumanApproval } from "./human-approval.ts";
+import { createJudgeElicit } from "./judge.ts";
 
 /** Snapshot of settings fields needed to resolve a run-time tool guard. */
 export interface GuardSettings {
@@ -55,6 +56,8 @@ export interface GuardResolverDeps {
   effectRunner?: ProcessRunner;
   /** Minimal environment already admitted by the host. */
   effectEnvironment?: Readonly<Record<string, string | undefined>>;
+  /** Injectable execution-environment resolver for deterministic host tests. */
+  effectEnvironmentResolver?: EffectEnvironmentResolver;
   /** Reads the live {@link GuardSettings}, re-invoked on every resolution. */
   loadSettings: GuardSettingsLoader;
   /** Optional logger passed down to the judge (falls back to the run's logger). */
@@ -249,8 +252,8 @@ function noHumanChannel(audit: Logger, runId: string): { allowed: false; answere
  *   covered by the session allowlist passes without prompting.
  * @remarks The default {@link GuardSessionAllowlist} is shared across this resolver's runs.
  *   A persistent host supplies `sessionAllowlistFor` to bind consent to live interactive control.
- *   Each human question captures its current list, so late responses cannot authorize a new scope. The
- *   The effect review model falls back to `CLARVIS_DEFAULT_MODEL` from the run env when settings
+ *   Each human question captures its current list, so late responses cannot authorize a new scope.
+ *   The review model falls back to `CLARVIS_DEFAULT_MODEL` from the run env when settings
  *   name none.
  */
 function createGuardRuntimeResolver(
@@ -334,6 +337,7 @@ function createGuardRuntimeResolver(
             registry,
             runner: deps.effectRunner,
             environment: deps.effectEnvironment ?? {},
+            environmentResolver: deps.effectEnvironmentResolver,
             signal: ctx.signal,
             guest: container,
           };
@@ -432,7 +436,27 @@ function createGuardRuntimeResolver(
             recordAnswer(audit, "human", answer.allowed, answer.persisted);
             return { allowed: answer.allowed, answerer: "human" };
           };
-    const chosenHuman = guardMode === "on" ? humanElicit : undefined;
+    const judgeElicit =
+      guardMode === "auto"
+        ? createJudgeElicit(
+            {
+              llm: ctx.llm,
+              providers: settings.providers ?? [],
+              defaultModel:
+                settings.defaultModel ??
+                (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
+              authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
+              logger: deps.logger ?? ctx.logger,
+              signal: ctx.signal,
+            },
+            { ...settings.effect_review, ...ctx.request.guard_judge },
+            humanElicit,
+          )
+        : undefined;
+    const chosenHuman =
+      guardMode === "on" || (guardMode === "auto" && judgeElicit === undefined)
+        ? humanElicit
+        : undefined;
     audit.info(
       {
         event: "guard.resolved",
@@ -444,12 +468,15 @@ function createGuardRuntimeResolver(
       "the run's command guard is resolved; every guarded call is ruled on under this mode",
     );
     /**
-     * Review on uses the human channel. Review auto accepts only an effect-review receipt that the
-     * host validated against the current authority revision; unsure results may fall back to one-call
-     * human approval. With no human channel, `applyGuard` treats that fallback as a denial.
+     * Review on uses the human channel. Auto prefers mechanically covered effect-review receipts;
+     * a sole generic shell effect may receive a call-local verdict over the complete command. Both
+     * paths recheck the authority revision and route unsure through the configured fallback.
      */
     const elicit: GuardElicit | undefined =
-      effectEnabled || chosenHuman !== undefined || humanElicit !== undefined
+      effectEnabled ||
+      chosenHuman !== undefined ||
+      judgeElicit !== undefined ||
+      humanElicit !== undefined
         ? async (req) => {
             if (effectEnabled && guardMode === "auto") {
               if (req.matched !== "host_command" && (await approval?.covers(req)) === true) {
@@ -457,6 +484,25 @@ function createGuardRuntimeResolver(
                 return { allowed: true, answerer: "session_allowlist" };
               }
               const batch = batches.get(req.args);
+              const original = calls.get(req.args);
+              const callLocalReview =
+                original?.shell !== undefined &&
+                req.escalate !== "human" &&
+                req.matched !== "credential_file" &&
+                req.matched !== "dangerous" &&
+                req.dangerous !== true &&
+                batch?.facts.length === 1 &&
+                batch.facts[0]?.id === "external.unknown";
+              if (callLocalReview) {
+                if (judgeElicit === undefined)
+                  return humanElicit === undefined
+                    ? noHumanChannel(audit, ctx.executionId)
+                    : humanElicit(req);
+                const answer = await judgeElicit(req);
+                if (answer.answerer === "judge")
+                  recordAnswer(audit, "judge", answer.allowed, false);
+                return answer;
+              }
               let result =
                 batch === undefined
                   ? undefined
@@ -465,12 +511,12 @@ function createGuardRuntimeResolver(
                       { tool: req.tool, args: req.args },
                       "command_guard",
                     );
-              const original = calls.get(req.args);
               if (result?.decision === "allow" && original?.shell !== undefined) {
                 const fresh = await attestShell(original, {
                   registry,
                   runner: deps.effectRunner,
                   environment: deps.effectEnvironment ?? {},
+                  environmentResolver: deps.effectEnvironmentResolver,
                   signal: ctx.signal,
                   guest: container,
                 });
@@ -532,6 +578,20 @@ function createGuardRuntimeResolver(
                 recordAnswer(audit, "session_allowlist", true, false);
                 return { allowed: true, answerer: "session_allowlist" };
               }
+              if (
+                req.matched === "credential_file" ||
+                req.matched === "dangerous" ||
+                req.dangerous === true
+              )
+                return humanElicit === undefined
+                  ? noHumanChannel(audit, ctx.executionId)
+                  : humanElicit(req);
+              if (judgeElicit !== undefined)
+                return judgeElicit(req).then((answer) => {
+                  if (answer.answerer === "judge")
+                    recordAnswer(audit, "judge", answer.allowed, false);
+                  return answer;
+                });
               if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
               return chosenHuman(req);
             };

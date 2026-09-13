@@ -51,7 +51,12 @@ export { globalPaths, type GlobalPaths } from "./global.ts";
 
 export { localHostPaths, type LocalHostPaths, type LocalHostPathOptions } from "./local-host.ts";
 
-export { configurationRoots, type ConfigurationRoot } from "./configuration.ts";
+export {
+  configurationRoots,
+  configurationPathClass,
+  configurationTarget,
+  type ConfigurationRoot,
+} from "./configuration.ts";
 
 export {
   agentsMarketplaceFile,

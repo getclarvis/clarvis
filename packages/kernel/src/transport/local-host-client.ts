@@ -15,6 +15,7 @@ const runtime = runtimeStatusSchema({ identifier: text, text });
 const status = z
   .object({
     host_generation: z.string().min(1).max(256),
+    skills_revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     runtime,
     runtime_notice: z.object({ sequence, message: text }).strict().optional(),
     extension_drift: z

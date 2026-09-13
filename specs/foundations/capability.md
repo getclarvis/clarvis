@@ -206,7 +206,7 @@ content. `AssistantMessagePhase` is `commentary | final_answer`, and `AssistantT
 metadata. `LiveMessage` is the loop's runtime superset: a plain `Message`; assistant turns
 carrying `reasoning`, retained `text_parts`, or `tool_calls`; or a `tool` turn keyed by `tool_call_id`
 with optional `images`. `SteerMessage` (`content` + optional
-`id`) is drained from a `SteerSource` (pull-based, optional `close()`); `CompactionRequest`
+`id`) is drained from a `SteerSource` (pull-based delivery, optional `close()` and `onPending()` arrival observation); `CompactionRequest`
 (an optional additive `request` string that "can never replace the agent profile's base
 compaction prompt") is drained from a `CompactionSource` the same way. `ToolCallRef`
  and `ToolResultImage` are the model-call-boundary shapes; `AssistantReasoningPart`
@@ -1338,3 +1338,16 @@ widening of the contract, preferring a port over exposing an engine type
   derivable and none is asserted here — see §2.7 for the two such gaps in `api.ts` itself (why
   `AgentsParam` has exactly the ten ceilings it has, and why `BudgetConfig` models only
   `stop`/`escalate`).
+
+
+`SteerSource.onPending` replays pending admitted messages to a subscriber and reports new arrivals
+without acknowledging delivery. The engine's private authority writer consumes those arrivals only
+for a host-seeded entry run; tools receive the shared reader alone. Draining still delivers each
+message once to the normal loop, and closure removes the observer. No container projection is added.
+Production: `SteerSource` in [api.ts](../../packages/capability/src/api.ts), `createSteerQueue` in
+[steer-queue.ts](../../packages/kernel/src/runs/steer-queue.ts), and `executeRun` in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: [steer-queue.test.ts](../../packages/kernel/tests/unit/steer-queue.test.ts) and the open-review
+steer case in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
+
+`OperatorAuthorityState.denied_effects` stores bounded exact refusal identities, never evidence or grants. It is a detached reader projection of kernel-owned state; it is not accepted in an authority seed. Production: `OperatorAuthorityState` in [operator-authority.ts](../../packages/capability/src/operator-authority.ts) and `createOperatorAuthorityRuntime` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts). Test: bounded, revision-fenced refusal storage and forged seed rejection in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).

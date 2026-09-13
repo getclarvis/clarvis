@@ -64,6 +64,7 @@ export class WorkspaceClientManager {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private status: LocalHostStatus | undefined;
   private readonly driftListeners = new Set<(notice: ExtensionDriftNotice) => void>();
+  private readonly skillsListeners = new Set<(revision: number) => void>();
   private readonly runtimeListeners = new Set<(notice: RuntimePlacementNotice) => void>();
   private readonly connectionListeners = new Set<(reason: string) => void>();
   private connectionFailure: string | undefined;
@@ -185,6 +186,14 @@ export class WorkspaceClientManager {
     return () => this.runtimeListeners.delete(listener);
   }
 
+  /** Subscribe to host-validated catalog replacements without reconnecting this process. */
+  subscribeSkillsChanged(listener: (revision: number) => void): () => void {
+    if (this.closed) return () => {};
+    this.skillsListeners.add(listener);
+    listener(this.status?.skills_revision ?? 0);
+    return () => this.skillsListeners.delete(listener);
+  }
+
   /** Report failed host probes without deriving connection health from a runtime placement label. */
   subscribeConnectionFailure(listener: (reason: string) => void): () => void {
     if (this.closed) return () => {};
@@ -243,6 +252,9 @@ export class WorkspaceClientManager {
   private publishStatus(state: LocalHostStatus): void {
     const previous = this.status;
     this.status = state;
+    if (previous?.skills_revision !== state.skills_revision) {
+      for (const listener of this.skillsListeners) listener(state.skills_revision ?? 0);
+    }
     if (
       previous?.extension_drift?.sequence !== state.extension_drift?.sequence &&
       state.extension_drift !== undefined
@@ -397,6 +409,7 @@ export class WorkspaceClientManager {
     clearTimeout(this.timer);
     await this.kernel.close();
     this.driftListeners.clear();
+    this.skillsListeners.clear();
     this.runtimeListeners.clear();
     this.connectionListeners.clear();
   }

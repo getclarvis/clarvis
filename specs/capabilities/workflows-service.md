@@ -46,16 +46,16 @@ scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the s
 run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
 The builtin configuration guide carries executable authoring examples for a workflow document,
-its brief and its separate Admiral skill launcher. The native configuration route writes authored
+its brief and its separate Admiral skill launcher. The ordinary configuration writer creates authored
 files; an ordinary manager run reloads definitions and requires its own workflow preflight.
 Production: `CONFIGURATION_EXAMPLES` in
 [configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts), and
 `readWorkflowDefs` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts).
-Test: `creates a workflow in native mode and runs it through Admiral with an independent preflight`
+Test: `creates a workflow in the ordinary conversation and runs it through Admiral with an independent preflight`
 and `loads the complete workflow, diagnoses broken briefs, and reloads workspace overrides` in
 [configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
-See [self-configuration.md](../hosts/self-configuration.md) for that mode's authority and limitations.
+See [self-configuration.md](../hosts/self-configuration.md) for the writer's authority and limitations.
 
 ## 2. Surface
 

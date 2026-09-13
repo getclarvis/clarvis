@@ -176,7 +176,7 @@ An override replaces the complete definition; it is not merged round by round. A
 is diagnosed and contributes no override, leaving a same-named built-in available.
 
 The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
-and a separate skill launcher targeting Admiral. Its native configuration mode can write those files;
+and a separate skill launcher targeting Admiral. The ordinary restricted writer can create those files;
 an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
 independent of Extension Profile selection, while a standalone launcher must be selected by a custom
 profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.
@@ -443,6 +443,7 @@ bun --filter @clarvis/workflows format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
 ## Operator evidence across leaders
 
 The capability resolves `OPERATOR_AUTHORITY_PORT` at attach time. `runLeader` passes a bounded

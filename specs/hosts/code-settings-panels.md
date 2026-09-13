@@ -1701,3 +1701,7 @@ does not widen effect authority. Production:
 [guard-mode.ts](../../packages/code/src/adapters/guard-mode.ts) and
 [kernel-run-client.ts](../../packages/code/src/adapters/kernel-run-client.ts).
 The review contract is [effect review](../execution/effect-review.md).
+
+Agent Profile documents with unknown frontmatter keys remain listable with an invalid marker. The editor does not promote `base_prompt` from invalid metadata; writes use the same closed schema as execution admission.
+Production: `docToAgentFile` and `normalizeAgentWrite` in [agent-files.ts](../../packages/code/src/adapters/agent-files.ts).
+Test: unknown-key rejection and unchecked-prompt isolation in [agent-files.test.ts](../../packages/code/tests/unit/agent-files.test.ts).

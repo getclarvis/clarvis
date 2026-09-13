@@ -195,19 +195,32 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
     expect((await config.listAgents()).filter((a) => a.scope !== "builtin")).toEqual([]);
   });
 
-  it("carries unknown frontmatter keys through a write instead of rejecting them", async () => {
+  it("rejects unknown frontmatter before changing an agent", async () => {
     const config = createConfigService(createMemoryConfigStore());
-    const frontmatter = {
-      model: "anthropic/sonnet",
-      description: "writes code",
-      "x-house-style": "terse",
-      presentation: { colour: "amber" },
-    };
-
-    await config.writeAgent("workspace", "coder", { frontmatter, body: "You are a coder." });
-
-    const doc = await config.getAgent("workspace", "coder");
-    expect(doc.frontmatter).toEqual(frontmatter);
+    const original = { model: "anthropic/sonnet", description: "writes code" };
+    await config.writeAgent("workspace", "coder", {
+      frontmatter: original,
+      body: "You are a coder.",
+    });
+    for (const field of [
+      "x-house-style",
+      "presentation",
+      "sandbox",
+      "guard",
+      "endpoint",
+      "credentials",
+      "capabilities",
+    ]) {
+      await expect(
+        config.writeAgent("workspace", "coder", {
+          frontmatter: { ...original, [field]: "override" },
+          body: "Changed.",
+        }),
+      ).rejects.toMatchObject({ code: "invalid_request" });
+      const doc = await config.getAgent("workspace", "coder");
+      expect(doc.frontmatter).toEqual(original);
+      expect(doc.body).toBe("You are a coder.");
+    }
   });
 
   it("projects grants/can_spawn/budget from frontmatter onto the summary", async () => {

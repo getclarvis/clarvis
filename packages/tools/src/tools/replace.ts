@@ -1,3 +1,4 @@
+import { isAuthoringSearchScope, isCanonicalAuthoringPath } from "../guard/authoring-path.ts";
 import { promises as fs } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import { configurationRoots } from "@clarvis/paths";
@@ -80,7 +81,9 @@ async function scopeFiles(
   const pattern = glob ? (glob.includes("/") ? glob : `**/${glob}`) : "**/*";
   const listing = await listFiles(root, config.workspaceRoot, {
     pattern,
-    respectGitignore: true,
+    respectGitignore: !(
+      config.reviewMutation !== undefined && isAuthoringSearchScope(root, config.workspaceRoot)
+    ),
     maxEntries: config.maxTraversalEntries,
   });
   if (listing.truncated) {
@@ -92,11 +95,14 @@ async function scopeFiles(
   }
   const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
   const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
-  const files = listing.files.filter((file) =>
-    protectedRoots.every((protectedRoot) => {
-      const rel = relative(protectedRoot, file);
-      return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
-    }),
+  const files = listing.files.filter(
+    (file) =>
+      (config.reviewMutation !== undefined &&
+        isCanonicalAuthoringPath(file, config.workspaceRoot)) ||
+      protectedRoots.every((protectedRoot) => {
+        const rel = relative(protectedRoot, file);
+        return rel !== "" && (rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+      }),
   );
   files.sort();
   return files;
@@ -129,6 +135,7 @@ async function scopeFiles(
  * above, and is worse than a refused one.
  */
 export const replace: ToolDef = {
+  atomicMutation: true,
   name: "replace",
   description:
     "Regex replacement scoped by path and/or glob (at least one required). Preview counts and " +
@@ -252,7 +259,7 @@ export const replace: ToolDef = {
     try {
       await withFileLocks(
         ops.map((o) => o.path),
-        () => applyOpsAtomic(ops),
+        () => applyOpsAtomic(ops, config.reviewMutation),
       );
     } catch (err) {
       if (err instanceof ToolError) throw err;

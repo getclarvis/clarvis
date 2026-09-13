@@ -98,6 +98,15 @@ mounted directory or execution root. Bundled helpers must first be read through 
 and prepared with their relative directory structure in the writable workspace, then invoked
 through the ordinary guarded shell. Remote locations are opaque locators.
 
+`validateSkillDocument` exposes the same bounded-frontmatter parser used by discovery, so the
+restricted configuration writer can validate a candidate before mutation.
+
+`captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
+paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,
+rejects links/escapes and limits allocations per file, skill and catalog. The owner must close the
+capture when its users settle. Full reads preserve the normal size errors; chunked reads preserve
+pagination. The loop uses this facility for host-selected snapshots.
+
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
 a resource while enforcing that it stays inside the selected skill directory.
 
@@ -336,3 +345,5 @@ bun --filter @clarvis/skills format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+`listSkillDirs` exposes the existing bounded discovery walk with an optional host directory observer. This lets catalogs monitor empty/grouping directories before a manifest arrives, using the same depth, directory-entry and candidate budgets as discovery. `validateSkillDocument` preserves root-specific naming rules; the writer uses the resulting metadata name for membership.

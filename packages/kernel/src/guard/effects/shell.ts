@@ -23,7 +23,7 @@ export async function attestShell(
     reviewability: "human_only",
   });
   if (typeof ctx.args.command !== "string" || process.platform === "win32") return unknown();
-  const environment = resolveEffectEnvironment(ctx, deps.environment);
+  const environment = (deps.environmentResolver ?? resolveEffectEnvironment)(ctx, deps.environment);
   if (environment === undefined) return unknown();
   deps = { ...deps, environment };
   const projection = projectLiteralData(ctx.args.command);

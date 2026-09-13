@@ -45,8 +45,6 @@ export interface StartRunInput {
   messages?: Message[];
   profile?: string;
   executionId?: string;
-  /** Volatile authorization identity, replaced whenever a session is opened or resumed. */
-  configurationSessionId?: string;
   continueFrom?: string;
   sessionId?: string;
   guardMode?: GuardMode;

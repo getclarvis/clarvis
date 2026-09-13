@@ -45,11 +45,11 @@ adapter using the same RPC framing.
 
 ## Services
 
-`StartRunParams.configuration_session_id` optionally carries a volatile authorization identity for
-the currently open conversation instance. Clients must generate a fresh value on every open/resume
-and never persist it or substitute the saved session id, `continue_from` or a provider cache hint.
-Omission requires native configuration approval per run. The `configuration_access` elicitation
-uses the existing open-ended kind. See [self-configuration.md](../../specs/hosts/self-configuration.md).
+Direct configuration uses ordinary runs and concrete `guard_confirm` elicitation when required.
+Host-owned authority is separate from model-provided parameters and saved transcript content.
+`LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
+generation, allowing command listings to refresh without reconnecting. See
+[self-configuration.md](../../specs/hosts/self-configuration.md).
 
 Managed `RunHandle` implementations can return an unsubscribe function from `onElicit` and expose
 `onElicitSettled` to retire answered or expired questions. Hosted observations carry sequenced event
@@ -73,7 +73,7 @@ services:
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
 | `skills`            | Skill listing and prompt rendering.                                                    |
 | `sessions`          | Workspace-scoped conversation/session records.                                         |
-| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.        |
+| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.       |
 | `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
@@ -323,6 +323,7 @@ Run start carries `session_id` and `agent_instance_id`; the hosted session persi
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
 ## Effect review presentation
 
 `effect_review` configures the shared reviewer. `GuardJudge.prompt` is deprecated additional

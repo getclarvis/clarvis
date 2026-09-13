@@ -17,6 +17,7 @@ import type { ToolDef } from "./types.ts";
  * success message warns to re-read the file and verify indentation.
  */
 export const multiEdit: ToolDef = {
+  atomicMutation: true,
   name: "multi_edit",
   description:
     "Apply several edit_file-style replacements to ONE file in a single atomic call. Edits run in " +

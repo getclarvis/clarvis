@@ -97,9 +97,11 @@ removed rather than deprecated.
 ## The four trees
 
 `configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
-scopes for native self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
-`workspace_agents`. It neither creates directories nor authorizes access. The kernel owns consent
-and the credential-excluding file policy described in
+scopes for self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents`. It neither creates directories nor authorizes access. `configurationPathClass` shares the closed
+authoring/operational/private vocabulary between file tools and the restricted writer. Classification
+does not resolve links or authorize a mutation; callers retain confinement checks and effect review.
+The kernel owns the review policy described in
 [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
@@ -404,3 +406,5 @@ The two encoders used to live in `@clarvis/loop`, while the loop was their only 
 each came to need one — a value two packages need belongs in the leaf both can reach, and these need
 nothing beyond the Node path and crypto primitives. `@clarvis/loop` re-exports them from `host.ts`, so `kernel` and `code`
 never saw the move.
+
+`configurationTarget` locates an already resolved path within the shared roots and returns the same authoring/operational/private classification. Both file-tool guards and the host batch writer consume it. It does not canonicalize disk links or authorize writes; callers retain their filesystem confinement checks.

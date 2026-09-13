@@ -784,8 +784,15 @@ synchronous persistence APIs that cannot yield while holding their transaction."
 resolved global directory and workspace; shared global content uses the user home. Production:
 [configuration.ts](../../packages/paths/src/configuration.ts). Test: all-four-root operations in
 [configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
-The consumer's file allow-list and consent are owned by
-[self-configuration.md](../hosts/self-configuration.md).
+`configurationPathClass` classifies relative targets as authoring, operational or private. Only
+canonical agent, skill and workflow Markdown names enter authoring; settings, executable declarations
+and other admitted configuration remain operational. Private trees, credential-like names and
+malformed relative paths never become inferred writes. The classifier performs no filesystem I/O:
+consumers still resolve actual targets and enforce links, confinement and revisions.
+Production: `configurationPathClass` in [configuration.ts](../../packages/paths/src/configuration.ts).
+Test: `configuration classes share a closed authoring, operational and private vocabulary` in
+[configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).
+Effect review is owned by [self-configuration.md](../hosts/self-configuration.md).
 
 **INV-001.** No package outside `@clarvis/paths` may spell the literal directory names `.clarvis`
 or `.agents`, or the temp-file prefix `.clarvis-tmp-`, in executable source under any package's
@@ -1017,3 +1024,7 @@ root — a **runtime** (environment-variable) coupling, not an import.
   (`memoryMachineryRoot`, `tracesDir`, etc.) are delegated to [memory-wiki-store](../capabilities/memory-store.md) and
   [trace-recording-and-persistence](trace.md) respectively, per this document's scope statement, and are not
   described here beyond the single directory path each root resolves to.
+
+The shared `configurationTarget` locator classifies already resolved targets against the configuration roots, including absent leaves and root/sibling distinctions. It grants no permission and does not replace caller-owned link/confinement checks.
+Production: `configurationTarget` in [configuration.ts](../../packages/paths/src/configuration.ts).
+Test: resolved targets, private paths and sibling-prefix rejection in [configuration.test.ts](../../packages/paths/tests/unit/configuration.test.ts).

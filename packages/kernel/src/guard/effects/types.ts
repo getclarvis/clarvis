@@ -6,7 +6,7 @@ import type {
   ReviewedEffectTarget,
   AuthorityEnvelopeV1,
 } from "@clarvis/capability";
-import type { GuardReviewability, ShellAnalysisIssue } from "@clarvis/tools/guard";
+import type { GuardContext, GuardReviewability, ShellAnalysisIssue } from "@clarvis/tools/guard";
 
 /** Host-attested effect of one segment or native tool call. */
 export interface GuardEffectFact {
@@ -35,11 +35,18 @@ export interface GuardEffectDescriptor {
   covers(grant: AuthorityEnvelopeV1["grants"][number], fact: GuardEffectFact): boolean;
 }
 
+/** Resolves the actual execution environment against host-attested evidence. */
+export type EffectEnvironmentResolver = (
+  ctx: GuardContext,
+  evidence: Readonly<Record<string, string | undefined>>,
+) => Readonly<Record<string, string | undefined>> | undefined;
+
 /** Exact host-selected process environment; never copied from process.env by an attestor. */
 export interface EffectAttestorDeps {
   registry: GuardEffectRegistry;
   runner?: ProcessRunner;
   environment: Readonly<Record<string, string | undefined>>;
+  environmentResolver?: EffectEnvironmentResolver;
   signal?: AbortSignal;
   guest?: boolean;
 }

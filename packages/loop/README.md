@@ -106,6 +106,16 @@ compaction or inference, under a five-second wall bound and run cancellation. An
 ends the stage; successful completion or checkpoint is refused outside the finalization gates; a failed or timed-out sweep cannot proceed to the model. Its signal is retired on
 every exit, and asynchronous publishers must honor it to prevent late context changes.
 
+Agent Profile frontmatter rejects unknown fields, including executor-policy and credential
+overrides. Valid profile customization still resolves under the host-admitted execution and
+delegation ceiling.
+
+Host-selected skill snapshots materialize bounded resource and helper copies through the optional
+`@clarvis/skills` import. Verification runs before and after capture. Idle catalog updates replace
+the captured generation, and disposal releases its files; failed post-capture verification releases
+the candidate. Full resource reads retain their existing bounds rather than returning a truncated
+page. See [skills](../../specs/execution/skills.md).
+
 ## Core flow
 
 ```ts
@@ -538,6 +548,7 @@ Direct runs persist missing session/agent identities before inference; continuat
 
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
+
 ## Host operator authority
 
 `ExecuteRunArgs.operatorAuthoritySeed` is private host input, separate from `rawBody`.
@@ -545,3 +556,5 @@ validation and separate deterministic, live-provider and installed-artifact qual
 prepublishes its reader, admits steers through its private hook, and persists
 `operator_authority_state` separately from capability slots. It never reconstructs evidence from
 `final_context`. See [effect review](../../specs/execution/effect-review.md).
+
+The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.

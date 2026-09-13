@@ -577,7 +577,7 @@ function buildResolvedSkill(
 
 /** Apply the strict identity subset required by an Agent Skills-conformant root. */
 function assertRootValidation(
-  root: SkillRoot,
+  root: Pick<SkillRoot, "validation">,
   frontmatter: SkillFrontmatter,
   defaulted: readonly SkillDefaultedField[],
   rawFrontmatter: unknown,
@@ -659,6 +659,31 @@ function assertRootValidation(
       { path: file },
     );
   }
+}
+
+/** Validate prospective authored bytes with the same root-specific rules used by discovery. */
+export function validateSkillDocument(
+  raw: string,
+  options: {
+    directory: string;
+    validation?: SkillRoot["validation"];
+  },
+): SkillFrontmatter {
+  if (raw.length > MAX_SKILL_FILE_CHARS || Buffer.byteLength(raw) > MAX_SKILL_FILE_BYTES)
+    throw new SkillError("invalid_skill", "Skill manifest exceeds the document limit");
+  const parsed = parseSkillWithDefaults(raw, MAX_SKILL_FRONTMATTER_CHARS, {
+    name: fallbackSkillName(options.directory),
+    description: DEFAULT_SKILL_DESCRIPTION,
+  });
+  assertRootValidation(
+    { validation: options.validation },
+    parsed.frontmatter,
+    parsed.defaulted,
+    parsed.rawFrontmatter,
+    options.directory,
+    path.join(options.directory, "SKILL.md"),
+  );
+  return parsed.frontmatter;
 }
 
 /**

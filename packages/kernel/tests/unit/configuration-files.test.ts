@@ -34,6 +34,62 @@ function fixture() {
 }
 
 describe("native configuration files", () => {
+  it("validates shared Agent Skills with the discovery root rules before writing", () => {
+    const f = fixture();
+    for (const content of [
+      "Review tests.",
+      "---\nname: other\ndescription: Review tests\n---\nReview.",
+      "---\nname: review\ndescription: Review tests\nallowed-tools: [Read]\n---\nReview.",
+    ])
+      expect(() =>
+        f.call({
+          operation: "write",
+          root: "workspace_agents",
+          path: "skills/review/SKILL.md",
+          content,
+          expected_revision: null,
+        }),
+      ).toThrow();
+    const content =
+      "---\nname: review\ndescription: Review tests\nallowed-tools: Read\n---\nReview.";
+    expect(
+      f.call({
+        operation: "write",
+        root: "workspace_agents",
+        path: "skills/review/SKILL.md",
+        content,
+        expected_revision: null,
+      }),
+    ).toMatchObject({ written: true });
+  });
+
+  it("rejects invalid skill manifests and authority overrides before replacing valid bytes", () => {
+    const f = fixture();
+    for (const [path, invalid] of [
+      ["skills/review/SKILL.md", "---\nname: review\nMissing closing fence"],
+      ["agents/reviewer.md", "---\nsandbox: false\n---\nReview tests."],
+    ] as const) {
+      const content = "Review tests.\n";
+      f.call({
+        operation: "write",
+        root: "workspace_clarvis",
+        path,
+        content,
+        expected_revision: null,
+      });
+      expect(() =>
+        f.call({
+          operation: "write",
+          root: "workspace_clarvis",
+          path,
+          content: invalid,
+          expected_revision: settingsDocumentRevision(content),
+        }),
+      ).toThrow();
+      expect(readFileSync(join(f.roots.workspace_clarvis, path), "utf8")).toBe(content);
+    }
+  });
+
   it("previews a complete mutation fact without applying the write", () => {
     const f = fixture();
     const request: ConfigurationFileRequest = {
@@ -84,7 +140,8 @@ describe("native configuration files", () => {
       const f = fixture();
       const path = "skills/example/SKILL.md";
       expect(f.call({ operation: "read", root, path })).toEqual({ content: null, revision: null });
-      const content = "First line\nChange me\nLast line\n";
+      const content =
+        "---\nname: example\ndescription: Example skill\n---\nFirst line\nChange me\nLast line\n";
       const revision = settingsDocumentRevision(content);
       expect(f.call({ operation: "write", root, path, content, expected_revision: null })).toEqual({
         written: true,
@@ -109,7 +166,8 @@ describe("native configuration files", () => {
         old_text: "Change me",
         new_text: "Changed",
       });
-      const updated = "First line\nChanged\nLast line\n";
+      const updated =
+        "---\nname: example\ndescription: Example skill\n---\nFirst line\nChanged\nLast line\n";
       expect(readFileSync(join(f.roots[root], path), "utf8")).toBe(updated);
       expect(f.call({ operation: "list", root, path: "skills/example" })).toEqual({
         entries: [{ name: "SKILL.md", kind: "file" }],

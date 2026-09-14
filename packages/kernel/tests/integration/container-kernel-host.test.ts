@@ -361,6 +361,11 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
       },
     });
     await arrived.promise;
+    const activeRun = await fixture.connection.client.hosting!.attach({
+      execution_id: created.execution_id!,
+      host_generation: fixture.connection.client.capabilities.hosting!.host_generation,
+      control: "observe",
+    });
     const active = await fixture.connection.client.goals.get(sessionId);
     await fixture.connection.client.goals.control({
       session_id: sessionId,
@@ -372,8 +377,7 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
       "paused",
     );
     release.resolve();
-    for (let index = 0; index < 200 && fixture.connection.host.stats().runs !== 0; index += 1)
-      await Bun.sleep(0);
+    await activeRun.handle.closed;
     expect(fixture.connection.host.stats().runs).toBe(0);
     const paused = await fixture.connection.client.goals.get(sessionId);
     expect(paused.state.current).toMatchObject({ status: "paused", auto_continuations: 0 });
@@ -386,19 +390,19 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
     next = await fixture.connect();
     const recovered = await next.client.goals.get(sessionId);
     expect(recovered.state.current?.status).toBe("paused");
-    await next.client.goals.control({
+    const resumed = await next.client.goals.control({
       session_id: sessionId,
       expected_revision: recovered.state.revision,
       operation_id: "resume",
       action: { kind: "resume" },
     });
-    let completed = false;
-    for (let index = 0; index < 200; index += 1) {
-      completed = (await next.client.goals.get(sessionId)).state.current?.status === "complete";
-      if (completed) break;
-      await Bun.sleep(0);
-    }
-    expect(completed).toBe(true);
+    const resumedRun = await next.client.hosting!.attach({
+      execution_id: resumed.execution_id!,
+      host_generation: next.client.capabilities.hosting!.host_generation,
+      control: "observe",
+    });
+    await resumedRun.handle.closed;
+    expect((await next.client.goals.get(sessionId)).state.current?.status).toBe("complete");
     expect(calls).toBe(3);
   } finally {
     release.resolve();

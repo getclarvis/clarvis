@@ -391,7 +391,9 @@ permanently.
 `containerArtifactVolumeName(archiveSha256)` addresses the independent immutable artifact volume.
 These helpers require full bare lowercase SHA-256 identities and perform no filesystem or engine
 mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even when the launcher
-runs on a different platform. Namespace derivation, volume admission and lifecycle belong to Kernel.
+runs on a different platform. It includes the private Git metadata/common roots used when a Windows
+or POSIX host's linked-worktree indirection must be rewritten for the Linux guest. Namespace
+derivation, volume admission and lifecycle belong to Kernel.
 
 ## Owner segments
 

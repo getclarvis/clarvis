@@ -74,6 +74,8 @@ export const containerGuestPaths = Object.freeze({
   agentsMask: posix.join("/workspace", AGENTS_DIR),
   globalRoot: "/var/lib/clarvis" as const,
   home: "/var/lib/clarvis/home" as const,
+  gitMetadataRoot: "/var/lib/clarvis/git-metadata" as const,
+  gitCommonRoot: "/var/lib/clarvis/git-metadata/common" as const,
   artifactRoot: "/opt/clarvis" as const,
   artifactEntrypoint: "/opt/clarvis/bin/clarvis-kernel" as const,
   artifactPayloadSubpath: "payload" as const,

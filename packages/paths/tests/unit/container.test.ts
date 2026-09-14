@@ -75,6 +75,8 @@ describe("Container paths and names", () => {
       agentsMask: "/workspace/.agents",
       globalRoot: "/var/lib/clarvis",
       home: "/var/lib/clarvis/home",
+      gitMetadataRoot: "/var/lib/clarvis/git-metadata",
+      gitCommonRoot: "/var/lib/clarvis/git-metadata/common",
       artifactRoot: "/opt/clarvis",
       artifactEntrypoint: "/opt/clarvis/bin/clarvis-kernel",
       artifactPayloadSubpath: "payload",

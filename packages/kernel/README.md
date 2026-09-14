@@ -269,6 +269,12 @@ ordinary public `KernelClient`. Process control remains below `@clarvis/kernel/l
 Kernel never receives an engine socket or a host process port. The owning contract is
 [`isolated-agent-runtime`](../../specs/hosts/isolated-agent-runtime.md).
 
+The connector admits the exact local base image ID, ABI and revision before any preflight or
+preparer executes. Data, artifact and mise preparers use deterministic names, are inspected for
+their complete effective policy before start, and reconcile cancellation or a lost create response
+by exact ID. Their cleanup has its own bound so an aborted ten-minute preparation cannot strand a
+privileged helper silently.
+
 The strict `runtime` block is global-only. Docker and Podman accept simple `{ "backend": "docker" }`
 or `{ "backend": "podman" }`, with product-owned positive resource limits and `outbound` network.
 Executable/context/connection, image digest, network and limits are advanced overrides. Docker alone
@@ -292,14 +298,16 @@ revision 1 and channel revision 1 are negotiated before the client is returned.
 The selected workspace is the only general host bind mounted read-write at `/workspace` and a
 preflight nonce proves that the selected engine sees the same directory. Private content and state
 volumes cover `/workspace/.clarvis` and `/var/lib/clarvis`; empty read-only masks cover `.agents`
-control roots. Normal and linked-worktree Git metadata is mounted through an exact read-only list.
+control roots. Normal and linked-worktree Git metadata is mounted through an exact read-only list;
+the launcher rewrites a linked worktree's host-native `.git` indirection to fixed POSIX guest paths,
+including when the host paths use Windows syntax.
 Docker/Podman effective inspect rejects a missing, additional or writable protected bind. Because
 the supported engines create missing nested mount targets in the host bind, `.clarvis` and `.agents`
 must already be directories; a non-Git workspace also supplies an empty `.git` directory. Admission
 fails before engine create when any target is absent, so bootstrap never changes the host workspace.
 Ordinary workspace mutation and outbound remote effects remain possible; the promise is host
 integrity outside the selected workspace, not workspace safety or network hermeticity. `/mise`
-remains an engine-owned cache volume partitioned by owner/project/workspace/image rather than a
+remains an engine-owned cache volume partitioned by owner/project/workspace and exact base image rather than a
 host-path bind.
 
 Root filesystem read-only, `cap-drop ALL`, no-new-privileges, resource bounds, non-executable tmpfs,
@@ -307,12 +315,20 @@ no engine socket/host credentials and immutable image labels remain. The base im
 the Linux environment and stable artifact preparer. The compiled Bun artifact is transferred to an
 immutable content-addressed volume and mounted read-only at `/opt/clarvis`; changing Clarvis does not
 rebuild the base. The real-engine qualifier writes explicit scenario evidence so a skipped test
-cannot be reported as passing.
+cannot be reported as passing. A failed artifact-cache verification permits recreation only after
+the engine proves zero Container consumers and confirms removal of that exact volume name.
+
+Effective inspection accepts only the engine's exact representation. Podman must report the precise
+effective and bounding capability sets, its explicit no-new-privileges value, and the canonical
+`rprivate`/`tmpcopyup` additions to the otherwise fixed tmpfs options. Policy drift is rejected before
+start, while cleanup uses the independently verified generation labels and exact Container ID.
 
 One host lease and exact engine registry own each namespace generation. Normal close revokes model
 authority, drains the Kernel, confirms physical exit, removes only the disposable Container and
 retains state, artifact and mise volumes. Startup reconciliation inspects the exact recorded ID and
-labels; an unreachable engine or unconfirmed previous process remains a conflict.
+labels; an unreachable engine or unconfirmed previous process remains a conflict. Loss of either
+the attached process or physical channel starts the same idempotent cleanup. One absolute boot
+deadline covers channel readiness, private initialization and public hello.
 
 As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
 capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is

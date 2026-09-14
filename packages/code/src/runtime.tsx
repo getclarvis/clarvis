@@ -547,6 +547,7 @@ async function runApp(
   const [runtimePlacementNotice, setRuntimePlacementNotice] = createSignal<{
     sequence: number;
     message: string;
+    pendingReconnect?: boolean;
   } | null>(null);
   const workspaceManager = await diagnosticAsync(
     "boot.workspace-manager",
@@ -580,8 +581,9 @@ async function runApp(
       setRuntimePlacementNotice({
         sequence: ++runtimePlacementSequence,
         message: notice.message,
+        ...(notice.pendingReconnect === true ? { pendingReconnect: true } : {}),
       });
-    }
+    } else setRuntimePlacementNotice(null);
   });
   platform.onShutdown(unsubscribeRuntimePlacement);
   const owner = workspaceManager.defaultOwner;

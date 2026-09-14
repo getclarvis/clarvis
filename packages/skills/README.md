@@ -145,7 +145,7 @@ metadata for diagnosis.
 
 `./capability` also exports the pure `formatSkillBody`, `formatSkillResourceChunk`,
 `formatSkillResourceLegacy` and `validateResourceChunk` helpers. Native handlers use the same
-disclosure and page validation. Core-only Container has no Skill catalog/tool/bridge and receives no
+disclosure and page validation. The complete Container Kernel has no Skill catalog/tool/bridge and receives no
 Skill or Plugin-bootstrap bytes; explicit Skill use or a custom `use_skills` profile is refused
 before engine/model work. A whole-resource provider never advertises a byte cursor it cannot
 continue.

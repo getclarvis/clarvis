@@ -76,6 +76,13 @@ Source ownership:
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
+The transport operation catalog keeps optional request properties inside their closed envelope even
+when a particular call omits them. In particular, `runs.context` encodes
+`target_window_tokens` as an admitted optional key, which lets `/model` later supply a target
+without failing operation-key discovery. Production: `OPERATIONS.runs.context` in
+[operations.ts](../../packages/kernel/src/transport/operations.ts). Test:
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+
 `Session.goal_state` is an optional host-owned projection of the goal domain, including its bounded
 audit archive. A public session save cannot create, remove or rewrite that field. Goal service DTOs
 do not independently advertise availability; actual host composition must supply the conversation
@@ -743,9 +750,10 @@ container placement because it reports the effective value after the kernel has 
 Neither type calls `outbound` internet-only, and the protocol exposes no host-port or engine-argument
 mutation method. Docker and Podman have no fallback field: either engine reports its own bounded
 failure and changing to Sandbox/Host requires a new explicit selection and run. The private
-execution protocol is revision 14 with exact lifecycle/model/capability/event/checkpoint methods and
-`runtime.elicit` as its sole capability; that wire is kernel-private and not part of
-`@clarvis/protocol`.
+Container framing and model broker are revision 1 and remain kernel-private. Channel 1 carries this
+same public Kernel protocol at wire revision 10; channel 2 admits only initialization/shutdown and
+channel 3 only logical model calls/deltas. There is no parallel execution/capability/checkpoint
+protocol.
 Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
 name, an absolute path under the global operator recipe directory and `none`/`outbound` build
 networking. It is persisted operator input;

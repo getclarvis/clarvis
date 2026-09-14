@@ -1,5 +1,11 @@
 import { mkdir, readFile, unlink } from "node:fs/promises";
-import { NOOP_LOGGER, resolveProvider, type EnvConfig, type Logger } from "@clarvis/capability";
+import {
+  NOOP_LOGGER,
+  resolveProvider,
+  sanitizeErrorMessage,
+  type EnvConfig,
+  type Logger,
+} from "@clarvis/capability";
 import {
   acquireLocalLease,
   containerLaunchPaths,
@@ -50,6 +56,14 @@ export interface LaunchedContainerKernel extends ConnectedContainerKernel {
   readonly operator: OperatorServices;
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef & { readonly path: "/workspace" };
+}
+
+/** Effective host and broker response ceiling for one admitted Container generation. */
+export function containerModelResponseLimit(
+  providerMaximum: number,
+  launchMaximum: number,
+): number {
+  return Math.min(providerMaximum, launchMaximum);
 }
 
 /**
@@ -138,7 +152,10 @@ export async function launchContainerKernel(
     const rawProvider = createAiSdkProvider({
       resolveRegistryKey: (name) => operator.resolveRegistryKey(name),
       timeoutMs: options.env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
-      maxResponseBytes: options.env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
+      maxResponseBytes: containerModelResponseLimit(
+        options.env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
+        options.launch.limits.outputBytes,
+      ),
       maxSseEventBytes: options.env.CLARVIS_PROVIDER_MAX_SSE_EVENT_BYTES,
       logger,
       ...(operator.resolveSubscription === undefined
@@ -189,7 +206,10 @@ export async function launchContainerKernel(
         maxQueued: options.env.CLARVIS_MAX_QUEUED_MODEL_CALLS,
         tokenCeiling: options.env.CLARVIS_TOKEN_CEILING,
         hostMaxRetries: options.env.CLARVIS_DEFAULT_MAX_RETRIES,
-        maxResponseBytes: options.env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
+        maxResponseBytes: containerModelResponseLimit(
+          options.env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
+          options.launch.limits.outputBytes,
+        ),
         maxRetryAfterMs: options.env.CLARVIS_DEFAULT_MAX_RETRY_AFTER_MS,
         maxTimeoutMs: options.env.CLARVIS_TIMEOUT_CEILING_MS,
         defaultTimeoutMs: options.env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
@@ -213,41 +233,54 @@ export async function launchContainerKernel(
       }
     });
     let closing: Promise<void> | undefined;
-    return {
+    const close = (): Promise<void> => {
+      closing ??= (async () => {
+        const failures: unknown[] = [];
+        stopAuthorityObservation?.();
+        stopAuthorityObservation = undefined;
+        await active.close();
+        for (const cleanup of [
+          () =>
+            unlink(paths.registryFile).catch((error: NodeJS.ErrnoException) => {
+              if (error.code !== "ENOENT") throw error;
+            }),
+          () => operator.close(),
+          () => options.protectedMounts.cleanup(),
+          () =>
+            lease.release().then((released) => {
+              if (!released) throw new Error("Container launch lease ownership was lost");
+            }),
+        ]) {
+          try {
+            await cleanup();
+          } catch (error) {
+            failures.push(error);
+          }
+        }
+        if (failures.length > 0)
+          throw new AggregateError(failures, "Container Kernel cleanup failed");
+      })();
+      return closing;
+    };
+    const launched: LaunchedContainerKernel = {
       ...active,
       operator,
       project: options.project,
       workspace: options.workspace,
-      close() {
-        closing ??= (async () => {
-          const failures: unknown[] = [];
-          stopAuthorityObservation?.();
-          stopAuthorityObservation = undefined;
-          await active.close();
-          for (const cleanup of [
-            () =>
-              unlink(paths.registryFile).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== "ENOENT") throw error;
-              }),
-            () => operator.close(),
-            () => options.protectedMounts.cleanup(),
-            () =>
-              lease.release().then((released) => {
-                if (!released) throw new Error("Container launch lease ownership was lost");
-              }),
-          ]) {
-            try {
-              await cleanup();
-            } catch (error) {
-              failures.push(error);
-            }
-          }
-          if (failures.length > 0)
-            throw new AggregateError(failures, "Container Kernel cleanup failed");
-        })();
-        return closing;
-      },
+      close,
     };
+    void active.closed
+      .then(() => close())
+      .catch((error: unknown) => {
+        logger.error(
+          {
+            event: "container.cleanup.failed",
+            error: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
+          },
+          "the Container transport closed and launcher cleanup failed",
+        );
+      });
+    return launched;
   } catch (error) {
     stopAuthorityObservation?.();
     let stopped: boolean;

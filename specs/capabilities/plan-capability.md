@@ -399,6 +399,19 @@ contribution unchanged (`packages/plan/src/capability/index.ts`). It used to car
 it `true` (`packages/loop/src/runtime/subagents/build-lead-input.ts`). The flag could never act,
 and has been removed.
 
+The child also cannot mutate task state through a hidden plan surface. `PlanDelegationPort` is the
+runtime-owned writer that claims a tracked task and records its return. After `noteSpawned` records
+the first tracked delegation in an iteration, the Lead's sibling `revise_plan` and
+`transition_plan_task` calls return a bounded deferral without invoking `PlanSession`. The next
+`beforeIteration` resets that fence and publishes the current canonical revision and digests, after
+which a fresh Lead mutation is admitted normally. CAS remains strict; no stale digest is relaxed.
+
+Production: `forAgent` in `packages/plan/src/capability/index.ts`; `IterState.spawnedTaskIds` and the
+plan-tool handler in `packages/plan/src/capability/orchestration.ts`; `createDelegationPlanPort` in
+`packages/plan/src/capability/delegation-port.ts`.
+Test: `packages/plan/tests/component/plan-catalog.test.ts` and
+`packages/plan/tests/component/plan-orchestration.test.ts` (the delegated-state publication case).
+
 The review ask is built only when all three of `review`, `scope.elicit` and `scope.clock` are present
 (`packages/plan/src/capability/index.ts`).
 

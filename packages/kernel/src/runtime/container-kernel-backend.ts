@@ -9,16 +9,20 @@ import type {
 } from "./types.ts";
 import { RuntimeLaunchError } from "./types.ts";
 import { CONTAINER_BASE_ABI } from "../hosting/container-contract.ts";
+import { inspectContainerBaseImage } from "./runtime-image.ts";
+import {
+  containerRecord,
+  exactContainerId,
+  hasExactEffectiveCapabilities,
+  hasExactTmpfsOptions,
+  hasNoNewPrivileges,
+} from "./container-inspection.ts";
 
 const idPattern = /^(?:sha256:)?([a-f0-9]{64})$/u;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const volumePattern = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,254}$/u;
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
+const record = containerRecord;
 
 function json(text: string, label: string): unknown {
   try {
@@ -31,9 +35,7 @@ function json(text: string, label: string): unknown {
 }
 
 function exactId(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const match = idPattern.exec(value.toLowerCase());
-  return match?.[1];
+  return exactContainerId(value);
 }
 
 function engineName(generation: string): string {
@@ -182,18 +184,21 @@ function createArgs(engine: "docker" | "podman", spec: ContainerKernelLaunchSpec
   ];
 }
 
-function validTmpfs(value: unknown, expectedSize: number): boolean {
-  if (typeof value !== "string") return false;
-  const entries = new Set(value.split(","));
-  return ["rw", "nosuid", "nodev", "noexec", `size=${String(expectedSize)}`].every((entry) =>
-    entries.has(entry),
-  );
+function validTmpfs(value: unknown, expectedSize: number, engine: "docker" | "podman"): boolean {
+  return hasExactTmpfsOptions(value, [
+    "rw",
+    "nosuid",
+    "nodev",
+    "noexec",
+    `size=${String(expectedSize)}`,
+    ...(engine === "podman" ? ["rprivate", "tmpcopyup"] : []),
+  ]);
 }
 
 function validContainerInspect(
-  engine: "docker" | "podman",
   value: unknown,
   spec: ContainerKernelLaunchSpec,
+  engine: "docker" | "podman",
 ): string | undefined {
   const root = record(Array.isArray(value) && value.length === 1 ? value[0] : undefined);
   const host = record(root?.HostConfig);
@@ -203,6 +208,7 @@ function validContainerInspect(
   const environment = Array.isArray(config?.Env) ? config.Env : undefined;
   const id = exactId(root?.Id);
   if (
+    root === undefined ||
     id === undefined ||
     host === undefined ||
     config === undefined ||
@@ -236,13 +242,9 @@ function validContainerInspect(
       "MISE_CONFIG_DIR=/mise/config",
       "MISE_STATE_DIR=/mise/state",
     ].every((entry) => environment.includes(entry)) ||
-    !Array.isArray(host.CapDrop) ||
-    (engine === "docker"
-      ? !host.CapDrop.some((entry) => String(entry).toLowerCase() === "all")
-      : host.CapDrop.length === 0 || (Array.isArray(host.CapAdd) && host.CapAdd.length !== 0)) ||
-    !Array.isArray(host.SecurityOpt) ||
-    !host.SecurityOpt.some((entry) => String(entry).includes("no-new-privileges")) ||
-    !validTmpfs(record(host.Tmpfs)?.["/tmp"], spec.limits.storageBytes) ||
+    !hasExactEffectiveCapabilities(root, host, []) ||
+    !hasNoNewPrivileges(host.SecurityOpt) ||
+    !validTmpfs(record(host.Tmpfs)?.["/tmp"], spec.limits.storageBytes, engine) ||
     mounts.some((entry) => entry === undefined)
   )
     return undefined;
@@ -284,6 +286,45 @@ export function createContainerKernelBackend(options: {
   readonly signal?: AbortSignal;
 }): ContainerKernelBackend {
   let inspected = false;
+  const proveAbsent = async (filter: string, signal?: AbortSignal): Promise<void> => {
+    const listed = await options.control.run(
+      ["container", "ls", "--all", "--quiet", "--no-trunc", "--filter", filter],
+      signal,
+    );
+    if (listed.exitCode !== 0 || listed.stdout.trim() !== "")
+      throw new RuntimeLaunchError(
+        "operational_failure",
+        "Container absence could not be confirmed",
+      );
+  };
+  const inspectOwned = async (
+    reference: string,
+    identity: { generation: string; namespace: string; role: string },
+    signal?: AbortSignal,
+  ): Promise<{ id: string; root: Record<string, unknown> } | undefined> => {
+    const result = await options.control.run(["container", "inspect", reference], signal);
+    if (result.exitCode !== 0) {
+      await proveAbsent(
+        idPattern.test(reference) ? `id=${exactId(reference)!}` : `name=^/${reference}$`,
+        signal,
+      );
+      return undefined;
+    }
+    const parsed = json(result.stdout, "container ownership inspect");
+    const root = record(Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : undefined);
+    const id = exactId(root?.Id);
+    const labels = record(record(root?.Config)?.Labels);
+    if (
+      root === undefined ||
+      id === undefined ||
+      labels?.["io.clarvis.managed"] !== "true" ||
+      labels?.["io.clarvis.role"] !== identity.role ||
+      labels?.["io.clarvis.generation"] !== identity.generation ||
+      labels?.["io.clarvis.state.namespace"] !== identity.namespace
+    )
+      throw new RuntimeLaunchError("operational_failure", "Container ownership is unconfirmed");
+    return { id, root };
+  };
   return {
     async inspect(): Promise<RuntimeAvailability> {
       try {
@@ -326,29 +367,18 @@ export function createContainerKernelBackend(options: {
           "invalid_launch_spec",
           "Container registry identity is invalid",
         );
-      const inspected = await options.control.run(
-        ["container", "inspect", input.id],
+      const owned = await inspectOwned(
+        input.id,
+        { generation: input.generation, namespace: input.namespace, role: "kernel" },
         options.signal,
       );
-      if (inspected.exitCode !== 0) return;
-      const root = record(
-        Array.isArray(json(inspected.stdout, "previous container inspect"))
-          ? (json(inspected.stdout, "previous container inspect") as unknown[])[0]
-          : undefined,
-      );
-      const labels = record(record(root?.Config)?.Labels);
-      const state = record(root?.State);
-      if (
-        exactId(root?.Id) !== exactId(input.id) ||
-        labels?.["io.clarvis.managed"] !== "true" ||
-        labels?.["io.clarvis.role"] !== "kernel" ||
-        labels?.["io.clarvis.generation"] !== input.generation ||
-        labels?.["io.clarvis.state.namespace"] !== input.namespace
-      )
+      if (owned === undefined) return;
+      if (owned.id !== exactId(input.id))
         throw new RuntimeLaunchError(
           "operational_failure",
           "Previous Container ownership is unconfirmed",
         );
+      const state = record(owned.root.State);
       if (state?.Running === true)
         throw new RuntimeLaunchError(
           "operational_failure",
@@ -360,6 +390,17 @@ export function createContainerKernelBackend(options: {
           "operational_failure",
           "Previous Container cleanup is unconfirmed",
         );
+      if (
+        (await inspectOwned(
+          input.id,
+          { generation: input.generation, namespace: input.namespace, role: "kernel" },
+          options.signal,
+        )) !== undefined
+      )
+        throw new RuntimeLaunchError(
+          "operational_failure",
+          "Previous Container removal is unconfirmed",
+        );
     },
     async startKernel(spec): Promise<ContainerProcessLifecycle> {
       if (!inspected)
@@ -369,23 +410,13 @@ export function createContainerKernelBackend(options: {
         );
       assertLaunchSpec(spec);
       await assertMountSources(spec);
-      const image = await options.control.run(
-        ["image", "inspect", spec.baseImageId],
-        options.signal,
-      );
-      if (image.exitCode !== 0)
-        throw new RuntimeLaunchError("operational_failure", "Container base image inspect failed");
-      const imageRoot = record(
-        Array.isArray(json(image.stdout, "image inspect"))
-          ? (json(image.stdout, "image inspect") as unknown[])[0]
-          : undefined,
-      );
-      const labels = record(record(imageRoot?.Config)?.Labels);
-      if (
-        exactId(imageRoot?.Id) !== spec.baseImageId.slice("sha256:".length) ||
-        labels?.["io.clarvis.base.abi"] !== spec.baseAbi ||
-        typeof labels?.["io.clarvis.base.revision"] !== "string"
-      )
+      const admittedBase = await inspectContainerBaseImage({
+        reference: spec.baseImageId,
+        control: options.control,
+        engine: options.engine === "docker" ? "Docker" : "Podman",
+        signal: options.signal,
+      });
+      if (admittedBase !== spec.baseImageId)
         throw new RuntimeLaunchError(
           "handshake_mismatch",
           "Container base identity or ABI did not match admission",
@@ -405,25 +436,16 @@ export function createContainerKernelBackend(options: {
             `${options.engine} create failed${detail === "" ? "" : `: ${detail}`}`,
           );
         }
-        const inspection = await options.control.run(
-          ["container", "inspect", name],
+        const owned = await inspectOwned(
+          name,
+          { generation: spec.generation, namespace: spec.namespace, role: "kernel" },
           options.signal,
         );
-        if (inspection.exitCode !== 0)
+        if (owned === undefined)
           throw new RuntimeLaunchError("operational_failure", `${options.engine} inspect failed`);
-        const inspectionValue = json(inspection.stdout, "container inspect");
-        const inspectionRoot = record(
-          Array.isArray(inspectionValue) && inspectionValue.length === 1
-            ? inspectionValue[0]
-            : undefined,
-        );
-        id = exactId(inspectionRoot?.Id);
-        if (id === undefined)
-          throw new RuntimeLaunchError(
-            "operational_failure",
-            `${options.engine} inspect omitted its exact ID`,
-          );
-        if (validContainerInspect(options.engine, inspectionValue, spec) !== id)
+        id = owned.id;
+        const inspectionValue = [owned.root];
+        if (validContainerInspect(inspectionValue, spec, options.engine) !== id)
           throw new RuntimeLaunchError(
             "unsupported_policy",
             "Container effective policy did not match admission",
@@ -435,7 +457,14 @@ export function createContainerKernelBackend(options: {
           process,
           async stop(graceSeconds) {
             const seconds = Math.max(1, Math.min(30, graceSeconds));
-            await options.control.run(["stop", "--time", String(seconds), id!]);
+            const stopped = await options.control.run(["stop", "--time", String(seconds), id!]);
+            if (stopped.exitCode !== 0)
+              throw new RuntimeLaunchError("operational_failure", `${options.engine} stop failed`);
+          },
+          async kill() {
+            const killed = await options.control.run(["kill", id!]);
+            if (killed.exitCode !== 0)
+              throw new RuntimeLaunchError("operational_failure", `${options.engine} kill failed`);
           },
           async remove() {
             if (removed) return;
@@ -445,12 +474,58 @@ export function createContainerKernelBackend(options: {
                 "operational_failure",
                 `${options.engine} remove failed`,
               );
+            if (
+              (await inspectOwned(
+                id!,
+                { generation: spec.generation, namespace: spec.namespace, role: "kernel" },
+                AbortSignal.timeout(30_000),
+              )) !== undefined
+            )
+              throw new RuntimeLaunchError(
+                "operational_failure",
+                `${options.engine} removal is unconfirmed`,
+              );
             removed = true;
           },
         };
       } catch (error) {
-        if (id !== undefined)
-          await options.control.run(["rm", "--force", id]).catch(() => undefined);
+        const cleanupSignal = AbortSignal.timeout(30_000);
+        try {
+          const cleanupId =
+            id ??
+            (
+              await inspectOwned(
+                name,
+                { generation: spec.generation, namespace: spec.namespace, role: "kernel" },
+                cleanupSignal,
+              )
+            )?.id;
+          if (cleanupId !== undefined) {
+            const removed = await options.control.run(["rm", "--force", cleanupId], cleanupSignal);
+            if (removed.exitCode !== 0)
+              throw new RuntimeLaunchError(
+                "operational_failure",
+                `${options.engine} cleanup failed`,
+              );
+            if (
+              (await inspectOwned(
+                cleanupId,
+                { generation: spec.generation, namespace: spec.namespace, role: "kernel" },
+                cleanupSignal,
+              )) !== undefined
+            )
+              throw new RuntimeLaunchError(
+                "operational_failure",
+                `${options.engine} cleanup removal is unconfirmed`,
+              );
+          }
+        } catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "Container launch cleanup is unconfirmed",
+            { cause: cleanupError },
+          );
+        }
         throw error;
       }
     },

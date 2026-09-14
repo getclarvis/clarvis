@@ -619,6 +619,7 @@ const cases: SoakCase[] = [
             runActive={() => false}
             active={lifecycle.active}
             notify={() => {}}
+            reload={async () => ({ ok: true, message: "reloaded" })}
             onClose={() => {}}
             onApplied={() => {}}
           />

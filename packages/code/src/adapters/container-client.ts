@@ -1,5 +1,11 @@
 import { kernelError } from "@clarvis/kernel";
-import type { KernelCapabilities, KernelClient, RuntimeStatus } from "@clarvis/protocol";
+import type {
+  ConfigService,
+  KernelCapabilities,
+  KernelClient,
+  ModelCatalogService,
+  RuntimeStatus,
+} from "@clarvis/protocol";
 
 /** Host-owned administration; composition never constructs another execution kernel. */
 export type ContainerOperatorServices = Pick<
@@ -19,6 +25,60 @@ export interface ComposeContainerClientOptions {
   };
   /** Optional launcher resource release, after transport close, even when that close fails. */
   dispose?: () => Promise<void>;
+  /** Report a committed host-side change that the immutable guest will receive next generation. */
+  onConfigurationSaved?: (kind: "settings" | "agents" | "context" | "models") => void;
+}
+
+function operatorConfig(
+  service: ConfigService,
+  changed: NonNullable<ComposeContainerClientOptions["onConfigurationSaved"]>,
+): ConfigService {
+  const saved = async <T>(kind: Parameters<typeof changed>[0], operation: () => Promise<T>) => {
+    const result = await operation();
+    changed(kind);
+    return result;
+  };
+  return {
+    getSettings: () => service.getSettings(),
+    previewSettingsRepair: (scope) => service.previewSettingsRepair(scope),
+    repairSettings: (scope, revision) =>
+      saved("settings", () => service.repairSettings(scope, revision)),
+    approveWorkspace: () => saved("settings", () => service.approveWorkspace()),
+    revokeWorkspace: () => saved("settings", () => service.revokeWorkspace()),
+    workspaceTrustError: () => service.workspaceTrustError(),
+    updateSettings: (scope, patch, revision) =>
+      saved("settings", () => service.updateSettings(scope, patch, revision)),
+    inspectSandbox: (inspectOptions) => service.inspectSandbox(inspectOptions),
+    listAgents: () => service.listAgents(),
+    getAgent: (scope, name) => service.getAgent(scope, name),
+    writeAgent: (scope, name, doc) => saved("agents", () => service.writeAgent(scope, name, doc)),
+    deleteAgent: (scope, name) => saved("agents", () => service.deleteAgent(scope, name)),
+    renameAgent: (scope, oldName, newName) =>
+      saved("agents", () => service.renameAgent(scope, oldName, newName)),
+    getContext: (scope) => service.getContext(scope),
+    getSharedPrompt: () => service.getSharedPrompt(),
+    writeSharedPrompt: (scope, doc) =>
+      saved("context", () => service.writeSharedPrompt(scope, doc)),
+    deleteSharedPrompt: (scope) => saved("context", () => service.deleteSharedPrompt(scope)),
+    subscribe: (kinds, listener) => service.subscribe(kinds, listener),
+  };
+}
+
+function operatorModels(
+  service: ModelCatalogService,
+  changed: NonNullable<ComposeContainerClientOptions["onConfigurationSaved"]>,
+): ModelCatalogService {
+  const saved = async <T>(operation: () => Promise<T>) => {
+    const result = await operation();
+    changed("models");
+    return result;
+  };
+  return {
+    get: () => service.get(),
+    refresh: () => saved(() => service.refresh()),
+    getEntitled: (scheme) => service.getEntitled(scheme),
+    refreshEntitled: (scheme) => saved(() => service.refreshEntitled(scheme)),
+  };
 }
 
 /**
@@ -65,6 +125,7 @@ export function composeContainerClient(options: ComposeContainerClientOptions): 
     throw kernelError("unsupported", "This operation is unavailable in Container");
   };
   let closing: Promise<void> | undefined;
+  const configurationSaved = options.onConfigurationSaved ?? (() => undefined);
   return {
     project: Object.freeze({ ...project }),
     workspace: Object.freeze({ ...workspace }),
@@ -88,9 +149,9 @@ export function composeContainerClient(options: ComposeContainerClientOptions): 
     files: execution.files,
     storage: execution.storage,
     extensionProfiles: execution.extensionProfiles,
-    config: operator.config,
+    config: operatorConfig(operator.config, configurationSaved),
     secrets: operator.secrets,
-    models: operator.models,
+    models: operatorModels(operator.models, configurationSaved),
     providerAuth: operator.providerAuth,
     plugins: {
       list: async () => [],

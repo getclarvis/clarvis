@@ -15,6 +15,7 @@ import {
   verifySharedWorkspace,
 } from "../../src/hosting/connect-local-container.ts";
 import { runtimeSettingsSchema } from "../../src/runtime/settings.ts";
+import { runContainerPreparer } from "../../src/runtime/container-preparer.ts";
 import type { ContainerAttachedProcess, ContainerControl } from "../../src/runtime/types.ts";
 
 const roots: string[] = [];
@@ -26,6 +27,15 @@ const baseImageId = `sha256:${"b".repeat(64)}` as const;
 const generation = "00000000-0000-4000-8000-000000000001";
 const namespace = "c".repeat(64);
 const containerId = "d".repeat(64);
+
+const emptyPreparerPolicy = {
+  user: "0:0",
+  entrypoint: "/bin/true",
+  capabilityAdditions: [] as const,
+  pidsLimit: 8,
+  memoryBytes: 1024,
+  mounts: [] as const,
+};
 
 function attached(exitCode = 0): ContainerAttachedProcess {
   const stdin = new PassThrough();
@@ -121,25 +131,46 @@ describe("local Container connector preparation", () => {
 
   test("the ephemeral preparer verifies ownership and removes the exact Container", async () => {
     const calls: string[][] = [];
+    let removed = false;
     const control: ContainerControl = {
       async run(args) {
         calls.push([...args]);
-        if (args[0] === "container")
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
           return {
             exitCode: 0,
             stdout: JSON.stringify([
               {
                 Id: containerId,
                 Config: {
+                  User: "0:0",
+                  Entrypoint: ["/bin/true"],
                   Labels: {
                     "io.clarvis.generation": generation,
                     "io.clarvis.state.role": "content",
+                    "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
                   },
                 },
+                HostConfig: {
+                  ReadonlyRootfs: true,
+                  Privileged: false,
+                  NetworkMode: "none",
+                  PidsLimit: 8,
+                  Memory: 1024,
+                  CapDrop: ["ALL"],
+                  CapAdd: [],
+                  SecurityOpt: ["no-new-privileges=true"],
+                  Tmpfs: {},
+                },
+                Mounts: [],
               },
             ]),
             stderr: "",
           };
+        }
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") removed = true;
         return { exitCode: 0, stdout: "", stderr: "" };
       },
       attach(args) {
@@ -153,12 +184,14 @@ describe("local Container connector preparation", () => {
         "io.clarvis.state.role": "content",
       },
       createArgs: ["create", "base"],
+      policy: emptyPreparerPolicy,
     });
     expect(result.evidence).toEqual({
       containerId,
       labels: {
         "io.clarvis.generation": generation,
         "io.clarvis.state.role": "content",
+        "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
       },
       removed: true,
     });
@@ -168,6 +201,7 @@ describe("local Container connector preparation", () => {
       preparer(control).run({
         labels: { "io.clarvis.generation": generation },
         createArgs: ["create", "base"],
+        policy: emptyPreparerPolicy,
       }),
     ).rejects.toThrow("identity is missing");
     await expect(
@@ -183,18 +217,261 @@ describe("local Container connector preparation", () => {
           "io.clarvis.state.role": "state",
         },
         createArgs: ["create", "base"],
+        policy: emptyPreparerPolicy,
       }),
     ).rejects.toBeDefined();
+  });
+
+  test("the preparer inspects before start and reconciles uncertain create and cancellation", async () => {
+    const labels = {
+      "io.clarvis.generation": generation,
+      "io.clarvis.state.role": "content",
+    };
+    const inspection = JSON.stringify([
+      {
+        Id: containerId,
+        Config: { User: "0:0", Entrypoint: ["/bin/true"], Labels: labels },
+        HostConfig: {
+          ReadonlyRootfs: true,
+          Privileged: false,
+          NetworkMode: "none",
+          PidsLimit: 8,
+          Memory: 1024,
+          CapDrop: ["ALL"],
+          CapAdd: [],
+          SecurityOpt: ["no-new-privileges=true"],
+          Tmpfs: {},
+        },
+        Mounts: [],
+      },
+    ]);
+    let exists = false;
+    let loseCreateResponse = true;
+    let killCount = 0;
+    const processState: { exitRejection?: Error } = {};
+    const calls: string[][] = [];
+    const createLost = new Error("create response lost");
+    const started = Promise.withResolvers<void>();
+    const control: ContainerControl = {
+      async run(args) {
+        calls.push([...args]);
+        if (args[0] === "create") {
+          exists = true;
+          if (loseCreateResponse) throw createLost;
+          return { exitCode: 0, stdout: containerId, stderr: "" };
+        }
+        if (args[0] === "container" && args[1] === "inspect")
+          return exists
+            ? { exitCode: 0, stdout: inspection, stderr: "" }
+            : { exitCode: 1, stdout: "", stderr: "missing" };
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: exists ? `${containerId}\n` : "", stderr: "" };
+        if (args[0] === "rm") exists = false;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      attach(args) {
+        calls.push([...args]);
+        started.resolve();
+        const streams = attached();
+        return {
+          ...streams,
+          exited:
+            processState.exitRejection === undefined
+              ? new Promise<number | null>(() => undefined)
+              : Promise.reject(processState.exitRejection),
+          kill: () => {
+            killCount++;
+          },
+        };
+      },
+    };
+    await expect(
+      preparer(control).run({
+        labels,
+        createArgs: ["create", "base"],
+        policy: emptyPreparerPolicy,
+      }),
+    ).rejects.toBe(createLost);
+    expect(calls).toContainEqual(["rm", "--force", containerId]);
+    expect(calls.some((call) => call[0] === "start")).toBe(false);
+
+    loseCreateResponse = false;
+    const controller = new AbortController();
+    const cancelled = new Error("cancelled");
+    const running = preparer(control).run({
+      labels,
+      createArgs: ["create", "base"],
+      policy: emptyPreparerPolicy,
+      signal: controller.signal,
+    });
+    await started.promise;
+    const inspectIndex = calls.findIndex(
+      (call) => call[0] === "container" && call[1] === "inspect",
+    );
+    const startIndex = calls.findIndex((call) => call[0] === "start");
+    expect(inspectIndex).toBeGreaterThan(-1);
+    expect(startIndex).toBeGreaterThan(inspectIndex);
+    controller.abort(cancelled);
+    await expect(running).rejects.toBe(cancelled);
+    expect(killCount).toBeGreaterThan(0);
+    expect(exists).toBe(false);
+
+    const preCancelled = new AbortController();
+    preCancelled.abort("cancelled before start");
+    await expect(
+      preparer(control).run({
+        labels,
+        createArgs: ["create", "base"],
+        policy: emptyPreparerPolicy,
+        signal: preCancelled.signal,
+      }),
+    ).rejects.toThrow("Container preparer failed");
+    expect(exists).toBe(false);
+
+    const processFailure = new Error("process failed");
+    processState.exitRejection = processFailure;
+    await expect(
+      preparer(control).run({
+        labels,
+        createArgs: ["create", "base"],
+        policy: emptyPreparerPolicy,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toBe(processFailure);
+    expect(exists).toBe(false);
+  });
+
+  test("the preparer refuses effective-policy and cleanup-identity drift", async () => {
+    const labels = {
+      "io.clarvis.generation": generation,
+      "io.clarvis.state.role": "content",
+    };
+    const policy = {
+      ...emptyPreparerPolicy,
+      name: `clarvis-content-${generation}`,
+      labels,
+    };
+    let mode: "policy" | "identity" = "policy";
+    let inspections = 0;
+    let removed = false;
+    const calls: string[][] = [];
+    const control: ContainerControl = {
+      async run(args) {
+        calls.push([...args]);
+        if (args[0] === "create") return { exitCode: 0, stdout: containerId, stderr: "" };
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
+          inspections++;
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              {
+                Id: mode === "identity" && inspections > 1 ? "e".repeat(64) : containerId,
+                Config: { User: "0:0", Entrypoint: ["/bin/true"], Labels: labels },
+                HostConfig: {
+                  ReadonlyRootfs: true,
+                  Privileged: mode === "policy",
+                  NetworkMode: "none",
+                  PidsLimit: 8,
+                  Memory: 1024,
+                  CapDrop: ["ALL"],
+                  CapAdd: [],
+                  SecurityOpt: ["no-new-privileges=true"],
+                  Tmpfs: {},
+                },
+                Mounts: [],
+              },
+            ]),
+            stderr: "",
+          };
+        }
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") removed = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      attach: () => attached(),
+    };
+    await expect(
+      runContainerPreparer({ control, createArgs: ["create", "base"], policy }),
+    ).rejects.toMatchObject({
+      code: "unsupported_policy",
+      message: "Container preparer effective policy did not match admission",
+    });
+    expect(calls).toContainEqual(["rm", "--force", containerId]);
+
+    mode = "identity";
+    inspections = 0;
+    removed = false;
+    await expect(
+      runContainerPreparer({ control, createArgs: ["create", "base"], policy }),
+    ).rejects.toThrow("cleanup identity changed");
+  });
+
+  test("the preparer accepts Podman's exact effective capability projection", async () => {
+    const labels = {
+      "io.clarvis.generation": generation,
+      "io.clarvis.state.role": "content",
+    };
+    const policy = {
+      ...emptyPreparerPolicy,
+      name: `clarvis-content-${generation}`,
+      labels,
+      capabilityAdditions: ["CHOWN"],
+    };
+    let removed = false;
+    const control: ContainerControl = {
+      async run(args) {
+        if (args[0] === "create") return { exitCode: 0, stdout: containerId, stderr: "" };
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              {
+                Id: containerId,
+                EffectiveCaps: ["CAP_CHOWN"],
+                BoundingCaps: ["CAP_CHOWN"],
+                Config: { User: "0:0", Entrypoint: ["/bin/true"], Labels: labels },
+                HostConfig: {
+                  ReadonlyRootfs: true,
+                  Privileged: false,
+                  NetworkMode: "none",
+                  PidsLimit: 8,
+                  Memory: 1024,
+                  CapDrop: ["CAP_DAC_OVERRIDE", "CAP_SETUID"],
+                  CapAdd: [],
+                  SecurityOpt: ["no-new-privileges"],
+                  Tmpfs: {},
+                },
+                Mounts: [],
+              },
+            ]),
+            stderr: "",
+          };
+        }
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") removed = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      attach: () => attached(),
+    };
+    await expect(
+      runContainerPreparer({ control, createArgs: ["create", "base"], policy }),
+    ).resolves.toMatchObject({ containerId });
+    expect(removed).toBe(true);
   });
 
   test.each(["docker", "podman"] as const)(
     "%s creates, labels and initializes the namespace mise volume",
     async (engine) => {
       const digest = createHash("sha256")
-        .update(JSON.stringify({ schema: 3, namespace }))
+        .update(JSON.stringify({ schema: 3, namespace, baseImageId }))
         .digest("hex");
       const name = `clarvis-mise-v3-${digest}`;
       let inspections = 0;
+      let preparerRemoved = false;
       const calls: string[][] = [];
       const control: ContainerControl = {
         async run(args) {
@@ -210,28 +487,51 @@ describe("local Container connector preparation", () => {
                     "io.clarvis.runtime.mise-cache": "true",
                     "io.clarvis.runtime.mise-cache.schema": "3",
                     "io.clarvis.runtime.mise-cache.identity": `sha256:${digest}`,
+                    "io.clarvis.runtime.mise-cache.base-image": baseImageId,
                   },
                 },
               ]),
               stderr: "",
             };
           }
-          if (args[0] === "container")
+          if (args[0] === "container" && args[1] === "inspect") {
+            if (preparerRemoved) return { exitCode: 1, stdout: "", stderr: "missing" };
             return {
               exitCode: 0,
               stdout: JSON.stringify([
                 {
                   Id: containerId,
                   Config: {
+                    User: "0:0",
+                    Entrypoint: ["/bin/sh"],
                     Labels: {
                       "io.clarvis.generation": generation,
                       "io.clarvis.state.role": "mise-preparer",
                     },
                   },
+                  HostConfig: {
+                    ReadonlyRootfs: true,
+                    Privileged: false,
+                    NetworkMode: "none",
+                    PidsLimit: 16,
+                    Memory: 67_108_864,
+                    CapDrop: ["ALL"],
+                    CapAdd: ["CHOWN"],
+                    SecurityOpt: ["no-new-privileges=true"],
+                    Tmpfs: {},
+                  },
+                  Mounts: [{ Destination: "/cache", Type: "volume", Name: name, RW: true }],
                 },
               ]),
               stderr: "",
             };
+          }
+          if (args[0] === "container" && args[1] === "ls")
+            return { exitCode: 0, stdout: "", stderr: "" };
+          if (args[0] === "rm") {
+            preparerRemoved = true;
+            return { exitCode: 0, stdout: "", stderr: "" };
+          }
           return { exitCode: 0, stdout: "", stderr: "" };
         },
         attach(args) {
@@ -508,7 +808,17 @@ describe("local Container connector preparation", () => {
             }
           : {
               exitCode: 0,
-              stdout: JSON.stringify([{ Id: baseImageId }]),
+              stdout: JSON.stringify([
+                {
+                  Id: baseImageId,
+                  Config: {
+                    Labels: {
+                      "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
+                      "io.clarvis.base.revision": "f".repeat(64),
+                    },
+                  },
+                },
+              ]),
               stderr: "",
             },
       attach: () => attached(),

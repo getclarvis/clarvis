@@ -362,4 +362,61 @@ describe("Docker runtime base recipe", () => {
       await rm(files.root, { recursive: true, force: true });
     }
   });
+
+  test("cancels an in-flight recipe build and still removes its private context", async () => {
+    const files = await fixture();
+    const controller = new AbortController();
+    const enteredBuild = Promise.withResolvers<void>();
+    const signals: Array<AbortSignal | undefined> = [];
+    let buildContext = "";
+    const control: DockerControl = {
+      async run(args, signal) {
+        signals.push(signal);
+        if (args[0] === "image" && args[1] === "tag")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "image" && args[2] === baseDigest)
+          return { exitCode: 0, stdout: image(baseDigest, baseLabels), stderr: "" };
+        if (args[0] === "image" && args[2]?.startsWith("clarvis-runtime-recipe-base:"))
+          return { exitCode: 0, stdout: image(baseDigest, baseLabels), stderr: "" };
+        if (args[0] === "image") return { exitCode: 1, stdout: "", stderr: "missing" };
+        if (args[0] === "build") {
+          buildContext = args.at(-1) ?? "";
+          enteredBuild.resolve();
+          return new Promise<DockerCommandResult>((_resolve, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () =>
+                reject(
+                  signal.reason instanceof Error
+                    ? signal.reason
+                    : new Error("runtime recipe build cancelled"),
+                ),
+              { once: true },
+            );
+          });
+        }
+        throw new Error(`unexpected Docker call: ${args.join(" ")}`);
+      },
+      attach: attachedNever,
+    };
+    try {
+      const resolving = resolveDockerRuntimeRecipe({
+        baseImageDigest: baseDigest,
+        recipe: { name: "cancel-build", script: files.script, network: "none" },
+        control,
+        roots: files.roots,
+        temporaryRoot: files.root,
+        signal: controller.signal,
+      });
+      await enteredBuild.promise;
+      controller.abort(new Error("cancelled during build"));
+      await expect(resolving).rejects.toThrow("could not be executed");
+      expect(signals.length).toBeGreaterThan(0);
+      expect(signals.every((signal) => signal === controller.signal)).toBe(true);
+      await expect(lstat(buildContext)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally {
+      controller.abort();
+      await rm(files.root, { recursive: true, force: true });
+    }
+  });
 });

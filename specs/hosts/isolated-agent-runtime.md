@@ -9,8 +9,10 @@ read-write at `/workspace`; Clarvis configuration, credentials and provider API 
 host.
 
 Container is selected before any Kernel is constructed. A selected Container never falls back to
-Host or Sandbox, and changing placement closes the current connection before another generation can
-start.
+Host or Sandbox. An idle isolation save re-resolves the destination, closes the current connection,
+admits the replacement, and only then publishes its effective runtime. A refused or failed
+replacement remains saved and pending reconnect; it cannot continue executing through the old
+placement.
 
 Production: `connectLocalContainerKernel` in
 `packages/kernel/src/hosting/connect-local-container.ts`;
@@ -49,10 +51,12 @@ Test: `packages/kernel/tests/contract/container-channel.test.ts`;
 ## Bootstrap and identity
 
 The host first resolves the canonical workspace, operator identity, namespace, base, artifact,
-engine and effective limits. It creates and inspects the Container before attaching. From attach
-through ready and the public hello, boot has a 30-second deadline. Base and artifact preparation have
-a separate cancelable ten-minute deadline; an operator recipe build remains a separately bounded
-30-minute preparation.
+engine and effective limits. The exact local base image ID, ABI and base revision are admitted before
+any preflight or volume preparer can execute. It creates and inspects the Container before attaching.
+From attach through ready and the public hello, boot shares one absolute 30-second deadline rather
+than restarting it for each phase. Base acquisition and artifact preparation have cancelable
+ten-minute deadlines; an operator recipe build remains a separately cancelable 30-minute
+preparation.
 
 Initialization is strict, single-use and limited to 8 MiB, with configuration limited to 4 MiB. It
 contains the generation UUID, public project and workspace DTOs, bare namespace hash, admitted
@@ -112,7 +116,9 @@ The projection is canonical-JSON hashed and immutable. Guest configuration reads
 `createContainerConfigStore`; all writes and trust changes are unsupported. Workspace changes to
 `.clarvis/settings.json`, agents or workflow definitions do not recompose the current generation.
 An operator save remains host-side and is shown as pending reconnect. Reload refuses while hosted
-runs or Memory indexing are active.
+runs or Memory indexing are active. Secret and subscription revocation synchronously fences the
+matching broker authority, including automatic subscription invalidation; it does not wait for a
+future reload.
 
 The Code facade routes runs, hosting, sessions, goals, plans, memory, workflows, files and storage to
 the guest. It routes config, secrets, models and provider authentication to
@@ -175,9 +181,9 @@ The guest mounts:
 | `/workspace/.clarvis` | namespace content volume, `data` subpath | read-write |
 | `/var/lib/clarvis` | namespace state volume, `data` subpath | read-write |
 | `/workspace/.agents` and protected roots | prepared empty masks | read-only |
-| Git directory and common directory | canonical host metadata | read-only |
+| Git directory and common directory | canonical host metadata; linked-worktree indirection rewritten to fixed POSIX guest targets | read-only |
 | `/opt/clarvis` | artifact digest volume, `payload` subpath | read-only |
-| `/mise` | admitted cache volume, `data` subpath | read-write |
+| `/mise` | admitted cache volume keyed by namespace and exact base image ID, `data` subpath | read-write |
 | `/tmp` | bounded tmpfs | read-write, noexec, nosuid, nodev |
 
 The launcher requires the nested targets `.clarvis` and `.agents` to exist as directories before
@@ -218,8 +224,12 @@ The builder compiles with Bun using `--compile --env=disable`,
 `--no-compile-autoload-dotenv`, `--no-compile-autoload-bunfig`,
 `--no-compile-autoload-tsconfig`, `--no-compile-autoload-package-json` and
 `--reject-unresolved`. The host verifies the archive before transfer. A networkless ephemeral
-preparer verifies the same archive hash before extraction and publishes readiness last. Kernel
-Containers only receive the immutable payload subpath.
+preparer is created under a deterministic name, inspected for exact policy and mounts before start,
+verifies the same archive hash before extraction, and publishes readiness last. An uncertain create
+or cancellation is reconciled and removed by exact inspected ID. Kernel Containers only receive the
+immutable payload subpath. A labeled cache whose physical verification fails is recreated only after
+an exact engine query proves that no Container consumes the volume, its exact removal succeeds and
+the engine confirms the name is absent.
 
 Published `runtime-release.json` schema 2 maps each Linux target to an immutable OCI base origin
 and digest plus a downloadable artifact basename, hash and size. Updating Clarvis code creates a new
@@ -243,16 +253,26 @@ only modes. Model inference over the host pipe remains available under `network=
 cannot use direct network access in that mode.
 
 The host inspects the exact local image ID, ABI labels, created Container identity, labels, mounts,
-user and effective security policy before attaching. A remote engine that cannot share the selected
-workspace is unsupported. Linux uses the invoking nonroot numeric UID and GID. Qualified
+user and effective security policy before attaching. Effective policy requires a complete
+capability drop, no additions for the Kernel, one exactly enabled no-new-privileges option and the
+exact tmpfs option set. Podman's inspected tmpfs set also includes its canonical `rprivate` and
+`tmpcopyup` options; those two engine-added values are required there rather than accepted as
+arbitrary extras. Data, artifact and mise preparers are likewise inspected before start with
+only their declared mounts and, where required, the single `CHOWN` addition. A remote engine that
+cannot share the selected workspace is unsupported. Linux uses the invoking nonroot numeric UID and GID. Qualified
 Docker/Podman VM engines use fixed nonroot 1000:1000 after bind-access preflight.
 
 Production: `createContainerKernelBackend` in
 `packages/kernel/src/runtime/container-kernel-backend.ts`;
+`inspectContainerBaseImage` in `packages/kernel/src/runtime/runtime-image.ts`;
+`runContainerPreparer` in `packages/kernel/src/runtime/container-preparer.ts`;
 `createDockerKernelBackend` and `createPodmanKernelBackend` in the corresponding runtime
 adapters.
 Test: `packages/kernel/tests/integration/container-kernel.e2e.test.ts`;
-`packages/kernel/tests/unit/container-volumes.test.ts`.
+`packages/kernel/tests/unit/container-volumes.test.ts`;
+`packages/kernel/tests/unit/container-kernel-backend.test.ts`;
+`packages/kernel/tests/unit/connect-local-container.test.ts`;
+`packages/kernel/tests/unit/runtime-artifact-volume.test.ts`.
 
 ## Lifecycle
 
@@ -262,6 +282,11 @@ first stops admissions and revokes the model lease, requests `container.shutdown
 services drain, waits 30 seconds, then asks the engine to stop with ten seconds grace and kills only
 the exact admitted process if required. It removes only that disposable Container and releases the
 host lease after physical death is confirmed.
+
+Create, inspect, stop and remove uncertainty fails closed. A lost create response is reconciled by
+the deterministic name plus exact generation/namespace labels; an ambiguous inspect never proves
+absence. A failed engine stop triggers the bounded kill path instead of an unbounded wait. Physical
+channel closure starts the same idempotent cleanup even when no client explicitly calls `close()`.
 
 Closing the TUI closes the Container. Detaching an observation does not promise survival beyond the
 connection, and the TUI refuses its exit-after-background action. `!command` is also unavailable

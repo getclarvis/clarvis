@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { createContainerKernelBackend } from "../../src/runtime/container-kernel-backend.ts";
+import { parseContainerInspect } from "../../src/runtime/container-inspection.ts";
 import { createDockerKernelBackend } from "../../src/runtime/docker-backend.ts";
 import { createPodmanKernelBackend } from "../../src/runtime/podman-backend.ts";
 import type {
@@ -21,6 +22,20 @@ afterEach(async () => {
 const id = "a".repeat(64);
 const imageId = "b".repeat(64);
 const namespace = "c".repeat(64);
+const baseRevision = "e".repeat(64);
+const podmanCapabilityDrop = [
+  "chown",
+  "dac_override",
+  "fowner",
+  "fsetid",
+  "kill",
+  "net_bind_service",
+  "setfcap",
+  "setgid",
+  "setpcap",
+  "setuid",
+  "sys_chroot",
+];
 const environment = [
   "PATH=/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
   "HOME=/var/lib/clarvis/home",
@@ -88,6 +103,7 @@ function inspectValue(spec: ContainerKernelLaunchSpec, engine: "docker" | "podma
   return [
     {
       Id: id,
+      ...(engine === "podman" ? { EffectiveCaps: [], BoundingCaps: [] } : {}),
       Config: {
         Labels: {
           "io.clarvis.managed": "true",
@@ -107,10 +123,14 @@ function inspectValue(spec: ContainerKernelLaunchSpec, engine: "docker" | "podma
         Memory: 1024,
         NanoCpus: 2_000_000_000,
         NetworkMode: "bridge",
-        CapDrop: engine === "docker" ? ["ALL"] : ["audit_write", "chown"],
+        CapDrop: engine === "docker" ? ["ALL"] : podmanCapabilityDrop,
         CapAdd: [],
-        SecurityOpt: ["no-new-privileges=true"],
-        Tmpfs: { "/tmp": "rw,nosuid,nodev,noexec,size=8192" },
+        SecurityOpt: [engine === "podman" ? "no-new-privileges" : "no-new-privileges=true"],
+        Tmpfs: {
+          "/tmp": `rw,nosuid,nodev,noexec,size=8192${
+            engine === "podman" ? ",rprivate,tmpcopyup" : ""
+          }`,
+        },
       },
       Mounts: [
         { Destination: "/workspace", Type: "bind", Source: spec.workspaceRoot, RW: true },
@@ -151,12 +171,22 @@ function inspectValue(spec: ContainerKernelLaunchSpec, engine: "docker" | "podma
 }
 
 describe("complete Container Kernel backend", () => {
+  test("rejects malformed engine inspection before interpreting policy", () => {
+    expect(() => parseContainerInspect("not-json", "Container inspect")).toThrow(
+      "Container inspect returned invalid JSON",
+    );
+    expect(() => parseContainerInspect("[]", "Container inspect")).toThrow(
+      "Container inspect returned an invalid envelope",
+    );
+  });
+
   test.each(["docker", "podman"] as const)(
     "%s inspects, launches with fixed policy, and owns exact cleanup",
     async (engine) => {
       const { spec } = await fixture();
       const calls: string[][] = [];
       const process = attached();
+      let removed = false;
       const control: ContainerControl = {
         run: async (args) => {
           calls.push([...args]);
@@ -178,7 +208,7 @@ describe("complete Container Kernel backend", () => {
                   Config: {
                     Labels: {
                       "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
-                      "io.clarvis.base.revision": "fixture",
+                      "io.clarvis.base.revision": baseRevision,
                     },
                   },
                 },
@@ -186,8 +216,13 @@ describe("complete Container Kernel backend", () => {
               stderr: "",
             };
           if (args[0] === "create") return { exitCode: 0, stdout: id, stderr: "" };
-          if (args[0] === "container")
+          if (args[0] === "container" && args[1] === "inspect") {
+            if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
             return { exitCode: 0, stdout: JSON.stringify(inspectValue(spec, engine)), stderr: "" };
+          }
+          if (args[0] === "container" && args[1] === "ls")
+            return { exitCode: 0, stdout: "", stderr: "" };
+          if (args[0] === "rm") removed = true;
           return { exitCode: 0, stdout: "", stderr: "" };
         },
         attach: (args) => {
@@ -270,15 +305,19 @@ describe("complete Container Kernel backend", () => {
     let running = false;
     let owned = true;
     let removeFails = false;
+    let removed = false;
+    let keepAfterRemove = false;
+    let reportedId = id;
     const control: ContainerControl = {
       run: async (args) => {
         calls.push([...args]);
-        if (args[0] === "container")
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
           return {
             exitCode: 0,
             stdout: JSON.stringify([
               {
-                Id: id,
+                Id: reportedId,
                 Config: {
                   Labels: {
                     "io.clarvis.managed": owned ? "true" : "false",
@@ -292,15 +331,26 @@ describe("complete Container Kernel backend", () => {
             ]),
             stderr: "",
           };
-        return removeFails
-          ? { exitCode: 1, stdout: "", stderr: "refused" }
-          : { exitCode: 0, stdout: "", stderr: "" };
+        }
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") {
+          if (removeFails) return { exitCode: 1, stdout: "", stderr: "refused" };
+          if (!keepAfterRemove) removed = true;
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
       },
       attach: () => attached(),
     };
     const backend = createContainerKernelBackend({ engine: "podman", control });
     await backend.reconcilePrevious({ id, generation, namespace });
-    expect(calls.at(-1)).toEqual(["rm", id]);
+    expect(calls).toContainEqual(["rm", id]);
+    removed = false;
+    reportedId = "d".repeat(64);
+    await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
+      "ownership is unconfirmed",
+    );
+    reportedId = id;
     running = true;
     await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
       "still running",
@@ -311,10 +361,17 @@ describe("complete Container Kernel backend", () => {
       "ownership is unconfirmed",
     );
     owned = true;
+    removed = false;
     removeFails = true;
     await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
       "cleanup is unconfirmed",
     );
+    removeFails = false;
+    keepAfterRemove = true;
+    await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
+      "removal is unconfirmed",
+    );
+    keepAfterRemove = false;
     await expect(
       backend.reconcilePrevious({ id: "short", generation, namespace }),
     ).rejects.toMatchObject({ code: "invalid_launch_spec" });
@@ -323,6 +380,7 @@ describe("complete Container Kernel backend", () => {
   test("sanitizes create failure and cleans a created ID when effective policy drifts", async () => {
     const { spec } = await fixture();
     let createFails = true;
+    let removed = false;
     const calls: string[][] = [];
     const control: ContainerControl = {
       async run(args) {
@@ -342,7 +400,7 @@ describe("complete Container Kernel backend", () => {
                 Config: {
                   Labels: {
                     "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
-                    "io.clarvis.base.revision": "fixture",
+                    "io.clarvis.base.revision": baseRevision,
                   },
                 },
               },
@@ -353,7 +411,8 @@ describe("complete Container Kernel backend", () => {
           return createFails
             ? { exitCode: 1, stdout: "", stderr: "\u001b[31msecret\tcreate\nfailed\u001b[0m" }
             : { exitCode: 0, stdout: id, stderr: "" };
-        if (args[0] === "container")
+        if (args[0] === "container" && args[1] === "inspect") {
+          if (removed) return { exitCode: 1, stdout: "", stderr: "missing" };
           return {
             exitCode: 0,
             stdout: JSON.stringify([
@@ -368,6 +427,10 @@ describe("complete Container Kernel backend", () => {
             ]),
             stderr: "",
           };
+        }
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") removed = true;
         return { exitCode: 0, stdout: "", stderr: "" };
       },
       attach: () => attached(),
@@ -376,7 +439,211 @@ describe("complete Container Kernel backend", () => {
     await backend.inspect();
     await expect(backend.startKernel(spec)).rejects.toThrow("create failed");
     createFails = false;
+    removed = false;
     await expect(backend.startKernel(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
     expect(calls).toContainEqual(["rm", "--force", id]);
+  });
+
+  test.each([
+    [
+      "partial capability drop",
+      (root: Record<string, unknown>) => {
+        delete root.EffectiveCaps;
+        delete root.BoundingCaps;
+        (root.HostConfig as Record<string, unknown>).CapDrop = ["CHOWN"];
+      },
+    ],
+    [
+      "capability addition",
+      (root: Record<string, unknown>) =>
+        ((root.HostConfig as Record<string, unknown>).CapAdd = ["SYS_ADMIN"]),
+    ],
+    [
+      "effective capability",
+      (root: Record<string, unknown>) => {
+        root.EffectiveCaps = ["CAP_SYS_ADMIN"];
+        root.BoundingCaps = ["CAP_SYS_ADMIN"];
+      },
+    ],
+    [
+      "disabled no-new-privileges",
+      (root: Record<string, unknown>) =>
+        ((root.HostConfig as Record<string, unknown>).SecurityOpt = ["no-new-privileges=false"]),
+    ],
+    [
+      "ambiguous no-new-privileges",
+      (root: Record<string, unknown>) =>
+        ((root.HostConfig as Record<string, unknown>).SecurityOpt = [
+          "no-new-privileges=true",
+          "no-new-privileges=false",
+        ]),
+    ],
+    [
+      "extra tmpfs option",
+      (root: Record<string, unknown>) =>
+        ((root.HostConfig as Record<string, unknown>).Tmpfs = {
+          "/tmp": "rw,nosuid,nodev,noexec,exec,size=8192",
+        }),
+    ],
+  ])("rejects effective hardening drift: %s", async (_label, mutate) => {
+    const { spec } = await fixture();
+    let removed = false;
+    let attachedCount = 0;
+    const inspected = inspectValue(spec, "podman");
+    mutate(inspected[0]! as Record<string, unknown>);
+    const control: ContainerControl = {
+      async run(args) {
+        if (args[0] === "info")
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ version: { Version: "1" }, host: { os: "linux" } }),
+            stderr: "",
+          };
+        if (args[0] === "image")
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              {
+                Id: imageId,
+                Config: {
+                  Labels: {
+                    "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
+                    "io.clarvis.base.revision": baseRevision,
+                  },
+                },
+              },
+            ]),
+            stderr: "",
+          };
+        if (args[0] === "create") return { exitCode: 0, stdout: id, stderr: "" };
+        if (args[0] === "container" && args[1] === "inspect")
+          return removed
+            ? { exitCode: 1, stdout: "", stderr: "missing" }
+            : { exitCode: 0, stdout: JSON.stringify(inspected), stderr: "" };
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") removed = true;
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      attach: () => {
+        attachedCount++;
+        return attached();
+      },
+    };
+    const backend = createPodmanKernelBackend({ control });
+    await backend.inspect();
+    await expect(backend.startKernel(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    expect(attachedCount).toBe(0);
+    expect(removed).toBe(true);
+  });
+
+  test("fails closed when previous-Container absence is ambiguous", async () => {
+    const generation = randomUUID();
+    let listed = { exitCode: 1, stdout: "", stderr: "daemon unavailable" };
+    const control: ContainerControl = {
+      run: async (args) =>
+        args[0] === "container" && args[1] === "inspect"
+          ? { exitCode: 1, stdout: "", stderr: "inspection unavailable" }
+          : listed,
+      attach: () => attached(),
+    };
+    const backend = createContainerKernelBackend({ engine: "docker", control });
+    await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
+      "absence could not be confirmed",
+    );
+    listed = { exitCode: 0, stdout: `${id}\n`, stderr: "" };
+    await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
+      "absence could not be confirmed",
+    );
+    listed = { exitCode: 0, stdout: "", stderr: "" };
+    await expect(backend.reconcilePrevious({ id, generation, namespace })).resolves.toBeUndefined();
+  });
+
+  test("rejects a failed engine stop and reconciles a create whose response was lost", async () => {
+    const { spec } = await fixture();
+    let createResponseLost = true;
+    let removed = false;
+    let stopFails = true;
+    let removeFails = false;
+    let keepAfterRemove = false;
+    const lost = new Error("create response lost");
+    const calls: string[][] = [];
+    const control: ContainerControl = {
+      async run(args) {
+        calls.push([...args]);
+        if (args[0] === "info")
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ ServerVersion: "1", OSType: "linux" }),
+            stderr: "",
+          };
+        if (args[0] === "image")
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify([
+              {
+                Id: imageId,
+                Config: {
+                  Labels: {
+                    "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
+                    "io.clarvis.base.revision": baseRevision,
+                  },
+                },
+              },
+            ]),
+            stderr: "",
+          };
+        if (args[0] === "create" && createResponseLost) throw lost;
+        if (args[0] === "create") return { exitCode: 0, stdout: id, stderr: "" };
+        if (args[0] === "container" && args[1] === "inspect")
+          return removed
+            ? { exitCode: 1, stdout: "", stderr: "missing" }
+            : { exitCode: 0, stdout: JSON.stringify(inspectValue(spec, "docker")), stderr: "" };
+        if (args[0] === "container" && args[1] === "ls")
+          return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "stop")
+          return stopFails
+            ? { exitCode: 1, stdout: "", stderr: "refused" }
+            : { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "rm") {
+          if (removeFails) return { exitCode: 1, stdout: "", stderr: "refused" };
+          if (!keepAfterRemove) removed = true;
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      attach: () => attached(),
+    };
+    const backend = createDockerKernelBackend({ control });
+    await backend.inspect();
+    await expect(backend.startKernel(spec)).rejects.toBe(lost);
+    expect(calls).toContainEqual(["rm", "--force", id]);
+    removed = false;
+    removeFails = true;
+    await expect(backend.startKernel(spec)).rejects.toMatchObject({
+      message: "Container launch cleanup is unconfirmed",
+      cause: expect.objectContaining({ message: "docker cleanup failed" }),
+    });
+    removeFails = false;
+    keepAfterRemove = true;
+    await expect(backend.startKernel(spec)).rejects.toMatchObject({
+      message: "Container launch cleanup is unconfirmed",
+      cause: expect.objectContaining({ message: "docker cleanup removal is unconfirmed" }),
+    });
+    keepAfterRemove = false;
+    createResponseLost = false;
+    removed = false;
+    const lifecycle = await backend.startKernel(spec);
+    await expect(lifecycle.stop(10)).rejects.toThrow("stop failed");
+    await lifecycle.kill();
+    expect(calls).toContainEqual(["kill", id]);
+    stopFails = false;
+    await lifecycle.stop(10);
+    removeFails = true;
+    await expect(lifecycle.remove()).rejects.toThrow("docker remove failed");
+    removeFails = false;
+    keepAfterRemove = true;
+    await expect(lifecycle.remove()).rejects.toThrow("docker removal is unconfirmed");
+    keepAfterRemove = false;
+    await lifecycle.remove();
   });
 });

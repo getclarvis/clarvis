@@ -14,11 +14,11 @@ const routes = {
   runs: "guest",
   hosting: "guest",
   localHost: "absent",
-  config: "operator",
+  config: "operator_wrapped",
   plugins: "unavailable",
   extensionProfiles: "guest",
   secrets: "operator",
-  models: "operator",
+  models: "operator_wrapped",
   providerAuth: "operator",
   files: "guest",
   memory: "guest",
@@ -32,7 +32,7 @@ const routes = {
   close: "lifecycle",
 } as const satisfies Record<
   keyof KernelClient,
-  "guest" | "operator" | "validated" | "unavailable" | "absent" | "lifecycle"
+  "guest" | "operator" | "operator_wrapped" | "validated" | "unavailable" | "absent" | "lifecycle"
 >;
 
 const profile: ResolvedExtensionProfile = {
@@ -165,6 +165,9 @@ describe("composeContainerClient", () => {
         else if (route === "operator") {
           expect(f.client[key]).toBe(f.operator[key as keyof typeof f.operator]);
           expect(f.client[key]).not.toBe(f.execution[key]);
+        } else if (route === "operator_wrapped") {
+          expect(f.client[key]).not.toBe(f.operator[key as keyof typeof f.operator]);
+          expect(f.client[key]).not.toBe(f.execution[key]);
         } else if (route === "validated")
           expect(f.client[key]).toEqual(
             f.options[key as "capabilities" | "principal" | "project" | "workspace"],
@@ -207,12 +210,38 @@ describe("composeContainerClient", () => {
       }
       const client = composeContainerClient({ ...f.options, execution });
       await client.config.listAgents();
-      expect(client.config).toBe(f.operator.config);
+      expect(client.config).not.toBe(f.operator.config);
       expect("localHost" in client).toBe(false);
       expect(f.calls).toEqual(["hello"]);
     } finally {
       await f.client.close();
     }
+  });
+
+  it("marks committed host configuration and catalog refreshes pending for the next generation", async () => {
+    const f = await fixture();
+    const changed: string[] = [];
+    const config = {
+      ...f.operator.config,
+      updateSettings: async () => ({}) as never,
+      writeAgent: async () => ({}) as never,
+      writeSharedPrompt: async () => ({}) as never,
+    } as KernelClient["config"];
+    const models = {
+      ...f.operator.models,
+      refresh: async () => ({ providers: [], source: "cache" as const }),
+    } as KernelClient["models"];
+    const client = composeContainerClient({
+      ...f.options,
+      operator: { ...f.operator, config, models },
+      onConfigurationSaved: (kind) => changed.push(kind),
+    });
+    await client.config.updateSettings("global", {}, null);
+    await client.config.writeAgent("global", "test", { frontmatter: {}, body: "test" });
+    await client.config.writeSharedPrompt("global", { mode: "replace", body: "test" });
+    await client.models.refresh();
+    expect(changed).toEqual(["settings", "agents", "context", "models"]);
+    await client.close();
   });
 
   it("keeps the immutable guest Extension Profile current functional over public transport", async () => {

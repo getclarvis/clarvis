@@ -254,6 +254,16 @@ optional `prepareReconnect`, and `callbacks`.
 `KernelRunClientCallbacks` : `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
 
+For Container placement, `composeContainerClient` routes execution/domain services to the guest and
+wraps host-owned configuration and model-catalog mutations explicitly. A successful host write
+emits a pending-projection notice; it does not replace the immutable generation's apparent active
+settings. Composition requires the authenticated principal returned by the guest hello, and a
+failed identity check closes the just-launched generation before propagating the error.
+Production: `composeContainerClient` in `packages/code/src/adapters/container-client.ts` and
+`connectContainerKernel` in `packages/code/src/adapters/workspace-client-manager.ts`.
+Test: `packages/code/tests/integration/container-client.test.ts` and
+`packages/code/tests/component/workspace-client-manager.test.ts`.
+
 ### 2.4 Other exported surfaces in scope
 
 | Module | Exports | File |
@@ -301,8 +311,8 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `task` | `task` | truthy |
 | `skill` | `skill` | truthy |
 
-When `KernelCapabilities.runtime.kind === "container"`, `toStartParams` omits Guard judge/mode,
-Memory and Plans projections. An explicit Task or Skill is rejected synchronously before
+When `KernelCapabilities.runtime.kind === "container"`, `toStartParams` omits only Guard
+judge/mode and preserves native Memory and Plans projections. An explicit Task or Skill is rejected synchronously before
 `runs.start`/`hosting.start` instead of being omitted and silently degraded. Production:
 `packages/code/src/adapters/kernel-run-client.ts` (`toStartParams`, `startRun`). Test:
 `packages/code/tests/component/kernel-run-client.test.ts` (Container payload and explicit feature
@@ -986,16 +996,23 @@ passes `Compacting context…` through `Footer.status`, reusing the canonical ru
 
 `reconnect(mode)` (`packages/code/src/adapters/kernel-run-client.ts`) is strictly
 `prepareReconnect?.(mode) → dispose() → connect()`. The preparation hook must accept the transition
-before the adapter releases a healthy client. `connection` authenticates another connection to the
-existing host; `reload` requests an idle host restart first. The omitted mode remains `reload` for
-configuration callbacks, while `/reconnect` explicitly selects `connection` and `/reconnect reload`
-selects `reload`. A refused reload leaves the existing adapter usable.
+before the run adapter releases its borrowed client. `connection` authenticates another connection
+to the current destination. `reload` makes `WorkspaceClientManager` resolve the persisted placement
+again, checks Container hosted runs and Memory index jobs, retires the old process, and admits the
+replacement identity before publishing it. An idle Host/Sandbox-to-Container or reverse change
+therefore updates the runtime projection and header before another run. A quiescence refusal leaves
+the old connection usable; a launch failure after retirement leaves the saved placement pending and
+never falls back to the previous placement. The omitted mode remains `reload` for configuration
+callbacks, while `/reconnect` explicitly selects `connection` and `/reconnect reload` selects
+`reload`.
 
-Production: `createKernelRunClient.reconnect` and `WorkspaceClientManager.recover` / `invalidate`.
+Production: `createKernelRunClient.reconnect` and `WorkspaceClientManager.recover` / `invalidate` /
+`connectionPlan`.
 Test: `reconnect confirms host retirement before releasing a healthy client`, `connection recovery
 forwards its intent without preparing a host reload` and `a refused host reload leaves the connected
-client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket and
-occupied-host cases in `packages/code/tests/component/workspace-client-manager.test.ts`.
+client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket,
+occupied-host and placement-transition cases in
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
@@ -1030,16 +1047,21 @@ Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. 
 Sandbox setting intact but never invoke it as fallback; engine failure remains a Container failure
 until a new explicit placement/run. Guard policy is untouched and becomes effective again only in
 native placement. Settings > Isolation, Run Controls and the
-`Ctrl+S` picker share that writer. `applyReviewMode` separately maps Off/Approval/Auto to
+`Ctrl+S` picker share that writer. With no active work, each surface immediately requests a reload;
+success publishes the admitted replacement runtime, while failure reports that the saved selection
+is pending reconnect. During active work the settings panels may save for later and the quick picker
+refuses the transition. `applyReviewMode` separately maps Off/Approval/Auto to
 the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
 workspace with no local policy; it writes no runtime or Sandbox field. Production:
 `packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
 `packages/code/src/views/config/IsolationConfigPanel.tsx`, and
-`packages/code/src/views/config/RunControlsPanel.tsx`. Tests:
+`packages/code/src/views/config/RunControlsPanel.tsx`; placement transition is owned by
+`WorkspaceClientManager.invalidate`. Tests:
 `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
-`packages/code/tests/integration/run-controls-render.test.tsx`.
+`packages/code/tests/integration/run-controls-render.test.tsx`, plus
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 The simple picker deliberately has no runtime-recipe editor. An operator may add a script under the
 global `runtime-recipes/` directory and reference it from the strict advanced Docker `recipe` block

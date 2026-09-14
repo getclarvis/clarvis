@@ -899,11 +899,13 @@ the Lead transcript selection and never opens `ActivityDetail`. Escape or scrim 
 intent that opened the surface, so later updates of that kind cannot reopen it; the first event for a
 different section may still reveal and orient the Sidebar. A new execution context resets the
 corresponding intent. The controller presents either automatic or pointer intent as a split at 100
-columns or wider and as a drawer below the threshold. Production:
+columns or wider and as a drawer below the threshold. The application footer contains only the
+canonical run strip; it does not repeat agent or workflow counts and is not a second Sidebar route.
+Production:
 `packages/code/src/app/layout.ts` (`createLayoutController`) and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
 `visibleSubagentContext`, `closeActivitySidebar`,
-`compactActivityStrip`, `Footer.onRunStripMouseDown`, `dismissTopOverlay`). Tests:
+`footerRunStrip`, `dismissTopOverlay`). Tests:
 `packages/code/tests/unit/layout.test.ts` (responsive explicit-intent mechanics) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals", "the first workflow leader opens and reveals Parallel
@@ -1111,7 +1113,10 @@ constants, `cols` and `separator`).
 **Right-of-gap zones — computed first, because they bound the room left for status chips.** The
 version field is always `v${input.version}` in `tokens.muted`, never elastic. `urgentField` fires
 whenever `input.connection.phase !== "ready"`: a warning glyph plus
-`connectionLabel(input.connection, input.width < 72)` in `tokens.warn`, never elastic. `exceptionField`
+`connectionLabel(input.connection, input.width < 72)` in `tokens.warn`, never elastic. Once the
+connection is ready, a committed host-side change that has not entered the immutable Container
+generation renders `⚠ reconnect pending` in the same urgent slot until successful reconnection clears
+the placement notice. `exceptionField`
 is a strict priority chain evaluated only when `exceptionAllowed` (`input.width >= 100`):
 `sandboxUnavailable` ("Sandbox unavailable") outranks Host isolation ("Isolation: Host"), which is
 itself only checked when the caller passes `includeIsolation: true`, which outranks `doctorDirty`
@@ -1391,13 +1396,13 @@ context: the first live Plan reveals Plan, the first workflow state/leader revea
 first visible sub-agent reveals Agents. Each preserves `Lead transcript` selection and leaves
 `ActivityDetail` closed. An explicit close is sticky for later updates of the intent that opened the
 surface; the first event for a different section may still reveal it, and a new execution context
-may reveal each section once again. Automatic and explicit footer intent both produce a split at
+may reveal each section once again. Automatic and explicit `Ctrl+L` intent both produce a split at
 ≥100 columns and a drawer below that threshold; while closed, and for every drawer presentation,
 `contentInset` stays 0. There is no stored sidebar preference or global toggle command.
 Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
 `visibleSubagentContext`, `closeActivitySidebar`,
-`compactActivityStrip`, `Footer.onRunStripMouseDown`). Pinned:
+`footerRunStrip`). Pinned:
 `packages/code/tests/unit/layout.test.ts` (responsive intent mechanics) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals", including new Plan and Workflow contexts; "the first

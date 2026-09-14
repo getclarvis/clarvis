@@ -108,10 +108,11 @@ async function runRecipeDocker(
   control: DockerControl,
   args: readonly string[],
   label: string,
+  signal?: AbortSignal,
   options?: DockerRunOptions,
 ): Promise<DockerCommandResult> {
   try {
-    return await control.run(args, undefined, options);
+    return await control.run(args, signal, options);
   } catch (cause) {
     throw new RuntimeLaunchError("runtime_recipe_failed", `${label} could not be executed`, {
       cause,
@@ -313,11 +314,13 @@ function validRecipeImage(image: ImageInspect, identity: RecipeIdentity): boolea
 async function inspectOptionalRecipeImage(
   control: DockerControl,
   identity: RecipeIdentity,
+  signal?: AbortSignal,
 ): Promise<string | undefined> {
   const inspected = await runRecipeDocker(
     control,
     ["image", "inspect", identity.tag],
     "Docker runtime recipe image inspection",
+    signal,
   );
   if (inspected.exitCode !== 0) return undefined;
   const image = parseImageInspect(inspected.stdout, "Docker runtime recipe image inspection");
@@ -343,12 +346,14 @@ RUN --mount=type=bind,source=recipe.sh,target=/run/clarvis-runtime-recipe.sh,rea
 async function ensureBuildBaseReference(
   control: DockerControl,
   baseImageDigest: string,
+  signal?: AbortSignal,
 ): Promise<string> {
   const reference = `clarvis-runtime-recipe-base:${baseImageDigest.slice("sha256:".length)}`;
   const tagged = await runRecipeDocker(
     control,
     ["image", "tag", baseImageDigest, reference],
     "Docker runtime recipe base tagging",
+    signal,
   );
   if (tagged.exitCode !== 0) {
     throw new RuntimeLaunchError(
@@ -360,6 +365,7 @@ async function ensureBuildBaseReference(
     control,
     ["image", "inspect", reference],
     "Docker runtime recipe base reference inspection",
+    signal,
   );
   if (inspected.exitCode !== 0) {
     throw new RuntimeLaunchError(
@@ -387,7 +393,11 @@ async function buildRecipeImage(
   captured: CapturedRecipe,
   identity: RecipeIdentity,
 ): Promise<string> {
-  const baseReference = await ensureBuildBaseReference(options.control, options.baseImageDigest);
+  const baseReference = await ensureBuildBaseReference(
+    options.control,
+    options.baseImageDigest,
+    options.signal,
+  );
   let context: string;
   try {
     context = await mkdtemp(join(options.temporaryRoot ?? tmpdir(), "clarvis-runtime-recipe-"));
@@ -433,6 +443,7 @@ async function buildRecipeImage(
             context,
           ],
           `Docker runtime recipe '${options.recipe.name}' build`,
+          options.signal,
           { timeoutMs: BUILD_TIMEOUT_MS },
         );
         if (result.exitCode !== 0) {
@@ -442,7 +453,11 @@ async function buildRecipeImage(
             `Docker runtime recipe '${options.recipe.name}' failed with exit code ${String(result.exitCode)}${detail.length === 0 ? "" : `: ${detail}`}`,
           );
         }
-        const imageDigest = await inspectOptionalRecipeImage(options.control, identity);
+        const imageDigest = await inspectOptionalRecipeImage(
+          options.control,
+          identity,
+          options.signal,
+        );
         if (imageDigest === undefined) {
           throw new RuntimeLaunchError(
             "runtime_recipe_failed",
@@ -472,6 +487,7 @@ async function resolveDockerRuntimeRecipeChecked(
     options.control,
     ["image", "inspect", options.baseImageDigest],
     "Docker runtime recipe base image inspection",
+    options.signal,
   );
   if (baseResult.exitCode !== 0) {
     throw new RuntimeLaunchError(
@@ -496,7 +512,7 @@ async function resolveDockerRuntimeRecipeChecked(
     globalPaths(undefined, options.roots).runtimeRecipesDir,
   );
   const identity = recipeIdentity(options.baseImageDigest, options.recipe, captured.digest);
-  const cached = await inspectOptionalRecipeImage(options.control, identity);
+  const cached = await inspectOptionalRecipeImage(options.control, identity, options.signal);
   if (cached !== undefined) return cached;
   try {
     options.onPreparation?.(options.recipe.name);
@@ -534,7 +550,11 @@ async function resolveDockerRuntimeRecipeChecked(
   }
   return withRequiredCleanup(
     async () => {
-      const builtByPeer = await inspectOptionalRecipeImage(options.control, identity);
+      const builtByPeer = await inspectOptionalRecipeImage(
+        options.control,
+        identity,
+        options.signal,
+      );
       return builtByPeer ?? (await buildRecipeImage(options, captured, identity));
     },
     async () => {

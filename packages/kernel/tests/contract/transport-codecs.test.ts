@@ -14,6 +14,7 @@ import {
   OPERATIONS,
   ORDINARY_OPERATIONS,
   SPECIAL_OPERATIONS,
+  decodeOperationParams,
 } from "../../src/transport/operations.ts";
 import { CLARVIS_WIRE_VERSION, M, N, type HelloResult } from "../../src/transport/wire.ts";
 import {
@@ -334,6 +335,23 @@ describe("wire handshake", () => {
 });
 
 describe("transport operation descriptors", () => {
+  it("admits the optional run-context model window emitted by /model", () => {
+    const operation = OPERATIONS.runs.context;
+    const encoded = operation.encode("run-1", 128_000);
+
+    expect(decodeOperationParams(operation, encoded)).toEqual({
+      execution_id: "run-1",
+      target_window_tokens: 128_000,
+    });
+    expect(
+      decodeOperationParams(operation, {
+        execution_id: "run-1",
+        target_window_tokens: 128_000,
+        provider_config: {},
+      }),
+    ).toBeNull();
+  });
+
   it("owns one unique method name and invokes every ordinary service method through its codec", async () => {
     expect(new Set(KNOWN_METHODS).size).toBe(KNOWN_METHODS.length);
     const invoked: string[] = [];

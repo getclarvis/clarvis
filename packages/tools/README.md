@@ -148,7 +148,7 @@ latency while preserving the real npm/Homebrew/runtime path.
 `shell` and `monitor_start` accept optional `sandbox_permissions`. Omitted or `use_default` follows
 the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
-field is a no-op. Core-only Container runs all ordinary commands without Command Review and rejects
+field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
 `require_escalated`: the guest has no channel to the machine host and no placement fallback. In
 native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
 `deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`ask` by default,

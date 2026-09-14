@@ -54,6 +54,8 @@ export type RuntimeLifecycleState =
 export interface RuntimePlacementNotice {
   readonly status: RuntimeStatus;
   readonly message?: string;
+  /** A committed operator change that the current immutable generation has not applied. */
+  readonly pendingReconnect?: boolean;
 }
 
 /** A typed reason why an explicitly selected runtime cannot launch. */
@@ -119,6 +121,8 @@ export interface ContainerProcessLifecycle {
   readonly id: string;
   readonly process: ContainerAttachedProcess;
   stop(graceSeconds: 10): Promise<void>;
+  /** Force only this already admitted engine object when graceful stop fails. */
+  kill(): Promise<void>;
   remove(): Promise<void>;
 }
 

@@ -63,6 +63,23 @@ async function removeVolume(name: string): Promise<void> {
   }
 }
 
+async function inspectBaseImageId(reference: string): Promise<`sha256:${string}`> {
+  const inspect = Bun.spawn([engine!, "image", "inspect", reference], {
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(inspect.stdout).text();
+  if ((await inspect.exited) !== 0)
+    throw new Error("qualification base image is not installed in the selected engine");
+  const parsed = JSON.parse(stdout) as Array<{ Id?: unknown }>;
+  const raw = parsed[0]?.Id;
+  const id = typeof raw === "string" && /^[a-f0-9]{64}$/u.test(raw) ? `sha256:${raw}` : raw;
+  if (typeof id !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(id))
+    throw new Error("qualification base image id is invalid");
+  return id as `sha256:${string}`;
+}
+
 test.skipIf(!enabled)(
   "real engine boots the compiled full Kernel, shares the workspace and preserves the namespace",
   async () => {
@@ -95,8 +112,9 @@ test.skipIf(!enabled)(
       projectId: git.project.id,
     });
     const data = containerDataVolumeNames(identity.namespace);
+    const baseImageId = await inspectBaseImageId(base!);
     const miseDigest = createHash("sha256")
-      .update(JSON.stringify({ schema: 3, namespace: identity.namespace }))
+      .update(JSON.stringify({ schema: 3, namespace: identity.namespace, baseImageId }))
       .digest("hex");
     let first: Awaited<ReturnType<typeof connectLocalContainerKernel>> | undefined;
     let second: Awaited<ReturnType<typeof connectLocalContainerKernel>> | undefined;

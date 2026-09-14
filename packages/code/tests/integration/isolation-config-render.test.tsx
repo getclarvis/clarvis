@@ -32,6 +32,7 @@ function mount() {
     settings,
     notify: (message: string) => notes.push(message),
     runActive: () => false,
+    reload: async () => ({ ok: true, message: "reloaded" }),
     openSandbox: () => sandboxOpened.push(true),
   };
   return { host, deps, press, writes, notes, sandboxOpened };

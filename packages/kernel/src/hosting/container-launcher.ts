@@ -56,6 +56,26 @@ function deadline<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
+function bootDeadline<T>(promise: Promise<T>, expiresAt: number): Promise<T> {
+  const remaining = expiresAt - Date.now();
+  if (remaining <= 0)
+    return Promise.reject(kernelError("unavailable", "Container Kernel boot timed out"));
+  return deadline(promise, remaining);
+}
+
+function physicalExitWithin(process: ContainerProcessLifecycle["process"], milliseconds: number) {
+  return Promise.race([
+    process.exited.then(
+      () => true,
+      () => true,
+    ),
+    new Promise<false>((resolve) => {
+      const timer = setTimeout(() => resolve(false), milliseconds);
+      timer.unref?.();
+    }),
+  ]);
+}
+
 /**
  * Negotiate one attached Container process and expose its public Kernel client.
  * The broker is bound to the physical model lane; no administrative host service is dispatched.
@@ -68,6 +88,7 @@ export async function connectContainerKernel(
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || timeout > CONTAINER_BOOT_TIMEOUT_MS)
     throw kernelError("invalid_request", "Container boot timeout is invalid");
   const process = options.lifecycle.process;
+  const bootExpiresAt = Date.now() + timeout;
   const channel = createContainerChannel({ input: process.stdout, output: process.stdin });
   const broker = createContainerModelBroker(options.broker);
   if (
@@ -108,16 +129,26 @@ export async function connectContainerKernel(
       } catch {
         channel.close();
       }
-      const exited = await Promise.race([
-        process.exited.then(() => true),
-        new Promise<false>((resolve) => {
-          const timer = setTimeout(() => resolve(false), 30_000);
-          timer.unref?.();
-        }),
-      ]);
+      const exited = await physicalExitWithin(process, 30_000);
       if (!exited) {
-        await options.lifecycle.stop(10).catch(() => process.kill("SIGKILL"));
-        await process.exited.catch(() => undefined);
+        let stopError: unknown;
+        try {
+          await options.lifecycle.stop(10);
+        } catch (error) {
+          stopError = error;
+        }
+        if (!(await physicalExitWithin(process, 10_000))) {
+          try {
+            await options.lifecycle.kill();
+          } catch (killError) {
+            throw new AggregateError(
+              [...(stopError === undefined ? [] : [stopError]), killError],
+              "Container Kernel termination is unconfirmed",
+              { cause: killError },
+            );
+          }
+          if (!(await physicalExitWithin(process, 10_000))) process.kill("SIGKILL");
+        }
       }
       modelPump.close();
       await control.close().catch(() => undefined);
@@ -126,8 +157,19 @@ export async function connectContainerKernel(
     })();
     return closing;
   };
+  void physical.promise
+    .then(() => close())
+    .catch((error: unknown) => {
+      logger.error(
+        {
+          event: "container.cleanup.failed",
+          error: sanitizeText(error instanceof Error ? error.message : String(error)),
+        },
+        "the Container channel closed and lifecycle cleanup failed",
+      );
+    });
   try {
-    await deadline(channel.ready, timeout);
+    await bootDeadline(channel.ready, bootExpiresAt);
     const initialize: ContainerInitialize = {
       ...options.initialize,
       generation: broker.generation,
@@ -148,7 +190,7 @@ export async function connectContainerKernel(
       },
     };
     const ready = containerReadySchema.parse(
-      await deadline(control.request("container.initialize", initialize), timeout),
+      await bootDeadline(control.request("container.initialize", initialize), bootExpiresAt),
     );
     if (
       ready.generation !== broker.generation ||
@@ -156,13 +198,13 @@ export async function connectContainerKernel(
       ready.configDigest !== initialize.configDigest
     )
       throw kernelError("unsupported", "Container Kernel ready identity mismatch");
-    client = await deadline(
+    client = await bootDeadline(
       connectKernelClient(createStdioTransport(channel.kernel, logger), {
         clientInfo: { name: "clarvis-container" },
         workspace: initialize.workspaceIdentity.workspace.id,
         logger,
       }),
-      timeout,
+      bootExpiresAt,
     );
     if (
       client.localHost !== undefined ||

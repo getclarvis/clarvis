@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { containerGuestPaths } from "@clarvis/paths";
 import {
   inspectReservedWorkspacePath,
   prepareRuntimeMounts,
 } from "../../src/runtime/container-mounts.ts";
+import { containerGitDirectoryTarget } from "../../src/git-workspace.ts";
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -49,22 +51,25 @@ function input(
                 type: "file",
                 readOnly: true,
               },
-              {
-                source: options.gitDir,
-                target: options.gitDir,
-                type: "directory",
-                readOnly: true,
-              },
               ...(options.gitCommonDir === options.gitDir
                 ? []
                 : [
                     {
                       source: options.gitCommonDir,
-                      target: options.gitCommonDir,
+                      target: containerGuestPaths.gitCommonRoot,
                       type: "directory" as const,
                       readOnly: true as const,
                     },
                   ]),
+              {
+                source: options.gitDir,
+                target:
+                  options.gitDir === options.gitCommonDir
+                    ? `${containerGuestPaths.gitCommonRoot}/worktrees/invalid`
+                    : containerGitDirectoryTarget(options.gitDir, options.gitCommonDir),
+                type: "directory",
+                readOnly: true,
+              },
             ]
           : [
               {
@@ -146,11 +151,30 @@ describe("prepareRuntimeMounts", () => {
     const linkedMounts = await prepareRuntimeMounts(
       input(linked, { kind: "external_worktree", gitDir, gitCommonDir: common }),
     );
-    expect(linkedMounts.gitMetadataMounts).toEqual([
-      { source: join(linked, ".git"), target: "/workspace/.git", type: "file", readOnly: true },
-      { source: gitDir, target: gitDir, type: "directory", readOnly: true },
-      { source: common, target: common, type: "directory", readOnly: true },
+    expect(linkedMounts.gitMetadataMounts.slice(1)).toEqual([
+      {
+        source: common,
+        target: containerGuestPaths.gitCommonRoot,
+        type: "directory",
+        readOnly: true,
+      },
+      {
+        source: gitDir,
+        target: `${containerGuestPaths.gitCommonRoot}/worktrees/linked`,
+        type: "directory",
+        readOnly: true,
+      },
     ]);
+    const projectedGitFile = linkedMounts.gitMetadataMounts[0]!;
+    expect(projectedGitFile).toMatchObject({
+      target: "/workspace/.git",
+      type: "file",
+      readOnly: true,
+    });
+    expect(projectedGitFile.source).not.toBe(join(linked, ".git"));
+    expect(await readFile(projectedGitFile.source, "utf8")).toBe(
+      `gitdir: ${containerGuestPaths.gitCommonRoot}/worktrees/linked\n`,
+    );
     await linkedMounts.cleanup();
   });
 

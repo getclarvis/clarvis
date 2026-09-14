@@ -1,10 +1,20 @@
 import type { Stats } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { agentsWorkspaceDir, workspacePaths } from "@clarvis/paths";
+import { agentsWorkspaceDir, containerGuestPaths, workspacePaths } from "@clarvis/paths";
 import type { WorkspaceRef } from "@clarvis/protocol";
 import { RuntimeLaunchError, type RuntimeProtectedMount } from "./types.ts";
+import { containerGitDirectoryTarget } from "../git-workspace.ts";
 
 export interface ContainerMountPreparationInput {
   readonly [key: string]: unknown;
@@ -159,6 +169,7 @@ export async function prepareRuntimeMounts(
         );
       }
       let expected: readonly RuntimeProtectedMount[];
+      let projectedGitDirectoryTarget: string | undefined;
       if (input.workspace.kind === "external_worktree") {
         if (!dotGitInfo.isFile()) {
           throw new RuntimeLaunchError(
@@ -188,19 +199,30 @@ export async function prepareRuntimeMounts(
           resolve(gitDir, commonReference),
           "runtime Git common directory",
         );
+        let gitTarget: string;
+        try {
+          gitTarget = containerGitDirectoryTarget(gitDir, commonDir);
+        } catch (cause) {
+          throw new RuntimeLaunchError(
+            "unsupported_policy",
+            "linked worktree Git directory must be contained by its common directory",
+            { cause },
+          );
+        }
+        projectedGitDirectoryTarget = gitTarget;
         expected = [
           { source: dotGit, target: "/workspace/.git", type: "file", readOnly: true },
-          { source: gitDir, target: gitDir, type: "directory", readOnly: true },
           ...(commonDir === gitDir
             ? []
             : [
                 {
                   source: commonDir,
-                  target: commonDir,
+                  target: containerGuestPaths.gitCommonRoot,
                   type: "directory" as const,
                   readOnly: true as const,
                 },
               ]),
+          { source: gitDir, target: gitTarget, type: "directory", readOnly: true },
         ];
       } else {
         if (!dotGitInfo.isDirectory()) {
@@ -232,7 +254,15 @@ export async function prepareRuntimeMounts(
           "runtime Git metadata mounts do not match host discovery",
         );
       }
-      gitMetadataMounts = expected;
+      if (input.workspace.kind === "external_worktree") {
+        const rewrittenGitFile = join(privateRoot, "worktree.git");
+        await writeFile(rewrittenGitFile, `gitdir: ${projectedGitDirectoryTarget!}\n`, {
+          mode: 0o400,
+        });
+        gitMetadataMounts = expected.map((mount, index) =>
+          index === 0 ? { ...mount, source: rewrittenGitFile } : mount,
+        );
+      } else gitMetadataMounts = expected;
     }
     return {
       controlRootMasks,

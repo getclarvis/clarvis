@@ -21,6 +21,7 @@ export interface HeaderInput {
   memory: MemoryState;
   plans: PlansState;
   connection: ConnectionState;
+  configurationPending?: boolean;
   doctorDirty: boolean;
   workspace: string;
   workspaceLabel?: string;
@@ -82,6 +83,13 @@ function urgentField(input: HeaderInput): HeaderField | undefined {
       elastic: false,
     };
   }
+  if (input.configurationPending === true)
+    return {
+      key: "urgent",
+      text: `${glyph("warning")} reconnect pending`,
+      color: tokens.warn,
+      elastic: false,
+    };
   return undefined;
 }
 

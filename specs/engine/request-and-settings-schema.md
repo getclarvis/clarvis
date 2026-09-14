@@ -789,7 +789,7 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   behind these consts is owned by other documents (hooks-execution, grants-and-tool-exposure,
   `@clarvis/supervision`'s `agentsSettingsSpec`).
 - `ajv` / `ajv-formats` — lazy fallback resolution for ordinary hosts; statically supplied only by
-  the standalone isolated-worker composition root (INV-073).
+  the standalone Container Kernel composition root (INV-073).
 
 **Depended on by** (all runtime, via the package's export map — never a raw `src/` path from outside
 the package):

@@ -44,9 +44,9 @@ place beside the server's tools.
 
 ## It does not know the engine
 
-`@clarvis/kernel` consumes this package for native Host/Sandbox MCP composition. Core-only Container
-admits no MCP server, catalog, result, connection, OAuth state or elicitation relay; a custom profile
-with an MCP tool fails before engine/model work. The closed absence contract belongs to
+`@clarvis/kernel` consumes this package for native Host/Sandbox MCP composition. The complete
+Container Kernel admits no MCP server, catalog, result, connection, OAuth state or elicitation
+relay; a custom profile with an MCP tool fails before engine/model work. The closed absence contract belongs to
 [`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md); this package does not
 depend on the kernel or implement its private RPC protocol.
 

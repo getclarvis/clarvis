@@ -398,6 +398,68 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     expect(events.at(-1)).toMatchObject({ kind: "plan_updated", detail: { change: "recovery" } });
   });
 
+  it("defers lead plan mutations until delegated task state is published in the next iteration", async () => {
+    const orch = buildPlansOrchestration(makeDeps());
+    await createPlan(orch, {
+      title: "Runtime",
+      objective: "Keep delegation and lead work ordered",
+      tasks: [{ title: "Delegated" }, { title: "Lead" }],
+      validation: [],
+    });
+    const stale = await readPlan(orch);
+    const [delegated, lead] = orch.session.cached()!.tasks;
+
+    expect(await orch.port.markSpawned(delegated!.id)).toBe(true);
+    orch.port.noteSpawned(delegated!.id);
+    expect(await orch.port.markReturned?.(delegated!.id, "child result")).toBe(true);
+
+    const transition = await dispatch(orch.contribution, {
+      id: "stale-lead-transition",
+      name: TRANSITION_PLAN_TASK_TOOL_NAME,
+      arguments: {
+        ...cas(stale),
+        task_id: lead!.id,
+        status: "in_progress",
+      },
+    });
+    expect(transition).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("delegated plan task is still settling"),
+    });
+    expect(orch.session.cached()!.tasks[1]!.status).toBe("pending");
+
+    const revision = await dispatch(orch.contribution, {
+      id: "stale-lead-revision",
+      name: REVISE_PLAN_TOOL_NAME,
+      arguments: {
+        ...cas(stale),
+        operation: { type: "set_objective", objective: "Do not race child state" },
+      },
+    });
+    expect(revision).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("delegated plan task is still settling"),
+    });
+    expect(orch.session.cached()!.objective).toBe("Keep delegation and lead work ordered");
+
+    await orch.contribution.hooks!.beforeIteration!();
+    const current = await readPlan(orch);
+    const accepted = await dispatch(orch.contribution, {
+      id: "fresh-lead-transition",
+      name: TRANSITION_PLAN_TASK_TOOL_NAME,
+      arguments: {
+        ...cas(current),
+        task_id: lead!.id,
+        status: "in_progress",
+      },
+    });
+    expect(accepted).toMatchObject({
+      kind: "result",
+      text: expect.not.stringContaining("error"),
+    });
+    expect(orch.session.cached()!.tasks[1]!.status).toBe("in_progress");
+  });
+
   it("propagates a planReviewAsk throw when the run is not cancelled", async () => {
     const orch = buildPlansOrchestration(
       makeDeps({

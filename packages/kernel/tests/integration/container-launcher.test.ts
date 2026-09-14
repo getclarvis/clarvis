@@ -1,13 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PassThrough } from "node:stream";
+import { PassThrough, Transform } from "node:stream";
 import { envSchema } from "@clarvis/capability";
 import { projectContainerConfiguration } from "../../src/config/container-projection.ts";
 import { serveContainerKernel } from "../../src/hosting/container-bootstrap.ts";
 import { connectContainerKernel } from "../../src/hosting/container-launcher.ts";
-import { launchContainerKernel } from "../../src/hosting/container-host-launcher.ts";
+import {
+  containerModelResponseLimit,
+  launchContainerKernel,
+} from "../../src/hosting/container-host-launcher.ts";
 import { createOperatorServices } from "../../src/config/operator-services.ts";
 import type { RuntimeArtifactManifest } from "../../src/runtime/runtime-artifact.ts";
 import type { ContainerKernelLaunchSpec } from "../../src/runtime/types.ts";
@@ -38,6 +41,11 @@ function manifest(): RuntimeArtifactManifest {
 }
 
 describe("Container Kernel process connection", () => {
+  test("caps model responses by the lower provider and launch ceiling", () => {
+    expect(containerModelResponseLimit(32 * 1024 * 1024, 4096)).toBe(4096);
+    expect(containerModelResponseLimit(2048, 4096)).toBe(2048);
+  });
+
   test("rejects invalid boot bounds, mismatched authority and sanitized guest diagnostics", async () => {
     const configuration = projectContainerConfiguration({
       store: {
@@ -66,6 +74,7 @@ describe("Container Kernel process connection", () => {
           kill: () => undefined,
         },
         stop: async () => undefined,
+        kill: async () => undefined,
         remove: async () => undefined,
       };
     };
@@ -128,24 +137,150 @@ describe("Container Kernel process connection", () => {
     ).rejects.toThrow("provider secret failed");
   });
 
-  test("initializes once, negotiates the public Kernel and owns physical shutdown", async () => {
-    const root = await mkdtemp(join(tmpdir(), "clarvis-container-launcher-"));
+  test.each([false, true])(
+    "initializes once, negotiates the public Kernel and escalates an unconfirmed stop (stop failure: %s)",
+    async (stopFails) => {
+      const root = await mkdtemp(join(tmpdir(), "clarvis-container-launcher-"));
+      roots.push(root);
+      const workspaceRoot = join(root, "workspace");
+      const globalDir = join(root, "state");
+      await Promise.all([mkdir(workspaceRoot), mkdir(globalDir)]);
+      const hostToGuest = new PassThrough();
+      const guestToHost = new PassThrough();
+      const guest = serveContainerKernel({
+        input: hostToGuest,
+        output: guestToHost,
+        workspaceRoot,
+        globalDir,
+        artifactManifest: manifest(),
+      });
+      const exited = Promise.withResolvers<number | null>();
+      let removed = 0;
+      let stopped = 0;
+      let killed = 0;
+      const configuration = projectContainerConfiguration({
+        store: {
+          readSettings: () => ({ merged: {}, operator_merged: {}, scopes: {}, sources: [] }),
+          listAgents: () => [],
+        },
+        env: envSchema.parse({ CLARVIS_OWNER: "fixture" }),
+        modelCatalog: [],
+        sharedPrompt: "",
+        contexts: [],
+        memoryPolicy: "",
+        workflowDefinitions: [],
+      });
+      const digest = `sha256:${"d".repeat(64)}` as const;
+      const connecting = connectContainerKernel({
+        lifecycle: {
+          id: "a".repeat(64),
+          process: {
+            stdin: hostToGuest,
+            stdout: guestToHost,
+            stderr: new PassThrough(),
+            exited: exited.promise,
+            kill: () => exited.resolve(null),
+          },
+          stop: async () => {
+            stopped++;
+            if (stopFails) throw new Error("engine stop failed");
+          },
+          kill: async () => {
+            killed++;
+            exited.resolve(null);
+          },
+          remove: async () => {
+            removed++;
+          },
+        },
+        initialize: {
+          workspaceIdentity: {
+            project: { id: "project" },
+            workspace: {
+              id: "workspace",
+              projectId: "project",
+              label: "fixture",
+              kind: "primary",
+              path: "/workspace",
+            },
+            namespace: "e".repeat(64),
+          },
+          owner: "fixture",
+          runtime: {
+            engine: "podman",
+            hostPlatform: "linux",
+            network: "none",
+            baseDigest: `sha256:${"f".repeat(64)}`,
+            baseAbi: "clarvis-linux-glibc-v1",
+          },
+          artifactDigest: digest,
+          configDigest: (
+            await import("../../src/config/container-projection.ts")
+          ).containerConfigurationDigest(configuration),
+          configuration,
+        },
+        broker: {
+          owner: "fixture",
+          namespace: "e".repeat(64),
+          modelCatalog: [],
+          maxConcurrent: 1,
+          maxQueued: 0,
+          tokenCeiling: 1,
+          hostMaxRetries: 0,
+          maxResponseBytes: 1024,
+          maxTimeoutMs: 1000,
+          defaultTimeoutMs: 1000,
+          resolve: async () => {
+            throw new Error("unexpected model resolution");
+          },
+        },
+      });
+      const [, connection] = await Promise.all([guest.initialized, connecting]);
+      expect(connection.client.project.id).toBe("project");
+      expect(connection.client.workspace.id).toBe("workspace");
+      expect(connection.client.localHost).toBeUndefined();
+      expect(connection.client.capabilities.runtime?.kind).toBe("container");
+      await expect(
+        connection.client.config.updateSettings("workspace", {}, null),
+      ).rejects.toMatchObject({ code: "unsupported" });
+      vi.useFakeTimers();
+      try {
+        const closing = connection.close();
+        for (let phase = 0; phase < 3; phase++) {
+          await new Promise<void>((resolve) => process.nextTick(resolve));
+          vi.advanceTimersByTime(30_000);
+        }
+        await closing;
+      } finally {
+        vi.useRealTimers();
+      }
+      await guest.close();
+      expect({ stopped, killed, removed }).toEqual({ stopped: 1, killed: 1, removed: 1 });
+    },
+  );
+
+  test("uses one deadline across prefix, initialization and public hello", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-container-deadline-"));
     roots.push(root);
     const workspaceRoot = join(root, "workspace");
     const globalDir = join(root, "state");
     await Promise.all([mkdir(workspaceRoot), mkdir(globalDir)]);
     const hostToGuest = new PassThrough();
-    const guestToHost = new PassThrough();
+    const delayedGuestToHost = new Transform({
+      transform(chunk, _encoding, callback) {
+        const timer = setTimeout(() => callback(null, chunk), 30);
+        timer.unref?.();
+      },
+    });
     const guest = serveContainerKernel({
       input: hostToGuest,
-      output: guestToHost,
+      output: delayedGuestToHost,
       workspaceRoot,
       globalDir,
       artifactManifest: manifest(),
     });
     const exited = Promise.withResolvers<number | null>();
     void guest.closed.then(() => exited.resolve(0));
-    let removed = 0;
     const configuration = projectContainerConfiguration({
       store: {
         readSettings: () => ({ merged: {}, operator_merged: {}, scopes: {}, sources: [] }),
@@ -158,75 +293,67 @@ describe("Container Kernel process connection", () => {
       memoryPolicy: "",
       workflowDefinitions: [],
     });
-    const digest = `sha256:${"d".repeat(64)}` as const;
-    const connecting = connectContainerKernel({
-      lifecycle: {
-        id: "a".repeat(64),
-        process: {
-          stdin: hostToGuest,
-          stdout: guestToHost,
-          stderr: new PassThrough(),
-          exited: exited.promise,
-          kill: () => exited.resolve(null),
-        },
-        stop: async () => exited.resolve(null),
-        remove: async () => {
-          removed++;
-        },
-      },
-      initialize: {
-        workspaceIdentity: {
-          project: { id: "project" },
-          workspace: {
-            id: "workspace",
-            projectId: "project",
-            label: "fixture",
-            kind: "primary",
-            path: "/workspace",
-          },
-          namespace: "e".repeat(64),
-        },
-        owner: "fixture",
-        runtime: {
-          engine: "podman",
-          hostPlatform: "linux",
-          network: "none",
-          baseDigest: `sha256:${"f".repeat(64)}`,
-          baseAbi: "clarvis-linux-glibc-v1",
-        },
-        artifactDigest: digest,
-        configDigest: (
-          await import("../../src/config/container-projection.ts")
-        ).containerConfigurationDigest(configuration),
-        configuration,
-      },
-      broker: {
-        owner: "fixture",
-        namespace: "e".repeat(64),
-        modelCatalog: [],
-        maxConcurrent: 1,
-        maxQueued: 0,
-        tokenCeiling: 1,
-        hostMaxRetries: 0,
-        maxResponseBytes: 1024,
-        maxTimeoutMs: 1000,
-        defaultTimeoutMs: 1000,
-        resolve: async () => {
-          throw new Error("unexpected model resolution");
-        },
-      },
-    });
-    const [, connection] = await Promise.all([guest.initialized, connecting]);
-    expect(connection.client.project.id).toBe("project");
-    expect(connection.client.workspace.id).toBe("workspace");
-    expect(connection.client.localHost).toBeUndefined();
-    expect(connection.client.capabilities.runtime?.kind).toBe("container");
+    const artifactDigest = `sha256:${"d".repeat(64)}` as const;
     await expect(
-      connection.client.config.updateSettings("workspace", {}, null),
-    ).rejects.toMatchObject({ code: "unsupported" });
-    await connection.close();
+      connectContainerKernel({
+        lifecycle: {
+          id: "a".repeat(64),
+          process: {
+            stdin: hostToGuest,
+            stdout: delayedGuestToHost,
+            stderr: new PassThrough(),
+            exited: exited.promise,
+            kill: () => exited.resolve(null),
+          },
+          stop: async () => exited.resolve(null),
+          kill: async () => exited.resolve(null),
+          remove: async () => undefined,
+        },
+        initialize: {
+          workspaceIdentity: {
+            project: { id: "project" },
+            workspace: {
+              id: "workspace",
+              projectId: "project",
+              label: "fixture",
+              kind: "primary",
+              path: "/workspace",
+            },
+            namespace: "e".repeat(64),
+          },
+          owner: "fixture",
+          runtime: {
+            engine: "podman",
+            hostPlatform: "linux",
+            network: "none",
+            baseDigest: `sha256:${"f".repeat(64)}`,
+            baseAbi: "clarvis-linux-glibc-v1",
+          },
+          artifactDigest,
+          configDigest: (
+            await import("../../src/config/container-projection.ts")
+          ).containerConfigurationDigest(configuration),
+          configuration,
+        },
+        broker: {
+          owner: "fixture",
+          namespace: "e".repeat(64),
+          modelCatalog: [],
+          maxConcurrent: 1,
+          maxQueued: 0,
+          tokenCeiling: 1,
+          hostMaxRetries: 0,
+          maxResponseBytes: 1024,
+          maxTimeoutMs: 1000,
+          defaultTimeoutMs: 1000,
+          resolve: async () => {
+            throw new Error("unexpected model resolution");
+          },
+        },
+        timeoutMs: 70,
+      }),
+    ).rejects.toThrow("boot timed out");
     await guest.close();
-    expect(removed).toBe(1);
   });
 
   test("the host launcher owns the lease, registry, operator facade and native guest", async () => {
@@ -285,6 +412,8 @@ describe("Container Kernel process connection", () => {
     let released = 0;
     let mountCleanup = 0;
     let removed = 0;
+    let guestHost: ReturnType<typeof serveContainerKernel> | undefined;
+    const cleanupCompleted = Promise.withResolvers<void>();
     const lease = {
       path: join(root, "lease"),
       record: { schema: 1, pid: process.pid, token: "fixture", createdAt: 1 },
@@ -293,6 +422,7 @@ describe("Container Kernel process connection", () => {
       assertOwned: async () => undefined,
       release: async () => {
         released++;
+        cleanupCompleted.resolve();
         return true;
       },
     } as unknown as LocalLease;
@@ -341,6 +471,7 @@ describe("Container Kernel process connection", () => {
           globalDir,
           artifactManifest: manifest(),
         });
+        guestHost = guest;
         const exited = Promise.withResolvers<number | null>();
         void guest.closed.then(() => exited.resolve(0));
         return {
@@ -353,6 +484,7 @@ describe("Container Kernel process connection", () => {
             kill: () => exited.resolve(null),
           },
           stop: async () => exited.resolve(null),
+          kill: async () => exited.resolve(null),
           remove: async () => {
             removed++;
           },
@@ -395,7 +527,8 @@ describe("Container Kernel process connection", () => {
     expect(launched.operator).toBe(operator);
     expect(launched.workspace.path).toBe("/workspace");
     await launched.operator.secrets.set("FIXTURE_KEY", "revoked");
-    await launched.close();
+    await guestHost!.close();
+    await cleanupCompleted.promise;
     await launched.close();
     expect({ released, mountCleanup, removed, reconciled }).toEqual({
       released: 1,
@@ -543,6 +676,7 @@ describe("Container Kernel process connection", () => {
               stopped++;
               processExit.resolve(null);
             },
+            kill: async () => processExit.resolve(null),
             remove: async () => {
               removed++;
             },

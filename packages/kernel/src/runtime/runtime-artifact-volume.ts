@@ -2,10 +2,9 @@ import { createReadStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { kernelError } from "../core/errors.ts";
 import type { CachedRuntimeArtifact } from "./runtime-artifact.ts";
+import { runContainerPreparer } from "./container-preparer.ts";
 import type { ContainerControl } from "./types.ts";
 import { RuntimeLaunchError } from "./types.ts";
-
-const idPattern = /^(?:sha256:)?[a-f0-9]{64}$/u;
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -38,36 +37,6 @@ function runtimeArtifactVolumeName(digest: `sha256:${string}`): string {
   return `clarvis-artifact-v1-${digest.slice("sha256:".length)}`;
 }
 
-async function removePreparer(
-  control: ContainerControl,
-  name: string,
-  generation: string,
-): Promise<void> {
-  const inspection = await control.run(["container", "inspect", name]);
-  if (inspection.exitCode !== 0)
-    throw new RuntimeLaunchError("operational_failure", "Artifact preparer inspection failed");
-  const root = record(
-    Array.isArray(parsed(inspection.stdout))
-      ? (parsed(inspection.stdout) as unknown[])[0]
-      : undefined,
-  );
-  const config = record(root?.Config);
-  const foundLabels = record(config?.Labels);
-  const id = root?.Id;
-  if (
-    typeof id !== "string" ||
-    !idPattern.test(id) ||
-    foundLabels?.["io.clarvis.generation"] !== generation
-  )
-    throw new RuntimeLaunchError(
-      "operational_failure",
-      "Artifact preparer ownership is unconfirmed",
-    );
-  const removed = await control.run(["rm", "--force", id]);
-  if (removed.exitCode !== 0)
-    throw new RuntimeLaunchError("operational_failure", "Artifact preparer cleanup failed");
-}
-
 /** Transfer one already verified archive into an immutable, label-checked engine volume. */
 export async function prepareRuntimeArtifactVolume(options: {
   readonly control: ContainerControl;
@@ -81,9 +50,7 @@ export async function prepareRuntimeArtifactVolume(options: {
 }): Promise<{ readonly name: string; readonly subpath: "payload" }> {
   const name = runtimeArtifactVolumeName(options.digest);
   const expected = labels(options.artifact, options.digest);
-  const inspect = await options.control.run(["volume", "inspect", name], options.signal);
-  const exists = inspect.exitCode === 0;
-  if (!exists) {
+  const createVolume = async (): Promise<void> => {
     const created = await options.control.run(
       [
         "volume",
@@ -95,28 +62,35 @@ export async function prepareRuntimeArtifactVolume(options: {
     );
     if (created.exitCode !== 0)
       throw new RuntimeLaunchError("operational_failure", "Artifact volume create failed");
-  }
-  const volumeInspect = await options.control.run(["volume", "inspect", name], options.signal);
-  const volumeRoot = record(
-    Array.isArray(parsed(volumeInspect.stdout))
-      ? (parsed(volumeInspect.stdout) as unknown[])[0]
-      : undefined,
-  );
-  const actual = record(volumeRoot?.Labels);
-  if (
-    volumeInspect.exitCode !== 0 ||
-    volumeRoot?.Name !== name ||
-    actual === undefined ||
-    Object.keys(actual).length !== Object.keys(expected).length ||
-    Object.entries(expected).some(([key, value]) => actual[key] !== value)
-  )
-    throw kernelError("conflict", "Container artifact volume identity conflicts");
-  const invoke = async (mode: "prepare" | "verify"): Promise<void> => {
+  };
+  const inspectVolume = async (): Promise<void> => {
+    const volumeInspect = await options.control.run(["volume", "inspect", name], options.signal);
+    const parsedInspection = parsed(volumeInspect.stdout);
+    const volumeRoot = record(Array.isArray(parsedInspection) ? parsedInspection[0] : undefined);
+    const actual = record(volumeRoot?.Labels);
+    if (
+      volumeInspect.exitCode !== 0 ||
+      volumeRoot?.Name !== name ||
+      actual === undefined ||
+      Object.keys(actual).length !== Object.keys(expected).length ||
+      Object.entries(expected).some(([key, value]) => actual[key] !== value)
+    )
+      throw kernelError("conflict", "Container artifact volume identity conflicts");
+  };
+  const inspect = await options.control.run(["volume", "inspect", name], options.signal);
+  const exists = inspect.exitCode === 0;
+  if (!exists) await createVolume();
+  await inspectVolume();
+  const invoke = async (mode: "prepare" | "verify"): Promise<number | null> => {
     const preparer = `clarvis-artifact-${mode}-${options.generation}`;
+    const preparerLabels = {
+      "io.clarvis.managed": "true",
+      "io.clarvis.generation": options.generation,
+      "io.clarvis.role": `artifact-${mode}`,
+    };
+    const tmpfsOptions = ["rw", "nosuid", "nodev", "noexec", "size=805306368"];
     const args = [
       "create",
-      "--name",
-      preparer,
       "--label",
       "io.clarvis.managed=true",
       "--label",
@@ -138,7 +112,7 @@ export async function prepareRuntimeArtifactVolume(options: {
       "--memory",
       "2147483648",
       "--tmpfs",
-      "/incoming:rw,nosuid,nodev,noexec,size=805306368",
+      `/incoming:${tmpfsOptions.join(",")}`,
       ...(options.engine === "docker"
         ? [
             "--mount",
@@ -156,28 +130,78 @@ export async function prepareRuntimeArtifactVolume(options: {
       String(options.size),
       mode,
     ];
-    const created = await options.control.run(args, options.signal);
-    if (created.exitCode !== 0)
-      throw new RuntimeLaunchError("operational_failure", "Artifact preparer create failed");
-    try {
-      const process = options.control.attach(["start", "--attach", "--interactive", preparer]);
-      if (mode === "prepare")
-        await pipeline(createReadStream(options.artifact.archivePath), process.stdin, {
-          signal: options.signal,
-        });
-      else process.stdin.end();
-      const exitCode = await process.exited;
-      if (exitCode !== 0)
-        throw new RuntimeLaunchError("operational_failure", "Artifact preparer validation failed");
-    } finally {
-      await removePreparer(options.control, preparer, options.generation);
-    }
+    const completed = await runContainerPreparer({
+      control: options.control,
+      createArgs: args,
+      policy: {
+        name: preparer,
+        labels: preparerLabels,
+        user: "0:0",
+        entrypoint: "/usr/local/libexec/clarvis-prepare-artifact",
+        capabilityAdditions: [],
+        pidsLimit: 32,
+        memoryBytes: 2_147_483_648,
+        mounts: [
+          { type: "volume", source: name, target: "/artifact", writable: mode === "prepare" },
+        ],
+        tmpfs: {
+          target: "/incoming",
+          options: [
+            ...tmpfsOptions,
+            ...(options.engine === "podman" ? ["rprivate", "tmpcopyup"] : []),
+          ],
+        },
+      },
+      interactive: true,
+      signal: options.signal,
+      writeInput: async (stdin) => {
+        if (mode === "prepare")
+          await pipeline(createReadStream(options.artifact.archivePath), stdin, {
+            signal: options.signal,
+          });
+        else stdin.end();
+      },
+    });
+    return completed.result.exitCode;
   };
-  try {
-    await invoke(exists ? "verify" : "prepare");
-  } catch (error) {
-    if (!exists) throw error;
-    throw kernelError("conflict", "Container artifact cache is incomplete or corrupted");
+  if (!exists) {
+    const exitCode = await invoke("prepare");
+    if (exitCode !== 0)
+      throw new RuntimeLaunchError("operational_failure", "Artifact preparer validation failed");
+    return { name, subpath: "payload" };
   }
+  let verifyExit: number | null;
+  try {
+    verifyExit = await invoke("verify");
+  } catch (error) {
+    if (options.signal?.aborted === true) throw options.signal.reason ?? error;
+    throw kernelError("conflict", "Container artifact cache inspection failed");
+  }
+  if (verifyExit === 0) return { name, subpath: "payload" };
+  const consumers = await options.control.run(
+    ["container", "ls", "--all", "--quiet", "--no-trunc", "--filter", `volume=${name}`],
+    options.signal,
+  );
+  if (consumers.exitCode !== 0 || consumers.stdout.trim() !== "")
+    throw kernelError("conflict", "Container artifact cache is incomplete and still in use");
+  const removed = await options.control.run(["volume", "rm", name], options.signal);
+  if (removed.exitCode !== 0)
+    throw kernelError("conflict", "Container artifact cache removal is unconfirmed");
+  const afterRemoval = await options.control.run(["volume", "inspect", name], options.signal);
+  const listed = await options.control.run(
+    ["volume", "ls", "--quiet", "--filter", `name=${name}`],
+    options.signal,
+  );
+  const exactStillListed = listed.stdout
+    .split(/\r?\n/u)
+    .map((entry) => entry.trim())
+    .includes(name);
+  if (afterRemoval.exitCode === 0 || listed.exitCode !== 0 || exactStillListed)
+    throw kernelError("conflict", "Container artifact cache removal is unconfirmed");
+  await createVolume();
+  await inspectVolume();
+  const prepareExit = await invoke("prepare");
+  if (prepareExit !== 0)
+    throw new RuntimeLaunchError("operational_failure", "Artifact preparer validation failed");
   return { name, subpath: "payload" };
 }

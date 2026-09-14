@@ -48,6 +48,7 @@ test("the isolation picker refuses a Container transition while activity is runn
         runActive={() => true}
         active={() => true}
         notify={(message) => notices.push(message)}
+        reload={async () => ({ ok: true, message: "reloaded" })}
         onClose={() => {}}
         onApplied={() => applied.push(true)}
       />
@@ -101,6 +102,7 @@ test("the isolation picker selects minimal lazy Podman without Docker fallback",
         runActive={() => false}
         active={() => true}
         notify={() => {}}
+        reload={async () => ({ ok: true, message: "reloaded" })}
         onClose={() => {}}
         onApplied={() => {}}
       />
@@ -120,6 +122,57 @@ test("the isolation picker selects minimal lazy Podman without Docker fallback",
       },
     },
   ]);
+  rendered.renderer.destroy();
+});
+
+test.each([
+  ["refused", async () => ({ ok: false, message: "activity is still draining" })],
+  ["failed", async () => Promise.reject(new Error("engine unavailable"))],
+] as const)("a saved isolation remains pending when reconnect is %s", async (_case, reload) => {
+  const { keymap, press } = createFakeKeymap();
+  const notices: string[] = [];
+  const applied: true[] = [];
+  const effective = {
+    sandbox: {
+      type: "native" as const,
+      enabled: true,
+      availability: "required" as const,
+      filesystem: "workspace-write" as const,
+      network: "host" as const,
+      toolchains: { mode: "auto" as const },
+    },
+  };
+  const settings = {
+    effective: () => effective,
+    write: async (_scope: string, patch: unknown) => Object.assign(effective, patch as object),
+  } as unknown as SettingsAdapter;
+  const rendered = await openRender(
+    (() => (
+      <IsolationPicker
+        interaction={interactionWith(keymap)}
+        settings={settings}
+        runActive={() => false}
+        active={() => true}
+        notify={(message) => notices.push(message)}
+        reload={reload}
+        onClose={() => {}}
+        onApplied={() => applied.push(true)}
+      />
+    )) as never,
+    { width: 110, height: 24 },
+  );
+  await rendered.renderOnce();
+  press("down");
+  press("return");
+  await tick();
+
+  expect(effective).toHaveProperty("runtime.backend", "docker");
+  expect(notices).toEqual([
+    _case === "refused"
+      ? "isolation saved, pending reconnect: activity is still draining"
+      : "isolation saved, pending reconnect: engine unavailable",
+  ]);
+  expect(applied).toEqual([]);
   rendered.renderer.destroy();
 });
 

@@ -1074,30 +1074,37 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/code/tests/integration/marketplace.test.ts`, and
     `packages/kernel/tests/integration/plugin-service.test.ts`.
 
-60. **A Container guest receives core execution material, never host feature authority.** The host
-    admits the complete request before engine acquisition, projects only compatible core profiles,
-    and exposes `runtime.elicit` as the sole capability method. The model broker keeps real provider
-    configuration and credentials on the host; the guest receives only synthetic routing names. No
-    Skill, MCP, Hook, Plugin contribution, Plan, Memory, Task, Workflow, Goal, configuration, preview,
-    Command Review or reviewer crosses the boundary. `require_escalated` is denied without elicitation
-    and no broker accepts arbitrary host commands, argv, cwd, environment, endpoint or path.
+60. **A Container guest receives a complete native Kernel under a closed projection, never host
+    administration or external-capability authority.** The host admits the generation before engine
+    acquisition and projects compatible builtin/global/workspace profiles plus native Plans, Memory
+    and Workflow configuration. Plans, Memory, Workflows and Goals are constructed and persisted in
+    the guest; none crosses the boundary through a domain bridge. Tasks, Skill, MCP, Hook, Plugin,
+    executable capability providers, preview, Command Review and reviewer remain unavailable. The
+    reverse channel accepts only logical model calls; provider configuration, subscription state,
+    SDKs and credentials stay on the host. `require_escalated` is denied and no broker accepts
+    arbitrary host commands, argv, cwd, environment, endpoint or path.
 
     The selected canonical workspace is mounted read-write, so its mutation is immediate and can be
-    destructive. Complete `.clarvis` and `.agents` roots are replaced by private empty read-only masks.
-    Git metadata is overlaid read-only for a primary checkout; a linked worktree receives its
-    indirection file, worktree gitDir and commonDir as exact read-only mounts. Current OCI engines
+    destructive. `.clarvis` is covered by the namespace's private read-write content volume and
+    `.agents` by a private empty read-only mask. Git metadata is overlaid read-only for a primary
+    checkout; a linked worktree receives a rewritten guest-only indirection plus its worktree Git
+    directory and common directory at fixed POSIX targets. Current OCI engines
     would materialize an absent nested protected target in the host bind, so a workspace missing
     `.clarvis`, `.agents` or `.git` is refused before container creation. Effective Docker/Podman
     inspection rejects missing, additional or writable protected binds. Model/subscription
     credentials, host HOME, Git helpers, SSH agent and engine socket remain absent. `/mise` remains an
-    engine-owned volume partitioned by owner/project/workspace/image rather than a host-path bind.
+    engine-owned volume partitioned by namespace and exact base image rather than a host-path bind.
 
     This boundary protects host integrity outside the selected workspace. It is not network
     hermeticity: ordinary `outbound` can reach public, host and LAN destinations and can exfiltrate
     readable workspace content; `none` is explicit offline policy and unenforced `internet` remains
     refused. Root filesystem read-only, capability drop, no-new-privileges, resource bounds, private
-    temporary storage, immutable image identity and repository build-context filtering remain. Docker
-    recipes remain bounded global operator authority and never become guest tools or a secret channel.
+    temporary storage, immutable image identity and repository build-context filtering remain. The
+    exact local base image ID, ABI and revision are admitted before any preparer executes. Every
+    privileged preparer is inspected before start for exact mounts, complete capability drop,
+    additions, no-new-privileges and tmpfs; uncertain creation and cancellation use exact-ID cleanup.
+    Docker recipes remain bounded global operator authority and never become guest tools or a secret
+    channel.
 
     There is no Container-to-Sandbox/Host fallback, replay or placement-changing elicitation. Any
     admission, engine, recipe, image, mount, policy, handshake, channel or guest failure stays a
@@ -1108,12 +1115,19 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     [`connect-local-container.ts`](../../packages/kernel/src/hosting/connect-local-container.ts),
     `createContainerKernelBackend` in
     [`container-kernel-backend.ts`](../../packages/kernel/src/runtime/container-kernel-backend.ts),
+    `runContainerPreparer` in
+    [`container-preparer.ts`](../../packages/kernel/src/runtime/container-preparer.ts),
+    `inspectContainerBaseImage` in
+    [`runtime-image.ts`](../../packages/kernel/src/runtime/runtime-image.ts),
     `projectContainerConfiguration` in
     [`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts), and
     `createContainerModelBroker` in
     [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts). Test:
     [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts),
     [`runtime-mounts.test.ts`](../../packages/kernel/tests/unit/runtime-mounts.test.ts),
+    [`container-kernel-backend.test.ts`](../../packages/kernel/tests/unit/container-kernel-backend.test.ts),
+    [`connect-local-container.test.ts`](../../packages/kernel/tests/unit/connect-local-container.test.ts),
+    [`runtime-artifact-volume.test.ts`](../../packages/kernel/tests/unit/runtime-artifact-volume.test.ts),
     [`container-model-broker.test.ts`](../../packages/kernel/tests/unit/container-model-broker.test.ts),
     [`container-channel.test.ts`](../../packages/kernel/tests/contract/container-channel.test.ts), and
     the opt-in [`container-kernel.e2e.test.ts`](../../packages/kernel/tests/integration/container-kernel.e2e.test.ts)

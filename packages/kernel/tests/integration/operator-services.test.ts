@@ -62,6 +62,33 @@ it("fences secret authority synchronously after validated writes and never passe
   }
 });
 
+it("chains subscription revocation into the Container broker authority fence", async () => {
+  const events: string[] = [];
+  const services = createOperatorServices({
+    ...fixture(),
+    subscriptions: {
+      onAuthorityRevoked: (scheme, reason) => {
+        events.push(`caller:${scheme}:${reason}`);
+      },
+    },
+  });
+  const stop = services.onAuthorityChanged((change) => {
+    if (change.kind === "subscription") events.push(`broker:${change.scheme}`);
+  });
+  try {
+    const disconnecting = services.providerAuth.disconnect("openai-codex");
+    expect(events).toEqual(["caller:openai-codex:disconnected", "broker:openai-codex"]);
+    await disconnecting;
+
+    events.length = 0;
+    await expect(services.resolveSubscription!("xai-grok")).rejects.toThrow();
+    expect(events).toEqual(["caller:xai-grok:invalidated", "broker:xai-grok"]);
+    stop();
+  } finally {
+    await services.close();
+  }
+});
+
 it("constructs administrative services without domains, MCP, plugins or network effects", async () => {
   const options = fixture();
   const spies = [

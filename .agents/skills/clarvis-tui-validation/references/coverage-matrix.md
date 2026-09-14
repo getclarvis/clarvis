@@ -88,7 +88,7 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `CMD-17` | `/reconnect` recovery; `/reconnect reload` success, busy refusal and failure                                       |
 | `CMD-18` | `/doctor` recheck, diagnostics and guided fixes                                                                    |
 | `CMD-19` | `/extensions`                                                                                                      |
-| `CMD-20` | `/activity`, `/activity plan`, `/activity workflow`, `/activity agents`                                            |
+| `CMD-20` | Sidebar Plan, Parallel work and Agents routes, including automatic reveal and sticky dismissal                    |
 | `CMD-21` | `/clear` with active and settled state                                                                             |
 | `CMD-22` | `/status`                                                                                                          |
 | `CMD-23` | `/export` success, failure, path confinement and memory-fuse refusal                                               |

@@ -127,7 +127,7 @@ plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
 
-Hooks are composed only for native Host/Sandbox. Core-only Docker/Podman does not construct or
+Hooks are composed only for native Host/Sandbox. The complete Docker/Podman Container Kernel does not construct or
 invoke host lifecycle callbacks, command hooks, HTTP/SSE Hook MCP or guest stdio Hook MCP; configured
 Hooks remain persisted but inactive for that placement. No event context, command, environment or
 Hook declaration crosses the private runtime. See the

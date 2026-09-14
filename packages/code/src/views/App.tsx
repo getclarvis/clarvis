@@ -250,7 +250,11 @@ export interface AppRunControls {
     source?: string;
   } | null>;
   /** Latest bounded runtime preparation or failure notice from the host. */
-  runtimePlacementNotice?: Accessor<{ sequence: number; message: string } | null>;
+  runtimePlacementNotice?: Accessor<{
+    sequence: number;
+    message: string;
+    pendingReconnect?: boolean;
+  } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -1102,6 +1106,7 @@ export function App(props: AppProps): JSX.Element {
       memory: runControls().memory,
       plans: runControls().plans,
       connection: props.backend.connection(),
+      configurationPending: props.run.runtimePlacementNotice?.()?.pendingReconnect === true,
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
       workspace: props.shell.workspace,
       workspaceLabel: props.shell.workspaceLabel,
@@ -1277,37 +1282,6 @@ export function App(props: AppProps): JSX.Element {
     if (interruptKey !== undefined) detail.push(`${interruptKey} to interrupt`);
     return detail.join(` ${glyph("separator")} `);
   };
-  const compactActivityStrip = (): string => {
-    const counts = {
-      waiting: props.activity.subagents.filter((agent) => agent.status === "spawned").length,
-      running: props.activity.subagents.filter((agent) => agent.status === "running").length,
-      done: props.activity.subagents.filter((agent) => agent.status === "done").length,
-      failed: props.activity.subagents.filter((agent) => agent.status === "error").length,
-    };
-    const selected = ts.selectedSubagent();
-    const selectedIndex = selected
-      ? props.activity.subagents.findIndex((agent) => agent.id === selected)
-      : -1;
-    const agents =
-      props.activity.subagents.length === 0
-        ? ""
-        : [
-            `Agents ${props.activity.subagents.length}`,
-            counts.waiting > 0 ? `${counts.waiting} waiting` : "",
-            counts.running > 0 ? `${counts.running} running` : "",
-            counts.done > 0 ? `${counts.done} done` : "",
-            counts.failed > 0 ? `${counts.failed} failed` : "",
-            selectedIndex >= 0 ? `A${selectedIndex + 1} focused` : "",
-          ]
-            .filter(Boolean)
-            .join(` ${glyph("separator")} `);
-    const leaders = [...(props.run.workflowActivity()?.nodes.values() ?? [])].filter(
-      (node) => node.kind === "leader",
-    ).length;
-    return [agents, leaders > 0 ? `Workflow ${leaders}` : ""]
-      .filter(Boolean)
-      .join(` ${glyph("separator")} `);
-  };
   const footerRunStrip = (): string => {
     if (
       overlays.overlay() !== "none" ||
@@ -1321,7 +1295,6 @@ export function App(props: AppProps): JSX.Element {
     // strings truncate into one ambiguous sentence; the strip returns when the
     // self-clearing hint expires.
     if (footerHint().text.length > 0) return "";
-    const activityStrip = compactActivityStrip();
     const context = props.activity.context;
     const settledSessionUsage = props.session.usage?.() ?? null;
     const liveSessionUsage = activeSessionUsage(
@@ -1342,7 +1315,7 @@ export function App(props: AppProps): JSX.Element {
       ...(sessionUsage ? { sessionUsage } : {}),
       ...(sessionCost ? { sessionCost } : {}),
     });
-    return [runStrip, activityStrip].filter(Boolean).join(` ${glyph("separator")} `);
+    return runStrip;
   };
   /**
    * The band width the footer's action row is budgeted against.
@@ -1608,6 +1581,7 @@ export function App(props: AppProps): JSX.Element {
                 runActive={props.run.active}
                 active={lifecycle.active}
                 notify={notify}
+                reload={() => props.backend.reconnect("reload")}
                 onClose={() => overlays.dismissTop()}
                 onApplied={() => overlays.dismissTop()}
               />
@@ -1758,12 +1732,6 @@ export function App(props: AppProps): JSX.Element {
                 : { text: "", tone: "info" };
             }}
             runStrip={footerRunStrip}
-            onRunStripMouseDown={() => {
-              if (compactActivityStrip()) {
-                autoSidebarOwner = null;
-                layout.setDrawerOpen(true);
-              }
-            }}
             navigation={
               <NavigationBar
                 environment={interaction.keyboardEnvironment}

@@ -236,6 +236,14 @@
     {
       "mechanism": "subprocess",
       "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
+      "identity": "subprocess|inspectBaseImageId|Bun.spawn([engine!, \"image\", \"inspect\", reference], { stdin: \"ignore\", stdout: \"pipe\", stderr: \"pipe\", })|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical base image identity inspection is required by this real-engine boundary test"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/integration/container-kernel.e2e.test.ts",
       "identity": "subprocess|removeVolume|Bun.spawn([engine!, \"volume\", \"inspect\", name], { stdin: \"ignore\", stdout: \"ignore\", stderr: \"ignore\", })|0",
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
@@ -248,6 +256,14 @@
       "package_owner": "@clarvis/kernel",
       "classification": "boundary-canary",
       "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
+    },
+    {
+      "mechanism": "timer",
+      "file": "packages/kernel/tests/integration/container-launcher.test.ts",
+      "identity": "timer|describe:Container Kernel process connection/test:uses one deadline across prefix, initialization and public hello/transform|setTimeout(() => callback(null, chunk), 30)|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "controlled stream latency proves one absolute boot deadline spans every handshake phase"
     },
     {
       "mechanism": "timer",

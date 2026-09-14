@@ -323,7 +323,7 @@ export const OPERATIONS = {
       metadata: read(),
       encode: (executionId, targetWindowTokens) => ({
         execution_id: executionId,
-        ...(targetWindowTokens !== undefined ? { target_window_tokens: targetWindowTokens } : {}),
+        target_window_tokens: targetWindowTokens,
       }),
       invoke: (services, p) =>
         services.runs.context(

@@ -48,6 +48,10 @@ exit policy. Unsaved settings still require confirmation, and Ctrl+C still reque
 while physical work is active. A refused reload leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
+For an idle Host/Sandbox/Container selection change, reload resolves the saved placement again,
+retires the previous connection, and publishes the replacement Kernel's effective runtime to the
+header before another run can start. A failed Container replacement never resumes execution on the
+old native placement; the saved choice remains pending reconnect with the launch error visible.
 For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
 workspace lease is retired before the replacement starts. That expected closure is not presented as
 a connection failure.
@@ -521,8 +525,8 @@ once-per-execution automatic reveal intent for the responsive Plan, Parallel wor
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
 split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
-does not close either presentation. The footer activity strip remains an
-explicit pointer route when agents or workflows contribute it; Plan never appears there.
+does not close either presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
+canonical footer contains only run context/session usage and does not repeat their counts.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
 `ListPicker` owns filterable modal lists, `SelectableList` owns scroll-following page lists, and
@@ -985,7 +989,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   `workflow_decide` never mount in the
   Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
   events remain the sole owner of the two lifecycle markers, while workflow state remains
-  Sidebar/footer-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
+  Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
   available only in that child's selected transcript.
 - The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
@@ -996,9 +1000,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
   child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
   Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+L` reopens the first available
-  Agents, Parallel work or Plan section and closes the surface when it is open. The footer keeps a pointer target
-  only when agent or workflow activity contributes its bounded strip; clicking that strip reopens
-  the responsive surface. Plan never contributes footer text. Plain Tab follows the active
+  Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
+  duplicates agent, workflow or Plan status; `Ctrl+L` and automatic reveal own access to the
+  responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
   changing Lead/child selection; Return activates or submits the currently focused component.
   Shift+Tab opens the agent picker, and clicking an agent selects only that agent's transcript.
@@ -1008,7 +1012,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   priority—running, pending, done, then failed—without changing their stable handles. Workflow leaders use run-local `L<n>` handles and sub-agents use the
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
-  Opening the Sidebar never replaces the shortcuts or activity/run strip below the composer. A fixed
+  Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
   line inside the Sidebar names `Ctrl+L` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
@@ -1364,8 +1368,12 @@ Settings > Isolation is the dedicated global placement screen shared with Run Co
 picker. Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
 MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
 without Command Review; workspace writes and outbound network remain enabled; Git metadata is
-read-only. Review reads `Not applicable in Container`; host configuration changes remain pending
-until reconnect. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
+read-only. Review reads `Not applicable in Container`. When idle, selecting a placement immediately
+reloads the workspace connection and the header reflects the admitted Kernel; a refused transition
+is saved and reported as pending reconnect. Settings, Agent, prompt and model-catalog writes remain
+host-side, notify that the active immutable Container projection is pending, and keep a
+`reconnect pending` warning in the header until a new generation is admitted. They take effect only
+in that new generation. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
 are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
 refused by the adapter before submission; the kernel still revalidates stale/external requests and
 returns the named `unsupported` failure before model work. No elicitation changes placement.

@@ -80,6 +80,7 @@ export function RunControlsPanel(
     memory: MemoryModeStore;
     notify: (message: string) => void;
     runActive: () => boolean;
+    reload: () => Promise<{ ok: boolean; message: string }>;
     openSandbox: () => void;
   },
 ): JSX.Element {
@@ -137,6 +138,13 @@ export function RunControlsPanel(
     if (confirmation && !(await host.confirm(confirmation))) return;
     try {
       const effective = await applyIsolation(isolation, deps.settings);
+      if (!deps.runActive()) {
+        const reloaded = await deps.reload();
+        if (!reloaded.ok) {
+          deps.notify(`isolation saved, pending reconnect: ${reloaded.message}`);
+          return;
+        }
+      }
       deps.notify(
         `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );

@@ -50,7 +50,8 @@ No generation, product version or engine parameter participates in these name bu
 
 `containerGuestPaths` is immutable Linux-guest vocabulary: workspace `/workspace`, private content
 under its Clarvis directory, the shared-agent mask under its agents directory, global root
-`/var/lib/clarvis`, home `/var/lib/clarvis/home`, artifact `/opt/clarvis` and its
+`/var/lib/clarvis`, home `/var/lib/clarvis/home`, Git metadata
+`/var/lib/clarvis/git-metadata` with common root beneath it, artifact `/opt/clarvis` and its
 `bin/clarvis-kernel` entry, payload subpath `payload`, mise `/mise` and temporary root `/tmp`.
 These virtual names use POSIX composition, never the launcher's native Windows path syntax.
 Kernel owns namespace derivation and validation of volume labels, ownership and lifecycle; these
@@ -60,6 +61,10 @@ Production: `containerLaunchPaths`, `containerDataVolumeNames`, `containerArtifa
 `containerGuestPaths` in [container.ts](../../packages/paths/src/container.ts).
 Test: [container.test.ts](../../packages/paths/tests/unit/container.test.ts) checks exact names,
 role separation, canonical identity refusal and fixed guest paths independently of host separators.
+The Kernel's `containerGitDirectoryTarget` maps a host-native linked-worktree path beneath this
+fixed common root and `prepareRuntimeMounts` writes the guest-only `.git` indirection. Test:
+[runtime-mounts.test.ts](../../packages/kernel/tests/unit/runtime-mounts.test.ts) and
+[git-workspace.test.ts](../../packages/kernel/tests/integration/git-workspace.test.ts).
 
 ## 2. Surface
 

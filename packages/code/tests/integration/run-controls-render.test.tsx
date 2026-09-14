@@ -109,6 +109,7 @@ function mount(
       notes.push(m);
     },
     runActive: () => false,
+    reload: async () => ({ ok: true, message: "reloaded" }),
     openSandbox: () => sandboxOpened.push(true),
   };
   return {

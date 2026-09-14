@@ -33,6 +33,7 @@ export function IsolationPicker(props: {
   runActive: () => boolean;
   active: Accessor<boolean>;
   notify: (message: string, tone?: "info" | "success" | "warn" | "error") => void;
+  reload: () => Promise<{ ok: boolean; message: string }>;
   onClose: () => void;
   onApplied: () => void;
 }): JSX.Element {
@@ -49,12 +50,24 @@ export function IsolationPicker(props: {
       return;
     }
     applying = true;
+    let saved = false;
     try {
       const effective = await applyIsolation(isolation, props.settings);
+      saved = true;
+      const reloaded = await props.reload();
+      if (!reloaded.ok) {
+        props.notify(`isolation saved, pending reconnect: ${reloaded.message}`, "warn");
+        return;
+      }
       props.notify(`isolation: ${effective} (global)`, "success");
       props.onApplied();
     } catch (error) {
-      props.notify(`isolation change failed: ${errorText(error)}`, "error");
+      props.notify(
+        saved
+          ? `isolation saved, pending reconnect: ${errorText(error)}`
+          : `isolation change failed: ${errorText(error)}`,
+        saved ? "warn" : "error",
+      );
     } finally {
       applying = false;
     }

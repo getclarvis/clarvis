@@ -19,6 +19,7 @@ import { createOperatorServices } from "../config/operator-services.ts";
 import { projectContainerHostConfiguration } from "../config/project-container-host.ts";
 import { createDockerKernelBackend } from "../runtime/docker-backend.ts";
 import { createPodmanKernelBackend } from "../runtime/podman-backend.ts";
+import { runContainerPreparer } from "../runtime/container-preparer.ts";
 import {
   prepareContainerVolumes,
   resolveContainerVolumeIdentity,
@@ -153,38 +154,20 @@ export function preparer(control: ContainerControl): ContainerVolumePreparer {
       if (generation === undefined || role === undefined)
         throw new Error("Container preparer identity is missing");
       const name = `clarvis-${role}-${generation}`;
-      const args = [...request.createArgs];
-      args.splice(1, 0, "--name", name);
-      const created = await control.run(args, request.signal);
-      if (created.exitCode !== 0) throw new Error("Container preparer create failed");
-      let result;
-      try {
-        const process = control.attach(["start", "--attach", name]);
-        process.stdin.end();
-        const exitCode = await process.exited;
-        result = { exitCode, stdout: "", stderr: "" };
-        const inspected = await control.run(["container", "inspect", name], request.signal);
-        const values = JSON.parse(inspected.stdout) as unknown;
-        const root = Array.isArray(values)
-          ? (values[0] as
-              { Id?: unknown; Config?: { Labels?: Record<string, string> } } | undefined)
-          : undefined;
-        if (
-          inspected.exitCode !== 0 ||
-          typeof root?.Id !== "string" ||
-          !/^[a-f0-9]{64}$/u.test(root.Id)
-        )
-          throw new Error("Container preparer inspection failed");
-        const removed = await control.run(["rm", "--force", root.Id], request.signal);
-        if (removed.exitCode !== 0) throw new Error("Container preparer removal failed");
-        return {
-          result,
-          evidence: { containerId: root.Id, labels: root.Config?.Labels ?? {}, removed: true },
-        };
-      } catch (error) {
-        await control.run(["rm", "--force", name]).catch(() => undefined);
-        throw error;
-      }
+      const completed = await runContainerPreparer({
+        control,
+        createArgs: request.createArgs,
+        policy: { ...request.policy, name, labels: request.labels },
+        signal: request.signal,
+      });
+      return {
+        result: completed.result,
+        evidence: {
+          containerId: completed.containerId,
+          labels: completed.labels,
+          removed: true,
+        },
+      };
     },
   };
 }
@@ -201,13 +184,14 @@ export async function prepareMiseVolume(options: {
 }): Promise<string> {
   const { control, namespace } = options;
   const digest = createHash("sha256")
-    .update(JSON.stringify({ schema: 3, namespace }))
+    .update(JSON.stringify({ schema: 3, namespace, baseImageId: options.baseImageId }))
     .digest("hex");
   const name = `clarvis-mise-v3-${digest}`;
   const expected = {
     "io.clarvis.runtime.mise-cache": "true",
     "io.clarvis.runtime.mise-cache.schema": "3",
     "io.clarvis.runtime.mise-cache.identity": `sha256:${digest}`,
+    "io.clarvis.runtime.mise-cache.base-image": options.baseImageId,
   };
   let inspected = await control.run(["volume", "inspect", name], options.signal);
   if (inspected.exitCode !== 0) {
@@ -221,6 +205,8 @@ export async function prepareMiseVolume(options: {
         "io.clarvis.runtime.mise-cache.schema=3",
         "--label",
         `io.clarvis.runtime.mise-cache.identity=sha256:${digest}`,
+        "--label",
+        `io.clarvis.runtime.mise-cache.base-image=${options.baseImageId}`,
         name,
       ],
       options.signal,
@@ -299,6 +285,14 @@ fi
       "clarvis-mise-preparer",
       user,
     ],
+    policy: {
+      user: "0:0",
+      entrypoint: "/bin/sh",
+      capabilityAdditions: ["CHOWN"],
+      pidsLimit: 16,
+      memoryBytes: 67_108_864,
+      mounts: [{ type: "volume", source: name, target: "/cache", writable: true }],
+    },
   });
   if (prepared.result.exitCode !== 0)
     throw kernelError("conflict", "Container mise cache ownership requires recovery");
@@ -407,8 +401,13 @@ export async function connectLocalContainerKernelUsingControl(
   const engine = runtime.backend;
   if (runtime.network === "internet")
     throw kernelError("unsupported", "Container internet network mode is unavailable");
-  const target = await engineTarget(control, engine, options.signal);
-  const release = options.release ?? (await options.resolveRelease?.(target, options.signal));
+  const basePreparationSignal =
+    options.signal === undefined
+      ? AbortSignal.timeout(10 * 60_000)
+      : AbortSignal.any([options.signal, AbortSignal.timeout(10 * 60_000)]);
+  const target = await engineTarget(control, engine, basePreparationSignal);
+  const release =
+    options.release ?? (await options.resolveRelease?.(target, basePreparationSignal));
   if (release === undefined)
     throw kernelError("invalid_request", "Container release selection is required");
   if (release.artifact.selection.target !== target)
@@ -418,15 +417,19 @@ export async function connectLocalContainerKernelUsingControl(
     control,
     resolveImage: async () => release.base,
     engine: engine === "docker" ? "Docker" : "Podman",
-    signal: options.signal,
+    signal: basePreparationSignal,
   })) as `sha256:${string}`;
   if (runtime.backend === "docker" && runtime.recipe !== undefined) {
+    const recipeSignal =
+      options.signal === undefined
+        ? AbortSignal.timeout(30 * 60_000)
+        : AbortSignal.any([options.signal, AbortSignal.timeout(30 * 60_000)]);
     baseImageId = (await resolveDockerRuntimeRecipe({
       baseImageDigest: baseImageId,
       recipe: runtime.recipe,
       control,
       roots: { env: { CLARVIS_HOME: options.globalDir } },
-      signal: options.signal,
+      signal: recipeSignal,
     })) as `sha256:${string}`;
   }
   const preparationSignal =
@@ -449,7 +452,7 @@ export async function connectLocalContainerKernelUsingControl(
     staleMs: 60_000,
     waitMs: 0,
     heartbeatMs: 5_000,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    signal: preparationSignal,
   });
   if (lease === null)
     throw kernelError("conflict", "Another Container Kernel owns this workspace namespace");
@@ -547,10 +550,10 @@ export async function connectLocalContainerKernelUsingControl(
       user,
     } as const;
     const backend =
-      ports.createBackend?.(engine, control, options.signal) ??
+      ports.createBackend?.(engine, control, preparationSignal) ??
       (engine === "docker"
-        ? createDockerKernelBackend({ control, signal: options.signal })
-        : createPodmanKernelBackend({ control, signal: options.signal }));
+        ? createDockerKernelBackend({ control, signal: preparationSignal })
+        : createPodmanKernelBackend({ control, signal: preparationSignal }));
     return await (ports.launch ?? launchContainerKernel)({
       backend,
       engine,
@@ -566,7 +569,7 @@ export async function connectLocalContainerKernelUsingControl(
       logger: options.logger,
       operator,
       lease: (transferredLease = lease),
-      signal: options.signal,
+      signal: preparationSignal,
     });
   } catch (error) {
     if (transferredLease === undefined) {

@@ -51,31 +51,25 @@ SemVer ordering and the existing cross-file identity before writing, and never c
 publishes. Public documentation resolves the newest complete distribution release independently, so
 it is not part of this source mutation.
 
-`runtime/build-image.ts` makes Docker the default OCI CLI and accepts Podman only through the
-explicit `--engine podman` adapter. Production composition accepts only the canonical runtime
-artifact repository at an immutable digest; it never sends repository source into
-`Containerfile.runtime`. `--development` first builds a source carrier from the frozen lockfile and
-then sends that carrier through the exact same final Containerfile. `--artifact-only` is the
-tag-release input. The helper also owns the immutable Debian slim reference plus the exact mise
-version and per-architecture release checksums. The final stage copies only the verified mise binary
-and its license; curl and archive tooling exist only in the download stage, while language runtimes
-and compilers remain on-demand guest installs. Every successful mode prints the exact local image
-ID. Podman and Docker local IDs are normalized to `sha256:` only when the full lowercase
-SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
-never require short-name selection.
+`runtime/build-image.ts` builds the version-independent Container base through the explicit
+`runtime:base:build --engine ... --target ... --tag ...` interface. The base owns the pinned Debian
+environment, Git, certificates, the verified per-architecture mise binary and the stable artifact
+preparer; it contains no Clarvis product executable. Its content revision, ABI and immutable local
+image ID are inspected before any preparer runs. Docker and Podman IDs are normalized only when the
+engine returns the complete lowercase SHA-256.
 
-Both Containerfiles and the build helper carry private protocol revision 14, matching the kernel
-worker. The closed core wire contains lifecycle/model/capability/event/checkpoint operations and
-`runtime.elicit` as its sole capability method. It carries no MCP, Hook, extension, host-backed
-capability, Command Review or reviewer projection; real provider configuration/credentials remain in
-the host broker. Older images are refused at admission and must be rebuilt; changing an active
-runtime image remains an operator choice.
+`runtime/build-artifact.ts` separately runs the pinned Linux Bun builder with the checkout read-only,
+autoload disabled and no network. It emits `clarvis-kernel-<target>.tar.gz`, a checksum sidecar and a
+strict manifest containing the public Kernel wire, broker and channel revisions. The compiled Kernel
+is qualified outside the checkout and is transferred into a content-addressed engine volume; changing
+only Clarvis code does not rebuild the base.
 
-`runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
-source commit to the two released OCI digests, the private guest protocol revision, the supported
-Linux platforms, and the digest-pinned build/base images. It writes no registry state itself; the
-tag-only release workflow owns publication and includes the resulting `runtime-release.json` in the
-verified release asset set.
+`runtime/release-manifest.ts` owns schema 2: one root product version and source commit map each Linux
+target to an immutable base image/digest/ABI plus the artifact basename, SHA-256, size and wire
+revisions. `runtime/qualify-container.ts` admits an already-built base/artifact pair, runs the real
+Docker or Podman Container Kernel canary and writes attributable scenario and cleanup evidence. It
+does not build or download either input. The release workflow publishes the tarballs, sidecars,
+qualification reports and `runtime-release.json` in the verified release asset set.
 
 `release/gitflow.ts` validates an open or merged release PR against the checked-out SHA and
 root version. `lib/gitflow-release.ts` owns branch/event selection and immutable RC numbering.
@@ -86,18 +80,14 @@ an actual merge commit at remote `main` and a candidate on the release head. The
 CI and supplies a source-scoped Publisher App token and SSH signing key; the workflow checks that key against `release/tag-signing-key.pub`, and the CLI verifies signatures
 and never force-pushes. See [RELEASING.md](../RELEASING.md#automation-setup) for activation requirements.
 
-`runtime/build-image.ts --candidate` explicitly admits only the candidate carrier repository and
-requires output in the candidate image repository; ordinary release builds still reject it. The
-same production Containerfile is used, with `DEVELOPMENT=false`. `release/candidate.ts` validates
-RC identity, emits the separate candidate manifest with the `source-v1` installation contract, and
-publishes only source prereleases. `packages/code/tooling/candidate-install.ts` consumes that contract
-for explicit development installs, verifying the source snapshot and pulling its candidate image.
-`ci/qualify-runtime.sh` runs the existing Docker or rootless Podman integration canaries against the
-actual built image, including stdio MCP hooks that write to the guest's mounted workspace but cannot
-access synthetic host files outside it. That hook canary also covers early lifecycle calls and gate
-argument rewriting. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
-before attaching that identity to a source prerelease. The official workflow accepts only stable
-tags and verifies anonymous image pulls before public release activation.
+`release/candidate.ts` validates RC identity, emits the separate candidate manifest with the
+`source-v1` installation contract, and publishes only source prereleases.
+`packages/code/tooling/candidate-install.ts` consumes that contract for explicit development
+installs, verifying the source snapshot and its runtime manifest. `ci/qualify-runtime.sh` is the
+strict wrapper around `runtime:qualify`. `.github/workflows/candidate.yml` and
+`.github/workflows/release.yml` build and publish a base only when its inputs change, then build the
+product artifact and require Docker and rootless Podman qualification on both Linux architectures
+before attaching that pair to a source candidate or stable release.
 
 ## Prompt-cache evidence
 

@@ -2176,7 +2176,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out).toContain("isolation");
   expect(out).toContain("review");
   expect(out).not.toContain("close activity");
-  expect(out).toContain("Agents 1 · 1 running");
+  expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
 
   press(t, "escape");
@@ -2190,7 +2190,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   const closedFrame = t.captureCharFrame();
   expect(closedFrame).not.toContain("open / close sidebar");
   expect(closedFrame).toContain("send / steer");
-  expect(closedFrame).toContain("Agents 1 · 1 running");
+  expect(closedFrame).not.toContain("Agents 1 · 1 running");
 
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2205,7 +2205,9 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
   expect(t.renderer.root.findDescendantById("transcript-viewport")?.width).toBe(historyWidthBefore);
 
@@ -2494,7 +2496,9 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
   expect(stillClosed).not.toContain("Lead transcript");
   t.renderer.destroy();
@@ -3169,7 +3173,7 @@ test("clicking a completed agent opens its isolated transcript without a detail 
   t.renderer.destroy();
 });
 
-test("a compact activity strip keeps sub-agents visible when the split sidebar cannot fit", async () => {
+test("the sidebar is the only compact sub-agent roster", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -3188,14 +3192,15 @@ test("a compact activity strip keeps sub-agents visible when the split sidebar c
   });
   const frame = await captureUntil(t, "Lead transcript");
   expect(frame).toContain("responsive explorer");
-  expect(frame).toContain("Agents 1");
-  expect(frame).toContain("1 running");
+  expect(frame).toContain("│ Agents");
+  expect(frame.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
+  expect(frame).not.toContain("Agents 1 · 1 running");
   press(t, "l", { ctrl: true });
   await t.renderOnce();
   await t.renderOnce();
   const closed = t.captureCharFrame();
   expect(closed).not.toContain("Lead transcript");
-  expect(closed).toContain("Agents 1");
+  expect(closed).not.toContain("Agents 1 · 1 running");
   t.renderer.destroy();
 });
 

@@ -5,6 +5,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { containerDataVolumeNames, containerGuestPaths, globalPaths } from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
 import type { DockerControl, DockerCommandResult } from "./docker-backend.ts";
+import type { ContainerPreparerPolicy } from "./container-preparer.ts";
 import { RuntimeLaunchError } from "./types.ts";
 
 /** Host-only identity. Engine, artifact and generation deliberately do not participate. */
@@ -128,6 +129,7 @@ export interface ContainerVolumePreparer {
   run(request: {
     readonly createArgs: readonly string[];
     readonly labels: Readonly<Record<string, string>>;
+    readonly policy: Omit<ContainerPreparerPolicy, "name" | "labels">;
     readonly signal?: AbortSignal;
   }): Promise<{
     readonly result: DockerCommandResult;
@@ -300,6 +302,19 @@ export async function prepareContainerVolumes(options: {
     const { result, evidence } = await options.preparer.run({
       createArgs,
       labels: ownership,
+      policy: {
+        user: readonly ? user : "0:0",
+        entrypoint: "/bin/sh",
+        capabilityAdditions: readonly ? [] : ["CHOWN"],
+        pidsLimit: 32,
+        memoryBytes: 67_108_864,
+        mounts: roles.map((role) => ({
+          type: "volume",
+          source: names[role],
+          target: `/${role}`,
+          writable: !readonly,
+        })),
+      },
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     if (

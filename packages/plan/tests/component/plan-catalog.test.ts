@@ -49,6 +49,7 @@ it.each(["off", "on", "review"] as const)(
     const passBuild = fakeAgentBuildContext();
     const sourceContribution = source!.forAgent(scope)!.attach(sourceBuild);
     const passContribution = pass!.forAgent(scope)!.attach(passBuild);
+    expect(source!.forAgent({ ...scope, entry: false })).toBeNull();
     expect(passContribution.tools).toEqual(sourceContribution.tools);
     const passPort = passCtx.services.get(PLAN_PORT)!.forAgent(passBuild)!;
     expect(passPort.augmentDelegateTask()).toEqual(

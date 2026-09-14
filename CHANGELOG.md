@@ -47,6 +47,19 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- Switching between Host/Sandbox and Docker/Podman now replaces the workspace connection while idle,
+  immediately updates the effective Isolation header, and cleans a failed Container composition so
+  the namespace is not left owned by a leaked generation.
+- `/model` can request an explicit context target through `runs.context` again; the optional field is
+  admitted by the closed transport envelope.
+- A Lead now defers plan mutations issued in the same model iteration after tracked delegation until
+  the returned task state and fresh CAS identity are published. Sub-agents continue to receive no
+  plan mutation tools, and strict digest checks remain intact.
+- Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
+- Container launch now admits the exact base before preparers, inspects every privileged preparer
+  before start, enforces exact capability/NNP/tmpfs policy, shares boot and preparation deadlines,
+  revokes subscription-backed model leases synchronously, and reconciles uncertain create/stop/close
+  outcomes without releasing workspace ownership early.
 - Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
   scope for automatic command review instead of forcing manual approval through missing evidence.
 - Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now

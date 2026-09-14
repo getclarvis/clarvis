@@ -114,6 +114,14 @@ test("connection failure remains actionable in the stable header", () => {
   expect(plan.urgent?.text).toContain("failed");
 });
 
+test("an immutable Container configuration save stays visible until reconnect", () => {
+  const pending = projectHeader(baseInput({ configurationPending: true }));
+  expect(pending.urgent?.text).toContain("reconnect pending");
+
+  const connected = projectHeader(baseInput({ configurationPending: false }));
+  expect(connected.urgent).toBeUndefined();
+});
+
 test("Host isolation is stated once and marked as the warning it is", () => {
   const wide = projectHeader(baseInput({ width: 120, isolation: "host" }));
   expect(wide.status.find((chip) => chip.key === "isolation")!.text).toContain("Host");

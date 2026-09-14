@@ -100,6 +100,8 @@ export function createOperatorServices(options: CreateOperatorServicesOptions): 
     },
   });
   const baseCatalog = createModelCatalogService(options.globalDir, logger);
+  const callerAuthorityRevoked =
+    options.subscriptions === false ? undefined : options.subscriptions?.onAuthorityRevoked;
   const subscriptions =
     options.subscriptions === false
       ? undefined
@@ -108,6 +110,13 @@ export function createOperatorServices(options: CreateOperatorServicesOptions): 
           store:
             options.subscriptions?.store ?? createFileSubscriptionStore({ dir: options.globalDir }),
           logger: options.subscriptions?.logger ?? logger,
+          onAuthorityRevoked(scheme, reason) {
+            try {
+              callerAuthorityRevoked?.(scheme, reason);
+            } finally {
+              authorityChanged({ kind: "subscription", scheme });
+            }
+          },
         });
   return {
     config,
@@ -121,10 +130,7 @@ export function createOperatorServices(options: CreateOperatorServicesOptions): 
             startDevice: (scheme) => subscriptions.startDevice(scheme),
             wait: (attemptId) => subscriptions.wait(attemptId),
             cancel: (attemptId) => subscriptions.cancel(attemptId),
-            async disconnect(scheme) {
-              await subscriptions.disconnect(scheme);
-              authorityChanged({ kind: "subscription", scheme });
-            },
+            disconnect: (scheme) => subscriptions.disconnect(scheme),
           },
     configStore,
     resolveRegistryKey: (name) => secretStore.read().values[name] ?? process.env[name],

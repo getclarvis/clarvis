@@ -146,6 +146,14 @@ from the same decision carries the one the first just invalidated and is rejecte
 three-call batch measured one write and two conflicts. Serial edits therefore cost a full model round
 trip each, and a plan in the demo workspace reached `revision: 35` that way.
 
+Delegation is another writer, but it is owned by the runtime rather than the child: the child never
+receives plan tools, while the delegation port records `in_progress` and `returned`. Once the Lead
+starts a tracked delegation, sibling `revise_plan` and `transition_plan_task` calls from that same
+model iteration are deferred. The next iteration publishes the runtime's current revision and
+digests before the Lead may mutate again. This preserves the strict CAS check instead of accepting a
+stale digest or letting a child edit the plan. The orchestration and catalog component suites pin
+both sides of this rule.
+
 `applyPlanRevisions` folds the operations in order (so one may build on the last), the batch is
 **all-or-nothing**, and it spends **one `revision` and at most one `spec_revision`** however many
 operations it carries. Both tools still accept their old singular shape (`operation`, or a flat
@@ -159,7 +167,7 @@ only about the envelope, and refusing it would cost the round trip this exists t
 
 A sub-agent's return lands in `returned`, which is **not** closed — the lead must judge it
 explicitly. In the loop, `delegate_task` may claim a task (`in_progress`) and record its return, but
-only `transition_plan_task` may close one.
+only the lead's later `transition_plan_task`, using the next canonical CAS, may close one.
 
 Planning does not turn independent spawning into a plan task. `spawn_subagent` remains the route for
 independent work and carries no `task_id`. The plan capability adds `delegate_task`, which requires

@@ -165,11 +165,23 @@ capability settings remain visible, and unavailable extensions are marked as suc
 are not overwritten. An active operation blocks the isolation transition until it stops. Production:
 `packages/code/src/views/config/IsolationConfigPanel.tsx`,
 `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
+`packages/code/src/views/config/RunControlsPanel.tsx`. An idle save immediately requests a workspace
+connection reload, so the header reflects the newly admitted Kernel placement; a failed reload leaves
+the saved choice explicitly pending instead of reporting it as active. Any committed host-side
+settings, Agent, context or model-catalog change for an active Container generation also keeps a
+`reconnect pending` warning in the header until a successful generation replacement clears it.
+Production: `WorkspaceClientManager.invalidate` in
+`packages/code/src/adapters/workspace-client-manager.ts`, `urgentField` in
+`packages/code/src/views/header-projection.ts`, and
+the `reload` callbacks in `packages/code/src/views/overlays/IsolationPicker.tsx`,
+`packages/code/src/views/config/IsolationConfigPanel.tsx`, and
 `packages/code/src/views/config/RunControlsPanel.tsx`. Test:
 `packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
-`packages/code/tests/integration/run-controls-render.test.tsx`.
+`packages/code/tests/integration/run-controls-render.test.tsx`; connection reselection is pinned by
+`packages/code/tests/component/workspace-client-manager.test.ts`, and the persistent warning by
+`packages/code/tests/unit/header-projection.test.ts`.
 
 `UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
 toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global

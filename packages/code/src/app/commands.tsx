@@ -655,6 +655,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           memory: deps.memoryMode,
           notify,
           runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
           openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
         });
     }),
@@ -1134,6 +1135,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           settings: deps.settings,
           notify,
           runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
           openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
         });
     }),

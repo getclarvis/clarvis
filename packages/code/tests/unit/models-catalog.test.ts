@@ -3,6 +3,24 @@ import type { ModelCatalog } from "@clarvis/protocol";
 import { createModelsCatalog, resolveModelPrice } from "../../src/adapters/models-catalog.ts";
 import type { ProviderConfig } from "../../src/adapters/settings.ts";
 
+test("preserves the public projection source without inventing provider endpoints", () => {
+  const catalog = createModelsCatalog({
+    source: "projection",
+    providers: [
+      {
+        id: "logical",
+        name: "logical",
+        kind: "openai-compatible",
+        needs_base_url: false,
+        models: [{ id: "model", context_window: 8192 }],
+      },
+    ],
+  });
+  expect(catalog.source).toBe("projection");
+  expect(catalog.provider("logical")?.base_url).toBeUndefined();
+  expect(catalog.models("logical")[0]?.context_window_tokens).toBe(8192);
+});
+
 const CATALOG: ModelCatalog = {
   source: "bundle",
   providers: [

@@ -80,6 +80,7 @@ const NO_COUNTER_ALLOWLIST = {
     "src/compaction-anchor.ts",
     "src/convergence-guards.ts",
     "src/loop-contract.ts",
+    "src/model-execution.ts",
     "src/output-budget.ts",
     "src/ports.ts",
     "src/usage.ts",
@@ -117,6 +118,7 @@ const NO_COUNTER_ALLOWLIST = {
     // Type-only: internal subscription adapter and persistence contracts.
     "src/subscriptions/types.ts",
     // Type-only.
+    "src/runtime/tool-policy.ts",
     "src/config/builtin-agents/types.ts",
     "src/guard/effects/types.ts",
     "src/connection-health.ts",

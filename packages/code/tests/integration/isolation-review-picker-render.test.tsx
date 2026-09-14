@@ -17,7 +17,7 @@ function interactionWith(keymap: ReturnType<typeof createFakeKeymap>["keymap"]):
   } as unknown as Interaction;
 }
 
-test("the isolation picker selects minimal lazy Docker without changing review", async () => {
+test("the isolation picker refuses a Container transition while activity is running", async () => {
   const { keymap, press } = createFakeKeymap();
   const writes: Array<{ scope: string; patch: unknown }> = [];
   const notices: string[] = [];
@@ -60,21 +60,16 @@ test("the isolation picker selects minimal lazy Docker without changing review",
   expect(frame).toContain("Select isolation");
   expect(frame).toContain("Docker");
   expect(frame).toContain("Podman");
-  expect(frame).toContain("start on first run");
+  expect(frame).toContain("reconnects through the selected Container engine");
 
   press("down");
   press("return");
   await tick();
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: {
-        runtime: { backend: "docker" },
-      },
-    },
+  expect(writes).toEqual([]);
+  expect(notices).toEqual([
+    "isolation change unavailable while activity is running; stop it before reconnecting",
   ]);
-  expect(notices).toEqual(["isolation: docker (global) — applies to the next run"]);
-  expect(applied).toEqual([true]);
+  expect(applied).toEqual([]);
   rendered.renderer.destroy();
 });
 

@@ -144,11 +144,14 @@ let remoteWorkspace: RemoteWorkspaceRequest | undefined;
 
 function workspaceClientTarget(): {
   workspaceRoot: string;
-  remote?: RemoteWorkspaceRequest;
+  destination?: { kind: "ssh"; destination: string; workspace: string; executable?: string };
 } {
   return remoteWorkspace === undefined
     ? { workspaceRoot: workspace }
-    : { workspaceRoot: remoteWorkspace.workspace, remote: remoteWorkspace };
+    : {
+        workspaceRoot: remoteWorkspace.workspace,
+        destination: { kind: "ssh", ...remoteWorkspace },
+      };
 }
 
 const ownerOverride = process.env.CLARVIS_OWNER;
@@ -183,7 +186,7 @@ const describeToolCall = (input: {
  * @remarks `runPrintMode` creates its own manager instead of using this helper:
  *   it needs `keySources` and `memory: true`, neither of which a silent
  *   listing/delete command has any use for. Every path still goes through the
- *   manager so a selected container backend receives its local runtime factory.
+ *   manager so a selected Container destination connects before application composition.
  */
 async function bootSilentSessionStore(): Promise<{
   manager: WorkspaceClientManager;
@@ -1078,6 +1081,7 @@ async function runApp(
       project: input.client.project.id,
       workspaceId: input.client.workspace.id,
       workspace: input.workspacePath,
+      runtimeKind: () => input.client.capabilities.runtime?.kind,
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),

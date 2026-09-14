@@ -357,16 +357,14 @@ Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-
 `memory.run.enqueue_failed`, and reported as `phase: "failed"` (`packages/memory/src/ingest.ts`), and the
 `onNotice` listener's own throws are swallowed (`packages/memory/src/ingest.ts`).
 
-A core-only Container foreground run has no Memory capability, queue callback or `onRunEnd`
-projection, so it does not enqueue an indexing pass. Explicit Memory use is rejected before engine
-or model work; inherited Memory configuration is inactive for that run. Native Host/Sandbox runs
-retain the canonical `onRunEnd` path above. The file host supplies `executeExtensionProfileRun`
-directly to `createMemoryFactory`; that executor imports and calls the Loop under the Extension
-Profile lease without passing through `runtimeCoordinator`, so a native dedicated indexing run
-remains on the host and may use its mutating Memory capability. Production:
-`admitContainerCoreRun` and `executeExtensionProfileRun` in
-`packages/kernel/src/{runs/prepare-run,file-kernel}.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
+A Container foreground run uses the same native Memory capability, queue callback and `onRunEnd`
+path when its frozen Memory projection is active. The indexer runs inside the Container and uses the
+same brokered logical model port; no host indexer or external Memory provider is constructed.
+Disabled Memory remains off without resolving a provider. Native Host/Sandbox runs retain the same
+canonical `onRunEnd` path above. Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts` and `createMemoryFactory` in
+`packages/memory/src/factory.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts` and
 `packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
 run executor`).
 
@@ -1029,12 +1027,12 @@ Production: `packages/kernel/src/runs/memory-ingest-phase.ts`, enforced at
 `packages/kernel/src/runs/managed-run.ts`.
 Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts`.
 
-**Container ingest boundary.** A core-only Container run has no Memory provider, lifecycle callback,
-queue or store authority and therefore cannot request post-run indexing. Native indexing passes run
-through the file host's direct Loop executor rather than the Container coordinator. Production:
-`admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts` and
-`executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
+**Container ingest boundary.** Container owns its Memory provider, lifecycle callback, queue and
+store in the same Kernel. Indexing uses the projected local provider and host model broker, while
+external providers and host-side indexing remain absent. Production: `createContainerNativeKernel`
+in `packages/kernel/src/hosting/container-native.ts` and `createContainerModelProvider` in
+`packages/kernel/src/runtime/model-broker-client.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts` and
 `packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
 run executor`).
 

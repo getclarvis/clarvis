@@ -57,15 +57,22 @@ export interface AgentShape {
   softMode: boolean;
 }
 
-const CONTAINER_CORE_GRANTS = new Set([
+const CONTAINER_NATIVE_GRANTS = new Set([
   "ask_user",
   "read_workspace",
   "edit_workspace",
   "run_commands",
+  "workflow",
 ]);
-const CONTAINER_PROJECTED_BUILTINS = new Set(["marshall", "coder", "explorer", "planner"]);
+const CONTAINER_PROJECTED_BUILTINS = new Set([
+  "marshall",
+  "admiral",
+  "coder",
+  "explorer",
+  "planner",
+]);
 
-/** Whether a visible profile and its complete delegation graph fit Container's core-only surface. */
+/** Whether a visible profile and its complete delegation graph fit Container's native policy. */
 export function isContainerCompatibleProfile(
   name: string,
   profiles: readonly AgentProfileView[],
@@ -78,8 +85,7 @@ export function isContainerCompatibleProfile(
     if (known !== undefined) return known;
     if (visiting.has(candidate)) return true;
     const profile = byName.get(candidate);
-    if (profile === undefined || profile.scope === "plugin" || profile.name === "admiral")
-      return false;
+    if (profile === undefined || profile.scope === "plugin") return false;
     const projectedBuiltin =
       profile.scope === "builtin" && CONTAINER_PROJECTED_BUILTINS.has(profile.name);
     if (
@@ -88,7 +94,7 @@ export function isContainerCompatibleProfile(
         profile.tools === undefined ||
         profile.tools === "unknown" ||
         profile.tools.length > 0 ||
-        profile.grants.some((grant) => !CONTAINER_CORE_GRANTS.has(grant)))
+        profile.grants.some((grant) => !CONTAINER_NATIVE_GRANTS.has(grant)))
     )
       return false;
     visiting.add(candidate);

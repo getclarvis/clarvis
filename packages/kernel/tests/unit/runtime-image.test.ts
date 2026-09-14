@@ -63,6 +63,77 @@ describe("canonical local runtime image ids", () => {
         resolveImage: () =>
           Promise.resolve({ reference: "clarvis-runtime:development", pull: false }),
       }),
-    ).rejects.toThrow("Podman returned an invalid runtime image id");
+    ).rejects.toThrow("Podman returned an invalid Container base image id");
+  });
+
+  it("fails closed for resolver, reference, pull and inspect failures", async () => {
+    expect(
+      await resolveContainerImageDigest({
+        configured: digest,
+        control: control(""),
+        engine: "Docker",
+      }),
+    ).toBe(digest);
+    await expect(
+      resolveContainerImageDigest({
+        configured: undefined,
+        control: control(""),
+        engine: "Docker",
+        resolveImage: async () => {
+          throw Object.assign(new Error("integrity"), { code: "runtime_image_integrity" });
+        },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_launch_spec" });
+    await expect(
+      resolveContainerImageDigest({
+        configured: undefined,
+        control: control(""),
+        engine: "Docker",
+        resolveImage: async () => {
+          throw new Error("resolver unavailable");
+        },
+      }),
+    ).rejects.toMatchObject({ code: "operational_failure" });
+    await expect(
+      resolveContainerImageDigest({
+        configured: undefined,
+        control: control(""),
+        engine: "Docker",
+        resolveImage: async () => ({ reference: "UPPERCASE", pull: false }),
+      }),
+    ).rejects.toThrow("reference is invalid");
+    await expect(
+      resolveContainerImageDigest({
+        configured: undefined,
+        control: control("", 1),
+        engine: "Docker",
+        resolveImage: async () => ({
+          reference: `registry.example/clarvis@${digest}`,
+          pull: true,
+        }),
+      }),
+    ).rejects.toThrow("download failed");
+    let calls = 0;
+    await expect(
+      resolveContainerImageDigest({
+        configured: undefined,
+        control: {
+          run: async () => {
+            calls++;
+            return calls === 1
+              ? { exitCode: 0, stdout: "pulled", stderr: "" }
+              : { exitCode: 1, stdout: "", stderr: "missing" };
+          },
+          attach: () => {
+            throw new Error("unexpected attach");
+          },
+        },
+        engine: "Docker",
+        resolveImage: async () => ({
+          reference: `registry.example/clarvis@${digest}`,
+          pull: true,
+        }),
+      }),
+    ).rejects.toThrow("not installed");
   });
 });

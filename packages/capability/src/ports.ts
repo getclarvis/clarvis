@@ -136,3 +136,4 @@ export type {
 } from "./elicit.ts";
 export type { AgentRegistryPort } from "./agents-port.ts";
 export type { LLMProvider, ToolChoice } from "./llm-port.ts";
+export type { ModelExecutionInfo, ModelExecutionResolver } from "./model-execution.ts";

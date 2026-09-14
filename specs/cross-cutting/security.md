@@ -1104,27 +1104,20 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     bounded Container failure until the operator explicitly selects another placement for a new run.
     No synthetic Markdown or policy prompt replaces a removed feature.
 
-    Production: `admitContainerCoreRun` in
-    [`prepare-run.ts`](../../packages/kernel/src/runs/prepare-run.ts); `ContainerCorePolicy` in
-    [`container-core-policy.ts`](../../packages/kernel/src/runtime/container-core-policy.ts);
-    `prepareRuntimeMounts`, `containerGuestRawBody`, `hostModelBroker` and
-    `createLocalContainerRuntime` in
-    [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts);
-    `assertRuntimeLaunchSpec` in
-    [`launch-policy.ts`](../../packages/kernel/src/runtime/launch-policy.ts); `validContainerPolicy`
-    in [`container-policy.ts`](../../packages/kernel/src/runtime/container-policy.ts); Docker/Podman
-    `createArgs`/effective inspection in `packages/kernel/src/runtime/{docker,podman}-backend.ts`;
-    `createGuestLoopExecutor` in
-    [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts); and
-    `createLazyRuntimeCoordinator` in
-    [`lazy-runtime.ts`](../../packages/kernel/src/runtime/lazy-runtime.ts). Test:
-    [`container-core-policy.test.ts`](../../packages/kernel/tests/unit/container-core-policy.test.ts),
-    [`runtime-mounts.test.ts`](../../packages/kernel/tests/unit/runtime-mounts.test.ts), backend policy
-    tests under `packages/kernel/tests/unit/`,
-    [`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts),
-    [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts), and the
-    opt-in [`local-docker-runtime.e2e.test.ts`](../../packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts)
-    core canary.
+    Production: `connectLocalContainerKernel` in
+    [`connect-local-container.ts`](../../packages/kernel/src/hosting/connect-local-container.ts),
+    `createContainerKernelBackend` in
+    [`container-kernel-backend.ts`](../../packages/kernel/src/runtime/container-kernel-backend.ts),
+    `projectContainerConfiguration` in
+    [`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts), and
+    `createContainerModelBroker` in
+    [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts). Test:
+    [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts),
+    [`runtime-mounts.test.ts`](../../packages/kernel/tests/unit/runtime-mounts.test.ts),
+    [`container-model-broker.test.ts`](../../packages/kernel/tests/unit/container-model-broker.test.ts),
+    [`container-channel.test.ts`](../../packages/kernel/tests/contract/container-channel.test.ts), and
+    the opt-in [`container-kernel.e2e.test.ts`](../../packages/kernel/tests/integration/container-kernel.e2e.test.ts)
+    qualifier.
 
 61. **A remote Code connection delegates machine/user authentication, host-key verification,
     transport integrity and encryption to OpenSSH
@@ -1174,12 +1167,12 @@ Production: `createDirectConfigurationCapability` and `configurationFileOperatio
 | Path swapped between check and open | `packages/tools/src/lib/files.ts` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
-| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-container-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
+| Container protected mount has a symlink, wrong kind or missing source | `prepareRuntimeMounts` and `assertMountSources` | `RuntimeLaunchError("unsupported_policy")` before Container start |
 | Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
-| Operational Docker or Podman startup failure | Original bounded Container failure; no native probe, latch, replay or fallback | `createLazyRuntimeCoordinator`; lazy-runtime tests |
-| Runtime image integrity, effective-policy or guest-handshake failure | No fallback; the launch fails closed | `createLazyRuntimeCoordinator`; lazy-runtime tests |
-| Runtime recipe path/content, build, base or derived-image identity failure | No fallback and no uncustomized launch; the host reports the bounded sanitized recipe error | `resolveDockerRuntimeRecipe`; runtime-recipe and lazy-runtime tests |
-| Container request depends on preview or another host-backed capability | `unsupported` before engine/model work with guidance to use Sandbox or Host; no listener or feature broker is created | `admitContainerCoreRun`; container-core admission tests |
+| Operational Docker or Podman startup failure | Original bounded Container failure; no native probe, replay or fallback | `connectLocalContainerKernel`; launcher tests |
+| Runtime base, artifact, effective-policy or Kernel handshake failure | No fallback; the launch fails closed | `connectLocalContainerKernel`; artifact and launcher tests |
+| Runtime recipe path/content, build, base or derived-image identity failure | No fallback and no uncustomized launch; the host reports the bounded sanitized recipe error | `resolveDockerRuntimeRecipe`; runtime recipe tests |
+| Container request depends on an external capability | `unsupported` before inference; no provider or bridge is created | `projectContainerConfiguration`; Container projection tests |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts` | the created directory is removed best-effort, then rethrow |

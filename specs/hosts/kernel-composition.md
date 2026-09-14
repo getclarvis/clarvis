@@ -27,15 +27,46 @@ Production: [kernel.ts](../../packages/kernel/src/kernel.ts) and
 Test: [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts)
 checks headless unavailability and an authenticated goal through actual kernel execution.
 
-`createFileRunHost` composes a FileKernel with the hosted registry, session coordinator and an
-authenticated server of the existing kernel RPC. It accepts host-owned projection/index storage and
-a local token verifier. Client disconnect retires observation/control and applies the run's explicit
+`createFileRunHost` selects construction through `composition`: omitted or `kind: "file"` uses
+FileKernel; `kind: "container"` uses `createContainerNativeKernel` and never constructs FileKernel.
+Both feed the hosted registry, session coordinator and authenticated server of the existing kernel
+RPC. The Container branch accepts admitted projection, inference port and explicit identity/roots;
+it excludes file-only adapter options and refuses local machine controls. Its immutable config,
+logical model catalog and Extension Profile replace file-backed administration; secrets/plugins
+use unavailable services without constructing their defaults. Plans and Memory use explicit content
+and lock/machinery roots. Workflow definitions come from the frozen projection, not guest files.
+
+Construction is not a launcher or isolation proof: the process owner must establish mounts, leases,
+artifact admission, pipe authentication and boot sequencing separately. The local and SSH bootstrap
+APIs retain File-only options. The hosted graph accepts owner-provided projection/index storage and
+an authentication callback. Client disconnect retires observation/control and applies the run's explicit
 disconnect policy; only its process owner calls the host's `close`. `InProcessKernel.prepareRun`
 captures effective root/leader configuration without inference, and its single-use start still enters
 the existing execution-id, owner and Extension Profile leases. `serveLocalFileKernel` adds a private
 lease/discovery record, authenticated listener and independent idle lifecycle;
 `connectOrLaunchLocalKernel` discovers or launches its application-selected artifact. Code adoption
 and installed-artifact retention remain separate composition work.
+
+Production: `createContainerNativeKernel` in
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts) delegates the common
+graph to `createNativeKernel` in [native-kernel.ts](../../packages/kernel/src/native-kernel.ts).
+Test: [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+checks the discriminated construction and public hello, counts zero SDK/MCP/plugin/secret-store/
+FileKernel construction, and verifies withheld local controls. Its deterministic native journeys
+also execute a compatible logical model without endpoint configuration, complete Plans tasks using
+CAS, and recreate the Kernel graph over retained plan/session data. Wiki tests retain documents and
+pending jobs without an indexing model (zero attempts), then exercise the injected indexing model,
+writable wiki tools and the pyramid finalization gate. These graph-level tests do not establish
+physical Container placement, process-crash durability or the complete native-domain matrix.
+
+Native construction owns its housekeeping, trace cleanup, host disposal and built Loop resources
+through the existing Kernel lifecycle. One failed disposal does not prevent the other resources
+from closing; only failed disposals remain owned for retry. Construction cleanup failures are
+reported together with the original construction failure rather than swallowed.
+Production: `createNativeKernel` in [native-kernel.ts](../../packages/kernel/src/native-kernel.ts)
+and `createKernelLifecycle` in [lifecycle.ts](../../packages/kernel/src/application/lifecycle.ts).
+Test: [native-kernel-cleanup.test.ts](../../packages/kernel/tests/unit/native-kernel-cleanup.test.ts)
+injects a collector failure and verifies all-resource disposal and failed-only retry.
 
 Production: `createFileRunHost` in
 [file-host.ts](../../packages/kernel/src/hosting/file-host.ts) and `prepareRun` in
@@ -149,19 +180,15 @@ capability executables, and plugin skill roots are composed. Standalone skill se
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
-That is the native Host/Sandbox composition. For Docker/Podman, `prepareKernelRun` instead admits a
-closed core request before Workflow/Goal routing, lease reservation or engine acquisition. It uses
-the operator-only settings projection, strips `use_skills` only from unmodified compatible builtins,
-refuses incompatible custom/Plugin profiles and explicit feature requests, and supplies no generic
-host capability registry to the runtime. The Container host creates only model, `runtime.elicit`,
-lifecycle, event, trace and checkpoint channels. Registration of a native capability is neither an
-implicit request nor authority to cross the guest boundary.
+Container calls the same `createNativeKernel` composition with a frozen configuration store, local
+Plans/Memory/Workflows/Goals, an injected logical model provider and an empty MCP connection manager.
+Only external extension and capability providers are absent. Registration of a native capability
+does not grant access to host administration.
 
-Production: `admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts`,
-`createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts`, and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/unit/local-docker-runtime.test.ts`.
+Production: `createNativeKernel` in `packages/kernel/src/native-kernel.ts` and
+`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts` and
+`packages/kernel/tests/integration/kernel-service-overrides.test.ts`.
 
 The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
 environment names. It creates the run-owned scratch and appends host system temporary access inside

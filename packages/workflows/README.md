@@ -41,13 +41,12 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-Workflow scheduling is composed only for native Host/Sandbox. Core-only Docker/Podman has no
-manager scheduler, workflow registry, leader request, shared workflow budget or host bridge.
-Selecting `admiral`, carrying the `workflow` grant or preparing Workflow execution fails before
-manager-path selection, engine or model work and recommends Sandbox or Host. The root entry still
-exposes `workflowContextOf`, `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for
-trusted native host composition. The
-[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns this fail-fast boundary.
+Workflow scheduling is native in Host, Sandbox and Container. Container keeps the manager scheduler,
+workflow registry, leaders and shared budget inside the same Kernel and persists their state in its
+private state volume. Projected builtin/global/workspace definitions are frozen for that generation;
+plugin definitions remain absent. The root entry exposes `workflowContextOf`,
+`workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition. The
+[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns the Container boundary.
 
 In ascending order of how much structure they assume:
 

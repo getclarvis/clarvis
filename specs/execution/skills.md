@@ -878,17 +878,15 @@ The one `SkillsProvider` the host builds is threaded three ways by `createInProc
 `skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false`.
 
-Container placement does not receive a catalog, bootstrap body, Skill tool, host root or Skill
-broker. An active Extension Profile can still affect native composition, but contributes no Skill
-byte to a Container request. Explicit `skill`, a resolvable `$skill`, Plugin Agent, or custom profile
-with `use_skills` is refused before engine/model work. The host-owned projections of unmodified
-`marshall`, `coder`, `explorer` and `planner` remove only their builtin `use_skills` grant; custom
-profiles are never silently rewritten.
+Container placement receives no Skill catalog, bootstrap body, tool, host root or broker. Explicit
+`skill`, a resolvable `$skill`, Plugin Agent, or operator profile with `use_skills` is refused during
+projection. Shipped builtin profiles lose only their builtin `use_skills`; operator profiles are
+never silently rewritten.
 
-Production: `admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts` and
-`containerGuestRawBody` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/integration/local-podman-runtime.test.ts`.
+Production: `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts`. Test:
+`packages/kernel/tests/unit/container-projection.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ---
 
@@ -1115,11 +1113,11 @@ to this document.
     `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
-53. **Container placement discloses no Skill content or root.** A resolvable explicit Skill and any
-    non-builtin `use_skills` profile are incompatible; inactive configured Skills do not block the
-    core run and do not cross its boundary. Production: `admitContainerCoreRun` in
-    `packages/kernel/src/runs/prepare-run.ts`. Test:
-    `packages/kernel/tests/unit/container-core-policy.test.ts`.
+53. **Container placement discloses no Skill content or root.** An explicit Skill and any operator
+    `use_skills` profile are incompatible; inactive configured Skills do not block an independent
+    run. Production: `projectContainerConfiguration` in
+    `packages/kernel/src/config/container-projection.ts`. Test:
+    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 ---
 

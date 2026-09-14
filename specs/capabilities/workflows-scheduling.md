@@ -1119,15 +1119,14 @@ widens a mutator to unscoped (`packages/workflows/src/schedule.ts`) — visible 
 
 ## 7. Coupling
 
-Container placement does not compose this scheduler, registry, manager, leader requests or shared
-workflow budget. Selecting `admiral`, carrying a `workflow` grant or preparing Workflow execution is
-an explicit incompatible dependency and fails before manager-path selection, lease, engine or model
-work. Native Host/Sandbox retains `workflowContextOf`, `workflowOutputBudgetOf`,
-`LeaderRequestAssembler` and the complete scheduling contract above.
+Container composes this scheduler, registry, manager, leader requests and shared workflow budget in
+the same Kernel. It retains `workflowContextOf`, `workflowOutputBudgetOf`,
+`LeaderRequestAssembler` and the complete scheduling contract above, using the model broker for
+inference and private state for persistence.
 
-Production: `admitContainerCoreRun` and `prepareKernelRun` in
-`packages/kernel/src/runs/prepare-run.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts`.
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### 7.1 What this package depends on
 

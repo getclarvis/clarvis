@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { EnvConfig, TracePort } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import type {
@@ -55,6 +56,8 @@ import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
  * capabilities and capability-event listener.
  */
 export interface EntryInputDeps {
+  /** Trusted machinery namespace inherited from execution dependencies. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   workspaceRoot: string;
   executionId?: string;
@@ -171,7 +174,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
   const subagentInstanceId = isLead ? undefined : (request.agent_instance_id ?? randomUUID());
   const subagentTaskBody = isLead ? "" : userText(request.messages);
   const entryHasBuiltins = agentToolsActive(deps.env, entryProfile.grants);
-  const spillToolResult = createToolSpill(deps.workspaceRoot, deps.logger);
+  const spillToolResult = createToolSpill(deps.statePaths ?? deps.workspaceRoot, deps.logger);
   const agents = deps.services?.get(AGENT_REGISTRY_PORT);
 
   const entryRunCaps: readonly RunCapability[] = isLead
@@ -179,6 +182,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
         createDelegationRunCapability({
           env: deps.env,
           workspaceRoot: deps.workspaceRoot,
+          ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
           opened,
           profiles: shape.spawnableRegistry,
           ...(entryProfile.default_spawn !== undefined

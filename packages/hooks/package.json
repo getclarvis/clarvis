@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/hooks",
-
   "private": true,
   "description": "Executes workspace shell hooks for Clarvis \u2014 match, spawn, bounded capture, verdict parse.",
   "license": "MIT",

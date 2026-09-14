@@ -2,22 +2,12 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2022"
-    ],
+    "lib": ["ES2022"],
     "noEmit": true,
     "paths": {
-      "@clarvis/capability": [
-        "../capability/src/index.ts"
-      ]
+      "@clarvis/capability": ["../capability/src/index.ts"]
     }
   },
-  "include": [
-    "src/**/*.ts",
-    "tests/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

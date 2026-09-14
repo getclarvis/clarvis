@@ -847,6 +847,16 @@ The invariants below are derived directly from this document's own source and it
 
 ## 7. Coupling
 
+The optional `modelExecutionResolver` argument to `resolveSubagentProfiles` replaces native provider
+resolution with exact closed-catalog admission. Entry and delegated profiles retain transport-free
+`modelExecution` metadata through `buildRunSubagentInput` and `toLlmTarget`; unknown pairs throw rather
+than producing a profile without transport configuration. The native unresolved-provider behavior
+above applies only without this resolver. Production:
+[`resolveSubagentProfiles`](../../packages/loop/src/runtime/subagents/subagent-profiles.ts) and
+[`buildRunSubagentInput`](../../packages/loop/src/runtime/subagents/delegate-task.ts).
+Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts).
+See [generic execution ports](capability-composition.md).
+
 ### Runtime, static (import edges out of this subsystem)
 
 | Depends on | Via | What forces it |

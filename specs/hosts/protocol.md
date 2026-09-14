@@ -163,10 +163,10 @@ optional hosted-run ownership and a close method:
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
 `host_platform`, effective isolation and lifecycle.
 Container placement additionally reports generation, selected Docker/Podman engine and version,
-host/guest platform, local immutable image digest, private runtime protocol revision, effective
-network grant and lifecycle. This is an informational projection, not a client-controlled launch
-input. The private runtime revision is distinct from the concrete transport's
-`CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
+host/guest platform, local immutable base image digest, artifact digest, base ABI, broker/channel
+versions, state namespace, effective network grant and lifecycle. This is an informational
+projection, not a client-controlled launch input. Public compatibility remains the concrete
+transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
 Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
 `createFileKernel` in `packages/kernel/src/file-kernel.ts`. Test:
@@ -301,6 +301,19 @@ TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`).
 | `refresh` | `() => Promise<ModelCatalog>` | `packages/protocol/src/models.ts` |
 | `getEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 | `refreshEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
+
+`ModelCatalog.source` distinguishes `cache`, `bundle`, and `projection`. A projection is immutable
+logical execution metadata, not a downloaded cache or provider configuration. The Container catalog
+adapter supplies no endpoint, credential name or fake URL; it marks logical entries as not requiring
+URL configuration in the guest. Refresh and subscription-entitlement operations are `unsupported`
+there; operator administration remains a separate host service.
+
+Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts) and
+`createContainerModelCatalog` in
+[container-model-catalog.ts](../../packages/kernel/src/config/container-model-catalog.ts).
+Test: the guest catalog case in
+[container-projection.test.ts](../../packages/kernel/tests/unit/container-projection.test.ts)
+checks compatible/subscription aliases, closed resolution, defensive snapshots and refresh refusal.
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
 

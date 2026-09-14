@@ -470,7 +470,7 @@ Test: `host continuation retirement` in
 The latter composes private file sessions, actual hosting, goal gates, loop and SDK with controlled
 responses. It verifies two automatic continuations, three separate run intents, decreasing budgets,
 single-count usage, complete serialized prefix/cache identity, stagnation, incompatible request
-refusal and pause/cancel races. These controlled-SDK tests are separate from TUI and guest qualification.
+refusal and pause/cancel races. These controlled-SDK tests are separate from TUI and Container qualification.
 
 `createFileRunHost` registers this policy in its ordinary prepared execution path. It exposes a
 connection-scoped `GoalService` with availability, state, receipt lookup and strict user controls.
@@ -478,13 +478,13 @@ Observer connections receive reads; writes resolve the actual registry controlle
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
-Native Host/Sandbox file hosts advertise the service; headless and Container placements do not.
-An explicit Goal policy or goal-owned continuation is incompatible with core-only Container and is
-refused before engine acquisition or inference.
+Native Host/Sandbox and complete Container Kernels advertise the service. Container keeps Goal
+state, controls, budgets and continuation inside its private state volume; it does not resume an
+active Goal automatically after reconnect.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),
 [file-host.ts](../../packages/kernel/src/hosting/file-host.ts), and
-[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts).
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts).
 Test: `starts a durable goal over IPC and admits its checkpoint continuation through the real kernel`
 and `pause retains physical work, fences foreign control and prevents automatic continuation` in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
@@ -492,7 +492,7 @@ and `pause retains physical work, fences foreign control and prevents automatic 
 Goal preparation wraps the host provider port for that stage. `createGoalUsageTracker` observes
 leader, child, compaction and attributed retry calls without changing their options or responses.
 Pending calls, rejected calls with no usage, and explicit provider uncertainty remain unknown;
-zero-initialized loop or guest totals cannot establish complete consumption. Missing cache detail
+zero-initialized loop totals cannot establish complete consumption. Missing cache detail
 alone counts input conservatively. Settlement uses that host observation and retains the per-agent
 breakdown only when its totals agree; otherwise it uses the observed aggregate. Unknown usage
 prevents automatic continuation and explicit resume until reconciled.
@@ -519,9 +519,9 @@ Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/ca
 `attemptCompaction` in [llm-compaction.ts](../../packages/loop/src/runtime/context/llm-compaction.ts),
 `createGoalUsageTracker` in [usage.ts](../../packages/kernel/src/goals/usage.ts), and
 `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
-Goal journey coverage is native Host/Sandbox coverage. Container qualification instead proves that
-an explicit Goal request is rejected before engine/model work; it does not attempt automatic
-continuation in a guest.
+Container Kernel coverage exercises Goal creation, pause and explicit resume using the native domain
+inside its private state volume. Engine qualification also proves boot, persistence and broker
+availability; it never resumes an interrupted Goal or replays a stage automatically.
 
 The local `tooling/goal/live.ts` command qualifies the native file host with the existing global
 subscription through the kernel's production resolver. A Linux host mount view retains renewable
@@ -570,14 +570,13 @@ owned by the planning capability. A checkpoint preserves open tasks; a final con
 normal plan gates. Goal context uses preserved append-only blocks and never a second compaction
 anchor or output budget. Session/agent cache identities survive runs; a goal ID is not cache affinity.
 
-Local and remote TUI controls require the same authenticated conversation/controller guarantees in
-native placement. Container has no Goal descriptor, runtime port, guest tool or host callback. The
-kernel refuses a forged or explicit Goal dependency with `unsupported` before Workflow/Goal routing,
-lease reservation, engine acquisition or model calls and recommends Sandbox or Host. It never runs a
-partial stage or converts a Goal into an ordinary Container conversation.
+Local, remote and Container TUI controls require the same authenticated conversation/controller
+guarantees. Container constructs the native Goal descriptor, runtime port and tools inside its
+Kernel; the host receives only bounded model calls. Reconnect preserves recoverable Goal state but
+requires explicit resume and never replays an unknown stage.
 
-Production: `prepareKernelRun` and `admitContainerCoreRun` in
-[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts), and the native `goalRuntimePortOf` in
-[capability.ts](../../packages/goal/src/capability.ts). Test:
-[container-core-policy.test.ts](../../packages/kernel/tests/unit/container-core-policy.test.ts)
-and native Goal suites cited above. Lower-level native tests do not establish a Container journey.
+Production: `createContainerNativeKernel` in
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts), and `goalRuntimePortOf`
+in [capability.ts](../../packages/goal/src/capability.ts). Test:
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+and the native Goal suites cited above.

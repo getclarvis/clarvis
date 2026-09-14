@@ -183,8 +183,8 @@ function toStartParams(
           },
         }
       : {}),
-    ...(!container && input.memory ? { memory: input.memory } : {}),
-    ...(!container && input.plans ? { plans: input.plans } : {}),
+    ...(input.memory ? { memory: input.memory } : {}),
+    ...(input.plans ? { plans: input.plans } : {}),
     ...(!container && input.task ? { task: input.task } : {}),
     ...(!container && input.skill ? { skill: input.skill } : {}),
   };

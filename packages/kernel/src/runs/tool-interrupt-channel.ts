@@ -8,13 +8,13 @@ import type { ToolInterruptReceipt } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
 
 /** Alphabet of a well-formed live tool-execution token. */
-export const TOOL_EXECUTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
+const TOOL_EXECUTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/u;
 
 /** Small bound on interrupt requests awaiting settlement on one run. */
 const MAX_TOOL_INTERRUPT_PENDING = 16;
 
 /** Absolute delivery deadline, independent of repeated requests for the same token. */
-export const TOOL_INTERRUPT_TIMEOUT_MS = 30_000;
+const TOOL_INTERRUPT_TIMEOUT_MS = 30_000;
 
 interface PendingInterrupt {
   readonly delivery: ToolInterruptDelivery;

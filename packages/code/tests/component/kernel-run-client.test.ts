@@ -647,7 +647,7 @@ test("startRun maps the complete guard and active-task request without workspace
   await handle.done;
 });
 
-test("startRun omits native-only settings projections for Container", async () => {
+test("startRun keeps native capability settings but omits host guard settings for Container", async () => {
   const ctrl = controllableHandle("exec_container");
   let captured: Record<string, unknown> | undefined;
   const { c } = client({
@@ -668,8 +668,7 @@ test("startRun omits native-only settings projections for Container", async () =
   });
   expect(captured).not.toHaveProperty("guard_mode");
   expect(captured).not.toHaveProperty("guard_judge");
-  expect(captured).not.toHaveProperty("memory");
-  expect(captured).not.toHaveProperty("plans");
+  expect(captured).toMatchObject({ memory: "off", plans: "off" });
   ctrl.settle({ execution_id: "exec_container", status: "completed" });
   ctrl.close();
   await handle.done;

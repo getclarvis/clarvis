@@ -203,7 +203,7 @@ test("the Docker consequences remain complete in a narrow Run controls viewport"
     "The selected workspace is mounted directly; changes appear on the host immediately.",
   );
   expect(prose).toContain(
-    "Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+    "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
   );
   expect(prose).toContain("Outbound network access is enabled and may cause remote effects");
   expect(prose).toContain("Commands run without Command Review.");

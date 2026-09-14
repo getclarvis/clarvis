@@ -11,7 +11,7 @@ import type {
 import { OPERATIONS, SPECIAL_OPERATIONS } from "./operations.ts";
 
 /** Clean-break version of Clarvis's internal request/notification wire. */
-export const CLARVIS_WIRE_VERSION = 9 as const;
+export const CLARVIS_WIRE_VERSION = 10 as const;
 
 /**
  * The request/response method vocabulary for kernel RPC — Clarvis's own,

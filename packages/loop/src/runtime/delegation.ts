@@ -8,6 +8,7 @@
  * absence simply means nothing is tracking this run.
  */
 import type { EnvConfig } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { ImagePart, LifecycleHook } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
@@ -175,6 +176,8 @@ function spawnInBackground(
  *   run also advertises `delegate_task` and applies the tracker's gate to both.
  */
 export interface DelegationDeps {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   bc: AgentBuildContext;
   env: EnvConfig;
   opened: RegistryEntry[];
@@ -249,6 +252,7 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
     ...(deps.capabilitiesFor ? { capabilitiesFor: deps.capabilitiesFor } : {}),
     ...(deps.clock ? { clock: deps.clock } : {}),
     ...(deps.workspaceRoot ? { workspaceRoot: deps.workspaceRoot } : {}),
+    ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
     ...(deps.hooks ? { hooks: deps.hooks } : {}),
     ...(deps.turnImages ? { turnImages: deps.turnImages } : {}),
     ...(deps.logger ? { logger: deps.logger } : {}),

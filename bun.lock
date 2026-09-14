@@ -9,8 +9,6 @@
         "@types/bun": "1.4.0",
         "@types/node": "^26.1.0",
         "@types/picomatch": "^4.0.3",
-        "ajv": "^8.20.0",
-        "ajv-formats": "^3.0.1",
         "eslint": "^10.6.0",
         "globals": "^17.7.0",
         "knip": "^6.27.0",
@@ -81,9 +79,6 @@
         "@clarvis/workflows": "workspace:*",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@clarvis/llm": "workspace:*",
       },
     },
     "packages/llm": {

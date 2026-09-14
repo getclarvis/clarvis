@@ -381,13 +381,13 @@ export const GATES: Gate[] = [
           return {
             status: "warn",
             detail: `${posture} ${glyph("emDash")} container starts fail closed`,
-            hint: `The container still starts lazily; if ${isolation === "docker" ? "Docker" : "Podman"} cannot start, the run fails closed because native Sandbox ${a.reason}.`,
+            hint: `The Container connection fails closed if ${isolation === "docker" ? "Docker" : "Podman"} cannot start; native Sandbox is ${a.reason}.`,
           };
         }
         if (isolation === "docker" || isolation === "podman") {
           return {
             status: "pass",
-            detail: `${posture} ${glyph("emDash")} starts on first run and never falls back`,
+            detail: `${posture} ${glyph("emDash")} connects before use and never falls back`,
           };
         }
         if (!a.available) {

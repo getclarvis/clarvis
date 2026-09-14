@@ -1,6 +1,7 @@
 import {
   NOOP_LOGGER,
   type ContextSnapshotEntry,
+  type ModelExecutionResolver,
   type EnvConfig,
   type LLMProvider,
   type Logger,
@@ -39,6 +40,7 @@ export type StoredContextCompactionResult =
 
 /** Inputs needed to compact an already-persisted continuation snapshot. */
 export interface CompactStoredContextArgs {
+  modelExecutionResolver?: ModelExecutionResolver;
   context: readonly ContextSnapshotEntry[];
   request: RunRequest;
   guidance?: string;
@@ -115,7 +117,12 @@ export function fitStoredContextToWindow(
 export async function compactStoredContext(
   args: CompactStoredContextArgs,
 ): Promise<StoredContextCompactionResult> {
-  const profiles = resolveSubagentProfiles(args.request.profiles, args.request.providers, args.env);
+  const profiles = resolveSubagentProfiles(
+    args.request.profiles,
+    args.request.providers,
+    args.env,
+    args.modelExecutionResolver,
+  );
   const shape = deriveRunShape(args.request, profiles);
   const profile = shape.entryResolved;
   const usage: TokenAccumulator = { input: 0, output: 0, cached: 0, cache_write: 0 };
@@ -139,6 +146,7 @@ export async function compactStoredContext(
     llm: args.llm,
     model: profile.model,
     provider: profile.provider,
+    ...(profile.modelExecution === undefined ? {} : { modelExecution: profile.modelExecution }),
     ...(profile.providerConfig !== undefined ? { providerConfig: profile.providerConfig } : {}),
     ...(args.signal !== undefined ? { signal: args.signal } : {}),
     timeoutMs: profile.compaction.llmTimeoutMs,

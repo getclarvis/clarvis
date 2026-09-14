@@ -31,6 +31,11 @@ export interface SubscriptionManagerOptions {
   adapters?: readonly SubscriptionSchemeAdapter[];
   now?: () => number;
   logger?: Logger;
+  /** Synchronous host authority fence, before local replacement/removal or remote revocation. */
+  onAuthorityRevoked?: (
+    scheme: SubscriptionScheme,
+    reason: "disconnected" | "replaced" | "invalidated",
+  ) => void;
 }
 
 /** Token-opaque request authority consumed structurally by the LLM host seam. */
@@ -49,6 +54,7 @@ export class SubscriptionManager implements ProviderAuthService {
   private readonly now: () => number;
   private readonly logger: Logger;
   private readonly attempts: DeviceAttemptManager;
+  private readonly onAuthorityRevoked: SubscriptionManagerOptions["onAuthorityRevoked"];
   private readonly refreshes = new Map<SubscriptionScheme, Promise<SubscriptionAccountRecord>>();
   private readonly catalogs = new Map<
     SubscriptionScheme,
@@ -66,6 +72,7 @@ export class SubscriptionManager implements ProviderAuthService {
         adapter,
       ]),
     );
+    this.onAuthorityRevoked = options.onAuthorityRevoked;
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? NOOP_LOGGER;
     this.attempts = new DeviceAttemptManager({
@@ -123,8 +130,12 @@ export class SubscriptionManager implements ProviderAuthService {
 
   async disconnect(scheme: SubscriptionScheme): Promise<void> {
     const resolved = this.registrationAndAdapter(scheme);
-    const snapshot = await this.store.read();
-    const current = snapshot.ok ? snapshot.value.accounts[scheme] : undefined;
+    this.onAuthorityRevoked?.(scheme, "disconnected");
+    const current = await this.store.mutateAccount(scheme, (account) => ({
+      account: undefined,
+      result: account,
+    }));
+    this.catalogs.delete(scheme);
     if (current !== undefined && resolved?.adapter.revoke !== undefined) {
       try {
         await resolved.adapter.revoke(resolved.registration, current);
@@ -135,8 +146,6 @@ export class SubscriptionManager implements ProviderAuthService {
         );
       }
     }
-    await this.store.mutateAccount(scheme, () => ({ account: undefined, result: undefined }));
-    this.catalogs.delete(scheme);
   }
 
   async resolve(
@@ -193,6 +202,7 @@ export class SubscriptionManager implements ProviderAuthService {
             throw error;
           }
           if (response.status === 401) {
+            this.onAuthorityRevoked?.(scheme, "invalidated");
             throw new SubscriptionError(
               "subscription_reauthentication_required",
               `${scheme} subscription authentication was rejected after refresh.`,
@@ -245,6 +255,7 @@ export class SubscriptionManager implements ProviderAuthService {
         } catch (retryError) {
           this.catalogs.delete(scheme);
           if (retryError instanceof SubscriptionHttpError && retryError.status === 401) {
+            this.onAuthorityRevoked?.(scheme, "invalidated");
             throw new SubscriptionError(
               "subscription_reauthentication_required",
               `${scheme} subscription authentication was rejected after refresh.`,
@@ -324,6 +335,7 @@ export class SubscriptionManager implements ProviderAuthService {
     scheme: SubscriptionScheme,
     account: SubscriptionAccountRecord,
   ): Promise<SubscriptionAccountStatus> {
+    this.onAuthorityRevoked?.(scheme, "replaced");
     await this.store.mutateAccount(scheme, () => ({ account, result: undefined }));
     this.catalogs.delete(scheme);
     return this.statusFor(scheme, account);
@@ -339,6 +351,7 @@ export class SubscriptionManager implements ProviderAuthService {
     if (resolved === undefined) throw this.unavailable(scheme);
     const snapshot = await this.store.read();
     if (!snapshot.ok) {
+      this.onAuthorityRevoked?.(scheme, "invalidated");
       throw new SubscriptionError(
         "subscription_reauthentication_required",
         `${scheme} subscription credential storage requires manual recovery.`,
@@ -347,6 +360,7 @@ export class SubscriptionManager implements ProviderAuthService {
     }
     const account = snapshot.value.accounts[scheme];
     if (account === undefined) {
+      this.onAuthorityRevoked?.(scheme, "invalidated");
       throw new SubscriptionError(
         "subscription_login_required",
         `${scheme} subscription billing requires login; an API key is a separate provider.`,
@@ -398,6 +412,7 @@ export class SubscriptionManager implements ProviderAuthService {
             error instanceof SubscriptionError &&
             error.code === "subscription_reauthentication_required"
           ) {
+            this.onAuthorityRevoked?.(scheme, "invalidated");
             this.catalogs.delete(scheme);
             return { account: undefined, result: error };
           }
@@ -408,6 +423,7 @@ export class SubscriptionManager implements ProviderAuthService {
           tokens.accountId !== undefined &&
           current.account_id !== tokens.accountId
         ) {
+          this.onAuthorityRevoked?.(scheme, "invalidated");
           this.catalogs.delete(scheme);
           return {
             account: undefined,

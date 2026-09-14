@@ -1,5 +1,6 @@
 import type {
   ImagePart,
+  ModelExecutionInfo,
   LifecycleHook,
   Message,
   MessageContent,
@@ -11,6 +12,7 @@ import type {
 import type { TokenAccumulator, TokenCounts } from "@clarvis/capability";
 import type { LLMProvider, ResolvedProviderConfig } from "@clarvis/capability";
 import type { NamespacedRegistry } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import { createIterationCounter, type TokenLedger } from "../budget/budget.ts";
 import { DISABLED_COMPACTION, type CompactionConfig } from "../context/context-compaction.ts";
 import { createToolSpill } from "../context/tool-spill.ts";
@@ -50,6 +52,8 @@ export type SubagentUsageSnapshot = TokenCounts & { iterations: number };
  * `usageSink` that always receives the final counts.
  */
 export interface RunSubagentInput {
+  /** Inherited host machinery namespace, independent of process defaults. */
+  statePaths?: WorkspaceStatePaths;
   task?: string;
   images?: ImagePart[];
   /** Fleet-wide shared prompt snapshotted for this run. */
@@ -59,6 +63,7 @@ export interface RunSubagentInput {
   model: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  modelExecution?: ModelExecutionInfo;
   capabilities?: Set<string>;
   reasoningSummary?: ReasoningSummary;
   reasoningEffort?: ReasoningEffort;
@@ -187,7 +192,7 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
       compaction: input.compaction ?? DISABLED_COMPACTION,
       ...(input.compactionPrompt !== undefined ? { compactionPrompt: input.compactionPrompt } : {}),
       ...(input.workspaceRoot !== undefined
-        ? { spillToolResult: createToolSpill(input.workspaceRoot) }
+        ? { spillToolResult: createToolSpill(input.statePaths ?? input.workspaceRoot) }
         : {}),
       registry: input.registry,
       ...(input.stagnationThreshold !== undefined

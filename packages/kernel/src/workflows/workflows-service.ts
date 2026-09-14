@@ -101,6 +101,8 @@ export interface WorkflowsServiceConfig {
   store: WorkflowStore;
   /** Reads the merged `workflows` fan-out settings per start. */
   readSettings: () => WorkflowsRuntimeSettings;
+  /** Host-resolved definitions replace all filesystem discovery and builtin merging when supplied. */
+  readWorkflowDefinitions?: () => NonNullable<WorkflowCtx["workflowDefs"]>;
   /** Resolves the manager-selectable leader profiles for the `run_leader` enum. */
   leaderProfiles?: () => readonly LeaderProfileInfo[];
   /** Resolves the default profile a leader runs as when a `run_leader` call omits
@@ -253,6 +255,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
    * depends on it.
    */
   const readWorkflowDefs = (): ReturnType<typeof loadWorkflows>["workflows"] => {
+    if (cfg.readWorkflowDefinitions !== undefined) return [...cfg.readWorkflowDefinitions()];
     const roots = [
       globalPaths(cfg.globalConfigDir).workflowsDir,
       workspacePaths(cfg.workspace).workflowsDir,
@@ -578,6 +581,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         const titleTask = generateWorkflowTitle({
           request: managerBody as unknown as RunRequest,
           llm: deps.llm,
+          ...(deps.modelExecutionResolver === undefined
+            ? {}
+            : { modelExecutionResolver: deps.modelExecutionResolver }),
           signal: context.signal,
           ...(deps.logger === undefined ? {} : { logger: deps.logger }),
         }).then((generated) => {

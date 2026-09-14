@@ -14,6 +14,7 @@ import {
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
 import { EXEC_TOOL_NAMES } from "./names.ts";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
@@ -22,6 +23,8 @@ import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
  * `elicit` and `sandbox` wiring passed through to @clarvis/tools.
  */
 export interface AgentToolsetOptions {
+  /** Trusted resolved machinery namespace, not a model argument. */
+  statePaths?: WorkspaceStatePaths;
   workspaceRoot: string;
   canMutate: boolean;
   canExec: boolean;
@@ -155,6 +158,7 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
   resolve(opts) {
     const config = resolveConfig({
       workspaceRoot: opts.workspaceRoot,
+      ...(opts.statePaths === undefined ? {} : { statePaths: opts.statePaths }),
       readOnly: !opts.canMutate,
       ...(opts.confineToWorkspace !== undefined
         ? { confineToWorkspace: opts.confineToWorkspace }

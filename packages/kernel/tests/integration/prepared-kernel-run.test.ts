@@ -195,7 +195,7 @@ describe("prepared kernel execution", () => {
     expect(JSON.stringify(f.llm.calls)).toContain("The original worker.");
   });
 
-  test("refuses Container feature requests before workflow routing, lease acquisition or inference", async () => {
+  test("does not retrofit a connected File Kernel when the operator selects Container", async () => {
     const f = await fixture();
     f.store.writeSettings("global", {
       ...f.store.readSettings().merged,
@@ -207,35 +207,17 @@ describe("prepared kernel execution", () => {
       { guard_mode: "on" as const },
       { skill: { name: "test-flow", task: "Run it" } },
     ]) {
-      expect(() =>
+      expect(
         f.kernel.prepareRun({
-          execution_id: `refused-${Object.keys(request)[0]}`,
+          execution_id: `native-${Object.keys(request)[0]}`,
           agent: "worker",
           messages: [{ role: "user", content: "Go" }],
           ...request,
         }),
-      ).toThrow("Use Isolation Sandbox or Host");
+      ).toMatchObject({ agent: expect.any(String), start: expect.any(Function) });
       expect(f.leases()).toBe(0);
       expect(f.llm.calls).toHaveLength(0);
     }
-    (f.skill.metadata as { agent?: string }).agent = undefined;
-    expect(() =>
-      f.kernel.prepareRun({
-        execution_id: "refused-dollar-skill",
-        agent: "worker",
-        messages: [{ role: "user", content: "Use $test-flow" }],
-      }),
-    ).toThrow("Skills is unavailable in Isolation Container");
-    expect(f.leases()).toBe(0);
-    expect(f.llm.calls).toHaveLength(0);
-    const compatible = f.kernel.prepareRun({
-      execution_id: "container-core-compatible",
-      agent: "worker",
-      messages: [{ role: "user", content: "Inspect the workspace" }],
-    });
-    expect(compatible).toMatchObject({ agent: "worker", model: "anthropic/original" });
-    expect(f.leases()).toBe(0);
-    expect(f.llm.calls).toHaveLength(0);
   });
 
   test("does not resurrect a retired owner generation through a prepared start", async () => {

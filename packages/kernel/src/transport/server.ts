@@ -195,6 +195,12 @@ export interface KernelConnection {
    */
   handle(method: string, params: unknown, signal?: AbortSignal): Promise<unknown>;
   /**
+   * Optional transport-owned callback after a successful response has been fully written.
+   * This acknowledges only the local stream write, not peer application processing.
+   * A cancelled request or failed write must not invoke it; throwing closes the transport.
+   */
+  responseSent?(method: string, result: unknown): void;
+  /**
    * Tear the session down: unsubscribe every config subscription and cancel every
    * ordinary live run started on this connection. Hosted observations are released;
    * their host context applies the explicit execution disconnect policy.

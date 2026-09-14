@@ -694,22 +694,16 @@ unavailable and timed-out preflights start nothing).
 
 ## 7. Coupling
 
-Container admits no MCP server or MCP elicitation relay. Its sole capability method,
-`runtime.elicit`, carries intentional agent questions such as `ask_user` from the matching live guest
-lease through the engine serializer and compute-clock pause to the host input port. Its wire validator
-accepts only a bounded string-form schema, a coherent required-field list and absent/`ask_user` kind;
-`guard_confirm`, feature review kinds, extra keys and malformed schemas are rejected before the host
-input callback. It is not Command Review and cannot select placement or invoke host execution. Run
-cancellation prevents delivery into a later run. Production: `validElicitArguments` and
-`createCapabilityBroker` in
-[`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts),
-`createGuestLoopExecutor` in
-[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
-`serveExecutionWorker` in
-[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts). Test:
-[`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts)
-and [`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts).
-The private protocol and lifetime contract belongs to
+Container admits no MCP elicitation relay. Intentional native questions such as `ask_user`, Plan
+approval and Goal controls travel stay inside the complete Kernel and reach the TUI through the same
+public run/service protocol as SSH hosting. They are not Command Review and cannot select placement
+or invoke host execution. Production: `createContainerNativeKernel` in
+[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts) and
+`createKernelTransportServer` in
+[`server.ts`](../../packages/kernel/src/transport/server.ts). Test:
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+and [`transport-codecs.test.ts`](../../packages/kernel/tests/contract/transport-codecs.test.ts). The
+private process lifetime contract belongs to
 [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 **Depends on** (runtime edges, forced by import):

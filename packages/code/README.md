@@ -155,7 +155,7 @@ bun --filter @clarvis/code setup
 clarvis
 ```
 
-To test a published source candidate and its container image, use:
+To test a published source candidate and its Container artifact, use:
 
 ```bash
 ./dev-install.sh --candidate                 # newest published RC among the latest 100 releases
@@ -166,20 +166,17 @@ clarvis-develop
 This requires Git and the candidate's pinned Bun version. The installer
 verifies the source prerelease and its `runtime-candidate.json`, checks out the exact tag commit
 under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
-checks the CLI version before replacing the managed launcher. When Docker or Podman is available,
-it also pulls and inspects the image by digest, preferring Docker and falling back to Podman. If
-neither is installed, candidate installation still succeeds for native use and reports that the
-container image was not prefetched; selecting container isolation remains unavailable until an
-engine is installed. The launcher pins the RC and source revision; runtime
-resolution validates the matching image manifest and protocol. The ordinary `./dev-install.sh`
-selects the working checkout and builds the local `clarvis-runtime:development` image for each of
-Docker and Podman that is installed, independently, so a host with only one engine still completes.
+checks the CLI version before replacing the managed launcher. Candidate runtime resolution downloads
+the target-specific tar archive on the host, verifies its release manifest and digest, and transfers
+it to the selected engine only when Container is used. The launcher pins the RC and source revision.
+The ordinary `./dev-install.sh` selects the working checkout, builds `clarvis-base:local` in each
+installed Docker/Podman store, and compiles one matching Linux artifact through an available engine.
 A missing engine is skipped; when every installed engine fails to build, installation fails closed.
 Candidate installation
 does not install a container engine, alter the working checkout, or replace the stable `clarvis`
 command.
 Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
-Previous candidate checkouts and downloaded images are retained; `--uninstall` removes only the
+Previous candidate checkouts and downloaded artifacts are retained; `--uninstall` removes only the
 launcher. Older image-only RCs without the `source-v1` installation marker are refused.
 
 For end users, the public installers in the repository root download portable artifacts from the
@@ -663,7 +660,7 @@ Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
 interpreters and task runners plus install, publish, deploy and migration
 commands remain reviewable. Existing lists — including an intentionally empty
 one — are never expanded or replaced. For a low-interruption integrated posture with host
-containment, choose Isolation `Sandbox` and Review `Auto`; Docker/Podman is a separate core-only
+containment, choose Isolation `Sandbox` and Review `Auto`; Docker/Podman is a separate complete-Kernel
 placement which executes ordinary commands without Command Review. An allowlist is approval policy
 and does not make repository-controlled build or test code safe to run directly on the host.
 
@@ -680,7 +677,7 @@ stored, but Docker/Podman makes it inactive. Selecting Host requires an explicit
 because it removes the containment boundary; turning Review off does not itself change isolation.
 With Review off, a Sandbox run that requests `sandbox_permissions: "require_escalated"` executes that
 one command on the host without a reviewer. Container always rejects that request and has no host or
-fallback channel. Its safety explanation states core-only/no Review, writable workspace and outbound
+fallback channel. Its safety explanation states native Container capabilities, no Review, writable workspace and outbound
 consequences, plus read-only Git metadata.
 
 In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
@@ -876,11 +873,9 @@ suitable for scripts and CI. Interactive approvals (guard/ask_user) are
 auto-denied with a note on stderr, so a headless run can never hang. Without
 `--agent`, it uses the same configured-default, runnable-`marshall`, runnable-Lead
 resolution as the TUI and fails clearly when no interactive entry agent exists. Its kernel, like
-the interactive and other headless paths, is opened through `WorkspaceClientManager`; a selected
-Docker or Podman runtime therefore receives the same lazy local factory instead of failing before
-the run starts.
-Runtime release-manifest acquisition observes the host generation's initialization cancellation
-as well as its bounded download deadline, allowing shutdown to interrupt image preparation.
+the interactive path, is opened through `WorkspaceClientManager`; a selected Docker or Podman
+destination is connected before submission. Runtime release/artifact acquisition observes the
+initialization cancellation and bounded preparation deadline.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever
@@ -1251,8 +1246,8 @@ bun --filter @clarvis/code dev
 
 For testing this checkout from arbitrary project directories without rebuilding after source
 edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
-`bun install --frozen-lockfile`, installs the repository hook, builds `clarvis-runtime:development`
-for each of Docker and Podman that is on `PATH`, and atomically writes a managed
+`bun install --frozen-lockfile`, installs the repository hook, builds `clarvis-base:local` for each
+Docker/Podman engine on `PATH`, builds the target Linux Kernel archive once, and atomically writes a managed
 `clarvis-develop` launcher to
 `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither engine still
 installs the launcher for native use. Re-running it updates that owned launcher;
@@ -1352,26 +1347,25 @@ files drift receives the parallel `Plugin '<name>' changed executable files` war
 runtime MCP/hook/capability projections are withheld.
 
 The workspace header reports stored Review and effective Isolation as separate chips. A configured
-Docker or Podman choice begins as that engine name and changes to its reported Container status after
-lazy first-run launch. There is no fallback chip or rewrite to Sandbox. `WorkspaceClientManager`
-supplies the selected local engine through a dynamic `@clarvis/kernel/local` import; native startup
-neither loads those adapters nor probes an engine.
+Docker or Podman choice connects that destination before constructing the workspace client. There is
+no fallback chip or rewrite to Sandbox. `WorkspaceClientManager` supplies the selected engine through
+a dynamic `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
 
 Settings > Isolation is the dedicated global placement screen shared with Run Controls and the quick
-picker. Docker/Podman is labelled **Core tools only**: Skills, MCPs, Hooks, Plugins and host-backed
-capabilities are unavailable; commands run without Command Review; workspace writes and outbound
-network remain enabled; Git metadata is read-only. Review reads `Not applicable in Container`, and
-Memory/Plans/Extensions are inactive without overwriting their persisted Host/Sandbox values.
-Profiles supplied by Plugins, carrying MCP/non-core grants or naming an unavailable default delegate
+picker. Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
+MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
+without Command Review; workspace writes and outbound network remain enabled; Git metadata is
+read-only. Review reads `Not applicable in Container`; host configuration changes remain pending
+until reconnect. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
 are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
 refused by the adapter before submission; the kernel still revalidates stale/external requests and
-returns the named `unsupported` failure before engine/model work. No elicitation changes placement.
+returns the named `unsupported` failure before model work. No elicitation changes placement.
 
 Container mounts the selected workspace read-write at `/workspace`, so changes appear on the host
-immediately and there is no Clarvis-owned copy/apply prompt. Complete `.clarvis` and `.agents` roots
-are opaque and Git metadata is overlaid read-only for primary and linked worktrees. Because current
-engines would materialize an absent nested mount target, a workspace missing `.clarvis`, `.agents` or
-`.git` fails before container creation instead of changing the host workspace. The safety promise
+immediately and there is no Clarvis-owned copy/apply prompt. A private content volume covers
+`.clarvis`, `.agents` is masked and Git metadata is overlaid read-only for primary and linked
+worktrees. A nonce preflight proves the engine sees the same workspace before persistent volumes are
+prepared. The safety promise
 covers the host outside the selected workspace, not workspace destruction or outbound remote effects.
 
 The simple selection persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced
@@ -1382,9 +1376,9 @@ builder policy and exact base form a local cache identity. Failure is visible an
 Clarvis does not use an uncustomized image or native fallback. Recipe scripts are not a secret
 channel: their bytes reach the engine and material written into image layers/build output may persist.
 
-Agents with `run_commands` can use `mise` for missing toolchains in the engine-owned, workspace/image
+Agents with `run_commands` can use `mise` for missing toolchains in the engine-owned namespace
 partitioned `/mise` cache. The guest receives no `expose_port`, engine socket, host shell or host
-credential helper. Engine correction or selecting Sandbox/Host always requires a new run.
+credential helper. Engine correction or selecting Sandbox/Host always requires a new connection with no active work.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

@@ -77,6 +77,10 @@ services:
 | `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
+`ModelCatalog.source` can be `cache`, `bundle`, or `projection`. The last denotes immutable logical
+execution metadata without provider endpoints or credential names; it does not grant refresh or
+subscription authority. See [the catalog contract](../../specs/hosts/protocol.md).
+
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
 
@@ -235,7 +239,7 @@ the concrete transport decides how to interrupt the request without serializing 
 wire parameters.
 
 The opening hello requires the exact `CLARVIS_WIRE_VERSION` declared by the kernel's
-[`wire.ts`](../kernel/src/transport/wire.ts), independently of the guest execution RPC revision.
+[`wire.ts`](../kernel/src/transport/wire.ts), independently of the private Container channel revision.
 Unknown versions and malformed or extra envelope fields fail closed. Stdio uses strict
 newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
@@ -283,9 +287,9 @@ It is absent for older and unguarded calls and is part of replay when present.
 
 The optional handshake runtime projection reports effective native or Container placement. Native
 status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
-Linux guest, effective network and lifecycle, while generation, engine version, image digest and
-private protocol revision appear once known. It has no fallback origin/status. This projection is
-informational only: runtime selection and the private guest protocol remain host/kernel contracts.
+Linux guest, effective network and lifecycle. A ready projection also requires generation, base
+image digest, artifact digest, base ABI, broker/channel versions and state namespace. It has no
+fallback origin/status. This projection is informational only; launch authority remains in Kernel.
 
 `SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` or Podman
 `{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned defaults;
@@ -295,7 +299,7 @@ path under the global operator recipe directory and optional `none`/`outbound` b
 is operator configuration, not a guest grant or image-build protocol operation.
 `RuntimeStatus.network` is never omitted for a Container because it reports the effective policy;
 `outbound` may reach host/LAN peers and must not be presented as public-only internet access. Private
-runtime revision 14 is core-only and remains outside this type-only package.
+broker and channel revisions remain outside this type-only package except for their status fields.
 
 ## Development
 

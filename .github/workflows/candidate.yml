@@ -12,19 +12,18 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ARTIFACT_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-candidate-artifact
-  IMAGE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-candidate
+  BASE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-base
 
 jobs:
-  images:
-    name: qualify candidate ${{ matrix.architecture }}
+  runtime:
+    name: build and qualify ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - architecture: amd64
+          - target: linux-x64
             runner: ubuntu-26.04
-          - architecture: arm64
+          - target: linux-arm64
             runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -38,53 +37,54 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
-      - name: validate candidate identity
-        run: bun run tooling/release/candidate.ts validate
       - run: bun install --frozen-lockfile
+      - run: bun run tooling/release/candidate.ts validate
       - run: bun run check:release
       - run: bun run build
-      - name: verify native container engines
-        run: docker version && podman version
-      - name: authenticate source-owned candidate registry
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: build carrier and qualify runnable candidate with both engines
+      - run: docker version && podman version
+      - name: build immutable base and Kernel artifact
         shell: bash
         env:
-          ARCHITECTURE: ${{ matrix.architecture }}
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          artifact_tag="$ARTIFACT_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCHITECTURE"
-          image_tag="$IMAGE_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARCHITECTURE"
-          bun run runtime:build -- --artifact-only "$artifact_tag"
-          docker push "$artifact_tag"
-          artifact_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$artifact_tag")"
-          [[ "$artifact_ref" == "$ARTIFACT_REPOSITORY@sha256:"* ]]
-          bun run runtime:build -- --candidate "$artifact_ref" "$image_tag"
-          bash tooling/ci/qualify-runtime.sh "$image_tag" docker
-          docker save "$image_tag" | podman load
-          bash tooling/ci/qualify-runtime.sh "$image_tag" podman
-          docker push "$image_tag"
-          image_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$image_tag")"
-          [[ "$image_ref" == "$IMAGE_REPOSITORY@sha256:"* ]]
-          mkdir -p build/candidate
-          printf 'ARTIFACT_REF=%s\nRUNTIME_REF=%s\n' "$artifact_ref" "$image_ref" > "build/candidate/$ARCHITECTURE.refs"
+          mkdir -p "build/candidate/${{ matrix.target }}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          local_base="clarvis-base:candidate-${{ matrix.target }}"
+          bun run runtime:base:build --engine docker --target "${{ matrix.target }}" --tag "$local_base"
+          base_revision="$(docker image inspect --format '{{index .Config.Labels "io.clarvis.base.revision"}}' "$local_base")"
+          published_base="$BASE_REPOSITORY:clarvis-linux-glibc-v1-$base_revision-${{ matrix.target }}"
+          if docker buildx imagetools inspect "$published_base" >/dev/null 2>&1; then
+            docker pull "$published_base"
+          else
+            docker tag "$local_base" "$published_base"
+            docker push "$published_base"
+          fi
+          base_digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "$published_base")"
+          base_digest="${base_digest##*@}"
+          [[ "$base_digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+          bun run runtime:artifact:build --engine docker --target "${{ matrix.target }}" --out "build/candidate/${{ matrix.target }}"
+          artifact="build/candidate/${{ matrix.target }}/clarvis-kernel-${{ matrix.target }}.tar.gz"
+          bun run runtime:qualify --engine docker --base "$published_base" --artifact "$artifact" --report "build/candidate/${{ matrix.target }}/qualification-docker-${{ matrix.target }}.json"
+          docker save "$published_base" | podman load
+          bun run runtime:qualify --engine podman --base "$published_base" --artifact "$artifact" --report "build/candidate/${{ matrix.target }}/qualification-podman-${{ matrix.target }}.json"
+          artifact_sha="$(cut -d' ' -f1 "$artifact.sha256")"
+          artifact_size="$(stat -c %s "$artifact")"
+          BASE_IMAGE="$BASE_REPOSITORY" BASE_DIGEST="$base_digest" ARTIFACT_SHA="$artifact_sha" ARTIFACT_SIZE="$artifact_size" TARGET="${{ matrix.target }}" bun -e 'const target=process.env.TARGET; await Bun.write("build/candidate/"+target+"/target.json", JSON.stringify({base:{image:process.env.BASE_IMAGE,digest:process.env.BASE_DIGEST,abi:"clarvis-linux-glibc-v1"},artifact:{asset:"clarvis-kernel-"+target+".tar.gz",sha256:process.env.ARTIFACT_SHA,size:Number(process.env.ARTIFACT_SIZE)},kernel_wire_version:10,broker_version:1,channel_version:1},null,2)+"\\n")'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: candidate-${{ matrix.architecture }}
-          path: build/candidate/*.refs
+          name: candidate-${{ matrix.target }}
+          path: build/candidate/${{ matrix.target }}/*
           if-no-files-found: error
           retention-days: 30
 
   publish:
-    name: publish qualified candidate in source repository
-    needs: images
+    name: publish qualified source candidate
+    needs: runtime
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
-      packages: write
       id-token: write
       attestations: write
       artifact-metadata: write
@@ -95,49 +95,24 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
-      - name: verify runner-provided Buildx
-        run: docker buildx version
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: candidate-*
           path: build/candidate
-          merge-multiple: true
-      - name: authenticate candidate registry
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: assemble candidate indexes and identity
-        id: images
+      - name: assemble closed runtime manifest
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -t artifact_refs < <(sed -n 's/^ARTIFACT_REF=//p' build/candidate/*.refs | LC_ALL=C sort)
-          mapfile -t runtime_refs < <(sed -n 's/^RUNTIME_REF=//p' build/candidate/*.refs | LC_ALL=C sort)
-          test "${#artifact_refs[@]}" -eq 2
-          test "${#runtime_refs[@]}" -eq 2
-          for repository in "$ARTIFACT_REPOSITORY" "$IMAGE_REPOSITORY"; do
-            if docker buildx imagetools inspect "$repository:$GITHUB_REF_NAME" >/dev/null 2>&1; then
-              echo 'Candidate index already exists; refusing to overwrite it.' >&2
-              exit 1
-            fi
-          done
-          docker buildx imagetools create --tag "$ARTIFACT_REPOSITORY:$GITHUB_REF_NAME" "${artifact_refs[@]}"
-          docker buildx imagetools create --tag "$IMAGE_REPOSITORY:$GITHUB_REF_NAME" "${runtime_refs[@]}"
-          artifact_digest="$(docker buildx imagetools inspect "$ARTIFACT_REPOSITORY:$GITHUB_REF_NAME" --format '{{.Manifest.Digest}}')"
-          runtime_digest="$(docker buildx imagetools inspect "$IMAGE_REPOSITORY:$GITHUB_REF_NAME" --format '{{.Manifest.Digest}}')"
-          printf 'artifact=%s\nruntime=%s\n' "$artifact_digest" "$runtime_digest" >> "$GITHUB_OUTPUT"
-          ARTIFACT_DIGEST="$artifact_digest" RUNTIME_DIGEST="$runtime_digest" bun run tooling/release/candidate.ts manifest
-      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+          VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-rc.*}"
+          VERSION="$VERSION" bun -e 'const x=await Bun.file("build/candidate/candidate-linux-x64/target.json").json(); const a=await Bun.file("build/candidate/candidate-linux-arm64/target.json").json(); await Bun.write("build/candidate/runtime-input.json",JSON.stringify({schema_version:2,version:process.env.VERSION,source_revision:process.env.GITHUB_SHA,targets:{"linux-x64":x,"linux-arm64":a}},null,2)+"\\n")'
+          bun run tooling/runtime/release-manifest.ts build/candidate/runtime-input.json build/candidate/runtime-release.json
+          find build/candidate -mindepth 2 -type f -exec mv {} build/candidate/ \;
+          bun run tooling/release/candidate.ts manifest
+      - name: attest Kernel archives
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
-          subject-name: ${{ env.ARTIFACT_REPOSITORY }}
-          subject-digest: ${{ steps.images.outputs.artifact }}
-          push-to-registry: true
-      - uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
-        with:
-          subject-name: ${{ env.IMAGE_REPOSITORY }}
-          subject-digest: ${{ steps.images.outputs.runtime }}
-          push-to-registry: true
-      - name: publish source prerelease only
+          subject-path: build/candidate/clarvis-kernel-*.tar.gz
+      - name: publish source prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: bun run tooling/release/candidate.ts publish

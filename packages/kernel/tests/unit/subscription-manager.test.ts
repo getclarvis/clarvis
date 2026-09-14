@@ -126,6 +126,86 @@ function adapter(
   };
 }
 
+describe("host inference authority fencing", () => {
+  it("fences synchronously, removes locally before remote revoke, and preserves a concurrent replacement", async () => {
+    const store = memoryStore({
+      version: 1,
+      accounts: { "openai-codex": account("old", "old"), "xai-grok": account("grok", "grok") },
+    });
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const events: string[] = [];
+    const manager = new SubscriptionManager({
+      store,
+      registrations: REGISTRATIONS,
+      onAuthorityRevoked: (scheme, reason) => {
+        events.push(`${scheme}:${reason}`);
+      },
+      adapters: [
+        {
+          ...adapter("openai-codex"),
+          revoke: async () => {
+            expect(store.value.accounts["openai-codex"]).toBeUndefined();
+            entered.resolve();
+            await release.promise;
+          },
+        },
+        adapter("xai-grok"),
+      ],
+    });
+    try {
+      const closing = manager.disconnect("openai-codex");
+      expect(events).toEqual(["openai-codex:disconnected"]);
+      await entered.promise;
+      await store.mutateAccount("openai-codex", () => ({
+        account: account("replacement", "replacement"),
+        result: undefined,
+      }));
+      release.resolve();
+      await closing;
+      expect(store.value.accounts["openai-codex"]?.account_id).toBe("replacement");
+      expect(store.value.accounts["xai-grok"]?.account_id).toBe("grok");
+    } finally {
+      release.resolve();
+      await manager.close();
+    }
+  });
+
+  it("invalid refresh revokes only its scheme before removing authority", async () => {
+    const store = memoryStore({
+      version: 1,
+      accounts: { "openai-codex": account("old", "old", 1) },
+    });
+    const events: string[] = [];
+    const manager = new SubscriptionManager({
+      store,
+      registrations: REGISTRATIONS,
+      now: () => 1000,
+      onAuthorityRevoked: (scheme, reason) => {
+        events.push(`${scheme}:${reason}`);
+      },
+      adapters: [
+        adapter("openai-codex", {
+          refresh: async () => {
+            throw new SubscriptionError(
+              "subscription_reauthentication_required",
+              "fixture invalid grant",
+              "invalid_grant",
+            );
+          },
+        }),
+      ],
+    });
+    try {
+      await expect(manager.resolve("openai-codex")).rejects.toThrow("fixture invalid grant");
+      expect(events).toEqual(["openai-codex:invalidated"]);
+      expect(store.value.accounts["openai-codex"]).toBeUndefined();
+    } finally {
+      await manager.close();
+    }
+  });
+});
+
 describe("production subscription availability", () => {
   it("exposes both project-approved schemes to the local manager", async () => {
     const manager = new SubscriptionManager({

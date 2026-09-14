@@ -64,7 +64,7 @@ test("Container compatibility projects shipped core profiles and closes custom g
     }),
   ];
   expect(isContainerCompatibleProfile("marshall", profiles)).toBe(true);
-  expect(isContainerCompatibleProfile("admiral", profiles)).toBe(false);
+  expect(isContainerCompatibleProfile("admiral", profiles)).toBe(true);
   expect(isContainerCompatibleProfile("plugin-agent", profiles)).toBe(false);
   expect(isContainerCompatibleProfile("custom", profiles)).toBe(true);
   expect(isContainerCompatibleProfile("custom-missing-default", profiles)).toBe(false);

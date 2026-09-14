@@ -820,13 +820,13 @@ catalog case).
 - `packages/kernel/src/guard/effect-review-service.ts` calls both `parseModelRef` and
   `resolveProvider` to resolve the shared reviewer's model and report a typed admission failure.
 - Container model calls also use the same resolver on the host's captured provider registry, after
-  exact provider/model admission, so raw snake-case settings never masquerade as the adapter's
-  resolved configuration. Production: `hostModelBroker` in
-  [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
+  exact logical provider/model admission, so raw settings never masquerade as resolved adapter
+  configuration. Production: `createContainerModelBroker` in
+  [`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
   Test: exact profile/vision model admission and host-stream behavior in
-  [`runtime-model-stream.test.ts`](../../packages/kernel/tests/integration/runtime-model-stream.test.ts),
+  [`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts),
   plus provider-routing-only guest projection in
-  [`local-docker-runtime.test.ts`](../../packages/kernel/tests/unit/local-docker-runtime.test.ts).
+  [`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts).
   The wire boundary is owned by [isolated-agent-runtime](isolated-agent-runtime.md).
 
 ## 8. Open questions

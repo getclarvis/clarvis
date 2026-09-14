@@ -25,7 +25,7 @@ vocabularies are deliberately *open* unions (`TraceKind`, `ErrorCode`, `RunEnded
 `AgentErrorCode`), each shipped as a runtime list plus a narrowing predicate, so a capability living
 in its own package can terminate, fail and record under names the engine never declared
 (`packages/capability/src/run.ts`; `packages/capability/src/agent-result.ts`).
-Eight of its modules are type-only and emit nothing at runtime, as recorded in the coverage
+Its type-only modules emit nothing at runtime and are recorded in the coverage
 allowlist at `tooling/checks/coverage.ts`; the package's coverage floor is 100% functions and
 100% lines (`tooling/checks/coverage.ts`).
 
@@ -544,6 +544,15 @@ retry past this point re-bills the whole prompt). `ProviderError` itself additio
 giving up, attached by `withTransportRetry` on the error it finally rethrows.
 
 ### 3.8 Token tallies (`usage.ts`)
+
+The transport-free `ModelExecutionInfo` and `ModelExecutionResolver` ports are exported from the root
+and `./ports`. Resolution is a closed lookup of the exact provider/model pair; a missing or mismatched
+pair cannot fall back to native transports. Metadata carries provider kind, context/output limits,
+capabilities, reasoning efforts and prompt-cache support, not URLs, credentials or request overrides.
+Production: [`ModelExecutionResolver`](../../packages/capability/src/model-execution.ts) and
+[`requireModelExecution`](../../packages/loop/src/model-execution.ts).
+Test: [`closed catalog validates exact aliases and projects metadata without native transport`](../../packages/loop/tests/unit/model-execution.test.ts).
+Engine consumption belongs to [capability composition](../engine/capability-composition.md).
 
 `TokenCounts` (`packages/capability/src/usage.ts`) is `input`, `output`, `cached`, `cache_write` — the doc-comment states
 `cached` counts input tokens served from the provider's prompt cache (a read hit) and `cache_write`
@@ -1171,7 +1180,7 @@ Production (engine): `packages/loop/src/runtime/tools/tool-effect.ts`. Unpinned 
 package.
 
 **INV-C47.** The `@clarvis/capability` package must hold 100% function and 100% line coverage over its
-non-type-only modules; the eight modules that emit nothing at runtime are named explicitly.
+non-type-only modules; modules that emit nothing at runtime are named explicitly.
 Production: `tooling/checks/coverage.ts`.
 
 **INV-C48.** `AgentRegistryPort.register` returning `null` (the registry is sealed, or at its

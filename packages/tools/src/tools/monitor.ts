@@ -117,7 +117,7 @@ async function waitForReady(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<ReadyResult> {
-  const lp = logPath(config.workspaceRoot, id);
+  const lp = logPath(config.statePaths, id);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const slice = await readLogSlice(lp, 0, config.maxOutputBytes);
@@ -240,8 +240,8 @@ export function createMonitorStart(
       );
 
       const liveness = await Promise.all(
-        (await listSidecars(config.workspaceRoot)).map((m) =>
-          monitorRunning(config.workspaceRoot, m, config.logger),
+        (await listSidecars(config.statePaths)).map((m) =>
+          monitorRunning(config.statePaths, m, config.logger),
         ),
       );
       const aliveCount = liveness.filter(Boolean).length;
@@ -254,9 +254,9 @@ export function createMonitorStart(
       }
 
       const id = mintId();
-      await ensureClarvisDir(config.workspaceRoot);
-      const lp = logPath(config.workspaceRoot, id);
-      const ep = exitPath(config.workspaceRoot, id);
+      await ensureClarvisDir(config.statePaths);
+      const lp = logPath(config.statePaths, id);
+      const ep = exitPath(config.statePaths, id);
       const host = shell();
       const wrapped = exitCaptureWrapper(command, host.flavor);
 
@@ -315,7 +315,7 @@ export function createMonitorStart(
         startedAt: Date.now(),
         readyWhen: readyWhen ?? null,
       };
-      await writeSidecar(config.workspaceRoot, meta);
+      await writeSidecar(config.statePaths, meta);
 
       if (readyRe) {
         const r = await waitForReady(config, id, child.pid, readyRe, readyTimeoutMs, signal);
@@ -379,14 +379,10 @@ export const monitorPoll: ToolDef = {
     const offset = (args.offset as number | undefined) ?? 0;
     const matchStr = args.match as string | undefined;
 
-    const meta = await readSidecar(config.workspaceRoot, id);
-    const exitState = await readExitState(config.workspaceRoot, id, config.logger);
+    const meta = await readSidecar(config.statePaths, id);
+    const exitState = await readExitState(config.statePaths, id, config.logger);
     const running = !exitState.exited && isAlive(meta.pid);
-    const slice = await readLogSlice(
-      logPath(config.workspaceRoot, id),
-      offset,
-      config.maxOutputBytes,
-    );
+    const slice = await readLogSlice(logPath(config.statePaths, id), offset, config.maxOutputBytes);
     config.logger.debug(
       {
         event: "tools.monitor_poll",
@@ -469,8 +465,8 @@ export function createMonitorStop(dependencies: MonitorStopDependencies = {}): T
     },
     async handler(args, config) {
       const id = args.id as string;
-      const meta = await readSidecar(config.workspaceRoot, id);
-      const { exited } = await readExitState(config.workspaceRoot, id, config.logger);
+      const meta = await readSidecar(config.statePaths, id);
+      const { exited } = await readExitState(config.statePaths, id, config.logger);
       if (!exited && isProcessAlive(meta.pid)) {
         killProcessTree(meta.pid, "SIGTERM", { logger: config.logger });
         await wait(STOP_GRACE_MS);
@@ -478,7 +474,7 @@ export function createMonitorStop(dependencies: MonitorStopDependencies = {}): T
           killProcessTree(meta.pid, "SIGKILL", { logger: config.logger });
         }
       }
-      await removeMonitorFiles(config.workspaceRoot, id);
+      await removeMonitorFiles(config.statePaths, id);
       return JSON.stringify({ stopped: true, id });
     },
   };
@@ -507,12 +503,12 @@ export const monitorList: ToolDef = {
     properties: {},
   },
   async handler(args, config) {
-    const metas = await listSidecars(config.workspaceRoot);
+    const metas = await listSidecars(config.statePaths);
     const monitors = await Promise.all(
       metas.map(async (m) => ({
         id: m.id,
         command: m.command,
-        running: await monitorRunning(config.workspaceRoot, m, config.logger),
+        running: await monitorRunning(config.statePaths, m, config.logger),
         started_at: m.startedAt,
         cwd: m.cwd,
       })),

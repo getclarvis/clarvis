@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/llm",
-
   "private": true,
   "description": "The provider layer: the Vercel AI SDK backend behind @clarvis/capability's LLMProvider port, plus the retry, logging and prompt-cache decorators.",
   "license": "MIT",

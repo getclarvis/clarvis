@@ -193,10 +193,10 @@ When the engine requests `preserveState` for an interrupted continuing activity,
 retains the current plan instead of changing its status. A later final result follows the ordinary
 task-closure and retention rules. This behavior does not grant review approval or continuation authority.
 
-Plans is available to native Host/Sandbox runs and the host control plane. Core-only Docker/Podman
-has no plan state, tool, transfer or retention callback; an explicit plan request or continuation
-which depends on one fails before engine/model work and recommends Sandbox or Host. Inherited plan
-settings remain inactive and do not block the run. The placement contract belongs to
+Plans is available to Host, Sandbox and Container Kernels. Container uses the native Markdown
+provider, tools, review, CAS, continuation and retention callbacks, with documents persisted in its
+private content volume. An active external provider is incompatible; disabled Plans does not resolve
+a provider. The placement contract belongs to
 [`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by

@@ -8,7 +8,7 @@ import { sanitizeErrorMessage } from "@clarvis/capability";
 import { acquireLocalLease, globalPaths, type RootOptions } from "@clarvis/paths";
 
 import type { DockerCommandResult, DockerControl, DockerRunOptions } from "./docker-backend.ts";
-import { RUNTIME_PROTOCOL_LABEL, RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
+import { CONTAINER_BASE_ABI } from "../hosting/container-contract.ts";
 import type { RuntimeSettingsBlock } from "./settings.ts";
 import { RuntimeLaunchError } from "./types.ts";
 
@@ -16,6 +16,8 @@ const RECIPE_SCHEMA = "1";
 const MAX_RECIPE_BYTES = 1024 * 1024;
 const BUILD_TIMEOUT_MS = 30 * 60 * 1_000;
 const LABEL_PREFIX = "io.clarvis.runtime.recipe";
+const BASE_ABI_LABEL = "io.clarvis.base.abi";
+const BASE_REVISION_LABEL = "io.clarvis.base.revision";
 const PROXY_ARGUMENTS = [
   "HTTP_PROXY",
   "HTTPS_PROXY",
@@ -301,7 +303,9 @@ function recipeIdentity(
 
 function validRecipeImage(image: ImageInspect, identity: RecipeIdentity): boolean {
   return (
-    image.labels[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION &&
+    image.labels[BASE_ABI_LABEL] === CONTAINER_BASE_ABI &&
+    typeof image.labels[BASE_REVISION_LABEL] === "string" &&
+    /^[a-f0-9]{64}$/u.test(image.labels[BASE_REVISION_LABEL]) &&
     Object.entries(identity.labels).every(([name, value]) => image.labels[name] === value)
   );
 }
@@ -366,7 +370,9 @@ async function ensureBuildBaseReference(
   const image = parseImageInspect(inspected.stdout, "Docker runtime recipe base reference");
   if (
     image.id !== baseImageDigest ||
-    image.labels[RUNTIME_PROTOCOL_LABEL] !== RUNTIME_PROTOCOL_REVISION
+    image.labels[BASE_ABI_LABEL] !== CONTAINER_BASE_ABI ||
+    typeof image.labels[BASE_REVISION_LABEL] !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(image.labels[BASE_REVISION_LABEL])
   ) {
     throw new RuntimeLaunchError(
       "handshake_mismatch",
@@ -476,11 +482,13 @@ async function resolveDockerRuntimeRecipeChecked(
   const base = parseImageInspect(baseResult.stdout, "Docker runtime recipe base image inspection");
   if (
     base.id !== options.baseImageDigest ||
-    base.labels[RUNTIME_PROTOCOL_LABEL] !== RUNTIME_PROTOCOL_REVISION
+    base.labels[BASE_ABI_LABEL] !== CONTAINER_BASE_ABI ||
+    typeof base.labels[BASE_REVISION_LABEL] !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(base.labels[BASE_REVISION_LABEL])
   ) {
     throw new RuntimeLaunchError(
       "handshake_mismatch",
-      "Docker runtime recipe base image identity or protocol did not match admission",
+      "Docker runtime recipe base image identity or ABI did not match admission",
     );
   }
   const captured = await captureRecipe(

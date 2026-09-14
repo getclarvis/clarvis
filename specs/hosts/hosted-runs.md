@@ -27,8 +27,9 @@ its background feature exposes explicit handoff, discovery and attachment throug
 
 Production: `HostedRunRef`, `HostedRunAttachment`, `HostedRunReceipt` and `HostingService` in
 [hosting.ts](../../packages/protocol/src/hosting.ts). The concrete kernel RPC and its IPC adapters
-remain owned by [kernel transport](kernel-transport.md); the guest's private execution RPC remains
-owned by [isolated agent runtime](isolated-agent-runtime.md).
+remain owned by [kernel transport](kernel-transport.md). The Container launcher carries this same
+public hosting service through channel 1; process
+ownership and broker channels remain owned by [isolated agent runtime](isolated-agent-runtime.md).
 
 ## Code integration
 
@@ -280,12 +281,12 @@ reported; all scopes are attempted. The concrete guard/configuration policy supp
 
 Native Host/Sandbox command approval consults the live scope on every check. Answers received after
 that scope retires deny even when the old dialog selected one-time approval. Human fallback answers
-are not cached by effect review. Container guests receive no guard or approval bridge. Production:
+are not cached by effect review. Container composes no guard or approval port. Production:
 `createGuardHumanApproval` in [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts)
-and `createLocalContainerRuntime` in
-[local-container-runtime.ts](../../packages/kernel/src/runtime/local-container-runtime.ts). Test:
+and `createContainerNativeKernel` in
+[container-native.ts](../../packages/kernel/src/hosting/container-native.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts) and
-[runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 Production: `createHostedAdmission`, `HostedAdmission` and `HostedControl` in
 [admission.ts](../../packages/kernel/src/hosting/admission.ts). Test: the reservation/disconnect,

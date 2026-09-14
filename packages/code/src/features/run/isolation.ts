@@ -16,15 +16,19 @@ export const ISOLATION_CHOICES: readonly IsolationChoice[] = [
     label: "Sandbox",
     detail: "native Seatbelt or Bubblewrap; host access is requested per command",
   },
-  { value: "docker", label: "Docker", detail: "core tools only; lazy Linux container" },
+  {
+    value: "docker",
+    label: "Docker",
+    detail: "native Kernel; no extensions or external providers",
+  },
   {
     value: "podman",
     label: "Podman",
-    detail: "core tools only; fails closed if Podman cannot start",
+    detail: "native Kernel; no extensions or external providers",
   },
 ];
 
-/** True when isolation is a lazy container engine rather than native host or sandbox. */
+/** True when isolation selects a Container Kernel rather than native host or sandbox. */
 export function isContainerIsolation(isolation: IsolationMode): isolation is "docker" | "podman" {
   return isolation === "docker" || isolation === "podman";
 }
@@ -88,22 +92,24 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
       ];
     case "docker":
       return [
-        "Core tools only: Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+        "The full native Kernel runs inside Docker; Plans, Memory, Workflows and Goals remain available.",
+        "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
         "Commands run without Command Review; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",
-        "Docker starts on the first run and fails closed if the engine cannot start.",
+        "Docker is selected before connecting and fails closed if the engine cannot start.",
       ];
     case "podman":
       return [
-        "Core tools only: Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+        "The full native Kernel runs inside Podman; Plans, Memory, Workflows and Goals remain available.",
+        "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
         "Commands run without Command Review; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",
-        "Podman starts on the first run and fails closed if the engine cannot start.",
+        "Podman is selected before connecting and fails closed if the engine cannot start.",
       ];
   }
 }
 
-/** Persist one isolation axis globally; container engines remain a deliberately minimal selection. */
+/** Persist one isolation axis globally; Container engines select a full-Kernel connection. */
 export async function applyIsolation(
   isolation: IsolationChoice["value"],
   settings: SettingsAdapter,

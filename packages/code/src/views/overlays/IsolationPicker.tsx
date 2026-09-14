@@ -41,13 +41,17 @@ export function IsolationPicker(props: {
 
   const apply = async (isolation: IsolationChoice["value"]): Promise<void> => {
     if (applying) return;
+    if (props.runActive()) {
+      props.notify(
+        "isolation change unavailable while activity is running; stop it before reconnecting",
+        "warn",
+      );
+      return;
+    }
     applying = true;
     try {
       const effective = await applyIsolation(isolation, props.settings);
-      props.notify(
-        `isolation: ${effective} (global)${props.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-        "success",
-      );
+      props.notify(`isolation: ${effective} (global)`, "success");
       props.onApplied();
     } catch (error) {
       props.notify(`isolation change failed: ${errorText(error)}`, "error");
@@ -90,7 +94,7 @@ export function IsolationPicker(props: {
       onClose={props.onClose}
       footer={() =>
         confirmation.message() ??
-        `global setting ${glyph("separator")} container engines start on first run`
+        `global setting ${glyph("separator")} reconnects through the selected Container engine`
       }
       footerFg={confirmation.message() ? tokens.del : tokens.muted}
       cells={(choice, selected) => [
@@ -112,7 +116,7 @@ export function IsolationPicker(props: {
                   {choice.value === "host"
                     ? `${glyph("warning")} No containment boundary.`
                     : isContainerIsolation(choice.value)
-                      ? "Core tools only; the managed Linux runtime is resolved lazily."
+                      ? "Full native Kernel; extensions and external capability providers are unavailable."
                       : "Uses the native host sandbox."}
                 </text>
                 <text fg={tokens.muted}>

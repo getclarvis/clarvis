@@ -1,5 +1,10 @@
 import { PLANS_DEFAULTS } from "@clarvis/plan/settings";
-import { parseModelRef, resolveProvider, type ProviderConfig } from "@clarvis/capability";
+import {
+  parseModelRef,
+  resolveProvider,
+  type ProviderConfig,
+  type ModelExecutionResolver,
+} from "@clarvis/capability";
 import {
   agentPromptOf,
   agentFrontmatterSchema,
@@ -36,6 +41,8 @@ interface EngineSettings {
 
 /** Defaults applied when agent frontmatter or merged settings omit model/limits/entry agent. */
 export interface SettingsAssemblerOptions {
+  /** Closed host execution catalog. Provider transport declarations stay out of the request. */
+  modelExecutionResolver?: ModelExecutionResolver;
   /** Model used when neither `default_model` nor agent frontmatter names one. */
   defaultModel?: string;
   /** Iteration cap applied when an agent's frontmatter omits `iteration_limit`
@@ -281,6 +288,7 @@ function buildProfile(
       `agent '${record.name}' declares no model and no default_model is set`,
     );
   }
+  requireCatalogModel(model, options.modelExecutionResolver);
   const agentPrompt = agentPromptOf(
     typeof fm.base_prompt === "string" ? fm.base_prompt : undefined,
     record.body,
@@ -418,6 +426,8 @@ export function createSettingsRunAssembler(
         "Direct self-configuration requires Isolation Sandbox or Host; containers cannot configure the host.",
       );
     const merged = settings.merged as unknown as EngineSettings;
+    requireCatalogModel(merged.default_vision_model, options.modelExecutionResolver);
+    requireCatalogModel(params.guard_judge?.model, options.modelExecutionResolver);
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
@@ -489,7 +499,7 @@ export function createSettingsRunAssembler(
         ...mentionSeeds.map((content) => ({ role: "user" as const, content })),
         ...(skillRun !== undefined ? [{ role: "user" as const, content: skillRun.seed }] : []),
       ],
-      providers: merged.providers ?? [],
+      providers: options.modelExecutionResolver === undefined ? (merged.providers ?? []) : [],
       servers,
       profiles,
       entry: agentName,
@@ -518,6 +528,7 @@ export function createSettingsRunAssembler(
                   merged.default_model ??
                   options.defaultModel,
                 merged.providers,
+                options.modelExecutionResolver,
               ),
             )
           ? { prompt_cache_ttl: "1h" as const }
@@ -558,8 +569,27 @@ export function createSettingsRunAssembler(
 }
 
 /** Prompt presence is independent of whether the configured reviewer provider can run. */
-function reviewerResolves(model: string | undefined, providers: unknown[] | undefined): boolean {
+function reviewerResolves(
+  model: string | undefined,
+  providers: unknown[] | undefined,
+  resolver?: ModelExecutionResolver,
+): boolean {
   if (model === undefined) return false;
   const ref = parseModelRef(model);
+  if (resolver !== undefined) {
+    const info = resolver.resolve(ref.provider, ref.modelId);
+    return info?.provider === ref.provider && info.model === ref.modelId;
+  }
   return resolveProvider(ref.provider, (providers ?? []) as ProviderConfig[], ref.modelId).ok;
+}
+
+/** Admit only exact catalog pairs before publishing a settings-derived request. */
+function requireCatalogModel(
+  model: string | undefined,
+  resolver: ModelExecutionResolver | undefined,
+): void {
+  if (model === undefined || resolver === undefined) return;
+  if (!reviewerResolves(model, undefined, resolver)) {
+    throw kernelError("invalid_request", `model '${model}' is not in the execution catalog`);
+  }
 }

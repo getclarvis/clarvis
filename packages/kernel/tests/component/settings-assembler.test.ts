@@ -46,6 +46,58 @@ async function assemblerWith(
 }
 
 describe("settings run assembler", () => {
+  it("projects catalog targets without provider transports and refuses missing exact pairs", async () => {
+    const modelExecutionResolver: NonNullable<SettingsAssemblerOptions["modelExecutionResolver"]> =
+      {
+        resolve: (provider, model) =>
+          provider === "alias" && model === "m"
+            ? {
+                provider,
+                model,
+                kind: "openai-codex",
+                contextWindowTokens: 32000,
+                capabilities: [],
+                reasoningEfforts: ["low"],
+                promptCache: "implicit",
+              }
+            : undefined,
+      };
+    const settings = {
+      default_model: "alias/m",
+      providers: [{ name: "alias", kind: "openai", api_key_env: "TEST_ONLY_KEY" }],
+    };
+    const assemble = await assemblerWith({ solo: {} }, settings, { modelExecutionResolver });
+    const body = assemble({
+      agent: "solo",
+      messages: [{ role: "user", content: "Test catalog." }],
+      execution_id: "catalog",
+    }) as RawBody & {
+      providers: unknown[];
+    };
+    expect(body.providers).toEqual([]);
+    expect(body.profiles[0]?.model).toBe("alias/m");
+    expect(() =>
+      validateBody(body, loadEnv({}), undefined, { modelExecutionResolver }),
+    ).not.toThrow();
+    const native = await assemblerWith({ solo: {} }, settings);
+    expect(
+      (native({ agent: "solo", messages: [], execution_id: "native" }) as { providers: unknown[] })
+        .providers,
+    ).toEqual(settings.providers);
+    for (const overrides of [
+      { default_model: "alias/missing" },
+      { default_vision_model: "alias/missing" },
+    ]) {
+      const missing = await assemblerWith(
+        { solo: {} },
+        { ...settings, ...overrides },
+        { modelExecutionResolver },
+      );
+      expect(() => missing({ agent: "solo", messages: [], execution_id: "missing" })).toThrow(
+        /execution catalog/,
+      );
+    }
+  });
   it("rejects authority overrides read from entry or delegated profile files", () => {
     for (const name of ["lead", "worker"]) {
       const store = createMemoryConfigStore({

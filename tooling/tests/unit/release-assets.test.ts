@@ -5,10 +5,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { RELEASE_TARGETS, releaseAssetSetFailures } from "../../checks/release-assets.ts";
-import {
-  RUNTIME_ARTIFACT_REPOSITORY,
-  RUNTIME_IMAGE_REPOSITORY,
-} from "../../runtime/build-image.ts";
 import { createRuntimeReleaseManifest } from "../../runtime/release-manifest.ts";
 
 const version = "0.0.2-beta";
@@ -68,6 +64,14 @@ async function writeArchive(
 
 async function writeReleaseSet(directory: string): Promise<void> {
   for (const target of RELEASE_TARGETS) await writeArchive(directory, target);
+  for (const target of ["linux-x64", "linux-arm64"]) {
+    const name = `clarvis-kernel-${target}.tar.gz`;
+    await writeFile(join(directory, name), `kernel-${target}`);
+    const digest = createHash("sha256").update(`kernel-${target}`).digest("hex");
+    await writeFile(join(directory, `${name}.sha256`), `${digest}  ${name}\n`);
+    for (const engine of ["docker", "podman"])
+      await writeFile(join(directory, `qualification-${engine}-${target}.json`), "{}\n");
+  }
   for (const name of [
     "BUN-LICENSE.md",
     "LICENSE",
@@ -83,10 +87,29 @@ async function writeReleaseSet(directory: string): Promise<void> {
     join(directory, "runtime-release.json"),
     `${JSON.stringify(
       createRuntimeReleaseManifest({
+        schema_version: 2,
         version,
-        sourceRevision: "a".repeat(40),
-        artifactImage: `${RUNTIME_ARTIFACT_REPOSITORY}@sha256:${"b".repeat(64)}`,
-        runtimeImage: `${RUNTIME_IMAGE_REPOSITORY}@sha256:${"c".repeat(64)}`,
+        source_revision: "a".repeat(40),
+        targets: Object.fromEntries(
+          ["linux-x64", "linux-arm64"].map((target) => [
+            target,
+            {
+              base: {
+                image: "ghcr.io/getclarvis/clarvis-base",
+                digest: `sha256:${"b".repeat(64)}`,
+                abi: "clarvis-linux-glibc-v1",
+              },
+              artifact: {
+                asset: `clarvis-kernel-${target}.tar.gz`,
+                sha256: "c".repeat(64),
+                size: 1024,
+              },
+              kernel_wire_version: 10,
+              broker_version: 1,
+              channel_version: 1,
+            },
+          ]),
+        ) as never,
       }),
       null,
       2,

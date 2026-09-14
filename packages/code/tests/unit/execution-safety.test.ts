@@ -134,8 +134,8 @@ describe("execution safety", () => {
         deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "off", "off"),
       ),
     ).toEqual([
-      "Core tools only.",
-      "Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.",
+      "The full native Kernel runs inside the Container.",
+      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
       "The selected workspace is mounted directly; changes appear on the host immediately.",
       "Outbound network access is enabled and may cause remote effects or expose workspace content.",
       "Commands run without Command Review.",

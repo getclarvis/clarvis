@@ -106,20 +106,22 @@ Other shortcuts depend on the terminal keyboard profile and appear in the footer
 README does not duplicate a keymap that the application generates dynamically.
 
 Settings > Isolation, Run Controls, and `Ctrl+S` share the same global
-Host/Sandbox/Docker/Podman writer. Docker or Podman starts only when the first run needs it; the
-simple TUI choice uses product-owned limits and ordinary outbound networking. Both Container
-placements are **Core tools only**: they run without Command Review, extensions or host-backed
-capabilities. Any admission, engine, image, policy, recipe, mount or guest-handshake failure remains
-in Container; Clarvis never replays it in Sandbox/Host. Docker Desktop and Colima satisfy the same
-Docker Engine contract on macOS.
+Host/Sandbox/Docker/Podman writer. Docker or Podman connects before a Kernel is created; the simple
+TUI choice uses product-owned limits and ordinary outbound networking. Container runs the complete
+native Kernel with Plans, Memory, Workflows and Goals. Command Review, plugins, skills, hooks, generic
+MCP and external capability providers remain unavailable; Tasks is unavailable because its current
+provider is MCP. Any acquisition, engine, base, artifact, policy, mount or handshake failure remains
+in Container; Clarvis never replays it in Sandbox/Host.
 
 An isolated container mounts the already-selected workspace read-write at `/workspace`, so guest
 changes appear on the host immediately. Start Clarvis in a Git worktree when you want that mount to
-be a separate checkout; Clarvis does not commit, merge, or remove it. Complete workspace `.clarvis`
-and `.agents` roots are replaced by empty read-only masks. Git metadata is mounted read-only, so
+be a separate checkout; Clarvis does not commit, merge, or remove it. The real `.clarvis` is covered
+by a private persistent content volume and `.agents` by an empty read-only mask. Git metadata is mounted read-only, so
 status/diff/log/show remain available but staging or committing requires Sandbox/Host. The guest has
 no engine socket, host shell, credentials or port-preview bridge. Agents with command access can
 install missing toolchains through the private engine-owned `/mise` cache.
+The nested `.clarvis` and `.agents` mount targets must already exist. A non-Git workspace also needs
+an empty `.git` directory; Clarvis refuses an absent target before the engine can create it on the host.
 
 ## Common commands
 
@@ -162,10 +164,11 @@ isolation is a complete security boundary:
 - Docker or Podman isolation leaves the selected workspace writable and enables ordinary outbound
   networking by default. A guest can therefore modify that checkout and transmit readable workspace
   content or reach host/LAN services; use `network: "none"` when the run must be offline;
-- Container isolation keeps provider configuration/credentials on the host and exposes no Skills,
-  MCPs, Hooks, Plugins, Plans, Memory, Tasks, Workflows, Goal, configuration or preview bridge. It
-  protects the host outside the selected workspace; it does not protect workspace contents or
-  prevent outbound remote effects;
+- Container isolation keeps provider configuration, credentials and API requests on the host. Plans,
+  Memory, Workflows and Goals are native inside the Container; Skills, generic MCP, Hooks, Plugins,
+  Tasks and preview remain absent. A closed model broker crosses the stdio boundary without exposing
+  provider credentials. Isolation protects the host outside the selected workspace; it does not
+  protect workspace contents or prevent outbound remote effects;
 - credentials saved through the managed API-key and subscription flows stay in global files. POSIX
   installs apply owner-only mode bits; Windows relies on the user's profile access controls. Literal
   provider or MCP headers can be authored in workspace settings, so use `${NAME}` references and
@@ -221,7 +224,7 @@ To install a source-only command from this checkout after Bun is available, run:
 ```
 
 That one-time machine setup installs dependencies, configures the repository hook, builds the local
-runtime image for each of Docker and Podman that is installed, and creates
+runtime base for each installed Docker/Podman engine, builds the Linux Kernel artifact, and creates
 `clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither
 engine still gets the launcher for native use. Run the command
 from any project to test the current checkout without building or downloading a release. Use
@@ -230,9 +233,9 @@ from any project to test the current checkout without building or downloading a 
 all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
 root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
 
-To install a published source RC together with its Docker image, use `./dev-install.sh --candidate`
+To install a published source RC together with its target Container artifact, use `./dev-install.sh --candidate`
 or `./dev-install.sh --candidate <rc-tag>`. This selects an isolated checkout and requires Git,
-the RC's pinned Bun version, and Docker. See the
+the RC's pinned Bun version, and an engine when Container is selected. See the
 [Code candidate installation guide](packages/code/README.md) for prerequisites and lifecycle.
 
 ## Packages

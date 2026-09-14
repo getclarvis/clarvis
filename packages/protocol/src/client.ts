@@ -58,27 +58,43 @@ export type RuntimeStatus =
       isolation: "host" | "sandbox";
       lifecycle: "ready";
     }
-  | {
+  | ({
       kind: "container";
       engine: "podman" | "docker";
       host_platform: string;
       guest_platform: "linux";
-      network: "none" | "internet" | "outbound";
-      generation?: string;
+      network: "none" | "outbound";
       engine_version?: string;
-      image_digest?: string;
-      runtime_protocol_revision?: string;
-      lifecycle:
-        | "cold"
-        | "inspecting"
-        | "preparing"
-        | "starting"
-        | "ready"
-        | "stopping"
-        | "stopped"
-        | "disconnected"
-        | "failed";
-    };
+    } & (
+      | {
+          generation: string;
+          image_digest: string;
+          artifact_digest: string;
+          base_abi: string;
+          broker_version: number;
+          channel_version: number;
+          state_namespace: string;
+          lifecycle: "ready";
+        }
+      | {
+          generation?: string;
+          image_digest?: string;
+          artifact_digest?: string;
+          base_abi?: string;
+          broker_version?: number;
+          channel_version?: number;
+          state_namespace?: string;
+          lifecycle:
+            | "cold"
+            | "inspecting"
+            | "preparing"
+            | "starting"
+            | "stopping"
+            | "stopped"
+            | "disconnected"
+            | "failed";
+        }
+    ));
 
 /** Options passed when connecting a {@link KernelClient}. */
 export interface ConnectOptions {

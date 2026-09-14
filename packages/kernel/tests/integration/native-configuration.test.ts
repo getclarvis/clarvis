@@ -28,51 +28,15 @@ it.each(["docker", "podman"] as const)(
         runtime: { backend },
       }),
     );
-    let nativeRuns = 0;
-    let containerStarts = 0;
-    const kernel = await createFileKernel({
-      workspaceRoot,
-      globalDir,
-      logger: NOOP_LOGGER,
-      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
-      subscriptions: false,
-      builtins: { hooks: false, tasks: false },
-      executeRun: async () => {
-        nativeRuns++;
-        throw new Error("unexpected native inference");
-      },
-      runtimeFactory: {
-        create: async () => {
-          containerStarts++;
-          throw new Error("ordinary placement");
-        },
-      },
-    });
-    try {
-      const run = await kernel.runs.start({
-        messages: [{ role: "user", content: "Create a local reviewer." }],
-        skill: { name: "clarvis-configure", task: "Create a local reviewer." },
-      });
-      let prompts = 0;
-      run.onElicit((request) => {
-        prompts++;
-        void run.respond({ id: request.id, action: "decline" });
-      });
-      const result = await run.done;
-      expect(result.status).toBe("failed");
-      expect(result.error?.message).toContain("Isolation Sandbox or Host");
-      expect(nativeRuns).toBe(0);
-      expect(containerStarts).toBe(0);
-      expect(prompts).toBe(0);
-      const ordinary = await kernel.runs.start({
-        messages: [{ role: "user", content: "Inspect the project." }],
-        agent: "coder",
-      });
-      expect((await ordinary.done).status).toBe("failed");
-      expect(containerStarts).toBe(1);
-      expect(nativeRuns).toBe(0);
-    } finally {
-      await kernel.close();
-    }
+    await expect(
+      createFileKernel({
+        workspaceRoot,
+        globalDir,
+        logger: NOOP_LOGGER,
+        env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+        subscriptions: false,
+        builtins: { hooks: false, tasks: false },
+      }),
+    ).rejects.toThrow("connectLocalContainerKernel");
   },
 );

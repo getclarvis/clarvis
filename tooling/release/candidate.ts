@@ -1,9 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import {
-  RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY,
-  RUNTIME_CANDIDATE_IMAGE_REPOSITORY,
-  RUNTIME_PROTOCOL_REVISION,
-} from "../runtime/build-image.ts";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { parseRuntimeReleaseManifest } from "../runtime/release-manifest.ts";
 
 /** Validate the source-only candidate identity independently of workflow tag glob matching. */
 export function candidateIdentity(tag: string, version: string, sha: string, repository: string) {
@@ -24,8 +20,10 @@ export function candidateIdentity(tag: string, version: string, sha: string, rep
     version,
     source_revision: sha,
     repository,
-    protocol_revision: RUNTIME_PROTOCOL_REVISION,
-    platforms: ["linux/amd64", "linux/arm64"],
+    kernel_wire_version: 10,
+    broker_version: 1,
+    channel_version: 1,
+    targets: ["linux-x64", "linux-arm64"],
   };
 }
 
@@ -41,17 +39,16 @@ export function main(): void {
   const mode = process.argv[2];
   if (mode === "validate") return;
   if (mode === "manifest") {
-    const artifact = process.env.ARTIFACT_DIGEST;
-    const runtime = process.env.RUNTIME_DIGEST;
-    if (!/^sha256:[a-f0-9]{64}$/.test(artifact) || !/^sha256:[a-f0-9]{64}$/.test(runtime))
-      throw new Error("invalid candidate image digest");
+    const release = parseRuntimeReleaseManifest(
+      readFileSync("build/candidate/runtime-release.json", "utf8"),
+      identity.version,
+    );
     writeFileSync(
       "build/candidate/runtime-candidate.json",
       `${JSON.stringify(
         {
           ...identity,
-          artifact_image: `${RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY}@${artifact}`,
-          runtime_image: `${RUNTIME_CANDIDATE_IMAGE_REPOSITORY}@${runtime}`,
+          runtime: release,
         },
         null,
         2,
@@ -63,7 +60,7 @@ export function main(): void {
   const notes = "build/candidate/notes.md";
   writeFileSync(
     notes,
-    `Candidate runtime built from source commit \`${identity.source_revision}\`.\n\nDocker and rootless Podman canaries passed on linux/amd64 and linux/arm64. See runtime-candidate.json for immutable image digests. Install this source candidate with \`./dev-install.sh --candidate ${identity.tag}\` using the pinned Bun version and Docker. The installer checks out this exact commit and pulls its digest-pinned image. This is not a stable Clarvis release and contains no stable installers.\n`,
+    `Candidate runtime built from source commit \`${identity.source_revision}\`.\n\nQualified base and Kernel artifacts are recorded in runtime-candidate.json. This is not a stable Clarvis release and contains no stable installers.\n`,
   );
   const result = Bun.spawnSync(
     [
@@ -72,6 +69,15 @@ export function main(): void {
       "create",
       identity.tag,
       "build/candidate/runtime-candidate.json",
+      "build/candidate/runtime-release.json",
+      ...readdirSync("build/candidate")
+        .filter((name) => /^clarvis-kernel-linux-(?:x64|arm64)\.tar\.gz(?:\.sha256)?$/u.test(name))
+        .sort()
+        .map((name) => `build/candidate/${name}`),
+      ...readdirSync("build/candidate")
+        .filter((name) => /^qualification-(?:docker|podman)-linux-(?:x64|arm64)\.json$/u.test(name))
+        .sort()
+        .map((name) => `build/candidate/${name}`),
       "--repo",
       "getclarvis/clarvis",
       "--verify-tag",

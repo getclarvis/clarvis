@@ -65,7 +65,12 @@ async function managerFor(
 ) {
   let index = 0;
   return WorkspaceClientManager.create(
-    { workspaceRoot: "/workspace", defaultOwner: "operator", openMcpAuthorizationUrl },
+    {
+      workspaceRoot: "/workspace",
+      globalDir: "/global",
+      defaultOwner: "operator",
+      openMcpAuthorizationUrl,
+    },
     {
       resolveArtifact: async () => ({
         command: [process.execPath, "/unused-host.ts"],

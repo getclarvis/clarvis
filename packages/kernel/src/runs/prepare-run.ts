@@ -12,11 +12,6 @@ import { snapshotRunConfiguration, type RunConfigurationSource } from "./configu
 import type { KernelRunService, RunRequestAssembler, PreparedRunExecution } from "./run-service.ts";
 import { createSettingsRunAssembler, type SettingsAssemblerOptions } from "./settings-assembler.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
-import {
-  admitContainerCoreRun,
-  assertContainerCoreExplicitRequest,
-} from "../runtime/container-core-policy.ts";
-import { dollarSkillSeeds, userMessagesText } from "../skills/dollar-mentions.ts";
 
 /** Host-only admission result; start is single-use and preserves the prepared execution identity. */
 export interface PreparedKernelRun {
@@ -57,62 +52,14 @@ export function prepareKernelRun(
   });
   let execution: PreparedRunExecution | undefined;
   const snapshot = snapshotRunConfiguration(options.configStore);
-  const settings = snapshot.readSettings();
-  const backend = settings.merged.runtime?.backend;
-  const container = backend === "docker" || backend === "podman";
-  if (container) {
-    assertContainerCoreExplicitRequest(request, {
-      goalRequested: goal !== undefined,
-      resolvedSkillMention:
-        dollarSkillSeeds(userMessagesText(request.messages), options.skills).length > 0,
-    });
-  }
-  const assemblySource: RunConfigurationSource = container
-    ? {
-        ...snapshot,
-        readSettings: () => {
-          if (settings.operator_merged === undefined && (settings.active_plugins?.length ?? 0) > 0)
-            throw kernelError(
-              "unsupported",
-              "Plugin settings provenance is unavailable in Isolation Container. Use Isolation Sandbox or Host.",
-              { placement: "container", capability: "Plugins" },
-            );
-          const merged = structuredClone(settings.operator_merged ?? settings.merged);
-          return {
-            ...structuredClone(settings),
-            merged,
-            operator_merged: structuredClone(merged),
-            active_plugins: [],
-            mcpServerOrigins: Object.fromEntries(
-              Object.entries(settings.mcpServerOrigins ?? {}).filter(
-                ([, origin]) => origin !== "plugin",
-              ),
-            ),
-          };
-        },
-      }
-    : snapshot;
-  const pluginNames = container
-    ? []
-    : [...(options.assemblerOptions?.pluginMcpServerNames?.() ?? [])];
   const assemble =
     options.assembleRunRequest ??
-    createSettingsRunAssembler(assemblySource, {
+    createSettingsRunAssembler(snapshot, {
       ...options.assemblerOptions,
       ...(options.skills === undefined ? {} : { skills: options.skills }),
-      pluginMcpServerNames: () => pluginNames,
     });
   const assembled = structuredClone(assemble(request));
-  const admitted = container
-    ? admitContainerCoreRun({
-        params: request,
-        assembled,
-        source: assemblySource,
-        customAssembler: options.assembleRunRequest !== undefined,
-        goalRequested: goal !== undefined,
-      })
-    : assembled;
-  const rawBody = goal === undefined ? admitted : goal.constrain(admitted as RunRequest);
+  const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
   if (rawBody === null || typeof rawBody !== "object")
     throw kernelError("invalid_request", "prepared run assembler returned no request object");
   const body = rawBody as {

@@ -58,8 +58,8 @@ export interface CatalogProvider {
 /** Full model catalog snapshot returned by the kernel. */
 export interface ModelCatalog {
   providers: CatalogProvider[];
-  /** Whether the catalog came from the refreshed cache or the bundled snapshot. */
-  source: "cache" | "bundle";
+  /** Catalog origin: refreshed host cache, bundled metadata, or immutable logical execution projection. */
+  source: "cache" | "bundle" | "projection";
 }
 
 /** Fetch and refresh the model/pricing catalog. */

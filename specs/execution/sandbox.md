@@ -471,19 +471,20 @@ Production: `packages/code/src/views/config/SandboxConfigPanel.tsx` (`SandboxCon
 ### 4.6 Native Sandbox and Container are separate placements
 
 Native Sandbox keeps the integrated host composition described in this document. Docker and Podman
-instead select the core-only Container contract in
-[isolated-agent-runtime.md](../hosts/isolated-agent-runtime.md): no Command Review, extensions or
-host-backed capability crosses that boundary, while the selected workspace remains writable and Git
-metadata is read-only. Selecting Container does not strengthen, enable or otherwise rewrite the
+select the complete Kernel Container contract in
+[isolated-agent-runtime.md](../hosts/isolated-agent-runtime.md): native domain services run inside
+the Container while Command Review, extensions and host process authority stay absent. The selected
+workspace remains writable and Git metadata is read-only. Selecting Container does not rewrite the
 persisted native Sandbox policy.
 
 Neither engine falls back to Sandbox or Host. Engine acquisition, image, policy, mount, handshake or
 guest failures are returned from the selected Container placement. The operator must explicitly
 select Sandbox/Host and begin a new run; a Container run is never replayed natively.
 
-Production: `packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`) and
-`packages/kernel/src/sandbox/policy.ts` (`effectiveSandboxSettings`). Tests:
-`packages/kernel/tests/unit/lazy-runtime.test.ts` and
+Production: `packages/kernel/src/hosting/connect-local-container.ts`
+(`connectLocalContainerKernel`) and `packages/kernel/src/sandbox/policy.ts`
+(`effectiveSandboxSettings`). Tests:
+`packages/code/tests/component/workspace-client-manager.test.ts` and
 `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 ## 5. Invariants
@@ -644,9 +645,10 @@ proved independently by INV-S14, so public-registry latency cannot fail this pac
 **INV-S16 — Container selection never changes or invokes native Sandbox.** Docker/Podman failure is
 reported in place. Only a new explicit operator selection can place a later run in native Sandbox.
 
-- Production: `createLazyRuntimeCoordinator` in `packages/kernel/src/runtime/lazy-runtime.ts` and
-  `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts`.
-- Test: `packages/kernel/tests/unit/lazy-runtime.test.ts` and
+- Production: `connectLocalContainerKernel` in
+  `packages/kernel/src/hosting/connect-local-container.ts` and `effectiveSandboxSettings` in
+  `packages/kernel/src/sandbox/policy.ts`.
+- Test: `packages/code/tests/component/workspace-client-manager.test.ts` and
   `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,

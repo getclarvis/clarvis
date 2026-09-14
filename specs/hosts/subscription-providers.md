@@ -111,6 +111,29 @@ persisted before its access token is returned. Omitted refresh tokens preserve t
 changed account identity or `invalid_grant` removes the record and requires explicit
 reauthentication. Catalog caches are memory-only and keyed by account version.
 
+`disconnect` fences host inference authority synchronously, commits local account removal, and only
+then attempts remote revocation. It does not erase an account connected while that remote request
+is pending. `SubscriptionManagerOptions.onAuthorityRevoked` is an optional synchronous host-only
+sink carrying the scheme and a closed reason, never credentials. It also fences explicit account
+replacement, invalid refresh/continuity, missing or corrupt authority observed during resolution,
+and authentication rejected after refresh. The host sink must revoke its corresponding leases
+without selecting another account; it is not exposed through guest administration or wire params.
+Ordinary refresh rotation for the same account retains its existing semantics.
+
+Production: `SubscriptionManager.disconnect`, `persistConnected`, `currentAccount` and
+`refreshAccount` in [manager.ts](../../packages/kernel/src/subscriptions/manager.ts).
+Test: the host inference authority fencing cases in
+[subscription-manager.test.ts](../../packages/kernel/tests/unit/subscription-manager.test.ts)
+check pre-network revocation, local removal, concurrent replacement preservation and invalid grant.
+
+`createOperatorServices.onSecretChanged` is another host-only synchronous fence. It receives only
+the secret name after a successful synchronous store mutation and before the asynchronous service
+response. Invalid writes do not notify. The launcher is responsible for binding these notifications
+to model leases; merely constructing the administrative services does not create such leases.
+Production: [operator-services.ts](../../packages/kernel/src/config/operator-services.ts).
+Test: the secret authority fencing case in
+[operator-services.test.ts](../../packages/kernel/tests/integration/operator-services.test.ts).
+
 Production: `createFileSubscriptionStore`, `SubscriptionManager.currentAccount`,
 `SubscriptionManager.refreshAccount`, and `SubscriptionManager.getEntitled`.
 

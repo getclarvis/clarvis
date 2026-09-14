@@ -157,10 +157,12 @@ write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Product
 `IsolationConfigPanel` is the dedicated global placement screen for Host, Sandbox, Docker or Podman.
 It writes through shared `applyIsolation` and drills to `sandbox.config` for native Sandbox fields
 rather than cloning them. Workspace settings cannot contribute a runtime. Docker/Podman copy states
-**Core tools only**, no extensions/host-backed capabilities/Command Review, writable workspace and
-outbound consequences, read-only Git metadata and fail-closed startup with no native fallback.
-Review renders `Not applicable in Container`, while Memory/Plans/Extensions are visibly inactive;
-their persisted native settings are not overwritten. Production:
+that the full native Kernel, including Plans, Memory, Workflows and Goals, runs in the Container;
+skills, MCP, hooks, plugins, Tasks, external capability providers and Command Review remain
+unavailable. It also names the writable workspace, outbound consequences, read-only Git metadata and
+fail-closed startup with no native fallback. Review renders `Not applicable in Container`, native
+capability settings remain visible, and unavailable extensions are marked as such; persisted settings
+are not overwritten. An active operation blocks the isolation transition until it stops. Production:
 `packages/code/src/views/config/IsolationConfigPanel.tsx`,
 `packages/code/src/features/run/isolation.ts` (`isolationPlacementLines`), and
 `packages/code/src/views/config/RunControlsPanel.tsx`. Test:

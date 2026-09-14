@@ -149,8 +149,8 @@ managed global installs may target either global convention, and both workspace 
 repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
-Core-only Container uses `agentsWorkspaceDir()` and `workspacePaths().clarvisDir` as the two complete
-control-root mask targets; it does not enumerate their descendants.
+Container uses `agentsWorkspaceDir()` as a complete control-root mask target and covers
+`workspacePaths().clarvisDir` with its private content volume; it does not enumerate descendants.
 
 Definition and selection ownership is specified in
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
@@ -382,6 +382,16 @@ Three of these exist because the code path they describe resolves to a boolean n
 `paths.spill_sweep`'s `truncated` is the same class: `sweepSpillDir` stops at 10,000 entries and
 returns `void`, so a workspace past that threshold would otherwise stop being swept silently and
 permanently.
+
+## Container namespaces
+
+`containerLaunchPaths(namespace, globalDir?)` resolves the host-only launch lease and registry under
+`state/container-hosts/<namespace>`. It exposes no local-host endpoint or credential path.
+`containerDataVolumeNames(namespace)` separates the persistent `content` and `state` roles;
+`containerArtifactVolumeName(archiveSha256)` addresses the independent immutable artifact volume.
+These helpers require full bare lowercase SHA-256 identities and perform no filesystem or engine
+mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even when the launcher
+runs on a different platform. Namespace derivation, volume admission and lifecycle belong to Kernel.
 
 ## Owner segments
 

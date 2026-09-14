@@ -1,4 +1,5 @@
 import type { Readable, Writable } from "node:stream";
+import type { RuntimeStatus } from "@clarvis/protocol";
 
 /** Captured result of one bounded engine control invocation. */
 export interface ContainerCommandResult {
@@ -32,8 +33,6 @@ export interface ContainerControl {
   attach(args: readonly string[]): ContainerAttachedProcess;
 }
 
-import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
-
 /** Runtime placement selected by the operator. */
 export type RuntimeKind = "native" | "container";
 
@@ -50,6 +49,12 @@ export type RuntimeLifecycleState =
   | "stopped"
   | "disconnected"
   | "failed";
+
+/** Informational placement transition emitted to local user interfaces. */
+export interface RuntimePlacementNotice {
+  readonly status: RuntimeStatus;
+  readonly message?: string;
+}
 
 /** A typed reason why an explicitly selected runtime cannot launch. */
 export type RuntimeUnavailableReason =
@@ -85,55 +90,47 @@ export interface RuntimeProtectedMount {
   readonly readOnly: true;
 }
 
-/** Immutable launch authority; guest input can neither construct nor widen it. */
-export interface RuntimeLaunchSpec {
+/** Immutable mounts and identity for one complete Kernel process. */
+export interface ContainerKernelLaunchSpec {
   readonly generation: string;
-  readonly ownerId: string;
-  readonly project: ProjectRef;
-  readonly workspace: WorkspaceRef;
-  /** Canonical host workspace mounted read-write at `/workspace`. */
+  readonly namespace: string;
   readonly workspaceRoot: string;
-  /** Exact empty private masks over both workspace control roots. */
   readonly controlRootMasks: readonly RuntimeProtectedMount[];
-  /** Exact Git metadata projection; an absent nested target is refused before engine creation. */
   readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
-  readonly imageDigest: string;
-  readonly network: RuntimeNetworkMode;
+  readonly baseImageId: `sha256:${string}`;
+  readonly baseAbi: string;
+  readonly artifact: {
+    readonly volume: string;
+    readonly digest: `sha256:${string}`;
+    readonly target: "linux-x64" | "linux-arm64";
+  };
+  readonly data: {
+    readonly contentVolume: string;
+    readonly stateVolume: string;
+  };
+  readonly miseVolume: string;
+  readonly network: Exclude<RuntimeNetworkMode, "internet">;
   readonly limits: RuntimeLimits;
-  readonly capabilityMethods: readonly string[];
+  readonly user: { readonly uid: number; readonly gid: number };
 }
 
-/** Effective placement and policy reported after engine admission. */
-export interface RuntimeInfo {
-  readonly kind: "container";
-  readonly generation: string;
-  readonly engine: "podman" | "docker";
-  readonly engineVersion: string;
-  readonly hostPlatform: NodeJS.Platform;
-  readonly guestPlatform: "linux";
-  readonly imageDigest: string;
-  readonly runtimeProtocolRevision: string;
-  readonly network: RuntimeNetworkMode;
-  readonly limits: RuntimeLimits;
-  readonly lifecycle: RuntimeLifecycleState;
+/** Exact attached process and destructive lifecycle authority for one admitted Container ID. */
+export interface ContainerProcessLifecycle {
+  readonly id: string;
+  readonly process: ContainerAttachedProcess;
+  stop(graceSeconds: 10): Promise<void>;
+  remove(): Promise<void>;
 }
 
-/** Started execution session owned by the host. */
-export interface RuntimeSession {
-  readonly info: RuntimeInfo;
-  /** True once the private channel or attached engine process cannot accept another request. */
-  readonly closed: boolean;
-  startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
-  steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
-  interruptTool(runId: string, payload: unknown, signal?: AbortSignal): Promise<unknown>;
-  cancel(runId: string): Promise<void>;
-  stop(): Promise<void>;
-}
-
-/** Private engine boundary. Implementations must never fall back to native execution. */
-export interface RuntimeBackend {
+/** Engine adapter for a complete Kernel process; it never accepts or executes a run request. */
+export interface ContainerKernelBackend {
   inspect(): Promise<RuntimeAvailability>;
-  start(spec: RuntimeLaunchSpec): Promise<RuntimeSession>;
+  reconcilePrevious(input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<void>;
+  startKernel(spec: ContainerKernelLaunchSpec): Promise<ContainerProcessLifecycle>;
 }
 
 /** Stable typed launch failure suitable for UI error mapping. */

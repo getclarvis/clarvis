@@ -75,7 +75,8 @@ their own proof boundaries.
 For container scenarios, consult the current
 [runtime contract](../../../../specs/hosts/isolated-agent-runtime.md) and use test-owned workspace,
 recipe, image, and generation identities. Assert effective placement independently, exercise host
-bridges, steer/cancel/follow-up, persistent mise state, loopback preview, and classified fallback.
+public Kernel transport, native domain journeys, model-broker revocation, steer/cancel/reconnect,
+persistent data/mise state, independent base/artifact identity and absence of fallback.
 Distinguish a guest service response from an unrelated host listener. Record cleanup alongside the
 test that created each resource.
 

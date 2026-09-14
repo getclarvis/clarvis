@@ -59,14 +59,13 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-Workflow execution is available only in Host/Sandbox. A selected `admiral`, `workflow` grant,
-prepared Workflow or workflow-owned continuation is an explicit dependency and Container admission
-rejects it before choosing the manager path, reserving a run or acquiring an engine. The kernel never
-executes a subset of the workflow or silently substitutes an ordinary run.
+Workflow execution is available in Host, Sandbox and Container. Container keeps manager, leaders,
+registry and execution records in its Kernel and uses frozen projected definitions. Plugin
+definitions remain unavailable; no subset or host bridge substitutes for the workflow.
 
-Production: `prepareKernelRun` and `admitContainerCoreRun` in
-`packages/kernel/src/runs/prepare-run.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts`.
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### `@clarvis/workflows` — `./artifact` entry
 

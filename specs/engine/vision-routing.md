@@ -40,15 +40,15 @@ family, capability gating).
 
 ## 2. Surface
 
-Container placement preserves the same capability gate: the host reconstructs each admitted model's
-declared capability set, including an empty set, before adapter serialization. The original image
-parts remain in the guest's retained context; only the wire representation strips images for a
-non-visual model, including after a `vision_model` prepass. Production: `hostModelBroker` in
-[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
+Container placement preserves the same capability gate through `ModelExecutionResolver`. The guest
+uses frozen logical model metadata for vision routing, while the host broker reconstructs real
+provider configuration only after admission. Original image parts remain in the guest context and
+only inline admitted media crosses the broker. Production: `createContainerModelBroker` in
+[`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
 Test: vision request filtering and unchanged source-prefix cases in
 [`vision-prepass.test.ts`](../../packages/loop/tests/unit/vision-prepass.test.ts), plus admitted
 Container vision-model routing in
-[`runtime-model-stream.test.ts`](../../packages/kernel/tests/integration/runtime-model-stream.test.ts).
+[`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts).
 The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 The prepass prompt requests visible details relevant to the task, exact readable text when needed,
@@ -283,6 +283,13 @@ the existing reading, usage, truncation and failure matrix in
 
 Step by step inside `runVisionPrepass` (`packages/loop/src/runtime/vision-prepass.ts`):
 
+With a host `modelExecutionResolver`, the native metadata lookup below is replaced by an exact
+catalog lookup: capabilities and output limits come from `ModelExecutionInfo`, with no native
+`providerConfig`. The same injected LLM executes the pre-pass. Production:
+[`runVisionPrepass`](../../packages/loop/src/runtime/vision-prepass.ts).
+Test: [`model-execution-injection.test.ts`](../../packages/loop/tests/integration/model-execution-injection.test.ts).
+See [generic execution ports](capability-composition.md).
+
 | Step | File | Effect |
 | --- | --- | --- |
 | 1 | `packages/loop/src/runtime/vision-prepass.ts` | no-op unless `entryStripsImages` is true and `turnImages.length > 0` |
@@ -444,16 +451,16 @@ from the other).
     `packages/code/src/core/attachments.ts`; pinned by "rejects empty, fifth,
     oversized and aggregate-overflow images" (`packages/code/tests/unit/attachments.test.ts`)
     and "rejected images never enter reactive composer state".
-The full composer image budget is transferable through both local-host stdio and private guest RPC.
+The full composer image budget is transferable through local-host and Container stdio.
     Their common logical JSON limit is 64 MiB, including base64, context and envelopes; physical
     fragments remain bounded and excess local messages cannot terminate another run. Production:
     `createJsonMessageWriter` in [json-message.ts](../../packages/kernel/src/core/json-message.ts).
     Test: `transfers the full composer image budget and isolates oversized requests and results`
     in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts) and
-    bounded private request/result transfer in
-    [runtime-execution-rpc.test.ts](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts)
-    and guest trace preservation in
-    [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
+    bounded Container lane transfer in
+    [container-channel.test.ts](../../packages/kernel/tests/contract/container-channel.test.ts)
+    and stream preservation in
+    [container-model-stream.test.ts](../../packages/kernel/tests/integration/container-model-stream.test.ts).
 20. **A staged attachment's declared `size` cannot understate its real payload.** `attachmentBytes`
     takes the larger of the declared size and `base64DecodedBytes(data)`, so a `size: 1` attachment
     whose `data` actually decodes to 32 bytes still reports 32 — admission checks bytes actually

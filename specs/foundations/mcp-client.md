@@ -1283,15 +1283,15 @@ through the SDK's own schemas.
 | `@clarvis/loop` | production dependency | `packages/loop/package.json`; connection/registry consumers plus OAuth coordinator and connection-manager construction at `packages/loop/src/runtime/build-run-deps.ts` |
 | `@clarvis/kernel` | production dependency | `packages/kernel/package.json`; native MCP server/memory/hook ports consume connection, lease and elicitation surfaces |
 
-MCP transports remain native Host/Sandbox composition. Core-only Container admits `servers: []`,
-constructs no connection manager or host bridge, and rejects an explicit profile MCP tool before
-engine/model work. No declaration, endpoint, environment/OAuth authorization or elicitation relay
-crosses the guest boundary. The closed Container contract is specified by
-[isolated-agent-runtime](../hosts/isolated-agent-runtime.md). Production:
-`admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts` and
-`createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
+MCP transports remain native Host/Sandbox composition. Container constructs an empty connection
+manager and exposes no MCP catalog, provider, OAuth authority or elicitation relay. Explicit MCP
+tools and grants are rejected by the frozen profile projection before inference. The closed
+Container contract is specified by [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Production: `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts` and `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/unit/container-projection.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
 is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts`,

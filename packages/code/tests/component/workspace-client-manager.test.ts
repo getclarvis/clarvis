@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "bun:test";
@@ -21,6 +21,97 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 describe("WorkspaceClientManager", () => {
+  it("selects Container before connecting and resolves its release for the engine target", async () => {
+    const root = openTempDir("clarvis-workspace-container-destination-");
+    const workspaceRoot = join(root, "workspace");
+    const globalDir = join(root, "global");
+    mkdirSync(workspaceRoot);
+    mkdirSync(globalDir);
+    writeFileSync(
+      join(globalDir, "settings.json"),
+      JSON.stringify({ runtime: { backend: "podman", network: "none" } }),
+    );
+    let selectedTarget = "";
+    let receivedOwner = "";
+    const source = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "local-global"),
+      defaultOwner: "container-owner",
+    });
+    const local = (await source.open()).client;
+    const controls = local.localHost!;
+    const client = {
+      ...local,
+      localHost: undefined,
+      capabilities: {
+        ...local.capabilities,
+        hosting: { ...local.capabilities.hosting!, default_owner: "container-owner" },
+        runtime: {
+          kind: "container" as const,
+          engine: "podman" as const,
+          host_platform: "linux",
+          guest_platform: "linux",
+          network: "none" as const,
+          generation: crypto.randomUUID(),
+          image_digest: `sha256:${"a".repeat(64)}`,
+          artifact_digest: `sha256:${"b".repeat(64)}`,
+          base_abi: "clarvis-linux-glibc-v1",
+          broker_version: 1 as const,
+          channel_version: 1 as const,
+          state_namespace: "c".repeat(64),
+          lifecycle: "ready" as const,
+        },
+      },
+    } satisfies KernelClient;
+    const manager = await WorkspaceClientManager.create(
+      {
+        workspaceRoot,
+        globalDir,
+        defaultOwner: "container-owner",
+        destination: { kind: "container" },
+      },
+      {
+        resolveContainerRelease: async ({ target }) => {
+          selectedTarget = target;
+          return {
+            base: { reference: "clarvis-base:local", pull: false },
+            artifact: {
+              source: { kind: "local", archivePath: join(root, "fixture.tar.gz") },
+              selection: {
+                productVersion: "0.0.1-beta",
+                sourceRevision: "d".repeat(40),
+                target,
+                baseAbi: "clarvis-linux-glibc-v1",
+                digest: `sha256:${"e".repeat(64)}`,
+                size: 1,
+              },
+            },
+          };
+        },
+        connectContainerHost: async (options) => {
+          receivedOwner = options.owner;
+          await options.resolveRelease!("linux-x64");
+          return { client };
+        },
+      },
+    );
+    try {
+      const revisions: number[] = [];
+      const unsubscribe = manager.subscribeSkillsChanged((revision) => revisions.push(revision));
+      expect(manager.defaultOwner).toBe("container-owner");
+      expect((await manager.open()).client.localHost).toBeUndefined();
+      expect(selectedTarget).toBe("linux-x64");
+      expect(receivedOwner).toBe("container-owner");
+      expect(revisions).toEqual([0]);
+      unsubscribe();
+    } finally {
+      await manager.close();
+      expect(manager.subscribeSkillsChanged(() => undefined)).toBeFunction();
+      await controls.requestRestart();
+      await source.close();
+    }
+  });
+
   it("explicit idle reload replaces the host generation", async () => {
     const root = openTempDir("clarvis-workspace-idle-reload-");
     const workspaceRoot = join(root, "workspace");
@@ -262,7 +353,11 @@ describe("WorkspaceClientManager", () => {
       {
         workspaceRoot: "/srv/remote/project",
         globalDir: join(root, "unused-client-global"),
-        remote: { destination: "operator@example.test", workspace: "/srv/remote/project" },
+        destination: {
+          kind: "ssh",
+          destination: "operator@example.test",
+          workspace: "/srv/remote/project",
+        },
       },
       {
         resolveArtifact: async () => {

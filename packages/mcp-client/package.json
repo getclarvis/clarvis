@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/mcp-client",
-
   "private": true,
   "description": "Clarvis's MCP transport layer: connection construction, a self-healing pooled connection with idle TTL and health checks, and the namespaced tool registry over them.",
   "license": "MIT",

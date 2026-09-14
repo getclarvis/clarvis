@@ -9,11 +9,13 @@ import {
 } from "../src/adapters/runtime-candidate.ts";
 import { installDevelopmentLauncher } from "./development-install.ts";
 
-/** Local OCI engines that can prefetch and inspect a candidate runtime image. */
-export type CandidateContainerEngine = "docker" | "podman";
+type CandidateFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 /** Fetch public release metadata without credentials, bounding redirects, size, and time. */
-export async function candidateJson(url: string, fetcher: typeof fetch = fetch): Promise<unknown> {
+export async function candidateJson(
+  url: string,
+  fetcher: CandidateFetcher = fetch,
+): Promise<unknown> {
   const response = await fetcher(url, {
     signal: AbortSignal.timeout(20_000),
     headers: { accept: "application/json", "user-agent": "clarvis-candidate-installer" },
@@ -108,56 +110,19 @@ function execute(argv: readonly string[], cwd: string): string {
   return result.stdout.trim();
 }
 
-function installedContainerEngines(): readonly CandidateContainerEngine[] {
-  return (["docker", "podman"] as const).filter((engine) => Bun.which(engine) !== null);
-}
-
-function validImageId(engine: CandidateContainerEngine, value: string): boolean {
-  if (/^sha256:[a-f0-9]{64}$/u.test(value)) return true;
-  return engine === "podman" && /^[a-f0-9]{64}$/u.test(value);
-}
-
-function prepareCandidateImage(
-  engines: readonly CandidateContainerEngine[],
-  image: string,
-  cwd: string,
-  run: (argv: readonly string[], cwd: string) => string,
-): CandidateContainerEngine | undefined {
-  if (engines.length === 0) return undefined;
-  const failures: unknown[] = [];
-  for (const engine of engines) {
-    try {
-      run([engine, "pull", image], cwd);
-      const id = run([engine, "image", "inspect", "--format", "{{.Id}}", image], cwd);
-      if (!validImageId(engine, id))
-        throw new Error(`${engine} returned an invalid candidate image identity`);
-      return engine;
-    } catch (error) {
-      failures.push(error);
-    }
-  }
-  if (failures.length === 1) throw failures[0];
-  throw new AggregateError(
-    failures,
-    `candidate image preparation failed through ${engines.join(" and ")}`,
-  );
-}
-
-/** Install an exact published source snapshot and optionally prefetch its container image. */
+/** Install an exact published source snapshot; Container assets resolve lazily from its release. */
 export async function installCandidate(input: {
   tag?: string;
   installRoot: string;
   binDirectory: string;
   bun: string;
   bunVersion: string;
-  fetcher?: typeof fetch;
+  fetcher?: CandidateFetcher;
   run?: (argv: readonly string[], cwd: string) => string;
-  containerEngines?: readonly CandidateContainerEngine[];
 }): Promise<{
   launcher: string;
   manifest: RuntimeCandidate;
   checkout: string;
-  imageEngine?: CandidateContainerEngine;
 }> {
   if (input.tag !== undefined) candidateVersion(input.tag);
   const api = `https://api.github.com/repos/${CANDIDATE_REPOSITORY}/releases`;
@@ -199,12 +164,6 @@ export async function installCandidate(input: {
     if (pinnedBun !== input.bunVersion)
       throw new Error(`candidate requires Bun ${pinnedBun}; installed Bun is ${input.bunVersion}`);
     run([input.bun, "install", "--frozen-lockfile"], checkout);
-    const imageEngine = prepareCandidateImage(
-      input.containerEngines ?? installedContainerEngines(),
-      manifest.runtime_image,
-      checkout,
-      run,
-    );
     const version = run([input.bun, "packages/code/src/cli.ts", "--version"], checkout);
     if (version !== `clarvis ${manifest.version}`)
       throw new Error("candidate CLI version smoke failed");
@@ -215,7 +174,7 @@ export async function installCandidate(input: {
       candidate: { tag, revision: commit },
     });
     activated = true;
-    return { launcher, manifest, checkout, ...(imageEngine === undefined ? {} : { imageEngine }) };
+    return { launcher, manifest, checkout };
   } finally {
     if (!activated) await rm(checkout, { recursive: true, force: true });
   }

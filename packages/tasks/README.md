@@ -10,10 +10,11 @@ External systems remain authoritative; the only durable Clarvis state is the
 minimal task binding and content-free uncertain-write replay metadata stored
 with a run.
 
-Tasks is composed only for native Host/Sandbox runs and the host control plane. Core-only
-Docker/Podman registers no Tasks request schema, tool, provider bridge or lifecycle callback; an
-explicit task binding or `tasks.*` profile grant fails before engine/model work and recommends
-Sandbox or Host. This does not add a dependency from Tasks to the kernel or loop.
+Tasks is composed only for native Host/Sandbox runs and their control plane. Docker/Podman registers
+no Tasks provider, tool or lifecycle callback because the only current provider is MCP; an explicit
+task binding or `tasks.*` profile grant fails before model work. Inherited settings remain on the
+host and do not block an unrelated Container run. This does not add a dependency from Tasks to the
+kernel or loop.
 
 ## Contract
 

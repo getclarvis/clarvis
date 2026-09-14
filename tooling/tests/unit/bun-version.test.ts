@@ -58,7 +58,7 @@ jobs:
         with:
           bun-version: ${VERSION}
       - run: bun --version && bun --revision
-  runtime-image:
+  runtime:
     steps:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:

@@ -19,7 +19,8 @@ folds into a run's `deps.capabilities`. Per run it decides whether memory is act
 sees: a seed block carrying the compiled `PROFILE.md`, a `## Memory` system-prompt section whose
 wording differs for the entry agent versus every subagent, and a toolset — read tools for
 everyone, write tools for a write-enabled native entry agent only. `prepareMemoryRuntime` remains a
-provider-opaque package utility, but the core-only Container kernel does not compose or serialize it.
+provider-opaque package utility. Container composes the same native Memory capability from its
+frozen local-provider projection and injects the model broker port for indexing.
 `tools.ts` is where the
 seven native tool bodies actually
 live, host-agnostic (`MemoryToolDef`), so the same module backs both an in-run agent and a
@@ -138,8 +139,9 @@ keeps four operations on the host: `seed(task?)`, schema-aware `accepts(name,arg
 `invoke(name,args,signal?)`, and `finish(record)` over the canonical `onRunEnd`. It exposes no
 provider/store object, provider key, credentials, path or mutating tool.
 
-The file kernel does not use this utility for Docker/Podman. Container admits no Memory request,
-descriptor, tool or callback; inherited Memory settings are merely inactive in that placement.
+The complete Container Kernel uses the native Memory factory directly with projected local-provider
+settings and an injected model port. This provider-opaque utility remains available to other host
+compositions and is not a Container bridge.
 
 Production: `MemoryRuntimeDescriptor`, `PreparedMemoryRuntime`, `prepareMemoryRunInternal` and
 `prepareMemoryRuntime` in `packages/memory/src/capability.ts`. Test:
@@ -610,14 +612,14 @@ statement of the instruction's own content owned by
 [capabilities/memory-indexer.md](memory-indexer.md) §5. Test (this document's half of the three-way
 check): `packages/memory/tests/architecture/write-policy.test.ts`.
 
-**Container absence boundary.** `prepareMemoryRuntime` remains provider-opaque, but the file kernel
-does not serialize or compose it for Docker/Podman. Container receives no seed, Memory descriptor,
-read/write tool or post-run callback; explicit Memory use fails admission and inherited settings are
-inactive. Production: `prepareMemoryRunInternal` in `packages/memory/src/capability.ts` and
-`admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts`. Test:
+**Container native boundary.** `prepareMemoryRuntime` remains provider-opaque, while the complete
+Container Kernel composes the native Memory factory with projected local settings. Seed, tools and
+post-run indexing stay inside the guest; only model calls use the host broker. Production:
+`prepareMemoryRunInternal` in `packages/memory/src/capability.ts` and
+`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
 `packages/memory/tests/component/capability.test.ts` (`prepares a provider-opaque runtime lease with
 canonical calls and host run-end`) and
-`packages/kernel/tests/unit/container-core-policy.test.ts`.
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### Further invariants derived directly from the code (not in the owned INV range but load-bearing
 here)
@@ -713,10 +715,9 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   engine's eager configuration path may reach it" and because this module is "the only place that
   knows both" the memory package's structural port and the kernel's MCP connection pool
   (packages/kernel/src/memory/memory-server-port.ts doc comment).
-- `packages/kernel/src/runs/prepare-run.ts` keeps Memory native by rejecting an explicit Container
-  dependency before engine/model work. No runtime adapter imports the provider-opaque preparation
-  surface for Docker/Podman. Production: `admitContainerCoreRun`. Test:
-  `packages/kernel/tests/unit/container-core-policy.test.ts`.
+- `packages/kernel/src/hosting/container-native.ts` keeps Memory native in Container and injects the
+  frozen policy and model resolver. No host-side Memory provider or indexer is constructed. Test:
+  `packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 **Forces the direction:**
 - `packages/memory/tests/architecture/settings-ownership.test.ts` fails the build if `settings.ts` ever value-imports

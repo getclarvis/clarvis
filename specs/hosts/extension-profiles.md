@@ -31,16 +31,17 @@ than an Extension Profile domain object. (`skillRoots` in
 `packages/loop/src/runtime/execute-run.ts`.)
 
 Extension Profile selection remains persisted and effective for Host/Sandbox, but all of its Plugin
-and standalone-Skill contributions are inactive in core-only Container. The Container assembler
-uses the operator-only settings projection, does not include Extension Profile fingerprint/revision
-in generation identity and admits no Plugin Agent. A profile can remain selected without blocking a
-core run because registration/selection is not an explicit request to use each contribution.
+and standalone-Skill contributions are inactive in Container. The guest exposes one immutable
+`builtin:container` profile with no extensions, while the host operator services retain the original
+selection for Host/Sandbox. Container projects builtin/global/workspace agent data without plugin
+origins and marks profiles with external grants nonselectable.
 
 Production: `ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
-`runtimeSelection` in `packages/kernel/src/file-kernel.ts`, and `admitContainerCoreRun` in
-`packages/kernel/src/runs/prepare-run.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/unit/lazy-runtime.test.ts`.
+`runtimeSelection` in `packages/kernel/src/file-kernel.ts`, and
+`createContainerExtensionProfileService` in
+`packages/kernel/src/config/container-extension-profile.ts`. Test:
+`packages/kernel/tests/unit/container-extension-profile.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ## 2. Surface
 
@@ -66,6 +67,19 @@ embedders an immutable builtin-only fallback (`createBuiltinExtensionProfileServ
 (`packages/kernel/src/file-kernel.ts`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`OPERATIONS.extensionProfiles` entries in
 `packages/kernel/src/transport/operations.ts`).
+
+The injectable `createContainerExtensionProfileService` provides only `builtin:container`, with a
+stable fingerprint of the no-external-extension policy. `current`, `get` of that exact reference,
+and `list` return defensive in-memory snapshots; `inventory` is empty. All previews, selections
+and mutations fail with `unsupported`, while an unknown `get` is `not_found`. It constructs no
+file-backed manager or discovery service. It is a composition primitive, not evidence that the
+Container launcher or guest composition has been integrated.
+
+Production: `createContainerExtensionProfileService` in
+[container-extension-profile.ts](../../packages/kernel/src/config/container-extension-profile.ts).
+Test: [container-extension-profile.test.ts](../../packages/kernel/tests/unit/container-extension-profile.test.ts)
+checks native preparation reads, snapshot isolation, stable identity and exhaustive service-method
+refusal.
 
 Code exposes the surface under Extensions as **Extension Profile**, explicitly distinct from the
 **Agent Profile** that selects an agent definition for a run. The

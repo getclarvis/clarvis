@@ -16,22 +16,23 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   same writer; a workspace cannot choose a runtime.
 - Simple Podman isolation now accepts `{ "backend": "podman" }` with the same product-owned limits
   and outbound default as Docker. Podman has no recipe; both Container engines fail closed.
-- `./dev-install.sh` now builds the local `clarvis-runtime:development` image for each of Docker and
-  Podman that is installed. A missing engine is skipped, so a Docker-only or Podman-only host still
-  completes; native mode remains available when neither engine is present.
+- `./dev-install.sh` now builds the version-independent local Container base in each installed
+  Docker/Podman engine, then compiles one architecture-matched Kernel artifact. A missing engine is
+  skipped; native mode remains available when neither engine is present.
 
 ### Changed
 
-- **Breaking:** Docker/Podman Isolation is now a host-enforced **Core tools only** placement. It runs
-  shell/file tools without Command Review; exposes no Skills, MCPs, Hooks, Plugin contributions,
-  Plans, Memory, Tasks, Workflows, Goal, host configuration or preview; keeps provider configuration
-  and credentials in the host model broker; and never falls back to Sandbox/Host. Explicit
-  incompatible requests fail before engine/model work. The workspace remains writable and outbound
-  may reach remote/host/LAN destinations, so the guarantee is integrity of the host outside the
-  selected workspace rather than workspace or network hermeticity. Complete `.clarvis`/`.agents`
-  roots are opaque and Git metadata is read-only; engines that would materialize an absent nested
-  protected target refuse workspaces missing `.clarvis`, `.agents` or `.git` before container
-  creation. Private runtime protocol revision 14 requires rebuilt Docker/Podman images.
+- **Breaking:** Docker/Podman Isolation now serves one complete native Kernel over the public wire.
+  Plans, Memory, Workflows and Goals execute and persist inside namespace volumes; external Tasks,
+  plugins, skills, hooks, generic MCP, external capability providers, preview and Command Review
+  remain unavailable. Provider configuration, credentials and API requests stay in the host model
+  broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by a private content
+  volume, `.agents` is masked and Git metadata is read-only; missing nested mount targets fail before
+  engine create. Public wire revision 10, broker revision 1 and channel revision 1 replace the private
+  worker protocol.
+- Container distribution now separates a version-independent Debian base from the compiled
+  `clarvis-kernel-<target>.tar.gz` artifact. Updating Clarvis no longer rebuilds a final product image;
+  launch transfers a verified content-addressed artifact into an immutable engine volume.
 - The interactive TUI now recovers from high process RSS locally and silently. Sustained pressure
   drops reconstructible completed tool bodies; the 2 GiB limit only blocks expensive new admissions.
   `/recover-memory`, the memory banner, and host rebuilds are gone. The footer may show

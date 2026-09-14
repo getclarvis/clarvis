@@ -177,12 +177,13 @@ continuation from persisted requests are
 covered by `separates workflow leader cache identities` in
 [`workflows-service.test.ts`](../../packages/kernel/tests/integration/workflows-service.test.ts).
 Native Goal continuation keeps this same session/instance affinity; its binding never substitutes
-the new execution ID or goal ID for the agent identity. Goal is unavailable in core-only Container,
-so no guest Goal bridge or alternate cache identity exists. Production:
+the new execution ID or goal ID for the agent identity. Container runs the same Goal domain inside
+its Kernel and reaches the host model broker through the logical model port, so no Goal bridge or
+alternate cache identity exists. Production:
 [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and
-[prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts). Test:
+[model-broker-client.ts](../../packages/kernel/src/runtime/model-broker-client.ts). Test:
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
-and [container-core-policy.test.ts](../../packages/kernel/tests/unit/container-core-policy.test.ts).
+and [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 ## Provider wire and replay
 

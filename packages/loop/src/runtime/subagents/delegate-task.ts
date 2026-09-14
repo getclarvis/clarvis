@@ -1,5 +1,6 @@
 import { projected } from "../capability-event.ts";
 import { randomUUID } from "node:crypto";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import {
   DELEGATE_TASK_MAX_CHARS,
   parseDelegateTaskText,
@@ -219,6 +220,8 @@ export type { SubagentAggregate };
  * capability event emitter.
  */
 export interface DelegateTaskContext {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   opened: RegistryEntry[];
   profiles: SubagentProfileRegistry;
@@ -464,6 +467,8 @@ export async function prepareSpawn(
  * the usage sink.
  */
 export interface SubagentRunContext {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   task: string;
   images?: ImagePart[];
   /** Fleet-wide shared prompt snapshotted for this run. */
@@ -512,6 +517,7 @@ export function buildRunSubagentInput(
     model: profile.model,
     provider: profile.provider,
     providerConfig: profile.providerConfig,
+    ...(profile.modelExecution === undefined ? {} : { modelExecution: profile.modelExecution }),
     capabilities: profile.capabilities,
     reasoningSummary: profile.reasoningSummary,
     ...(profile.reasoningEffort !== undefined ? { reasoningEffort: profile.reasoningEffort } : {}),
@@ -536,6 +542,7 @@ export function buildRunSubagentInput(
     ...(base.computeRegion !== undefined ? { computeRegion: base.computeRegion } : {}),
     ...(base.steer !== undefined ? { steer: base.steer } : {}),
     workspaceRoot: base.workspaceRoot,
+    ...(base.statePaths === undefined ? {} : { statePaths: base.statePaths }),
     hooks: base.hooks,
     usageSink: base.usageSink,
     ...(base.toolInterrupts !== undefined ? { toolInterrupts: base.toolInterrupts } : {}),
@@ -651,6 +658,7 @@ export async function runPreparedSubagent(
         ...(ctx.computeRegion !== undefined ? { computeRegion: ctx.computeRegion } : {}),
         ...(ctx.steer !== undefined ? { steer: ctx.steer } : {}),
         workspaceRoot: ctx.workspaceRoot,
+        ...(ctx.statePaths === undefined ? {} : { statePaths: ctx.statePaths }),
         hooks: ctx.hooks,
         usageSink,
         ...(ctx.toolInterrupts !== undefined ? { toolInterrupts: ctx.toolInterrupts } : {}),

@@ -1,326 +1,279 @@
-# Isolated agent runtime
-
-## 1. Scope and security promise
-
-Docker and Podman are explicit **Container** placements. They execute a deliberately smaller Clarvis
-runtime: the loop and builtin core tools run in a Linux guest, while model calls are mediated by the
-host. Container is not a second form of native Sandbox and does not compose the host's extension or
-product-capability graph.
-
-The security promise is integrity of the host outside the selected workspace. The selected workspace
-is the operator-chosen mutation domain and remains read-write. Outbound network access, when enabled,
-can observe and cause remote effects and can exfiltrate readable workspace content. Container does
-not protect the workspace from destructive commands.
-
-Production: `packages/kernel/src/runtime/container-core-policy.ts` (`ContainerCorePolicy`),
-`packages/kernel/src/runs/prepare-run.ts` (`admitContainerCoreRun`), and
-`packages/kernel/src/runtime/local-container-runtime.ts` (`createLocalContainerRuntime`). Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts`,
-`packages/kernel/tests/unit/container-core-policy.test.ts`, and
-`packages/code/tests/unit/isolation.test.ts`.
-
-## 2. Closed core policy
-
-The host owns one non-extensible policy description:
-
-```ts
-interface ContainerCorePolicy {
-  readonly revision: 1;
-  readonly toolPolicy: RuntimeToolPolicy;
-  readonly network: "none" | "outbound";
-  readonly gitMetadata: "absent" | "read-only";
-  readonly commandReview: "off";
-  readonly hostFeatures: "none";
-}
-```
-
-`hostFeatures: "none"` is an enumeration, not an omitted list which an older client could widen.
-`internet` remains accepted by the settings DTO only so unsupported-policy admission can explain the
-refusal; it never becomes an admitted policy. `none` and `outbound` remain an independent network
-axis.
-
-The three method vocabularies are distinct and exact:
-
-| Direction/purpose | Exact methods |
-| --- | --- |
-| Host lifecycle to guest | `runtime.bootstrap`, `runtime.start`, `runtime.steer`, `runtime.interrupt_tool`, `runtime.cancel`, `runtime.shutdown` |
-| Guest execution to host | `host.model`, `host.capability`, `host.event`, `host.checkpoint` |
-| Capability broker grants | `runtime.elicit` |
-
-`runtime.elicit` backs intentional agent/operator dialogue such as `ask_user`. It is not Command
-Review and carries only the bounded `ElicitParams` plus optional timeout. Model streaming is returned
-through `host.model`; trace traffic uses `host.event`; checkpoints use `host.checkpoint`. None of
-those are capability methods. `runtime.hook_mcp`, `runtime.mcp_elicit`, feature methods and
-`host_vcs` do not exist.
-
-Production: `packages/kernel/src/runtime/execution-rpc.ts` (`HOST_EXECUTION_METHODS`,
-`GUEST_EXECUTION_METHODS`), `packages/kernel/src/runtime/container-core-policy.ts`
-(`CONTAINER_CORE_CAPABILITY_METHODS`), and `packages/kernel/src/runtime/execution-worker.ts`
-(`serveExecutionWorker`). Test: `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`,
-`packages/kernel/tests/integration/runtime-execution-worker.test.ts`, and
-`packages/kernel/tests/unit/container-core-policy.test.ts`.
-
-## 3. Admission before any work
-
-`prepareKernelRun` captures settings, assembles the request/profile graph, resolves placement from
-host-owned settings and then calls `admitContainerCoreRun`. This happens before Workflow/Goal
-selection, run lease reservation, engine acquisition, bridge opening or model inference. Code hides
-incompatible controls for usability, but every client reaches the same kernel admission.
-
-The assembler uses `operator_merged` settings for Container so Plugin settings fragments never enter
-the request. Admission then returns a strict copy with:
-
-- `servers: []`;
-- no `skill`, `task`, `plans`, `memory`, `guard_mode` or `guard_judge`;
-- no Plugin seed, bootstrap, Hook, MCP server or capability executable;
-- no host-backed Plans, Memory, Tasks, Workflows, Goal, configuration or preview;
-- profiles limited to builtin core grants or compatible user/workspace profiles;
-- no MCP tools and only `ask_user`, `read_workspace`, `edit_workspace`, `run_commands` grants.
-
-`marshall`, `coder`, `explorer` and `planner` have an explicit host-owned Container projection which
-removes their builtin `use_skills` grant while retaining compatible delegation. `admiral` is refused
-because it depends on Workflow. A Plugin Agent is always refused. A user/workspace profile is not
-silently rewritten: any MCP tool, `use_skills`, `workflow`, `tasks.*` or other non-core grant rejects
-the request. Its complete `can_spawn`/`default_spawn` graph must also resolve to compatible profiles.
-An unresolved `$name` remains ordinary text; an explicit `skill` parameter or a `$skill` which really
-resolves is incompatible.
-
-Explicit `task`, Plans, Memory, Workflow, Goal, `guard_mode: "on" | "auto"` or any `guard_judge`
-returns `kernelError("unsupported", ...)` with closed details
-`{ placement: "container", capability }` and the message:
-
-```text
-<Capability> is unavailable in Isolation Container. Use Isolation Sandbox or Host.
-```
-
-Host-wide registered capabilities and inherited settings which the request did not ask to use are
-projected inactive rather than blocking Container. This distinction prevents registration of a new
-native capability from widening or accidentally disabling Container. A custom `assembleRunRequest`
-implementation still goes through conservative kernel validation.
-
-Production: `packages/kernel/src/runs/prepare-run.ts` (`prepareKernelRun`,
-`admitContainerCoreRun`), `packages/kernel/src/runs/settings-assembler.ts`
-(`createSettingsRunAssembler`), and `packages/kernel/src/config/config-store.ts`
-(`ConfigSnapshot.operator_merged`). Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/component/settings-assembler.test.ts`.
-
-## 4. Host and guest composition
-
-### 4.1 Host
-
-The Container host composition creates only:
-
-- an exact model lease and model broker;
-- a capability broker containing only `runtime.elicit`;
-- lifecycle/control channels;
-- trace events, durable checkpoints and terminal settlement.
-
-It does not iterate the generic host capability registry. It does not construct or invoke Hooks,
-remote MCP, Hook MCP, Skills, Plans, Memory, Tasks, Workflows, Goal, configuration, effect review,
-Command Review or preview adapters. No feature process or callback starts before, during or after a
-Container run. Host/Sandbox retain their normal capability composition.
-
-The guest receives synthetic provider routing records only. Those records contain a logical provider
-name and a fixed non-routable broker placeholder needed by the loop's request validator; real
-provider kind, endpoint, headers, options and credentials remain in the host model lease. The model
-broker authorizes only provider/model pairs already present in the admitted request and bounds input,
-output, concurrency and queueing.
-
-Production: `packages/kernel/src/runtime/local-container-runtime.ts`
-(`containerGuestRawBody`, `hostModelBroker`, `createLocalContainerRuntime`) and
-`packages/kernel/src/runtime/authority-brokers.ts` (`createModelBroker`,
-`createCapabilityBroker`). Test: `packages/kernel/tests/unit/local-docker-runtime.test.ts`,
-`packages/kernel/tests/unit/runtime-authority-brokers.test.ts`, and
-`packages/kernel/tests/integration/local-podman-runtime.test.ts`.
-
-### 4.2 Guest
-
-`GuestRunEnvelope` contains only `rawBody`, `modelLeaseId`, `toolPolicy`, `loopPolicy` and an optional
-feature-free prior execution. Its validator rejects legacy `hostCapabilities`, `skillCatalog`,
-`skillBootstraps`, `memory`, `hooks`, `workflow`, `goal`, `parentRunId` and `outputBudgets` fields.
-The raw request is strict: empty MCP servers, compatible core profiles/tools/grants and synthetic
-routing providers only.
-
-`createGuestLoopExecutor` builds the loop with builtin core tools and no Skills, Hooks, Tasks, Plans,
-Memory, Workflow, Goal or MCP connection manager. It sets `allowHostEscalation: false`, so
-`sandbox_permissions: "require_escalated"` returns a denied tool result without elicitation or a host
-process. There is no host shell, arbitrary argv/path/endpoint broker or placement fallback.
-
-Production: `packages/kernel/src/runtime/guest-loop-executor.ts` (`GuestRunEnvelope`,
-`createGuestLoopExecutor`) and `packages/loop/src/runtime/capabilities/tools.ts`
-(`createAgentToolsCapability`). Test: `packages/kernel/tests/integration/runtime-guest-loop.test.ts` and
-`packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
-
-## 5. Private protocol and image identity
-
-The runtime protocol revision is **14**. Bootstrap has an exact shape: generation, immutable image
-digest, protocol revision and the exact capability-method tuple `runtime.elicit`. Unknown bootstrap
-fields, an old revision, a different digest/generation or a widened capability list fail the
-handshake. Docker and Podman require the matching image label before attachment.
-
-The production and development Containerfiles and `tooling/runtime/build-image.ts` carry the same
-revision. Runtime images remain qualified by immutable image ID; tags are resolved before admission.
-The guest does not negotiate optional features.
-
-Production: `packages/kernel/src/runtime/protocol-revision.ts`,
-`packages/kernel/src/runtime/execution-worker.ts`, `tooling/runtime/build-image.ts`,
-`Containerfile.runtime`, and `Containerfile.runtime-development`. Test:
-`packages/kernel/tests/integration/runtime-execution-worker.test.ts`,
-`packages/kernel/tests/unit/runtime-docker-backend.test.ts`, and
-`packages/kernel/tests/unit/runtime-podman-backend.test.ts`.
-
-## 6. Filesystem boundary
-
-### 6.1 Workspace and control roots
-
-The selected canonical workspace is the only host bind mounted read-write and appears at
-`/workspace`. Before engine creation the host creates three empty directories under a private
-host-temporary root. Two are mounted read-only over the complete workspace `.clarvis` and `.agents`
-roots, making every known or future child opaque. No synthetic Markdown or policy guidance is placed
-in a mask.
-
-Every workspace-relative target and ancestor is checked with `lstat`; a symlink, non-directory
-control root or private source under the selected workspace rejects Container. Current OCI engines
-materialize an absent nested target in the parent host bind, so both control roots must already exist
-as directories; otherwise the backend refuses before container creation and leaves the workspace
-unchanged. The private mask root is removed after launch failure or runtime teardown; there is no
-writable degradation.
-
-`RuntimeLaunchSpec.controlRootMasks` has exactly two typed descriptors in fixed order. Each contains
-canonical `source`, exact guest `target`, `type: "directory"` and `readOnly: true`. Additional,
-missing, reordered, writable or workspace-backed masks fail launch validation or effective inspect.
-
-Production: `packages/paths/src/workspace.ts` (`workspacePaths`, `agentsWorkspaceDir`),
-`packages/kernel/src/runtime/local-container-runtime.ts` (`inspectReservedWorkspacePath`,
-`prepareRuntimeMounts`), `packages/kernel/src/runtime/container-policy.ts`
-(`assertMaterializedProtectedTargets`), and `packages/kernel/src/runtime/launch-policy.ts`
-(`assertRuntimeLaunchSpec`). Test: `packages/kernel/tests/unit/runtime-mounts.test.ts` and
-`packages/kernel/tests/unit/runtime-launch-policy.test.ts`.
-
-### 6.2 Git metadata
-
-Worktree files remain read-write, but all Git metadata is read-only:
-
-- a normal checkout overlays its canonical `.git` directory at `/workspace/.git` read-only;
-- a linked worktree overlays the `.git` indirection file read-only, mounts the exact canonical
-  worktree gitDir at the absolute path named by that file and mounts its canonical commonDir,
-  all read-only;
-- current OCI engines would materialize an absent nested `/workspace/.git` target in the host bind,
-  so a non-Git workspace is refused before container creation instead of creating host metadata.
-
-The host validates the linked `.git` and `commondir` bytes against `discoverGitWorkspace`; relative,
-non-canonical, missing or inconsistent metadata fails closed. No Git config, credential helper,
-agent socket or host HOME is added. `git status`, `git diff`, `git log` and `git show` can read the
-admitted repository when its local configuration needs no host-only executable. `git add`, commit,
-ref updates and metadata lockfiles fail. The error path recommends a new Sandbox or Host run; it does
-not switch placement.
-
-`RuntimeLaunchSpec.gitMetadataMounts` is a closed typed list. Launch validation checks cardinality,
-uniqueness, source/target shape, filesystem roots and read-only flags. Docker/Podman effective
-inspection must contain exactly the workspace RW bind, all protected RO binds and the private
-engine-owned `/mise` volume; a missing, additional or writable host bind rejects attachment.
-
-Production: `packages/kernel/src/git-workspace.ts` (`discoverGitWorkspace`),
-`packages/kernel/src/file-kernel.ts` (`createFileKernel` runtime inputs),
-`packages/kernel/src/runtime/container-policy.ts` (`assertMaterializedProtectedTargets` and
-`validContainerPolicy`), and the Docker/Podman
-backends. Test: `packages/kernel/tests/unit/runtime-mounts.test.ts`,
-`packages/kernel/tests/unit/runtime-docker-backend.test.ts`,
-`packages/kernel/tests/unit/runtime-podman-backend.test.ts`, and
-`packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
-
-### 6.3 Preserved engine controls
-
-Both engines retain an immutable image, read-only root filesystem, `cap-drop ALL`,
-`no-new-privileges`, no engine socket, bounded CPU/memory/process/output/storage, a `nosuid,nodev,noexec`
-`/tmp`, filtered environment and no host credentials. `/mise` is a private engine volume partitioned
-by owner, project, workspace and exact image; it is not a host-path bind. Rootful Docker uses the
-operator's numeric UID/GID; rootless Docker and Podman use their qualified mappings.
-
-Production: `packages/kernel/src/runtime/docker-backend.ts`,
-`packages/kernel/src/runtime/podman-backend.ts`, and
-`packages/kernel/src/runtime/container-mise-cache.ts`. Test:
-`packages/kernel/tests/unit/runtime-docker-backend.test.ts`,
-`packages/kernel/tests/unit/runtime-podman-backend.test.ts`,
-`packages/kernel/tests/integration/runtime-docker-identity.e2e.test.ts`, and
-`packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts`.
-
-## 7. Lifecycle, failure and observability
-
-Container acquisition is lazy and coalesced per effective runtime selection. Plugin revision is not
-part of generation identity because Plugin bytes never enter a core generation. A changed runtime
-selection retires the old generation; cancellation, steer, tool interruption, model stream, trace,
-checkpoint and terminal settlement remain supported.
-
-There is no Docker→Sandbox or Podman→Host/Sandbox fallback, latch, retry status or fallback notice.
-An unavailable engine, image/policy mismatch, mount limitation, bridge disconnect or guest failure
-returns its original bounded sanitized error. The operator must explicitly change Isolation and
-start a new run. A run which started in Container is never replayed natively.
-
-`mcp_degraded` and feature capability events cannot originate from Container because no MCP or
-feature bridge is attempted. Runtime logs remain host-owned structured diagnostics; they do not add
-prompt policy. Checkpoints exclude host operator-authority and legacy capability state before being
-sent to the guest.
-
-Production: `packages/kernel/src/runtime/lazy-runtime.ts` (`createLazyRuntimeCoordinator`),
-`packages/kernel/src/runtime/status-schema.ts`, and
-`packages/kernel/src/runtime/isolated-run-executor.ts`. Test:
-`packages/kernel/tests/unit/lazy-runtime.test.ts`,
-`packages/kernel/tests/contract/runtime-status-conformance.test.ts`, and
-`packages/kernel/tests/integration/runtime-execution-worker.test.ts`.
-
-## 8. UI contract
-
-Settings > Isolation presents Docker/Podman as **Core tools only** and states:
-
-- Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable;
-- commands run without Command Review;
-- workspace writes and outbound network remain enabled;
-- Git metadata is read-only, so commits require Sandbox or Host.
-
-Review renders as `Not applicable in Container`; Memory, Plans and Extensions render inactive. These
-views do not overwrite the persisted native values, which become effective again after switching to
-Sandbox/Host. Plugin profiles and incompatible custom profiles are disabled or labelled as requiring
-Sandbox/Host. Code omits Guard, Memory and Plans fields from Container payloads, but kernel admission
-remains authoritative if state changes before submit.
-
-An engine failure tells the operator to fix Docker/Podman or explicitly select Sandbox/Host for a new
-run. There is no fallback badge/action and no elicitation which changes placement mid-run.
-
-Production: `packages/code/src/features/run/isolation.ts`,
-`packages/code/src/adapters/execution-safety.ts`,
-`packages/code/src/views/config/IsolationConfigPanel.tsx`,
-`packages/code/src/views/config/RunControlsPanel.tsx`,
-`packages/code/src/views/overlays/ReviewPicker.tsx`, and
-`packages/code/src/adapters/kernel-run-client.ts`. Test:
-`packages/code/tests/unit/isolation.test.ts`,
-`packages/code/tests/unit/execution-safety.test.ts`,
-`packages/code/tests/integration/isolation-config-render.test.tsx`,
-`packages/code/tests/integration/isolation-review-picker-render.test.tsx`, and
-`packages/code/tests/integration/run-controls-render.test.tsx`.
-
-## 9. Invariants
-
-1. **Container core-only is host-enforced.** Client filtering is never authority.
-2. **No host execution from the guest.** No broker receives arbitrary host command, argv, cwd, env,
-   endpoint or path.
-3. **No extension contribution.** Plugin Agents/Skills/MCP/Hooks/executables/settings do not enter a
-   Container request.
-4. **No feature capability crosses the boundary.** Only model, lifecycle, events, trace/checkpoint
-   and explicit operator elicitation remain.
-5. **No Command Review in Container.** Guard fields, reviewer settings, approval and per-command
-   audit do not enter the guest.
-6. **No prompt policy substitute.** The implementation does not generate Markdown or system guidance
-   to replace Guard.
-7. **Explicit incompatibility fails before inference.** Inactive inherited configuration does not.
-8. **No placement fallback or replay.** A different placement requires a new operator selection/run.
-9. **Only the selected workspace is a writable host bind.** Control roots and Git metadata are
-   masked/read-only; `/mise` is engine-private.
-10. **Network is independent.** `none`/`outbound` are enforced without Command Review.
-11. **`host_vcs` remains absent.** No renamed equivalent exists.
-12. **Native composition is unchanged.** Host/Sandbox retain Review, extensions and capabilities.
-13. **Registration is not request.** Host-wide inactive capability registration neither enters nor
-    blocks Container.
-14. **Admission precedes engine acquisition.** An already-incompatible request reserves nothing and
-    starts no engine, bridge or model.
+# Isolated Container Kernel
+
+## Purpose
+
+Docker and Podman are process placements for one complete Clarvis Kernel. The TUI connects through
+the public `KernelClient` contract to a Kernel whose loop, tools, sessions, Plans, Memory,
+Workflows and Goals all execute inside the selected Container. The selected host workspace is bound
+read-write at `/workspace`; Clarvis configuration, credentials and provider API calls remain on the
+host.
+
+Container is selected before any Kernel is constructed. A selected Container never falls back to
+Host or Sandbox, and changing placement closes the current connection before another generation can
+start.
+
+Production: `connectLocalContainerKernel` in
+`packages/kernel/src/hosting/connect-local-container.ts`;
+`WorkspaceClientManager.create` in
+`packages/code/src/adapters/workspace-client-manager.ts`.
+Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
+
+## Process and transport topology
+
+The application process owns a launcher instance and the Docker or Podman CLI process created with
+attach and interactive pipes, without a TTY. Exactly one Kernel process runs in the Container. The
+launcher owns inspection, immutable image and artifact selection, mounts, external namespace lease,
+model authority, shutdown and removal of the disposable Container. It does not own runs or domain
+stores.
+
+The physical stdio pair begins in each direction with `CLARVIS-CONTAINER/1\n`. Frames contain a
+one-byte channel, a four-byte big-endian payload length and 1 to 65,536 bytes. Channel 1 carries the
+public Kernel transport, channel 2 carries only `container.initialize` and
+`container.shutdown`, and channel 3 carries only `model.call` plus `model.delta`
+notifications. The multiplexer treats payloads as bytes and reuses the stdio request, response,
+notification and cancellation codec on every virtual stream.
+
+The physical queue is bounded to 32 MiB and 1,024 frames. A slow virtual reader applies
+backpressure; invalid channels, zero or oversized lengths, prefix mismatch and partial EOF close all
+lanes. JSON framing retains an 8 MiB line limit, 64 MiB logical-message limit, 128 MiB queue and 128
+inbound requests per lane.
+
+Production: `createContainerChannel` in
+`packages/kernel/src/hosting/container-channel.ts`; `createStdioTransport` and
+`serveKernelOverStdio` in `packages/kernel/src/transport/stdio.ts`.
+Test: `packages/kernel/tests/contract/container-channel.test.ts`;
+`packages/kernel/tests/contract/stdio-response-sent.test.ts`;
+`packages/kernel/tests/integration/container-launcher.test.ts`.
+
+## Bootstrap and identity
+
+The host first resolves the canonical workspace, operator identity, namespace, base, artifact,
+engine and effective limits. It creates and inspects the Container before attaching. From attach
+through ready and the public hello, boot has a 30-second deadline. Base and artifact preparation have
+a separate cancelable ten-minute deadline; an operator recipe build remains a separately bounded
+30-minute preparation.
+
+Initialization is strict, single-use and limited to 8 MiB, with configuration limited to 4 MiB. It
+contains the generation UUID, public project and workspace DTOs, bare namespace hash, admitted
+owner, inspected engine and host platform, network mode, local base image ID, base ABI, artifact and
+configuration digests, frozen configuration and a secret-free model lease. Paths are fixed by the
+entrypoint and cannot be supplied in the message.
+
+The guest verifies the configuration digest, artifact target, base ABI and wire, broker and channel
+versions before constructing services. The ready reply repeats generation and digests. The launcher
+then opens model dispatch and performs public wire version 10 hello. Memory recovery starts once,
+after the first successful hello response is sent.
+
+Production: `parseContainerInitialize` in
+`packages/kernel/src/hosting/container-contract.ts`; `serveContainerKernel` in
+`packages/kernel/src/hosting/container-bootstrap.ts`; `connectContainerKernel` in
+`packages/kernel/src/hosting/container-launcher.ts`.
+Test: `packages/kernel/tests/contract/container-contract.test.ts`;
+`packages/kernel/tests/integration/container-launcher.test.ts`;
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
+## Native composition
+
+`createNativeKernel` is the common native service graph. File hosting supplies file-backed
+operator configuration and provider effects. Container hosting supplies a strict in-memory
+`ContainerConfiguration`, a model provider connected to channel 3, an empty connection manager,
+builtin tools, and fixed `skills=false`, `hooks=false`, `allowHostEscalation=false`.
+
+Plans use the Markdown provider. Memory uses local wiki or admitted workspace-relative file paths
+and keeps native seed, write, delete and index behavior. Workflows, leaders, Goals, sessions,
+journals and continuation execute inside the same Kernel. Disabled Plans or Memory retain their
+native disabled semantics. Goal plus manager Workflow remains subject to the ordinary Goals
+contract.
+
+Tasks is unavailable because its only provider is MCP. Plugins, external Skills, external Hooks,
+generic MCP and executable or plugin capability providers are neither loaded nor exposed. An
+explicit Task, Skill, external grant, incompatible profile or external active Plans or Memory
+provider fails before inference or provider startup. Merely having inactive host settings for such
+providers does not block an otherwise native run.
+
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`; `createNativeKernel` in
+`packages/kernel/src/native-kernel.ts`; `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts`.
+Test: `packages/kernel/tests/integration/container-kernel-host.test.ts`;
+`packages/kernel/tests/unit/container-projection.test.ts`;
+`packages/code/tests/integration/container-run-host.test.ts`.
+
+## Configuration and application facade
+
+The host projects schema version 1 configuration once per generation. The schema recursively rejects
+unknown fields and contains effective defaults, builtin/global/workspace Agent Profiles, prompts,
+context, Memory policy, local Plans and Memory settings, native Workflow definitions, logical model
+metadata, loop policy and tool ceiling. It excludes provider endpoints, credentials, MCP, Tasks,
+plugins, hooks, skills, engine settings, process environment and subscription state.
+
+The projection is canonical-JSON hashed and immutable. Guest configuration reads come from
+`createContainerConfigStore`; all writes and trust changes are unsupported. Workspace changes to
+`.clarvis/settings.json`, agents or workflow definitions do not recompose the current generation.
+An operator save remains host-side and is shown as pending reconnect. Reload refuses while hosted
+runs or Memory indexing are active.
+
+The Code facade routes runs, hosting, sessions, goals, plans, memory, workflows, files and storage to
+the guest. It routes config, secrets, models and provider authentication to
+`createOperatorServices` in the application process. Plugins, Skills and Tasks expose empty or
+unavailable views and reject mutations. The immutable guest Extension Profile remains
+`builtin:container`. `localHost` is absent.
+
+Production: `composeContainerClient` in
+`packages/code/src/adapters/container-client.ts`; `createOperatorServices` in
+`packages/kernel/src/config/operator-services.ts`;
+`createContainerConfigStore` in
+`packages/kernel/src/config/container-projection.ts`.
+Test: `packages/code/tests/integration/container-client.test.ts`;
+`packages/kernel/tests/integration/operator-services.test.ts`;
+`packages/kernel/tests/integration/kernel-service-overrides.test.ts`.
+
+## Logical models and host broker
+
+The guest resolves every entry, child, vision, compaction and Memory model through
+`ModelExecutionResolver`. Logical metadata contains provider and model names, kind, context and
+output limits, capabilities, reasoning efforts and prompt-cache mode. It contains no endpoint or
+authentication configuration. When the resolver is present, a run with a non-empty provider
+configuration is invalid and legacy provider resolution is not called. Host and Sandbox retain the
+existing resolver path when this port is absent.
+
+The host creates one 256-bit lease for a generation, bound to the physical channel, owner, namespace,
+generation and exact logical model pairs. It expires within 24 hours. The broker independently
+limits concurrency, queue length, input and response bytes, timeouts, retries and an aggregate token
+ceiling. It reserves conservatively before dispatch, charges reported usage from all attempts
+without double-counting cache subsets, and retains the reservation when usage or outcome is unknown.
+
+`model.call` accepts a closed DTO. The host resolves the actual provider and account, constructs
+`LLMCallParams` field by field, and streams text, tool-input and retry events in increasing
+sequence. Remote media and file paths are refused. Duplicate call IDs never dispatch again. EOF,
+shutdown, expiry, credential revocation and generation replacement revoke queued, active and future
+calls without account fallback.
+
+Production: `createContainerModelBroker` in
+`packages/kernel/src/runtime/model-broker-host.ts`;
+`createContainerModelProvider` in
+`packages/kernel/src/runtime/model-broker-client.ts`;
+`ModelExecutionResolver` in `packages/capability/src/model-execution.ts`.
+Test: `packages/kernel/tests/unit/container-model-broker.test.ts`;
+`packages/kernel/tests/integration/container-model-stream.test.ts`;
+`packages/loop/tests/integration/model-execution-injection.test.ts`.
+
+## Filesystem and persistence
+
+The namespace is the full SHA-256 of canonical JSON containing schema 1, Container placement,
+operator ID, canonical global root, project ID and canonical workspace root. Engine, generation,
+artifact and credentials do not enter it. A host lease under
+`state/container-hosts/<namespace>` serializes all engines and records only exact lifecycle
+identity.
+
+The guest mounts:
+
+| Target | Source | Access |
+| --- | --- | --- |
+| `/workspace` | selected canonical host workspace | read-write |
+| `/workspace/.clarvis` | namespace content volume, `data` subpath | read-write |
+| `/var/lib/clarvis` | namespace state volume, `data` subpath | read-write |
+| `/workspace/.agents` and protected roots | prepared empty masks | read-only |
+| Git directory and common directory | canonical host metadata | read-only |
+| `/opt/clarvis` | artifact digest volume, `payload` subpath | read-only |
+| `/mise` | admitted cache volume, `data` subpath | read-write |
+| `/tmp` | bounded tmpfs | read-write, noexec, nosuid, nodev |
+
+The launcher requires the nested targets `.clarvis` and `.agents` to exist as directories before
+engine create. A non-Git workspace additionally requires an existing empty `.git` directory for its
+read-only mask. Docker and Podman can otherwise create a missing nested target in the host bind with
+engine ownership; Clarvis returns `unsupported_policy` instead of changing the workspace to launch.
+
+The two data volumes have exact names and labels for schema, namespace and role. Existing label,
+schema, readiness or ownership disagreement fails closed. Existing nonempty partial initialization
+requires recovery. No close or update deletes data volumes. Workspace content is shared with the
+host, while Container Plans, Memory and machine state intentionally remain separate from Host and
+Sandbox state.
+
+Production: `resolveContainerVolumeIdentity` and `prepareContainerVolumes` in
+`packages/kernel/src/runtime/container-volumes.ts`; `containerDataVolumeNames` and
+`containerLaunchPaths` in `packages/paths/src/container.ts`;
+`prepareRuntimeMounts` in `packages/kernel/src/runtime/container-mounts.ts`.
+Test: `packages/kernel/tests/unit/container-volumes.test.ts`;
+`packages/kernel/tests/unit/runtime-mounts.test.ts`;
+`packages/paths/tests/unit/container.test.ts`.
+
+## Base and compiled artifact
+
+The OCI base contains Debian bookworm, Git, certificates, mise, archive utilities and the stable
+artifact preparer. It has ABI `clarvis-linux-glibc-v1` and a content-derived base revision. It
+contains no Clarvis Kernel version. A host-owned recipe may derive another base from it; recipe cache
+identity includes base digest, ABI target and exact recipe bytes, never product version or artifact
+digest.
+
+The product artifact is `clarvis-kernel-<target>.tar.gz` for `linux-x64` or
+`linux-arm64`. Its root has `manifest.json`, `bin/clarvis-kernel`, `LICENSE` and declared
+licenses or assets. The strict manifest records product version, full source revision, dirty state,
+target, ABI and wire, broker and channel versions, plus an ordered list of regular files and hashes.
+The archive is limited to 512 MiB and extraction to 1 GiB, and rejects undeclared entries, traversal,
+links, devices, sockets and special permissions.
+
+The builder compiles with Bun using `--compile --env=disable`,
+`--no-compile-autoload-dotenv`, `--no-compile-autoload-bunfig`,
+`--no-compile-autoload-tsconfig`, `--no-compile-autoload-package-json` and
+`--reject-unresolved`. The host verifies the archive before transfer. A networkless ephemeral
+preparer verifies the same archive hash before extraction and publishes readiness last. Kernel
+Containers only receive the immutable payload subpath.
+
+Published `runtime-release.json` schema 2 maps each Linux target to an immutable OCI base origin
+and digest plus a downloadable artifact basename, hash and size. Updating Clarvis code creates a new
+artifact without rebuilding the base.
+
+Production: `runtimeBaseBuildPlan` in `tooling/runtime/build-image.ts`;
+`runtimeArtifactBuildPlan` in `tooling/runtime/build-artifact.ts`;
+`validateRuntimeArtifact` and `prepareRuntimeArtifactVolume` in
+`packages/kernel/src/runtime/runtime-artifact.ts`;
+`parseRuntimeReleaseManifest` in `tooling/runtime/release-manifest.ts`.
+Test: `tooling/tests/unit/runtime-artifact.test.ts`;
+`tooling/tests/architecture/container-native-composition.test.ts`;
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
+
+## Effective launch policy
+
+The final Container has a read-only root, nonroot admitted user, all capabilities dropped,
+no-new-privileges, bounded PIDs, memory, CPU and tmpfs, fixed cwd and entrypoint, an allowlisted
+environment, no engine socket and no implicit mounts. `network=none` or outbound bridge are the
+only modes. Model inference over the host pipe remains available under `network=none`; guest tools
+cannot use direct network access in that mode.
+
+The host inspects the exact local image ID, ABI labels, created Container identity, labels, mounts,
+user and effective security policy before attaching. A remote engine that cannot share the selected
+workspace is unsupported. Linux uses the invoking nonroot numeric UID and GID. Qualified
+Docker/Podman VM engines use fixed nonroot 1000:1000 after bind-access preflight.
+
+Production: `createContainerKernelBackend` in
+`packages/kernel/src/runtime/container-kernel-backend.ts`;
+`createDockerKernelBackend` and `createPodmanKernelBackend` in the corresponding runtime
+adapters.
+Test: `packages/kernel/tests/integration/container-kernel.e2e.test.ts`;
+`packages/kernel/tests/unit/container-volumes.test.ts`.
+
+## Lifecycle
+
+The launcher moves through cold, inspecting, preparing, starting, ready, stopping and stopped.
+Failed boot becomes failed; lost ready transport becomes disconnected and starts shutdown. Close
+first stops admissions and revokes the model lease, requests `container.shutdown`, lets native
+services drain, waits 30 seconds, then asks the engine to stop with ten seconds grace and kills only
+the exact admitted process if required. It removes only that disposable Container and releases the
+host lease after physical death is confirmed.
+
+Closing the TUI closes the Container. Detaching an observation does not promise survival beyond the
+connection, and the TUI refuses its exit-after-background action. `!command` is also unavailable
+because it would run on the application host; agent shell tools still run inside the Container.
+Reconnect waits for exact previous-process reconciliation, starts a new generation in the same
+namespace and does not replay unknown mutations or inference.
+
+Production: `launchContainerKernel` in
+`packages/kernel/src/hosting/container-host-launcher.ts`;
+`connectContainerKernel` in
+`packages/kernel/src/hosting/container-launcher.ts`;
+`createRunHost` in `packages/code/src/run-host.ts`.
+Test: `packages/kernel/tests/integration/container-launcher.test.ts`;
+`packages/code/tests/integration/container-run-host.test.ts`;
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts`.

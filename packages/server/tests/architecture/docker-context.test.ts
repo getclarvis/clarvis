@@ -24,7 +24,8 @@ describe("server image build context", () => {
       "!package.json",
       "!bun.lock",
       "!packages/**",
-      "!tooling/runtime/guest-entry.ts",
+      "!tooling/runtime/kernel-entry.ts",
+      "!tooling/runtime/prepare-artifact.sh",
       "!third-party/bun/LICENSE.md",
     ]) {
       expect(ignore).toContain(included);

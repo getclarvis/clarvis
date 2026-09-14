@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { createFilePlanRepository, createPlanStore } from "@clarvis/plan";
 import { globalPaths, localHostPaths, writeFileDurableSync } from "@clarvis/paths";
-import { createFileRunHost, type FileRunHostOptions } from "../../src/bootstrap.ts";
+import { createFileRunHost } from "../../src/bootstrap.ts";
 import { openHostedProjection } from "../../src/hosting/projection.ts";
 import { createKernelEnvironment } from "../../src/ports/environment.ts";
 import type { RuntimeSettingsInput } from "../../src/runtime/settings.ts";
@@ -26,7 +26,6 @@ export type GoalFixtureResponse = (
 export async function createGoalFileHostFixture(
   options: {
     runtime?: RuntimeSettingsInput;
-    runtimeFactory?: FileRunHostOptions["kernel"]["runtimeFactory"];
     timeoutMs?: number;
     plansMode?: "off" | "on" | "review";
     planRetention?: "keep" | "discard";
@@ -211,7 +210,6 @@ export async function createGoalFileHostFixture(
         environment: createKernelEnvironment({ PATH: process.env.PATH }),
         builtins: { tools: true, skills: false, hooks: false, tasks: false },
         planStoreFor: () => planStore,
-        ...(options.runtimeFactory === undefined ? {} : { runtimeFactory: options.runtimeFactory }),
       },
       hostGeneration: "generation",
       authenticate: (token) => (token === "operator-token" ? "operator" : undefined),

@@ -3,45 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
-import type { FileKernelRuntimeFactory } from "@clarvis/kernel/bootstrap";
 import {
   codeHostEnvironment,
   createCodeHostKernelOptions,
-  type CodeHostRuntimeDependencies,
 } from "../../src/adapters/host-kernel-options.ts";
-
-type RuntimeInput = Parameters<FileKernelRuntimeFactory["create"]>[0];
-
-function runtimeHost(
-  engine: "podman" | "docker",
-): Awaited<ReturnType<FileKernelRuntimeFactory["create"]>> {
-  return {
-    closed: false,
-    info: {
-      kind: "container",
-      generation: engine,
-      engine,
-      engineVersion: "test",
-      hostPlatform: process.platform,
-      guestPlatform: "linux",
-      imageDigest: `sha256:${"d".repeat(64)}`,
-      runtimeProtocolRevision: "test",
-      network: "none",
-      limits: {
-        cpuCount: 1,
-        memoryBytes: 1,
-        processCount: 1,
-        outputBytes: 1,
-        storageBytes: 1,
-      },
-      lifecycle: "ready",
-    },
-    executeRun: async () => {
-      throw new Error("execution is outside this composition test");
-    },
-    close: async () => {},
-  };
-}
 
 describe("code host kernel options", () => {
   it("uses one tool ceiling default for launcher identity and host construction", () => {
@@ -78,7 +43,7 @@ describe("code host kernel options", () => {
       });
       expect(base).not.toHaveProperty("defaultOwner");
       expect(base).not.toHaveProperty("extensionProfileSelector");
-      expect(base.runtimeFactory).toHaveProperty("create");
+      expect(base).not.toHaveProperty("runtimeFactory");
 
       const scoped = createCodeHostKernelOptions({
         workspaceRoot: join(root, "workspace"),
@@ -99,61 +64,5 @@ describe("code host kernel options", () => {
     } finally {
       await rm(root, { recursive: true, force: true });
     }
-  });
-
-  it("selects each lazy container adapter and forwards Docker image preparation effects", async () => {
-    const notices: string[] = [];
-    const podman = runtimeHost("podman");
-    const docker = runtimeHost("docker");
-    let resolvedSignal: AbortSignal | undefined;
-    const runtimeDependencies: CodeHostRuntimeDependencies = {
-      productVersion: () => "1.2.3",
-      resolveRuntimeImage: async ({ currentVersion, signal }) => {
-        expect(currentVersion).toBe("1.2.3");
-        resolvedSignal = signal;
-        return { reference: "clarvis-runtime:test", pull: false };
-      },
-      loadLocalRuntime: async () => ({
-        createLocalPodmanRuntime: async (value, options) => {
-          expect(value.settings.backend).toBe("podman");
-          if (options === undefined) throw new Error("expected Podman runtime options");
-          const controller = new AbortController();
-          expect(await options.resolveImage?.(controller.signal)).toEqual({
-            reference: "clarvis-runtime:test",
-            pull: false,
-          });
-          return podman;
-        },
-        createLocalDockerRuntime: async (value, options) => {
-          expect(value.settings.backend).toBe("docker");
-          if (options === undefined) throw new Error("expected Docker runtime options");
-          const controller = new AbortController();
-          expect(await options.resolveImage?.(controller.signal)).toEqual({
-            reference: "clarvis-runtime:test",
-            pull: false,
-          });
-          options.onRecipePreparation?.("base");
-          return docker;
-        },
-      }),
-    };
-    const options = createCodeHostKernelOptions(
-      {
-        workspaceRoot: "/workspace",
-        globalDir: "/global",
-        logger: createLogger("silent"),
-        runtimeNotice: (message) => notices.push(message),
-      },
-      runtimeDependencies,
-    );
-
-    expect(
-      await options.runtimeFactory!.create({ settings: { backend: "podman" } } as RuntimeInput),
-    ).toBe(podman);
-    expect(
-      await options.runtimeFactory!.create({ settings: { backend: "docker" } } as RuntimeInput),
-    ).toBe(docker);
-    expect(resolvedSignal).toBeInstanceOf(AbortSignal);
-    expect(notices).toEqual(["Preparing Docker environment: base"]);
   });
 });

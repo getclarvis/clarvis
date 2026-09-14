@@ -80,6 +80,94 @@ Test: [runtime-status-conformance.test.ts](../../packages/kernel/tests/contract/
 passes every current variant/lifecycle through both actual boundaries and preserves their distinct
 identifier and text bounds.
 
+### Binary multiplexing for process pipes
+
+`createContainerChannel` exposes Kernel, control and model byte-stream pairs over one physical
+readable/writable pair. Each direction begins with ASCII `CLARVIS-CONTAINER/1\n`; subsequent frames
+contain a one-byte channel (1, 2 or 3), a four-byte big-endian payload length, and 1–65,536 payload
+bytes. A divergent prefix, unknown channel, invalid length, interrupted frame, or physical stream
+failure closes all lanes and their pending stdio calls. stdout carries only this wire; diagnostics
+must use the process's separate stderr pipe.
+
+The multiplexor never interprets JSON. Each lane uses `createStdioTransport` or
+`serveKernelOverStdio`, retaining the existing 8 MiB physical JSON line, 64 MiB logical message,
+128 MiB JSON queue and 128 inbound request limits. Outbound physical frames are created lazily:
+one write is in flight, arbitration advances after each frame, and callbacks yield before selecting
+the next lane. A virtual output accepts one bounded codec line at a time, not an entire fragmented
+logical message. Inbound retained physical frames are bounded by 32 MiB and 1,024 frames, including
+reserved space for the frame being assembled and one buffered frame per virtual reader. Reaching a
+bound pauses physical reads until virtual readers consume their backlog; no frame is discarded.
+
+`KernelConnection.responseSent(method, result)` is an optional, local lifecycle callback.
+`serveKernelOverStdio` invokes it only after a successful response has finished writing to the
+owned stream and the request has not been cancelled. It does not acknowledge peer application
+processing and adds no wire method or frame. Failed writes and cancelled requests omit the
+callback. A callback failure disconnects the transport rather than emitting a second response.
+This permits post-hello startup and completion accounting to follow the write boundary without
+assuming that returning from a service handler already sent its response.
+
+Production: `KernelConnection` in [server.ts](../../packages/kernel/src/transport/server.ts) and
+`serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts).
+Test: [stdio-response-sent.test.ts](../../packages/kernel/tests/contract/stdio-response-sent.test.ts)
+checks deferred writes, cancellation, write failure and callback failure without duplicate frames.
+
+### Private Container bootstrap and model ports
+
+`parseContainerInitialize` admits a closed, lossless-JSON bootstrap envelope up to 8 MiB. Its
+configuration keeps the separate 4 MiB ceiling. The envelope binds a UUID generation, admitted
+owner, project/workspace DTOs (guest path `/workspace`), bare SHA-256 namespace, engine/platform,
+base ABI/image ID, artifact/config digests and a finite model lease. Its strict `runtime` object
+requires `network: "none" | "outbound"`, carrying the launcher-inspected mode for truthful guest
+status; omission and `internet` are rejected. This field describes the enforced engine policy and
+does not give the guest authority to change it. The envelope rejects alternate paths,
+environment, authentication and unknown fields at every structural level. The owner matches the
+projected loop identity, the workspace belongs to the project, the canonical configuration digest
+matches, and the lease has the exact logical model pairs and at most 24 hours of remaining validity.
+The ready DTO admits wire 10 and broker 1 only. These validators do not start or qualify a Kernel.
+
+The model broker is a separate `KernelServer` restricted to `model.call`. Scope/model/admission
+checks precede its host-only resolver. Its generation owns at most 65,536 call IDs, with no replay
+or eviction; requests reserve `(context + bounded output) * (1 + host retries)` atomically under
+host concurrency, queue and aggregate-token limits. Timeout and retry ceilings are host inputs,
+not authority supplied by the guest. Request input is bounded to 32 MiB; output uses the smaller
+of that limit and the host response ceiling. Delta queues are bounded to 1,024 events/8 MiB.
+
+Known input/output usage (including retried usage, without adding cache subsets again) is debited
+in full. Reservation surplus becomes releasable only with complete usage and a successful local
+terminal write. This write boundary does not prove peer processing. Unknown usage, cancellation
+after dispatch or a missing terminal write retains the reservation. Usage above the reservation
+increases the charge and blocks new admission when the generation ceiling no longer admits it.
+Repeated write callbacks cannot release credit twice. EOF/revocation/expiration retires authority;
+provider revocation aborts its active/queued calls without selecting another account or model.
+Run/agent/job attribution does not establish host-side domain authorization.
+
+Production: [container-contract.ts](../../packages/kernel/src/hosting/container-contract.ts)
+(`parseContainerInitialize`, `containerReadySchema`),
+[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts),
+[model-broker-host.ts](../../packages/kernel/src/runtime/model-broker-host.ts)
+(`createContainerModelBroker`) and
+[model-broker-client.ts](../../packages/kernel/src/runtime/model-broker-client.ts).
+Test: [container-contract.test.ts](../../packages/kernel/tests/contract/container-contract.test.ts),
+[container-model-broker.test.ts](../../packages/kernel/tests/unit/container-model-broker.test.ts)
+and [container-model-stream.test.ts](../../packages/kernel/tests/integration/container-model-stream.test.ts)
+exercise bootstrap refusal/limits, admission side-effect counters, accounting, revocation and
+sequenced stream/tool-input/retry callbacks. These deterministic tests do not establish engine,
+artifact or complete domain qualification.
+
+Both stdio adapters accept opt-in `strictDirection`. In that mode clients accept only response and
+notification frames; servers accept only request and cancel frames. Other valid frame shapes close
+the wire before dispatch. The default remains unchanged for existing transports. Method allow-lists,
+bootstrap admission and authority belong to the endpoint composition, not the binary parser.
+This primitive does not itself launch a process or establish the native Container composition.
+
+Production: `createContainerChannel` in
+[container-channel.ts](../../packages/kernel/src/hosting/container-channel.ts), and
+`createStdioTransport`/`serveKernelOverStdio` in [stdio.ts](../../packages/kernel/src/transport/stdio.ts).
+Test: [container-channel.test.ts](../../packages/kernel/tests/contract/container-channel.test.ts)
+checks byte-by-byte prefix/header decoding, UTF-8 preservation, all three lanes with histories above
+8 MiB, round-robin progress, count/byte backpressure and resumption, cancellation, truncated/invalid
+frames, pending-call teardown and strict direction without handler side effects.
+
 ## 2. Surface
 
 ### 2.1 Exported from `@clarvis/kernel`
@@ -517,8 +605,8 @@ otherwise `context` is bound, `helloCompleted` set, and the result assembled wit
 `context.capabilities ?? capabilities`.
 
 `CLARVIS_WIRE_VERSION` in [wire.ts](../../packages/kernel/src/transport/wire.ts) is the single
-revision authority for the kernel RPC over both stdio and local sockets. It is independent of the
-private execution RPC revision used between host and guest. Supporting hosted runs additionally
+revision authority for the kernel RPC over local sockets, SSH stdio and Container channel 1. The
+private Container channel and model broker negotiate their own revisions. Supporting hosted runs additionally
 requires the advertised `hosting.host_generation`; opening a transport does not enable that service.
 Production: `createKernelServer` and `connectKernelClient` in
 [server.ts](../../packages/kernel/src/transport/server.ts) and
@@ -702,7 +790,7 @@ without the `readableAll`/`writableAll` relaxations. A local host composition mu
 placement by itself is not authorization. This adapter alone does not detach or preserve a run.
 
 RPC defines the calls and notifications; local IPC supplies their byte streams. The adapter never
-forwards kernel frames to the guest's [private execution RPC](isolated-agent-runtime.md#5-private-protocol-and-image-identity).
+forwards kernel frames to the [private Container channel](isolated-agent-runtime.md#process-and-transport-topology).
 `createKernelServer` accepts the kernel catalog only; the local-transport service test rejects
 `host.capability` on this endpoint. Hosted-run ownership, durable handoff and observation recovery
 belong to [the hosting service](hosted-runs.md#hosted-kernel-rpc), independently of the socket lifetime.
@@ -891,14 +979,15 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 **INV-221.** `steer`/`compact`/`cancel`/`interruptTool`/`respond` each forward with the handle's own `execution_id`
 under the stable names `runs.steer`, `runs.compact`, `runs.cancel`, `runs.interrupt_tool`, `runs.respond`.
 
-Interrupt receipt statuses describe registry outcomes, not transport health. Container RPC failures,
-invalid receipts and timeout after delivery reject the handle's request as sanitized `unavailable`
-rather than returning `not_running`. Expiry before delivery to a subscriber instead returns
-`not_running`; the bounded channel contract is owned by
-[kernel runs](kernel-runs.md). Production: `createIsolatedRunExecutor` in
-[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts).
-Test: `rejects interrupt delivery without fabricating not_running` in
-[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts).
+Interrupt receipt statuses describe registry outcomes, not transport health. A transport failure
+rejects the handle's request as sanitized `unavailable`; expiry before delivery to a subscriber
+returns `not_running`. Container uses this same public run-control contract over channel 1 rather
+than translating it through a private execution protocol. The bounded channel contract is owned by
+[kernel runs](kernel-runs.md). Production: `createKernelClient` in
+`packages/kernel/src/transport/client.ts` and `createContainerChannel` in
+`packages/kernel/src/hosting/container-channel.ts`. Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts` and
+`packages/kernel/tests/contract/container-channel.test.ts`.
 Production: `packages/kernel/src/transport/client.ts`, names bound at `packages/kernel/src/transport/client.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts`.
 

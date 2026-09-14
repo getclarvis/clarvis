@@ -38,6 +38,29 @@ system*, not by convention: `WorkspacePaths` (`packages/paths/src/workspace.ts`)
 key for any of that machinery, so writing it into a repository is a compile error rather than a
 possibility to remember to avoid (`packages/paths/src/workspace.ts`).
 
+### Container path vocabulary
+
+`containerLaunchPaths(namespace, globalDir?)` places only the host launch lease (`launch.lock`) and
+process registry (`registry.json`) under `<global>/state/container-hosts/<namespace>`. It does not
+create directories, publish an endpoint or resolve credentials. `containerDataVolumeNames` returns
+`clarvis-data-v1-<namespace>-content` and `clarvis-data-v1-<namespace>-state`;
+`containerArtifactVolumeName` returns `clarvis-artifact-v1-<archive-sha256>`. Both identities must be
+full, bare lowercase SHA-256 hashes; truncation, digest prefixes and path syntax are rejected.
+No generation, product version or engine parameter participates in these name builders.
+
+`containerGuestPaths` is immutable Linux-guest vocabulary: workspace `/workspace`, private content
+under its Clarvis directory, the shared-agent mask under its agents directory, global root
+`/var/lib/clarvis`, home `/var/lib/clarvis/home`, artifact `/opt/clarvis` and its
+`bin/clarvis-kernel` entry, payload subpath `payload`, mise `/mise` and temporary root `/tmp`.
+These virtual names use POSIX composition, never the launcher's native Windows path syntax.
+Kernel owns namespace derivation and validation of volume labels, ownership and lifecycle; these
+pure helpers do not authorize any mount or data deletion.
+
+Production: `containerLaunchPaths`, `containerDataVolumeNames`, `containerArtifactVolumeName` and
+`containerGuestPaths` in [container.ts](../../packages/paths/src/container.ts).
+Test: [container.test.ts](../../packages/paths/tests/unit/container.test.ts) checks exact names,
+role separation, canonical identity refusal and fixed guest paths independently of host separators.
+
 ## 2. Surface
 
 ### 2.1 Exports map
@@ -265,8 +288,6 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
 | `runtimeDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>` | `WorkspaceStatePaths.runtimeDir`, `workspaceStatePaths` |
-| `runtimeCheckpointsDir(runtimeId)` | `<runtime>/checkpoints` | `WorkspaceStatePaths.runtimeCheckpointsDir`, `workspaceStatePaths` |
-| `runtimeCheckpointFile(runtimeId, executionId)` | `<runtime>/checkpoints/<ownerSegment(executionId)>.json` | `WorkspaceStatePaths.runtimeCheckpointFile`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
 | `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts` |
@@ -422,12 +443,12 @@ real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflo
 `extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
-That writer inventory is not a Container visibility allow-list. Docker/Podman replaces the complete
-`<ws>/.clarvis` and `<ws>/.agents` roots with two private empty read-only directory masks, so a new or
-unknown descendant is opaque without a runtime-policy edit. Mask sources are host-created outside
-the selected workspace and removed after launch failure or teardown. Production:
+That writer inventory is not a Container visibility allow-list. Docker/Podman covers
+`<ws>/.clarvis` with its private persistent content volume and `<ws>/.agents` with an empty
+read-only mask. Mask sources are host-created outside the selected workspace and removed after
+launch failure or teardown. Production:
 `agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
-`packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`packages/kernel/src/runtime/container-mounts.ts`. Test:
 `packages/kernel/tests/unit/runtime-mounts.test.ts`.
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):

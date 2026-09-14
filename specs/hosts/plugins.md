@@ -876,15 +876,13 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss.
 
-For Container placement, the active Plugin selection is deliberately ignored by request assembly:
-no bootstrap, Skill, Agent, MCP server, Hook, settings fragment or capability executable contributes
-to the guest. A selected Plugin Agent is an explicit incompatible dependency and fails admission;
-merely having Plugins enabled remains inactive and does not block the core run. Production:
-`ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
-`createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts`, and
-`admitContainerCoreRun` in `packages/kernel/src/runs/prepare-run.ts`. Test:
-`packages/kernel/tests/unit/container-core-policy.test.ts` and
-`packages/kernel/tests/integration/local-podman-runtime.test.ts`.
+For Container placement, the active Plugin selection is excluded before configuration projection:
+no bootstrap, Skill, Agent, MCP server, Hook, settings fragment or capability executable reaches the
+guest. A selected Plugin Agent or external grant is incompatible; merely having Plugins installed
+does not block an independent run. Production: `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts`. Test:
+`packages/kernel/tests/unit/container-projection.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 - **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
   `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
   plugin. No second mutable approval projection filters the snapshot.
@@ -1422,12 +1420,11 @@ All of the following are derived directly from this document's own source and te
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
-44c. **A Container guest receives no Plugin contribution.** The operator-only settings view excludes
-    Plugin fragments before assembly, and kernel admission refuses Plugin Agents or non-core profile
-    graphs before engine/model work. Production: `operator_merged` in
-    `packages/kernel/src/config/config-store.ts` and `admitContainerCoreRun` in
-    `packages/kernel/src/runs/prepare-run.ts`. Test:
-    `packages/kernel/tests/unit/container-core-policy.test.ts`.
+44c. **A Container guest receives no Plugin contribution.** Projection excludes Plugin fragments,
+    and incompatible Plugin Agents/profile grants fail before model work. Production:
+    `projectContainerConfiguration` in
+    `packages/kernel/src/config/container-projection.ts`. Test:
+    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Extension Profiles are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before

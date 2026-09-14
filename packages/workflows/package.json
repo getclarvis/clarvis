@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/workflows",
-
   "private": true,
   "description": "Agentic workflow layer over @clarvis/loop: a manager run whose run_leader tool spawns full, isolated leader runs (Manager \u2192 Leaders \u2192 Sub-agents).",
   "license": "MIT",

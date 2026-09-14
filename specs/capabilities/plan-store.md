@@ -692,13 +692,12 @@ the caller to re-read and re-decide.
 
 ## 7. Coupling
 
-The file kernel composes this store only for native Host/Sandbox runs and its control plane.
-Docker/Podman carries no plan document, transfer, store or mutation grant. Explicit plan use or a
-continuation which depends on one fails before engine/model work; this does not change the
-unrestricted low-level `delete(id)` contract or `PlanService` control-plane deletion. Production:
-`admitContainerCoreRun` in
-[`prepare-run.ts`](../../packages/kernel/src/runs/prepare-run.ts). Test:
-[`container-core-policy.test.ts`](../../packages/kernel/tests/unit/container-core-policy.test.ts).
+File and Container Kernels compose this store locally. Container places Markdown documents in its
+private content volume and serves plan control over the public Kernel protocol; there is no transfer
+or proxy store. This does not change the low-level `delete(id)` contract or `PlanService`
+control-plane deletion. Production: `createNativeKernel` in
+[`native-kernel.ts`](../../packages/kernel/src/native-kernel.ts). Test:
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 **Depends on (runtime, static):**
 

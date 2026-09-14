@@ -1,5 +1,5 @@
 import { sanitizeErrorMessage } from "@clarvis/capability";
-import type { EnvConfig, TracePort } from "@clarvis/capability";
+import type { EnvConfig, TracePort, ModelExecutionResolver } from "@clarvis/capability";
 import type { RunRequest } from "@clarvis/capability";
 import type { LLMProvider, LLMUsage } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
@@ -8,12 +8,14 @@ import type { TokenLedger } from "./budget/budget.ts";
 import { userText } from "./subagents/build-subagent-input.ts";
 import type { EntrySeed } from "./entry-seed.ts";
 import type { UsageAccounting } from "./usage-accounting.ts";
+import { rejectCatalogProviders, requireModelExecution } from "../model-execution.ts";
 
 /**
  * The ambient dependencies of the vision prepass: the env/config, the LLM
  * provider, and an optional logger.
  */
 export interface VisionPrepassDeps {
+  modelExecutionResolver?: ModelExecutionResolver;
   env: EnvConfig;
   llm: LLMProvider;
   logger?: Logger;
@@ -110,11 +112,20 @@ export async function runVisionPrepass(p: VisionPrepassArgs): Promise<string | u
   if (modelRef === undefined) return;
 
   const ref = parseModelRef(modelRef);
-  const resolution = resolveProvider(ref.provider, p.request.providers, ref.modelId);
+  const resolver = p.deps.modelExecutionResolver;
+  rejectCatalogProviders(p.request.providers, resolver);
+  const modelExecution =
+    resolver === undefined ? undefined : requireModelExecution(resolver, ref.provider, ref.modelId);
+  const resolution =
+    resolver === undefined
+      ? resolveProvider(ref.provider, p.request.providers, ref.modelId)
+      : undefined;
   const modelConfig = p.request.providers.find((pr) => pr.name === ref.provider)?.models?.[
     ref.modelId
   ];
-  const capabilities = modelConfig?.capabilities ? new Set(modelConfig.capabilities) : undefined;
+  const declaredCapabilities = modelExecution?.capabilities ?? modelConfig?.capabilities;
+  const capabilities =
+    declaredCapabilities === undefined ? undefined : new Set(declaredCapabilities);
   if (capabilities !== undefined && !capabilities.has("vision")) {
     p.deps.logger?.warn(
       { event: "vision.capability_missing", model: modelRef },
@@ -141,7 +152,7 @@ export async function runVisionPrepass(p: VisionPrepassArgs): Promise<string | u
     const result = await p.deps.llm.call({
       model: ref.modelId,
       provider: ref.provider,
-      ...(resolution.ok ? { providerConfig: resolution.config } : {}),
+      ...(resolution?.ok ? { providerConfig: resolution.config } : {}),
       ...(capabilities !== undefined ? { capabilities } : {}),
       messages: [
         { role: "system", content: VISION_SYSTEM_PROMPT },
@@ -153,7 +164,9 @@ export async function runVisionPrepass(p: VisionPrepassArgs): Promise<string | u
       tools: [],
       reasoningEffort: "off",
       maxOutputTokens: Math.min(
-        modelConfig?.max_output_tokens ?? VISION_MAX_OUTPUT_TOKENS,
+        modelExecution?.maxOutputTokens ??
+          modelConfig?.max_output_tokens ??
+          VISION_MAX_OUTPUT_TOKENS,
         VISION_MAX_OUTPUT_TOKENS,
       ),
       timeoutMs: p.deps.env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,

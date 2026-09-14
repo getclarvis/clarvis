@@ -1,7 +1,20 @@
 import { promises as fs, readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { ensureWorkspaceLocalDir, isMonitorSidecar, workspaceStatePaths } from "@clarvis/paths";
+import {
+  ensureWorkspaceLocalDir,
+  isMonitorSidecar,
+  workspaceStatePaths,
+  type WorkspaceStatePaths,
+} from "@clarvis/paths";
+
+/** Trusted machinery namespace; a string preserves standalone ambient-root resolution. */
+type MonitorWorkspace = string | WorkspaceStatePaths;
+
+/** Resolve once at the composition boundary, never from tool arguments. */
+function monitorPaths(source: MonitorWorkspace): WorkspaceStatePaths {
+  return typeof source === "string" ? workspaceStatePaths(source) : source;
+}
 import { ToolError } from "../errors.ts";
 import { writeAtomic } from "./atomic.ts";
 import { readRawFile } from "./files.ts";
@@ -38,24 +51,24 @@ export interface MonitorMeta {
  * @remarks Under the user's global root, not the working tree: a background
  * process's bookkeeping is machine-local state, and a repository is not where
  * it belongs. */
-export function monitorDir(workspaceRoot: string): string {
-  return workspaceStatePaths(workspaceRoot).localDir;
+export function monitorDir(workspaceRoot: MonitorWorkspace): string {
+  return monitorPaths(workspaceRoot).localDir;
 }
 
 /** Path of a monitor's JSON metadata sidecar (`monitor-<id>.json`). */
-export function sidecarPath(workspaceRoot: string, id: string): string {
-  return workspaceStatePaths(workspaceRoot).monitorSidecar(id);
+export function sidecarPath(workspaceRoot: MonitorWorkspace, id: string): string {
+  return monitorPaths(workspaceRoot).monitorSidecar(id);
 }
 
 /** Path of a monitor's captured-output log file (`monitor-<id>.log`). */
-export function logPath(workspaceRoot: string, id: string): string {
-  return workspaceStatePaths(workspaceRoot).monitorLog(id);
+export function logPath(workspaceRoot: MonitorWorkspace, id: string): string {
+  return monitorPaths(workspaceRoot).monitorLog(id);
 }
 
 /** Path of a monitor's exit-code file (`monitor-<id>.exit`), written when the
  * process ends. */
-export function exitPath(workspaceRoot: string, id: string): string {
-  return workspaceStatePaths(workspaceRoot).monitorExit(id);
+export function exitPath(workspaceRoot: MonitorWorkspace, id: string): string {
+  return monitorPaths(workspaceRoot).monitorExit(id);
 }
 
 /** Mint a fresh monitor id of the form `mon_` + 8 random hex chars. */
@@ -72,7 +85,7 @@ export function mintId(): string {
  *   single creator rather than whichever tool happened to run first. It needs no
  *   `.gitignore` any more, because it is no longer inside a repository.
  */
-export async function ensureClarvisDir(workspaceRoot: string): Promise<string> {
+export async function ensureClarvisDir(workspaceRoot: MonitorWorkspace): Promise<string> {
   return Promise.resolve(ensureWorkspaceLocalDir(workspaceRoot));
 }
 
@@ -119,7 +132,10 @@ function isMeta(m: unknown): m is MonitorMeta {
 }
 
 /** Atomically persist a monitor's metadata to its JSON sidecar. */
-export async function writeSidecar(workspaceRoot: string, meta: MonitorMeta): Promise<void> {
+export async function writeSidecar(
+  workspaceRoot: MonitorWorkspace,
+  meta: MonitorMeta,
+): Promise<void> {
   await writeAtomic(sidecarPath(workspaceRoot, meta.id), JSON.stringify(meta));
 }
 
@@ -132,7 +148,10 @@ export async function writeSidecar(workspaceRoot: string, meta: MonitorMeta): Pr
  * @throws {@link ToolError} with code `monitor_not_found` when the sidecar is
  *   missing, unreadable, unparseable, or fails the {@link isMeta} shape check.
  */
-export async function readSidecar(workspaceRoot: string, id: string): Promise<MonitorMeta> {
+export async function readSidecar(
+  workspaceRoot: MonitorWorkspace,
+  id: string,
+): Promise<MonitorMeta> {
   let raw: string;
   try {
     raw = (
@@ -165,7 +184,7 @@ export async function readSidecar(workspaceRoot: string, id: string): Promise<Mo
  *   skipped rather than throwing.
  */
 export async function listSidecars(
-  workspaceRoot: string,
+  workspaceRoot: MonitorWorkspace,
   maxEntries = Number.POSITIVE_INFINITY,
 ): Promise<MonitorMeta[]> {
   const dir = monitorDir(workspaceRoot);
@@ -219,7 +238,7 @@ export interface ExitState {
  *   or `null` if it is non-numeric or not a safe integer.
  */
 export async function readExitState(
-  workspaceRoot: string,
+  workspaceRoot: MonitorWorkspace,
   id: string,
   logger: ToolsLogger = NOOP_TOOLS_LOGGER,
 ): Promise<ExitState> {
@@ -251,7 +270,7 @@ export async function readExitState(
 /** Convenience over {@link readExitState} returning just the exit `code` (or
  * `null` when unknown or still running). */
 export async function readExitCode(
-  workspaceRoot: string,
+  workspaceRoot: MonitorWorkspace,
   id: string,
   logger: ToolsLogger = NOOP_TOOLS_LOGGER,
 ): Promise<number | null> {
@@ -269,7 +288,7 @@ export async function readExitCode(
  *   an unrelated process after exit is not mistaken for the monitor.
  */
 export async function monitorRunning(
-  workspaceRoot: string,
+  workspaceRoot: MonitorWorkspace,
   meta: MonitorMeta,
   logger: ToolsLogger = NOOP_TOOLS_LOGGER,
 ): Promise<boolean> {
@@ -280,7 +299,10 @@ export async function monitorRunning(
 
 /** Remove a monitor's sidecar, log, and exit files, ignoring any that are
  * already gone. */
-export async function removeMonitorFiles(workspaceRoot: string, id: string): Promise<void> {
+export async function removeMonitorFiles(
+  workspaceRoot: MonitorWorkspace,
+  id: string,
+): Promise<void> {
   await Promise.all([
     fs.rm(sidecarPath(workspaceRoot, id), { force: true }),
     fs.rm(logPath(workspaceRoot, id), { force: true }),
@@ -318,7 +340,7 @@ const MONITOR_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  *   left intact; runs concurrently across monitors.
  */
 export async function sweepMonitors(
-  workspaceRoot: string,
+  workspaceRoot: MonitorWorkspace,
   options: { maxEntries?: number; concurrency?: number } = {},
 ): Promise<void> {
   const metas = await listSidecars(workspaceRoot, options.maxEntries ?? 10_000);

@@ -136,6 +136,12 @@ The open run vocabulary also carries `AgentsParam`, including the supervision re
 per-child hint: `@clarvis/supervision` divides it across the configured live and retained child
 slots, and its settings schema applies the absolute 32-MiB maximum.
 
+`ModelExecutionInfo` and `ModelExecutionResolver` (exported from the root and `./ports`) describe a
+host-owned closed catalog of exact provider/model pairs. Metadata includes kind, context/output
+limits, capabilities, reasoning efforts and prompt-cache support, never endpoints or credentials.
+An unknown pair returns `undefined`; consumers must not fall back to native provider resolution.
+See the [generic execution contract](../../specs/engine/capability-composition.md).
+
 The provider vocabulary includes the strict `openai-codex` and `xai-grok` kinds, but this leaf owns
 no OAuth service or credential type. `ResolvedProviderConfig` and `LLMCallParams` remain token-free;
 a configured model may retain provider-published `reasoning_efforts` as non-secret metadata so a

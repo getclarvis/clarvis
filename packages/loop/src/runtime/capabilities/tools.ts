@@ -42,7 +42,7 @@ import {
 export { agentToolsActive };
 import { executeAgentToolCall } from "../tools/builtin/execute-agent-tool-call.ts";
 import { mkdirSync, rmSync, rmdirSync } from "node:fs";
-import { DIR_MODE, workspaceStatePaths } from "@clarvis/paths";
+import { DIR_MODE, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /** Registry name of the built-in coding-tools capability. */
 export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
@@ -84,6 +84,8 @@ export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonl
  * guard, sandbox and credential names. All optional; omitting one runs
  * unguarded / unsandboxed / without scrubbing. */
 export interface AgentToolsCapabilityOptions {
+  /** Host-resolved paths shared by temporary roots, spills and monitors. */
+  statePaths?: WorkspaceStatePaths;
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
@@ -137,7 +139,7 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       if (!ctx.env.CLARVIS_AGENT_TOOLS_ENABLED) return null;
       const resolution = await opts?.resolveGuard?.(ctx);
       const sandbox = opts?.resolveSandbox?.(ctx);
-      const statePaths = workspaceStatePaths(ctx.workspaceRoot);
+      const statePaths = opts?.statePaths ?? workspaceStatePaths(ctx.workspaceRoot);
       const temporaryRoot = statePaths.runTempDir(ctx.executionId);
       mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
@@ -149,6 +151,7 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
         skillExecutionRoots,
         opts?.allowHostEscalation,
         temporaryRoot,
+        statePaths,
         () => {
           for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
             try {
@@ -177,6 +180,7 @@ function createAgentToolsRunCapability(
   skillExecutionRoots: readonly string[],
   allowHostEscalation: boolean | undefined,
   temporaryRoot: string,
+  statePaths: WorkspaceStatePaths,
   removeEmptyRunDirs: () => void,
 ): RunCapability {
   const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
@@ -225,6 +229,7 @@ function createAgentToolsRunCapability(
           ? withGuardElicitWaitBound(resolution.elicit, elicitWaitMs, scope.signal)
           : undefined;
       const toolset = createAgentToolset({
+        statePaths,
         workspaceRoot: ctx.workspaceRoot,
         ...(scope.entry && resolution?.reviewMutation !== undefined
           ? { reviewMutation: resolution.reviewMutation }

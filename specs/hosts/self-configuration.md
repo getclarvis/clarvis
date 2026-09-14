@@ -9,10 +9,10 @@ capability. Host and Sandbox retain their configured runtime and entry agent. Th
 access nor requires the operator to repeat the request as a slash command. Host/environment skill
 gates still apply, including to this embedded guide.
 
-An explicit configuration skill request in Docker/Podman fails during common Container admission
-before lease, engine or inference. It directs the operator to Isolation Sandbox or Host and does not
-switch placement. The direct capability does not bind in a Container run. This feature adds no
-Container method or descriptor; private protocol revision 14 remains the core-only wire.
+An explicit configuration skill request in Docker/Podman fails because skills are unavailable. The
+guest configuration service is read-only and the Code facade routes authenticated settings/model/
+login actions to operator services on the host. Saved changes remain pending until an explicit
+reconnect; they never mutate the active generation or switch placement.
 
 Production: `createDirectConfigurationCapability` in
 [direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts),

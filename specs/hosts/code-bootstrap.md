@@ -91,8 +91,8 @@ download Bun or mutate shell profiles; ordinary root/package builds retain detac
 The distinct POSIX development entry starts at root `dev-install.sh`, which checks that Bun is
 available and delegates to `packages/code/tooling/development-install.ts`. In its default local mode, that typed installer
 requires the exact `mise.toml` version, performs the frozen dependency install, configures the local
-Git hook, builds the local `clarvis-runtime:development` image for each of Docker and Podman that is
-installed, and atomically creates a marked `clarvis-develop` regular file without replacing an
+Git hook, builds `clarvis-base:local` for each installed Docker/Podman engine, compiles one matching
+Linux Kernel archive, and atomically creates a marked `clarvis-develop` regular file without replacing an
 unmanaged destination. Docker and Podman are attempted independently because they keep separate
 image stores; a missing engine is skipped so a Docker-only or Podman-only host still completes.
 When neither engine is installed the launcher is still written and native mode remains usable.
@@ -1498,15 +1498,16 @@ contains the complete app's paint/readiness markers. Production:
 `clarvis` executable. It preserves the caller's working directory unless `--empty-workspace`
 selects a newly allocated temporary directory, never replaces an unmanaged destination, and
 exposes global-state and managed-temporary deletion only through explicit `--clear`. Default
-installation also builds `clarvis-runtime:development` for each of Docker and Podman that is
-installed and skips a missing engine; it fails closed only when every installed engine fails.
+installation also builds `clarvis-base:local` for each installed Docker/Podman engine and one
+target Linux Kernel archive; it skips missing engines and fails closed only when every installed
+engine fails.
 Production:
 `dev-install.sh` and `packages/code/tooling/development-install.ts`
 (`developmentLauncherSource`, `existingLauncher`, `cleanDevelopmentState`,
 `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
 `prepareDevelopmentRuntimeImages`). Test:
 `packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup,
-shell-delegation, and per-engine runtime-image cases).
+shell-delegation, per-engine base cases and artifact build).
 
 **INV-CB-45.** Resume/continue session preflight finishes before OpenTUI renderer creation, so a
 missing session never enters raw mode or the alternate screen. Once renderer creation begins,

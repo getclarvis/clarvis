@@ -696,17 +696,17 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-Plans remain a native Host/Sandbox capability. Container projects inherited plan settings inactive
-and carries no plan descriptor, tool, lifecycle callback or retention bridge. An explicit `plans`
-request, continuation requiring a plan, or profile grant which depends on Plans fails before run
-reservation and inference with guidance to use Sandbox or Host; Container never executes a partial
-run with the plan silently omitted.
+Plans is native in Host, Sandbox and Container. Container admits the Markdown provider and keeps
+the native plan service, tools, CAS, approval, continuation and retention lifecycle in its Kernel.
+An active external+external provider is rejected during projection; an inactive inherited setting
+does not start that provider. Plan documents persist in the private content volume.
 
-Production: `admitContainerCoreRun` in
-[`prepare-run.ts`](../../packages/kernel/src/runs/prepare-run.ts) and `createGuestLoopExecutor` in
-[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts). Test:
-[`container-core-policy.test.ts`](../../packages/kernel/tests/unit/container-core-policy.test.ts)
-and [`runtime-guest-loop.test.ts`](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
+Production: `projectContainerConfiguration` in
+[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
+`createContainerNativeKernel` in
+[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
+[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits

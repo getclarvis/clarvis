@@ -5,7 +5,10 @@ import type {
   ProviderConfig,
   ReasoningEffort,
   ReasoningSummary,
+  ModelExecutionInfo,
+  ModelExecutionResolver,
 } from "@clarvis/capability";
+import { rejectCatalogProviders, requireModelExecution } from "../../model-execution.ts";
 import { DEFAULT_COMPACTION_PROMPT } from "../context/compaction-prompt.ts";
 import type { ResolvedProviderConfig } from "@clarvis/capability";
 import type { EnvConfig } from "@clarvis/capability";
@@ -34,6 +37,8 @@ export interface ResolvedSubagentProfile {
   modelRef: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  /** Catalog metadata is separate from native transport configuration. */
+  modelExecution?: ModelExecutionInfo;
   basePrompt?: string;
   tools: string[];
   grants?: Grant[];
@@ -159,15 +164,28 @@ export function resolveSubagentProfiles(
   raw: AgentProfile[] | undefined,
   providers: ProviderConfig[] | undefined,
   env: EnvConfig,
+  modelExecutionResolver?: ModelExecutionResolver,
 ): SubagentProfileRegistry {
+  rejectCatalogProviders(providers, modelExecutionResolver);
   const registry: SubagentProfileRegistry = new Map();
   for (const p of raw ?? []) {
     const ref = parseModelRef(p.model);
-    const res = resolveProvider(ref.provider, providers, ref.modelId);
+    const modelExecution =
+      modelExecutionResolver === undefined
+        ? undefined
+        : requireModelExecution(modelExecutionResolver, ref.provider, ref.modelId);
+    const res =
+      modelExecutionResolver === undefined
+        ? resolveProvider(ref.provider, providers, ref.modelId)
+        : undefined;
     const modelConfig = providers?.find((pr) => pr.name === ref.provider)?.models?.[ref.modelId];
     const contextWindowTokens =
-      modelConfig?.context_window_tokens ?? env.CLARVIS_DEFAULT_CONTEXT_WINDOW_TOKENS;
-    const capabilitySet = modelConfig?.capabilities ? new Set(modelConfig.capabilities) : undefined;
+      modelExecution?.contextWindowTokens ??
+      modelConfig?.context_window_tokens ??
+      env.CLARVIS_DEFAULT_CONTEXT_WINDOW_TOKENS;
+    const capabilities = modelExecution?.capabilities ?? modelConfig?.capabilities;
+    const capabilitySet = capabilities === undefined ? undefined : new Set(capabilities);
+    const maxOutputTokens = modelExecution?.maxOutputTokens ?? modelConfig?.max_output_tokens;
     const fraction =
       p.compaction?.context_fraction ?? env.CLARVIS_DEFAULT_COMPACTION_CONTEXT_FRACTION;
     const compaction: CompactionConfig = {
@@ -194,16 +212,15 @@ export function resolveSubagentProfiles(
       model: ref.modelId,
       modelRef: p.model,
       provider: ref.provider,
-      ...(res.ok ? { providerConfig: res.config } : {}),
+      ...(res?.ok ? { providerConfig: res.config } : {}),
+      ...(modelExecution === undefined ? {} : { modelExecution }),
       ...(p.base_prompt !== undefined ? { basePrompt: p.base_prompt } : {}),
       tools: p.tools,
       ...(p.grants !== undefined ? { grants: p.grants } : {}),
       ...(p.iteration_limit !== undefined ? { iterationLimit: p.iteration_limit } : {}),
       ...resolveCompactionPrompt(p.compaction),
       contextWindowTokens,
-      ...(modelConfig?.max_output_tokens !== undefined
-        ? { maxOutputTokens: modelConfig.max_output_tokens }
-        : {}),
+      ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
       ...(capabilitySet !== undefined ? { capabilities: capabilitySet } : {}),
       stagnationThreshold: p.stagnation_threshold ?? env.CLARVIS_DEFAULT_STAGNATION_THRESHOLD,
       callTimeoutMs: p.call_timeout_ms ?? env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,

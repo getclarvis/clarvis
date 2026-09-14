@@ -64,8 +64,8 @@ The catalog adds short host-authored descriptions for discovery; persisted evide
 the scoped reference and digest. Descriptions do not establish proof.
 
 `goalRuntimePortOf` recovers the bound port only from a capability created by this package's
-factory. Placement adapters cannot substitute an object merely named `goal`. Kernel's container
-bridge uses that identity to install the same canonical capability in the guest. Optional operation
+factory. Placement adapters cannot substitute an object merely named `goal`. The complete Container
+Kernel constructs the same canonical capability locally. Optional operation
 signals supplement the execution signal; host implementations check them again inside each mutation,
 so a cancelled queued operation cannot publish when its transaction eventually starts.
 

@@ -16,29 +16,25 @@ test("distribution workflows separate candidate and stable publication and gate 
   const candidate = Bun.YAML.parse(candidateSource) as Workflow;
   const stable = Bun.YAML.parse(stableSource) as Workflow;
   expect(candidate.on.push.tags).toEqual(["v*-rc.*"]);
-  expect(candidate.jobs.publish.needs).toBe("images");
-  expect(candidateSource).toContain('bash tooling/ci/qualify-runtime.sh "$image_tag" docker');
-  expect(candidateSource).toContain('bash tooling/ci/qualify-runtime.sh "$image_tag" podman');
+  expect(candidate.jobs.publish.needs).toBe("runtime");
+  expect(candidateSource).toContain("bun run runtime:qualify --engine docker");
+  expect(candidateSource).toContain("bun run runtime:qualify --engine podman");
+  expect(candidateSource).toContain("bun run runtime:artifact:build");
+  expect(candidateSource).not.toContain("clarvis-runtime-candidate-artifact");
   expect(candidateSource).not.toContain("getclarvis/clarvis-releases");
   expect(candidateSource).not.toContain("CLARVIS_RELEASE_APP_PRIVATE_KEY");
   expect(candidateSource).not.toContain("docker/setup-buildx-action");
   expect(stableSource).not.toContain("docker/setup-buildx-action");
-  expect(candidateSource).toContain("run: docker buildx version");
   expect(candidateSource).toContain("runner: ubuntu-26.04-arm");
   expect(candidateSource).toContain("runner: ubuntu-26.04\n");
   expect(candidateSource).not.toContain("apt-get install -y podman");
-  expect(stableSource).toContain("run: docker buildx version");
   expect(stable.jobs.package.needs).toBe("identity");
-  expect(stable.jobs["runtime-image"].needs).toBe("identity");
+  expect(stable.jobs.runtime.needs).toBe("identity");
   expect(stable.jobs.identity.steps[1].run).toContain('[[ "$GITHUB_REF_NAME" =~ ^v');
-  const publicCheck = stable.jobs.publish.steps.findIndex(
-    (s) => s.name === "verify public runtime image availability",
-  );
   const token = stable.jobs.publish.steps.findIndex(
-    (s) => s.name === "mint a token scoped to the public distribution repository",
+    (s) => s.name === "mint public distribution token",
   );
-  expect(publicCheck).toBeGreaterThan(-1);
-  expect(token).toBeGreaterThan(publicCheck);
+  expect(token).toBeGreaterThan(-1);
   expect(
     workflowSecurityFailures([
       { path: "candidate.yml", source: candidateSource },

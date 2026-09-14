@@ -359,19 +359,44 @@ export async function connectKernelClient(
             "host_platform",
             "guest_platform",
             "image_digest",
-            "runtime_protocol_revision",
+            "artifact_digest",
+            "base_abi",
+            "broker_version",
+            "channel_version",
+            "state_namespace",
             "network",
             "lifecycle",
           ]) &&
           (runtime.engine === "podman" || runtime.engine === "docker") &&
           typeof runtime.host_platform === "string" &&
           runtime.guest_platform === "linux" &&
-          (runtime.generation === undefined || typeof runtime.generation === "string") &&
+          (runtime.generation === undefined ||
+            (typeof runtime.generation === "string" &&
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+                runtime.generation,
+              ))) &&
           (runtime.engine_version === undefined || typeof runtime.engine_version === "string") &&
-          (runtime.image_digest === undefined || typeof runtime.image_digest === "string") &&
-          (runtime.runtime_protocol_revision === undefined ||
-            typeof runtime.runtime_protocol_revision === "string") &&
-          ["none", "internet", "outbound"].includes(String(runtime.network)) &&
+          (runtime.image_digest === undefined ||
+            (typeof runtime.image_digest === "string" &&
+              /^sha256:[a-f0-9]{64}$/u.test(runtime.image_digest))) &&
+          (runtime.artifact_digest === undefined ||
+            (typeof runtime.artifact_digest === "string" &&
+              /^sha256:[a-f0-9]{64}$/u.test(runtime.artifact_digest))) &&
+          (runtime.base_abi === undefined || typeof runtime.base_abi === "string") &&
+          (runtime.broker_version === undefined || runtime.broker_version === 1) &&
+          (runtime.channel_version === undefined || runtime.channel_version === 1) &&
+          (runtime.state_namespace === undefined ||
+            (typeof runtime.state_namespace === "string" &&
+              /^[a-f0-9]{64}$/u.test(runtime.state_namespace))) &&
+          (runtime.lifecycle !== "ready" ||
+            (typeof runtime.generation === "string" &&
+              typeof runtime.image_digest === "string" &&
+              typeof runtime.artifact_digest === "string" &&
+              typeof runtime.base_abi === "string" &&
+              typeof runtime.broker_version === "number" &&
+              typeof runtime.channel_version === "number" &&
+              typeof runtime.state_namespace === "string")) &&
+          ["none", "outbound"].includes(String(runtime.network)) &&
           [
             "cold",
             "inspecting",

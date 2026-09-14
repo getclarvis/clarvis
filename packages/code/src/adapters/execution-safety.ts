@@ -153,8 +153,10 @@ export function deriveRunControls(
 export function safetyDescription(state: RunControlsState): string[] {
   const lines: string[] = [];
   if (state.isolation === "docker" || state.isolation === "podman") {
-    lines.push("Core tools only.");
-    lines.push("Skills, MCPs, Hooks, Plugins and host-backed capabilities are unavailable.");
+    lines.push("The full native Kernel runs inside the Container.");
+    lines.push(
+      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
+    );
     lines.push(
       "The selected workspace is mounted directly; changes appear on the host immediately.",
     );

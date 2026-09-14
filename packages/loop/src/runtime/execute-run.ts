@@ -1,6 +1,7 @@
 import { composePromptCacheKey, sanitizeErrorMessage, contentToText } from "@clarvis/capability";
 import { randomUUID } from "node:crypto";
-import type { EnvConfig } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
+import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
 import type { ConnectionManager } from "@clarvis/mcp-client";
@@ -60,6 +61,10 @@ import { extensionAdmissionFor } from "./extension-admission.ts";
  *   through {@link ExecuteRunArgs} instead.
  */
 export interface ExecuteRunDeps {
+  /** Trusted host-resolved machinery paths; never derived from request fields. */
+  statePaths?: WorkspaceStatePaths;
+  /** Host-owned exact execution catalog; never accepted from run JSON. */
+  modelExecutionResolver?: ModelExecutionResolver;
   /** Host substrate factory; callbacks are private to the engine, never capability ports. */
   operatorAuthority?: (input: {
     seed?: OperatorAuthoritySeed;
@@ -348,7 +353,7 @@ export async function executeRun({
     deps.capabilityRegistry,
     allCapabilities.flatMap((capability) => capability.grants ?? []),
   );
-  const { request: parsed } = validateBody(rawBody, deps.env, requestRegistry);
+  const { request: parsed } = validateBody(rawBody, deps.env, requestRegistry, deps);
   const requestView: CapabilityRequestView = createCapabilityRequestView(parsed);
   const hostMetadata = deps.hostMetadata?.();
   const capabilityNeedsHuman = allCapabilities.some(
@@ -544,7 +549,21 @@ export async function executeRun({
             return journal;
           },
           env: deps.env,
-          llm: withPromptCacheDefaults(deps.llm, { identity, promptCacheTtl }),
+          ...(deps.modelExecutionResolver === undefined
+            ? {}
+            : { modelExecutionResolver: deps.modelExecutionResolver }),
+          llm: withPromptCacheDefaults(
+            {
+              call: (params) =>
+                deps.llm.call({
+                  ...params,
+                  executionId,
+                  sessionId: params.sessionId ?? identity.sessionId,
+                  agentInstanceId: params.agentInstanceId ?? identity.agentInstanceId,
+                }),
+            },
+            { identity, promptCacheTtl },
+          ),
           connections: deps.connections,
           logger: runLogger,
           onEvent,
@@ -556,6 +575,7 @@ export async function executeRun({
           toolInterruptRegistry,
           ...(continuation !== undefined ? { continuation } : {}),
           workspaceRoot: deps.workspaceRoot,
+          ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
           executionId,
           owner,
           capabilities: allCapabilities,

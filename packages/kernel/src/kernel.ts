@@ -69,6 +69,7 @@ import {
 } from "./runs/settings-assembler.ts";
 import {
   createWorkflowsService,
+  type WorkflowsServiceConfig,
   type WorkflowsRuntimeSettings,
 } from "./workflows/workflows-service.ts";
 import { createWorkflowStore } from "./workflows/workflow-store.ts";
@@ -212,6 +213,12 @@ export interface CreateKernelOptions {
   workspace: WorkspaceRef;
   /** Settings/agents store the config service and run assembler read from. */
   configStore: ConfigStore;
+  /** Host-owned config service; skips constructing the default service when supplied. */
+  configService?: ConfigService;
+  /** Host-owned secret service; skips both the default service and file secret store. */
+  secretService?: SecretService;
+  /** Host-owned plugin service; skips constructing the default plugin service and its stores. */
+  pluginService?: PluginService;
   /** Overrides how a run request is assembled; defaults to the settings-based assembler. */
   assembleRunRequest?: RunRequestAssembler;
   /** Options passed to the default settings assembler when `assembleRunRequest` is omitted. */
@@ -286,6 +293,8 @@ export interface CreateKernelOptions {
   acquireRunLease?: () => () => void;
   /** Placement-neutral loop executor shared by ordinary and workflow runs. */
   executeRun?: RunExecutor;
+  /** Frozen host projection for native workflow execution without guest definition discovery. */
+  readWorkflowDefinitions?: WorkflowsServiceConfig["readWorkflowDefinitions"];
 }
 
 /** Capability defaults shared by direct and transport-backed local kernels. */
@@ -509,6 +518,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       assembleRunRequest,
       store: createWorkflowStore({ dir: globalDir, owner: scope.owner }),
       readSettings: () => readWorkflowsSettings(opts.configStore),
+      ...(opts.readWorkflowDefinitions === undefined
+        ? {}
+        : { readWorkflowDefinitions: opts.readWorkflowDefinitions }),
       leaderProfiles: () => workflowPolicy.leaderProfiles(),
       resolveLeaderDefault: (managerAgent) => workflowPolicy.resolveLeaderDefault(managerAgent),
       eventBuffer,
@@ -839,77 +851,82 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     },
   });
 
-  const config = createConfigService(opts.configStore, {
-    ...(opts.inspectSandbox !== undefined ? { inspectSandbox: opts.inspectSandbox } : {}),
-    /**
-     * Composed exactly as `executeRun` composes the registry it validates
-     * against: the engine's built-ins, the host registry's declarations, and
-     * every registered capability's own `grants`. A capability declares its
-     * grant on itself rather than on the registry — `use_skills`,
-     * `workflow` and capability-owned grants arrive that way — so reading the
-     * registry alone reported the built-ins only, and every agent carrying one
-     * of those grants would have been judged unrunnable.
-     */
-    knownGrants: () => [
-      ...BUILTIN_GRANT_NAMES,
-      ...mergedRegistry.grants().map((grant) => grant.name),
-      ...(runDeps.capabilities ?? []).flatMap((capability) =>
-        (capability.grants ?? []).map((grant) => grant.name),
-      ),
-      // The workflows capability is injected into a manager's `executeRun`
-      // rather than into `runDeps`, deliberately — only an entry agent carrying
-      // this grant gets one. It is still a grant this kernel accepts, so a
-      // profile naming it is runnable and must not be reported otherwise.
-      WORKFLOW_GRANT,
-    ],
-  });
+  const config =
+    opts.configService ??
+    createConfigService(opts.configStore, {
+      ...(opts.inspectSandbox !== undefined ? { inspectSandbox: opts.inspectSandbox } : {}),
+      /**
+       * Composed exactly as `executeRun` composes the registry it validates
+       * against: the engine's built-ins, the host registry's declarations, and
+       * every registered capability's own `grants`. A capability declares its
+       * grant on itself rather than on the registry — `use_skills`,
+       * `workflow` and capability-owned grants arrive that way — so reading the
+       * registry alone reported the built-ins only, and every agent carrying one
+       * of those grants would have been judged unrunnable.
+       */
+      knownGrants: () => [
+        ...BUILTIN_GRANT_NAMES,
+        ...mergedRegistry.grants().map((grant) => grant.name),
+        ...(runDeps.capabilities ?? []).flatMap((capability) =>
+          (capability.grants ?? []).map((grant) => grant.name),
+        ),
+        // The workflows capability is injected into a manager's `executeRun`
+        // rather than into `runDeps`, deliberately — only an entry agent carrying
+        // this grant gets one. It is still a grant this kernel accepts, so a
+        // profile naming it is runnable and must not be reported otherwise.
+        WORKFLOW_GRANT,
+      ],
+    });
   const skills = createSkillsService({
     skills: opts.skillsProvider,
     ...(opts.assemblerOptions?.skillPlansMode !== undefined
       ? { skillPlansMode: opts.assemblerOptions.skillPlansMode }
       : {}),
   });
-  const secrets = createSecretService(opts.secretStore ?? createFileSecretStore());
+  const secrets =
+    opts.secretService ?? createSecretService(opts.secretStore ?? createFileSecretStore());
   const models = opts.modelCatalogService ?? createModelCatalogService(globalDir, logger);
   const providerAuth = opts.providerAuthService ?? createUnavailableProviderAuthService();
   const files = createWorkspaceService(opts.workspaceRoot);
-  const plugins = createPluginService({
-    globalDir,
-    workspaceRoot: opts.workspaceRoot,
-    ...(opts.home === undefined ? {} : { home: opts.home }),
-    enabledPlugins:
-      opts.activePlugins ??
-      (() => {
-        const snapshot = opts.configStore.readSettings();
-        if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
-        const merged = snapshot.merged as Record<string, unknown>;
-        return Array.isArray(merged.enabledPlugins)
-          ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
-          : [];
-      }),
-    withSelectedMutation: async (_ref, mutation) => {
-      if (selectedPluginMutation) {
-        throw kernelError("conflict", "another selected plugin mutation is already in progress");
-      }
-      if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
-        throw kernelError("conflict", "finish active runs before changing a selected plugin");
-      }
-      selectedPluginMutation = true;
-      try {
+  const plugins =
+    opts.pluginService ??
+    createPluginService({
+      globalDir,
+      workspaceRoot: opts.workspaceRoot,
+      ...(opts.home === undefined ? {} : { home: opts.home }),
+      enabledPlugins:
+        opts.activePlugins ??
+        (() => {
+          const snapshot = opts.configStore.readSettings();
+          if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
+          const merged = snapshot.merged as Record<string, unknown>;
+          return Array.isArray(merged.enabledPlugins)
+            ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
+            : [];
+        }),
+      withSelectedMutation: async (_ref, mutation) => {
+        if (selectedPluginMutation) {
+          throw kernelError("conflict", "another selected plugin mutation is already in progress");
+        }
         if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
           throw kernelError("conflict", "finish active runs before changing a selected plugin");
         }
-        const result = await mutation();
-        selectedPluginRecompositionRequired = true;
-        return result;
-      } finally {
-        selectedPluginMutation = false;
-      }
-    },
-    environment: opts.environment ?? process.env,
-    lifecycle,
-    logger,
-  });
+        selectedPluginMutation = true;
+        try {
+          if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+            throw kernelError("conflict", "finish active runs before changing a selected plugin");
+          }
+          const result = await mutation();
+          selectedPluginRecompositionRequired = true;
+          return result;
+        } finally {
+          selectedPluginMutation = false;
+        }
+      },
+      environment: opts.environment ?? process.env,
+      lifecycle,
+      logger,
+    });
   const storage = createStorageService(globalDir);
   const extensionProfiles = opts.extensionProfileService ?? createBuiltinExtensionProfileService();
   /**

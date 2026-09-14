@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   inspectReservedWorkspacePath,
   prepareRuntimeMounts,
-} from "../../src/runtime/local-container-runtime.ts";
+} from "../../src/runtime/container-mounts.ts";
 
 const temporary: string[] = [];
 afterEach(async () => {
@@ -93,19 +93,17 @@ function input(
 }
 
 describe("prepareRuntimeMounts", () => {
-  test("creates two opaque control masks and a non-Git mask outside the workspace", async () => {
+  test("leaves .clarvis to the private content volume and masks .agents outside the workspace", async () => {
     const fixture = await root();
     const workspace = join(fixture, "workspace");
     await mkdir(join(workspace, ".clarvis", "future"), { recursive: true });
     await mkdir(join(workspace, ".agents", "future"), { recursive: true });
+    await mkdir(join(workspace, ".git"));
     await writeFile(join(workspace, ".clarvis", "future", "sentinel"), "clarvis-secret");
     await writeFile(join(workspace, ".agents", "future", "sentinel"), "agents-secret");
 
     const prepared = await prepareRuntimeMounts(input(workspace));
-    expect(prepared.controlRootMasks.map((mount) => mount.target)).toEqual([
-      "/workspace/.clarvis",
-      "/workspace/.agents",
-    ]);
+    expect(prepared.controlRootMasks.map((mount) => mount.target)).toEqual(["/workspace/.agents"]);
     expect(prepared.gitMetadataMounts).toHaveLength(1);
     expect(prepared.gitMetadataMounts[0]).toMatchObject({
       target: "/workspace/.git",
@@ -128,6 +126,7 @@ describe("prepareRuntimeMounts", () => {
     const primary = join(fixture, "primary");
     const primaryGit = join(primary, ".git");
     await mkdir(primaryGit, { recursive: true });
+    await Promise.all([mkdir(join(primary, ".clarvis")), mkdir(join(primary, ".agents"))]);
     const primaryMounts = await prepareRuntimeMounts(
       input(primary, { gitDir: primaryGit, gitCommonDir: primaryGit }),
     );
@@ -140,6 +139,7 @@ describe("prepareRuntimeMounts", () => {
     const common = join(fixture, "repository", ".git");
     const gitDir = join(common, "worktrees", "linked");
     await mkdir(linked, { recursive: true });
+    await Promise.all([mkdir(join(linked, ".clarvis")), mkdir(join(linked, ".agents"))]);
     await mkdir(gitDir, { recursive: true });
     await writeFile(join(linked, ".git"), `gitdir: ${gitDir}\n`);
     await writeFile(join(gitDir, "commondir"), "../..\n");
@@ -161,6 +161,9 @@ describe("prepareRuntimeMounts", () => {
     await mkdir(workspace);
     await mkdir(outside);
     await symlink(outside, join(workspace, ".agents"));
+    await expect(
+      inspectReservedWorkspacePath(join(workspace, ".agents"), workspace),
+    ).rejects.toMatchObject({ code: "unsupported_policy" });
     await expect(prepareRuntimeMounts(input(workspace))).rejects.toMatchObject({
       code: "unsupported_policy",
     });
@@ -209,7 +212,14 @@ describe("prepareRuntimeMounts", () => {
 
     const undiscovered = join(fixture, "undiscovered");
     await mkdir(join(undiscovered, ".git"), { recursive: true });
+    await writeFile(join(undiscovered, ".git", "HEAD"), "ref: refs/heads/main\n");
     await expect(prepareRuntimeMounts(input(undiscovered))).rejects.toMatchObject({
+      code: "unsupported_policy",
+    });
+
+    const noMountTarget = join(fixture, "no-mount-target");
+    await mkdir(noMountTarget);
+    await expect(prepareRuntimeMounts(input(noMountTarget))).rejects.toMatchObject({
       code: "unsupported_policy",
     });
 

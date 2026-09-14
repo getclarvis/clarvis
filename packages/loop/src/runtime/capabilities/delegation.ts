@@ -7,6 +7,7 @@
  */
 import type { ImagePart, LifecycleHook } from "@clarvis/capability";
 import type { EnvConfig } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { Logger } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import type { RegistryEntry } from "@clarvis/mcp-client";
@@ -38,6 +39,8 @@ export const DELEGATION_CAPABILITY_NAME = "delegation";
  * already exist.
  */
 export interface DelegationCapabilityDeps {
+  /** Machinery namespace shared with every descendant. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   workspaceRoot: string;
   opened: RegistryEntry[];
@@ -129,6 +132,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               capabilitiesFor,
               ...(scope.clock ? { clock: scope.clock } : {}),
               workspaceRoot: deps.workspaceRoot,
+              ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
               ...(deps.hooks ? { hooks: deps.hooks } : {}),
               ...(deps.logger ? { logger: deps.logger } : {}),
               ...(deps.turnImages !== undefined && deps.turnImages.length > 0

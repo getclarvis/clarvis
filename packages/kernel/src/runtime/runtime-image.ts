@@ -1,7 +1,7 @@
 import { RuntimeLaunchError, type ContainerControl } from "./types.ts";
 
-/** A local development tag or release-manifest-pinned image reference. */
-export interface RuntimeImageSelection {
+/** A local development tag or release-manifest-pinned Container base reference. */
+export interface ContainerBaseImageSelection {
   readonly reference: string;
   readonly pull: boolean;
 }
@@ -40,16 +40,16 @@ function imageId(source: string): string | undefined {
 export async function resolveContainerImageDigest(input: {
   readonly configured: string | undefined;
   readonly control: ContainerControl;
-  readonly resolveImage?: (signal?: AbortSignal) => Promise<RuntimeImageSelection>;
+  readonly resolveImage?: (signal?: AbortSignal) => Promise<ContainerBaseImageSelection>;
   readonly engine: "Docker" | "Podman";
   readonly signal?: AbortSignal;
 }): Promise<string> {
   if (input.configured !== undefined) return input.configured;
-  let selected: RuntimeImageSelection;
+  let selected: ContainerBaseImageSelection;
   try {
     selected =
       (await input.resolveImage?.(input.signal)) ??
-      ({ reference: "clarvis-runtime:development", pull: false } as const);
+      ({ reference: "clarvis-base:local", pull: false } as const);
   } catch (cause) {
     if (
       typeof cause === "object" &&
@@ -59,13 +59,13 @@ export async function resolveContainerImageDigest(input: {
     ) {
       throw new RuntimeLaunchError(
         "invalid_launch_spec",
-        "Clarvis runtime image identity could not be verified",
+        "Clarvis Container base identity could not be verified",
         { cause },
       );
     }
     throw new RuntimeLaunchError(
       "operational_failure",
-      "Clarvis runtime image could not be resolved",
+      "Clarvis Container base could not be resolved",
       { cause },
     );
   }
@@ -75,7 +75,7 @@ export async function resolveContainerImageDigest(input: {
   ) {
     throw new RuntimeLaunchError(
       "operational_failure",
-      "Clarvis runtime image reference is invalid",
+      "Clarvis Container base reference is invalid",
     );
   }
   if (selected.pull) {
@@ -83,18 +83,18 @@ export async function resolveContainerImageDigest(input: {
       timeoutMs: 15 * 60_000,
     });
     if (pulled.exitCode !== 0) {
-      throw new RuntimeLaunchError("operational_failure", "Clarvis runtime image download failed");
+      throw new RuntimeLaunchError("operational_failure", "Clarvis Container base download failed");
     }
   }
   const inspected = await input.control.run(["image", "inspect", selected.reference]);
   if (inspected.exitCode !== 0) {
-    throw new RuntimeLaunchError("operational_failure", "Clarvis runtime image is not installed");
+    throw new RuntimeLaunchError("operational_failure", "Clarvis Container base is not installed");
   }
   const digest = imageId(inspected.stdout);
   if (digest === undefined) {
     throw new RuntimeLaunchError(
       "operational_failure",
-      `${input.engine} returned an invalid runtime image id`,
+      `${input.engine} returned an invalid Container base image id`,
     );
   }
   return digest;

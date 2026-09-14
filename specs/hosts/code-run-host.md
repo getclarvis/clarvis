@@ -1043,8 +1043,8 @@ workspace with no local policy; it writes no runtime or Sandbox field. Productio
 
 The simple picker deliberately has no runtime-recipe editor. An operator may add a script under the
 global `runtime-recipes/` directory and reference it from the strict advanced Docker `recipe` block
-in global `settings.json`; Code's `local-host.ts` keeps image resolution on the same lazy
-first-run factory, and the kernel owns script capture, build, caching and fail-closed errors. Neither
+in global `settings.json`; the Container connector resolves the recipe before ordinary preparation,
+and the kernel owns script capture, build, caching and fail-closed errors. Neither
 the renderer nor a guest receives the script bytes or an operation to
 mutate that configuration. Production: `main` in
 `packages/code/src/local-host.ts`, `runtimeSettingsSchema` in
@@ -1054,12 +1054,12 @@ mutate that configuration. Production: `main` in
 `packages/kernel/tests/unit/runtime-recipe.test.ts`, and the gated
 `packages/kernel/tests/integration/runtime-recipe.e2e.test.ts`.
 
-Code supplies the workspace it already owns to the lazy container runtime. In a linked Git worktree,
+Code supplies the workspace it already owns to the Container connector. In a linked Git worktree,
 that worktree is the separate checkout and Clarvis does not create a second copy, pause for apply,
 commit, merge or remove it. A primary checkout is mounted directly as well. Worktree files remain
-writable, while discovered primary/linked Git metadata is overlaid read-only. Current engines would
-materialize an absent nested protected target, so a workspace missing `.clarvis`, `.agents` or `.git`
-fails before container creation. Commits and incompatible workspaces require a new Sandbox/Host run.
+writable, while discovered primary/linked Git metadata is overlaid read-only. A preflight nonce
+proves the engine sees that same bind before persistent volumes are prepared. Commits and
+incompatible workspaces require a new Sandbox/Host connection.
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `discoverGitWorkspace` and the runtime
 composition in `packages/kernel/src/file-kernel.ts`; `safetyDescription` in
@@ -1403,7 +1403,7 @@ The following are derived directly from this document's own source and its tests
 
 56. **Isolation choice and persisted command-review policy remain independently stored, but Review
     is not effective in Container.** Docker/Podman wins over the native Sandbox block; every Container
-    safety description states core-only, no Command Review, writable workspace/outbound consequences
+    safety description states native Container capabilities, no Command Review, writable workspace/outbound consequences
     and read-only Git metadata. Switching back restores the persisted native Review value.
     Production: `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`,
     `deriveRunControls`, `safetyDescription`). Pinned:

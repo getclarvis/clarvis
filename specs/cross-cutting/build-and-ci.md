@@ -78,8 +78,9 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:<pkg>` × 18 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
 | `link` | `bun --filter @clarvis/code link` | `package.json` (`scripts.link`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
-| `runtime:build` | build a final isolated-runtime image from the canonical released carrier digest; Docker by default | `package.json` (`scripts.runtime:build`) |
-| `runtime:build:dev` | build a current-source carrier, then the same final isolated-runtime image | `package.json` (`scripts.runtime:build:dev`) |
+| `runtime:base:build` | build the ABI-pinned Container base without product code | `package.json` (`scripts.runtime:base:build`) |
+| `runtime:artifact:build` | compile and export one target-specific Kernel archive and checksum | `package.json` (`scripts.runtime:artifact:build`) |
+| `runtime:qualify` | qualify an explicit base/artifact pair on one real engine and emit a report | `package.json` (`scripts.runtime:qualify`) |
 | `release:package` / `release:smoke` / `release:install-smoke` | native portable archive, artifact smoke, and installer smoke | `package.json` (`scripts.release:*`) |
 | `check:release` | root/installers/repository identity; tag identity when `RELEASE_TAG` is supplied | `package.json` (`scripts.check:release`) |
 | `bench:code` | `bun --filter @clarvis/code bench` | `package.json` (`scripts.bench:code`) |
@@ -430,15 +431,13 @@ The isolated runtime has two Containerfiles with deliberately different jobs:
 
 | Surface | Input | Output |
 | --- | --- | --- |
-| `Containerfile.runtime` | canonical `ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest>`, digest-pinned Debian slim base, and checksum-pinned mise release | runnable guest image with the released executable, licenses, Git/CA and mise bootstrap |
-| `Containerfile.runtime-development` | root manifests, frozen lockfile, repository source, and a digest-pinned Bun build image | scratch OCI carrier containing only `/clarvis-runtime` and `/licenses` |
+| `Containerfile.runtime` | digest-pinned Debian base and checksum-pinned mise release | reusable base with Git/CA, mise bootstrap and stable artifact preparer, without product code |
+| `Containerfile.runtime-development` | root manifests, frozen lockfile, repository source, and a digest-pinned Bun build image | builder for the target-specific compiled Kernel tar archive |
 
-The production surface contains no `COPY packages`, `bun install`, or `bun build`. It is therefore a
-consumer of a released internal artifact, not a source build disguised as a deployment image. The
-development surface copies all eighteen workspace manifests before the install so that manifest and
-lock changes invalidate the dependency layer while ordinary source edits do not. It compiles
-`tooling/runtime/guest-entry.ts`, whose static package imports make the Bun standalone dependency
-closure explicit; the worker itself remains `packages/kernel/src/runtime/guest-main.ts`.
+The production surface contains no product `COPY`, `bun install`, or `bun build`. The development
+surface copies package manifests before the frozen install and compiles
+`tooling/runtime/kernel-entry.ts`; its static imports make the standalone Kernel dependency closure
+explicit. The resulting archive is distributed separately from the base.
 
 The runnable final stage intentionally contains no Node/npm, Python, Rust, compiler, curl or archive
 utility. A throwaway stage selects the mise 2026.8.2 Linux archive for native amd64/arm64, verifies
@@ -448,27 +447,24 @@ workspace/image-scoped cache; language runtimes installed there are runtime stat
 inputs. The image suppresses mise's self-update notice because the reviewed image build, rather than
 an individual guest session, owns that pinned bootstrap version.
 
-`tooling/runtime/build-image.ts` owns CLI construction. Release mode accepts only the canonical
-carrier repository at an immutable digest. Development mode builds a command-owned local carrier and
-then invokes the exact production Containerfile with `io.clarvis.runtime.development=true`.
-Artifact-only mode exists for the tag workflow. Docker is the default and Podman must be selected
-explicitly. Bun and Debian references use explicit Docker Hub registry paths to avoid interactive
-short-name resolution. `runtimeLocalImageId` accepts only full lowercase hexadecimal local IDs,
-with or without `sha256:`, and emits canonical prefixed identities; it rejects short IDs and tags.
-Bun and Debian references are immutable; mise's version and both architecture checksums
-are source constants forwarded as build arguments. Both carrier and final image label the root
-product version, full source revision, protocol revision, source URL and MIT license, while the final
-image additionally labels its mise version. Revision 14 is the core-only wire; both Containerfiles,
-the build helper and kernel constant must move together and older images fail handshake. Image
-qualification uses `tooling/ci/qualify-runtime.sh` for each available engine plus the opt-in kernel
-canaries; a skipped engine test proves compilation/admission only, not an actual Docker/Podman mount
-or network result.
+`tooling/runtime/build-image.ts` builds only the pinned Debian/mise base and records
+`io.clarvis.base.abi` plus its input revision. `tooling/runtime/build-artifact.ts` separately compiles
+`tooling/runtime/kernel-entry.ts` with Bun autoload disabled and exports
+`clarvis-kernel-<target>.tar.gz`, its strict manifest and checksum. Product code never enters the
+base image. Docker and Podman store the base independently; the same verified archive is transferred
+to an immutable engine volume at launch. `runtimeLocalImageId` accepts only full lowercase local
+image IDs and keeps OCI manifest digests distinct.
 
-Production: both root runtime Containerfiles; `runtimeImageBuildPlan` and image constants in
-`tooling/runtime/build-image.ts`; `tooling/runtime/guest-entry.ts`; `RUNTIME_PROTOCOL_REVISION` in
-`packages/kernel/src/runtime/protocol-revision.ts`.
-Test: `tooling/tests/architecture/runtime-containerfiles.test.ts`,
-`tooling/tests/unit/runtime-image-build.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
+`tooling/runtime/qualify-container.ts` validates the pair, runs the real-engine Kernel E2E outside
+the checkout and requires a scenario evidence file before writing a passing report. Release manifest
+schema 2 maps Linux x64/arm64 to independent base and artifact identities plus public wire 10,
+broker 1 and channel 1.
+
+Production: both root runtime Containerfiles; `runtimeBaseBuildPlan` in
+`tooling/runtime/build-image.ts`; `runtimeArtifactBuildPlan` in
+`tooling/runtime/build-artifact.ts`; `tooling/runtime/kernel-entry.ts`.
+Test: `tooling/tests/architecture/container-native-composition.test.ts`,
+`tooling/tests/unit/runtime-artifact.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
 
 ### 3.4 Git attributes
 
@@ -594,7 +590,7 @@ cross-package types through the built `dist/*.d.ts` (§4.2). The hook is install
 
 ### 4.4 CI jobs
 
-**`linux`**, `ubuntu-latest`, runs the full build, typecheck, formatting, lint, Docker image build,
+**`linux`**, `ubuntu-latest`, runs the full build, typecheck, formatting, lint, runtime artifact build,
 coverage-with-classified-crash retry, and real-PTY artifact smoke. It installs and executes ripgrep
 and Bubblewrap before tests because CI makes grep parity and the Linux native-sandbox canary hard
 contracts. On Ubuntu's AppArmor-restricted host it loads the packaged `bwrap-userns-restrict`
@@ -1104,24 +1100,20 @@ the owner. Production: root `package.json` (`scripts`, `devDependencies`), `.git
 `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this
 monorepo`).
 
-**BUILD-38.** A production isolated-runtime image can acquire Clarvis code only from the canonical
-released carrier at an immutable digest. Repository source compilation is confined to
-`Containerfile.runtime-development`; that development carrier must use the same exact Bun version as
-`mise.toml` through a digest-pinned build image, and both paths must advertise the kernel-owned
-private protocol revision. Carrier and final-image commands bypass builder caches so a stale
-cross-stage `COPY` cannot substitute an older guest binary for current source or an approved release
-artifact. The final image uses a digest-pinned Debian slim base and may acquire mise only from the
+**BUILD-38.** A production Container base contains no Clarvis product code. Repository source compilation is confined to
+`Containerfile.runtime-development`; that builder must use the exact Bun version in `mise.toml` and
+must emit the manifest-bound archive. The base uses a
+digest-pinned Debian slim input and may acquire mise only from the
 exact versioned amd64/arm64 archives after matching their source-owned SHA-256 values; curl, archive
 utilities, language runtimes and compilers remain outside the final stage. Production:
-both root runtime Containerfiles;
-`runtimeImageBuildArgs`, `runtimeArtifactBuildArgs`, and `runtimeImageBuildPlan` in
-`tooling/runtime/build-image.ts`; `RUNTIME_PROTOCOL_REVISION` in
-`packages/kernel/src/runtime/protocol-revision.ts`. Test:
-`tooling/tests/architecture/runtime-containerfiles.test.ts`,
-`tooling/tests/unit/runtime-image-build.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
+both root runtime Containerfiles; `runtimeBaseBuildPlan` in
+`tooling/runtime/build-image.ts`; and `runtimeArtifactBuildPlan` in
+`tooling/runtime/build-artifact.ts`. Test:
+`tooling/tests/architecture/container-native-composition.test.ts`,
+`tooling/tests/unit/runtime-artifact.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
 
 An operator Docker recipe is intentionally downstream of this release pipeline. It starts from the
-already resolved local immutable runtime image, creates only a local labelled derived image, and has
+already resolved local immutable base image, creates only a local labelled derived base, and has
 no publish, registry, release-manifest or running-container commit path. Production:
 `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`. Test:
 `packages/kernel/tests/unit/runtime-recipe.test.ts` and the explicitly gated
@@ -1173,7 +1165,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts` — the build cannot produce the artifact without it | static value import |
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts` and `packages/code/tooling/artifact/smoke.ts` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts` uses `HOME_ENV` | static value import |
-| `docker` | Linux CI server-image build, default local isolated-runtime builder, live canary, and tag-only GHCR release jobs | external process |
+| `docker` | Linux CI server-image build, default local base/artifact builder, live Container canary, and base GHCR release jobs | external process |
 | `podman` | explicit alternative accepted by the isolated-runtime build helper; never selected implicitly | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts` | external process |
 

@@ -38,6 +38,48 @@ their package READMEs. Shared-prompt resolution, workspace trust for `shared-age
 independence from agent overlays are specified in
 [`agent-system-prompt.md`](../../specs/engine/agent-system-prompt.md).
 
+## Container channel infrastructure
+
+`src/hosting/container-channel.ts` supplies three bounded virtual stream pairs over one process
+pipe pair. `createContainerChannel` checks the binary prefix and headers, lazily slices outbound
+writes with round-robin arbitration, and applies aggregate inbound backpressure. Each stream pair
+uses the existing stdio codec, including its large-message fragmentation; the channel does not parse
+JSON or authorize methods. The stdio client/server additionally accept opt-in `strictDirection` for
+peers that must reject frames travelling in the wrong direction. Existing SSH callers retain their
+current behavior. This transport primitive alone does not select a placement or construct a Kernel.
+The optional server connection callback `responseSent` runs after a successful, non-cancelled
+response finishes its local stream write. It is not an acknowledgement of peer processing; failed
+writes omit it, and callback failure disconnects without a second response. See
+[kernel transport](../../specs/hosts/kernel-transport.md).
+
+The private `container-contract` validator admits only the fixed bootstrap identity, a canonical
+configuration digest and a bounded logical model lease; configuration and total-envelope limits
+remain separate. `createContainerModelBroker` and `createContainerModelProvider` supply a
+model-only reverse channel with host-owned ceilings, sequenced native callbacks and no provider
+configuration in the guest DTO. Successful calls release reservation surplus only after complete
+usage accounting and a successful local terminal write; unknown outcomes retain the reserve.
+`createContainerExtensionProfileService` supplies the immutable `builtin:container` snapshot
+without discovery: native preparation can read `current`, while every selection and mutation is
+unsupported. `createContainerModelCatalog` exposes the same frozen logical pairs as a resolver
+and a catalog with `source: "projection"`, without endpoints, auth, SDKs or refresh access.
+These primitives do not themselves wire a Container launcher or establish domain qualification.
+
+Operator administration offers synchronous, host-only credential fences: `onSecretChanged`
+receives a name after a successful secret-store mutation; subscription `onAuthorityRevoked`
+receives a scheme and reason before authority replacement/removal or remote revocation. Disconnect
+commits local removal before contacting the provider and preserves a concurrently connected account.
+The caller binds these ports to leases; construction alone neither creates a lease nor runs a domain.
+See [subscription providers](../../specs/hosts/subscription-providers.md).
+
+`createFileRunHost` accepts a discriminated construction: omitted/`file` preserves FileKernel;
+`container` uses `createContainerNativeKernel` over the immutable projection and injected inference,
+without FileKernel, SDK/MCP construction or file-backed secrets/plugins. Its hosted hello advertises
+native goal controls without `localHost`. Local and SSH bootstrap APIs remain File-only.
+This internal graph constructor is not a launcher: it does not establish mounts, process leases,
+artifact admission or the Container handshake. See
+[kernel composition](../../specs/hosts/kernel-composition.md) for the boundary and construction-test
+scope; complete domain/engine qualification is separate from this primitive.
+
 ## Hosted observation infrastructure
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
@@ -220,13 +262,11 @@ ordinary remote composition uses the unavailable implementation. The authenticat
 identities directly from Git and owns that canonical workspace until close. There is no project-level
 kernel cache, worktree registry, switching transaction, or occupancy lease.
 
-The package also exposes the host-side core-only Container runtime. `RuntimeLaunchSpec` binds
-immutable identity, image, revision, exact method authority, resource policy and protected mounts;
-`assertRuntimeLaunchSpec` and `createRuntimeSupervisor` reject invalid, unavailable or mismatched
-guests without replaying work on the host. Private execution RPC, worker, model/capability brokers,
-checkpoints and Docker/Podman adapters remain below the host kernel rather than becoming a public
-`KernelClient`. Engine CLI ports are exported only from `@clarvis/kernel/local`, keeping process
-control off the native eager path. The owning contract is
+The package also exposes the complete Container Kernel connector. `connectLocalContainerKernel`
+resolves one immutable base and product artifact, proves the selected workspace bind, prepares the
+private data volumes, starts exactly one Kernel server through Docker or Podman and returns the
+ordinary public `KernelClient`. Process control remains below `@clarvis/kernel/local`; the Container
+Kernel never receives an engine socket or a host process port. The owning contract is
 [`isolated-agent-runtime`](../../specs/hosts/isolated-agent-runtime.md).
 
 The strict `runtime` block is global-only. Docker and Podman accept simple `{ "backend": "docker" }`
@@ -236,45 +276,43 @@ supports an operator-owned recipe under global `runtime-recipes/`. Neither engin
 fallback: admission, acquisition, recipe, image, mount, policy, handshake, channel or guest failure
 stays a Container failure. The operator must explicitly select Sandbox/Host and start a new run.
 
-Before any engine work, `prepareKernelRun` applies `ContainerCorePolicy`: `servers: []`, no
-Skills/MCP/Hooks/Plugins/Plans/Memory/Tasks/Workflow/Goal/configuration/preview, no Guard or reviewer,
-and a compatible profile graph using only `ask_user`, `read_workspace`, `edit_workspace` and
-`run_commands`. The unmodified `marshall`, `coder`, `explorer` and `planner` builtins receive a
-host-owned projection without `use_skills`; `admiral`, Plugin Agents and incompatible custom profiles
-fail with `unsupported` before lease/model work. Inherited feature settings remain inactive and do
-not block the core run. Container never iterates the native capability registry.
+The host freezes a strict `ContainerConfiguration` before startup. The guest constructs the same
+native Plans, Memory, Workflows, Goals, sessions, files and storage services as a File Kernel, while
+plugins, skills, hooks, generic MCP and external capability providers remain absent. Tasks is
+explicitly unavailable because its current provider is MCP; internal plan tasks remain available.
+Builtin agents retain their native grants, including Workflow, with only `use_skills` removed.
+Incompatible operator profiles fail before inference instead of losing grants silently.
 
-The guest receives an exact revision-14 envelope, synthetic provider routing names and
-`runtime.elicit` as its sole capability method. Real provider endpoints, kinds, options and
-credentials remain in the host model broker. `runtime.bootstrap/start/steer/interrupt_tool/cancel/shutdown`
-are lifecycle methods; `host.model/capability/event/checkpoint` are guest-to-host operations.
-`runtime.elicit` backs intentional `ask_user`, not per-command approval. There is no Hook/MCP method,
-feature descriptor, host shell, `host_vcs` or arbitrary host argv/path/endpoint broker;
-`require_escalated` is always denied.
+One private three-lane stdio channel carries the public Kernel transport, bootstrap control and a
+closed model broker. Real endpoints, SDKs, credentials and subscription state stay on the host. The
+guest sends only a logical provider/model pair and bounded `LLMCallParams`; it cannot dispatch
+configuration, URLs, files or host processes through the broker. Public wire revision 10, broker
+revision 1 and channel revision 1 are negotiated before the client is returned.
 
-The selected workspace is the only general host bind mounted read-write at `/workspace`. The host
-creates private empty read-only masks over complete `/workspace/.clarvis` and
-`/workspace/.agents` roots. Normal and linked-worktree Git metadata is mounted through an exact
-read-only list. Current engines would materialize a missing nested mount target, so a workspace
-without `.clarvis`, `.agents` or `.git` is refused before container creation rather than changing the
-host bind. Docker/Podman effective inspect rejects a missing, additional or writable protected bind.
+The selected workspace is the only general host bind mounted read-write at `/workspace` and a
+preflight nonce proves that the selected engine sees the same directory. Private content and state
+volumes cover `/workspace/.clarvis` and `/var/lib/clarvis`; empty read-only masks cover `.agents`
+control roots. Normal and linked-worktree Git metadata is mounted through an exact read-only list.
+Docker/Podman effective inspect rejects a missing, additional or writable protected bind. Because
+the supported engines create missing nested mount targets in the host bind, `.clarvis` and `.agents`
+must already be directories; a non-Git workspace also supplies an empty `.git` directory. Admission
+fails before engine create when any target is absent, so bootstrap never changes the host workspace.
 Ordinary workspace mutation and outbound remote effects remain possible; the promise is host
 integrity outside the selected workspace, not workspace safety or network hermeticity. `/mise`
 remains an engine-owned cache volume partitioned by owner/project/workspace/image rather than a
 host-path bind.
 
 Root filesystem read-only, `cap-drop ALL`, no-new-privileges, resource bounds, non-executable tmpfs,
-no engine socket/host credentials and immutable image labels remain. The production and development
-Containerfiles and `tooling/runtime/build-image.ts` all declare protocol revision 14. Release/candidate
-images resolve by immutable digest; development builds can produce the same worker through Docker or
-Podman. The shared opt-in core canary verifies opaque control bytes, Git reads, denied Git mutation,
-workspace writes, outbound and denied escalation; skipped canaries are not engine evidence.
+no engine socket/host credentials and immutable image labels remain. The base image contains only
+the Linux environment and stable artifact preparer. The compiled Bun artifact is transferred to an
+immutable content-addressed volume and mounted read-only at `/opt/clarvis`; changing Clarvis does not
+rebuild the base. The real-engine qualifier writes explicit scenario evidence so a skipped test
+cannot be reported as passing.
 
-Container acquisition remains lazy/coalesced and healthy generations are reused. Plugin revision is
-not part of generation identity because Plugin bytes never enter the guest. Normal close shuts down
-RPC and force-removes only the disposable container, retaining the engine-owned `/mise` cache.
-Cleanup failure remains owned for a later close; a crash can still leave an engine container because
-external orphan reconciliation is not implemented.
+One host lease and exact engine registry own each namespace generation. Normal close revokes model
+authority, drains the Kernel, confirms physical exit, removes only the disposable Container and
+retains state, artifact and mise volumes. Startup reconciliation inspects the exact recorded ID and
+labels; an unreachable engine or unconfirmed previous process remains a conflict.
 
 As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
 capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is
@@ -548,7 +586,7 @@ these invalidations without transferring execution authority. Registrations are 
 per connection and 128 per host, and pending installations are released on disconnect.
 See [kernel transport](../../specs/hosts/kernel-transport.md) for response validation and disposal.
 
-Public stdio and private execution RPC share a 64 MiB logical JSON limit. Larger-than-frame
+Public stdio and each virtual Container channel share a 64 MiB logical JSON limit. Larger-than-frame
 messages use contiguous 256 KiB binary fragments, canonical base64 and a 30-second transfer deadline;
 the physical frame limits remain 8 MiB and 4 MiB respectively. Serialized queued data is bounded at
 128 MiB per direction. Oversized or unserializable local requests fail before sending bytes and
@@ -748,6 +786,12 @@ When the assembler projects the `agents:` settings block onto a run, it preserve
 owner and derives the effective per-child buffer slice; the kernel does not materialize or widen the
 32-MiB aggregate ceiling itself.
 
+`createSettingsRunAssembler` optionally accepts a `modelExecutionResolver`: it checks exact entry,
+delegated, vision and explicit reviewer targets against that closed catalog and emits empty
+`providers`, keeping transport declarations outside the request. Reviewer availability for the
+guard-derived cache TTL uses the same catalog. Without this option, native provider declarations
+and resolution are preserved. This assembler seam alone does not integrate a Container runtime.
+
 Every settings source exposes an exact-byte revision. Ordinary saves and settings repair are kernel
 compare-and-swap operations under the same local-filesystem, same-host process lease: a client
 supplies the revision it read, and a concurrent edit returns `conflict` without overwriting either
@@ -899,7 +943,7 @@ Plan documents are deliberately not in the trace at all: the record's `plan_ref`
 names the file, and clients read it back through `PlansService`.
 
 The internal transport negotiates the exact `CLARVIS_WIRE_VERSION` declared in
-[`wire.ts`](src/transport/wire.ts). This is independent of the guest execution RPC revision. Hello is
+[`wire.ts`](src/transport/wire.ts). This is independent of the private Container channel revision. Hello is
 mandatory before every read, control or mutation even for in-process/default-owner connections;
 request envelopes reject unknown fields, physical stdio frames are capped at 8 MiB, and logical
 messages are capped at 64 MiB. The serialized writer has bounded count/bytes plus a 30-second
@@ -1133,13 +1177,13 @@ is therefore visible after an ordinary tool batch without model polling, while t
 may still checkpoint and settle. SDK composition tests preserve the preceding request prefix, tool
 exchange, catalog and cache identity through that transition.
 
-Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native/guest execution. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
+Hosted session preparation persists the leader instance before the first call. The same session and instance fields cross native and Container connections. `@clarvis/kernel/bootstrap` exposes host subscription manager/adapter construction for bounded transport observation; credentials remain under host authority. Kernel integration tests compose the real plan, loop and SDK through persisted continuation.
 For a goal stage, the host observes its provider port directly, including child, compaction and
 retry consumption. A pending call, a cancelled call without usage, or an unreported attempt leaves
 accounting unknown and prevents continuation. A failed stage with confirmed exhausted goal spend
 settles as `budget_limited`, preserving its physical outcome and any measured overrun; newer user
 pause/cancel controls still prevail. Missing cache detail alone counts the full input
-conservatively. Zero-initialized loop or guest totals cannot override that observation.
+conservatively. Zero-initialized loop totals cannot override that observation.
 The [goal-file-host.test.ts](tests/integration/goal-file-host.test.ts) integration suite exercises IPC, the actual file host, SDK and HTTP
 with controlled responses: two automatic continuations with a delegated plan, prefix/identity
 preservation, pause/resume, cancellation and absent usage. It is separate from live-provider,
@@ -1151,9 +1195,9 @@ The [compaction test](tests/integration/goal-file-host-compaction.test.ts) queue
 the active hosted handle. The real SDK summary call is included in goal/session consumption; one
 rolling anchor, current goal and plan survive into automatic continuation. SDK requests preserve the
 historical prefix before and after the deliberate compaction boundary.
-Goal/Workflow qualification remains native Host/Sandbox because both capabilities are rejected by
-core-only Container before engine/model work; the Container canary instead proves the core loop and
-negative capability boundary.
+Goal/Workflow qualification runs through the complete Container Kernel as well as native
+Host/Sandbox. The Container canary proves persisted domain control and the negative external
+capability boundary.
 Workflow leaders retain the manager's session identity and use their reserved child execution ID
 as their own persisted agent instance. Two leaders of the same profile therefore have distinct
 cache keys, separate from the manager, in both direct and prepared host assembly.

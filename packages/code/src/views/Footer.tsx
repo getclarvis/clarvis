@@ -115,8 +115,6 @@ export function Footer(props: {
   hint: () => { text: string; tone: HintTone };
   status?: () => { text: string; tone: FooterStatusTone };
   runStrip?: () => string;
-  /** Optional mouse route owned by the run strip, such as opening compact activity. */
-  onRunStripMouseDown?: () => void;
   /** Keymap-derived action projection. */
   navigation?: JSX.Element;
   compact?: () => boolean;
@@ -167,7 +165,7 @@ export function Footer(props: {
           </Show>
         </Show>
         <Show when={strip().length > 0}>
-          <box onMouseDown={() => props.onRunStripMouseDown?.()} flexShrink={1} minWidth={0}>
+          <box flexShrink={1} minWidth={0}>
             <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
               {"  " + strip()}
             </text>

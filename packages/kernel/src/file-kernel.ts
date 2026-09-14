@@ -1,3 +1,4 @@
+import { createNativeKernel } from "./native-kernel.ts";
 import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { extractEnvRefs, loadEnv, type EnvConfig } from "@clarvis/capability";
@@ -7,17 +8,12 @@ import { configurationRoots } from "@clarvis/paths";
 import type { ConnectionEventSink } from "./connection-health.ts";
 import type { MemoryStore } from "@clarvis/memory";
 import {
-  createMemoryCapability,
-  createMemoryFactory,
   loadMemoryPolicy,
   MEMORY_CAPABILITY_NAME,
-  type MemoryFactory,
   type MemoryFactorySettings,
   type MemoryPluginPort,
 } from "@clarvis/memory/capability";
 import { createMemoryServerPort } from "./memory/memory-server-port.ts";
-import { composeIndexPassDeps } from "./memory/pass-deps.ts";
-import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
 import { componentFloor, createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 import { createTasksCapability } from "@clarvis/tasks/capability";
 import { createTaskServerPort } from "./tasks/task-server-port.ts";
@@ -30,10 +26,8 @@ import {
   type PlanProviderConfig,
   type PlanStore,
 } from "@clarvis/plan";
-import { createPlanningRuntime } from "./plans/planning-runtime.ts";
 import type { ExtensionProfilePluginRef, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import {
-  buildExecuteRunDeps,
   hooksEffective,
   type HostExtensionAdmission,
   type HostModelCallAdmission,
@@ -43,13 +37,11 @@ import {
 } from "@clarvis/loop/host";
 import type {
   ExecuteRunArgs,
-  ExecuteRunDeps,
   ExecuteRunOutcome,
   HookConfig,
   Logger,
   ProviderConfig,
 } from "@clarvis/loop";
-import { TraceCleanup, type TraceStore } from "@clarvis/trace";
 import type { GuardConfig } from "@clarvis/loop/host";
 import type { EventStreamOptions } from "./core/event-stream.ts";
 import { createFileConfigStore } from "./config/file-config-store.ts";
@@ -81,7 +73,7 @@ import {
   type GuardSettings,
 } from "./guard/resolver.ts";
 import { createGuardSessionAllowlist } from "./guard/guard-elicit.ts";
-import { createInProcessKernel, type InProcessKernel } from "./kernel.ts";
+import type { InProcessKernel } from "./kernel.ts";
 import { createSandboxPolicyResolver } from "./sandbox/policy.ts";
 import type { KernelOwnershipMode } from "./application/scope-policy.ts";
 import {
@@ -90,17 +82,7 @@ import {
   type KernelEnvironment,
   type SecretEnvironmentSource,
 } from "./ports/environment.ts";
-import {
-  globalPaths,
-  globalRoot,
-  ownerFromWorkspace,
-  sweepGlobalStateArtifacts,
-  sweepSpillDir,
-  workspacePaths,
-} from "@clarvis/paths";
-import { sweepMonitors } from "@clarvis/tools/monitor";
-import { WorkspaceHousekeeping } from "./application/workspace-housekeeping.ts";
-import { referencedSessionExecutionIds } from "./sessions/session-service.ts";
+import { globalPaths, globalRoot, ownerFromWorkspace, workspacePaths } from "@clarvis/paths";
 import { discoverGitWorkspace } from "./git-workspace.ts";
 import { SubscriptionManager } from "./subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "./subscriptions/store.ts";
@@ -111,16 +93,9 @@ import {
 } from "./extension-profiles/extension-profile-manager.ts";
 import { withRunLease } from "./runs/run-lease.ts";
 import type { RunExecutor } from "./runs/run-service.ts";
-import { settingsDocumentRevision } from "./config/config-store.ts";
-import { runtimeSettingsSchema } from "./runtime/settings.ts";
-import {
-  createLazyRuntimeCoordinator,
-  type FileKernelRuntimeFactory,
-  type RuntimePlacementNotice,
-} from "./runtime/lazy-runtime.ts";
-import { RuntimeLaunchError } from "./runtime/types.ts";
+import type { RuntimePlacementNotice } from "./runtime/types.ts";
 
-export type { FileKernelRuntimeFactory, RuntimePlacementNotice } from "./runtime/lazy-runtime.ts";
+export type { RuntimePlacementNotice } from "./runtime/types.ts";
 
 /**
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
@@ -148,6 +123,8 @@ export interface CreateFileKernelOptions {
   onOwnerRetired?: (owner: string) => void | Promise<void>;
   /** Directory for run traces; when omitted the loop uses its default. */
   traceDir?: string;
+  /** Directory for trace locks when the host scopes cross-placement coordination by workspace. */
+  traceLocksDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
   /** Process-local Extension Profile override (`scope:name`); never persisted. */
@@ -205,9 +182,7 @@ export interface CreateFileKernelOptions {
   onSkillsChanged?: () => void;
   /** Explicit host-selected execution placement; absence is lazy native execution. */
   executeRun?: RunExecutor;
-  /** Constructs container execution only when trusted effective settings select an engine. */
-  runtimeFactory?: FileKernelRuntimeFactory;
-  /** Receives lazy placement changes and an optional user-facing fallback notice. */
+  /** Receives informational placement changes from a process-owned host. */
   onRuntimePlacement?: (notice: RuntimePlacementNotice) => void;
 }
 
@@ -238,8 +213,6 @@ export interface FileKernel extends InProcessKernel {
   readonly runtime: RuntimeStatus;
   /** Physical execution leases, including background memory work; independent of UI connections. */
   activeExecutionLeases(): number;
-  /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
-  retryRuntime(): void;
 }
 
 /**
@@ -325,36 +298,6 @@ function reportCapability(
     { event: "kernel.capability.composed", capability, enabled, reason },
     "a host capability was composed into this kernel's runs; a disabled one stays registered but contributes no tools",
   );
-}
-
-async function recoverInterruptedRuns(store: TraceStore, logger?: Logger): Promise<number> {
-  try {
-    const report = await store.recoverOrphans?.();
-    if (report === undefined) return 0;
-    if (report.recovered > 0 || report.exhausted) {
-      logger?.info(
-        {
-          event: "runs.recovered_interrupted",
-          recovered: report.recovered,
-          examined: report.examined,
-          quarantined: report.quarantined,
-          degraded: report.degraded,
-          exhausted: report.exhausted,
-        },
-        "recovered interrupted runs from their journals; transcripts and token accounting are restored, but they cannot be continued",
-      );
-    }
-    return report.recovered;
-  } catch (err) {
-    logger?.warn(
-      {
-        event: "runs.recovery_failed",
-        cause: err instanceof Error ? err.message : String(err),
-      },
-      "journal recovery pass failed; orphaned journals remain for the next start",
-    );
-    return 0;
-  }
 }
 
 /**
@@ -450,6 +393,14 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     logger: componentLogger("config"),
   });
+  const configuredRuntime = configStore.readSettings().operator_merged?.runtime;
+  if (configuredRuntime?.backend === "docker" || configuredRuntime?.backend === "podman") {
+    extensionProfileManager.close();
+    pluginContributions.close();
+    throw new Error(
+      "Container placement must be established with connectLocalContainerKernel before creating a File Kernel",
+    );
+  }
   extensionProfileManager.bindRuntime({
     readWorkspaceTrust: () => configStore.readSettings().workspace_trust ?? { state: "inert" },
     approveWorkspace: () => {
@@ -736,20 +687,6 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       ),
   };
 
-  /**
-   * Planning is host composition: one memoized store factory feeds both the
-   * execution capability and the kernel's owner-scoped control plane.
-   */
-  const planning = createPlanningRuntime({
-    workspaceRoot: opts.workspaceRoot,
-    env,
-    logger: componentLogger("plan"),
-    loadProvider: loadPlanProvider,
-    pluginPort: planPluginPort,
-    executablePort: capabilityExecutables,
-    ...(opts.planStoreFor !== undefined ? { storeFor: opts.planStoreFor } : {}),
-  });
-
   const tasksEnabled = opts.builtins?.tasks !== false;
   const hooksEnabled = hooksEffective(opts.builtins?.hooks, env.CLARVIS_HOOKS_ENABLED, loadHooks);
   reportCapability(
@@ -781,359 +718,256 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const defaultGuardAllowlist =
     opts.sessionAllowlistFor === undefined ? createGuardSessionAllowlist() : undefined;
   const sessionAllowlistFor = opts.sessionAllowlistFor ?? (() => defaultGuardAllowlist);
-  const built = await buildExecuteRunDeps({
-    env,
-    environment: environment.values,
-    logger,
-    workspaceRoot: opts.workspaceRoot,
-    skillRoots: pluginSkillRoots,
-    composeSkills: withBuiltinSkills,
-    skillBootstraps: pluginSkillBootstraps,
-    resolveGuard: async (ctx) => {
-      const resolution = await createGuardResolver({
-        loadSettings: loadGuardSettings,
-        effectRunner: createNodeProcessRunner(componentLogger("guard")),
-        effectEnvironment: Object.fromEntries(
-          ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
-            key,
-            environment.values[key],
-          ]),
-        ),
-        logger: componentLogger("guard"),
-        audit: auditLogger,
-        sessionAllowlistFor,
-      })(ctx);
-      const ceiling = ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT;
-      const backend = configStore.readSettings().merged.runtime?.backend;
-      if (
-        opts.builtins?.tools === false ||
-        (ceiling !== "edit" && ceiling !== "exec") ||
-        backend === "docker" ||
-        backend === "podman"
-      )
-        return resolution;
-      return {
-        ...resolution,
-        reviewMutation: createAuthoringMutationReview(ctx, {
-          roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
-          store: configStore,
+  const nativeRuntime = (): Extract<RuntimeStatus, { kind: "native" }> => ({
+    kind: "native",
+    host_platform: process.platform,
+    isolation: configStore.readSettings().merged.sandbox?.enabled === false ? "host" : "sandbox",
+    lifecycle: "ready",
+  });
+  const native = await createNativeKernel({
+    globalDir,
+    planning: {
+      workspaceRoot: opts.workspaceRoot,
+      env,
+      logger: componentLogger("plan"),
+      loadProvider: loadPlanProvider,
+      pluginPort: planPluginPort,
+      executablePort: capabilityExecutables,
+      ...(opts.planStoreFor !== undefined ? { storeFor: opts.planStoreFor } : {}),
+    },
+    loop: {
+      env,
+      environment: environment.values,
+      logger,
+      workspaceRoot: opts.workspaceRoot,
+      skillRoots: pluginSkillRoots,
+      composeSkills: withBuiltinSkills,
+      skillBootstraps: pluginSkillBootstraps,
+      resolveGuard: async (ctx) => {
+        const resolution = await createGuardResolver({
+          loadSettings: loadGuardSettings,
+          effectRunner: createNodeProcessRunner(componentLogger("guard")),
+          effectEnvironment: Object.fromEntries(
+            ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
+              key,
+              environment.values[key],
+            ]),
+          ),
+          logger: componentLogger("guard"),
           audit: auditLogger,
-          changed: () => extensionProfileManager.requestSkillRefresh(),
-          prepareSkillInclusion: (refs) => extensionProfileManager.prepareSkillInclusion(refs),
+          sessionAllowlistFor,
+        })(ctx);
+        const ceiling = ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT;
+        const backend = configStore.readSettings().merged.runtime?.backend;
+        if (
+          opts.builtins?.tools === false ||
+          (ceiling !== "edit" && ceiling !== "exec") ||
+          backend === "docker" ||
+          backend === "podman"
+        )
+          return resolution;
+        return {
+          ...resolution,
+          reviewMutation: createAuthoringMutationReview(ctx, {
+            roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+            store: configStore,
+            audit: auditLogger,
+            changed: () => extensionProfileManager.requestSkillRefresh(),
+            prepareSkillInclusion: (refs) => extensionProfileManager.prepareSkillInclusion(refs),
+          }),
+        };
+      },
+      resolveSandbox: () => sandboxPolicy.resolve(),
+      resolveSecretNames: loadSecretNames,
+      resolveHooks: loadHooks,
+      hookCredentialNames: managedSecretNames,
+      mcpAuthorization: {
+        storeFile: globalPaths(globalDir).mcpOAuthFile,
+        ...(opts.openMcpAuthorizationUrl === undefined
+          ? {}
+          : { openAuthorizationUrl: opts.openMcpAuthorizationUrl }),
+      },
+      ...(subscriptionManager === undefined
+        ? {}
+        : {
+            resolveSubscription: (scheme, signal, context) =>
+              subscriptionManager.resolve(scheme, signal, context),
+          }),
+      ...(opts.modelCallAdmission === undefined
+        ? {}
+        : { modelCallAdmission: opts.modelCallAdmission }),
+      ...(opts.extensionAdmission === undefined
+        ? {}
+        : { extensionAdmission: opts.extensionAdmission }),
+      ...(loopBuiltins === undefined ? {} : { builtins: loopBuiltins }),
+      ...(opts.traceDir !== undefined ? { traceDir: opts.traceDir } : {}),
+      ...(opts.traceLocksDir !== undefined ? { traceLocksDir: opts.traceLocksDir } : {}),
+      ...(opts.onConnectionEvent !== undefined
+        ? { onConnectionEvent: opts.onConnectionEvent }
+        : {}),
+    },
+    compose(built) {
+      const memoryPluginPort: MemoryPluginPort = {
+        locate: (plugin) =>
+          pluginContributions.locateCapabilityExecutable(
+            activePluginRefs(),
+            MEMORY_CAPABILITY_NAME,
+            plugin,
+          ),
+      };
+
+      const memoryServerPort = createMemoryServerPort({
+        servers: () => effectiveMcpServers(configStore),
+        connections: built.deps.connections,
+      });
+      const taskServerPort = createTaskServerPort({
+        connections: built.deps.connections,
+      });
+      reportCapability(logger, "plans", true, loadPlanProvider()?.kind ?? "markdown");
+      const tasksLogger = componentLogger("tasks");
+      const taskProviderFactory = new TaskProviderFactory({
+        configStore,
+        serverPort: taskServerPort,
+        pluginContributions,
+        environment: environment.values,
+        enabled: tasksEnabled,
+        logger: tasksLogger,
+      });
+
+      extensionProfileManager.onSkillRootsChanged(() => opts.onSkillsChanged?.());
+      return {
+        ...(opts.memory
+          ? {
+              memory: {
+                workspaceRoot: opts.workspaceRoot,
+                logger: componentLogger("memory"),
+                lockWarnMs: env.CLARVIS_MEMORY_LOCK_WARN_MS,
+                loadSettings: loadMemorySettings,
+                executeRun: executeExtensionProfileRun,
+                loadPolicy: () =>
+                  loadMemoryPolicy({
+                    global: globalPaths(globalDir).memoryPolicyFile,
+                    workspace: workspacePaths(opts.workspaceRoot).memoryPolicyFile,
+                  }),
+                ...(opts.memoryStoreFor !== undefined ? { storeFor: opts.memoryStoreFor } : {}),
+                serverPort: memoryServerPort,
+                pluginPort: memoryPluginPort,
+                executablePort: capabilityExecutables,
+              },
+            }
+          : {}),
+
+        decorateDeps: (base) => ({
+          ...base,
+          operatorAuthority: createOperatorAuthorityRuntime,
+          hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
+          capabilities: [
+            ...(base.capabilities ?? []).filter(
+              (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
+            ),
+            createDirectConfigurationCapability({
+              roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
+              store: configStore,
+              enabled: opts.builtins?.tools !== false,
+              audit: auditLogger,
+              changed: () => extensionProfileManager.requestSkillRefresh(),
+              prepareSkillInclusion: (ref) => extensionProfileManager.prepareSkillInclusion(ref),
+            }),
+            ...(base.capabilities ?? []).filter(
+              (capability) => capability.name === MEMORY_CAPABILITY_NAME,
+            ),
+            createTasksCapability({
+              resolver: taskProviderFactory,
+              enabled: tasksEnabled,
+              logger: tasksLogger,
+            }),
+          ],
         }),
+
+        kernel(deps, memoryFactory) {
+          reportCapability(
+            logger,
+            MEMORY_CAPABILITY_NAME,
+            memoryFactory !== undefined,
+            opts.memory === true ? "host_enabled" : "host_disabled",
+          );
+          reportCapability(
+            logger,
+            "tasks",
+            tasksEnabled,
+            tasksEnabled ? "host_default" : "host_disabled",
+          );
+          const nativeExecuteRun: RunExecutor =
+            opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+
+          return {
+            ...(opts.operatorAuthorityFor === undefined
+              ? {}
+              : { operatorAuthorityFor: opts.operatorAuthorityFor }),
+            logger: componentLogger("kernel"),
+            workspaceRoot: opts.workspaceRoot,
+            project: gitWorkspace.project,
+            workspace: gitWorkspace.workspace,
+            configStore,
+            extensionProfileService: extensionProfileManager.service,
+            activePlugins: () => extensionProfileManager.activePlugins(),
+            assemblerOptions: {
+              ...(defaultModel !== undefined ? { defaultModel } : {}),
+              defaultAgent: DEFAULT_ENTRY_AGENT,
+              defaultIterationLimit: env.CLARVIS_DEFAULT_ITERATION_LIMIT,
+              fallbackTokenLimit: env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT,
+              fallbackOnExceed: env.CLARVIS_DEFAULT_ON_EXCEED,
+              skillPlansMode,
+              pluginMcpServerNames: () =>
+                pluginContributions
+                  .mcpServers(activePluginRefs())
+                  .map((contribution) => contribution.effectiveName),
+            },
+            ...(built.skills !== undefined ? { skillsProvider: built.skills } : {}),
+            secretStore,
+            modelCatalogService:
+              subscriptionManager?.catalogService(
+                createModelCatalogService(globalDir, componentLogger("models")),
+              ) ?? createModelCatalogService(globalDir, componentLogger("models")),
+            ...(subscriptionManager === undefined
+              ? {}
+              : { providerAuthService: subscriptionManager }),
+            inspectSandbox: (options) => sandboxPolicy.inspect(options),
+            ...(opts.globalDir !== undefined ? { globalConfigDir: opts.globalDir } : {}),
+            defaultOwner: kernelDefaultOwner,
+            ...(opts.ownerCache !== undefined ? { ownerCache: opts.ownerCache } : {}),
+            ...(opts.onOwnerRetired !== undefined ? { onOwnerRetired: opts.onOwnerRetired } : {}),
+            ...(opts.eventBuffer !== undefined ? { eventBuffer: opts.eventBuffer } : {}),
+            ownershipMode,
+            environment: environment.values,
+            taskProviderFactory,
+            tasksEnabled,
+            acquireRunLease: acquireExtensionProfileRunLease,
+            executeRun: nativeExecuteRun,
+            capabilities: {
+              runtime: nativeRuntime(),
+            },
+            dispose: async (): Promise<void> => {
+              extensionProfileManager.close();
+              pluginContributions.close();
+              try {
+                await capabilityExecutables.close();
+              } finally {
+                await subscriptionManager?.close();
+              }
+            },
+          };
+        },
       };
     },
-    resolveSandbox: () => sandboxPolicy.resolve(),
-    resolveSecretNames: loadSecretNames,
-    resolveHooks: loadHooks,
-    hookCredentialNames: managedSecretNames,
-    mcpAuthorization: {
-      storeFile: globalPaths(globalDir).mcpOAuthFile,
-      ...(opts.openMcpAuthorizationUrl === undefined
-        ? {}
-        : { openAuthorizationUrl: opts.openMcpAuthorizationUrl }),
-    },
-    capabilities: [planning.capability],
-    ...(subscriptionManager === undefined
-      ? {}
-      : {
-          resolveSubscription: (scheme, signal, context) =>
-            subscriptionManager.resolve(scheme, signal, context),
-        }),
-    ...(opts.modelCallAdmission === undefined
-      ? {}
-      : { modelCallAdmission: opts.modelCallAdmission }),
-    ...(opts.extensionAdmission === undefined
-      ? {}
-      : { extensionAdmission: opts.extensionAdmission }),
-    ...(loopBuiltins === undefined ? {} : { builtins: loopBuiltins }),
-    ...(opts.traceDir !== undefined ? { traceDir: opts.traceDir } : {}),
-    ...(opts.onConnectionEvent !== undefined ? { onConnectionEvent: opts.onConnectionEvent } : {}),
   }).catch(async (error: unknown) => {
     extensionProfileManager.close();
     pluginContributions.close();
-    await Promise.allSettled([
-      capabilityExecutables.close(),
-      subscriptionManager?.close() ?? Promise.resolve(),
-    ]);
+    await Promise.allSettled([capabilityExecutables.close(), subscriptionManager?.close()]);
     throw error;
   });
-
-  /**
-   * Execution memory, constructed here rather than by the engine.
-   *
-   * @remarks The factory needs the decorated {@link LLMProvider} that
-   * `buildExecuteRunDeps` assembles, so it is built from `built.deps.llm`
-   * afterwards and the capability is folded into a re-spread deps object — the
-   * same shape `createInProcessKernel` already uses to override
-   * `capabilityRegistry`. It has to land on **`deps.capabilities`** and not on a
-   * per-call `ExecuteRunArgs.capabilities`: `@clarvis/workflows` runs a leader
-   * with `deps: ctx.deps` and nothing else, so a per-call-site injection would
-   * silently strip `edit_memory` from every workflow leader.
-   *
-   * {@link createMemoryCapability} is called unconditionally, even with no
-   * factory. The engine collects `seedMarker` from every **registered**
-   * capability, active or not, which is what strips a stale `<memory>` block
-   * from a continuation whose run has memory switched off; registering it only
-   * when memory is on would delete that behaviour without a failing test.
-   */
-  /** Filled in immediately below; see `runDeps`. */
-  const depsRef: { current: ExecuteRunDeps | undefined } = { current: undefined };
-  /**
-   * How a `memory.provider` of kind `plugin` finds the executable it names.
-   *
-   * @remarks The operator chooses; the plugin only offers. A plugin cannot
-   * contribute a `memory:` block — `memorySettingsSpec` is not
-   * `pluginContributable` — so the only way its provider is ever used is an
-   * operator naming it here. Installation, explicit enabling and this selection
-   * authorize the service; the plugin cannot select itself.
-   */
-  const memoryPluginPort: MemoryPluginPort = {
-    locate: (plugin) =>
-      pluginContributions.locateCapabilityExecutable(
-        activePluginRefs(),
-        MEMORY_CAPABILITY_NAME,
-        plugin,
-      ),
-  };
-
-  const memoryServerPort = createMemoryServerPort({
-    servers: () => effectiveMcpServers(configStore),
-    connections: built.deps.connections,
-  });
-  const taskServerPort = createTaskServerPort({
-    connections: built.deps.connections,
-  });
-  reportCapability(logger, "plans", true, loadPlanProvider()?.kind ?? "markdown");
-  const tasksLogger = componentLogger("tasks");
-  const taskProviderFactory = new TaskProviderFactory({
-    configStore,
-    serverPort: taskServerPort,
-    pluginContributions,
-    environment: environment.values,
-    enabled: tasksEnabled,
-    logger: tasksLogger,
-  });
-
-  /** Filled in immediately below; see `passRunDeps`. */
-  const passDepsRef: { current: ExecuteRunDeps | undefined } = { current: undefined };
-  const memoryFactory: MemoryFactory | undefined = opts.memory
-    ? createMemoryFactory({
-        llm: built.deps.llm,
-        workspaceRoot: opts.workspaceRoot,
-        logger: componentLogger("memory"),
-        lockWarnMs: env.CLARVIS_MEMORY_LOCK_WARN_MS,
-        loadSettings: loadMemorySettings,
-        // A thunk, and it must stay one: an indexer pass runs against the very
-        // deps object this factory's capability is folded into, so an eager
-        // value would be circular. By the time a pass resolves it, `deps` is
-        // assigned.
-        runDeps: () => depsRef.current,
-        executeRun: executeExtensionProfileRun,
-        passRunDeps: () => passDepsRef.current,
-        loadPolicy: () =>
-          loadMemoryPolicy({
-            global: globalPaths(globalDir).memoryPolicyFile,
-            workspace: workspacePaths(opts.workspaceRoot).memoryPolicyFile,
-          }),
-        ...(opts.memoryStoreFor !== undefined ? { storeFor: opts.memoryStoreFor } : {}),
-        serverPort: memoryServerPort,
-        pluginPort: memoryPluginPort,
-        executablePort: capabilityExecutables,
-      })
-    : undefined;
-  reportCapability(
-    logger,
-    MEMORY_CAPABILITY_NAME,
-    memoryFactory !== undefined,
-    opts.memory === true ? "host_enabled" : "host_disabled",
-  );
-  reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
-  extensionProfileManager.onSkillRootsChanged(() => opts.onSkillsChanged?.());
-  const deps: ExecuteRunDeps = {
-    ...built.deps,
-    operatorAuthority: createOperatorAuthorityRuntime,
-    capabilityRegistry: composeKernelCapabilityRegistry(built.deps.capabilityRegistry),
-    hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
-    capabilities: [
-      ...(built.deps.capabilities ?? []),
-      createDirectConfigurationCapability({
-        roots: configurationRoots({ workspaceRoot: opts.workspaceRoot, globalDir }),
-        store: configStore,
-        enabled: opts.builtins?.tools !== false,
-        audit: auditLogger,
-        changed: () => extensionProfileManager.requestSkillRefresh(),
-        prepareSkillInclusion: (ref) => extensionProfileManager.prepareSkillInclusion(ref),
-      }),
-      createMemoryCapability(memoryFactory),
-      createTasksCapability({
-        resolver: taskProviderFactory,
-        enabled: tasksEnabled,
-        logger: tasksLogger,
-      }),
-    ],
-  };
-  depsRef.current = deps;
-
-  passDepsRef.current = composeIndexPassDeps(deps, memoryFactory);
-
-  const traceLogger = componentLogger("trace");
-  const recoveredRuns = await recoverInterruptedRuns(built.resolved.store, traceLogger);
-
-  const cleanup = new TraceCleanup({
-    store: built.resolved.store,
-    ttlDays: env.CLARVIS_TRACE_TTL_DAYS,
-    batchSize: env.CLARVIS_TRACE_CLEANUP_BATCH_SIZE,
-    logger: traceLogger,
-    protectedExecutionIds: () => referencedSessionExecutionIds(globalDir),
-  });
-  cleanup.start(env.CLARVIS_TRACE_CLEANUP_INTERVAL_MS);
-  const housekeeping = new WorkspaceHousekeeping({
-    sweepSpills: () => sweepSpillDir(opts.workspaceRoot),
-    sweepMonitors: () => sweepMonitors(opts.workspaceRoot),
-    sweepGlobalArtifacts: async () => {
-      await sweepGlobalStateArtifacts(globalDir);
-    },
-    logger,
-  });
-
-  let kernel: InProcessKernel;
-  const runtimeSelection = () => {
-    const configured = runtimeSettingsSchema.parse(
-      configStore.readSettings().merged.runtime ?? { backend: "native" },
-    );
-    return {
-      settings: configured,
-      configurationRevision: settingsDocumentRevision(JSON.stringify(configured)),
-      extensionRevision: extensionProfileManager.runRef().fingerprint,
-    };
-  };
-  const nativeIsolation = (): "host" | "sandbox" => {
-    const sandbox = configStore.readSettings().merged.sandbox;
-    return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
-  };
-  const nativeExecuteRun: RunExecutor =
-    opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
-  const runtimeCoordinator = createLazyRuntimeCoordinator({
-    selection: runtimeSelection,
-    nativeIsolation,
-    nativeExecuteRun,
-    ...(opts.runtimeFactory === undefined ? {} : { runtimeFactory: opts.runtimeFactory }),
-    ownerId: kernelDefaultOwner,
-    project: gitWorkspace.project,
-    workspace: gitWorkspace.workspace,
-    workspaceRoot: gitWorkspace.worktreeRoot,
-    ...(gitWorkspace.workspace.kind === "external_worktree" && gitWorkspace.commonDir !== undefined
-      ? { gitCommonDir: gitWorkspace.commonDir }
-      : {}),
-    deps,
-    planFactory: planning.planFactory,
-    ...(tasksEnabled ? { taskResolver: taskProviderFactory } : {}),
-    ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
-    ...(built.skills === undefined ? {} : { skillBootstraps: pluginSkillBootstraps }),
-    ...(memoryFactory === undefined ? {} : { memoryFactory }),
-    loadGuardSettings,
-    guardAudit: auditLogger,
-    sessionAllowlistFor,
-    loadSecretNames,
-    logger: componentLogger("runtime"),
-    assertFallbackSandbox: async () => {
-      const inspection = await sandboxPolicy.inspect({ refresh: true });
-      if (!inspection.backend.available) {
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          `Docker failed and the required native sandbox is unavailable (${inspection.backend.reason})`,
-        );
-      }
-    },
-    onPlacement: (notice) => {
-      if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
-      opts.onRuntimePlacement?.(notice);
-    },
-  });
-  try {
-    kernel = createInProcessKernel({
-      ...(opts.operatorAuthorityFor === undefined
-        ? {}
-        : { operatorAuthorityFor: opts.operatorAuthorityFor }),
-      deps,
-      logger: componentLogger("kernel"),
-      workspaceRoot: opts.workspaceRoot,
-      project: gitWorkspace.project,
-      workspace: gitWorkspace.workspace,
-      configStore,
-      extensionProfileService: extensionProfileManager.service,
-      activePlugins: () => extensionProfileManager.activePlugins(),
-      assemblerOptions: {
-        ...(defaultModel !== undefined ? { defaultModel } : {}),
-        defaultAgent: DEFAULT_ENTRY_AGENT,
-        defaultIterationLimit: env.CLARVIS_DEFAULT_ITERATION_LIMIT,
-        fallbackTokenLimit: env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT,
-        fallbackOnExceed: env.CLARVIS_DEFAULT_ON_EXCEED,
-        skillPlansMode,
-        pluginMcpServerNames: () =>
-          pluginContributions
-            .mcpServers(activePluginRefs())
-            .map((contribution) => contribution.effectiveName),
-      },
-      ...(memoryFactory !== undefined ? { memoryFactory } : {}),
-      planFactory: planning.planFactory,
-      ...(built.skills !== undefined ? { skillsProvider: built.skills } : {}),
-      secretStore,
-      modelCatalogService:
-        subscriptionManager?.catalogService(
-          createModelCatalogService(globalDir, componentLogger("models")),
-        ) ?? createModelCatalogService(globalDir, componentLogger("models")),
-      ...(subscriptionManager === undefined ? {} : { providerAuthService: subscriptionManager }),
-      inspectSandbox: (options) => sandboxPolicy.inspect(options),
-      ...(opts.globalDir !== undefined ? { globalConfigDir: opts.globalDir } : {}),
-      defaultOwner: kernelDefaultOwner,
-      ...(opts.ownerCache !== undefined ? { ownerCache: opts.ownerCache } : {}),
-      ...(opts.onOwnerRetired !== undefined ? { onOwnerRetired: opts.onOwnerRetired } : {}),
-      ...(opts.eventBuffer !== undefined ? { eventBuffer: opts.eventBuffer } : {}),
-      ownershipMode,
-      environment: environment.values,
-      taskProviderFactory,
-      tasksEnabled,
-      acquireRunLease: acquireExtensionProfileRunLease,
-      executeRun: runtimeCoordinator.executeRun,
-      capabilities: {
-        runtime: runtimeCoordinator.current(),
-      },
-      dispose: async (): Promise<void> => {
-        cleanup.stop();
-        await housekeeping.stop();
-        try {
-          await runtimeCoordinator.close();
-        } finally {
-          extensionProfileManager.close();
-          pluginContributions.close();
-          try {
-            await capabilityExecutables.close();
-          } finally {
-            try {
-              await built.dispose();
-            } finally {
-              await subscriptionManager?.close();
-            }
-          }
-        }
-      },
-    });
-  } catch (error) {
-    cleanup.stop();
-    await housekeeping.stop();
-    extensionProfileManager.close();
-    pluginContributions.close();
-    await Promise.allSettled([
-      runtimeCoordinator.close(),
-      capabilityExecutables.close(),
-      subscriptionManager?.close() ?? Promise.resolve(),
-      built.dispose(),
-    ]);
-    throw error;
-  }
-  housekeeping.start();
+  const kernel = native.kernel;
+  const { deps, recoveredRuns } = native;
   logger.info(
     {
       event: "kernel.boot.ready",
@@ -1143,16 +977,13 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     "the kernel is ready and now serves requests",
   );
-  return Object.defineProperties(
-    Object.assign(kernel, {
-      workspaceHooks,
-      retryRuntime: () => runtimeCoordinator.retry(),
-      activeExecutionLeases: () => extensionProfileRunRefs,
-    }),
-    {
-      runtime: { enumerable: true, get: () => runtimeCoordinator.current() },
+  return Object.assign(kernel, {
+    workspaceHooks,
+    activeExecutionLeases: () => extensionProfileRunRefs,
+    get runtime() {
+      return nativeRuntime();
     },
-  ) as FileKernel;
+  });
 }
 import { createOperatorAuthorityRuntime } from "./guard/operator-authority.ts";
 import { createNodeProcessRunner } from "./adapters/process/node-process-runner.ts";

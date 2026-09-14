@@ -101,7 +101,7 @@ describe("built-in tools adapter integrations", () => {
   it("maps image content while the real read-only surface refuses mutation", async () => {
     const root = workspace();
     const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
       "base64",
     );
     writeFileSync(join(root, "pixel.png"), png);

@@ -41,14 +41,12 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 ## The workflow tools
 
-For container placement, the kernel keeps the native manager scheduler, supervision registry and
-shared subtree output budget together in the guest. The host still assembles each leader's canonical
-request, owns provider credentials and persists workflow progress. `LeaderRequestAssembler` may be
-asynchronous and receives both parent and child run identities. The root entry also exposes
-`workflowContextOf`, `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` as trusted host
-composition seams; lookup recognizes factory-created capability objects by identity, not guest names.
-The [isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns this projection and its
-fail-closed behavior.
+Workflow scheduling is native in Host, Sandbox and Container. Container keeps the manager scheduler,
+workflow registry, leaders and shared budget inside the same Kernel and persists their state in its
+canonical owner-scoped host state shared with Host/Sandbox. Projected builtin/global/workspace definitions are frozen for that generation;
+plugin definitions remain absent. The root entry exposes `workflowContextOf`,
+`workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition. The
+[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns the Container boundary.
 
 In ascending order of how much structure they assume:
 

@@ -13,8 +13,7 @@ export function effectiveRunIsolation(
   runtime: RuntimeStatus | undefined,
   active: boolean,
 ): IsolationMode {
-  if (runtime?.kind === "native" && (active || runtime.lifecycle === "fallback"))
-    return runtime.isolation;
+  if (runtime?.kind === "native" && active) return runtime.isolation;
   if (runtime?.kind === "container") return runtime.engine;
   return configured;
 }
@@ -154,8 +153,9 @@ export function deriveRunControls(
 export function safetyDescription(state: RunControlsState): string[] {
   const lines: string[] = [];
   if (state.isolation === "docker" || state.isolation === "podman") {
+    lines.push("The full native Kernel runs inside the Container.");
     lines.push(
-      `Agent tools run inside a Linux ${state.isolation === "docker" ? "Docker" : "Podman"} container.`,
+      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
     );
     lines.push(
       "The selected workspace is mounted directly; changes appear on the host immediately.",
@@ -163,15 +163,10 @@ export function safetyDescription(state: RunControlsState): string[] {
     lines.push(
       state.network === "none"
         ? "Container network access is disabled."
-        : "Outbound network access is enabled; guest services can be exposed to the host.",
+        : "Outbound network access is enabled and may cause remote effects or expose workspace content.",
     );
-    lines.push(
-      state.guardMode === "off"
-        ? "Commands run without command review."
-        : state.guardMode === "auto"
-          ? "Commands use model review; uncertain actions ask you."
-          : "Risky commands ask before running.",
-    );
+    lines.push("Commands run without Command Review.");
+    lines.push("Git metadata is read-only; use Sandbox or Host for commits.");
     return lines;
   }
   if (state.sandboxEnabled) {

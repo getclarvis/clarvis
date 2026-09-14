@@ -19,7 +19,6 @@ function mount() {
   const writes: Array<{ scope: string; patch: unknown }> = [];
   const notes: string[] = [];
   const sandboxOpened: true[] = [];
-  const runtimeRetries: true[] = [];
   const settings = {
     version: () => writes.length,
     effective: () => effective,
@@ -33,14 +32,14 @@ function mount() {
     settings,
     notify: (message: string) => notes.push(message),
     runActive: () => false,
+    reload: async () => ({ ok: true, message: "reloaded" }),
     openSandbox: () => sandboxOpened.push(true),
-    retryRuntime: () => runtimeRetries.push(true),
   };
-  return { host, deps, press, writes, notes, sandboxOpened, runtimeRetries };
+  return { host, deps, press, writes, notes, sandboxOpened };
 }
 
 test("Isolation settings persist a simple Podman runtime globally", async () => {
-  const { host, deps, press, writes, notes, sandboxOpened, runtimeRetries } = mount();
+  const { host, deps, press, writes, notes, sandboxOpened } = mount();
   const t = await openRender((() => IsolationConfigPanel(host, deps)) as never, {
     width: 110,
     height: 24,
@@ -67,18 +66,9 @@ test("Isolation settings persist a simple Podman runtime globally", async () => 
       scope: "global",
       patch: {
         runtime: { backend: "podman" },
-        sandbox: {
-          type: "native",
-          enabled: true,
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "host",
-          toolchains: { mode: "auto" },
-        },
       },
     },
   ]);
-  expect(runtimeRetries).toEqual([true]);
   expect(notes).toEqual(["isolation: podman (global)"]);
   t.renderer.destroy();
 });

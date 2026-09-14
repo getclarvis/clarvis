@@ -239,11 +239,10 @@ Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-re
 
 ## Wire and presentation
 
-Operator authority and effect review are Host/Sandbox-only and do not cross the private runtime
-protocol. Docker/Podman guests receive no evidence, binding, epoch, envelope, reviewer settings,
-approval bridge or guard audit channel. Explicit `guard_mode: "on" | "auto"` is rejected before the
-guest starts; absent/`off` container runs keep the core-only boundary. This change therefore does not
-advance the private runtime protocol revision.
+Operator authority and effect review are Host/Sandbox-only. Docker/Podman Kernels receive no
+evidence, binding, epoch, reviewer settings, approval bridge or guard audit channel. Code omits
+Container guard fields before submission and the Container composition has no effect-review
+capability. Effect review has no Container channel method or descriptor.
 
 The public elicitation detail has optional analysis, effect, authority and reviewer fields. Older
 details still validate. The UI shows a one-based segment, affected argument position, effect and
@@ -251,10 +250,8 @@ failure kind. Durable shell rows retain answerer, effect, relation and failure v
 reviewer prose. The standalone tools DTO and dependency-free protocol DTO share no package edge.
 
 Production: [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts),
-[isolated-run-executor.ts](../../packages/kernel/src/runtime/isolated-run-executor.ts), and
 [effect-review.ts](../../packages/code/src/core/transcript/effect-review.ts).
-Test: [runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts),
-[isolated-run-executor.test.ts](../../packages/kernel/tests/integration/isolated-run-executor.test.ts),
+Test: [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
 and [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
 DTO discriminator drift is checked by
 [effect-review-dto.test.ts](../../packages/kernel/tests/architecture/effect-review-dto.test.ts).

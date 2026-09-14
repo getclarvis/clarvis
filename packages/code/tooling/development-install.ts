@@ -23,7 +23,7 @@ export const DEVELOPMENT_CONTAINER_ENGINES = ["docker", "podman"] as const;
 /** A local OCI engine that can store the source development runtime image. */
 export type DevelopmentContainerEngine = (typeof DEVELOPMENT_CONTAINER_ENGINES)[number];
 /** Tag inspected by source development; never pulled. */
-export const DEVELOPMENT_RUNTIME_IMAGE = "clarvis-runtime:development";
+export const DEVELOPMENT_RUNTIME_IMAGE = "clarvis-base:local";
 const DEVELOPMENT_TEMP_MARKER = ".clarvis-development-temp-root";
 const DEVELOPMENT_TEMP_MARKER_CONTENT = "clarvis-develop temporary workspaces v1\n";
 
@@ -83,7 +83,7 @@ export function developmentInstallHelp(): string {
     "",
     `Default: install ${launcherName} from this checkout and build ${DEVELOPMENT_RUNTIME_IMAGE} for each of Docker and Podman that is installed.`,
     "",
-    "  --candidate [tag]  install a published RC and prefetch its container image when possible",
+    "  --candidate [tag]  install a published RC with its pinned Container artifacts",
     "  --clear      delete global state and managed temporary workspaces before installing",
     `  --uninstall  remove only the managed ${launcherName} launcher`,
     "  --help       print this help and exit",
@@ -117,6 +117,13 @@ export function developmentLauncherSource(input: {
     "set -eu",
     `repository=${repository}`,
     `bun=${bun}`,
+    `export CLARVIS_RUNTIME_BASE=${shellQuote(DEVELOPMENT_RUNTIME_IMAGE)}`,
+    'case "$(uname -m)" in',
+    "  x86_64|amd64) clarvis_runtime_target=linux-x64 ;;",
+    "  aarch64|arm64) clarvis_runtime_target=linux-arm64 ;;",
+    '  *) echo "Unsupported Container architecture" >&2; exit 1 ;;',
+    "esac",
+    'export CLARVIS_RUNTIME_ARTIFACT="$repository/dist/runtime/$clarvis_runtime_target/clarvis-kernel-$clarvis_runtime_target.tar.gz"',
     'if [ ! -f "$repository/packages/code/src/cli.ts" ]; then',
     `  printf '%s\\n' "${launcherName}: source checkout not found at $repository; rerun ./dev-install.sh from its new location" >&2`,
     "  exit 1",
@@ -347,21 +354,51 @@ export function detectContainerEngines(
   return DEVELOPMENT_CONTAINER_ENGINES.filter((engine) => which(engine) !== null);
 }
 
-/** Argv for the existing development image builder and one explicit engine. */
+/** Argv for the version-independent development base builder and one explicit engine. */
 export function developmentRuntimeBuildArgv(
   bun: string,
   engine: DevelopmentContainerEngine,
 ): string[] {
-  return [bun, "run", "runtime:build:dev", "--", "--engine", engine, DEVELOPMENT_RUNTIME_IMAGE];
+  const target = process.arch === "arm64" ? "linux-arm64" : "linux-x64";
+  return [
+    bun,
+    "run",
+    "runtime:base:build",
+    "--engine",
+    engine,
+    "--target",
+    target,
+    "--tag",
+    DEVELOPMENT_RUNTIME_IMAGE,
+  ];
 }
 
-/** One engine that was present but could not build the local development image. */
+/** Argv for the target Linux Kernel archive built after at least one base succeeds. */
+export function developmentRuntimeArtifactArgv(
+  bun: string,
+  engine: DevelopmentContainerEngine,
+): string[] {
+  const target = process.arch === "arm64" ? "linux-arm64" : "linux-x64";
+  return [
+    bun,
+    "run",
+    "runtime:artifact:build",
+    "--engine",
+    engine,
+    "--target",
+    target,
+    "--out",
+    `dist/runtime/${target}`,
+  ];
+}
+
+/** One engine that was present but could not build the local development base. */
 export interface DevelopmentRuntimeImageFailure {
   readonly engine: DevelopmentContainerEngine;
   readonly error: string;
 }
 
-/** Outcome of attempting the local development image on each engine. */
+/** Outcome of attempting the local development base on each engine. */
 export interface DevelopmentRuntimeImagePreparation {
   readonly prepared: readonly DevelopmentContainerEngine[];
   readonly skipped: readonly DevelopmentContainerEngine[];
@@ -373,7 +410,7 @@ function errorMessage(error: unknown): string {
 }
 
 /**
- * Build `clarvis-runtime:development` for every installed engine.
+ * Build the local Container base for every installed engine and one target Kernel artifact.
  *
  * @remarks Docker and Podman keep separate image stores, so success on one does not
  * install the other. A missing engine is skipped. When at least one engine is
@@ -408,11 +445,14 @@ export function prepareDevelopmentRuntimeImages(input: {
       log(`Failed to build ${DEVELOPMENT_RUNTIME_IMAGE} with ${engine}: ${message}`);
     }
   }
+  if (prepared.length > 0) {
+    execute(developmentRuntimeArtifactArgv(input.bun, prepared[0]!), input.repository);
+  }
   if (available.size > 0 && prepared.length === 0) {
     const attempted = DEVELOPMENT_CONTAINER_ENGINES.filter((engine) => available.has(engine));
     throw new AggregateError(
       failed.map((item) => new Error(item.error)),
-      `development runtime image build failed through ${attempted.join(" and ")}`,
+      `development runtime base build failed through ${attempted.join(" and ")}`,
     );
   }
   return { prepared, skipped, failed };
@@ -509,9 +549,7 @@ async function main(): Promise<void> {
     });
     console.log(`Installed ${result.manifest.tag} at ${result.checkout}.`);
     console.log(
-      result.imageEngine === undefined
-        ? "Container image was not prefetched because Docker and Podman are unavailable; native mode remains usable."
-        : `Container image (${result.imageEngine}): ${result.manifest.runtime_image}`,
+      "Container base and Kernel artifacts will be verified when Container isolation is selected.",
     );
     console.log(
       `Run ${result.launcher}; rerun --candidate to update. Previous checkouts are retained.`,
@@ -545,9 +583,7 @@ async function main(): Promise<void> {
     step += 1;
   }
 
-  console.log(
-    `[${step}/${steps}] Building the local runtime image for available container engines.`,
-  );
+  console.log(`[${step}/${steps}] Building the local Container base and Kernel artifact.`);
   const images = prepareDevelopmentRuntimeImages({
     repository: repositoryRoot,
     bun: process.execPath,
@@ -558,11 +594,11 @@ async function main(): Promise<void> {
     );
   } else {
     console.log(
-      `Runtime image ready (${DEVELOPMENT_RUNTIME_IMAGE}): ${images.prepared.join(", ")}.`,
+      `Container base ready (${DEVELOPMENT_RUNTIME_IMAGE}) and Kernel artifact built: ${images.prepared.join(", ")}.`,
     );
     if (images.failed.length > 0) {
       console.log(
-        `Continuing without ${images.failed.map((item) => item.engine).join(" and ")} because that engine could not build the image.`,
+        `Continuing without ${images.failed.map((item) => item.engine).join(" and ")} because that engine could not build the base.`,
       );
     }
   }

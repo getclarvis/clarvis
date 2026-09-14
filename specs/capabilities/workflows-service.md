@@ -10,8 +10,8 @@ Hosted turns may supply `PreparedWorkflowExecution` to the kernel's `runManagerW
 retains the manager's already assembled body, including a skill seed, and fixes the assembler,
 fan-out settings, selectable leaders and default leader for the whole tree. Later file edits affect
 future preparations. They do not change a leader spawned by an already admitted manager or grant
-an expired interactive permission. The scheduler and physical tree still use the same workflow
-service, lifecycle and container bridge.
+an expired interactive permission. The scheduler and physical tree use the native workflow service
+and lifecycle; Docker/Podman does not compose a workflow bridge.
 
 Production: `PreparedWorkflowExecution`, `runManagerWorkflow` and `assembleLeader` in
 [workflows-service.ts](../../packages/kernel/src/workflows/workflows-service.ts), and
@@ -59,17 +59,14 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 
 ## 2. Surface
 
-For container managers, the kernel's admitted `runtime.workflows` bridge leaves canonical request
-assembly and durable callbacks on the host, while the guest owns the live scheduler and shared child
-budget. Validated sequence checkpoints and monotonic spend projections call the existing
-`WorkflowCtx.onSequenceState`, `onBudgetExhausted` and host ledger; they do not create a guest-owned
-workflow store or bypass the host's completion barrier.
+Workflow execution is available in Host, Sandbox and Container. Container keeps manager, leaders,
+registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
+shared with Host/Sandbox, and uses frozen projected definitions. Plugin
+definitions remain unavailable; no subset or host bridge substitutes for the workflow.
 
-Production: `createHostWorkflowBridge` and `consumeGuestWorkflowEvent` in
-`packages/kernel/src/runtime/workflows-bridge.ts`; `createLocalContainerRuntime` in
-`packages/kernel/src/runtime/local-container-runtime.ts`.
-Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts` (manager/leader
-execution, host ledger and durable workflow edge).
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### `@clarvis/workflows` — `./artifact` entry
 

@@ -25,10 +25,10 @@ import { prepareHostedGoalTurn, type GoalExecutionPolicy } from "../goals/hosted
 import { createGoalService } from "../goals/service.ts";
 import { unavailableGoalService } from "../goals/unavailable.ts";
 import { createGoalChanges } from "../goals/changes.ts";
+import { createContainerNativeKernel, type ContainerNativeOptions } from "./container-native.ts";
 
 /** Operator-owned process resources; storage and authentication are never selected by an RPC peer. */
-export interface FileRunHostOptions {
-  kernel: Omit<CreateFileKernelOptions, "sessionAllowlistFor" | "ownershipMode">;
+interface FileRunHostCommonOptions {
   hostGeneration: string;
   storage: Pick<
     HostedRegistryOptions,
@@ -46,9 +46,36 @@ export interface FileRunHostOptions {
   exposeDefaultOwner?: boolean;
 }
 
-/** A process-owned FileKernel and authenticated RPC server, independent of any transport connection. */
+/** File composition preserves discovery; Container accepts only admitted data and inference ports. */
+export type FileRunHostOptions = FileRunHostCommonOptions &
+  (
+    | {
+        composition?: { kind: "file" };
+        kernel: Omit<CreateFileKernelOptions, "sessionAllowlistFor" | "ownershipMode">;
+      }
+    | ContainerFileRunHostOptions
+  );
+
+interface ContainerFileRunHostOptions {
+  composition: Pick<ContainerNativeOptions, "configuration" | "llm" | "runtime"> & {
+    kind: "container";
+  };
+  kernel: Pick<ContainerNativeOptions, "globalDir" | "project" | "workspace" | "logger"> & {
+    workspaceRoot: string;
+    defaultOwner: string;
+  };
+}
+
+/** Narrow the nested composition discriminator before using file-only adapter options. */
+function isContainerHost(
+  options: FileRunHostOptions,
+): options is FileRunHostCommonOptions & ContainerFileRunHostOptions {
+  return options.composition?.kind === "container";
+}
+
+/** A process-owned native Kernel and authenticated RPC server, independent of its pipes. */
 export interface FileRunHost {
-  readonly kernel: FileKernel;
+  readonly kernel: Omit<FileKernel, "workspaceHooks">;
   readonly server: KernelServer;
   /** Publish a bounded operator notice from application-owned runtime preparation, never from a guest request. */
   runtimeNotice(message: string): void;
@@ -70,6 +97,9 @@ export interface FileRunHost {
  * admission. Offline compaction and generated-state cleanup reserve a host-wide maintenance slot.
  */
 export async function createFileRunHost(options: FileRunHostOptions): Promise<FileRunHost> {
+  if (isContainerHost(options) && options.exposeLocalControls === true)
+    throw kernelError("unsupported", "Container cannot expose local machine controls");
+  const exposeLocalControls = !isContainerHost(options) && options.exposeLocalControls !== false;
   const logger = options.kernel.logger ?? NOOP_LOGGER;
   const goalChanges = createGoalChanges(logger);
   const owner = options.kernel.defaultOwner ?? ownerFromWorkspace(options.kernel.workspaceRoot);
@@ -83,37 +113,54 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
   const publishRuntimeNotice = (message: string): void => {
     runtimeNotice = { sequence: ++sequence, message: sanitizeText(message).slice(0, 4096) };
   };
-  const kernel = await createFileKernel({
-    ...options.kernel,
-    defaultOwner: owner,
-    ownershipMode: "single",
-    sessionAllowlistFor: (run) => registry?.guardAllowlistFor(run),
-    operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
-    onRuntimePlacement(notice) {
-      options.kernel.onRuntimePlacement?.(notice);
-      if (notice.message !== undefined) publishRuntimeNotice(notice.message);
-    },
-    onExtensionProfileDrift(notice) {
-      options.kernel.onExtensionProfileDrift?.(notice);
-      extensionDrift = {
-        sequence: ++sequence,
-        kind: notice.kind,
-        name: sanitizeText(notice.kind === "skill" ? notice.name : notice.plugin).slice(0, 4096),
-        ...(notice.kind === "skill" ? { source: notice.source } : {}),
-      };
-    },
-    openMcpAuthorizationUrl(url) {
-      if (operator === undefined)
-        return Promise.reject(
-          kernelError("unavailable", "interactive browser handoff is not ready"),
+  const kernel: FileRunHost["kernel"] = await (async () => {
+    if (isContainerHost(options)) {
+      if (options.kernel.workspaceRoot !== options.kernel.workspace.path)
+        throw kernelError(
+          "invalid_request",
+          "Container workspace identity does not match its root",
         );
-      return operator.openAuthorizationUrl(url);
-    },
-    onSkillsChanged() {
-      options.kernel.onSkillsChanged?.();
-      skillsRevision++;
-    },
-  });
+      return (
+        await createContainerNativeKernel({
+          ...options.composition,
+          ...options.kernel,
+          owner,
+          operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
+        })
+      ).kernel;
+    }
+    return createFileKernel({
+      ...options.kernel,
+      defaultOwner: owner,
+      ownershipMode: "single",
+      sessionAllowlistFor: (run) => registry?.guardAllowlistFor(run),
+      operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
+      onRuntimePlacement(notice) {
+        options.kernel.onRuntimePlacement?.(notice);
+        if (notice.message !== undefined) publishRuntimeNotice(notice.message);
+      },
+      onExtensionProfileDrift(notice) {
+        options.kernel.onExtensionProfileDrift?.(notice);
+        extensionDrift = {
+          sequence: ++sequence,
+          kind: notice.kind,
+          name: sanitizeText(notice.kind === "skill" ? notice.name : notice.plugin).slice(0, 4096),
+          ...(notice.kind === "skill" ? { source: notice.source } : {}),
+        };
+      },
+      openMcpAuthorizationUrl(url) {
+        if (operator === undefined)
+          return Promise.reject(
+            kernelError("unavailable", "interactive browser handoff is not ready"),
+          );
+        return operator.openAuthorizationUrl(url);
+      },
+      onSkillsChanged() {
+        options.kernel.onSkillsChanged?.();
+        skillsRevision++;
+      },
+    });
+  })();
   const prices = new Map<string, ModelCost>();
   const disconnections = new Set<Promise<void>>();
   const roles = new Map<string, HostingPeer["role"]>();
@@ -242,7 +289,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
         restart_requested: restartRequested,
       }),
       canControl: (peerId, sessionId) => owned.controlsConversation(peerId, sessionId),
-      retryRuntime: () => exclusive(async () => kernel.retryRuntime()),
       requestRestart: () =>
         exclusive(async () => {
           restartRequested = true;
@@ -353,7 +399,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           services: servicesFor(
             connection.service,
             connection.peer.id,
-            role === "operator" && options.exposeLocalControls !== false
+            role === "operator" && exposeLocalControls
               ? ownedOperator.connect(connection.peer.id)
               : undefined,
           ),
@@ -364,9 +410,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
               ...(options.exposeDefaultOwner === true ? { default_owner: owner } : {}),
             },
             goals: true,
-            ...(role === "operator" && options.exposeLocalControls !== false
-              ? { local_host: true as const }
-              : {}),
+            ...(role === "operator" && exposeLocalControls ? { local_host: true as const } : {}),
           },
           close() {
             roles.delete(connection.peer.id);

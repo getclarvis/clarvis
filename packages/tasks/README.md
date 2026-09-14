@@ -10,10 +10,11 @@ External systems remain authoritative; the only durable Clarvis state is the
 minimal task binding and content-free uncertain-write replay metadata stored
 with a run.
 
-For Docker/Podman placement the kernel registers this same capability and request schema in the guest,
-backed by a per-run host provider bridge. Provider resolution, connections and credentials remain on
-the host; active binding, strict tool inputs, provider errors and write gates are preserved. This
-does not add a dependency from Tasks to the kernel or loop.
+Tasks is composed only for native Host/Sandbox runs and their control plane. Docker/Podman registers
+no Tasks provider, tool or lifecycle callback because the only current provider is MCP; an explicit
+task binding or `tasks.*` profile grant fails before model work. Inherited settings remain on the
+host and do not block an unrelated Container run. This does not add a dependency from Tasks to the
+kernel or loop.
 
 ## Contract
 

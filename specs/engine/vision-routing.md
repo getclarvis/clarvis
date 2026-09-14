@@ -40,15 +40,16 @@ family, capability gating).
 
 ## 2. Surface
 
-Container placement preserves the same capability gate: the host reconstructs each admitted model's
-declared capability set, including an empty set, before adapter serialization. The original image
-parts remain in the guest's retained context; only the wire representation strips images for a
-non-visual model, including after a `vision_model` prepass. Production: `hostModelBroker` in
-[`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
-Test: the real OpenAI-compatible SDK vision-prepass case in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
-asserts images on the vision request, none on the text request, and an unchanged source message
-prefix. The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Container placement preserves the same capability gate through `ModelExecutionResolver`. The guest
+uses frozen logical model metadata for vision routing, while the host broker reconstructs real
+provider configuration only after admission. Original image parts remain in the guest context and
+only inline admitted media crosses the broker. Production: `createContainerModelBroker` in
+[`model-broker-host.ts`](../../packages/kernel/src/runtime/model-broker-host.ts).
+Test: vision request filtering and unchanged source-prefix cases in
+[`vision-prepass.test.ts`](../../packages/loop/tests/unit/vision-prepass.test.ts), plus admitted
+Container vision-model routing in
+[`container-model-stream.test.ts`](../../packages/kernel/tests/integration/container-model-stream.test.ts).
+The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 The prepass prompt requests visible details relevant to the task, exact readable text when needed,
 and explicit limits for hidden or illegible content. Images are data, not instructions. Production:
@@ -282,6 +283,13 @@ the existing reading, usage, truncation and failure matrix in
 
 Step by step inside `runVisionPrepass` (`packages/loop/src/runtime/vision-prepass.ts`):
 
+With a host `modelExecutionResolver`, the native metadata lookup below is replaced by an exact
+catalog lookup: capabilities and output limits come from `ModelExecutionInfo`, with no native
+`providerConfig`. The same injected LLM executes the pre-pass. Production:
+[`runVisionPrepass`](../../packages/loop/src/runtime/vision-prepass.ts).
+Test: [`model-execution-injection.test.ts`](../../packages/loop/tests/integration/model-execution-injection.test.ts).
+See [generic execution ports](capability-composition.md).
+
 | Step | File | Effect |
 | --- | --- | --- |
 | 1 | `packages/loop/src/runtime/vision-prepass.ts` | no-op unless `entryStripsImages` is true and `turnImages.length > 0` |
@@ -326,7 +334,8 @@ Calling `read_image` resolves the file against the workspace plus the run-owned
 `config.temporaryRoots`, then reads it (`resolvePath` + `readRawFile`, capped at `config.maxImageBytes`,
 default `DEFAULT_MAX_IMAGE_BYTES = 5_000_000` — `packages/tools/src/config.ts`), sniffs its
 format from magic bytes (`sniffImageMime`, `packages/tools/src/lib/image.ts`, PNG/JPEG/GIF/WebP only),
-and returns `{ content: [imagePart(base64, mimeType)] }` or throws `not_an_image`
+verifies the complete PNG chunk stream and every PNG CRC, and returns
+`{ content: [imagePart(base64, mimeType)] }` or throws `not_an_image`
 (`packages/tools/src/tools/read-image.ts`). A successful call's result content is the `imagePart` alone — no text part —
 so whatever flattens a `ToolResult` to `.text` for that call gets an empty string, not a textual echo
 of the image (`packages/tools/src/tools/read-image.ts`; pinned by "produces no text output (flattened text is empty)",
@@ -412,10 +421,11 @@ from the other).
     when capabilities are undeclared.** Production `packages/loop/src/runtime/loop/run-agent.ts`; pinned by the three cases of
     "read_image is offered only to a model that can consume its result"
     (`packages/loop/tests/integration/vision-tool-gating.test.ts`).
-16. **`read_image` only recognizes PNG/JPEG/GIF/WebP by magic bytes and rejects everything else with
-    `not_an_image`, independent of extension.** Production
+16. **`read_image` only recognizes PNG/JPEG/GIF/WebP by magic bytes, verifies PNG chunk CRCs, and
+    rejects unsupported or corrupt PNG data with `not_an_image`, independent of extension.** Production
     `packages/tools/src/tools/read-image.ts`, `packages/tools/src/lib/image.ts`; pinned by
-    "errors not_an_image for a non-image file"
+    "errors not_an_image for a non-image file" and
+    "errors not_an_image before a corrupt PNG reaches model history"
     (`packages/tools/tests/integration/read-image.test.ts`).
 17. **`read_image` is available even on a read-only tool surface.** Production: no read-only gate in
     `read-image.ts`; pinned by "is available in the read-only surface"
@@ -443,14 +453,16 @@ from the other).
     `packages/code/src/core/attachments.ts`; pinned by "rejects empty, fifth,
     oversized and aggregate-overflow images" (`packages/code/tests/unit/attachments.test.ts`)
     and "rejected images never enter reactive composer state".
-The full composer image budget is transferable through both local-host stdio and private guest RPC.
+The full composer image budget is transferable through local-host and Container stdio.
     Their common logical JSON limit is 64 MiB, including base64, context and envelopes; physical
     fragments remain bounded and excess local messages cannot terminate another run. Production:
     `createJsonMessageWriter` in [json-message.ts](../../packages/kernel/src/core/json-message.ts).
     Test: `transfers the full composer image budget and isolates oversized requests and results`
     in [stdio-codec.test.ts](../../packages/kernel/tests/contract/stdio-codec.test.ts) and
-    `preserves admitted images, accumulated context and final trace through the real guest loop`
-    in [runtime-capability-composition.test.ts](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+    bounded Container lane transfer in
+    [container-channel.test.ts](../../packages/kernel/tests/contract/container-channel.test.ts)
+    and stream preservation in
+    [container-model-stream.test.ts](../../packages/kernel/tests/integration/container-model-stream.test.ts).
 20. **A staged attachment's declared `size` cannot understate its real payload.** `attachmentBytes`
     takes the larger of the declared size and `base64DecodedBytes(data)`, so a `size: 1` attachment
     whose `data` actually decodes to 32 bytes still reports 32 — admission checks bytes actually

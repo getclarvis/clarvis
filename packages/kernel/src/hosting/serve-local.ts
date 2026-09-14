@@ -6,7 +6,7 @@ import {
   suppressSecondaryRejection,
 } from "@clarvis/capability";
 import { kernelError } from "../core/errors.ts";
-import { globalPaths } from "@clarvis/paths";
+import { globalPaths, workspaceStatePaths } from "@clarvis/paths";
 import { listenLocalKernel, type LocalKernelListener } from "../transport/local.ts";
 import { createFileRunHost, type FileRunHost, type FileRunHostOptions } from "./file-host.ts";
 import { memoryKeepsHostAlive } from "./memory-activity.ts";
@@ -20,7 +20,7 @@ import {
 
 /** Process composition. None of these inputs are accepted from a connecting RPC peer. */
 export interface ServeLocalFileKernelOptions {
-  kernel: FileRunHostOptions["kernel"];
+  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
   artifactId: string;
   /** Idle duration measured with a monotonic clock. Defaults to one minute. */
   idleTimeoutMs?: number;
@@ -83,6 +83,11 @@ export async function serveLocalFileKernel(
         globalDir: identity.globalDir,
         defaultOwner: identity.owner,
         traceDir: options.kernel.traceDir ?? globalPaths(identity.globalDir).tracesDir,
+        traceLocksDir:
+          options.kernel.traceLocksDir ??
+          workspaceStatePaths(identity.workspaceRoot, {
+            env: { CLARVIS_HOME: identity.globalDir },
+          }).traceLocksDir,
       },
       hostGeneration: state.generation,
       storage: state.storage,

@@ -757,6 +757,18 @@ never the ability to write one, so the context itself cannot fail on I/O).
 
 ## 7. Coupling
 
+Generic execution catalogs supply `modelExecution` metadata separately from native `providerConfig`.
+Live compaction retains the target metadata; `compactStoredContext` accepts the optional
+`modelExecutionResolver` and resolves the same exact profile pair. Catalog kind controls the
+subscription reasoning behavior and catalog output limits cap stored summarization output without
+inventing transport configuration. Production:
+[`buildCompactionThunk`](../../packages/loop/src/runtime/loop/loop.ts),
+[`compactStoredContext`](../../packages/loop/src/runtime/context/stored-context-compaction.ts) and
+[`summarizeContext`](../../packages/loop/src/runtime/context/llm-compaction.ts).
+Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts) and
+[`stored-context-compaction.test.ts`](../../packages/loop/tests/unit/stored-context-compaction.test.ts).
+See [generic execution ports](capability-composition.md).
+
 **Depends on** (imports, `packages/loop/src/runtime/context/live-context.ts` and siblings):
 - `@clarvis/capability` — `LiveMessage`, `MessageContent`, `ToolCallRef`, `ToolResultImage`,
   `AssistantReasoningPart`, `contentToText`, `NOOP_LOGGER`, `Logger`, `levelEnabled`,

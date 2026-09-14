@@ -5,6 +5,7 @@ import {
   resolveProvider,
   TASK_TITLE_MAX,
   type LLMProvider,
+  type ModelExecutionResolver,
   type Logger,
   type NamespacedTool,
   type RunRequest,
@@ -34,6 +35,7 @@ const SET_TITLE_TOOL: NamespacedTool = {
 export interface WorkflowTitleInput {
   request: RunRequest;
   llm: LLMProvider;
+  modelExecutionResolver?: ModelExecutionResolver;
   signal?: AbortSignal;
   logger?: Logger;
 }
@@ -63,8 +65,16 @@ export async function generateWorkflowTitle(input: WorkflowTitleInput): Promise<
   if (profile === undefined || task.length === 0) return null;
 
   const ref = parseModelRef(profile.model);
-  const resolution = resolveProvider(ref.provider, input.request.providers, ref.modelId);
-  if (!resolution.ok) {
+  const catalog = input.modelExecutionResolver;
+  const resolution =
+    catalog === undefined
+      ? resolveProvider(ref.provider, input.request.providers, ref.modelId)
+      : undefined;
+  if (catalog !== undefined) {
+    const model = catalog.resolve(ref.provider, ref.modelId);
+    if (model?.provider !== ref.provider || model.model !== ref.modelId) return null;
+  }
+  if (resolution !== undefined && !resolution.ok) {
     input.logger?.warn(
       { model: profile.model },
       `workflow_title: ${resolution.message} — keeping the provisional title`,
@@ -74,9 +84,16 @@ export async function generateWorkflowTitle(input: WorkflowTitleInput): Promise<
 
   try {
     const result = await input.llm.call({
+      ...(input.request.execution_id === undefined
+        ? {}
+        : { executionId: input.request.execution_id }),
+      ...(input.request.session_id === undefined ? {} : { sessionId: input.request.session_id }),
+      ...(input.request.agent_instance_id === undefined
+        ? {}
+        : { agentInstanceId: input.request.agent_instance_id }),
       model: ref.modelId,
       provider: ref.provider,
-      providerConfig: resolution.config,
+      ...(resolution?.ok ? { providerConfig: resolution.config } : {}),
       messages: [
         {
           role: "system",

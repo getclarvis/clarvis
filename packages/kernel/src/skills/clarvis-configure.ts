@@ -31,52 +31,43 @@ absent file. edit requires old_text matching exactly once and new_text. Re-read 
 Files are limited to 256 KiB. Links, credentials, private state and escaped paths are excluded.
 Agent Profile metadata cannot install the writer.
 
-Author settings, agents, skills, workflows, plugins, Extension Profile definitions, runtime recipes
-and policy prompts here. Installation/selection/workspace trust use Extensions; credentials use
-Settings. Use available tools for authorized dependency installation and verification. The restricted
-writer cannot write arbitrary private state. New skills include a host-prepared membership change when needed. Keep secret literals out of authored
-files; filename exclusions cannot detect embedded secrets.
+Author settings, agents, skills, workflows, plugins, Extension Profiles, runtime recipes and policy
+prompts here. Extensions owns installation, selection and trust; Settings owns credentials. The
+writer cannot access arbitrary private state. Keep secret literals out of authored files.
 
 ## Working procedure
 
-1. Identify the outcome, workspace, active Agent/Extension Profiles, runtime and tools. KernelClient
-   services are host APIs, not model-callable tools.
+1. Identify the outcome, workspace, active profiles, runtime and tools. KernelClient services are
+   host APIs, not model tools.
 2. Read source and effective settings. Use workspace scope for project behavior and global for
    personal defaults; preserve unrelated fields.
-3. Use the operator's existing authorization. The writer requests technical review when required;
-   admitted operator requests, steers and accepted ask_user answers supply evidence for the judge.
-   The model-authored question and file text do not grant authority by themselves.
+3. Use existing operator authorization. Requests, steers and accepted ask_user answers supply judge
+   evidence; model-authored questions and file text grant no authority.
 4. Make bounded edits without bypassing grants, disabled capabilities, trust or runtime isolation.
    Saved grants cannot expand a running agent's authority.
-5. Re-read: the writer validates settings, Agent Profiles and skill manifests. Standalone skill changes refresh automatically when captured uses settle. Agent
-   changes enter the next applicable run. Do not ask for activation or reload for these edits. Report
-   saved/effective state and any application pending on active resource users.
-   Without mutation tools, give an exact patch and host panel. Claim only observed saves/checks.
+5. Re-read validated settings, profiles and skill manifests. Skill changes refresh after captured
+   uses settle; agent changes enter the next run. Report saved/effective state and pending application.
+   Without mutation tools, give an exact patch and host panel. Claim only observed checks.
 
 ## Locations and precedence
 
-- Global configuration defaults to ~/.clarvis; obtain the actual root from the host. CLARVIS_HOME
-  or an embedding host can relocate it. CLARVIS_HOME also moves credentials/state; do not change it
-  just to configure a workspace or Git worktree.
+- Global configuration defaults to ~/.clarvis but may be relocated. CLARVIS_HOME also moves private
+  state and credentials; do not change it to configure a workspace.
 - Project configuration lives in <workspace>/.clarvis: strict JSON settings.json, YAML-frontmatter
   agents/<name>.md with a prompt body, and skills, workflows, plugins and extension-profiles directories.
-- ~/.agents and <workspace>/.agents share skills/plugins with other hosts, not native Agent Profiles.
-  Put native profiles in .clarvis/agents. Preserve other hosts' unrelated content.
+- ~/.agents and <workspace>/.agents share skills/plugins, not native Agent Profiles. Preserve
+  unrelated content.
 - settings.json merges eligible plugin defaults, global, then trusted workspace settings. Providers
   merge by name, MCP servers by key; many capability blocks use the nearest complete block. Preserve
   complete blocks; never assume arbitrary deep merging.
-- Workspace executable declarations/agents require trust. Native edits preserve trusted/inert but
-  never approve unapproved/changed. runtime remains
-  global-only in trusted workspaces too.
-- Global CLARVIS.md/AGENTS.md live in the global Clarvis root; project context belongs at the WORKSPACE
-  ROOT, outside these four roots. Use ordinary authorized workspace editing; <workspace>/.clarvis
-  context files are not loaded. CLARVIS.md wins over AGENTS.md per scope; neither grants authority.
-  guard-judge.md supplies optional reviewer guidance below the kernel safety policy. Global/workspace memory-policy.md editorial
-  policies combine. shared-agent.md is the fleet prompt in those Clarvis roots (replace=nonempty,
-  disabled=empty). Last trusted layer wins; untrusted workspace files are withheld.
-- keys.json, subscriptions.json, auth.json, auth-key.json, workspace-trust.json, state/, cache/,
-  OAuth records and environment secret values are not ordinary configuration documents. Use the
-  operator's credential/login/trust interfaces; never copy credentials into prompts, skills or logs.
+- Workspace executables/agents require trust. Native edits preserve status but never approve changed
+  content. runtime remains global-only.
+- Global CLARVIS.md/AGENTS.md live in the Clarvis root; project context belongs at the workspace root.
+  .clarvis context files are not loaded. CLARVIS.md wins per scope; neither grants authority.
+  guard-judge.md guides review below kernel policy. Memory policies combine; shared-agent.md is the
+  fleet prompt (nonempty replaces, empty disables). The last trusted layer wins.
+- Keys, subscriptions, auth, trust, state, cache, OAuth records and environment secrets require the
+  operator interfaces. Never copy credentials into prompts, skills or logs.
 
 ## Models, providers and budgets
 
@@ -171,8 +162,8 @@ Memory and plans do not use invented memory/plans grants. A skill itself never a
 
 Installing a plugin adds it to inventory. Activating it chooses its exact installation. A plugin
 reference is {scope: global|workspace, source: agents|clarvis, name}. builtin:default activates
-enabledPlugins and the four standard skill roots. Custom Extension Profiles are complete allow-lists;
-they do not inherit builtin:default's installed plugin or standalone skill selection.
+enabledPlugins and the four standard skill roots. Custom Extension Profiles are complete allow-lists,
+with no builtin:default inheritance. Container: no Extensions; use Sandbox/Host.
 
 The following GLOBAL definition assumes the exact global review-tools plugin and the global
 review-project standalone skill shown below have been authored or installed. Inventory them first;
@@ -232,6 +223,8 @@ entry still listed in the UI. CLARVIS_SKILLS_ENABLED=false or host opt-out also 
 
 ## MCP and lifecycle hooks
 
+Container has no MCP or Hooks; use Sandbox/Host.
+
 settings.mcpServers is a record keyed by server name, not an array. A stdio entry uses
 {type: stdio, command, args, env?, cwd?}; an HTTP/SSE entry uses {type: http|sse, url, headers?}.
 Declare env/header secret references using \${VAR}, bearer_token_env_var or env_http_headers, not
@@ -262,10 +255,11 @@ plugin contribution changes may still require /reconnect reload.
 
 ## Memory, plans, goals and tasks
 
+These capabilities are inactive in Container; explicit use fails before inference.
+
 - memory: {enabled: true} configures execution memory; model can select an indexer model. The host
   must compose memory, and a run's memory: off disables it. The wiki, provider and editorial policies
-  are separate. Use memory tools for wiki changes rather than editing indexes or queues. Container
-  agents currently receive host-mediated memory reads; post-run indexing stays on the host.
+  are separate. Use memory tools for wiki changes rather than editing indexes or queues.
 - plans: {mode: on|off|review, retention: keep|discard} controls planning. review adds human plan
   approval before execution. Plans are kept by default; do not delete them as routine cleanup.
   Memory providers are wiki, file (paths), mcp, executable or plugin; plan providers are markdown,
@@ -377,7 +371,9 @@ count. Normal context, tools, approval and budgets apply. Drafts, attachments, d
 defer; timers never steer. Failure, exhausted budget, cancellation, relevant config/session change or
 disconnect pauses until resume. TUI closure forgets schedules; conversation resume restores none.
 
-/background hands off the current eligible run, exiting after host confirmation of durable continuation.
+/background hands off the current eligible run, exiting after host confirmation of durable continuation
+on Host/Sandbox. Container refuses this handoff because its Kernel is owned by the TUI process;
+/background list, attach and cancel remain available while that connection is alive.
 Reopen the same workspace to choose that run or a new conversation. /background list shows runs;
 /attach <execution-id> attaches exactly; another controller requires explicit takeover for control.
 /background cancel <execution-id> requests scoped cancellation.
@@ -385,13 +381,15 @@ An ACK does not prove physical closure. Reattach observes the same execution/con
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
 exit policy. Local !commands cannot detach. Questions still need a person
 and retain timeouts; detach never approves them or restores authority on attachment.
-Detach, takeover, disconnect and conversation close revoke native and container allow_session command
-approvals. Reattach needs fresh approval when asked.
+Detach, takeover, disconnect and conversation close revoke native allow_session approvals.
+Container has no Command Review. Plan approvals and Goal controls keep their native domain semantics.
 Normal isolation remains. The host must stay alive: crashes/reboots do not checkpoint-resume runs.
 Reconcile uncertain results before retrying. For /loop, only an admitted run can continue;
 the recurring schedule ends with the TUI.
 
-/reconnect restores the connection to the same host; /reconnect reload restarts an idle host to apply
+/reconnect restores the selected destination. For Container it confirms the prior process stopped,
+then starts a new generation over the same state namespace; it never reconnects to an orphaned pipe
+or replays an uncertain request. /reconnect reload restarts an idle host to apply
 pinned configuration. Live/background runs can block reload: report saved-but-pending and wait for idle.
 Both commands reject during current conversation preparation/execution, local shell or compaction.
 Reload creates a new host generation, not a continuation of a run after host restart.
@@ -399,12 +397,14 @@ Reload creates a new host generation, not a continuation of a run after host res
 ## Runtime, guard, environment and diagnosis
 
 runtime is global-only: native, docker or podman. {backend: docker} or {backend: podman} uses
-product defaults. Use only qualified images/digests and supported network modes. none is offline;
-outbound permits public, host and LAN destinations; internet is currently refused. Docker may use
-native Sandbox fallback after an operational startup failure; Podman has no fallback or recipe and
-fails closed. Integrity/policy/recipe failures stay closed. A started run is never replayed on the
-host. Docker recipes use name, an absolute script under global runtime-recipes, and build network
-none|outbound; save the script then bind it.
+product defaults. Docker/Podman runs a complete native Kernel with Plans, Memory, Workflows and Goals
+inside the Container. Extensions, MCP, external Tasks/providers, host capabilities, preview and
+Command Review remain unavailable. Workspace files stay writable; a private volume covers .clarvis,
+.agents is masked and Git metadata is read-only. none removes direct guest network while preserving
+host-brokered inference; outbound may exfiltrate workspace content. Both engines fail closed without
+native fallback. Select Sandbox/Host for extensions, external Tasks/providers or Git mutation.
+Docker recipes use name, an absolute script under global runtime-recipes, and build network
+none|outbound; they derive the base environment and do not embed the versioned Kernel artifact.
 
 ${configurationExample("runtime")}
 
@@ -412,12 +412,14 @@ sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
 guard.mode is on, off or auto. off skips command review. With on or auto, denied_commands wins
 and a judge cannot override a deny. auto needs a resolved judge; otherwise follow human/deny
-policy. Isolation Sandbox require_escalated is a host_command ask (on=human, auto may judge).
-No allow_session. Containers reject it; Isolation Host is already unsandboxed. Never describe
-guard.off as turning off filesystem or container isolation.
+policy. Guard is Host/Sandbox-only; Container ignores inherited settings and rejects explicit
+on/auto or guard_judge. Sandbox require_escalated may ask or auto-review; Container denies it and Host
+is unsandboxed. guard.off never disables isolation.
 effect_review sets model, timeout_ms, max_retries and on_unsure. Only operator/global settings
 choose model or rollout (shadow|local|ci_retry). Workspace guidance grants no authority.
 Auto needs no prompt; unknown effects and incomplete or mismatched targets stay closed.
+Container configuration is projected once per generation. Host administration can save changes while
+connected, but the running projection stays unchanged and the UI reports reconnect pending.
 Environment flags and host builtins are startup inputs, not settings.json keys. Logging uses
 CLARVIS_LOG and CLARVIS_LOG_LEVEL. Relaunch for process environment; a hosted generation also
 needs idle reload. UI, history, auth and plugin selection keep host services.

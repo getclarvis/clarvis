@@ -209,6 +209,8 @@ export interface RetryInfo {
 export interface LLMCallParams {
   /** Semantic accounting purpose; operational metadata, never part of the provider prompt. */
   callPurpose?: "generation" | "memory" | "compaction";
+  /** Execution attribution for host-mediated inference; never part of the provider request. */
+  executionId?: string;
   model: string;
   messages: LiveMessage[];
   tools: NamespacedTool[];

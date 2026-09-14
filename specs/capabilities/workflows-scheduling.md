@@ -1119,21 +1119,14 @@ widens a mutator to unscoped (`packages/workflows/src/schedule.ts`) — visible 
 
 ## 7. Coupling
 
-Container placement keeps this package's scheduler, registry and shared leader/subagent output
-budget together in the guest. The host still assembles each canonical leader request, admits it once
-to the parent's runtime generation and persists progress. `LeaderRequestAssembler` accepts a
-synchronous request or promise and receives the allocated child identity. `workflowContextOf` and
-`workflowOutputBudgetOf` recognize only factory-created capability objects by identity; they are
-trusted host projection seams, not a guest-selected capability registry. The kernel refuses an
-unprojectable host capability rather than dropping its policy.
+Container composes this scheduler, registry, manager, leader requests and shared workflow budget in
+the same Kernel. It retains `workflowContextOf`, `workflowOutputBudgetOf`,
+`LeaderRequestAssembler` and the complete scheduling contract above, using the model broker for
+inference and private state for persistence.
 
-Production: `workflowContextOf` in `packages/workflows/src/capability.ts`;
-`workflowOutputBudgetOf`, `createLeaderOutputBudgetCapability` and `runLeader` in
-`packages/workflows/src/run-leader.ts`; `LeaderRequestAssembler` in
-`packages/workflows/src/types.ts`; `createHostWorkflowBridge` and `createGuestWorkflowCapabilities`
-in `packages/kernel/src/runtime/workflows-bridge.ts`.
-Test: `packages/kernel/tests/integration/runtime-capability-composition.test.ts`
-(`runs an Admiral and its leader through the same guest registry and subtree budget`).
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### 7.1 What this package depends on
 

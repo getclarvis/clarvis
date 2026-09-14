@@ -15,14 +15,39 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   Podman. Native Sandbox details stay in Settings > Sandbox. Run Controls and `Ctrl+S` share the
   same writer; a workspace cannot choose a runtime.
 - Simple Podman isolation now accepts `{ "backend": "podman" }` with the same product-owned limits
-  and outbound default as Docker. Podman has no recipe and no Sandbox fallback: an operational
-  startup failure fails closed.
-- `./dev-install.sh` now builds the local `clarvis-runtime:development` image for each of Docker and
-  Podman that is installed. A missing engine is skipped, so a Docker-only or Podman-only host still
-  completes; native mode remains available when neither engine is present.
+  and outbound default as Docker. Podman has no recipe; both Container engines fail closed.
+- `./dev-install.sh` now builds the version-independent local Container base in each installed
+  Docker/Podman engine, then compiles one architecture-matched Kernel artifact. A missing engine is
+  skipped; native mode remains available when neither engine is present.
 
 ### Changed
 
+- Container `/model` saves now attempt the required idle generation reload immediately, and corrupt
+  PNG tool results are rejected before they can poison subsequent provider calls.
+- Interactive Container startup now offers to terminate an exact, verified previous Clarvis Kernel
+  when it still owns the workspace namespace.
+- Container cold boot now reports its current preparation phase, and the startup banner reserves its
+  full height plus a non-shrinking status row so progress text cannot overwrite the logo, including
+  at the compact-layout boundary. Startup input also survives a slow boot's
+  renderer handoff without reading a destroyed input buffer.
+- Isolation changes now keep the picker open with explicit save/reconnect progress until the new
+  placement is active. A failed placement restores the previous connection and isolation choice;
+  startup through an unavailable Container engine can explicitly return to Host. Host
+  confirmation shows its `y`/`n` decision keys without repeating the warning.
+
+- **Breaking:** Docker/Podman Isolation now serves one complete native Kernel over the public wire.
+  Plans, Memory, Workflows and Goals execute inside the Container and persist in the same canonical
+  stores used by Host/Sandbox, together with sessions, conversation context and traces. Legacy
+  namespace-volume domain data is imported once without overwriting divergent host files. External Tasks,
+  plugins, skills, hooks, generic MCP, external capability providers, preview and Command Review
+  remain unavailable. Provider configuration, credentials and API requests stay in the host model
+  broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by a private content
+  volume, `.agents` is masked and Git metadata is read-only; missing nested mount targets fail before
+  engine create. Public wire revision 10, broker revision 1 and channel revision 1 replace the private
+  worker protocol.
+- Container distribution now separates a version-independent Debian base from the compiled
+  `clarvis-kernel-<target>.tar.gz` artifact. Updating Clarvis no longer rebuilds a final product image;
+  launch transfers a verified content-addressed artifact into an immutable engine volume.
 - The interactive TUI now recovers from high process RSS locally and silently. Sustained pressure
   drops reconstructible completed tool bodies; the 2 GiB limit only blocks expensive new admissions.
   `/recover-memory`, the memory banner, and host rebuilds are gone. The footer may show
@@ -37,6 +62,24 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Fixed
 
+- Switching between Host/Sandbox and Docker/Podman now replaces the workspace connection while idle,
+  immediately updates the effective Isolation header, and cleans a failed Container composition so
+  the namespace is not left owned by a leaked generation.
+- `/model` can request an explicit context target through `runs.context` again; the optional field is
+  admitted by the closed transport envelope.
+- A Lead now defers plan mutations issued in the same model iteration after tracked delegation until
+  the returned task state and fresh CAS identity are published. Sub-agents continue to receive no
+  plan mutation tools, and strict digest checks remain intact.
+- Agent and workflow counts appear only in the sidebar; the footer no longer repeats the roster.
+- Container launch now admits the exact base before preparers, inspects every privileged preparer
+  before start, enforces exact capability/NNP/tmpfs policy, shares boot and preparation deadlines,
+  revokes subscription-backed model leases synchronously, and reconciles uncertain create/stop/close
+  outcomes without releasing workspace ownership early.
+- Compiled Container Kernels now bundle the lazy Ajv validation modules required by the first agent
+  run, preserve the builtin-tool namespace marker across the model broker, and clean hosted
+  projection directories without reporting `EISDIR`.
+- Container agents now receive the admitted Container placement, Docker/Podman engine, network mode
+  and guest workspace root in their system environment while the host bind source remains private.
 - Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
   scope for automatic command review instead of forcing manual approval through missing evidence.
 - Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now
@@ -47,6 +90,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   independent startup, discovery and reconnection without changing run scratch paths.
 - Simple Podman isolation accepts Podman's unprefixed 64-character local image IDs when resolving
   the development runtime image, instead of reporting an invalid image id after a successful build.
+- Runtime carrier and final-image builds bypass OCI builder caches so a current-source or release
+  build cannot silently retain an older compiled guest through a stale cross-stage `COPY` layer.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
 
 ## [0.2.0] - 2026-09-07

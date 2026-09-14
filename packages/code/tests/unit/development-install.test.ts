@@ -22,6 +22,7 @@ import {
   DEVELOPMENT_LAUNCHER_MARKER,
   DEVELOPMENT_RUNTIME_IMAGE,
   developmentInstallHelp,
+  developmentRuntimeArtifactArgv,
   developmentRuntimeBuildArgv,
   installDevelopmentLauncher,
   parseDevelopmentInstallArgs,
@@ -60,7 +61,7 @@ test("development install arguments keep cleaning and removal explicit", () => {
   );
   expect(developmentInstallHelp()).toContain("clarvis-develop --clear");
   expect(developmentInstallHelp()).toContain("clarvis-develop --empty-workspace");
-  expect(developmentInstallHelp()).toContain("clarvis-runtime:development");
+  expect(developmentInstallHelp()).toContain("clarvis-base:local");
   expect(developmentInstallHelp()).toContain("Docker and Podman");
 });
 
@@ -235,7 +236,7 @@ test("container engine detection treats Docker and Podman independently", () => 
   ).toEqual(["docker", "podman"]);
 });
 
-test("development install builds the local runtime image for each available engine", () => {
+test("development install builds the local runtime base and Kernel artifact for each engine", () => {
   const bun = "/opt/bun";
   const repository = "/repo";
   const calls: string[][] = [];
@@ -265,14 +266,19 @@ test("development install builds the local runtime image for each available engi
     skipped: ["docker"],
     failed: [],
   });
-  expect(calls).toEqual([developmentRuntimeBuildArgv(bun, "podman")]);
+  expect(calls).toEqual([
+    developmentRuntimeBuildArgv(bun, "podman"),
+    developmentRuntimeArtifactArgv(bun, "podman"),
+  ]);
   expect(calls[0]).toEqual([
     bun,
     "run",
-    "runtime:build:dev",
-    "--",
+    "runtime:base:build",
     "--engine",
     "podman",
+    "--target",
+    process.arch === "arm64" ? "linux-arm64" : "linux-x64",
+    "--tag",
     DEVELOPMENT_RUNTIME_IMAGE,
   ]);
 
@@ -298,6 +304,7 @@ test("development install builds the local runtime image for each available engi
   expect(calls).toEqual([
     developmentRuntimeBuildArgv(bun, "docker"),
     developmentRuntimeBuildArgv(bun, "podman"),
+    developmentRuntimeArtifactArgv(bun, "podman"),
   ]);
 
   expect(() =>
@@ -310,5 +317,5 @@ test("development install builds the local runtime image for each available engi
       },
       log,
     }),
-  ).toThrow("development runtime image build failed through docker");
+  ).toThrow("development runtime base build failed through docker");
 });

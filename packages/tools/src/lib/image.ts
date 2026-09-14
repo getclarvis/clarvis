@@ -50,3 +50,46 @@ export function sniffImageMime(buf: Buffer): string | null {
   }
   return null;
 }
+
+function crc32(bytes: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function validPng(buf: Buffer): boolean {
+  let offset = 8;
+  let chunks = 0;
+  let hasImageData = false;
+  while (offset <= buf.length - 12) {
+    const length = buf.readUInt32BE(offset);
+    const end = offset + 12 + length;
+    if (end > buf.length) return false;
+    const type = buf.subarray(offset + 4, offset + 8).toString("ascii");
+    if (
+      crc32(buf.subarray(offset + 4, offset + 8 + length)) !== buf.readUInt32BE(offset + 8 + length)
+    )
+      return false;
+    if (chunks === 0 && (type !== "IHDR" || length !== 13)) return false;
+    if (type === "IDAT") hasImageData = true;
+    chunks += 1;
+    offset = end;
+    if (type === "IEND") return length === 0 && hasImageData && offset === buf.length;
+  }
+  return false;
+}
+
+/**
+ * Reject image bytes whose recognized container is structurally corrupt.
+ *
+ * @remarks PNG validation walks the complete chunk stream and verifies every
+ * CRC so a signature-only file cannot enter model history and poison later
+ * provider calls. The other admitted formats retain their existing signature
+ * contract until their decoders are owned here.
+ */
+export function imageBytesAreValid(buf: Buffer, mimeType: string): boolean {
+  return mimeType !== "image/png" || validPng(buf);
+}

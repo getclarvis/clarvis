@@ -80,7 +80,8 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     skillExecutionRoots: [],
     readOnly: false,
     confineToWorkspace: true,
-    stateRoot: workspaceStatePaths(root).root,
+    stateRoot: (overrides.statePaths ?? workspaceStatePaths(root)).root,
+    statePaths: workspaceStatePaths(root),
     temporaryRoots: [],
     gitMetadataPaths: [],
     registerTemporaryRoot() {},
@@ -147,7 +148,7 @@ export function writeBinary(root: string, rel: string): string {
 }
 
 const MINIMAL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQAY3Y2wAAAAAElFTkSuQmCC",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
   "base64",
 );
 

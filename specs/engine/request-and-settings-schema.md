@@ -426,6 +426,21 @@ runtime (`canSpawnChildren`/`shape.isLead`), which is [grants-and-tool-exposure]
 
 ### 4.5 Provider rules (`provider-rules.ts`)
 
+When `validateBody` receives `modelExecutionResolver`, request `providers` must be empty. Profile,
+vision and reviewer references must resolve to the exact requested pair; unknown or mismatched pairs
+fail closed, including aliases. Provider kind for reasoning-summary validation comes from catalog
+metadata. The native rules below apply when no resolver is supplied; native URL and subscription
+validation remain unchanged. Production: [`validateBody`](../../packages/loop/src/validation/request-schema.ts),
+[`requireModelExecution`](../../packages/loop/src/model-execution.ts) and
+[`enforcePerProfileRules`](../../packages/loop/src/validation/request/profile-rules.ts).
+Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts).
+
+The host settings assembler's optional resolver checks the entry and delegated closure, default
+vision target and explicit reviewer before emitting an empty provider array. Without it, provider
+declarations survive assembly. Production: [`createSettingsRunAssembler`](../../packages/kernel/src/runs/settings-assembler.ts).
+Test: [`settings-assembler-model-execution.test.ts`](../../packages/kernel/tests/component/settings-assembler-model-execution.test.ts)
+and [`settings-assembler.test.ts`](../../packages/kernel/tests/component/settings-assembler.test.ts).
+
 `rejectProviderConfigIssues` (`packages/loop/src/validation/request/provider-rules.ts`):
 returns immediately when `providers` is empty; else, for each entry: rejects a repeated `name`
 (`duplicate_provider_name`); rejects a `base_url` that is not a well-formed `http(s)` URL
@@ -573,9 +588,9 @@ falls back to `basePrompt` only when the body is empty/whitespace-only.
 
 `build(opts)` in `packages/loop/src/validation/ajv.ts` is the one place that actually instantiates
 an Ajv instance and registers `ajv-formats`; both public factories call it. `load()` normally
-resolves those CommonJS modules only on first use. The isolated worker's standalone composition
-instead calls `installBundledAjvModules` from `tooling/runtime/guest-entry.ts` before starting the
-worker, so Bun can close the modules into one executable without changing the native host's lazy
+resolves those CommonJS modules only on first use. The Container Kernel's standalone composition
+instead calls `installBundledAjvModules` from `tooling/runtime/kernel-entry.ts` before serving the
+Kernel, so Bun can close the modules into one executable without changing the native host's lazy
 path. `createAjv()` (`{ strict: false, allErrors: true }`) and `createStrictAjv()` (the same plus
 `strictSchema: true`) differ by exactly that one option, but serve two different
 purposes at two unrelated call sites: `createAjv` is the **only** call in
@@ -628,13 +643,13 @@ Production: `packages/loop/src/validation/request/identity-rules.ts`. Test:
 the `load()` function, deferred past module evaluation, never at the top level — so an ordinary host
 that merely reaches this module (e.g. the terminal UI, through delegation, on its boot path) does
 not pay the cost unless a validator is actually built. The only eager alternative is explicit
-composition: the standalone guest entry statically imports both modules, installs them with
-`installBundledAjvModules`, and only then calls `startGuestMain`.
+composition: the standalone Container Kernel entry statically imports both modules, installs them
+with `installBundledAjvModules`, and only then calls `serveContainerKernel`.
 Production: `load` and `installBundledAjvModules` in
-`packages/loop/src/validation/ajv.ts`; `tooling/runtime/guest-entry.ts`. Test:
+`packages/loop/src/validation/ajv.ts`; `tooling/runtime/kernel-entry.ts`. Test:
 `packages/loop/tests/architecture/eager-validator-boundary.test.ts` (walks the TypeScript AST and
 asserts every fallback `require(...)` call is nested inside a function) and
-`tooling/tests/architecture/runtime-containerfiles.test.ts` (pins the standalone composition).
+`tooling/tests/architecture/container-native-composition.test.ts` (pins the standalone composition).
 
 **INV-RS-01.** The built-in request schema and the hand-authored `RunRequest` type both carry the
 same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
@@ -774,7 +789,7 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   behind these consts is owned by other documents (hooks-execution, grants-and-tool-exposure,
   `@clarvis/supervision`'s `agentsSettingsSpec`).
 - `ajv` / `ajv-formats` — lazy fallback resolution for ordinary hosts; statically supplied only by
-  the standalone isolated-worker composition root (INV-073).
+  the standalone Container Kernel composition root (INV-073).
 
 **Depended on by** (all runtime, via the package's export map — never a raw `src/` path from outside
 the package):

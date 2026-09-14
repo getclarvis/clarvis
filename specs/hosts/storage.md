@@ -29,15 +29,14 @@ Stable logical categories are `traces`, `sessions`, `workflow_records`, `project
 `memory`, `plans`, `diagnostics`, `run_scratch`, `workspace_state`, and `cache`. A row
 contains no pathname and no persisted content.
 
-Docker's content-addressed recipe images/base aliases and both engines' persistent `/mise` caches are engine-owned
-objects rather than paths under the Clarvis global root. They are therefore deliberately absent from
-this filesystem inventory and from `StorageService.cleanup`; the service must not imply it measured
-or removed engine storage. The isolated-runtime contract owns their labels, opaque identities and
-lifecycle.
-Production: `prepareMiseCache` in `packages/kernel/src/runtime/container-mise-cache.ts`; inspection roots
-in `packages/kernel/src/storage/storage-service.ts`. Test:
-`packages/kernel/tests/unit/runtime-docker-backend.test.ts`,
-`packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts` and
+Container base/recipe images, artifact/data/mise volumes and disposable Containers are engine-owned
+objects rather than paths under the host Clarvis global root. They are absent from this filesystem
+inventory and `StorageService.cleanup`; the service must not imply it measured or removed engine
+storage. Production: `prepareContainerVolumes` in
+`packages/kernel/src/runtime/container-volumes.ts` and inspection roots in
+`packages/kernel/src/storage/storage-service.ts`. Test:
+`packages/kernel/tests/unit/container-volumes.test.ts`,
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts` and
 `packages/kernel/tests/integration/storage-service.test.ts`.
 
 Git worktree checkout roots are outside this inventory and cleanup service. Code selects or creates
@@ -49,14 +48,13 @@ Production: `CATEGORIES` and the inspection roots in
 `packages/kernel/tests/integration/storage-service.test.ts` and
 `packages/code/tests/integration/worktree-bootstrap.test.ts`.
 
-The per-workspace `runtimes/` state tree contains only host-accepted execution checkpoints grouped
-by generation. The selected workspace/worktree is mounted in place and is not copied into that tree;
-there is no runtime registry, baseline, apply journal, transaction staging or lifecycle record for
-storage cleanup to interpret. Production: `WorkspaceStatePaths` and `workspaceStatePaths` in
-`packages/paths/src/workspace-state.ts`; `appendRuntimeCheckpoint` in
-`packages/kernel/src/runtime/runtime-checkpoints.ts`. Test:
-`packages/paths/tests/component/workspace-state.test.ts` and
-`packages/kernel/tests/integration/runtime-checkpoints.test.ts`.
+Container process registry and host lease live under `containerLaunchPaths(namespace)` and carry only
+generation/engine/Container/base/artifact lifecycle identity. Domain state lives in the guest state
+volume; the selected workspace is mounted in place and is never copied into host runtime state.
+Production: `containerLaunchPaths` in `packages/paths/src/container.ts` and
+`launchContainerKernel` in `packages/kernel/src/hosting/container-host-launcher.ts`. Test:
+`packages/paths/tests/unit/container.test.ts` and
+`packages/kernel/tests/integration/container-launcher.test.ts`.
 
 ## Inventory boundaries
 

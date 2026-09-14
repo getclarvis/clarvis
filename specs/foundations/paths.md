@@ -38,6 +38,34 @@ system*, not by convention: `WorkspacePaths` (`packages/paths/src/workspace.ts`)
 key for any of that machinery, so writing it into a repository is a compile error rather than a
 possibility to remember to avoid (`packages/paths/src/workspace.ts`).
 
+### Container path vocabulary
+
+`containerLaunchPaths(namespace, globalDir?)` places only the host launch lease (`launch.lock`) and
+process registry (`registry.json`) under `<global>/state/container-hosts/<namespace>`. It does not
+create directories, publish an endpoint or resolve credentials. `containerDataVolumeNames` returns
+`clarvis-data-v1-<namespace>-content` and `clarvis-data-v1-<namespace>-state`;
+`containerArtifactVolumeName` returns `clarvis-artifact-v1-<archive-sha256>`. Both identities must be
+full, bare lowercase SHA-256 hashes; truncation, digest prefixes and path syntax are rejected.
+No generation, product version or engine parameter participates in these name builders.
+
+`containerGuestPaths` is immutable Linux-guest vocabulary: workspace `/workspace`, private content
+under its Clarvis directory, the shared-agent mask under its agents directory, global root
+`/var/lib/clarvis`, home `/var/lib/clarvis/home`, Git metadata
+`/var/lib/clarvis/git-metadata` with common root beneath it, artifact `/opt/clarvis` and its
+`bin/clarvis-kernel` entry, payload subpath `payload`, mise `/mise` and temporary root `/tmp`.
+These virtual names use POSIX composition, never the launcher's native Windows path syntax.
+Kernel owns namespace derivation and validation of volume labels, ownership and lifecycle; these
+pure helpers do not authorize any mount or data deletion.
+
+Production: `containerLaunchPaths`, `containerDataVolumeNames`, `containerArtifactVolumeName` and
+`containerGuestPaths` in [container.ts](../../packages/paths/src/container.ts).
+Test: [container.test.ts](../../packages/paths/tests/unit/container.test.ts) checks exact names,
+role separation, canonical identity refusal and fixed guest paths independently of host separators.
+The Kernel's `containerGitDirectoryTarget` maps a host-native linked-worktree path beneath this
+fixed common root and `prepareRuntimeMounts` writes the guest-only `.git` indirection. Test:
+[runtime-mounts.test.ts](../../packages/kernel/tests/unit/runtime-mounts.test.ts) and
+[git-workspace.test.ts](../../packages/kernel/tests/integration/git-workspace.test.ts).
+
 ## 2. Surface
 
 ### 2.1 Exports map
@@ -223,6 +251,10 @@ builder tests do not qualify native IPC behavior.
 | `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts` |
 
+`agentsWorkspaceDir(root?)` returns the complete `<ws>/.agents` control root. Container mount policy
+uses this root together with `workspacePaths(root).clarvisDir`; it does not reconstruct either
+literal or enumerate their children outside `@clarvis/paths`.
+
 Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
 than deprecated so that writing generated bookkeeping into someone's working tree is a compile
 error rather than a convention." (`packages/paths/src/workspace.ts`). The one residue kept is transient: an
@@ -261,8 +293,6 @@ record (`packages/paths/src/workspace-state.ts`) rooted at `<global>/state/works
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
 | `runtimeDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>` | `WorkspaceStatePaths.runtimeDir`, `workspaceStatePaths` |
-| `runtimeCheckpointsDir(runtimeId)` | `<runtime>/checkpoints` | `WorkspaceStatePaths.runtimeCheckpointsDir`, `workspaceStatePaths` |
-| `runtimeCheckpointFile(runtimeId, executionId)` | `<runtime>/checkpoints/<ownerSegment(executionId)>.json` | `WorkspaceStatePaths.runtimeCheckpointFile`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts` |
 | `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts` |
@@ -418,6 +448,16 @@ real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflo
 `extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
+That writer inventory is not a Container visibility allow-list. Docker/Podman covers
+`<ws>/.clarvis` with its private persistent content volume, overlays only the canonical Plans and
+Memory directories read-write, and covers `<ws>/.agents` with an empty read-only mask. Exact
+owner-scoped session, workflow and trace directories plus workspace machinery are overlaid below
+the private state volume so Host/Sandbox and Container use one durable domain history. Mask sources are host-created outside the selected workspace and removed after
+launch failure or teardown. Production:
+`agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
+`packages/kernel/src/runtime/container-mounts.ts`. Test:
+`packages/kernel/tests/unit/runtime-mounts.test.ts`.
+
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts`):
 ```
 .gitignore
@@ -449,7 +489,7 @@ and `cache/` (`models-dev.json`, `update-check.json`)
 `<global>/state/workspaces/<segment>/`, where `segment = ownerSegment(ownerFromWorkspace(root))`
 (`packages/paths/src/workspace-state.ts`). Under it: `local/` (prompt history, `code.json`, `extension-profile.json`, `diagnostics/`,
 monitor sidecars/logs/exits, shell spills, tool-output spills), `memory/` (the wiki's machinery —
-delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), and
+delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), `trace-locks/` (cross-process trace coordination), and
 `owners/<seg>/{memory,plans}` for a multi-owner deployment. "Nothing here is seeded with a
 `.gitignore`: this tree is not inside anyone's repository, which is the entire point of it."
 (`packages/paths/src/workspace-state.ts`). Confirmed present at runtime by the kernel test:

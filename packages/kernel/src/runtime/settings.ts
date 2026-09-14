@@ -55,7 +55,6 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
       limits: defaultedLimits,
       executable: z.string().min(1).optional(),
       connection: z.string().min(1).optional(),
-      fallback: z.enum(["sandbox", "fail"]).default("sandbox"),
       recipe: runtimeRecipe.optional(),
     })
     .strict(),
@@ -76,19 +75,6 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
 
 export type RuntimeSettingsInput = z.input<typeof runtimeSettingsSchema>;
 export type RuntimeSettingsBlock = z.output<typeof runtimeSettingsSchema>;
-
-type ResolvedEngineSettings<Backend extends "docker" | "podman"> = Omit<
-  Extract<RuntimeSettingsBlock, { backend: Backend }>,
-  "image_digest" | "executable" | "connection"
-> & {
-  image_digest: string;
-  executable: string;
-  connection: string;
-};
-
-/** A container block after host-local executable, context and image resolution. */
-export type ResolvedContainerRuntimeSettings =
-  ResolvedEngineSettings<"podman"> | ResolvedEngineSettings<"docker">;
 
 /** Kernel-owned last-wins runtime placement block; plugins cannot contribute it. */
 export const runtimeSettingsSpec: CapabilitySettingsSpec = {

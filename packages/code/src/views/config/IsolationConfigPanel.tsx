@@ -10,7 +10,6 @@ import {
   applyIsolation,
   isolationConfirmation,
   isolationPlacementLines,
-  isContainerIsolation,
   ISOLATION_CHOICES,
   type IsolationChoice,
 } from "../../features/run/isolation.ts";
@@ -32,8 +31,8 @@ export interface IsolationConfigDeps {
   settings: SettingsAdapter;
   notify: (message: string) => void;
   runActive: () => boolean;
+  reload: () => Promise<{ ok: boolean; message: string }>;
   openSandbox: () => void;
-  retryRuntime?: () => void;
 }
 
 /**
@@ -57,7 +56,13 @@ export function IsolationConfigPanel(host: ViewHost, deps: IsolationConfigDeps):
     if (confirmation && !(await host.confirm(confirmation))) return;
     try {
       const effective = await applyIsolation(value, deps.settings);
-      if (isContainerIsolation(value)) deps.retryRuntime?.();
+      if (!deps.runActive()) {
+        const reloaded = await deps.reload();
+        if (!reloaded.ok) {
+          deps.notify(`isolation saved, pending reconnect: ${reloaded.message}`);
+          return;
+        }
+      }
       deps.notify(
         `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );

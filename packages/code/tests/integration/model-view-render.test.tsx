@@ -24,7 +24,10 @@ const PROVIDERS = [
 
 function mount(
   withProviders = true,
-  safety?: Pick<Parameters<typeof ModelView>[1], "runActive" | "inspectContext" | "fitContext">,
+  safety?: Pick<
+    Parameters<typeof ModelView>[1],
+    "runActive" | "inspectContext" | "fitContext" | "reload"
+  >,
   writeError?: Error,
 ) {
   const { keymap, press } = createFakeKeymap();
@@ -247,6 +250,37 @@ test("Enter writes the model and resets effort to a compatible balanced level", 
   expect(notes[0]).toContain("default model: openrouter/deepseek-chat");
   expect(notes[0]).toContain("effort: medium (workspace)");
   expect(t.captureCharFrame()).toContain("(◉) openrouter/deepseek-chat");
+  t.renderer.destroy();
+});
+
+test("a Container model change applies the saved projection through one reload", async () => {
+  let reloads = 0;
+  const { view, press, notes } = mount(true, {
+    reload: async () => {
+      reloads += 1;
+      return { ok: true, message: "reloaded" };
+    },
+  });
+  const t = await openRender(view as never, { width: 100, height: 20 });
+  await t.renderOnce();
+  press("down");
+  press("return");
+  await Bun.sleep(0);
+  expect(reloads).toBe(1);
+  expect(notes.some((note) => note.includes("pending reconnect"))).toBe(false);
+  t.renderer.destroy();
+});
+
+test("a refused Container reload reports the committed model as pending", async () => {
+  const { view, press, notes } = mount(true, {
+    reload: async () => ({ ok: false, message: "activity is still draining" }),
+  });
+  const t = await openRender(view as never, { width: 100, height: 20 });
+  await t.renderOnce();
+  press("down");
+  press("return");
+  await Bun.sleep(0);
+  expect(notes).toContain("default model saved, pending reconnect: activity is still draining");
   t.renderer.destroy();
 });
 

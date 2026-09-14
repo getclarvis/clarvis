@@ -216,12 +216,6 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         requireLocalHost(services).respondBrowser(p.request_id as string, p.opened as boolean),
     },
-    retryRuntime: {
-      method: "localHost.retryRuntime",
-      metadata: write(),
-      encode: () => ({}),
-      invoke: (services) => requireLocalHost(services).retryRuntime(),
-    },
     requestRestart: {
       method: "localHost.requestRestart",
       metadata: write(),
@@ -329,7 +323,7 @@ export const OPERATIONS = {
       metadata: read(),
       encode: (executionId, targetWindowTokens) => ({
         execution_id: executionId,
-        ...(targetWindowTokens !== undefined ? { target_window_tokens: targetWindowTokens } : {}),
+        target_window_tokens: targetWindowTokens,
       }),
       invoke: (services, p) =>
         services.runs.context(

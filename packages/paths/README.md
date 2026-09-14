@@ -64,10 +64,16 @@ platform helper lives here rather than in the capability contract because its ca
 the host operating system.
 
 ```ts
-import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import {
+  agentsWorkspaceDir,
+  globalPaths,
+  workspacePaths,
+  workspaceStatePaths,
+} from "@clarvis/paths";
 
 const ws = workspacePaths("/work/repo");
 ws.plansRoot; //                /work/repo/.clarvis/plans
+agentsWorkspaceDir("/work/repo"); // /work/repo/.agents
 
 const st = workspaceStatePaths("/work/repo");
 st.monitorSidecar("mon_ab"); // ~/.clarvis/state/workspaces/ws_<sha256>/local/monitor-mon_ab.json
@@ -113,7 +119,7 @@ always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
 history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roots, monitor sidecars and logs, shell and tool-result spills), the memory
-wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segment is
+wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
@@ -135,13 +141,18 @@ the workspace one, where `settings.json` and `agents/` have always sat at the ro
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.
 
-`.agents` is not one uniformly read-only tree. Standalone skills and marketplace documents remain
-foreign/user-authored inputs, while `.agents/plugins/<name>/` is a first-class plugin inventory
+`.agents` is not one uniformly read-only tree in native composition. Standalone skills and
+marketplace documents remain foreign/user-authored inputs, while `.agents/plugins/<name>/` is a
+first-class plugin inventory
 beside `.clarvis/plugins/<name>/`. `agentsPluginsDirs()` returns its global and workspace roots;
 managed global installs may target either global convention, and both workspace plugin roots remain
 repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
+Container uses `agentsWorkspaceDir()` as a complete control-root mask target and covers
+`workspacePaths().clarvisDir` with its private content volume. Kernel then overlays only the exact
+Plans and Memory descendants selected through the path vocabulary; the mask builder itself does not
+enumerate descendants.
 
 Definition and selection ownership is specified in
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
@@ -373,6 +384,21 @@ Three of these exist because the code path they describe resolves to a boolean n
 `paths.spill_sweep`'s `truncated` is the same class: `sweepSpillDir` stops at 10,000 entries and
 returns `void`, so a workspace past that threshold would otherwise stop being swept silently and
 permanently.
+
+## Container namespaces
+
+`containerLaunchPaths(namespace, globalDir?)` resolves the host-only launch lease and registry under
+`state/container-hosts/<namespace>`. It exposes no local-host endpoint or credential path.
+`containerDataVolumeNames(namespace)` separates the persistent `content` and `state` roles;
+`containerArtifactVolumeName(archiveSha256)` addresses the independent immutable artifact volume.
+These helpers require full bare lowercase SHA-256 identities and perform no filesystem or engine
+mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even when the launcher
+runs on a different platform. It includes the private Git metadata/common roots used when a Windows
+or POSIX host's linked-worktree indirection must be rewritten for the Linux guest. Namespace
+derivation, volume admission and lifecycle belong to Kernel.
+Kernel uses these builders to bind only canonical native domain stores into a Container: Plans and
+Memory content/machinery, owner-scoped sessions/workflow records/trace records, and trace locks.
+Configuration, credentials, extensions, local UI state and other owners are not part of that map.
 
 ## Owner segments
 

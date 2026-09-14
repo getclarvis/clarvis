@@ -3,6 +3,8 @@ import type {
   LocalKernelLaunchOptions,
   RemoteSshKernelOptions,
   RuntimePlacementNotice,
+  ConnectLocalContainerKernelOptions,
+  LaunchedContainerKernel,
 } from "@clarvis/kernel/bootstrap";
 import { ownerFromWorkspace } from "@clarvis/paths";
 import type { KernelClient, LocalHostStatus, WorkspaceRef } from "@clarvis/protocol";
@@ -12,6 +14,9 @@ import { sanitizeErrorMessage } from "@clarvis/kernel/policy";
 import type { ReconnectMode } from "./connection-state.ts";
 import { encodeRemoteKernelArguments } from "./remote-kernel-arguments.ts";
 import { codeHostEnvironment } from "./host-kernel-options.ts";
+import { composeContainerClient } from "./container-client.ts";
+import { productVersion } from "../cli-args.ts";
+import { resolveClarvisContainerRelease } from "./runtime-image.ts";
 
 type ExtensionDriftNotice = NonNullable<LocalHostStatus["extension_drift"]>;
 
@@ -25,9 +30,54 @@ async function connectRemoteKernel(options: RemoteSshKernelOptions) {
   return connectRemoteKernelOverSsh(options);
 }
 
+async function connectContainerKernel(options: ConnectLocalContainerKernelOptions) {
+  const { connectLocalContainerKernel } = await import("@clarvis/kernel/bootstrap");
+  const launched = await connectLocalContainerKernel(options);
+  return composeLaunchedContainerConnection(launched);
+}
+
+/** Compose one admitted launch and retire all of its resources if validation fails. */
+export async function composeLaunchedContainerConnection(launched: LaunchedContainerKernel) {
+  try {
+    const runtime = launched.client.capabilities.runtime;
+    if (runtime?.kind !== "container")
+      throw new Error("Container Kernel did not report Container placement");
+    const configurationListeners = new Set<
+      (kind: "settings" | "agents" | "context" | "models") => void
+    >();
+    return {
+      client: composeContainerClient({
+        execution: launched.client,
+        operator: launched.operator,
+        project: launched.project,
+        workspace: launched.workspace,
+        principal: launched.client.principal,
+        capabilities: { ...launched.client.capabilities, runtime },
+        dispose: () => launched.close(),
+        onConfigurationSaved: (kind) => {
+          for (const listener of configurationListeners) listener(kind);
+        },
+      }),
+      closed: launched.closed,
+      subscribeConfigurationSaved: (
+        listener: (kind: "settings" | "agents" | "context" | "models") => void,
+      ) => {
+        configurationListeners.add(listener);
+        return () => configurationListeners.delete(listener);
+      },
+    };
+  } catch (error) {
+    await launched.close();
+    throw error;
+  }
+}
+
 interface WorkspaceConnection {
   client: KernelClient;
   closed?: Promise<string>;
+  subscribeConfigurationSaved?: (
+    listener: (kind: "settings" | "agents" | "context" | "models") => void,
+  ) => () => void;
 }
 
 export interface ManagedWorkspaceClient {
@@ -36,14 +86,38 @@ export interface ManagedWorkspaceClient {
   release(): Promise<void>;
 }
 
+/** Identify only the connector's typed live-Container ownership conflict. */
+export function isContainerKernelOwnershipConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("details" in error)) return false;
+  const details = error.details;
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "kind" in details &&
+    details.kind === "container_kernel_owned"
+  );
+}
+
 /** Operator-selected process identity and client-local browser authority; no callbacks cross RPC. */
 export interface WorkspaceClientOptions extends Pick<
   CreateFileKernelOptions,
-  "workspaceRoot" | "globalDir" | "defaultOwner" | "extensionProfileSelector" | "logger"
+  "workspaceRoot" | "defaultOwner" | "extensionProfileSelector" | "logger"
 > {
+  globalDir: string;
   openMcpAuthorizationUrl?: (url: string) => Promise<boolean>;
-  /** Operator-selected SSH target. Its Clarvis installation owns config, credentials and state. */
-  remote?: { destination: string; workspace: string; executable?: string };
+  onContainerProgress?: ConnectLocalContainerKernelOptions["onProgress"];
+  /** One-shot interactive decision to retire the exact registered Container Kernel. */
+  containerOwnershipConflict?: "refuse" | "terminate";
+  /** Explicit process destination. Omission resolves local versus Container from operator settings. */
+  destination?:
+    | { readonly kind: "local" }
+    | {
+        readonly kind: "ssh";
+        readonly destination: string;
+        readonly workspace: string;
+        readonly executable?: string;
+      }
+    | { readonly kind: "container" };
 }
 
 /** Process discovery ports, injectable without replacing module-global transports. */
@@ -51,6 +125,159 @@ export interface WorkspaceClientDependencies {
   resolveArtifact?: typeof resolveLocalKernelArtifact;
   connectHost?: (options: LocalKernelLaunchOptions) => Promise<{ client: KernelClient }>;
   connectRemoteHost?: (options: RemoteSshKernelOptions) => Promise<WorkspaceConnection>;
+  connectContainerHost?: (
+    options: ConnectLocalContainerKernelOptions,
+  ) => Promise<WorkspaceConnection>;
+  resolveContainerRelease?: typeof resolveClarvisContainerRelease;
+}
+
+type WorkspaceDestination = NonNullable<WorkspaceClientOptions["destination"]>;
+
+interface WorkspaceConnectionPlan {
+  readonly destination: WorkspaceDestination;
+  readonly defaultOwner: string;
+  readonly connectHost: () => Promise<WorkspaceConnection>;
+}
+
+async function selectedDestination(options: WorkspaceClientOptions): Promise<WorkspaceDestination> {
+  if (options.destination !== undefined) return options.destination;
+  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
+  const operator = createOperatorServices({
+    workspaceRoot: options.workspaceRoot,
+    globalDir: options.globalDir,
+    logger: options.logger,
+    subscriptions: false,
+  });
+  try {
+    const runtime = operator.configStore.readSettings().operator_merged?.runtime;
+    return typeof runtime === "object" &&
+      runtime !== null &&
+      "backend" in runtime &&
+      (runtime.backend === "docker" || runtime.backend === "podman")
+      ? { kind: "container" }
+      : { kind: "local" };
+  } finally {
+    await operator.close();
+  }
+}
+
+/** Read whether startup is currently pinned to a Container engine without opening a Kernel. */
+export async function isContainerWorkspaceDestination(
+  options: WorkspaceClientOptions,
+): Promise<boolean> {
+  return (await selectedDestination(options)).kind === "container";
+}
+
+async function connectionPlan(
+  options: WorkspaceClientOptions,
+  deps: WorkspaceClientDependencies,
+  requestedDestination?: WorkspaceDestination,
+): Promise<WorkspaceConnectionPlan> {
+  const destination = requestedDestination ?? (await selectedDestination(options));
+  const selector = options.extensionProfileSelector;
+  if (destination.kind === "local") {
+    const artifact = await (deps.resolveArtifact ?? resolveLocalKernelArtifact)();
+    const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
+    const launch: LocalKernelLaunchOptions = {
+      ...artifact,
+      artifactId: artifact.artifactId + ":" + (selector ?? "selected"),
+      workspaceRoot: options.workspaceRoot,
+      globalDir: options.globalDir,
+      owner: defaultOwner,
+      logger: options.logger,
+      environment: codeHostEnvironment({
+        ...process.env,
+        CLARVIS_HOST_EXTENSION_PROFILE: selector,
+      }),
+    };
+    const connect = deps.connectHost ?? connectLocalKernel;
+    return { destination, defaultOwner, connectHost: () => connect(launch) };
+  }
+  if (destination.kind === "ssh") {
+    const payload = encodeRemoteKernelArguments({
+      workspaceRoot: destination.workspace,
+      ...(selector === undefined ? {} : { extensionProfileSelector: selector }),
+    });
+    const launch: RemoteSshKernelOptions = {
+      destination: destination.destination,
+      workspace: destination.workspace,
+      remoteCommand: [destination.executable ?? "clarvis", "--remote-kernel", payload],
+      logger: options.logger,
+    };
+    const connect = deps.connectRemoteHost ?? connectRemoteKernel;
+    return { destination, defaultOwner: "", connectHost: () => connect(launch) };
+  }
+  const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
+  const connect = deps.connectContainerHost ?? connectContainerKernel;
+  const resolveRelease = deps.resolveContainerRelease ?? resolveClarvisContainerRelease;
+  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
+  const operator = createOperatorServices({
+    workspaceRoot: options.workspaceRoot,
+    globalDir: options.globalDir,
+    logger: options.logger,
+    subscriptions: false,
+  });
+  let runtime: unknown;
+  try {
+    runtime = operator.configStore.readSettings().operator_merged?.runtime;
+  } finally {
+    await operator.close();
+  }
+  if (
+    typeof runtime !== "object" ||
+    runtime === null ||
+    !("backend" in runtime) ||
+    (runtime.backend !== "docker" && runtime.backend !== "podman")
+  )
+    throw new Error("Container destination requires a Docker or Podman runtime setting");
+  const containerRuntime = runtime as ConnectLocalContainerKernelOptions["runtime"];
+  return {
+    destination,
+    defaultOwner,
+    connectHost: async () => {
+      return connect({
+        workspaceRoot: options.workspaceRoot,
+        globalDir: options.globalDir,
+        owner: defaultOwner,
+        runtime: containerRuntime,
+        resolveRelease: (target, signal) =>
+          resolveRelease({ currentVersion: productVersion(), target, signal }),
+        logger: options.logger,
+        environment: process.env,
+        ...(options.onContainerProgress === undefined
+          ? {}
+          : { onProgress: options.onContainerProgress }),
+        ...(options.containerOwnershipConflict === undefined
+          ? {}
+          : { ownershipConflict: options.containerOwnershipConflict }),
+      });
+    },
+  };
+}
+
+async function admitConnection(
+  plan: WorkspaceConnectionPlan,
+  client: KernelClient,
+  expectedOwner?: string,
+): Promise<string> {
+  if (plan.destination.kind === "local") {
+    if (client.localHost === undefined)
+      throw new Error("workspace host does not advertise local application controls");
+    if (expectedOwner !== undefined && plan.defaultOwner !== expectedOwner)
+      throw new Error("workspace host identity changed during reconnect");
+    return plan.defaultOwner;
+  }
+  if (client.localHost !== undefined)
+    throw new Error("remote workspace host unexpectedly exposes machine-local controls");
+  const advertised = client.capabilities.hosting?.default_owner ?? "";
+  if (advertised.length === 0)
+    throw new Error("remote workspace host does not advertise its session namespace");
+  if (
+    (plan.destination.kind === "container" && advertised !== plan.defaultOwner) ||
+    (expectedOwner !== undefined && advertised !== expectedOwner)
+  )
+    throw new Error("remote workspace host identity changed during reconnect");
+  return advertised;
 }
 
 /**
@@ -71,12 +298,15 @@ export class WorkspaceClientManager {
   private readonly browserAttempts = new Set<string>();
   private readonly retiringClients = new WeakSet<KernelClient>();
   private reconnecting: { mode: ReconnectMode; task: Promise<void> } | undefined;
+  private stopConfigurationObservation: (() => void) | undefined;
 
   private constructor(
     private kernel: KernelClient,
     private readonly options: WorkspaceClientOptions,
-    readonly defaultOwner: string,
-    private readonly connectHost: () => Promise<WorkspaceConnection>,
+    private readonly deps: WorkspaceClientDependencies,
+    private destination: WorkspaceDestination,
+    public defaultOwner: string,
+    private connectHost: () => Promise<WorkspaceConnection>,
     closed?: Promise<string>,
   ) {
     this.observePhysicalClose(kernel, closed);
@@ -86,73 +316,33 @@ export class WorkspaceClientManager {
     options: WorkspaceClientOptions,
     deps: WorkspaceClientDependencies = {},
   ): Promise<WorkspaceClientManager> {
-    const selector = options.extensionProfileSelector;
-    let connectHost: () => Promise<WorkspaceConnection>;
-    let defaultOwner: string;
-    if (options.remote === undefined) {
-      const artifact = await (deps.resolveArtifact ?? resolveLocalKernelArtifact)();
-      defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
-      const launch: LocalKernelLaunchOptions = {
-        ...artifact,
-        artifactId: artifact.artifactId + ":" + (selector ?? "selected"),
-        workspaceRoot: options.workspaceRoot,
-        globalDir: options.globalDir,
-        owner: defaultOwner,
-        logger: options.logger,
-        environment: codeHostEnvironment({
-          ...process.env,
-          CLARVIS_HOST_EXTENSION_PROFILE: selector,
-        }),
-      };
-      const local = deps.connectHost ?? connectLocalKernel;
-      connectHost = () => local(launch);
-    } else {
-      const remote = options.remote;
-      const payload = encodeRemoteKernelArguments({
-        workspaceRoot: remote.workspace,
-        ...(selector === undefined ? {} : { extensionProfileSelector: selector }),
-      });
-      const launch: RemoteSshKernelOptions = {
-        destination: remote.destination,
-        workspace: remote.workspace,
-        remoteCommand: [remote.executable ?? "clarvis", "--remote-kernel", payload],
-        logger: options.logger,
-      };
-      const connect = deps.connectRemoteHost ?? connectRemoteKernel;
-      connectHost = () => connect(launch);
-      defaultOwner = "";
-    }
-    const connection = await connectHost();
+    const plan = await connectionPlan(options, deps);
+    const connection = await plan.connectHost();
     const { client } = connection;
-    if (options.remote === undefined && client.localHost === undefined) {
-      await client.close();
-      throw new Error("workspace host does not advertise local application controls");
-    }
-    if (options.remote !== undefined) {
-      if (client.localHost !== undefined) {
-        await client.close();
-        throw new Error("remote workspace host unexpectedly exposes machine-local controls");
-      }
-      defaultOwner = client.capabilities.hosting?.default_owner ?? "";
-      if (defaultOwner.length === 0) {
-        await client.close();
-        throw new Error("remote workspace host does not advertise its session namespace");
-      }
-    }
-    const manager = new WorkspaceClientManager(
-      client,
-      options,
-      defaultOwner,
-      connectHost,
-      connection.closed,
-    );
+    let defaultOwner: string;
     try {
-      if (options.remote === undefined) await manager.refresh();
+      defaultOwner = await admitConnection(plan, client);
     } catch (error) {
       await client.close();
       throw error;
     }
-    if (options.remote === undefined) manager.schedule();
+    const manager = new WorkspaceClientManager(
+      client,
+      options,
+      deps,
+      plan.destination,
+      defaultOwner,
+      plan.connectHost,
+      connection.closed,
+    );
+    manager.observeConfigurationSaved(connection);
+    try {
+      if (plan.destination.kind === "local") await manager.refresh();
+    } catch (error) {
+      await client.close();
+      throw error;
+    }
+    if (plan.destination.kind === "local") manager.schedule();
     return manager;
   }
 
@@ -224,6 +414,22 @@ export class WorkspaceClientManager {
       });
   }
 
+  private observeConfigurationSaved(connection: WorkspaceConnection): void {
+    this.stopConfigurationObservation?.();
+    this.stopConfigurationObservation = connection.subscribeConfigurationSaved?.((kind) => {
+      if (this.closed || this.destination.kind !== "container") return;
+      const status = this.kernel.capabilities.runtime;
+      if (status === undefined) return;
+      const label = kind === "models" ? "Model catalog" : "Configuration";
+      for (const listener of this.runtimeListeners)
+        listener({
+          status,
+          message: `${label} saved on the host; the active Container keeps its immutable projection until reconnect`,
+          pendingReconnect: true,
+        });
+    });
+  }
+
   private async refresh(): Promise<void> {
     const client = this.kernel;
     const state = await client.localHost!.inspect();
@@ -268,7 +474,7 @@ export class WorkspaceClientManager {
   }
 
   private schedule(): void {
-    if (this.closed || this.reconnecting !== undefined || this.options.remote !== undefined) return;
+    if (this.closed || this.reconnecting !== undefined || this.destination.kind !== "local") return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => {
       if (this.polling) return;
@@ -301,31 +507,6 @@ export class WorkspaceClientManager {
     this.timer.unref?.();
   }
 
-  /** Retry placement only through the host's quiescent operator admission. */
-  retryRuntime(): void {
-    if (this.closed) return;
-    if (this.kernel.localHost === undefined) {
-      const status = this.kernel.capabilities.runtime;
-      if (status !== undefined)
-        for (const listener of this.runtimeListeners)
-          listener({
-            status,
-            message: "Remote runtime retry requires reconnecting to the remote host",
-          });
-      return;
-    }
-    detachObserved("hosting.runtime.retry", async () => {
-      try {
-        await this.kernel.localHost!.retryRuntime();
-        await this.refresh();
-      } catch (error) {
-        if (this.status !== undefined)
-          for (const listener of this.runtimeListeners)
-            listener({ status: this.status.runtime, message: sanitizeErrorMessage(String(error)) });
-      }
-    });
-  }
-
   /** Replace a lost connection without requesting restart, runtime retry or execution replay. */
   recover(workspaceId: string): Promise<void> {
     return this.reconnect(workspaceId, "connection");
@@ -346,6 +527,15 @@ export class WorkspaceClientManager {
     }
     const reconnect = (async () => {
       const previous = this.kernel;
+      const previousDestination = this.destination;
+      const nextPlan =
+        mode === "reload"
+          ? await connectionPlan(this.options, this.deps)
+          : {
+              destination: this.destination,
+              defaultOwner: this.defaultOwner,
+              connectHost: this.connectHost,
+            };
       const retirePrevious = async (): Promise<void> => {
         this.retiringClients.add(previous);
         try {
@@ -355,28 +545,37 @@ export class WorkspaceClientManager {
           throw error;
         }
       };
-      if (mode === "reload" && previous.localHost === undefined)
-        throw new Error("remote workspace reload is unavailable; reconnect instead");
-      if (mode === "reload") await previous.localHost!.requestRestart();
+      if (mode === "reload" && previousDestination.kind === "ssh")
+        throw new Error("SSH workspace reload is unavailable; reconnect instead");
+      if (mode === "reload" && previousDestination.kind === "container") {
+        const runs = await (previous.hosting?.list() ?? []);
+        if (runs.some((run) => ["starting", "running", "finishing"].includes(run.execution_state)))
+          throw new Error(
+            "Container configuration is saved and pending reconnect; stop active runs first",
+          );
+      }
+      if (mode === "reload" && previousDestination.kind === "local") {
+        this.retiringClients.add(previous);
+        try {
+          await previous.localHost!.requestRestart();
+        } catch (error) {
+          this.retiringClients.delete(previous);
+          throw error;
+        }
+      }
       clearTimeout(this.timer);
-      if (mode === "reload" || this.options.remote !== undefined) {
+      if (mode === "reload" || previousDestination.kind !== "local") {
         await retirePrevious();
       }
-      const connection = await this.connectHost();
+      const connection = await nextPlan.connectHost();
       const { client } = connection;
       let state: LocalHostStatus | undefined;
       try {
-        if (this.options.remote === undefined) {
-          if (client.localHost === undefined)
-            throw new Error("workspace host does not advertise local application controls");
-          state = await client.localHost.inspect();
-        } else if (
-          client.localHost !== undefined ||
-          client.capabilities.hosting?.default_owner !== this.defaultOwner
-        ) {
-          throw new Error("remote workspace host identity changed during reconnect");
+        await admitConnection(nextPlan, client, this.defaultOwner);
+        if (nextPlan.destination.kind === "local") {
+          state = await client.localHost!.inspect();
         }
-        if (mode === "connection" && this.options.remote === undefined) {
+        if (mode === "connection" && previousDestination.kind === "local") {
           await retirePrevious();
         }
         if (this.closed) throw new Error("workspace client is closed");
@@ -385,10 +584,13 @@ export class WorkspaceClientManager {
         throw error;
       }
       this.kernel = client;
+      this.destination = nextPlan.destination;
+      this.connectHost = nextPlan.connectHost;
       this.status = undefined;
       this.connectionFailure = undefined;
       this.browserAttempts.clear();
       this.observePhysicalClose(client, connection.closed);
+      this.observeConfigurationSaved(connection);
       if (!this.closed && state !== undefined) this.publishStatus(state);
       else if (!this.closed && client.capabilities.runtime !== undefined)
         for (const listener of this.runtimeListeners)
@@ -407,6 +609,8 @@ export class WorkspaceClientManager {
     if (this.closed) return;
     this.closed = true;
     clearTimeout(this.timer);
+    this.stopConfigurationObservation?.();
+    this.stopConfigurationObservation = undefined;
     await this.kernel.close();
     this.driftListeners.clear();
     this.skillsListeners.clear();

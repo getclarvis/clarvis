@@ -1281,19 +1281,17 @@ through the SDK's own schemas.
 | Consumer | Kind | Evidence |
 | --- | --- | --- |
 | `@clarvis/loop` | production dependency | `packages/loop/package.json`; connection/registry consumers plus OAuth coordinator and connection-manager construction at `packages/loop/src/runtime/build-run-deps.ts` |
-| `@clarvis/kernel` | production dependency | `packages/kernel/package.json`; `createHostRemoteMcpBridge` and `createGuestMcpConnections` in `packages/kernel/src/runtime/remote-mcp.ts` consume connection/lease/elicitation ports and native acquisition errors |
+| `@clarvis/kernel` | production dependency | `packages/kernel/package.json`; native MCP server/memory/hook ports consume connection, lease and elicitation surfaces |
 
-Container placement keeps HTTP/SSE transports and their environment/OAuth authorization on the host.
-The kernel pins the admitted server snapshot and owner, exposes run-owned tool/resource leases, and
-reconstructs native pending/deferred/failure types in the guest. Remote elicitation returns to the
-guest's existing serialized relay; stdio remains guest-local. The kernel owns the closed RPC schema
-and teardown, specified by [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
-Production: `createHostRemoteMcpBridge` and `createGuestMcpConnections` in
-[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts).
-Test: `runtime remote MCP ownership` in
-[`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts), and
-HTTP/SSE bearer/header/saved-OAuth plus remote elicitation cases in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+MCP transports remain native Host/Sandbox composition. Container constructs an empty connection
+manager and exposes no MCP catalog, provider, OAuth authority or elicitation relay. Explicit MCP
+tools and grants are rejected by the frozen profile projection before inference. The closed
+Container contract is specified by [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+Production: `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts` and `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`. Test:
+`packages/kernel/tests/unit/container-projection.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
 is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts`,

@@ -692,20 +692,12 @@ the caller to re-read and re-decide.
 
 ## 7. Coupling
 
-The kernel's isolated runtime projects this store through `runtime.plans` revision `v2`. It preserves
-the 8 MiB canonical document and 32 MiB list-page limits using bounded multipart JSON transfer
-without widening shared capability/RPC frames. Extension frontmatter preserves its YAML aliases
-instead of expanding shared graphs into JSON. Capacity is reserved before provider mutations;
-unfinished transfers are revoked with the run. The host also enforces current-run mutation binding
-and terminal discard/CAS checks before reaching the low-level store's delete method. These host
-checks do not change the unrestricted low-level `delete(id)` contract or `PlanService` control-plane
-deletion. Production: `createHostPlansGrant` in
-[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts), and `createPlanTransferGrant`
-in [`plan-transfer.ts`](../../packages/kernel/src/runtime/plan-transfer.ts).
-Test: canonical sizes across the real RPC/broker in
-[`runtime-plan-transfer.test.ts`](../../packages/kernel/tests/contract/runtime-plan-transfer.test.ts)
-and retention authority in
-[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts).
+File and Container Kernels compose this store locally. Container places Markdown documents in its
+canonical workspace plan directory and serves plan control over the public Kernel protocol; there is no transfer
+or proxy store. This does not change the low-level `delete(id)` contract or `PlanService`
+control-plane deletion. Production: `createNativeKernel` in
+[`native-kernel.ts`](../../packages/kernel/src/native-kernel.ts). Test:
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 **Depends on (runtime, static):**
 

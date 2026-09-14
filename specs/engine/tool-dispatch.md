@@ -637,8 +637,8 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `packages/loop/src/validation/ajv.ts` — both `tool-arg-validator.ts` and `result-contract.ts`
   reach Ajv only through `createAjv()`/`createStrictAjv()`, so nothing in this document's static
   import graph forces Ajv's cost onto an ordinary host that never validates a tool call. The
-  isolated worker is the explicit exception: its standalone composition root statically bundles
-  and installs those two modules before guest execution.
+  compiled Container Kernel is the explicit exception: its artifact composition root statically
+  bundles and installs those two modules before serving the public Kernel transport.
 - **Consumed by `runtime/loop/run-agent.ts`** (loop core, out of this document's scope): builds
   `argValidator` (`createToolArgValidator`, `packages/loop/src/runtime/loop/run-agent.ts`), builds `mcpHandler`
   (`buildMcpHandler`), builds `submitHandler` around `contract.validate`, and assembles the handler chain in the fixed order described in §4.5.

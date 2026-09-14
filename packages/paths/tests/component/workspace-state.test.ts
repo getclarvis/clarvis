@@ -54,10 +54,10 @@ describe("workspaceStatePaths", () => {
     expect(p.workspaceRoot).toBe(resolve(WS));
   });
 
-  test("shares its segment with the traces and sessions of the same workspace", () => {
+  test("keeps trace locks in the canonical workspace state namespace", () => {
     const segment = ownerSegment(ownerFromWorkspace(resolve(WS)));
     expect(p.root.endsWith(segment)).toBe(true);
-    expect(join(globalPaths(undefined, { env }).tracesDir, segment).endsWith(segment)).toBe(true);
+    expect(p.traceLocksDir).toBe(join(p.root, "trace-locks"));
   });
 
   test("no path it builds is inside the working tree — the whole point", () => {
@@ -68,17 +68,14 @@ describe("workspaceStatePaths", () => {
       p.diagnosticsDir,
       p.memoryMachineryRoot,
       p.plansLockDir,
+      p.traceLocksDir,
       p.pluginDataRoot,
       p.promptHistoryFile,
       p.codeConfigFile,
       p.extensionProfileSelectionFile,
       p.runsDir,
-      p.runtimesDir,
       p.runDir("run/with separators"),
       p.runTempDir("run/with separators"),
-      p.runtimeDir("runtime/with separators"),
-      p.runtimeCheckpointsDir("runtime/with separators"),
-      p.runtimeCheckpointFile("runtime/with separators", "run/with separators"),
       p.monitorSidecar("m"),
       p.monitorLog("m"),
       p.monitorExit("m"),
@@ -111,17 +108,10 @@ describe("workspaceStatePaths", () => {
     expect(p.codeConfigFile).toBe(join(p.localDir, "code.json"));
     expect(p.extensionProfileSelectionFile).toBe(join(p.localDir, "extension-profile.json"));
     expect(p.runsDir).toBe(join(p.localDir, "runs"));
-    expect(p.runtimesDir).toBe(join(p.root, "runtimes"));
     expect(p.runDir("run/with separators")).toBe(
       join(p.runsDir, ownerSegment("run/with separators")),
     );
     expect(p.runTempDir("run/with separators")).toBe(join(p.runDir("run/with separators"), "tmp"));
-    const runtime = p.runtimeDir("runtime/with separators");
-    expect(runtime).toBe(join(p.runtimesDir, ownerSegment("runtime/with separators")));
-    expect(p.runtimeCheckpointsDir("runtime/with separators")).toBe(join(runtime, "checkpoints"));
-    expect(p.runtimeCheckpointFile("runtime/with separators", "run/with separators")).toBe(
-      join(runtime, "checkpoints", `${ownerSegment("run/with separators")}.json`),
-    );
   });
 
   test("owner roots separate a server's tenants under one segment dir", () => {

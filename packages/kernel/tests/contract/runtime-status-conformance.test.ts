@@ -45,19 +45,20 @@ const container: RuntimeStatus = {
   host_platform: "linux",
   guest_platform: "linux",
   network: "none",
+  generation: "019c9ca0-64af-7c11-9c4a-1ccf84a51a10",
+  image_digest: `sha256:${"a".repeat(64)}`,
+  artifact_digest: `sha256:${"b".repeat(64)}`,
+  base_abi: "clarvis-linux-glibc-v1",
+  broker_version: 1,
+  channel_version: 1,
+  state_namespace: "c".repeat(64),
   lifecycle: "ready",
 };
 
 test("disk and local-host transport share every runtime variant and lifecycle", async () => {
   const values: RuntimeStatus[] = [
     { kind: "native", host_platform: "linux", isolation: "host", lifecycle: "ready" },
-    {
-      kind: "native",
-      host_platform: "linux",
-      isolation: "sandbox",
-      lifecycle: "fallback",
-      fallback_from: "podman",
-    },
+    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "ready" },
     ...(
       [
         "cold",
@@ -82,6 +83,7 @@ test("disk and local-host transport share every runtime variant and lifecycle", 
     { ...container, lifecycle: "running" },
     { ...container, secret: "extra" },
     { ...container, guest_platform: "windows" },
+    { kind: "native", host_platform: "linux", isolation: "sandbox", lifecycle: "fallback" },
   ]) {
     expect(() => persisted(invalid)).toThrow("host state index is invalid");
     await expect(remote(invalid)).rejects.toThrow("invalid local host status");
@@ -91,7 +93,7 @@ test("disk and local-host transport share every runtime variant and lifecycle", 
 test("runtime boundaries retain their distinct identifier and text limits", async () => {
   const longIdentifier = { ...container, generation: "g".repeat(257) };
   expect(() => persisted(longIdentifier)).toThrow();
-  expect((await remote(longIdentifier)).runtime).toEqual(longIdentifier);
+  await expect(remote(longIdentifier)).rejects.toThrow();
   const longText = { ...container, engine_version: "v".repeat(4_097) };
   expect(persisted(longText)).toEqual(longText);
   await expect(remote(longText)).rejects.toThrow();

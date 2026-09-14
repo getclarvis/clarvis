@@ -1,14 +1,22 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, realpathSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "bun:test";
 import { ownerFromWorkspace } from "@clarvis/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
-import { connectOrLaunchLocalKernel } from "@clarvis/kernel/bootstrap";
+import {
+  connectOrLaunchLocalKernel,
+  createOperatorServices,
+  type LaunchedContainerKernel,
+} from "@clarvis/kernel/bootstrap";
 import type { KernelClient } from "@clarvis/protocol";
 
-import { WorkspaceClientManager } from "../../src/adapters/workspace-client-manager.ts";
+import {
+  composeLaunchedContainerConnection,
+  isContainerKernelOwnershipConflict,
+  WorkspaceClientManager,
+} from "../../src/adapters/workspace-client-manager.ts";
 import { prepareStartupFoundation } from "../../src/startup-foundation.ts";
 import { openTempDir } from "../helpers/tracked-temp.ts";
 import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
@@ -22,6 +30,347 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 describe("WorkspaceClientManager", () => {
+  it("recognizes only the typed live Container ownership conflict", () => {
+    expect(
+      isContainerKernelOwnershipConflict({
+        code: "conflict",
+        details: { kind: "container_kernel_owned", engine: "podman" },
+      }),
+    ).toBe(true);
+    expect(
+      isContainerKernelOwnershipConflict({
+        code: "conflict",
+        message: "Another Container Kernel owns this workspace namespace",
+      }),
+    ).toBe(false);
+  });
+
+  it("forwards the authenticated Container principal and closes a rejected launch", async () => {
+    const root = openTempDir("clarvis-workspace-container-composition-");
+    const workspaceRoot = join(root, "workspace");
+    mkdirSync(workspaceRoot);
+    const source = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "global"),
+    });
+    const local = (await source.open()).client;
+    const principal = { id: "container-operator" };
+    const workspace = { ...local.workspace, path: "/workspace" as const };
+    const runtime = {
+      kind: "container" as const,
+      engine: "podman" as const,
+      host_platform: "linux",
+      guest_platform: "linux" as const,
+      network: "none" as const,
+      generation: crypto.randomUUID(),
+      image_digest: `sha256:${"a".repeat(64)}` as const,
+      artifact_digest: `sha256:${"b".repeat(64)}` as const,
+      base_abi: "clarvis-linux-glibc-v1",
+      broker_version: 1 as const,
+      channel_version: 1 as const,
+      state_namespace: "c".repeat(64),
+      lifecycle: "ready" as const,
+    };
+    const execution: KernelClient = {
+      ...local,
+      workspace,
+      principal,
+      localHost: undefined,
+      capabilities: {
+        ...local.capabilities,
+        skills: false,
+        tasks: false,
+        local_host: undefined,
+        runtime,
+      },
+    };
+    const operator = createOperatorServices({
+      workspaceRoot,
+      globalDir: join(root, "operator-global"),
+      subscriptions: false,
+    });
+    let launchCloses = 0;
+    const savedKinds: string[] = [];
+    const launch = {
+      client: execution,
+      operator: {
+        ...operator,
+        models: {
+          ...operator.models,
+          refresh: async () => ({ providers: [], source: "cache" as const }),
+        },
+      },
+      project: local.project,
+      workspace,
+      generation: runtime.generation,
+      artifactDigest: runtime.artifact_digest,
+      configDigest: `sha256:${"d".repeat(64)}` as const,
+      closed: new Promise<string>(() => {}),
+      stderr: () => "",
+      revokeModelPair: () => undefined,
+      close: async () => {
+        launchCloses++;
+      },
+    } satisfies LaunchedContainerKernel;
+    const connection = await composeLaunchedContainerConnection(launch);
+    const unsubscribe = connection.subscribeConfigurationSaved!((kind) => savedKinds.push(kind));
+    expect(connection.client.principal).toEqual(principal);
+    await connection.client.models.refresh();
+    expect(savedKinds).toEqual(["models"]);
+    unsubscribe();
+    await connection.client.close();
+    expect(launchCloses).toBe(1);
+
+    await expect(
+      composeLaunchedContainerConnection({
+        ...launch,
+        client: {
+          ...execution,
+          capabilities: {
+            ...execution.capabilities,
+            runtime: {
+              kind: "native",
+              host_platform: "linux",
+              isolation: "sandbox",
+              lifecycle: "ready",
+            },
+          },
+        },
+      }),
+    ).rejects.toThrow("did not report Container placement");
+    expect(launchCloses).toBe(2);
+    await operator.close();
+    await source.close();
+  });
+
+  it("selects Container before connecting and resolves its release for the engine target", async () => {
+    const root = openTempDir("clarvis-workspace-container-destination-");
+    const workspaceRoot = join(root, "workspace");
+    const globalDir = join(root, "global");
+    mkdirSync(workspaceRoot);
+    mkdirSync(globalDir);
+    writeFileSync(
+      join(globalDir, "settings.json"),
+      JSON.stringify({ runtime: { backend: "podman", network: "none" } }),
+    );
+    let selectedTarget = "";
+    let receivedOwner = "";
+    let configurationSaved:
+      ((kind: "settings" | "agents" | "context" | "models") => void) | undefined;
+    const source = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: join(root, "local-global"),
+      defaultOwner: "container-owner",
+    });
+    const local = (await source.open()).client;
+    const controls = local.localHost!;
+    const client = {
+      ...local,
+      localHost: undefined,
+      capabilities: {
+        ...local.capabilities,
+        hosting: { ...local.capabilities.hosting!, default_owner: "container-owner" },
+        runtime: {
+          kind: "container" as const,
+          engine: "podman" as const,
+          host_platform: "linux",
+          guest_platform: "linux",
+          network: "none" as const,
+          generation: crypto.randomUUID(),
+          image_digest: `sha256:${"a".repeat(64)}`,
+          artifact_digest: `sha256:${"b".repeat(64)}`,
+          base_abi: "clarvis-linux-glibc-v1",
+          broker_version: 1 as const,
+          channel_version: 1 as const,
+          state_namespace: "c".repeat(64),
+          lifecycle: "ready" as const,
+        },
+      },
+    } satisfies KernelClient;
+    const manager = await WorkspaceClientManager.create(
+      {
+        workspaceRoot,
+        globalDir,
+        defaultOwner: "container-owner",
+        destination: { kind: "container" },
+      },
+      {
+        resolveContainerRelease: async ({ target }) => {
+          selectedTarget = target;
+          return {
+            base: { reference: "clarvis-base:local", pull: false },
+            artifact: {
+              source: { kind: "local", archivePath: join(root, "fixture.tar.gz") },
+              selection: {
+                productVersion: "0.0.1-beta",
+                sourceRevision: "d".repeat(40),
+                target,
+                baseAbi: "clarvis-linux-glibc-v1",
+                digest: `sha256:${"e".repeat(64)}`,
+                size: 1,
+              },
+            },
+          };
+        },
+        connectContainerHost: async (options) => {
+          receivedOwner = options.owner;
+          await options.resolveRelease!("linux-x64");
+          return {
+            client,
+            subscribeConfigurationSaved: (listener) => {
+              configurationSaved = listener;
+              return () => {
+                configurationSaved = undefined;
+              };
+            },
+          };
+        },
+      },
+    );
+    try {
+      const revisions: number[] = [];
+      const placements: string[] = [];
+      const unsubscribe = manager.subscribeSkillsChanged((revision) => revisions.push(revision));
+      const unsubscribePlacement = manager.subscribeRuntimePlacement((notice) =>
+        placements.push(
+          `${notice.pendingReconnect === true ? "pending:" : ""}${notice.message ?? notice.status.kind}`,
+        ),
+      );
+      expect(manager.defaultOwner).toBe("container-owner");
+      expect((await manager.open()).client.localHost).toBeUndefined();
+      expect(selectedTarget).toBe("linux-x64");
+      expect(receivedOwner).toBe("container-owner");
+      expect(revisions).toEqual([0]);
+      configurationSaved?.("models");
+      expect(placements.at(-1)).toContain("pending:Model catalog saved on the host");
+      expect(placements.at(-1)).toContain("until reconnect");
+      unsubscribe();
+      unsubscribePlacement();
+    } finally {
+      await manager.close();
+      expect(manager.subscribeSkillsChanged(() => undefined)).toBeFunction();
+      await controls.requestRestart();
+      await source.close();
+    }
+  });
+
+  it("re-selects and retires the host when isolation changes between local and Container", async () => {
+    const root = openTempDir("clarvis-workspace-placement-transition-");
+    const workspaceRoot = join(root, "workspace");
+    const globalDir = join(root, "global");
+    const backingGlobal = join(root, "backing-global");
+    mkdirSync(workspaceRoot);
+    mkdirSync(globalDir);
+    const backing = await WorkspaceClientManager.create({
+      workspaceRoot,
+      globalDir: backingGlobal,
+    });
+    const backingClient = (await backing.open()).client;
+    const owner = ownerFromWorkspace(workspaceRoot);
+    let containerClosed = 0;
+    const containerClient: KernelClient = {
+      ...backingClient,
+      memory: {
+        ...backingClient.memory,
+        jobs: async () => ({
+          jobs: [],
+          counts: {
+            pending: 1,
+            running: 0,
+            retry_wait: 0,
+            completed: 0,
+            failed: 0,
+          },
+        }),
+      },
+      hosting: {
+        ...backingClient.hosting!,
+        list: async () => [
+          {
+            execution_id: "old-unknown-run",
+            session_id: "old-session",
+            workspace_id: "workspace",
+            host_generation: crypto.randomUUID(),
+            title: "Recovered uncertain run",
+            revision: 1,
+            disconnect_policy: "cancel",
+            execution_state: "unknown",
+            attention: "none",
+            control_epoch: 1,
+            control: "available",
+            config: { agent: "fixture" },
+            created_at: 1,
+            updated_at: 1,
+          },
+        ],
+      },
+      localHost: undefined,
+      capabilities: {
+        ...backingClient.capabilities,
+        hosting: { host_generation: crypto.randomUUID(), default_owner: owner },
+        local_host: undefined,
+        runtime: {
+          kind: "container",
+          engine: "podman",
+          host_platform: "linux",
+          guest_platform: "linux",
+          network: "none",
+          generation: crypto.randomUUID(),
+          image_digest: `sha256:${"a".repeat(64)}`,
+          artifact_digest: `sha256:${"b".repeat(64)}`,
+          base_abi: "clarvis-linux-glibc-v1",
+          broker_version: 1,
+          channel_version: 1,
+          state_namespace: "c".repeat(64),
+          lifecycle: "ready",
+        },
+      },
+      close: async () => {
+        containerClosed += 1;
+      },
+    };
+    const manager = await WorkspaceClientManager.create(
+      { workspaceRoot, globalDir },
+      { connectContainerHost: async () => ({ client: containerClient }) },
+    );
+    try {
+      const initial = (await manager.open()).client;
+      expect(initial.localHost).toBeDefined();
+      const placements: string[] = [];
+      const connectionFailures: string[] = [];
+      manager.subscribeRuntimePlacement((notice) => placements.push(notice.status.kind));
+      manager.subscribeConnectionFailure((reason) => connectionFailures.push(reason));
+
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({ runtime: { backend: "podman", network: "none" } }),
+      );
+      await manager.invalidate(manager.current.id);
+      const container = (await manager.open()).client;
+      expect(container.localHost).toBeUndefined();
+      expect(container.capabilities.runtime?.kind).toBe("container");
+      expect(placements.at(-1)).toBe("container");
+      expect(connectionFailures).toEqual([]);
+      await expect(initial.localHost!.inspect()).rejects.toThrow();
+
+      writeFileSync(
+        join(globalDir, "settings.json"),
+        JSON.stringify({ runtime: { backend: "native" } }),
+      );
+      await manager.invalidate(manager.current.id);
+      const local = (await manager.open()).client;
+      expect(containerClosed).toBe(1);
+      expect(local.localHost).toBeDefined();
+      expect(local.capabilities.runtime?.kind).not.toBe("container");
+      expect(placements.at(-1)).not.toBe("container");
+      await local.localHost!.requestRestart();
+    } finally {
+      await manager.close();
+      await backingClient.localHost!.requestRestart();
+      await backing.close();
+    }
+  });
+
   it("explicit idle reload replaces the host generation", async () => {
     const root = openTempDir("clarvis-workspace-idle-reload-");
     const workspaceRoot = join(root, "workspace");
@@ -269,7 +618,11 @@ describe("WorkspaceClientManager", () => {
       {
         workspaceRoot: "/srv/remote/project",
         globalDir: join(root, "unused-client-global"),
-        remote: { destination: "operator@example.test", workspace: "/srv/remote/project" },
+        destination: {
+          kind: "ssh",
+          destination: "operator@example.test",
+          workspace: "/srv/remote/project",
+        },
       },
       {
         resolveArtifact: async () => {

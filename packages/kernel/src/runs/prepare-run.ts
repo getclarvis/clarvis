@@ -52,13 +52,11 @@ export function prepareKernelRun(
   });
   let execution: PreparedRunExecution | undefined;
   const snapshot = snapshotRunConfiguration(options.configStore);
-  const pluginNames = [...(options.assemblerOptions?.pluginMcpServerNames?.() ?? [])];
   const assemble =
     options.assembleRunRequest ??
     createSettingsRunAssembler(snapshot, {
       ...options.assemblerOptions,
       ...(options.skills === undefined ? {} : { skills: options.skills }),
-      pluginMcpServerNames: () => pluginNames,
     });
   const assembled = structuredClone(assemble(request));
   const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);

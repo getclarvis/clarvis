@@ -36,7 +36,11 @@ const press = (
   renderer: { keyInput: { emit(ev: string, key: KeyEvent): void } },
   name: string,
   ctrl = false,
-) => renderer.keyInput.emit("keypress", keyEvent(name, ctrl));
+): KeyEvent => {
+  const key = keyEvent(name, ctrl);
+  renderer.keyInput.emit("keypress", key);
+  return key;
+};
 
 class FakeProcess extends EventEmitter {
   readonly platform = process.platform;
@@ -101,6 +105,35 @@ test("fatal boot: renderer teardown is terminal for the surrounding boot", async
   t.renderer.destroy();
   await settled;
   expect(profilesStarted).toBe(0);
+});
+
+test("fatal boot: offers and runs an explicit Container ownership resolution", async () => {
+  const t = await openCoreRenderer({ width: 100, height: 24 });
+  let terminations = 0;
+  const settled = runFatalBoot({
+    renderer: t.renderer,
+    error: new Error("Another Container Kernel owns this workspace namespace"),
+    retry: () => Promise.reject(new Error("retry must not run")),
+    resolution: {
+      key: "t",
+      label: "terminate previous Container",
+      run: async () => {
+        terminations += 1;
+      },
+    },
+    quit: () => {
+      throw new Error("quit must not fire");
+    },
+  });
+  await flush();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("[t] terminate previous Container");
+  const key = press(t.renderer, "t");
+  expect(await settled).toBe(true);
+  expect(key.defaultPrevented).toBe(true);
+  expect(key.propagationStopped).toBe(true);
+  expect(terminations).toBe(1);
+  t.renderer.destroy();
 });
 
 test("fatal boot: only ctrl+c routes to quit; other keys are inert", async () => {

@@ -1,5 +1,5 @@
 import type { Readable, Writable } from "node:stream";
-import { globalPaths } from "@clarvis/paths";
+import { globalPaths, workspaceStatePaths } from "@clarvis/paths";
 import { loadEnv, NOOP_LOGGER, suppressSecondaryRejection } from "@clarvis/capability";
 import { kernelError } from "../core/errors.ts";
 import { serveKernelOverStdio } from "../transport/stdio.ts";
@@ -9,7 +9,7 @@ import { localKernelPolicyIdentity } from "./policy-identity.ts";
 
 /** Inputs for one process-owned hosted kernel carried by an already authenticated stdio channel. */
 export interface ServeRemoteStdioOptions {
-  kernel: FileRunHostOptions["kernel"];
+  kernel: Extract<FileRunHostOptions, { composition?: { kind: "file" } }>["kernel"];
   artifactId: string;
   input?: Readable;
   output?: Writable;
@@ -61,6 +61,11 @@ export async function serveRemoteFileKernelOverStdio(
         globalDir: identity.globalDir,
         defaultOwner: identity.owner,
         traceDir: options.kernel.traceDir ?? globalPaths(identity.globalDir).tracesDir,
+        traceLocksDir:
+          options.kernel.traceLocksDir ??
+          workspaceStatePaths(identity.workspaceRoot, {
+            env: { CLARVIS_HOME: identity.globalDir },
+          }).traceLocksDir,
       },
       hostGeneration: state.generation,
       storage: state.storage,

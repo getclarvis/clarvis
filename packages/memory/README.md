@@ -434,14 +434,10 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
-Native runs retain that seven-tool surface. An isolated container run is deliberately narrower:
-`prepareMemoryRuntime` resolves the canonical provider on the host and projects only the four read
-operations, a provider-opaque digest and the bounded seed. Provider configuration, credentials,
-store paths and all three mutating tools stay out of the guest. The host grant validates the
-canonical read schema again, so a forged `write_memory`, `edit_memory` or `delete_memory` request is
-rejected even when the host provider is writable. Once the guest's completed trace is persisted on
-the host, the guest lifecycle bridge asks the host to run the same canonical `onRunEnd` path; durable
-enqueueing and later indexing therefore remain host work rather than guest memory authority.
+Host, Sandbox and Container runs retain that seven-tool surface when Memory is active. Container
+builds the native local wiki/file provider and lifecycle inside its Kernel, stores documents in its
+canonical workspace content and machinery shared with Host/Sandbox, and routes indexing inference through the host model broker. External Memory
+providers are rejected during projection; disabled Memory does not resolve a provider.
 
 The read-only `file` provider accepts at most 64 declared paths, 1 MiB per
 document and 8 MiB across one call by default. Oversized inputs are not loaded
@@ -450,9 +446,9 @@ visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-A write-enabled native entry agent may write memory directly during a run; an isolated guest may
-not. The same host tools back an owner's kernel/MCP editing surface and the host-owned dedicated
-indexing pass.
+A write-enabled entry agent may write memory directly during a Host, Sandbox or Container run. The
+same native tools back the Kernel editing surface and the dedicated indexing pass in the Kernel that
+owns that Memory store.
 
 `pinned:` and `authority: confirmed` are the owner's alone, and the rule binds
 every non-owner caller — the model's tools exactly as much as the autonomous
@@ -479,7 +475,7 @@ cannot be interrupted once it has started.
 - `@clarvis/memory/testing` — an in-memory store, its conformance suite, and a
   clock whose time only moves when a test moves it.
 - `@clarvis/memory/capability` — the loop adapter: `createMemoryCapability`, the
-  per-owner `MemoryFactory`, canonical memory tool contracts, the read-only isolated-runtime lease
+  per-owner `MemoryFactory`, canonical memory tool contracts, the provider-opaque preparation utility
   from `prepareMemoryRuntime`, the post-run index enqueue, the `ExecutionRecord` → `RunSnapshot`
   adapter and the memory toolset.
 

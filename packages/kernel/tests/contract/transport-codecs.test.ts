@@ -14,6 +14,7 @@ import {
   OPERATIONS,
   ORDINARY_OPERATIONS,
   SPECIAL_OPERATIONS,
+  decodeOperationParams,
 } from "../../src/transport/operations.ts";
 import { CLARVIS_WIRE_VERSION, M, N, type HelloResult } from "../../src/transport/wire.ts";
 import {
@@ -293,13 +294,17 @@ describe("wire handshake", () => {
           ...HELLO.capabilities,
           runtime: {
             kind: "container",
-            generation: "generation-1",
+            generation: "00000000-0000-4000-8000-000000000001",
             engine,
             engine_version: "5.4.0",
             host_platform: "linux",
             guest_platform: "linux",
             image_digest: `sha256:${"a".repeat(64)}`,
-            runtime_protocol_revision: "1",
+            artifact_digest: `sha256:${"b".repeat(64)}`,
+            base_abi: "clarvis-linux-glibc-v1",
+            broker_version: 1,
+            channel_version: 1,
+            state_namespace: "c".repeat(64),
             network: "none",
             lifecycle: "ready",
           },
@@ -330,6 +335,23 @@ describe("wire handshake", () => {
 });
 
 describe("transport operation descriptors", () => {
+  it("admits the optional run-context model window emitted by /model", () => {
+    const operation = OPERATIONS.runs.context;
+    const encoded = operation.encode("run-1", 128_000);
+
+    expect(decodeOperationParams(operation, encoded)).toEqual({
+      execution_id: "run-1",
+      target_window_tokens: 128_000,
+    });
+    expect(
+      decodeOperationParams(operation, {
+        execution_id: "run-1",
+        target_window_tokens: 128_000,
+        provider_config: {},
+      }),
+    ).toBeNull();
+  });
+
   it("owns one unique method name and invokes every ordinary service method through its codec", async () => {
     expect(new Set(KNOWN_METHODS).size).toBe(KNOWN_METHODS.length);
     const invoked: string[] = [];

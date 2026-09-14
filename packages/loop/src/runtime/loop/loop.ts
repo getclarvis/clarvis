@@ -311,6 +311,7 @@ function buildCompactionThunk(
       llm: target.llm,
       model: target.model,
       provider: target.provider,
+      ...(target.modelExecution === undefined ? {} : { modelExecution: target.modelExecution }),
       ...(target.providerConfig ? { providerConfig: target.providerConfig } : {}),
       ...(runtime.signal ? { signal: runtime.signal } : {}),
       timeoutMs: core.compaction.llmTimeoutMs,
@@ -442,7 +443,10 @@ function buildModelCall(
 ): LLMCallParams {
   const { target, runtime, clock } = core;
   const supportsToolCalling = target.capabilities?.has("tool_calling") ?? true;
-  const reasoningFloor = reasoningOutputFloor(target.providerConfig?.kind, target.reasoningEffort);
+  const reasoningFloor = reasoningOutputFloor(
+    target.modelExecution?.kind ?? target.providerConfig?.kind,
+    target.reasoningEffort,
+  );
   const outputBudgetBase = target.maxOutputTokens ?? reasoningFloor;
   const breakpoints = d.ctx.cacheBreakpoints();
   const cacheBreakpoints = [breakpoints.prior, breakpoints.stable].filter((i) => i >= 0);

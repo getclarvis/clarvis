@@ -1,4 +1,4 @@
-import type { z } from "zod";
+import { z } from "zod";
 import type { CapabilityRegistry, ErrorCode } from "@clarvis/capability";
 import { ValidationError } from "@clarvis/capability";
 import { runRequestSchema, type ParsedRunRequest } from "./request-schema.ts";
@@ -92,9 +92,16 @@ function pickFirstIssue(issues: readonly ZodIssue[]): ZodIssue {
  *   typo in any other key is still rejected rather than silently carried. Its
  *   absence is what kept a capability's param a field the engine had to spell out.
  */
-function runRequestSchemaFor(registry?: CapabilityRegistry): typeof runRequestSchema {
+function runRequestSchemaFor(
+  registry?: CapabilityRegistry,
+  catalog = false,
+): typeof runRequestSchema {
   const specs = registry?.specs() ?? [];
-  let schema = runRequestSchema;
+  let schema = catalog
+    ? runRequestSchema.extend({
+        providers: z.array(runRequestSchema.shape.providers.element).max(1000),
+      })
+    : runRequestSchema;
   for (const spec of specs) {
     if (spec.requestParams === undefined) continue;
     for (const key of Object.keys(spec.requestParams)) {
@@ -110,8 +117,12 @@ function runRequestSchemaFor(registry?: CapabilityRegistry): typeof runRequestSc
   return schema;
 }
 
-export function parseRunRequest(raw: unknown, registry?: CapabilityRegistry): ParsedRunRequest {
-  const parsed = runRequestSchemaFor(registry).safeParse(raw);
+export function parseRunRequest(
+  raw: unknown,
+  registry?: CapabilityRegistry,
+  catalog = false,
+): ParsedRunRequest {
+  const parsed = runRequestSchemaFor(registry, catalog).safeParse(raw);
   if (!parsed.success) {
     const issue = pickFirstIssue(parsed.error.issues);
     const code = classifyIssue(issue);

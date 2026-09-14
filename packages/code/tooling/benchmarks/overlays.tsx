@@ -618,8 +618,8 @@ const cases: SoakCase[] = [
             settings={safetySettings}
             runActive={() => false}
             active={lifecycle.active}
-            retryRuntime={() => {}}
             notify={() => {}}
+            reload={async () => ({ ok: true, message: "reloaded" })}
             onClose={() => {}}
             onApplied={() => {}}
           />

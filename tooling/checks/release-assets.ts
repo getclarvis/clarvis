@@ -36,6 +36,13 @@ const STATIC_RELEASE_ASSETS = [
   RUNTIME_RELEASE_MANIFEST_ASSET,
 ] as const;
 
+const RUNTIME_RELEASE_ASSETS = ["linux-x64", "linux-arm64"].flatMap((target) => [
+  `clarvis-kernel-${target}.tar.gz`,
+  `clarvis-kernel-${target}.tar.gz.sha256`,
+  `qualification-docker-${target}.json`,
+  `qualification-podman-${target}.json`,
+]);
+
 const RELEASE_TAG =
   /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
@@ -104,10 +111,20 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
   if (match === null) return [`release asset verification requires an exact v<SemVer> tag: ${tag}`];
   const version = tag.slice(1);
   const archiveNames = RELEASE_TARGETS.map((target) => `clarvis-v${version}-${target}.tar.gz`);
+  const runtimeArchiveNames = ["linux-x64", "linux-arm64"].map(
+    (target) => `clarvis-kernel-${target}.tar.gz`,
+  );
+  const qualificationNames = ["linux-x64", "linux-arm64"].flatMap((target) =>
+    ["docker", "podman"].map((engine) => `qualification-${engine}-${target}.json`),
+  );
   const expected = new Set([
     ...archiveNames,
     ...archiveNames.map((name) => `${name}.sha256`),
+    ...runtimeArchiveNames,
+    ...runtimeArchiveNames.map((name) => `${name}.sha256`),
+    ...qualificationNames,
     ...STATIC_RELEASE_ASSETS,
+    ...RUNTIME_RELEASE_ASSETS,
   ]);
   const failures: string[] = [];
   const entries = await readdir(directory, { withFileTypes: true });
@@ -141,6 +158,17 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
     failures.push(...(await archiveFailures(archivePath, version, target)));
   }
 
+  for (const name of runtimeArchiveNames) {
+    if (!actual.has(name)) continue;
+    const value = await digest(join(directory, name));
+    const sidecar = `${name}.sha256`;
+    if (
+      actual.has(sidecar) &&
+      (await readFile(join(directory, sidecar), "utf8")) !== `${value}  ${name}\n`
+    )
+      failures.push(`${sidecar} does not match ${name}`);
+  }
+
   if (actual.has("SHA256SUMS")) {
     const aggregate = checksumEntries
       .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
@@ -162,7 +190,16 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
       );
     }
   }
-  for (const name of STATIC_RELEASE_ASSETS) {
+  for (const target of ["linux-x64", "linux-arm64"] as const) {
+    const name = `clarvis-kernel-${target}.tar.gz`;
+    const sidecar = `${name}.sha256`;
+    if (actual.has(name) && actual.has(sidecar)) {
+      const line = `${await digest(join(directory, name))}  ${name}\n`;
+      if ((await readFile(join(directory, sidecar), "utf8")) !== line)
+        failures.push(`${sidecar} does not match ${name}`);
+    }
+  }
+  for (const name of [...STATIC_RELEASE_ASSETS, ...RUNTIME_RELEASE_ASSETS]) {
     if (actual.has(name) && Bun.file(join(directory, name)).size === 0) {
       failures.push(`release asset ${name} must not be empty`);
     }

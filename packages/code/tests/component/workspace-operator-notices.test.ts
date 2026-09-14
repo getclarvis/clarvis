@@ -11,8 +11,7 @@ function peer(generation = "generation") {
   };
   let browser: LocalHostBrowserRequest | null = null;
   let inspectFailure: Error | undefined;
-  let retryFailure: Error | undefined;
-  const calls = { close: 0, retry: 0, browser: [] as Array<[string, boolean]> };
+  const calls = { close: 0, browser: [] as Array<[string, boolean]> };
   const surface: Pick<KernelClient, "workspace" | "project" | "localHost" | "close"> = {
     workspace: {
       id: "workspace",
@@ -30,10 +29,6 @@ function peer(generation = "generation") {
       takeBrowserRequest: async () => browser,
       async respondBrowser(id, opened) {
         calls.browser.push([id, opened]);
-      },
-      async retryRuntime() {
-        calls.retry++;
-        if (retryFailure !== undefined) throw retryFailure;
       },
       requestRestart: async () => {},
     },
@@ -53,9 +48,6 @@ function peer(generation = "generation") {
     failInspect: (error: Error | undefined) => {
       inspectFailure = error;
     },
-    failRetry: (error: Error | undefined) => {
-      retryFailure = error;
-    },
   };
 }
 
@@ -73,7 +65,12 @@ async function managerFor(
 ) {
   let index = 0;
   return WorkspaceClientManager.create(
-    { workspaceRoot: "/workspace", defaultOwner: "operator", openMcpAuthorizationUrl },
+    {
+      workspaceRoot: "/workspace",
+      globalDir: "/global",
+      defaultOwner: "operator",
+      openMcpAuthorizationUrl,
+    },
     {
       resolveArtifact: async () => ({
         command: [process.execPath, "/unused-host.ts"],
@@ -85,7 +82,7 @@ async function managerFor(
 }
 
 describe("workspace operator notices", () => {
-  test("publishes sequenced placement and drift changes once and reports retry refusal", async () => {
+  test("publishes sequenced placement and drift changes once", async () => {
     const host = peer();
     host.status({ extension_drift: { sequence: 1, kind: "skill", name: "review" } });
     const manager = await managerFor([host]);
@@ -100,22 +97,13 @@ describe("workspace operator notices", () => {
         runtime_notice: { sequence: 1, message: "Preparing Podman environment" },
         extension_drift: { sequence: 2, kind: "plugin_runtime", name: "tracker" },
       });
-      manager.retryRuntime();
       await until(() => notices.length === 2);
       expect(notices[1]!.message).toBe("Preparing Podman environment");
       expect(drifts).toEqual(["review", "tracker"]);
-      manager.retryRuntime();
-      await until(() => host.calls.retry === 2);
-      host.failRetry(new Error("active background refuses runtime retry"));
-      manager.retryRuntime();
-      await until(() =>
-        notices.some((notice) => notice.message?.includes("refuses runtime retry") === true),
-      );
-      expect(notices).toHaveLength(3);
+      expect(notices).toHaveLength(2);
       offRuntime();
       offDrift();
       await manager.close();
-      manager.retryRuntime();
       manager.subscribeRuntimePlacement(() => {
         throw new Error("notice after close");
       })();
@@ -125,7 +113,6 @@ describe("workspace operator notices", () => {
       manager.subscribeConnectionFailure(() => {
         throw new Error("failure after close");
       })();
-      expect(host.calls.retry).toBe(3);
     } finally {
       await manager.close();
     }
@@ -153,7 +140,6 @@ describe("workspace operator notices", () => {
       );
       manager.subscribeConnectionFailure((reason) => replay.push(reason))();
       expect(replay).toEqual(failures);
-      expect(replacement.calls.retry).toBe(0);
       unsubscribe();
     } finally {
       await manager.close();
@@ -174,8 +160,7 @@ describe("workspace operator notices", () => {
     });
     try {
       expect(host.calls.browser).toEqual([["browser-one", false]]);
-      manager.retryRuntime();
-      await until(() => host.calls.retry === 1);
+      await until(() => host.calls.browser.length === 1);
       host.browser(null);
       expect(urls).toEqual(["https://example.test/authorize"]);
     } finally {

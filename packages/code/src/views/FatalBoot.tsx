@@ -10,7 +10,11 @@ import { tokens } from "../theme/tokens.ts";
  * The boot-failure screen. Rendered before the keymap/theme exist — the token
  * signals carry usable defaults, and keys are bound straight off the renderer.
  */
-function FatalBoot(props: { error: Accessor<string>; busy: Accessor<boolean> }): JSX.Element {
+function FatalBoot(props: {
+  error: Accessor<string>;
+  busy: Accessor<boolean>;
+  resolution?: { key: string; label: string };
+}): JSX.Element {
   return (
     <box
       position="absolute"
@@ -47,7 +51,9 @@ function FatalBoot(props: { error: Accessor<string>; busy: Accessor<boolean> }):
         </box>
         <box paddingTop={1}>
           <text fg={props.busy() ? tokens.muted : tokens.accent}>
-            {props.busy() ? "retrying" + glyph("ellipsis") : "[r] retry   [ctrl+c] quit"}
+            {props.busy()
+              ? "working" + glyph("ellipsis")
+              : `[r] retry${props.resolution === undefined ? "" : `   [${props.resolution.key}] ${props.resolution.label}`}   [ctrl+c] quit`}
           </text>
         </box>
       </box>
@@ -66,6 +72,8 @@ export function runFatalBoot(opts: {
   renderer: CliRenderer;
   error: unknown;
   retry: () => Promise<void>;
+  /** Optional explicit recovery action for a typed boot failure. */
+  resolution?: { key: string; label: string; run: () => Promise<void> };
   quit: () => void;
 }): Promise<boolean> {
   const [message, setMessage] = createSignal(errorText(opts.error));
@@ -76,7 +84,13 @@ export function runFatalBoot(opts: {
     () => (
       <RendererContext.Provider value={opts.renderer}>
         <Show when={visible()}>
-          <FatalBoot error={message} busy={busy} />
+          <FatalBoot
+            error={message}
+            busy={busy}
+            {...(opts.resolution === undefined
+              ? {}
+              : { resolution: { key: opts.resolution.key, label: opts.resolution.label } })}
+          />
         </Show>
       </RendererContext.Provider>
     ),
@@ -102,9 +116,17 @@ export function runFatalBoot(opts: {
         return;
       }
       if (busy() || key.defaultPrevented) return;
-      if (key.name !== "r") return;
+      const action =
+        key.name === "r"
+          ? opts.retry
+          : key.name === opts.resolution?.key
+            ? opts.resolution.run
+            : undefined;
+      if (action === undefined) return;
+      key.preventDefault();
+      key.stopPropagation();
       setBusy(true);
-      void opts.retry().then(
+      void action().then(
         () => close(true),
         (e: unknown) => {
           if (closed) return;

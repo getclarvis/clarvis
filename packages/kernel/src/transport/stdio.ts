@@ -380,6 +380,7 @@ function fromEnvelope(env: ErrorEnvelope): Error & KernelError {
 export function createStdioTransport(
   io: { input: Readable; output: Writable },
   logger: Logger = NOOP_LOGGER,
+  options: { strictDirection?: boolean } = {},
 ): KernelTransport {
   let seq = 0;
   let closed = false;
@@ -413,6 +414,12 @@ export function createStdioTransport(
     io.input,
     (frame) => {
       if (closed) return;
+      if (options.strictDirection && frame.t !== "res" && frame.t !== "note") {
+        terminate(new Error("invalid stdio frame direction"));
+        io.input.destroy();
+        io.output.destroy();
+        return;
+      }
       if (frame.t === "res") {
         const p = pending.get(frame.id);
         if (p === undefined) return;
@@ -511,6 +518,7 @@ export function serveKernelOverStdio(
   server: KernelServer,
   io: { input: Readable; output: Writable },
   logger: Logger = NOOP_LOGGER,
+  options: { strictDirection?: boolean } = {},
 ): { close(): void } {
   let closed = false;
   const controllers = new Map<number, AbortController>();
@@ -541,6 +549,10 @@ export function serveKernelOverStdio(
     io.input,
     (frame) => {
       if (closed) return;
+      if (options.strictDirection && frame.t !== "req" && frame.t !== "cancel") {
+        disconnect(new Error("invalid stdio frame direction"));
+        return;
+      }
       if (frame.t === "cancel") {
         controllers.get(frame.id)?.abort(new Error("request cancelled"));
         return;
@@ -567,7 +579,15 @@ export function serveKernelOverStdio(
       inboundBytes += bytes;
       void conn
         .handle(frame.method, frame.params, controller.signal)
-        .then((result) => writer.send({ t: "res", id: frame.id, result }))
+        .then(async (result) => {
+          await writer.send({ t: "res", id: frame.id, result });
+          if (closed || controller.signal.aborted) return;
+          try {
+            conn.responseSent?.(frame.method, result);
+          } catch (error) {
+            disconnect(error);
+          }
+        })
         .catch((err: unknown) =>
           sendControl(writer, { t: "res", id: frame.id, error: toEnvelope(err) }),
         )

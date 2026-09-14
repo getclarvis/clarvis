@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants as osConstants } from "node:os";
-import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
+import { ensureWorkspaceLocalDir } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
 import { resolvePath, displayPath } from "../lib/paths.ts";
 import { statDirectory } from "../lib/files.ts";
@@ -49,7 +49,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
  * `shell-<token>.<stream>.log` in the workspace's state tree, returned as both
  * an absolute path (to write) and a display path (to report).
  *
- * @param config - server configuration; `workspaceRoot` anchors the spill dir.
+ * @param config - server configuration; trusted `statePaths` anchor the spill dir.
  * @param stream - which stream the file backs.
  * @returns the absolute and display paths for the spill file.
  * @remarks The spill lives outside the working tree, so {@link displayPath}
@@ -61,8 +61,8 @@ function spillTarget(
   config: RuntimeConfig,
   stream: "stdout" | "stderr",
 ): { absPath: string; displayPath: string } {
-  ensureWorkspaceLocalDir(config.workspaceRoot);
-  const absPath = workspaceStatePaths(config.workspaceRoot).spillFile(uniqueToken(), stream);
+  ensureWorkspaceLocalDir(config.statePaths);
+  const absPath = config.statePaths.spillFile(uniqueToken(), stream);
   return { absPath, displayPath: displayPath(absPath, config.workspaceRoot) };
 }
 

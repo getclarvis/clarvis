@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/plan",
-
   "private": true,
   "description": "Provider-neutral execution plans and Markdown persistence for Clarvis.",
   "license": "MIT",

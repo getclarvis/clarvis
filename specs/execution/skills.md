@@ -878,31 +878,15 @@ The one `SkillsProvider` the host builds is threaded three ways by `createInProc
 `skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false`.
 
-Container placement reuses that same host-admitted provider snapshot rather than mounting any host
-skill root. `createRuntimeSkillCatalog` projects only safe catalog fields;
-`createHostSkillsGrant` serves admitted bodies and bounded resources through `runtime.skills`
-revision `v2`; and
-`createRuntimeSkillBootstraps` resolves only the active plugins' declarations through
-`resolveBootstrapSkills`, then serializes `{ plugin, skill, body }` without roots. The guest
-`createGuestSkillsCapability` renders those bootstrap bodies before the sanitized catalog and
-proxies the same two closed operations. The host bridge accepts exactly `{operation: "load", name}`
-or `{operation: "resource", name, resource, offset}`; it rejects missing or additional fields before
-provider access, and a body call can never be reinterpreted from a path alias. Builtins preserve
-`source: builtin`, catalog priority and their non-filesystem locators. `formatSkillBody`,
-`formatSkillResourceChunk` and `formatSkillResourceLegacy` in
-[disclosure.ts](../../packages/skills/src/disclosure.ts) own the native and host-bridge rendering.
-The bridge strips host locations and marks non-builtin metadata with `resourceAccess: "remote"`
-before rendering and transports the resulting text; the guest
-validates the response identity without implementing a second formatter. Resource pages receive the
-same `validateResourceChunk` checks, and whole-resource fallback cannot promise byte continuation.
-Production:
-`createHostSkillsGrant` and `createGuestSkillsCapability` in
-`packages/kernel/src/runtime/skills-bridge.ts`, and `createLocalContainerRuntime` in
-`packages/kernel/src/runtime/local-container-runtime.ts`. Test:
-`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (native/guest builtin and resource
-conformance, path-free catalog, active bootstrap and exact request refusal) and
-`packages/kernel/tests/integration/local-podman-runtime.test.ts` (bootstrap reaches the guest
-prompt without a mount).
+Container placement receives no Skill catalog, bootstrap body, tool, host root or broker. Explicit
+`skill`, a resolvable `$skill`, Plugin Agent, or operator profile with `use_skills` is refused during
+projection. Shipped builtin profiles lose only their builtin `use_skills`; operator profiles are
+never silently rewritten.
+
+Production: `projectContainerConfiguration` in
+`packages/kernel/src/config/container-projection.ts`. Test:
+`packages/kernel/tests/unit/container-projection.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ---
 
@@ -1129,17 +1113,11 @@ to this document.
     `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
-53. **Container placement discloses skill content, never host roots, and resolves bootstrap bodies
-    only from active plugin declarations against the admitted provider snapshot.** The guest and
-    host both enforce the exact body/resource operation split; neither accepts body aliases or
-    operation-specific extra fields.
-    Production: `createRuntimeSkillCatalog`, `createRuntimeSkillBootstraps`,
-    `createHostSkillsGrant` and `createGuestSkillsCapability` in
-    `packages/kernel/src/runtime/skills-bridge.ts`; `loadSkillTool` and `readSkillResourceTool` in
-    `packages/skills/src/tool.ts`. Test:
-    `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` and
-    `packages/kernel/tests/integration/runtime-guest-loop.test.ts` (the invalid `/dev/null`-style
-    body payload never crosses to host capability authority).
+53. **Container placement discloses no Skill content or root.** An explicit Skill and any operator
+    `use_skills` profile are incompatible; inactive configured Skills do not block an independent
+    run. Production: `projectContainerConfiguration` in
+    `packages/kernel/src/config/container-projection.ts`. Test:
+    `packages/kernel/tests/unit/container-projection.test.ts`.
 
 ---
 

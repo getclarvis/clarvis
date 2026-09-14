@@ -127,15 +127,10 @@ plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
 
-Docker and Podman do not disable this policy. The kernel's private hook bridge invokes the admitted
-host lifecycle callbacks, retaining command/environment filtering and native gate/rewriting order.
-Only configured fire points and validated event contexts cross that bridge; the guest never supplies
-a hook command. For `mcp_tool` hooks, `stdio` execution is routed back to the active container using
-the run's guest server declaration and environment; it never falls back to a host process. Commands
-and dependencies must therefore be available inside the image or mounted workspace, as for ordinary
-guest MCP tools. HTTP/SSE MCP hooks retain host connections and remote effects. Early `session_start`
-and `run_start` hooks can acquire their own guest lease before the ordinary MCP pool opens; each
-lease is released after its call. See the
+Hooks are composed only for native Host/Sandbox. The complete Docker/Podman Container Kernel does not construct or
+invoke host lifecycle callbacks, command hooks, HTTP/SSE Hook MCP or guest stdio Hook MCP; configured
+Hooks remain persisted but inactive for that placement. No event context, command, environment or
+Hook declaration crosses the private runtime. See the
 [isolated runtime contract](../../specs/hosts/isolated-agent-runtime.md).
 
 ## Usage

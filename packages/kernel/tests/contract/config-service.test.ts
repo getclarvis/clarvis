@@ -223,24 +223,27 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
     }
   });
 
-  it("projects grants/can_spawn/budget from frontmatter onto the summary", async () => {
+  it("projects grants/spawn/budget fields from frontmatter onto the summary", async () => {
     const config = createConfigService(createMemoryConfigStore());
     const summary = await config.writeAgent("workspace", "lead", {
       frontmatter: {
         model: "anthropic/sonnet",
         grants: ["read_workspace", "run_commands"],
         can_spawn: ["explorer"],
+        default_spawn: "explorer",
         budget: { on_exceed: "escalate", total_token_limit: 200000 },
       },
       body: "You lead.",
     });
     expect(summary.grants).toEqual(["read_workspace", "run_commands"]);
     expect(summary.can_spawn).toEqual(["explorer"]);
+    expect(summary.default_spawn).toBe("explorer");
     expect(summary.budget).toEqual({ on_exceed: "escalate", total_token_limit: 200000 });
 
     const listed = (await config.listAgents()).find((a) => a.name === "lead");
     expect(listed?.grants).toEqual(["read_workspace", "run_commands"]);
     expect(listed?.can_spawn).toEqual(["explorer"]);
+    expect(listed?.default_spawn).toBe("explorer");
   });
 
   it("omits grants/can_spawn/budget when the frontmatter declares none", async () => {

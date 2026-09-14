@@ -20,13 +20,16 @@ export type { MemoryIngestNotice, RunProgress } from "../core/run-types.ts";
 /** An agent profile as summarized for the UI's profile pickers and info panels. */
 export interface ProfileInfo {
   name: string;
+  scope?: "global" | "workspace" | "plugin" | "builtin";
   description?: string;
   model?: string;
   canSpawn?: string[];
+  defaultSpawn?: string;
   budget?: { on_exceed?: string; total_token_limit?: number };
   /** Tool grants from the agent frontmatter (kernel-projected). Undefined when
    * the frontmatter could not be parsed — rendered as "unknown". */
   grants?: string[];
+  tools?: string[];
 }
 
 interface GuardJudgeInput {

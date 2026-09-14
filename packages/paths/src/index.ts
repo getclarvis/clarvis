@@ -49,6 +49,16 @@ export { globalRoot, workspaceRoot, HOME_ENV, WORKSPACE_ENV, type RootOptions } 
 
 export { globalPaths, type GlobalPaths } from "./global.ts";
 
+export {
+  containerLaunchPaths,
+  containerKernelStatePaths,
+  containerDataVolumeNames,
+  containerArtifactVolumeName,
+  containerGuestPaths,
+  type ContainerLaunchPaths,
+  type ContainerKernelStatePaths,
+} from "./container.ts";
+
 export { localHostPaths, type LocalHostPaths, type LocalHostPathOptions } from "./local-host.ts";
 
 export {
@@ -64,6 +74,7 @@ export {
   agentsPluginsDir,
   agentsPluginsDirs,
   agentsSkillsDirs,
+  agentsWorkspaceDir,
   isAgentsMarketplaceFile,
   workspacePaths,
   type WorkspacePaths,

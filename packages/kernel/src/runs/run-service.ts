@@ -346,7 +346,19 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
         request: stored.request,
         ...(request?.trim() ? { guidance: request.trim() } : {}),
         env: deps.env,
-        llm: deps.llm,
+        llm: {
+          call: (params) =>
+            deps.llm.call({
+              ...params,
+              executionId,
+              sessionId: params.sessionId ?? stored.request.session_id ?? executionId,
+              agentInstanceId:
+                params.agentInstanceId ?? stored.request.agent_instance_id ?? executionId,
+            }),
+        },
+        ...(deps.modelExecutionResolver === undefined
+          ? {}
+          : { modelExecutionResolver: deps.modelExecutionResolver }),
         logger,
       });
       if (outcome.status === "skipped") {

@@ -14,8 +14,7 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[
 const ACTION_SHA = /^[0-9a-f]{40}$/;
 const SOURCE_REPOSITORY = "getclarvis/clarvis";
 const RELEASE_REPOSITORY = "getclarvis/clarvis-releases";
-const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
-const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
+const RUNTIME_BASE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-base";
 
 interface WorkflowSource {
   path: string;
@@ -110,30 +109,30 @@ export function releaseReadinessFailures(input: {
   }
   const tagOnlyGuard = "if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')";
   const runtimeReleaseMarkers = [
-    `RUNTIME_ARTIFACT_REPOSITORY: ${RUNTIME_ARTIFACT_REPOSITORY}`,
-    `RUNTIME_IMAGE_REPOSITORY: ${RUNTIME_IMAGE_REPOSITORY}`,
-    "  runtime-image:",
+    `BASE_REPOSITORY: ${RUNTIME_BASE_REPOSITORY}`,
+    "  runtime:",
     "  runtime-manifest:",
     "needs: [package, runtime-manifest]",
     "RELEASE_TAG: ${{ github.ref_name }}",
+    "bun run runtime:base:build",
+    "bun run runtime:artifact:build",
+    "bun run runtime:qualify --engine docker",
+    "bun run runtime:qualify --engine podman",
     "bun run tooling/runtime/release-manifest.ts",
     "uses: actions/attest@",
-    "subject-name: ${{ env.RUNTIME_ARTIFACT_REPOSITORY }}",
-    "subject-name: ${{ env.RUNTIME_IMAGE_REPOSITORY }}",
+    "subject-path: build/runtime/clarvis-kernel-*.tar.gz",
     "artifact-metadata: write",
     "build/release/runtime-release.json",
   ];
   const tagGuardCount = input.releaseWorkflow.split(tagOnlyGuard).length - 1;
-  const registryPushCount = input.releaseWorkflow.split("push-to-registry: true").length - 1;
   const packageWriteCount = input.releaseWorkflow.split("packages: write").length - 1;
   const runtimeIdentityGate = input.releaseWorkflow.indexOf("RELEASE_TAG: ${{ github.ref_name }}");
   const runtimeRegistryLogin = input.releaseWorkflow.indexOf("docker login ghcr.io");
-  const firstRuntimePush = input.releaseWorkflow.indexOf('docker push "$artifact_tag"');
+  const firstRuntimePush = input.releaseWorkflow.indexOf('docker push "$published_base"');
   if (
     runtimeReleaseMarkers.some((marker) => !input.releaseWorkflow.includes(marker)) ||
     tagGuardCount < 3 ||
-    registryPushCount < 2 ||
-    packageWriteCount < 2 ||
+    packageWriteCount < 1 ||
     runtimeIdentityGate < 0 ||
     runtimeRegistryLogin < 0 ||
     firstRuntimePush < 0 ||
@@ -141,7 +140,7 @@ export function releaseReadinessFailures(input: {
     runtimeRegistryLogin > firstRuntimePush
   ) {
     failures.push(
-      "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
+      "release workflow must publish the immutable base, attest Kernel artifacts and qualify both engines only on tag pushes",
     );
   }
   if (!input.releaseWorkflow.includes(tagOnlyGuard)) {

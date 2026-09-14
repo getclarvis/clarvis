@@ -57,6 +57,7 @@ import type {
   WorkflowsService,
   SubscriptionScheme,
   SubscriptionState,
+  RuntimeStatus,
 } from "@clarvis/protocol";
 import type { Commands, CommandUi, ViewHost, ViewRoute } from "../keys/commands.ts";
 import type { InteractionEffects } from "../keys/interaction.ts";
@@ -113,7 +114,8 @@ export interface AppCommandDeps {
   refreshAgentProfiles: () => Promise<void>;
   keys: KeysAdapter;
   reconnectBackend: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
-  retryRuntime?: () => void;
+  /** Current admitted placement, used when a host-side save requires a new generation. */
+  runtime?: () => RuntimeStatus | undefined;
   env: EnvView;
   preview: ThemePreview;
   platform: Platform;
@@ -656,8 +658,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           memory: deps.memoryMode,
           notify,
           runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
           openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
-          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
         });
     }),
   });
@@ -678,6 +680,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           catalog: deps.catalog,
           notify,
           runActive: deps.runActive,
+          ...(deps.runtime?.()?.kind === "container"
+            ? { reload: () => deps.reconnectBackend("reload") }
+            : {}),
           ...(deps.inspectRunContext === undefined
             ? {}
             : { inspectContext: deps.inspectRunContext }),
@@ -1136,8 +1141,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           settings: deps.settings,
           notify,
           runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
           openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
-          ...(deps.retryRuntime === undefined ? {} : { retryRuntime: deps.retryRuntime }),
         });
     }),
   });

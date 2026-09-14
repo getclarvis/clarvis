@@ -642,19 +642,41 @@ name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts`).
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
 order as the Agents window"`).
 
+When effective Isolation is Docker/Podman, the list also projects kernel-owned Container
+compatibility: unmodified `marshall`, `coder`, `explorer` and `planner` remain selectable through
+their core projection; `admiral`, Plugin Agents and custom profiles with MCP tools, non-core grants
+or a `default_spawn` outside the admitted graph are labelled as requiring Sandbox/Host. The `$`
+completion provider returns no Skills while Container is effective. This is submit-time guidance,
+not authority; kernel admission revalidates the graph if state changes. Production:
+`packages/code/src/adapters/agents.ts` and `packages/code/src/views/App.tsx`. Test:
+`packages/code/tests/unit/agents.test.ts` and
+`packages/code/tests/component/kernel-run-client.test.ts`.
+
 ### `IsolationPicker` and `ReviewPicker`
 
 The two quick pickers reuse `ListPicker` but never combine their state. `IsolationPicker` marks the
 effective Host/Sandbox/Docker/Podman boundary, persists the global choice through `applyIsolation`, and
 arms `useArmedConfirm` before Host removes containment. Its Docker or Podman choice writes only
-`runtime.backend`, keeps native Sandbox enabled, and asks the existing coordinator to
-retry on the next run; it does not start an engine from the picker. `ReviewPicker` marks
-Off/Approval/Auto, writes through `applyReviewMode` at the current scope, preserves command policy
-and leaves Isolation untouched. Both are lazy `retain-one` portal boundaries, so neither module
-enters first boot and each native tree is reused after first open. Production:
+`runtime.backend`, keeps native Sandbox settings intact, and does not start an engine from the picker.
+A placement choice keeps the picker modal while saving and reconnecting, names the current phase in
+the footer, blocks navigation and Escape during that operation, and closes only after the replacement
+is admitted. Failure leaves the saved choice and wrapped error visible in the bounded preview, while
+the picker restores its prior global isolation through `AppBackend.restoreIsolation`, then the
+connection layer recovers that placement,
+and the standard navigation offers another choice or Escape without a competing footer. If restoring the setting itself fails, the error
+explicitly retains the pending reconnect state. Armed Host
+confirmation replaces the ordinary picker actions with `use host`/`keep isolation` and does not
+repeat its warning in the footer. A later Container failure remains failed until the operator chooses
+a placement and starts a new run. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
+the current scope, preserves command policy and leaves Isolation untouched; under Container it
+renders `Not applicable in Container` and does not overwrite that policy. Both are lazy `retain-one`
+portal boundaries, so neither module enters first boot and each native tree is reused after first
+open. Production:
 `packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
 `packages/code/src/views/overlays/IsolationPicker.tsx`,
-`packages/code/src/views/overlays/ReviewPicker.tsx`, and `packages/code/src/views/App.tsx`.
+`packages/code/src/views/overlays/ListPicker.tsx`,
+`packages/code/src/views/overlays/ReviewPicker.tsx`, and `packages/code/src/views/App.tsx`. Test:
+`packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 ### `Help` (`views/overlays/Help.tsx`)
 

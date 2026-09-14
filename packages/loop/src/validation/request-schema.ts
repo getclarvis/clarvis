@@ -1,4 +1,9 @@
-import type { CapabilityRegistry, EnvConfig, RunRequest } from "@clarvis/capability";
+import type {
+  CapabilityRegistry,
+  EnvConfig,
+  RunRequest,
+  ModelExecutionResolver,
+} from "@clarvis/capability";
 import { parseRunRequest } from "./request/parsing.ts";
 import {
   rejectDuplicateProfileNames,
@@ -34,8 +39,9 @@ export function validateBody(
   raw: unknown,
   env: EnvConfig,
   registry?: CapabilityRegistry,
+  options: { modelExecutionResolver?: ModelExecutionResolver } = {},
 ): ValidatedRunRequest {
-  const data = parseRunRequest(raw, registry);
+  const data = parseRunRequest(raw, registry, options.modelExecutionResolver !== undefined);
   rejectDuplicateServerNames(data);
   rejectDuplicateProfileNames(data);
   requireKnownGrants(data, registry);
@@ -43,8 +49,8 @@ export function validateBody(
   requireKnownSpawnTargets(data, shape);
   enforceBudgetMode(data, shape);
   enforceEnvCeilings(data, env);
-  rejectProviderConfigIssues(data);
-  requireResolvableModelProviders(data);
-  enforcePerProfileRules(data, env);
+  rejectProviderConfigIssues(data, options.modelExecutionResolver);
+  requireResolvableModelProviders(data, options.modelExecutionResolver);
+  enforcePerProfileRules(data, env, options.modelExecutionResolver);
   return { request: data, shape };
 }

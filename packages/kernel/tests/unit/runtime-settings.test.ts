@@ -39,7 +39,6 @@ describe("runtime settings", () => {
         backend: "docker" as const,
         network: "outbound" as const,
         limits: DEFAULT_RUNTIME_LIMITS,
-        fallback: "sandbox" as const,
       },
     ],
     [
@@ -131,8 +130,10 @@ describe("runtime settings", () => {
     expect(runtimeSettingsSchema.parse({ ...value, backend: "docker" })).toEqual({
       ...value,
       backend: "docker",
-      fallback: "sandbox",
     });
+    expect(() =>
+      runtimeSettingsSchema.parse({ ...value, backend: "docker", fallback: "sandbox" }),
+    ).toThrow();
     const { executable: _executable, ...incompletePodman } = value;
     expect(runtimeSettingsSchema.parse(incompletePodman)).toEqual(incompletePodman);
     expect(() => runtimeSettingsSchema.parse({ ...value, image_digest: "latest" })).toThrow();

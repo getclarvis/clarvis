@@ -1,4 +1,4 @@
-import type { EnvConfig } from "@clarvis/capability";
+import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import {
   bind,
@@ -59,7 +59,7 @@ import { TOOL_EFFECT_PORT } from "@clarvis/capability";
 import { orderCapabilities } from "./capability-order.ts";
 import { collectCapabilityToolMetadata } from "./capability-tool-metadata.ts";
 import { createToolEffectPort } from "./tools/tool-effect.ts";
-import { createEntryInput } from "./entry-inputs.ts";
+import { createEntryInput, type EntryInputDeps } from "./entry-inputs.ts";
 import { buildElicitRelay } from "./elicit-relay.ts";
 import { openToolPool } from "./open-tool-pool.ts";
 import { createMcpInstructionsRunCapability } from "./mcp-instructions.ts";
@@ -93,6 +93,9 @@ import {
  *   `executeRun` builds this and hands the orchestrator the promptcache-keyed LLM.
  */
 export interface OrchestratorDeps {
+  /** Preserve the resolved namespace through entry and child orchestration. */
+  statePaths?: EntryInputDeps["statePaths"];
+  modelExecutionResolver?: ModelExecutionResolver;
   /** Read projection published before activation. */
   operatorAuthority?: OperatorAuthorityReader;
   /** Private loop-owned steer observer; not passed to capability contexts. */
@@ -206,7 +209,12 @@ export async function runOrchestrator(
   const startedAt = performance.now();
   const wallStartedAt = Date.now();
   const config = resolveConfig(request, deps.env);
-  const profileRegistry = resolveSubagentProfiles(request.profiles, request.providers, deps.env);
+  const profileRegistry = resolveSubagentProfiles(
+    request.profiles,
+    request.providers,
+    deps.env,
+    deps.modelExecutionResolver,
+  );
   const allCapabilities = deps.capabilities ?? [];
   const capabilityToolMetadata = collectCapabilityToolMetadata(allCapabilities);
   const persistedTraceProjectors =

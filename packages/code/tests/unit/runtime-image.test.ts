@@ -1,160 +1,237 @@
-import { expect, test } from "bun:test";
-import { RUNTIME_PROTOCOL_REVISION } from "@clarvis/kernel";
-import { resolveClarvisRuntimeImage } from "../../src/adapters/runtime-image.ts";
+import { afterEach, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { resolveClarvisContainerRelease } from "../../src/adapters/runtime-image.ts";
 
-function manifest(version = "1.2.3"): Record<string, unknown> {
+const revision = "a".repeat(40);
+const roots: string[] = [];
+afterEach(async () => {
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
+
+function target(name: "linux-x64" | "linux-arm64", marker: string) {
   return {
-    schema: 1,
-    repository: "getclarvis/clarvis",
-    version,
-    source_revision: "a".repeat(40),
-    protocol_revision: RUNTIME_PROTOCOL_REVISION,
-    platforms: ["linux/amd64", "linux/arm64"],
-    runtime_image: `ghcr.io/getclarvis/clarvis-runtime@sha256:${"b".repeat(64)}`,
-    artifact_image: `ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:${"c".repeat(64)}`,
-    base_image: `debian@sha256:${"d".repeat(64)}`,
-    build_image: `oven/bun@sha256:${"e".repeat(64)}`,
+    base: {
+      image: "ghcr.io/getclarvis/clarvis-runtime-base",
+      digest: `sha256:${marker.repeat(64)}`,
+      abi: "clarvis-linux-glibc-v1",
+    },
+    artifact: {
+      asset: `clarvis-kernel-${name}.tar.gz`,
+      sha256: (marker === "b" ? "d" : "e").repeat(64),
+      size: 1024,
+    },
+    kernel_wire_version: 10,
+    broker_version: 1,
+    channel_version: 1,
   };
 }
 
-test("generation shutdown cancels release manifest acquisition", async () => {
-  const controller = new AbortController();
-  const entered = Promise.withResolvers<void>();
-  const fetcher = (async (_input: unknown, options: RequestInit) => {
-    const signal = options.signal!;
-    const stopped = new Promise<never>((_resolve, reject) =>
-      signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true }),
-    );
-    entered.resolve();
-    return stopped;
-  }) as unknown as typeof fetch;
-  const refused = resolveClarvisRuntimeImage({
-    currentVersion: "1.2.3",
-    environment: {},
-    signal: controller.signal,
-    fetcher,
-  }).catch((error: unknown) => error);
-  await entered.promise;
-  controller.abort(new Error("host retired"));
-  expect(await refused).toMatchObject({ message: "host retired" });
-});
-
-test("source development selects the local image without any network request", async () => {
-  let fetched = false;
-  await expect(
-    resolveClarvisRuntimeImage({
-      currentVersion: "1.2.3",
-      environment: { CLARVIS_CODE_SOURCE: "1" },
-      fetcher: (() => {
-        fetched = true;
-        throw new Error("must stay offline");
-      }) as unknown as unknown as typeof fetch,
-    }),
-  ).resolves.toEqual({ reference: "clarvis-runtime:development", pull: false });
-  expect(fetched).toBe(false);
-});
-
-test("an installed build resolves only its exact release's digest-pinned image", async () => {
-  let requested = "";
-  const fetcher = (async (input: string | URL | Request) => {
-    requested = String(input);
-    return new Response(JSON.stringify(manifest()), { status: 200 });
-  }) as unknown as unknown as typeof fetch;
-  await expect(
-    resolveClarvisRuntimeImage({ currentVersion: "1.2.3", environment: {}, fetcher }),
-  ).resolves.toEqual({
-    reference: `ghcr.io/getclarvis/clarvis-runtime@sha256:${"b".repeat(64)}`,
-    pull: true,
-  });
-  expect(requested).toBe(
-    "https://github.com/getclarvis/clarvis-releases/releases/download/v1.2.3/runtime-release.json",
-  );
-});
-
-test("release identity drift is an integrity failure rather than a sandbox fallback", async () => {
-  const fetcher = (async () =>
-    new Response(JSON.stringify(manifest("1.2.4")), {
-      status: 200,
-    })) as unknown as unknown as typeof fetch;
-  await expect(
-    resolveClarvisRuntimeImage({ currentVersion: "1.2.3", environment: {}, fetcher }),
-  ).rejects.toMatchObject({ code: "runtime_image_integrity" });
-});
-
-test("a release redirect outside GitHub is refused", async () => {
-  const fetcher = (async () => {
-    const response = new Response(JSON.stringify(manifest()), { status: 200 });
-    Object.defineProperty(response, "url", { value: "https://example.test/runtime-release.json" });
-    return response;
-  }) as unknown as unknown as typeof fetch;
-  await expect(
-    resolveClarvisRuntimeImage({ currentVersion: "1.2.3", environment: {}, fetcher }),
-  ).rejects.toMatchObject({ code: "runtime_image_integrity" });
-});
-
-function candidateManifest(): Record<string, unknown> {
-  const { base_image: _base, build_image: _build, ...base } = manifest();
+function runtime() {
   return {
-    ...base,
+    schema_version: 2,
+    version: "1.2.3",
+    source_revision: revision,
+    targets: {
+      "linux-x64": target("linux-x64", "b"),
+      "linux-arm64": target("linux-arm64", "c"),
+    },
+  };
+}
+
+const responseFetch = (response: () => Response): typeof fetch =>
+  (async () => response()) as unknown as typeof fetch;
+
+test("stable release resolves the immutable base and separate Kernel artifact", async () => {
+  for (const selectedTarget of ["linux-x64", "linux-arm64"] as const) {
+    const selection = await resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: selectedTarget,
+      environment: {},
+      fetcher: responseFetch(() => new Response(JSON.stringify(runtime()))),
+    });
+    expect(selection).toEqual({
+      base: {
+        reference: `ghcr.io/getclarvis/clarvis-runtime-base@sha256:${selectedTarget === "linux-x64" ? "b".repeat(64) : "c".repeat(64)}`,
+        pull: true,
+      },
+      artifact: {
+        source: {
+          kind: "release",
+          repository: "getclarvis/clarvis-releases",
+          tag: "v1.2.3",
+          assetName: `clarvis-kernel-${selectedTarget}.tar.gz`,
+        },
+        selection: {
+          productVersion: "1.2.3",
+          sourceRevision: revision,
+          target: selectedTarget,
+          baseAbi: "clarvis-linux-glibc-v1",
+          digest: `sha256:${selectedTarget === "linux-x64" ? "d".repeat(64) : "e".repeat(64)}`,
+          size: 1024,
+        },
+      },
+    });
+  }
+});
+
+test("candidate selection is tied to its source revision and source repository", async () => {
+  const tag = "v1.2.3-rc.4";
+  const candidate = {
+    schema: 1,
     channel: "candidate",
     installation: "source-v1",
-    tag: "v1.2.3-rc.2",
-    runtime_image: `ghcr.io/getclarvis/clarvis-runtime-candidate@sha256:${"b".repeat(64)}`,
-    artifact_image: `ghcr.io/getclarvis/clarvis-runtime-candidate-artifact@sha256:${"c".repeat(64)}`,
+    tag,
+    version: "1.2.3",
+    source_revision: revision,
+    repository: "getclarvis/clarvis",
+    kernel_wire_version: 10,
+    broker_version: 1,
+    channel_version: 1,
+    targets: ["linux-x64", "linux-arm64"],
+    runtime: runtime(),
   };
-}
-
-test("candidate source installs resolve the exact RC image instead of the local development tag", async () => {
-  let requested = "";
-  const fetcher = (async (input: string | URL | Request) => {
-    requested = String(input);
-    return new Response(JSON.stringify(candidateManifest()));
-  }) as unknown as typeof fetch;
+  const selection = await resolveClarvisContainerRelease({
+    currentVersion: "1.2.3",
+    target: "linux-x64",
+    environment: {
+      CLARVIS_RUNTIME_CANDIDATE: tag,
+      CLARVIS_RUNTIME_CANDIDATE_REVISION: revision,
+    },
+    fetcher: responseFetch(() => new Response(JSON.stringify(candidate))),
+  });
+  expect(selection.artifact.source).toEqual({
+    kind: "release",
+    repository: "getclarvis/clarvis",
+    tag,
+    assetName: "clarvis-kernel-linux-x64.tar.gz",
+  });
   await expect(
-    resolveClarvisRuntimeImage({
+    resolveClarvisContainerRelease({
       currentVersion: "1.2.3",
+      target: "linux-x64",
       environment: {
-        CLARVIS_CODE_SOURCE: "1",
-        CLARVIS_RUNTIME_CANDIDATE: "v1.2.3-rc.2",
-        CLARVIS_RUNTIME_CANDIDATE_REVISION: "a".repeat(40),
+        CLARVIS_RUNTIME_CANDIDATE: tag,
+        CLARVIS_RUNTIME_CANDIDATE_REVISION: "f".repeat(40),
       },
-      fetcher,
+      fetcher: responseFetch(() => new Response(JSON.stringify(candidate))),
     }),
-  ).resolves.toEqual({ reference: String(candidateManifest().runtime_image), pull: true });
-  expect(requested).toBe(
-    "https://github.com/getclarvis/clarvis/releases/download/v1.2.3-rc.2/runtime-candidate.json",
-  );
+  ).rejects.toThrow("candidate source revision is invalid");
 });
 
-test("candidate version, commit, protocol and image namespace drift fail closed", async () => {
-  for (const patch of [
-    { tag: "v1.2.3-rc.3" },
-    { version: "1.2.4" },
-    { source_revision: "b".repeat(40) },
-    { protocol_revision: "999" },
-    { installation: undefined },
-    { runtime_image: manifest().runtime_image },
-    { artifact_image: "ghcr.io/foreign/image:latest" },
-  ]) {
-    await expect(
-      resolveClarvisRuntimeImage({
-        currentVersion: "1.2.3",
-        environment: {
-          CLARVIS_CODE_SOURCE: "1",
-          CLARVIS_RUNTIME_CANDIDATE: "v1.2.3-rc.2",
-          CLARVIS_RUNTIME_CANDIDATE_REVISION: "a".repeat(40),
-        },
-        fetcher: (async () =>
-          new Response(
-            JSON.stringify({ ...candidateManifest(), ...patch }),
-          )) as unknown as typeof fetch,
-      }),
-    ).rejects.toMatchObject({ code: "runtime_image_integrity" });
-  }
-  await expect(
-    resolveClarvisRuntimeImage({
-      currentVersion: "1.2.4",
-      environment: { CLARVIS_RUNTIME_CANDIDATE: "v1.2.3-rc.2" },
+test("source mode validates an explicit local archive without consulting a release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-code-runtime-artifact-"));
+  roots.push(root);
+  const stage = join(root, "stage");
+  const archive = join(root, "clarvis-kernel-linux-x64.tar.gz");
+  await mkdir(stage);
+  await writeFile(
+    join(stage, "manifest.json"),
+    JSON.stringify({ productVersion: "1.2.3", sourceRevision: revision, target: "linux-x64" }),
+  );
+  const tar = Bun.spawn(["tar", "-czf", archive, "-C", stage, "manifest.json"], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  expect(await tar.exited).toBe(0);
+  const selection = await resolveClarvisContainerRelease({
+    currentVersion: "1.2.3",
+    target: "linux-x64",
+    environment: {
+      CLARVIS_CODE_SOURCE: "1",
+      CLARVIS_RUNTIME_BASE: "clarvis-base:local",
+      CLARVIS_RUNTIME_ARTIFACT: archive,
+    },
+    fetcher: responseFetch(() => {
+      throw new Error("source mode must not fetch");
     }),
-  ).rejects.toMatchObject({ code: "runtime_image_integrity" });
+  });
+  expect(selection.base).toEqual({ reference: "clarvis-base:local", pull: false });
+  expect(selection.artifact.source).toEqual({ kind: "local", archivePath: archive });
+  expect(selection.artifact.selection).toMatchObject({
+    productVersion: "1.2.3",
+    sourceRevision: revision,
+    target: "linux-x64",
+    baseAbi: "clarvis-linux-glibc-v1",
+  });
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.4",
+      target: "linux-x64",
+      environment: {
+        CLARVIS_CODE_SOURCE: "1",
+        CLARVIS_RUNTIME_BASE: "clarvis-base:local",
+        CLARVIS_RUNTIME_ARTIFACT: archive,
+      },
+    }),
+  ).rejects.toThrow("local Container artifact identity is invalid");
+});
+
+test("release acquisition rejects incomplete identities, untrusted redirects and oversized bodies", async () => {
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "dev",
+      target: "linux-x64",
+      environment: {},
+    }),
+  ).rejects.toThrow("version cannot select");
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: { CLARVIS_CODE_SOURCE: "1" },
+    }),
+  ).rejects.toThrow("requires explicit");
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: {},
+      fetcher: responseFetch(
+        () =>
+          new Response(null, {
+            status: 302,
+            headers: { location: "https://invalid.example/runtime-release.json" },
+          }),
+      ),
+    }),
+  ).rejects.toThrow("destination is untrusted");
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: {},
+      fetcher: responseFetch(() => new Response("x".repeat(64 * 1024 + 1))),
+    }),
+  ).rejects.toThrow("size limit");
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: {},
+      fetcher: responseFetch(
+        () => new Response(JSON.stringify({ ...runtime(), schema_version: 1 })),
+      ),
+    }),
+  ).rejects.toThrow("manifest identity is invalid");
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: {},
+      fetcher: responseFetch(() => new Response(JSON.stringify({ ...runtime(), extra: true }))),
+    }),
+  ).rejects.toThrow("manifest identity is invalid");
+  const badTarget = runtime();
+  badTarget.targets["linux-x64"].broker_version = 2;
+  await expect(
+    resolveClarvisContainerRelease({
+      currentVersion: "1.2.3",
+      target: "linux-x64",
+      environment: {},
+      fetcher: responseFetch(() => new Response(JSON.stringify(badTarget))),
+    }),
+  ).rejects.toThrow("target identity is invalid");
 });

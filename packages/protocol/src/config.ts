@@ -50,8 +50,6 @@ export type RuntimeConfig =
       limits?: Partial<RuntimeLimitsConfig>;
       executable?: string;
       connection?: string;
-      /** Operational launch failures use the required native sandbox by default. */
-      fallback?: "sandbox" | "fail";
       /** Optional operator-owned, content-addressed first-use image customization. */
       recipe?: RuntimeRecipeConfig;
     }
@@ -362,8 +360,12 @@ export interface AgentSummary {
    * Absent (`undefined`) means the frontmatter could not be parsed.
    */
   grants?: string[];
+  /** MCP tool names declared by this profile; built-in coding tools come from grants instead. */
+  tools?: string[];
   /** Names this agent may spawn as sub-agents (a lead has ≥ 1). */
   can_spawn?: string[];
+  /** Preferred child selected when delegation omits an explicit profile. */
+  default_spawn?: string;
   /** Spend policy (`on_exceed` / `total_token_limit`) from the frontmatter. */
   budget?: AgentBudget;
   /** For an agent Clarvis ships that a config file overlays: see {@link AgentOverlay}. */

@@ -65,6 +65,35 @@ test("settled compaction uses user guidance and returns a smaller replacement sn
   expect(JSON.stringify(result.context)).toContain("Keep the auth decision");
 });
 
+test.each(["openai-codex", "xai-grok"] as const)(
+  "stored catalog compaction carries %s kind and output limit",
+  async (kind) => {
+    const llm = new MockLLM({ script: [{ text: "Short summary." }] });
+    const result = await compactStoredContext({
+      context: CONTEXT,
+      request: { ...REQUEST, providers: [] },
+      env: loadEnv({}),
+      llm,
+      modelExecutionResolver: {
+        resolve: (provider, model) => ({
+          provider,
+          model,
+          kind,
+          contextWindowTokens: 1000,
+          maxOutputTokens: 100,
+          capabilities: [],
+          reasoningEfforts: ["low"],
+          promptCache: "implicit",
+        }),
+      },
+    });
+    expect(result.status).toBe("compacted");
+    expect(llm.calls[0]?.maxOutputTokens).toBe(100);
+    expect(llm.calls[0]?.reasoningEffort).toBeUndefined();
+    expect(llm.calls[0]?.providerConfig).toBeUndefined();
+  },
+);
+
 test("smaller-model fitting is mechanical and reaches the target high-water mark", () => {
   const env = loadEnv({ CLARVIS_DEFAULT_COMPACTION_PRESERVE_RECENT_TOKENS: "0" });
   const opaqueTail: ContextSnapshotEntry = {

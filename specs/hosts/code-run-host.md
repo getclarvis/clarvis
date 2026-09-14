@@ -254,6 +254,16 @@ optional `prepareReconnect`, and `callbacks`.
 `KernelRunClientCallbacks` : `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
 
+For Container placement, `composeContainerClient` routes execution/domain services to the guest and
+wraps host-owned configuration and model-catalog mutations explicitly. A successful host write
+emits a pending-projection notice; it does not replace the immutable generation's apparent active
+settings. Composition requires the authenticated principal returned by the guest hello, and a
+failed identity check closes the just-launched generation before propagating the error.
+Production: `composeContainerClient` in `packages/code/src/adapters/container-client.ts` and
+`connectContainerKernel` in `packages/code/src/adapters/workspace-client-manager.ts`.
+Test: `packages/code/tests/integration/container-client.test.ts` and
+`packages/code/tests/component/workspace-client-manager.test.ts`.
+
 ### 2.4 Other exported surfaces in scope
 
 | Module | Exports | File |
@@ -300,6 +310,13 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `plans` | `plans` | truthy |
 | `task` | `task` | truthy |
 | `skill` | `skill` | truthy |
+
+When `KernelCapabilities.runtime.kind === "container"`, `toStartParams` omits only Guard
+judge/mode and preserves native Memory and Plans projections. An explicit Task or Skill is rejected synchronously before
+`runs.start`/`hosting.start` instead of being omitted and silently degraded. Production:
+`packages/code/src/adapters/kernel-run-client.ts` (`toStartParams`, `startRun`). Test:
+`packages/code/tests/component/kernel-run-client.test.ts` (Container payload and explicit feature
+refusal cases).
 
 `workspace` is *not* a start parameter — `packages/code/tests/component/kernel-run-client.test.ts`
 asserts `expect(captured).not.toHaveProperty("workspace")`.
@@ -979,16 +996,23 @@ passes `Compacting context…` through `Footer.status`, reusing the canonical ru
 
 `reconnect(mode)` (`packages/code/src/adapters/kernel-run-client.ts`) is strictly
 `prepareReconnect?.(mode) → dispose() → connect()`. The preparation hook must accept the transition
-before the adapter releases a healthy client. `connection` authenticates another connection to the
-existing host; `reload` requests an idle host restart first. The omitted mode remains `reload` for
-configuration callbacks, while `/reconnect` explicitly selects `connection` and `/reconnect reload`
-selects `reload`. A refused reload leaves the existing adapter usable.
+before the run adapter releases its borrowed client. `connection` authenticates another connection
+to the current destination. `reload` makes `WorkspaceClientManager` resolve the persisted placement
+again, checks Container hosted runs and Memory index jobs, retires the old process, and admits the
+replacement identity before publishing it. An idle Host/Sandbox-to-Container or reverse change
+therefore updates the runtime projection and header before another run. A quiescence refusal leaves
+the old connection usable; a launch failure after retirement leaves the saved placement pending and
+never falls back to the previous placement. The omitted mode remains `reload` for configuration
+callbacks, while `/reconnect` explicitly selects `connection` and `/reconnect reload` selects
+`reload`.
 
-Production: `createKernelRunClient.reconnect` and `WorkspaceClientManager.recover` / `invalidate`.
+Production: `createKernelRunClient.reconnect` and `WorkspaceClientManager.recover` / `invalidate` /
+`connectionPlan`.
 Test: `reconnect confirms host retirement before releasing a healthy client`, `connection recovery
 forwards its intent without preparing a host reload` and `a refused host reload leaves the connected
-client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket and
-occupied-host cases in `packages/code/tests/component/workspace-client-manager.test.ts`.
+client usable` in `packages/code/tests/component/kernel-run-client.test.ts`, plus the real socket,
+occupied-host and placement-transition cases in
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
@@ -996,16 +1020,17 @@ Pure functions of `RunControlsState`, no state of their own.
 
 `deriveIsolation` gives an explicit Docker or Podman runtime precedence over the native Sandbox
 block; without a container runtime it returns Sandbox when that block is enabled and Host otherwise.
-`deriveRunControls` then projects Review, Memory and Plans independently from that isolation choice.
+`deriveRunControls` then projects stored Review, Memory and Plans independently from that isolation
+choice while marking their effective availability for Container.
 
-`safetyDescription` branches first on container isolation. Docker and Podman describe the directly
-mounted selected workspace plus either disabled networking or outbound access with explicit service
-exposure. It states that guest changes appear on the host immediately rather than promising a hidden
-copy or apply phase, then states whether commands run without review, use model review, or ask before
-running. Container placement does not hide the independently selected Review mode.
-Native Sandbox describes required versus optional confinement, filesystem and network policy; Host
-describes direct execution. Review changes the consequence text inside either native placement but
-never changes which placement was selected.
+`safetyDescription` branches first on container isolation. Docker and Podman describe **Core tools
+only**, the directly mounted writable selected workspace, either disabled networking or outbound
+access with explicit service exposure, and read-only Git metadata. They state that commands run
+without Command Review and that extensions/host-backed capabilities are unavailable; they do not
+promise a hidden copy, workspace protection or remote-effect containment. Native Sandbox describes
+required versus optional confinement, filesystem and network policy; Host describes direct
+execution. Stored Review changes consequences only inside native placement and never changes which
+placement was selected.
 
 `memoryDescription` is a three-way switch on `state.memory`: `"on"` reads before/after, "no
 extraction model resolves" for `"inert"`, otherwise disabled-for-this-session.
@@ -1018,24 +1043,30 @@ TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
 `applyIsolation` maps Host/Sandbox/Docker/Podman to an explicit global `{runtime, sandbox}` patch.
-Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both keep the native
-Sandbox enabled; Docker uses it as the required operational fallback, while Podman fails closed if
-the engine cannot start. Guard policy is untouched. Settings > Isolation, Run Controls and the
-`Ctrl+S` picker share that writer. `applyReviewMode` separately maps Off/Approval/Auto to
+Docker persists only `{backend:"docker"}` and Podman only `{backend:"podman"}`. Both leave the native
+Sandbox setting intact but never invoke it as fallback; engine failure remains a Container failure
+until a new explicit placement/run. Guard policy is untouched and becomes effective again only in
+native placement. Settings > Isolation, Run Controls and the
+`Ctrl+S` picker share that writer. With no active work, each surface immediately requests a reload;
+success publishes the admitted replacement runtime, while failure reports that the saved selection
+is pending reconnect. During active work the settings panels may save for later and the quick picker
+refuses the transition. `applyReviewMode` separately maps Off/Approval/Auto to
 the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
 workspace with no local policy; it writes no runtime or Sandbox field. Production:
 `packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
 `packages/code/src/views/config/IsolationConfigPanel.tsx`, and
-`packages/code/src/views/config/RunControlsPanel.tsx`. Tests:
+`packages/code/src/views/config/RunControlsPanel.tsx`; placement transition is owned by
+`WorkspaceClientManager.invalidate`. Tests:
 `packages/code/tests/unit/isolation.test.ts`,
 `packages/code/tests/integration/isolation-config-render.test.tsx`,
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
-`packages/code/tests/integration/run-controls-render.test.tsx`.
+`packages/code/tests/integration/run-controls-render.test.tsx`, plus
+`packages/code/tests/component/workspace-client-manager.test.ts`.
 
 The simple picker deliberately has no runtime-recipe editor. An operator may add a script under the
 global `runtime-recipes/` directory and reference it from the strict advanced Docker `recipe` block
-in global `settings.json`; Code's `local-host.ts` keeps image resolution on the same lazy
-first-run factory, and the kernel owns script capture, build, caching and fail-closed errors. Neither
+in global `settings.json`; the Container connector resolves the recipe before ordinary preparation,
+and the kernel owns script capture, build, caching and fail-closed errors. Neither
 the renderer nor a guest receives the script bytes or an operation to
 mutate that configuration. Production: `main` in
 `packages/code/src/local-host.ts`, `runtimeSettingsSchema` in
@@ -1045,9 +1076,12 @@ mutate that configuration. Production: `main` in
 `packages/kernel/tests/unit/runtime-recipe.test.ts`, and the gated
 `packages/kernel/tests/integration/runtime-recipe.e2e.test.ts`.
 
-Code supplies the workspace it already owns to the lazy container runtime. In a linked Git worktree,
+Code supplies the workspace it already owns to the Container connector. In a linked Git worktree,
 that worktree is the separate checkout and Clarvis does not create a second copy, pause for apply,
-commit, merge or remove it. A primary checkout or non-Git directory is mounted directly as well.
+commit, merge or remove it. A primary checkout is mounted directly as well. Worktree files remain
+writable, while discovered primary/linked Git metadata is overlaid read-only. A preflight nonce
+proves the engine sees that same bind before persistent volumes are prepared. Commits and
+incompatible workspaces require a new Sandbox/Host connection.
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `discoverGitWorkspace` and the runtime
 composition in `packages/kernel/src/file-kernel.ts`; `safetyDescription` in
@@ -1169,8 +1203,8 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/run-host.test.ts`.
 
 16. **`Work on task` carries only `{id, provider_key, mode}` — never a workspace or repository.**
-    `packages/code/src/run-host.ts`, and `toStartParams` passes `task` through verbatim
-    (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
+    `packages/code/src/run-host.ts`, and native `toStartParams` passes `task` through verbatim while
+    Container refuses it before submission (`packages/code/src/adapters/kernel-run-client.ts`). Pinned:
     `packages/code/tests/component/run-host.test.ts`.
 
 17. **The resumed active-task binding survives a continuation fallback.** `sessionTask` is set from
@@ -1389,11 +1423,13 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/session-store.test.ts`, which always supplies one — the throw
     itself is unpinned.
 
-56. **Isolation and command review are independently derived: an explicit Docker or Podman runtime
-    wins over the native Sandbox block, while `guardMode` remains an orthogonal field; every
-    container safety description includes that guard consequence.** Production:
-    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`,
-    `safetyDescription`). Pinned: `packages/code/tests/unit/execution-safety.test.ts`.
+56. **Isolation choice and persisted command-review policy remain independently stored, but Review
+    is not effective in Container.** Docker/Podman wins over the native Sandbox block; every Container
+    safety description states native Container capabilities, no Command Review, writable workspace/outbound consequences
+    and read-only Git metadata. Switching back restores the persisted native Review value.
+    Production: `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`,
+    `deriveRunControls`, `safetyDescription`). Pinned:
+    `packages/code/tests/unit/execution-safety.test.ts`.
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**

@@ -123,6 +123,24 @@ ResolvedTraceStore`, `skills?: SkillsProvider`, `modelCallAdmission`, `extension
 
 ### 2.2a `createHostModelCallAdmission` / `createHostExtensionAdmission` (`packages/loop/src/runtime/build-run-deps.ts`)
 
+`BuildRunDepsOptions` also accepts caller-owned `llm`, `connections` and an optional
+`modelExecutionResolver`. Supplying the LLM skips native SDK construction and the local retry,
+logging and admission wrappers; the caller owns those policies. Supplied connections skip the MCP
+client/manager and OAuth factories and are not closed by `dispose`. The resolver is threaded into
+execution and admits only exact catalog pairs, with no native transport fallback. Production:
+[`buildExecuteRunDeps`](../../packages/loop/src/runtime/build-run-deps.ts).
+Test: [`model-execution-injection.test.ts`](../../packages/loop/tests/integration/model-execution-injection.test.ts).
+
+Catalog metadata reaches entry and delegated targets, [vision](vision-routing.md), and live/stored
+[compaction](context-compaction.md), preserving context/output limits and provider-kind behavior
+without a synthetic `ResolvedProviderConfig`. Production:
+[`resolveSubagentProfiles`](../../packages/loop/src/runtime/subagents/subagent-profiles.ts),
+[`runOrchestrator`](../../packages/loop/src/runtime/orchestrator.ts),
+[`compactStoredContext`](../../packages/loop/src/runtime/context/stored-context-compaction.ts).
+Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts) and
+[`stored-context-compaction.test.ts`](../../packages/loop/tests/unit/stored-context-compaction.test.ts).
+These generic embedding contracts do not establish Container host/runtime integration.
+
 Two exported factory functions, re-exported through the curated main entrypoint (`.`,
 `packages/loop/src/lib.ts`) beside `buildExecuteRunDeps` — so §2.1's "carries" list for `.` is these two
 functions plus everything already named there. Each takes a narrow `Pick<EnvConfig, ...>` subset
@@ -357,10 +375,10 @@ Given `seedMarkers: ["<cap-block>"]`:
 2. Compute per-component sub-loggers and set the paths-package logger.
 3. Compute `useTools`/`useSkills`/`useHooks`.
 4. Resolve the trace store.
-5. If `mcpAuthorization` is present, build one OAuth coordinator; inject it into the MCP client
+5. Unless connections are supplied, if `mcpAuthorization` is present, build one OAuth coordinator; inject it into the MCP client
    factory, then build the connection manager. This stays independent of the optional
    feature-package imports: `@clarvis/mcp-client` is an ordinary engine dependency.
-6. Build the retrying/logging/admission-wrapped AI SDK provider.
+6. Unless `llm` is supplied, build the retrying/logging/admission-wrapped AI SDK provider.
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
    `@clarvis/skills`, then build a static provider from an array, wrap a function form in
    `dynamicSkills`, or build one host-pinned provider through `snapshotSkills`. The last form

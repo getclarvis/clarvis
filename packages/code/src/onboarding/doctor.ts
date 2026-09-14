@@ -380,14 +380,14 @@ export const GATES: Gate[] = [
         if ((isolation === "docker" || isolation === "podman") && !a.available) {
           return {
             status: "warn",
-            detail: `${posture} ${glyph("emDash")} Sandbox fallback unavailable`,
-            hint: `The container still starts lazily; if ${isolation === "docker" ? "Docker" : "Podman"} cannot start, the run fails closed because native Sandbox ${a.reason}.`,
+            detail: `${posture} ${glyph("emDash")} container starts fail closed`,
+            hint: `The Container connection fails closed if ${isolation === "docker" ? "Docker" : "Podman"} cannot start; native Sandbox is ${a.reason}.`,
           };
         }
         if (isolation === "docker" || isolation === "podman") {
           return {
             status: "pass",
-            detail: `${posture} ${glyph("emDash")} starts on first run; Sandbox fallback ready`,
+            detail: `${posture} ${glyph("emDash")} connects before use and never falls back`,
           };
         }
         if (!a.available) {

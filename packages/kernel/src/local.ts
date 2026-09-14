@@ -38,15 +38,8 @@ export {
   createNodeDockerControl,
   type NodeDockerControlOptions,
 } from "./adapters/process/node-docker-control.ts";
-export {
-  createLocalPodmanRuntime,
-  type LocalPodmanRuntimeOptions,
-} from "./runtime/local-podman-runtime.ts";
-export {
-  createLocalDockerRuntime,
-  type LocalDockerRuntimeOptions,
-  type RuntimeImageSelection,
-} from "./runtime/local-docker-runtime.ts";
+export { createDockerKernelBackend } from "./runtime/docker-backend.ts";
+export { createPodmanKernelBackend } from "./runtime/podman-backend.ts";
 export type { ProcessRunner, ProcessRunRequest, ProcessRunResult } from "./ports/process-runner.ts";
 export { createFilePluginRepository } from "./adapters/filesystem/plugin-repository.ts";
 export { createGitPluginFetcher } from "./adapters/git/plugin-fetcher.ts";

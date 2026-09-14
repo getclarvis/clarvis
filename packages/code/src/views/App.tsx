@@ -33,13 +33,19 @@ import type { AgentsStore } from "../adapters/agents-store.ts";
 import type { SettingsAdapter } from "../adapters/settings.ts";
 import { resolveContextWindow } from "../adapters/settings.ts";
 import type { ModelsCatalog } from "../adapters/models-catalog.ts";
-import type { ClarvisDirs } from "../adapters/agents.ts";
+import { isContainerCompatibleProfile, type ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
 import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls, effectiveRunIsolation } from "../adapters/execution-safety.ts";
+import {
+  deriveIsolation,
+  deriveRunControls,
+  effectiveRunIsolation,
+  type IsolationMode,
+} from "../adapters/execution-safety.ts";
+import { isContainerIsolation } from "../features/run/isolation.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -244,8 +250,12 @@ export interface AppRunControls {
     name: string;
     source?: string;
   } | null>;
-  /** Latest one-shot Docker-to-Sandbox fallback explanation from the host. */
-  runtimePlacementNotice?: Accessor<{ sequence: number; message: string } | null>;
+  /** Latest bounded runtime preparation or failure notice from the host. */
+  runtimePlacementNotice?: Accessor<{
+    sequence: number;
+    message: string;
+    pendingReconnect?: boolean;
+  } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -312,9 +322,8 @@ export interface AppBackend {
   storage: StorageService;
   /** Host-reported execution placement and effective container policy. */
   runtime?: () => RuntimeStatus | undefined;
-  /** Clear a session-latched Docker fallback; the next run starts it lazily again. */
-  retryRuntime: () => void;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
+  restoreIsolation?: (isolation: IsolationMode) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** Everything {@link App} needs to render: transcript/activity state, shell handles and the run/session/fleet/backend controls. */
@@ -369,6 +378,8 @@ export function App(props: AppProps): JSX.Element {
     if (notice === undefined || notice === null || notice.sequence === shownMcpStartupNotice)
       return;
     shownMcpStartupNotice = notice.sequence;
+    props.fleet.settings.version();
+    if (isContainerIsolation(deriveIsolation(props.fleet.settings.effective()))) return;
     notify(
       `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
         .map((server) => `${server.name}: ${server.reason}`)
@@ -948,7 +959,7 @@ export function App(props: AppProps): JSX.Element {
     refreshAgentProfiles: props.fleet.refreshAgentProfiles,
     keys: props.fleet.keys,
     reconnectBackend: props.backend.reconnect,
-    retryRuntime: props.backend.retryRuntime,
+    ...(props.backend.runtime === undefined ? {} : { runtime: props.backend.runtime }),
     env,
     preview: props.fleet.preview,
     platform: props.shell.platform,
@@ -1093,12 +1104,12 @@ export function App(props: AppProps): JSX.Element {
       review: runControls().guardMode,
       sandboxUnavailable:
         effectiveIsolation() === "sandbox" &&
-        props.backend.runtime?.()?.lifecycle !== "fallback" &&
         appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
       plans: runControls().plans,
       connection: props.backend.connection(),
+      configurationPending: props.run.runtimePlacementNotice?.()?.pendingReconnect === true,
       doctorDirty: doctorDirty() && !focusedRepairSurface(),
       workspace: props.shell.workspace,
       workspaceLabel: props.shell.workspaceLabel,
@@ -1158,15 +1169,17 @@ export function App(props: AppProps): JSX.Element {
 
   const skillMentionProvider = createSkillMentionProvider({
     skills: () =>
-      commands
-        .entries()
-        .filter((entry) => entry.namespace === "skills")
-        .map((entry) => ({
-          name:
-            entry.slashes[0]?.replace(/^\//, "") ||
-            (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
-          description: entry.desc,
-        })),
+      isContainerIsolation(runControls().isolation)
+        ? []
+        : commands
+            .entries()
+            .filter((entry) => entry.namespace === "skills")
+            .map((entry) => ({
+              name:
+                entry.slashes[0]?.replace(/^\//, "") ||
+                (entry.name.startsWith("skill.") ? entry.name.slice("skill.".length) : entry.name),
+              description: entry.desc,
+            })),
   });
 
   const argHintProviders = (): CompleteProvider[] =>
@@ -1272,37 +1285,6 @@ export function App(props: AppProps): JSX.Element {
     if (interruptKey !== undefined) detail.push(`${interruptKey} to interrupt`);
     return detail.join(` ${glyph("separator")} `);
   };
-  const compactActivityStrip = (): string => {
-    const counts = {
-      waiting: props.activity.subagents.filter((agent) => agent.status === "spawned").length,
-      running: props.activity.subagents.filter((agent) => agent.status === "running").length,
-      done: props.activity.subagents.filter((agent) => agent.status === "done").length,
-      failed: props.activity.subagents.filter((agent) => agent.status === "error").length,
-    };
-    const selected = ts.selectedSubagent();
-    const selectedIndex = selected
-      ? props.activity.subagents.findIndex((agent) => agent.id === selected)
-      : -1;
-    const agents =
-      props.activity.subagents.length === 0
-        ? ""
-        : [
-            `Agents ${props.activity.subagents.length}`,
-            counts.waiting > 0 ? `${counts.waiting} waiting` : "",
-            counts.running > 0 ? `${counts.running} running` : "",
-            counts.done > 0 ? `${counts.done} done` : "",
-            counts.failed > 0 ? `${counts.failed} failed` : "",
-            selectedIndex >= 0 ? `A${selectedIndex + 1} focused` : "",
-          ]
-            .filter(Boolean)
-            .join(` ${glyph("separator")} `);
-    const leaders = [...(props.run.workflowActivity()?.nodes.values() ?? [])].filter(
-      (node) => node.kind === "leader",
-    ).length;
-    return [agents, leaders > 0 ? `Workflow ${leaders}` : ""]
-      .filter(Boolean)
-      .join(` ${glyph("separator")} `);
-  };
   const footerRunStrip = (): string => {
     if (
       overlays.overlay() !== "none" ||
@@ -1316,7 +1298,6 @@ export function App(props: AppProps): JSX.Element {
     // strings truncate into one ambiguous sentence; the strip returns when the
     // self-clearing hint expires.
     if (footerHint().text.length > 0) return "";
-    const activityStrip = compactActivityStrip();
     const context = props.activity.context;
     const settledSessionUsage = props.session.usage?.() ?? null;
     const liveSessionUsage = activeSessionUsage(
@@ -1337,7 +1318,7 @@ export function App(props: AppProps): JSX.Element {
       ...(sessionUsage ? { sessionUsage } : {}),
       ...(sessionCost ? { sessionCost } : {}),
     });
-    return [runStrip, activityStrip].filter(Boolean).join(` ${glyph("separator")} `);
+    return runStrip;
   };
   /**
    * The band width the footer's action row is budgeted against.
@@ -1536,7 +1517,11 @@ export function App(props: AppProps): JSX.Element {
               enabled={lifecycle.active}
               list={props.fleet.agents.list}
               active={props.fleet.agents.active}
-              isRunnable={(name) => props.fleet.agents.isRunnable(name)}
+              isRunnable={(name) =>
+                props.fleet.agents.isRunnable(name) &&
+                (!isContainerIsolation(runControls().isolation) ||
+                  isContainerCompatibleProfile(name, props.fleet.agents.list()))
+              }
               defaults={() => {
                 const global = props.fleet.code.read("global").agent?.default;
                 const workspace = props.fleet.code.read("workspace").agent?.default;
@@ -1598,8 +1583,11 @@ export function App(props: AppProps): JSX.Element {
                 settings={props.fleet.settings}
                 runActive={props.run.active}
                 active={lifecycle.active}
-                retryRuntime={props.backend.retryRuntime}
                 notify={notify}
+                reload={() => props.backend.reconnect("reload")}
+                {...(props.backend.restoreIsolation === undefined
+                  ? {}
+                  : { restore: props.backend.restoreIsolation })}
                 onClose={() => overlays.dismissTop()}
                 onApplied={() => overlays.dismissTop()}
               />
@@ -1750,12 +1738,6 @@ export function App(props: AppProps): JSX.Element {
                 : { text: "", tone: "info" };
             }}
             runStrip={footerRunStrip}
-            onRunStripMouseDown={() => {
-              if (compactActivityStrip()) {
-                autoSidebarOwner = null;
-                layout.setDrawerOpen(true);
-              }
-            }}
             navigation={
               <NavigationBar
                 environment={interaction.keyboardEnvironment}

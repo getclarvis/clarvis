@@ -36,13 +36,6 @@ describe("execution safety", () => {
     expect(effectiveRunIsolation("docker", host, true)).toBe("host");
     expect(effectiveRunIsolation("docker", host, false)).toBe("docker");
     expect(effectiveRunIsolation("docker", undefined, true)).toBe("docker");
-    expect(
-      effectiveRunIsolation(
-        "docker",
-        { ...host, isolation: "sandbox", lifecycle: "fallback" },
-        false,
-      ),
-    ).toBe("sandbox");
   });
   it("derives isolation independently from command review", () => {
     expect(deriveIsolation({})).toBe("host");
@@ -110,6 +103,9 @@ describe("execution safety", () => {
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);
+    expect(safetyDescription({ ...sandbox, guardMode: "on" })[0]).toBe(
+      "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
+    );
 
     expect(safetyDescription(deriveRunControls({}, "off", "off"))).toEqual([
       "Commands run directly without approval.",
@@ -138,21 +134,23 @@ describe("execution safety", () => {
         deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "off", "off"),
       ),
     ).toEqual([
-      "Agent tools run inside a Linux Docker container.",
+      "The full native Kernel runs inside the Container.",
+      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
       "The selected workspace is mounted directly; changes appear on the host immediately.",
-      "Outbound network access is enabled; guest services can be exposed to the host.",
-      "Commands run without command review.",
+      "Outbound network access is enabled and may cause remote effects or expose workspace content.",
+      "Commands run without Command Review.",
+      "Git metadata is read-only; use Sandbox or Host for commits.",
     ]);
     expect(
       safetyDescription(
         deriveRunControls(onDisk({ runtime: { backend: "podman", network: "none" } }), "on", "off"),
       ),
-    ).toContain("Risky commands ask before running.");
+    ).toContain("Commands run without Command Review.");
     expect(
       safetyDescription(
         deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "auto", "off"),
       ),
-    ).toContain("Commands use model review; uncertain actions ask you.");
+    ).toContain("Commands run without Command Review.");
   });
 });
 

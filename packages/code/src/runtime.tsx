@@ -77,7 +77,7 @@ import { applyAsciiMode, glyph } from "./theme/glyphs.ts";
 import { presentStatusLine, progressStatusText } from "./features/run/status-presenter.ts";
 import { createAttention } from "./core/attention.ts";
 import { createSettingsAdapter, type SettingsAdapter } from "./adapters/settings.ts";
-import { plansState } from "./adapters/execution-safety.ts";
+import { plansState, type IsolationMode } from "./adapters/execution-safety.ts";
 import { createPlatform, openPublicUrl } from "./adapters/platform.ts";
 import { createFilePromptHistory } from "./adapters/file-prompt-history.ts";
 import { startHeadlessRun } from "./adapters/headless-run.ts";
@@ -97,7 +97,11 @@ import {
   type KernelRunClient,
   type KernelRunClientCallbacks,
 } from "./adapters/kernel-run-client.ts";
-import { WorkspaceClientManager } from "./adapters/workspace-client-manager.ts";
+import {
+  isContainerKernelOwnershipConflict,
+  isContainerWorkspaceDestination,
+  WorkspaceClientManager,
+} from "./adapters/workspace-client-manager.ts";
 import { createTasksController } from "./features/tasks/controller.ts";
 import {
   createWorkspaceCallbackTarget,
@@ -114,6 +118,7 @@ import {
   type ReconnectMode,
 } from "./adapters/connection-state.ts";
 import { runFatalBoot } from "./views/FatalBoot.tsx";
+import { containerConnectionStatus } from "./startup-foundation.ts";
 import { createElicitSlot } from "./adapters/elicit-slot.ts";
 import {
   createSessionStore,
@@ -144,11 +149,31 @@ let remoteWorkspace: RemoteWorkspaceRequest | undefined;
 
 function workspaceClientTarget(): {
   workspaceRoot: string;
-  remote?: RemoteWorkspaceRequest;
+  destination?: { kind: "ssh"; destination: string; workspace: string; executable?: string };
 } {
   return remoteWorkspace === undefined
     ? { workspaceRoot: workspace }
-    : { workspaceRoot: remoteWorkspace.workspace, remote: remoteWorkspace };
+    : {
+        workspaceRoot: remoteWorkspace.workspace,
+        destination: { kind: "ssh", ...remoteWorkspace },
+      };
+}
+
+async function saveOperatorIsolation(isolation: IsolationMode): Promise<void> {
+  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
+  const { applyIsolation } = await import("./features/run/isolation.ts");
+  const operator = createOperatorServices({
+    workspaceRoot: workspaceClientTarget().workspaceRoot,
+    globalDir: globalRoot(),
+    logger: createLogger("silent"),
+    subscriptions: false,
+  });
+  try {
+    const settings = await createSettingsAdapter(operator.config);
+    await applyIsolation(isolation, settings);
+  } finally {
+    await operator.close();
+  }
 }
 
 const ownerOverride = process.env.CLARVIS_OWNER;
@@ -183,7 +208,7 @@ const describeToolCall = (input: {
  * @remarks `runPrintMode` creates its own manager instead of using this helper:
  *   it needs `keySources` and `memory: true`, neither of which a silent
  *   listing/delete command has any use for. Every path still goes through the
- *   manager so a selected container backend receives its local runtime factory.
+ *   manager so a selected Container destination connects before application composition.
  */
 async function bootSilentSessionStore(): Promise<{
   manager: WorkspaceClientManager;
@@ -544,11 +569,12 @@ async function runApp(
   const [runtimePlacementNotice, setRuntimePlacementNotice] = createSignal<{
     sequence: number;
     message: string;
+    pendingReconnect?: boolean;
   } | null>(null);
-  const workspaceManager = await diagnosticAsync(
-    "boot.workspace-manager",
-    () =>
-      preparedWorkspaceManager ??
+  const connectWorkspaceManager = (
+    containerOwnershipConflict: "refuse" | "terminate" = "refuse",
+  ): Promise<WorkspaceClientManager> =>
+    diagnosticAsync("boot.workspace-manager", () =>
       WorkspaceClientManager.create({
         ...workspaceClientTarget(),
         globalDir: globalRoot(),
@@ -556,8 +582,73 @@ async function runApp(
         ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
         logger: diagnostics?.logger ?? createLogger("silent"),
         openMcpAuthorizationUrl: openPublicUrl,
+        onContainerProgress: (phase) =>
+          bootShell.setStartupStatus(containerConnectionStatus(phase)),
+        containerOwnershipConflict,
       }),
-  );
+    );
+  const useHostForBoot = async (): Promise<void> => {
+    await saveOperatorIsolation("host");
+  };
+  let connectedWorkspaceManager: WorkspaceClientManager | undefined;
+  try {
+    connectedWorkspaceManager = await (preparedWorkspaceManager ?? connectWorkspaceManager());
+  } catch (error) {
+    diagnosticEvent("boot.failed", { phase: "workspace-manager", error, attempt: 1 }, "error");
+    let attempt = 1;
+    const connect = async (ownership: "refuse" | "terminate"): Promise<void> => {
+      attempt += 1;
+      try {
+        connectedWorkspaceManager = await connectWorkspaceManager(ownership);
+      } catch (retryError) {
+        diagnosticEvent(
+          "boot.failed",
+          { phase: "workspace-manager", error: retryError, attempt },
+          "error",
+        );
+        throw retryError;
+      }
+    };
+    const containerSelected = await isContainerWorkspaceDestination({
+      ...workspaceClientTarget(),
+      globalDir: globalRoot(),
+      ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
+      ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+      logger: diagnostics?.logger ?? createLogger("silent"),
+    }).catch(() => false);
+    const recovered = await runFatalBoot({
+      renderer,
+      error,
+      retry: () => connect("refuse"),
+      ...(isContainerKernelOwnershipConflict(error)
+        ? {
+            resolution: {
+              key: "t",
+              label: "terminate previous Container",
+              run: () => connect("terminate"),
+            },
+          }
+        : containerSelected
+          ? {
+              resolution: {
+                key: "h",
+                label: "use Host",
+                run: async () => {
+                  await useHostForBoot();
+                  await connect("refuse");
+                },
+              },
+            }
+          : {}),
+      quit: () => {
+        releaseBootRendererLifecycle();
+        platform.shutdown("boot-failed").catch(() => undefined);
+      },
+    });
+    if (!recovered) return;
+  }
+  if (connectedWorkspaceManager === undefined) return;
+  const workspaceManager = connectedWorkspaceManager;
   const [skillsRevision, setSkillsRevision] = createSignal(0);
   platform.onShutdown(workspaceManager.subscribeSkillsChanged(setSkillsRevision));
   const unsubscribeExtensionProfileDrift = workspaceManager.subscribeExtensionProfileDrift(
@@ -577,8 +668,9 @@ async function runApp(
       setRuntimePlacementNotice({
         sequence: ++runtimePlacementSequence,
         message: notice.message,
+        ...(notice.pendingReconnect === true ? { pendingReconnect: true } : {}),
       });
-    }
+    } else setRuntimePlacementNotice(null);
   });
   platform.onShutdown(unsubscribeRuntimePlacement);
   const owner = workspaceManager.defaultOwner;
@@ -1078,6 +1170,7 @@ async function runApp(
       project: input.client.project.id,
       workspaceId: input.client.workspace.id,
       workspace: input.workspacePath,
+      runtimeKind: () => input.client.capabilities.runtime?.kind,
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
@@ -1233,8 +1326,7 @@ async function runApp(
       };
     conn.set({ phase: "connecting", detail: "reconnecting" });
     loops?.refresh();
-    try {
-      await runClient.reconnect(mode);
+    const refreshAdapters = async (): Promise<void> => {
       await keys.reload();
       await settings.reload();
       await agentFiles.reload();
@@ -1243,6 +1335,10 @@ async function runApp(
       conn.set(
         profs.length === 0 ? { phase: "ready", detail: "no Agent Profiles" } : { phase: "ready" },
       );
+    };
+    try {
+      await runClient.reconnect(mode);
+      await refreshAdapters();
       return {
         ok: true,
         message:
@@ -1598,8 +1694,15 @@ async function runApp(
       return runClient.storage;
     },
     runtime: runtimeStatus,
-    retryRuntime: () => workspaceManager.retryRuntime(),
     reconnect: reconnectBackend,
+    restoreIsolation: async (isolation) => {
+      try {
+        await saveOperatorIsolation(isolation);
+      } catch (error) {
+        return { ok: false, message: `could not restore isolation: ${errorText(error)}` };
+      }
+      return reconnectBackend("connection");
+    },
   };
 
   const startupInput = bootShell.takeStartupInput();

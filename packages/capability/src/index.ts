@@ -152,6 +152,7 @@ export { DELEGATE_TASK_MAX_CHARS, parseDelegateTaskText } from "./delegate-task.
 export type { DelegateTaskTextParseResult } from "./delegate-task.ts";
 export { parseModelRef } from "./model-ref.ts";
 export type { ModelRef } from "./model-ref.ts";
+export type { ModelExecutionInfo, ModelExecutionResolver } from "./model-execution.ts";
 export { FORBIDDEN_PROVIDER_BODY_KEYS, resolveProvider } from "./provider-resolver.ts";
 export type { ProviderResolution } from "./provider-resolver.ts";
 export { reasoningOutputFloor } from "./reasoning-budget.ts";

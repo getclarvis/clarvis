@@ -5,7 +5,7 @@ import path from "node:path";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 import type { Guard, Elicit } from "./guard/types.ts";
 import { discoverLinkedGitMetadataPaths, type SandboxConfig } from "./sandbox.ts";
-import { resolveCommand, workspaceStatePaths } from "@clarvis/paths";
+import { resolveCommand, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /**
  * The fully resolved, validated runtime configuration threaded through every
@@ -89,6 +89,9 @@ export interface RuntimeConfig {
    * Read-only: nothing that mutates consults it.
    */
   stateRoot: string;
+
+  /** Host-resolved machinery paths, shared by writes, reads and housekeeping. */
+  statePaths: WorkspaceStatePaths;
 
   /** Ordered writable temporary roots admitted in addition to the workspace; first is primary. */
   temporaryRoots: readonly string[];
@@ -246,6 +249,8 @@ function assertTimeoutOrder(min: number, max: number, minLabel: string, maxLabel
 export interface AgentToolsOptions {
   /** The workspace root; validated to exist and be a directory. */
   workspaceRoot: string;
+  /** Trusted composition port; omitted paths use the ordinary process roots. */
+  statePaths?: WorkspaceStatePaths;
 
   /** Expose only the read-only tool surface. Defaults to false. */
   readOnly?: boolean;
@@ -346,6 +351,11 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     throw new StartupError("No workspace root: options.workspaceRoot is required.");
   }
   const workspaceRoot = validateWorkspace(options.workspaceRoot);
+  const statePaths = Object.freeze({
+    ...(options.statePaths ?? workspaceStatePaths(workspaceRoot)),
+  });
+  if (path.resolve(statePaths.workspaceRoot) !== workspaceRoot)
+    throw new StartupError("Tool state paths belong to another workspace.");
   const gitMetadataPaths = discoverLinkedGitMetadataPaths(workspaceRoot);
   const logger = options.logger ?? NOOP_TOOLS_LOGGER;
 
@@ -513,7 +523,8 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     ripgrepAvailable,
     readOnly,
     confineToWorkspace,
-    stateRoot: workspaceStatePaths(workspaceRoot).root,
+    stateRoot: statePaths.root,
+    statePaths,
     temporaryRoots,
     skillExecutionRoots,
     gitMetadataPaths,

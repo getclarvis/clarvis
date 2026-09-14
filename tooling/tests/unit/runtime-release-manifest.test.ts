@@ -1,77 +1,67 @@
 import { describe, expect, test } from "bun:test";
-
-import {
-  RUNTIME_ARTIFACT_REPOSITORY,
-  RUNTIME_BASE_IMAGE,
-  RUNTIME_BUILD_IMAGE,
-  RUNTIME_IMAGE_REPOSITORY,
-  RUNTIME_PROTOCOL_REVISION,
-} from "../../runtime/build-image.ts";
 import {
   createRuntimeReleaseManifest,
   parseRuntimeReleaseManifest,
-  RUNTIME_RELEASE_PLATFORMS,
-  RUNTIME_SOURCE_REPOSITORY,
+  RUNTIME_TARGETS,
 } from "../../runtime/release-manifest.ts";
 
-const input = {
-  version: "0.1.1",
-  sourceRevision: "a".repeat(40),
-  artifactImage: `${RUNTIME_ARTIFACT_REPOSITORY}@sha256:${"b".repeat(64)}`,
-  runtimeImage: `${RUNTIME_IMAGE_REPOSITORY}@sha256:${"c".repeat(64)}`,
+const target = (name: "linux-x64" | "linux-arm64", byte: string) => ({
+  base: {
+    image: `ghcr.io/getclarvis/clarvis-base-${byte}`,
+    digest: `sha256:${byte.repeat(64)}` as const,
+    abi: "clarvis-linux-glibc-v1" as const,
+  },
+  artifact: {
+    asset: `clarvis-kernel-${name}.tar.gz`,
+    sha256: (byte === "a" ? "c" : "d").repeat(64),
+    size: 1024,
+  },
+  kernel_wire_version: 10 as const,
+  broker_version: 1 as const,
+  channel_version: 1 as const,
+});
+
+const manifest = {
+  schema_version: 2 as const,
+  version: "1.2.3",
+  source_revision: "e".repeat(40),
+  targets: {
+    "linux-x64": target("linux-x64", "a"),
+    "linux-arm64": target("linux-arm64", "b"),
+  },
 };
 
-describe("runtime release manifest", () => {
-  test("binds one product version and protocol to immutable multi-platform images", () => {
-    const manifest = createRuntimeReleaseManifest(input);
-    expect(manifest).toEqual({
-      schema: 1,
-      repository: RUNTIME_SOURCE_REPOSITORY,
-      version: input.version,
-      source_revision: input.sourceRevision,
-      protocol_revision: RUNTIME_PROTOCOL_REVISION,
-      platforms: RUNTIME_RELEASE_PLATFORMS,
-      artifact_image: input.artifactImage,
-      runtime_image: input.runtimeImage,
-      build_image: RUNTIME_BUILD_IMAGE,
-      base_image: RUNTIME_BASE_IMAGE,
-    });
-    expect(parseRuntimeReleaseManifest(`${JSON.stringify(manifest)}\n`, input.version)).toEqual(
-      manifest,
-    );
+describe("runtime release manifest schema 2", () => {
+  test("binds both exact Linux targets to independent base and artifact identities", () => {
+    expect(RUNTIME_TARGETS).toEqual(["linux-x64", "linux-arm64"]);
+    expect(createRuntimeReleaseManifest(manifest)).toEqual(manifest);
+    expect(parseRuntimeReleaseManifest(JSON.stringify(manifest), "1.2.3")).toEqual(manifest);
   });
 
-  test("rejects mutable, foreign, malformed, or cross-version identities", () => {
-    expect(() =>
-      createRuntimeReleaseManifest({ ...input, runtimeImage: "runtime:latest" }),
-    ).toThrow(RUNTIME_IMAGE_REPOSITORY);
-    expect(() =>
-      createRuntimeReleaseManifest({
-        ...input,
-        artifactImage: `ghcr.io/example/runtime@sha256:${"b".repeat(64)}`,
-      }),
-    ).toThrow(RUNTIME_ARTIFACT_REPOSITORY);
-    expect(() => createRuntimeReleaseManifest({ ...input, sourceRevision: "short" })).toThrow(
-      "complete lowercase Git commit",
-    );
-    expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify(createRuntimeReleaseManifest(input)), "0.1.2"),
-    ).toThrow("does not match the release");
-  });
-
-  test("rejects unknown fields and drift in protocol, toolchain, or platforms", () => {
-    const manifest = createRuntimeReleaseManifest(input);
-    expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, unexpected: true })),
-    ).toThrow("unexpected field set");
-    expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, protocol_revision: "999" })),
-    ).toThrow("identity does not match");
-    expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, build_image: "oven/bun:latest" })),
-    ).toThrow("identity does not match");
-    expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, platforms: ["linux/amd64"] })),
-    ).toThrow("unsupported platform set");
+  test("rejects legacy schema, unknown fields, target drift and incompatible protocols", () => {
+    for (const value of [
+      { ...manifest, schema_version: 1 },
+      { ...manifest, extra: true },
+      { ...manifest, targets: { "linux-x64": manifest.targets["linux-x64"] } },
+      {
+        ...manifest,
+        targets: {
+          ...manifest.targets,
+          "linux-x64": { ...manifest.targets["linux-x64"], broker_version: 2 },
+        },
+      },
+      {
+        ...manifest,
+        targets: {
+          ...manifest.targets,
+          "linux-x64": {
+            ...manifest.targets["linux-x64"],
+            artifact: { ...manifest.targets["linux-x64"].artifact, asset: "https://invalid" },
+          },
+        },
+      },
+    ])
+      expect(() => parseRuntimeReleaseManifest(JSON.stringify(value))).toThrow();
+    expect(() => parseRuntimeReleaseManifest(JSON.stringify(manifest), "1.2.4")).toThrow();
   });
 });

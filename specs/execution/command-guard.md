@@ -554,8 +554,8 @@ changes who may answer. Placement is resolved once per Host/Sandbox run from hos
 enabled native policy is contained-or-fail-closed (`sandboxWouldApply`); even legacy
 `availability: "optional"` never falls back to bare execution. `loadGuardSettings` uses the same
 effective native policy resolver as tool execution. Container placement is outside Command Guard:
-an explicit `on`/`auto` request is rejected before guest launch, while absent/`off` runs receive no
-guard policy, authority ledger or reviewer. Per-call unsandbox overrides placement to Host and
+Code omits its stored guard fields and the guest receives no guard policy, authority ledger or
+reviewer. Per-call unsandbox overrides placement to Host and
 omits the native network restriction. Its `host_command` ask precedes generic undecidability, but
 never deny-list enforcement. Auto uses the host-validated effect reviewer; unsure, operational
 failures and malformed responses use the normal `on_unsure` fallback. Mode `on` remains human and
@@ -563,10 +563,10 @@ failures and malformed responses use the normal `on_unsure` fallback. Mode `on` 
 
 Production: `createGuardResolver`, `createShellGuard`, `loadGuardSettings` in
 `packages/kernel/src/file-kernel.ts`, `sandboxWouldApply` in `packages/tools/src/sandbox.ts`, and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-container-runtime.ts`. Test:
+`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
 `packages/kernel/tests/integration/guard-auto-review.test.ts`,
 `packages/tools/tests/unit/sandbox-placement.test.ts`, and
-`packages/kernel/tests/integration/runtime-capability-composition.test.ts`.
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 POSIX normalization removes consecutive leading Git `--no-pager`/`--no-color` presentation flags.
 `commandComparison` in `packages/kernel/src/guard/command-comparison.ts` additionally validates bare
@@ -658,7 +658,7 @@ Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), and
-[runtime-guest-loop.test.ts](../../packages/kernel/tests/integration/runtime-guest-loop.test.ts).
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 ### 4.8 The engine's wiring
 
@@ -1016,8 +1016,8 @@ broken.
 46. **The session allowlist is never persisted; its host can revoke it independently of the
     resolver.** The default lifetime remains one resolver, while `sessionAllowlistFor` chooses the
     current interactive scope per command. A revoked instance cannot be repopulated; a pending
-    answer from that scope cannot approve even once. Container calls use the same host lookup and
-    never cache human answers in the guest judge. Production:
+    answer from that scope cannot approve even once. Container constructs no guard/session-allowlist
+    lookup and never receives a guest judge. Production:
     `createGuardSessionAllowlist` and `createGuardResolver` in
     [guard-elicit.ts](../../packages/kernel/src/guard/guard-elicit.ts) and
     [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test: the default across-run and
@@ -1138,13 +1138,14 @@ broken.
     `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
     complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
 
-61. **Container placement is core-only and does not execute Command Guard or effect review.**
-    An explicit `guard_mode: "on" | "auto"` is rejected before guest launch. With the field absent or
-    `off`, the guest receives no guard settings, reviewer model, operator evidence, authority envelope,
-    approval capability or guard-audit channel. `require_escalated` still fails structurally because
-    the guest has no host-exec channel. Production: `createLocalContainerRuntime` and
-    `createGuestLoopExecutor`. Test: `runtime capability composition` and `runtime guest loop` in
-    `packages/kernel/tests/integration/`.
+61. **Container placement does not execute Command Guard or effect review.** An explicit
+    `guard_mode: "on" | "auto"` or `guard_judge` is withheld by the Code adapter before the public
+    request. The Container configuration has no reviewer, operator evidence or host execution
+    authority, and `require_escalated` remains false. Production: `KernelRunClient.startRun` in
+    `packages/code/src/adapters/kernel-run-client.ts` and `createContainerNativeKernel` in
+    `packages/kernel/src/hosting/container-native.ts`. Test:
+    `packages/code/tests/component/kernel-run-client.test.ts` and
+    `packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ---
 
@@ -1164,7 +1165,7 @@ broken.
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts` |
 | Host supplies no `resolveGuard` | calls receive no policy guard and proceed without command review, including `require_escalated` shell | `packages/loop/src/runtime/capabilities/tools.ts`; `packages/tools/src/core.ts` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts`; test `packages/kernel/tests/unit/guard-audit.test.ts` |
-| Container request explicitly selects Review `on` or `auto` | reject as `unsupported_policy` before guest launch | `createLocalContainerRuntime`; `runtime-capability-composition.test.ts` |
+| Container has stored Review `on`/`auto` or judge guidance | Code omits those fields; guest composes no guard/reviewer service | `KernelRunClient.startRun`; `container-kernel-host.test.ts` |
 | `guard-judge.md` unreadable / blank / >32 KiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts` |
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 

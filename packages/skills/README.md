@@ -144,10 +144,11 @@ that MCP server (including its plugin-qualified form), while the protocol/UI ret
 metadata for diagnosis.
 
 `./capability` also exports the pure `formatSkillBody`, `formatSkillResourceChunk`,
-`formatSkillResourceLegacy` and `validateResourceChunk` helpers. Native handlers and the kernel
-container bridge use the same disclosure and page validation. The bridge preserves builtin identity
-and priority, strips host-only paths before formatting, and sends the resulting text through its
-read-only RPC. A whole-resource provider never advertises a byte cursor it cannot continue.
+`formatSkillResourceLegacy` and `validateResourceChunk` helpers. Native handlers use the same
+disclosure and page validation. The complete Container Kernel has no Skill catalog/tool/bridge and receives no
+Skill or Plugin-bootstrap bytes; explicit Skill use or a custom `use_skills` profile is refused
+before engine/model work. A whole-resource provider never advertises a byte cursor it cannot
+continue.
 
 The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedTextChunk`,
 `hashBoundedFile`, their option/result types, and the bounded skill file/resource limits. The legacy

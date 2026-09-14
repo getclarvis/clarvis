@@ -399,6 +399,19 @@ contribution unchanged (`packages/plan/src/capability/index.ts`). It used to car
 it `true` (`packages/loop/src/runtime/subagents/build-lead-input.ts`). The flag could never act,
 and has been removed.
 
+The child also cannot mutate task state through a hidden plan surface. `PlanDelegationPort` is the
+runtime-owned writer that claims a tracked task and records its return. After `noteSpawned` records
+the first tracked delegation in an iteration, the Lead's sibling `revise_plan` and
+`transition_plan_task` calls return a bounded deferral without invoking `PlanSession`. The next
+`beforeIteration` resets that fence and publishes the current canonical revision and digests, after
+which a fresh Lead mutation is admitted normally. CAS remains strict; no stale digest is relaxed.
+
+Production: `forAgent` in `packages/plan/src/capability/index.ts`; `IterState.spawnedTaskIds` and the
+plan-tool handler in `packages/plan/src/capability/orchestration.ts`; `createDelegationPlanPort` in
+`packages/plan/src/capability/delegation-port.ts`.
+Test: `packages/plan/tests/component/plan-catalog.test.ts` and
+`packages/plan/tests/component/plan-orchestration.test.ts` (the delegated-state publication case).
+
 The review ask is built only when all three of `review`, `scope.elicit` and `scope.clock` are present
 (`packages/plan/src/capability/index.ts`).
 
@@ -706,18 +719,18 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
    Returns immediately for checkpoint disposition, or unless `record.status === "completed"` **and** `ref.retention === "discard"`. Deletes through `bestEffort`, logs `plan.retention.discarded` with `deleted: boolean`
    at `info` either way, and emits `plan_removed` only when a document was actually removed.
 
-In isolated execution, the host independently enforces this retention path. Mutation authority is
-bound to a plan created through that run's grant or its host-selected continuation ref. Read/list
-do not rebind it. Deletion requires the current owner's durable completed run record and matching
-provider/id/final revisions, plus canonical `completed`/`discard` state. The host supplies CAS from
-its own read, so a concurrent retention change prevents deletion even if the guest omitted CAS.
-Production: `createHostPlansGrant` in
-[`plan-bridge.ts`](../../packages/kernel/src/runtime/plan-bridge.ts) and `createLocalContainerRuntime`
-in [`local-container-runtime.ts`](../../packages/kernel/src/runtime/local-container-runtime.ts).
-Test: foreign-plan, retained/active-plan, trace identity and CAS refusals in
-[`runtime-plan-bridge.test.ts`](../../packages/kernel/tests/unit/runtime-plan-bridge.test.ts), and
-real guest keep/discard lifecycle in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+Plans is native in Host, Sandbox and Container. Container admits the Markdown provider and keeps
+the native plan service, tools, CAS, approval, continuation and retention lifecycle in its Kernel.
+An active external+external provider is rejected during projection; an inactive inherited setting
+does not start that provider. Plan documents and locks persist in the canonical workspace stores
+shared with Host/Sandbox.
+
+Production: `projectContainerConfiguration` in
+[`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and
+`createContainerNativeKernel` in
+[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts). Test:
+[`container-projection.test.ts`](../../packages/kernel/tests/unit/container-projection.test.ts) and
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 The `lifecycle.onRunStart` hook exists only for a continuation (`packages/plan/src/capability/index.ts`): it reconciles,
 emits `plan_removed` if the continuation plan was gone (and returns), else emits

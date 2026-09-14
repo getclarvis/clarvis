@@ -1,21 +1,19 @@
+import type { LocalContainerReleaseSelection } from "@clarvis/kernel/bootstrap";
+import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   candidateVersion,
-  parseRuntimeCandidate,
   CANDIDATE_REPOSITORY,
+  parseRuntimeCandidate,
 } from "./runtime-candidate.ts";
-import type { RuntimeImageSelection } from "@clarvis/kernel/local";
-import { RUNTIME_PROTOCOL_REVISION } from "@clarvis/kernel";
 
 const RUNTIME_RELEASE_ASSET = "runtime-release.json";
 const RUNTIME_RELEASE_REPOSITORY = "getclarvis/clarvis-releases";
-const RUNTIME_SOURCE_REPOSITORY = "getclarvis/clarvis";
-const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
-const DEVELOPMENT_IMAGE = "clarvis-runtime:development";
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 20_000;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 const REVISION = /^[0-9a-f]{40}$/u;
-const PINNED_IMAGE = /^[a-z0-9][a-z0-9._:/-]*@sha256:[a-f0-9]{64}$/u;
 
 function integrityError(message: string, cause?: unknown): Error {
   return Object.assign(new Error(message, cause === undefined ? undefined : { cause }), {
@@ -63,127 +61,203 @@ async function boundedText(response: Response): Promise<string> {
   return new TextDecoder().decode(bytes);
 }
 
-function runtimeImageFromManifest(source: string, version: string): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source) as unknown;
-  } catch (cause) {
-    throw integrityError("runtime release manifest is not valid JSON", cause);
-  }
-  const manifest = record(parsed);
-  const expected = [
-    "artifact_image",
-    "base_image",
-    "build_image",
-    "platforms",
-    "protocol_revision",
-    "repository",
-    "schema",
-    "source_revision",
-    "runtime_image",
-    "version",
-  ].sort();
-  if (
-    manifest === undefined ||
-    Object.keys(manifest)
-      .sort()
-      .some((key, index) => key !== expected[index]) ||
-    Object.keys(manifest).length !== expected.length ||
-    manifest.schema !== 1 ||
-    manifest.repository !== RUNTIME_SOURCE_REPOSITORY ||
-    manifest.version !== version ||
-    manifest.protocol_revision !== RUNTIME_PROTOCOL_REVISION ||
-    typeof manifest.source_revision !== "string" ||
-    !REVISION.test(manifest.source_revision) ||
-    !Array.isArray(manifest.platforms) ||
-    manifest.platforms.length !== 2 ||
-    manifest.platforms[0] !== "linux/amd64" ||
-    manifest.platforms[1] !== "linux/arm64" ||
-    typeof manifest.runtime_image !== "string" ||
-    !manifest.runtime_image.startsWith(`${RUNTIME_IMAGE_REPOSITORY}@`) ||
-    !PINNED_IMAGE.test(manifest.runtime_image)
-  ) {
-    throw integrityError("runtime release manifest identity is invalid");
-  }
-  return manifest.runtime_image;
+interface ReleaseTarget {
+  base: { image: string; digest: `sha256:${string}`; abi: "clarvis-linux-glibc-v1" };
+  artifact: { asset: string; sha256: string; size: number };
+  kernel_wire_version: 10;
+  broker_version: 1;
+  channel_version: 1;
 }
 
-/**
- * Resolve a simple Docker selection to either the current source image or
- * this exact product release's immutable OCI reference.
- *
- * @remarks The call is intentionally made by the lazy runtime factory, never
- * during TUI boot. Explicit candidate installations fetch their same-tag candidate manifest
- * and verify source revision and protocol before pulling. Local source development never pulls: `clarvis-develop` consumes the
- * locally built `clarvis-runtime:development` tag. Installed releases fetch
- * only their same-version bounded sidecar and pull the digest-pinned image it
- * names.
- */
-export async function resolveClarvisRuntimeImage(options: {
-  readonly signal?: AbortSignal;
+function releaseTarget(value: unknown, target: "linux-x64" | "linux-arm64"): ReleaseTarget {
+  const root = record(value);
+  const base = record(root?.base);
+  const artifact = record(root?.artifact);
+  if (
+    root === undefined ||
+    base === undefined ||
+    artifact === undefined ||
+    Object.keys(root).sort().join(",") !==
+      "artifact,base,broker_version,channel_version,kernel_wire_version" ||
+    Object.keys(base).sort().join(",") !== "abi,digest,image" ||
+    Object.keys(artifact).sort().join(",") !== "asset,sha256,size" ||
+    typeof base.image !== "string" ||
+    !/^[a-z0-9][a-z0-9._:/-]*$/u.test(base.image) ||
+    typeof base.digest !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/u.test(base.digest) ||
+    base.abi !== "clarvis-linux-glibc-v1" ||
+    artifact.asset !== `clarvis-kernel-${target}.tar.gz` ||
+    typeof artifact.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(artifact.sha256) ||
+    typeof artifact.size !== "number" ||
+    !Number.isSafeInteger(artifact.size) ||
+    artifact.size <= 0 ||
+    root.kernel_wire_version !== 10 ||
+    root.broker_version !== 1 ||
+    root.channel_version !== 1
+  )
+    throw integrityError("runtime release target identity is invalid");
+  return {
+    base: {
+      image: base.image,
+      digest: base.digest as `sha256:${string}`,
+      abi: "clarvis-linux-glibc-v1",
+    },
+    artifact: { asset: artifact.asset, sha256: artifact.sha256, size: artifact.size },
+    kernel_wire_version: 10,
+    broker_version: 1,
+    channel_version: 1,
+  };
+}
+
+async function releaseJson(
+  url: string,
+  fetcher: typeof fetch,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  let current = url;
+  for (let redirects = 0; ; redirects++) {
+    const checked = new URL(current);
+    if (
+      !trustedDownloadUrl(current) ||
+      checked.port !== "" ||
+      checked.username !== "" ||
+      checked.password !== ""
+    )
+      throw integrityError("runtime release destination is untrusted");
+    const response = await fetcher(current, {
+      redirect: "manual",
+      signal:
+        signal === undefined
+          ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+          : AbortSignal.any([signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),
+      headers: { accept: "application/json", "user-agent": "clarvis-container" },
+    });
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      await response.body?.cancel();
+      const location = response.headers.get("location");
+      if (redirects >= 5 || location === null)
+        throw integrityError("runtime release redirect is invalid");
+      current = new URL(location, current).href;
+      continue;
+    }
+    if (!response.ok) throw integrityError("runtime release manifest download failed");
+    return JSON.parse(await boundedText(response)) as unknown;
+  }
+}
+
+/** Resolve one admitted base/artifact pair without downloading or mounting product bytes. */
+export async function resolveClarvisContainerRelease(options: {
   readonly currentVersion: string;
+  readonly target: "linux-x64" | "linux-arm64";
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly fetcher?: typeof fetch;
-}): Promise<RuntimeImageSelection> {
+  readonly signal?: AbortSignal;
+}): Promise<LocalContainerReleaseSelection> {
   const environment = options.environment ?? process.env;
+  const localArtifact = environment.CLARVIS_RUNTIME_ARTIFACT;
+  const localBase = environment.CLARVIS_RUNTIME_BASE;
+  if (environment.CLARVIS_CODE_SOURCE === "1") {
+    if (localArtifact === undefined || localBase === undefined)
+      throw integrityError(
+        "source Container requires explicit CLARVIS_RUNTIME_BASE and CLARVIS_RUNTIME_ARTIFACT",
+      );
+    const path = resolve(localArtifact);
+    const bytes = await Bun.file(path).bytes();
+    const size = (await stat(path)).size;
+    const child = Bun.spawn(["tar", "-xOzf", path, "manifest.json"], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const manifest = JSON.parse(await new Response(child.stdout).text()) as Record<string, unknown>;
+    if (
+      (await child.exited) !== 0 ||
+      manifest.productVersion !== options.currentVersion ||
+      manifest.target !== options.target ||
+      typeof manifest.sourceRevision !== "string"
+    )
+      throw integrityError("local Container artifact identity is invalid");
+    return {
+      base: { reference: localBase, pull: false },
+      artifact: {
+        source: { kind: "local", archivePath: path },
+        selection: {
+          productVersion: options.currentVersion,
+          sourceRevision: manifest.sourceRevision,
+          target: options.target,
+          baseAbi: "clarvis-linux-glibc-v1",
+          digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+          size,
+        },
+      },
+    };
+  }
+  if (!VERSION.test(options.currentVersion))
+    throw integrityError("Clarvis version cannot select a Container release");
   const candidate = environment.CLARVIS_RUNTIME_CANDIDATE;
-  if (candidate === undefined && environment.CLARVIS_CODE_SOURCE === "1") {
-    return { reference: DEVELOPMENT_IMAGE, pull: false };
-  }
-  if (!VERSION.test(options.currentVersion)) {
-    throw integrityError("Clarvis product version cannot select a runtime release");
-  }
+  let parsed: Record<string, unknown> | undefined;
+  let repository: "getclarvis/clarvis-releases" | "getclarvis/clarvis" =
+    "getclarvis/clarvis-releases";
+  let tag = `v${options.currentVersion}`;
   if (candidate !== undefined) {
-    try {
-      if (
-        candidateVersion(candidate) !== options.currentVersion ||
-        !REVISION.test(environment.CLARVIS_RUNTIME_CANDIDATE_REVISION ?? "")
-      ) {
-        throw new Error("candidate source identity differs from the installed version");
-      }
-    } catch (cause) {
-      throw integrityError("invalid installed candidate identity", cause);
-    }
+    if (
+      candidateVersion(candidate) !== options.currentVersion ||
+      !REVISION.test(environment.CLARVIS_RUNTIME_CANDIDATE_REVISION ?? "")
+    )
+      throw integrityError("installed candidate identity is invalid");
+    const candidateManifest = parseRuntimeCandidate(
+      await releaseJson(
+        `https://github.com/${CANDIDATE_REPOSITORY}/releases/download/${candidate}/runtime-candidate.json`,
+        options.fetcher ?? globalThis.fetch,
+        options.signal,
+      ),
+      candidate,
+    );
+    if (candidateManifest.source_revision !== environment.CLARVIS_RUNTIME_CANDIDATE_REVISION)
+      throw integrityError("installed candidate source revision is invalid");
+    parsed = record(candidateManifest.runtime);
+    repository = "getclarvis/clarvis";
+    tag = candidate;
+  } else {
+    parsed = record(
+      await releaseJson(
+        `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/v${options.currentVersion}/${RUNTIME_RELEASE_ASSET}`,
+        options.fetcher ?? globalThis.fetch,
+        options.signal,
+      ),
+    );
   }
-  const url =
-    candidate !== undefined
-      ? `https://github.com/${CANDIDATE_REPOSITORY}/releases/download/${candidate}/runtime-candidate.json`
-      : `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/` +
-        `v${options.currentVersion}/${RUNTIME_RELEASE_ASSET}`;
-  const response = await (options.fetcher ?? globalThis.fetch)(url, {
-    redirect: "follow",
-    signal:
-      options.signal === undefined
-        ? AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
-        : AbortSignal.any([options.signal, AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)]),
-    headers: {
-      accept: "application/json",
-      "user-agent": `clarvis/${options.currentVersion}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`runtime release manifest failed with HTTP ${String(response.status)}`);
-  }
-  if (!trustedDownloadUrl(response.url || url)) {
-    throw integrityError("runtime release manifest redirected outside GitHub");
-  }
-  const source = await boundedText(response);
-  if (candidate !== undefined) {
-    try {
-      const manifest = parseRuntimeCandidate(JSON.parse(source), candidate);
-      if (
-        manifest.protocol_revision !== RUNTIME_PROTOCOL_REVISION ||
-        manifest.source_revision !== environment.CLARVIS_RUNTIME_CANDIDATE_REVISION
-      ) {
-        throw new Error("candidate runtime does not match installed source or protocol");
-      }
-      return { reference: manifest.runtime_image, pull: true };
-    } catch (cause) {
-      throw integrityError("candidate runtime identity is invalid", cause);
-    }
-  }
+  const targets = record(parsed?.targets);
+  if (
+    parsed === undefined ||
+    targets === undefined ||
+    Object.keys(parsed).sort().join(",") !== "schema_version,source_revision,targets,version" ||
+    parsed.schema_version !== 2 ||
+    parsed.version !== options.currentVersion ||
+    typeof parsed.source_revision !== "string" ||
+    !REVISION.test(parsed.source_revision) ||
+    Object.keys(targets).sort().join(",") !== "linux-arm64,linux-x64"
+  )
+    throw integrityError("runtime release manifest identity is invalid");
+  const selected = releaseTarget(targets[options.target], options.target);
   return {
-    reference: runtimeImageFromManifest(source, options.currentVersion),
-    pull: true,
+    base: { reference: `${selected.base.image}@${selected.base.digest}`, pull: true },
+    artifact: {
+      source: {
+        kind: "release",
+        repository,
+        tag,
+        assetName: selected.artifact.asset,
+      },
+      selection: {
+        productVersion: options.currentVersion,
+        sourceRevision: parsed.source_revision,
+        target: options.target,
+        baseAbi: selected.base.abi,
+        digest: `sha256:${selected.artifact.sha256}`,
+        size: selected.artifact.size,
+      },
+    },
   };
 }

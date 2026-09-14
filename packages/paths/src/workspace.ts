@@ -151,6 +151,11 @@ export function agentsSkillsDirs(opts: RootOptions = {}): { user: string; worksp
   };
 }
 
+/** Resolve the complete shared workspace control root. */
+export function agentsWorkspaceDir(root: string): string {
+  return join(resolve(root), AGENTS_DIR);
+}
+
 /**
  * Resolve the shared plugin directory under one `.agents` root.
  *

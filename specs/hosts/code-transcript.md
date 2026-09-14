@@ -943,21 +943,18 @@ its own — only a scroll handle and a per-mount handle table: everything it pai
 projections of section 4.12, `PlanActivity` and `WorkflowActivity`, plus `ActivityStore.subagents`.
 Its own TSDoc states the scope rule (`Sidebar` in `packages/code/src/views/Sidebar.tsx`): it is a
 *summary-only* inspector. Complete child tools and answers live in the explicitly selected isolated
-transcript; workflow activity remains structure/status in the footer strip and Sidebar and never
+transcript; workflow activity remains structure/status in the Sidebar and never
 becomes transcript content.
 
 **Two mounts, one component.** `TranscriptRegion` mounts `Sidebar` twice from identical props — as a
 split column when `layout.secondaryMode()` is `"split"`
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
 absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
-the Sidebar owns compact plan detail, `Ctrl+P` owns the full plan, and Plan contributes nothing to
-`compactActivityStrip` (`packages/code/src/views/App.tsx`). App owns three
+the Sidebar owns compact plan detail and `Ctrl+P` owns the full plan. App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
 `Ctrl+L` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
-section. A pointer intent remains available later when the
-footer contains agent or workflow activity. `createLayoutController.secondaryMode` projects either
-explicit source of intent as split or drawer.
+section. `createLayoutController.secondaryMode` projects that explicit intent as split or drawer.
 
 The effective secondary mode also owns roster placement. A split or drawer is the sole detailed
 roster surface. Each of the three first-event intents is consumed independently. Explicitly closing
@@ -965,13 +962,9 @@ an automatic reveal is sticky for later updates of that same section/execution, 
 the first event for another section; the latter may reopen and reorient the Sidebar. The Agents
 intent does not change the Lead selection or open `ActivityDetail`. The outer Sidebar ScrollBox
 reveals the whole section owner with native `scrollChildIntoView`, so a long Plan cannot hide later
-workflow or Agents content below the viewport. When closed, the Lead transcript
-mounts no replacement roster; `App`'s clickable footer activity strip
-preserves agent waiting/running/done/failed counts and workflow leader count without consuming
-transcript height, and composes them after canonical Context/Session state rather than replacing it.
-The strip and the ordinary footer shortcuts remain unchanged while the Sidebar is open. Plan never
-contributes to that strip. Clicking it is the explicit intent that opens a split at
-eligible widths or a drawer otherwise; `Ctrl+L` is the sole keyboard toggle and Escape leaves the
+workflow or Agents content below the viewport. When closed, the Lead transcript mounts no
+replacement roster. The canonical footer retains only Context/Session state and never duplicates
+agent, workflow or Plan counts. `Ctrl+L` is the sole keyboard toggle and Escape leaves the
 Sidebar unchanged. Plain Tab never changes Lead/child selection: at shell level it clears
 transcript block focus and returns to the composer, while a focused screen may own Tab for its local
 focus order. Shift+Tab opens the agent picker. Clicking any sidebar agent, including a settled
@@ -1461,10 +1454,9 @@ JSON key/value presentation is absent.
 
 **INV-T48.** Detailed Plan, Parallel work and Agents state has exactly one responsive owner. In
 `split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
-or Plan/workflow pane in the Lead transcript. The footer retains bounded agent/workflow activity
-beside canonical Context/Session state and reopens the surface on click, while Plan contributes no
-footer text. Opening the Sidebar changes neither that strip nor the ordinary footer action
-projection; its own fixed footer names `Ctrl+L` as the sole keyboard toggle. Escape does not close
+or Plan/workflow pane in the Lead transcript. The application footer retains canonical
+Context/Session state without a second agent/workflow/Plan roster or a hidden pointer route. The
+Sidebar's own fixed footer names `Ctrl+L` as the sole keyboard toggle. Escape does not close
 the Sidebar, and no `/activity` command exists. The first live Plan, first workflow state/leader and first delegation own independent
 once-per-execution automatic intents that
 open/reveal their whole section. Closing one is sticky only for repeated events of that intent; the
@@ -1481,7 +1473,7 @@ order follows Plan status priority while their projected handles remain stable. 
 `Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
 owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanContext`,
 `visibleSubagentContext`, `requestAutomaticSidebar`, `closeActivitySidebar`,
-`openActivitySidebar`, the `activity.toggle` command and `compactActivityStrip`). Tests:
+`openActivitySidebar`, the `activity.toggle` command and `footerRunStrip`). Tests:
 `packages/code/tests/integration/transcript-region-render.test.tsx`,
 `packages/code/tests/integration/sidebar-render.test.tsx` (including the settled-row negative
 `ActivityDetail` case), and

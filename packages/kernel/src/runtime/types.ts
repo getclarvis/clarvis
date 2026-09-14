@@ -1,4 +1,5 @@
 import type { Readable, Writable } from "node:stream";
+import type { RuntimeStatus } from "@clarvis/protocol";
 
 /** Captured result of one bounded engine control invocation. */
 export interface ContainerCommandResult {
@@ -32,8 +33,6 @@ export interface ContainerControl {
   attach(args: readonly string[]): ContainerAttachedProcess;
 }
 
-import type { ProjectRef, WorkspaceRef } from "@clarvis/protocol";
-
 /** Runtime placement selected by the operator. */
 export type RuntimeKind = "native" | "container";
 
@@ -50,6 +49,14 @@ export type RuntimeLifecycleState =
   | "stopped"
   | "disconnected"
   | "failed";
+
+/** Informational placement transition emitted to local user interfaces. */
+export interface RuntimePlacementNotice {
+  readonly status: RuntimeStatus;
+  readonly message?: string;
+  /** A committed operator change that the current immutable generation has not applied. */
+  readonly pendingReconnect?: boolean;
+}
 
 /** A typed reason why an explicitly selected runtime cannot launch. */
 export type RuntimeUnavailableReason =
@@ -77,85 +84,72 @@ export interface RuntimeLimits {
   readonly storageBytes: number;
 }
 
-/** Immutable launch authority; guest input can neither construct nor widen it. */
-export interface RuntimeLaunchSpec {
+/** One host-resolved bind whose source, destination, kind and mutability are closed by policy. */
+export interface RuntimeProtectedMount {
+  readonly source: string;
+  readonly target: string;
+  readonly type: "directory" | "file";
+  readonly readOnly: true;
+}
+
+/** One canonical domain-state directory shared by host and Container Kernels. */
+export interface RuntimeDataMount {
+  readonly source: string;
+  readonly target: string;
+  readonly type: "directory";
+  readonly readOnly: false;
+}
+
+/** Immutable mounts and identity for one complete Kernel process. */
+export interface ContainerKernelLaunchSpec {
   readonly generation: string;
-  readonly ownerId: string;
-  readonly project: ProjectRef;
-  readonly workspace: WorkspaceRef;
-  /** Canonical host workspace mounted read-write at `/workspace`. */
+  readonly namespace: string;
   readonly workspaceRoot: string;
-  /** Existing host-control paths overlaid read-only at their workspace-relative guest paths. */
-  readonly readOnlyWorkspacePaths: readonly string[];
-  /** Linked-worktree Git metadata mounted at the same absolute path so `.git` remains valid. */
-  readonly gitCommonDir?: string;
-  readonly imageDigest: string;
-  readonly configurationRevision: string;
-  readonly extensionRevision: string;
-  readonly network: RuntimeNetworkMode;
+  readonly controlRootMasks: readonly RuntimeProtectedMount[];
+  readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
+  readonly domainDataMounts: readonly RuntimeDataMount[];
+  readonly baseImageId: `sha256:${string}`;
+  readonly baseAbi: string;
+  readonly artifact: {
+    readonly volume: string;
+    readonly digest: `sha256:${string}`;
+    readonly target: "linux-x64" | "linux-arm64";
+  };
+  readonly data: {
+    readonly contentVolume: string;
+    readonly stateVolume: string;
+  };
+  readonly miseVolume: string;
+  readonly network: Exclude<RuntimeNetworkMode, "internet">;
   readonly limits: RuntimeLimits;
-  readonly capabilityMethods: readonly string[];
+  readonly user: { readonly uid: number; readonly gid: number };
 }
 
-/** Effective placement and policy reported after engine admission. */
-export interface RuntimeInfo {
-  readonly kind: "container";
-  readonly generation: string;
-  readonly engine: "podman" | "docker";
-  readonly engineVersion: string;
-  readonly hostPlatform: NodeJS.Platform;
-  readonly guestPlatform: "linux";
-  readonly imageDigest: string;
-  readonly runtimeProtocolRevision: string;
-  readonly network: RuntimeNetworkMode;
-  readonly limits: RuntimeLimits;
-  readonly lifecycle: RuntimeLifecycleState;
+/** Exact attached process and destructive lifecycle authority for one admitted Container ID. */
+export interface ContainerProcessLifecycle {
+  readonly id: string;
+  readonly process: ContainerAttachedProcess;
+  stop(graceSeconds: 10): Promise<void>;
+  /** Force only this already admitted engine object when graceful stop fails. */
+  kill(): Promise<void>;
+  remove(): Promise<void>;
 }
 
-/** Application protocol used to present one guest TCP listener to the user. */
-export type RuntimePreviewProtocol = "http" | "https" | "tcp";
-
-/** Loopback-only host endpoint backed by one guest TCP listener. */
-export interface RuntimePortPreview {
-  readonly guestPort: number;
-  readonly host: "127.0.0.1";
-  readonly hostPort: number;
-  readonly protocol: RuntimePreviewProtocol;
-  readonly url: string;
-}
-
-/** One admitted stdio MCP hook call, without process configuration or host credentials. */
-export interface RuntimeHookMcpCall {
-  readonly server: string;
-  readonly tool: string;
-  readonly input: unknown;
-}
-
-/** Started execution session owned by the host. */
-export interface RuntimeSession {
-  readonly info: RuntimeInfo;
-  /** True once the private channel or attached engine process cannot accept another request. */
-  readonly closed: boolean;
-  startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
-  /** Execute a hook through the active run's guest-owned stdio MCP connection. */
-  callHookMcp(runId: string, call: RuntimeHookMcpCall, signal?: AbortSignal): Promise<unknown>;
-  /** Deliver a host remote server's elicitation to its active guest-owned relay. */
-  elicitMcp(runId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
-  steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
-  interruptTool(runId: string, payload: unknown, signal?: AbortSignal): Promise<unknown>;
-  cancel(runId: string): Promise<void>;
-  exposePort(
-    guestPort: number,
-    protocol?: RuntimePreviewProtocol,
-    signal?: AbortSignal,
-  ): Promise<RuntimePortPreview>;
-  stop(): Promise<void>;
-}
-
-/** Private engine boundary. Implementations must never fall back to native execution. */
-export interface RuntimeBackend {
+/** Engine adapter for a complete Kernel process; it never accepts or executes a run request. */
+export interface ContainerKernelBackend {
   inspect(): Promise<RuntimeAvailability>;
-  start(spec: RuntimeLaunchSpec): Promise<RuntimeSession>;
+  reconcilePrevious(input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<void>;
+  /** Stop and remove one running Kernel only after its exact persisted identity is confirmed. */
+  terminatePrevious(input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<void>;
+  startKernel(spec: ContainerKernelLaunchSpec): Promise<ContainerProcessLifecycle>;
 }
 
 /** Stable typed launch failure suitable for UI error mapping. */

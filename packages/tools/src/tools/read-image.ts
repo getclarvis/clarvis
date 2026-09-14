@@ -1,6 +1,6 @@
 import { ToolError } from "../errors.ts";
 import { readFileOptions, readRawFile } from "../lib/files.ts";
-import { sniffImageMime } from "../lib/image.ts";
+import { imageBytesAreValid, sniffImageMime } from "../lib/image.ts";
 import { resolvePath } from "../lib/paths.ts";
 import { imagePart } from "./content.ts";
 import type { ToolDef } from "./types.ts";
@@ -54,7 +54,7 @@ export const readImage: ToolDef = {
       readFileOptions(config),
     );
     const mimeType = sniffImageMime(buf);
-    if (mimeType === null) {
+    if (mimeType === null || !imageBytesAreValid(buf, mimeType)) {
       throw new ToolError(
         "not_an_image",
         `Not a supported image (expected png, jpeg, gif, or webp): ${relPath}`,

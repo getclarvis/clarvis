@@ -694,18 +694,16 @@ unavailable and timed-out preflights start nothing).
 
 ## 7. Coupling
 
-For container runs, authenticated remote MCP connections remain on the host. Their relay crosses
-the closed `runtime.mcp_elicit` operation to the matching live guest lease and then uses the same
-engine serializer and compute-clock pause before reaching the host input port. Run or lease
-cancellation cannot deliver a question into a later run. Production: `createHostRemoteMcpBridge`
-and `createGuestMcpConnections` in
-[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts), and `serveExecutionWorker` in
-[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts).
-Test: remote guest-relay integration in
-[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
-and live-run routing/cancellation in
-[`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts).
-The private protocol and lifetime contract belongs to
+Container admits no MCP elicitation relay. Intentional native questions such as `ask_user`, Plan
+approval and Goal controls travel stay inside the complete Kernel and reach the TUI through the same
+public run/service protocol as SSH hosting. They are not Command Review and cannot select placement
+or invoke host execution. Production: `createContainerNativeKernel` in
+[`container-native.ts`](../../packages/kernel/src/hosting/container-native.ts) and
+`createKernelTransportServer` in
+[`server.ts`](../../packages/kernel/src/transport/server.ts). Test:
+[`container-kernel-host.test.ts`](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+and [`transport-codecs.test.ts`](../../packages/kernel/tests/contract/transport-codecs.test.ts). The
+private process lifetime contract belongs to
 [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 **Depends on** (runtime edges, forced by import):

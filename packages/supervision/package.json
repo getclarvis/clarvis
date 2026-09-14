@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/supervision",
-
   "private": true,
   "description": "The run-scoped registry a parent observes and controls its spawned children through — agent ids, the activity buffer, the event projection, the steer queue, background registration and the limits.",
   "license": "MIT",

@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/loop",
-
   "private": true,
   "description": "Embeddable loop engine \u2014 run an LLM agent loop (any model, sub-agents, budgets, compaction) in-process.",
   "license": "MIT",

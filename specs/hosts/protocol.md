@@ -76,6 +76,13 @@ Source ownership:
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
+The transport operation catalog keeps optional request properties inside their closed envelope even
+when a particular call omits them. In particular, `runs.context` encodes
+`target_window_tokens` as an admitted optional key, which lets `/model` later supply a target
+without failing operation-key discovery. Production: `OPERATIONS.runs.context` in
+[operations.ts](../../packages/kernel/src/transport/operations.ts). Test:
+[transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts).
+
 `Session.goal_state` is an optional host-owned projection of the goal domain, including its bounded
 audit archive. A public session save cannot create, remove or rewrite that field. Goal service DTOs
 do not independently advertise availability; actual host composition must supply the conversation
@@ -161,12 +168,12 @@ optional hosted-run ownership and a close method:
 
 `KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
 optional host-reported `runtime` and `hosting.host_generation`. Native placement reports `kind`,
-`host_platform`, effective isolation, lifecycle and optional fallback origin.
+`host_platform`, effective isolation and lifecycle.
 Container placement additionally reports generation, selected Docker/Podman engine and version,
-host/guest platform, local immutable image digest, private runtime protocol revision, effective
-network grant and lifecycle. This is an informational projection, not a client-controlled launch
-input. The private runtime revision is distinct from the concrete transport's
-`CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
+host/guest platform, local immutable base image digest, artifact digest, base ABI, broker/channel
+versions, state namespace, effective network grant and lifecycle. This is an informational
+projection, not a client-controlled launch input. Public compatibility remains the concrete
+transport's `CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
 Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
 `createFileKernel` in `packages/kernel/src/file-kernel.ts`. Test:
@@ -301,6 +308,19 @@ TLS plus at-rest protection" (`packages/protocol/src/secrets.ts`).
 | `refresh` | `() => Promise<ModelCatalog>` | `packages/protocol/src/models.ts` |
 | `getEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
 | `refreshEntitled` | `(scheme: SubscriptionScheme) => Promise<CatalogProvider>` | `packages/protocol/src/models.ts` |
+
+`ModelCatalog.source` distinguishes `cache`, `bundle`, and `projection`. A projection is immutable
+logical execution metadata, not a downloaded cache or provider configuration. The Container catalog
+adapter supplies no endpoint, credential name or fake URL; it marks logical entries as not requiring
+URL configuration in the guest. Refresh and subscription-entitlement operations are `unsupported`
+there; operator administration remains a separate host service.
+
+Production: `ModelCatalog` in [models.ts](../../packages/protocol/src/models.ts) and
+`createContainerModelCatalog` in
+[container-model-catalog.ts](../../packages/kernel/src/config/container-model-catalog.ts).
+Test: the guest catalog case in
+[container-projection.test.ts](../../packages/kernel/tests/unit/container-projection.test.ts)
+checks compatible/subscription aliases, closed resolution, defensive snapshots and refresh refusal.
 
 #### `WorkspaceService` (`packages/protocol/src/workspace.ts`)
 
@@ -712,7 +732,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | --- | --- | --- |
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts` |
 | `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
-| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add `fallback` and optional `recipe` | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
+| `RuntimeConfig` | native, or simple/advanced Docker or Podman; Docker may add an optional `recipe`; neither engine has fallback placement | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts` |
@@ -725,9 +745,15 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 omit image, executable, connection and limits; the kernel fills product-owned defaults. Omitting a
 container `network` selects
 the kernel's ordinary routable `outbound` default; this may reach host and LAN peers as well as the
-public internet. Podman has no `fallback` or `recipe` field. `RuntimeStatus.network` in `client.ts` is required for container placement because
-it reports the effective value after the kernel has resolved defaults. Neither type calls
-`outbound` internet-only, and the protocol exposes no host-port or engine-argument mutation method.
+public internet. Podman has no `recipe` field. `RuntimeStatus.network` in `client.ts` is required for
+container placement because it reports the effective value after the kernel has resolved defaults.
+Neither type calls `outbound` internet-only, and the protocol exposes no host-port or engine-argument
+mutation method. Docker and Podman have no fallback field: either engine reports its own bounded
+failure and changing to Sandbox/Host requires a new explicit selection and run. The private
+Container framing and model broker are revision 1 and remain kernel-private. Channel 1 carries this
+same public Kernel protocol at wire revision 10; channel 2 admits only initialization/shutdown and
+channel 3 only logical model calls/deltas. There is no parallel execution/capability/checkpoint
+protocol.
 Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
 name, an absolute path under the global operator recipe directory and `none`/`outbound` build
 networking. It is persisted operator input;
@@ -759,8 +785,8 @@ field-level repair could be produced" (`packages/protocol/src/config.ts`). The p
 
 `AgentBudget` (`packages/protocol/src/config.ts`) is `{ on_exceed?: string; total_token_limit?: number }`.
 `AgentSummary` (`packages/protocol/src/config.ts`) is `{ name; scope: Scope | "plugin" | "builtin"; model?;
-description?; plugin?; grants?: string[]; can_spawn?: string[]; budget?: AgentBudget; overlay?:
-AgentOverlay }` — `grants` being `undefined` specifically means "the frontmatter
+description?; plugin?; grants?: string[]; can_spawn?: string[]; default_spawn?: string; budget?: AgentBudget;
+overlay?: AgentOverlay }` — `grants` being `undefined` specifically means "the frontmatter
 could not be parsed" (`packages/protocol/src/config.ts`).
 
 `SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts`) lists "every capability grant an

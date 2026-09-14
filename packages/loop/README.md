@@ -211,6 +211,11 @@ The public settled-context helpers can estimate a persisted snapshot, run the sa
 compaction without another agent iteration, or mechanically fit it to a smaller model window.
 Mechanical fitting preserves retained entries byte-for-byte, including opaque provider metadata;
 the caller owns the explicit persisted replacement and its cache-breaking consequences.
+The host chooses which capabilities reach a run. Container builds this loop with native tools,
+Plans, Memory, Workflows and Goals, an injected logical model provider and an empty connection
+manager. Skills, MCP, Hooks, plugins and external Tasks remain absent; the loop does not create a
+fallback or host bridge for an omitted capability.
+
 Built-ins cover:
 
 - coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a
@@ -313,6 +318,19 @@ result, or an error resets the streak. Re-running a clean lint or test after edi
 cannot terminate an otherwise productive run merely because that verification also passed earlier.
 
 ## Host responsibilities
+
+`buildExecuteRunDeps` accepts an already-owned `llm`, `connections`, and optional
+`modelExecutionResolver`. An injected LLM bypasses SDK construction and local retry/logging/admission
+wrappers; injected connections bypass MCP/OAuth factories and remain caller-owned on disposal.
+`traceDir` and the optional `traceLocksDir` let a host preserve the record location while placing
+cross-process coordination in an independently mounted workspace state directory.
+The resolver admits only exact catalog pairs with empty request `providers`, supplying metadata to
+entry/delegated profiles, vision and compaction without fabricating native transport configuration.
+When catalog metadata omits a maximum output size, delegated profiles use the context window as a
+conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
+Without it, native provider resolution remains unchanged. These are generic embedding ports, not a
+claim that the Container runtime uses them. See [composition](../../specs/engine/capability-composition.md)
+and [request validation](../../specs/engine/request-and-settings-schema.md).
 
 A host supplies or builds:
 

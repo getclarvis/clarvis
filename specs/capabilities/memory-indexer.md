@@ -357,21 +357,14 @@ Test: [`indexer-continuation.test.ts`](../../packages/memory/tests/unit/indexer-
 `memory.run.enqueue_failed`, and reported as `phase: "failed"` (`packages/memory/src/ingest.ts`), and the
 `onNotice` listener's own throws are swallowed (`packages/memory/src/ingest.ts`).
 
-For an isolated foreground run, the guest owns neither this queue nor its store. It first sends the
-completed `ExecutionRecord` through `host.event`; the host trace store persists it; only then does
-the guest Memory lifecycle call `runtime.memory { operation: "finish" }`. The host bridge re-reads
-that exact owner/run record and executes `PreparedMemoryRuntime.finish`, which is the same canonical
-`onRunEnd` described above. A missing durable trace refuses the finish rather than trusting a guest
-record or moving enqueueing into the container. Production: `guestTraceStore` and
-`createGuestMemoryCapability` in `packages/kernel/src/runtime/{guest-loop-executor,memory-bridge}.ts`;
-`createHostMemoryBridge` in `packages/kernel/src/runtime/memory-bridge.ts`; `prepareMemoryRuntime` in
-`packages/memory/src/capability.ts`. The file host supplies `executeExtensionProfileRun` directly to
-`createMemoryFactory`; that executor imports and calls the Loop under the Extension Profile lease
-without passing through `runtimeCoordinator`, so the later dedicated indexing run remains on the
-host and may use its mutating Memory capability. Production: `executeExtensionProfileRun` and the
-`createMemoryFactory` call in `packages/kernel/src/file-kernel.ts`. Test:
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (trace persists before finish) and
-`packages/kernel/tests/unit/runtime-memory-bridge.test.ts` (host post-run handling), plus
+A Container foreground run uses the same native Memory capability, queue callback and `onRunEnd`
+path when its frozen Memory projection is active. The indexer runs inside the Container and uses the
+same brokered logical model port; no host indexer or external Memory provider is constructed.
+Disabled Memory remains off without resolving a provider. Native Host/Sandbox runs retain the same
+canonical `onRunEnd` path above. Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts` and `createMemoryFactory` in
+`packages/memory/src/factory.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts` and
 `packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
 run executor`).
 
@@ -1034,17 +1027,12 @@ Production: `packages/kernel/src/runs/memory-ingest-phase.ts`, enforced at
 `packages/kernel/src/runs/managed-run.ts`.
 Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts`.
 
-**Isolated ingest boundary.** An isolated guest can request post-run Memory handling only after its exact
-owner-bound trace is durable on the host. The guest receives no queue or store authority, and its
-Memory provider contains only the four read tools; the canonical host `onRunEnd` performs the
-enqueue, and the dedicated indexing pass runs through the file host's direct Loop executor rather
-than the container coordinator. Production: `createHostMemoryBridge` and `createGuestMemoryCapability` in
-`packages/kernel/src/runtime/memory-bridge.ts`; `guestTraceStore` in
-`packages/kernel/src/runtime/guest-loop-executor.ts`; `prepareMemoryRuntime` in
-`packages/memory/src/capability.ts`; `executeExtensionProfileRun` in
-`packages/kernel/src/file-kernel.ts`. Test:
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts` and
-`packages/kernel/tests/unit/runtime-memory-bridge.test.ts`, plus
+**Container ingest boundary.** Container owns its Memory provider, lifecycle callback, queue and
+store in the same Kernel. Indexing uses the projected local provider and host model broker, while
+external providers and host-side indexing remain absent. Production: `createContainerNativeKernel`
+in `packages/kernel/src/hosting/container-native.ts` and `createContainerModelProvider` in
+`packages/kernel/src/runtime/model-broker-client.ts`. Test:
+`packages/kernel/tests/integration/container-kernel-host.test.ts` and
 `packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
 run executor`).
 
@@ -1181,7 +1169,7 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 | `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts` |
 | `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts` |
-| `@clarvis/kernel` (`runtime/memory-bridge`) | keeps the provider, trace lookup and canonical `onRunEnd` on the host while an isolated guest gets only seed/read calls plus a finish notification | `createHostMemoryBridge`/`createGuestMemoryCapability` in `packages/kernel/src/runtime/memory-bridge.ts` |
+| `@clarvis/kernel` (`native-kernel`, Container projection) | keeps Memory and its indexer native inside the Container while rejecting external providers before their startup | `createNativeKernel` in `packages/kernel/src/native-kernel.ts`, `projectContainerConfiguration` in `packages/kernel/src/config/container-projection.ts` |
 | `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts`, `packages/kernel/src/runs/run-service.ts`, `packages/kernel/src/workflows/workflows-service.ts` |
 | `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts`, adapted at `packages/code/src/adapters/event-span.ts` and consumed at `packages/code/src/run-host.ts` |
 | memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `createMemoryRunCapability` in `packages/memory/src/capability.ts` |

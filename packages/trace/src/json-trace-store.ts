@@ -152,6 +152,8 @@ function parseJournalName(name: string): ParsedName | null {
 export interface JsonTraceStoreOptions {
   /** Root directory the store owns; resolved to an absolute path on open. */
   dir: string;
+  /** Optional cross-process lock root; defaults to the store-local `.locks` directory. */
+  locksDir?: string;
   /** Test seam after publishing `deleting` and before removing the owner directory. */
   beforeOwnerRemove?: (owner: string) => void;
   /**
@@ -379,7 +381,7 @@ function retainNewest<T extends TraceListRow>(heap: T[], row: T, capacity: numbe
 export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTraceStore {
   const logger = opts.logger ?? NOOP_LOGGER;
   const rootDir = resolve(opts.dir);
-  const locksDir = join(rootDir, LOCKS_DIR);
+  const locksDir = resolve(opts.locksDir ?? join(rootDir, LOCKS_DIR));
   const maxCleanupScanEntries = normalizeCacheLimit(
     opts.maxCleanupScanEntries,
     MAX_TRACE_CLEANUP_SCAN_ENTRIES,

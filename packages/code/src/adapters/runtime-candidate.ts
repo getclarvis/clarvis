@@ -9,11 +9,61 @@ export interface RuntimeCandidate {
   tag: string;
   version: string;
   source_revision: string;
-  repository: string;
-  protocol_revision: string;
-  platforms: string[];
-  artifact_image: string;
-  runtime_image: string;
+  repository: typeof CANDIDATE_REPOSITORY;
+  kernel_wire_version: 10;
+  broker_version: 1;
+  channel_version: 1;
+  targets: readonly ["linux-x64", "linux-arm64"];
+  runtime: {
+    schema_version: 2;
+    version: string;
+    source_revision: string;
+    targets: Record<"linux-x64" | "linux-arm64", RuntimeCandidateTarget>;
+  };
+}
+
+interface RuntimeCandidateTarget {
+  base: { image: string; digest: `sha256:${string}`; abi: "clarvis-linux-glibc-v1" };
+  artifact: { asset: string; sha256: string; size: number };
+  kernel_wire_version: 10;
+  broker_version: 1;
+  channel_version: 1;
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function validTarget(value: unknown, target: "linux-x64" | "linux-arm64"): boolean {
+  const root = record(value);
+  const base = record(root?.base);
+  const artifact = record(root?.artifact);
+  return (
+    root !== undefined &&
+    base !== undefined &&
+    artifact !== undefined &&
+    Object.keys(root).sort().join(",") ===
+      "artifact,base,broker_version,channel_version,kernel_wire_version" &&
+    Object.keys(base).sort().join(",") === "abi,digest,image" &&
+    Object.keys(artifact).sort().join(",") === "asset,sha256,size" &&
+    typeof base.image === "string" &&
+    /^[a-z0-9][a-z0-9._:/-]*$/u.test(base.image) &&
+    typeof base.digest === "string" &&
+    /^sha256:[a-f0-9]{64}$/u.test(base.digest) &&
+    base.abi === "clarvis-linux-glibc-v1" &&
+    artifact.asset === `clarvis-kernel-${target}.tar.gz` &&
+    typeof artifact.sha256 === "string" &&
+    /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
+    typeof artifact.size === "number" &&
+    Number.isSafeInteger(artifact.size) &&
+    artifact.size > 0 &&
+    artifact.size <= 512 * 1024 * 1024 &&
+    root.kernel_wire_version === 10 &&
+    root.broker_version === 1 &&
+    root.channel_version === 1
+  );
 }
 
 /** Reject stable tags, ambiguous RC numbers, and shell or URL metacharacters. */
@@ -23,12 +73,11 @@ export function candidateVersion(tag: string): string {
   return match[1];
 }
 
-/** Validate the complete source-install contract before downloading code or selecting an image. */
+/** Validate source identity and the embedded base/artifact release mapping. */
 export function parseRuntimeCandidate(value: unknown, tag: string): RuntimeCandidate {
   const version = candidateVersion(tag);
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (typeof value !== "object" || value === null || Array.isArray(value))
     throw new Error("candidate manifest must be an object");
-  }
   const item = value as Record<string, unknown>;
   const keys = [
     "schema",
@@ -38,14 +87,16 @@ export function parseRuntimeCandidate(value: unknown, tag: string): RuntimeCandi
     "version",
     "source_revision",
     "repository",
-    "protocol_revision",
-    "platforms",
-    "artifact_image",
-    "runtime_image",
+    "kernel_wire_version",
+    "broker_version",
+    "channel_version",
+    "targets",
+    "runtime",
   ];
+  const runtime = item.runtime as Record<string, unknown> | undefined;
+  const runtimeTargets = runtime?.targets as Record<string, unknown> | undefined;
   if (
-    Object.keys(item).length !== keys.length ||
-    keys.some((key) => !(key in item)) ||
+    Object.keys(item).sort().join(",") !== keys.sort().join(",") ||
     item.schema !== 1 ||
     item.channel !== "candidate" ||
     item.installation !== "source-v1" ||
@@ -54,20 +105,20 @@ export function parseRuntimeCandidate(value: unknown, tag: string): RuntimeCandi
     item.repository !== CANDIDATE_REPOSITORY ||
     typeof item.source_revision !== "string" ||
     !/^[a-f0-9]{40}$/u.test(item.source_revision) ||
-    typeof item.protocol_revision !== "string" ||
-    !/^[1-9]\d*$/u.test(item.protocol_revision) ||
-    JSON.stringify(item.platforms) !== JSON.stringify(["linux/amd64", "linux/arm64"]) ||
-    typeof item.runtime_image !== "string" ||
-    !/^ghcr\.io\/getclarvis\/clarvis-runtime-candidate@sha256:[a-f0-9]{64}$/u.test(
-      item.runtime_image,
-    ) ||
-    typeof item.artifact_image !== "string" ||
-    !/^ghcr\.io\/getclarvis\/clarvis-runtime-candidate-artifact@sha256:[a-f0-9]{64}$/u.test(
-      item.artifact_image,
-    )
+    item.kernel_wire_version !== 10 ||
+    item.broker_version !== 1 ||
+    item.channel_version !== 1 ||
+    JSON.stringify(item.targets) !== JSON.stringify(["linux-x64", "linux-arm64"]) ||
+    runtime === undefined ||
+    Object.keys(runtime).sort().join(",") !== "schema_version,source_revision,targets,version" ||
+    runtime.schema_version !== 2 ||
+    runtime.version !== version ||
+    runtime.source_revision !== item.source_revision ||
+    runtimeTargets === undefined ||
+    Object.keys(runtimeTargets).sort().join(",") !== "linux-arm64,linux-x64" ||
+    !validTarget(runtimeTargets["linux-x64"], "linux-x64") ||
+    !validTarget(runtimeTargets["linux-arm64"], "linux-arm64")
   )
-    throw new Error(
-      "candidate manifest is not an installable source-v1 candidate or has invalid identity",
-    );
+    throw new Error("candidate manifest has invalid source or Container runtime identity");
   return item as unknown as RuntimeCandidate;
 }

@@ -14,9 +14,6 @@ function fixture() {
   const operator = createLocalHostOperator({
     inspect: () => status,
     canControl: (peer, session) => controllers.get(session) === peer,
-    retryRuntime: async () => {
-      operations.push("retry");
-    },
     requestRestart: async () => {
       operations.push("restart");
     },
@@ -114,7 +111,7 @@ describe("local host operator authority", () => {
     }
   });
 
-  test("inspection is a copy and only explicit operator actions request retry or restart", async () => {
+  test("inspection is a copy and only an explicit operator action requests restart", async () => {
     const f = fixture();
     try {
       const client = f.operator.connect("operator");
@@ -131,9 +128,8 @@ describe("local host operator authority", () => {
         await expect(f.operator.openAuthorizationUrl(url)).rejects.toMatchObject({
           code: "invalid_request",
         });
-      await client.retryRuntime();
       await client.requestRestart();
-      expect(f.operations).toEqual(["retry", "restart"]);
+      expect(f.operations).toEqual(["restart"]);
     } finally {
       f.operator.close();
     }

@@ -37,6 +37,10 @@ a 21,000-character regression ceiling; that is not a provider token count.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.
 
+`read_image` recognizes PNG, JPEG, GIF and WebP from their bytes. PNG input also requires a complete
+chunk stream with valid CRCs, so a signature-only or corrupt file is refused before it can enter
+model history and make later provider calls fail.
+
 `ToolCallHooks.onExecutionStarted` is shell's successful-spawn notification, after review and
 abort-listener installation. Failed spawn and pre-aborted dispatch do not announce execution.
 An abort after process exit does not turn its completed output into an aborted result. The engine
@@ -148,8 +152,9 @@ latency while preserving the real npm/Homebrew/runtime path.
 `shell` and `monitor_start` accept optional `sandbox_permissions`. Omitted or `use_default` follows
 the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
 the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
-field is a no-op. Isolated container guests reject it: the guest has no channel to the machine host.
-Mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
+field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
+`require_escalated`: the guest has no channel to the machine host and no placement fallback. In
+native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
 `deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`ask` by default,
 or configured `deny`). Without a usable judge model it asks a human. Host-command review bypasses
 session coverage and never offers `allow_session`, including human fallback; clean judge decisions

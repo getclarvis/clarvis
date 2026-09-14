@@ -101,7 +101,6 @@ function mount(
   } as unknown as MemoryModeStore;
   const notes: string[] = [];
   const sandboxOpened: true[] = [];
-  const runtimeRetries: true[] = [];
   const deps = {
     settings,
     guard,
@@ -110,8 +109,8 @@ function mount(
       notes.push(m);
     },
     runActive: () => false,
+    reload: async () => ({ ok: true, message: "reloaded" }),
     openSandbox: () => sandboxOpened.push(true),
-    retryRuntime: () => runtimeRetries.push(true),
   };
   return {
     host,
@@ -122,7 +121,6 @@ function mount(
     guardSetModeCalls,
     memorySetModeCalls,
     sandboxOpened,
-    runtimeRetries,
   };
 }
 
@@ -168,8 +166,7 @@ async function activateMemoryOff(
 }
 
 test("the isolation row opens sandbox details and persists minimal lazy Docker", async () => {
-  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened, runtimeRetries } =
-    mount();
+  const { host, deps, press, notes, writes, guardSetModeCalls, sandboxOpened } = mount();
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
     height: 40,
@@ -185,19 +182,10 @@ test("the isolation row opens sandbox details and persists minimal lazy Docker",
       scope: "global",
       patch: {
         runtime: { backend: "docker" },
-        sandbox: {
-          type: "native",
-          enabled: true,
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "host",
-          toolchains: { mode: "auto" },
-        },
       },
     },
   ]);
   expect(guardSetModeCalls).toEqual([]);
-  expect(runtimeRetries).toEqual([true]);
   expect(notes).toEqual(["isolation: docker (global)"]);
   t.renderer.destroy();
 });
@@ -216,10 +204,13 @@ test("the Docker consequences remain complete in a narrow Run controls viewport"
     "The selected workspace is mounted directly; changes appear on the host immediately.",
   );
   expect(prose).toContain(
-    "Outbound network access is enabled; guest services can be exposed to the host.",
+    "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
   );
+  expect(prose).toContain("Outbound network access is enabled and may cause remote effects");
+  expect(prose).toContain("Commands run without Command Review.");
+  expect(prose).toContain("Git metadata is read-only; use Sandbox or Host for commits.");
   expect(prose).toContain(
-    "Docker stays cold until the first run; an operational startup failure requires Sandbox.",
+    "Docker stays cold until the first run and fails closed if it cannot start.",
   );
   expect(frame.split("\n").every((line) => line.length <= 72)).toBe(true);
   t.renderer.destroy();

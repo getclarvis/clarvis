@@ -10,9 +10,9 @@ Clarvis is distributed as a product, not as eighteen independently versioned wor
 The portable-release path turns the map-free split Code artifact into a target-native archive that
 needs no user-installed Bun, Node.js, compiler, or package manager. The same contract owns initial
 installation, explicit uninstall and self-update, release assembly, and the point at which a fully
-uploaded draft becomes visible. A tagged product release also owns the private isolated-worker
-distribution: immutable multi-platform OCI carrier/final images plus the manifest binding their
-digests to that release. Production: root `package.json` (`version`, private workspaces),
+uploaded draft becomes visible. A tagged product release also owns the Container Kernel
+distribution: an immutable multi-platform base plus target Kernel archives and the manifest binding
+their digests to that release. Production: root `package.json` (`version`, private workspaces),
 `packages/code/tooling/release/package.ts` (`main`), `tooling/runtime/release-manifest.ts`, and
 `.github/workflows/release.yml`.
 
@@ -32,13 +32,12 @@ The user-facing surfaces are:
 - `clarvis --update`, a complete CLI mode answered before the application graph loads;
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
   Clarvis's license, standalone third-party notices/license texts, and `runtime-release.json`;
-- two attested Linux OCI indexes in GHCR: the standalone artifact carrier and runnable isolated
-  runtime, each covering `linux/amd64` and `linux/arm64`;
+- one attested Linux base OCI index plus x64/arm64 Kernel archives, checksums and qualification reports;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
 - root script `release:prepare`, which promotes the curated changelog entry and updates the product
   version plus both installer defaults without committing or publishing;
 - a tag-triggered workflow that publishes from `getclarvis/clarvis` to public binary-only
-  `getclarvis/clarvis-releases` and publishes the runtime images in the source repository's GHCR,
+  `getclarvis/clarvis-releases`, publishes the base in source GHCR and attaches Kernel archives,
   plus a non-publishing `workflow_dispatch` portable-build path.
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
@@ -101,25 +100,34 @@ and more than 4,096 entries are refused. Production:
 `packages/code/src/update/release-manifest.ts` (`parseReleaseManifest`, `manifestFiles`,
 `verifyReleaseTree`). Test: `packages/code/tests/unit/release-manifest.test.ts`.
 
-The separate `runtime-release.json` is schema 1 and contains exactly the following fields:
+The separate `runtime-release.json` is schema 2 and contains exactly the following shape:
 
 ```json
 {
-  "schema": 1,
-  "repository": "getclarvis/clarvis",
+  "schema_version": 2,
   "version": "0.1.0",
   "source_revision": "<40 lowercase Git hex>",
-  "protocol_revision": "1",
-  "platforms": ["linux/amd64", "linux/arm64"],
-  "artifact_image": "ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest>",
-  "runtime_image": "ghcr.io/getclarvis/clarvis-runtime@sha256:<digest>",
-  "build_image": "oven/bun:1.4.0-debian@sha256:<digest>",
-  "base_image": "debian:bookworm-slim@sha256:<digest>"
+  "targets": {
+    "linux-x64": {
+      "base": { "image": "ghcr.io/getclarvis/clarvis-base", "digest": "sha256:<64 hex>", "abi": "clarvis-linux-glibc-v1" },
+      "artifact": { "asset": "clarvis-kernel-linux-x64.tar.gz", "sha256": "<64 hex>", "size": 1 },
+      "kernel_wire_version": 10,
+      "broker_version": 1,
+      "channel_version": 1
+    },
+    "linux-arm64": {
+      "base": { "image": "ghcr.io/getclarvis/clarvis-base", "digest": "sha256:<64 hex>", "abi": "clarvis-linux-glibc-v1" },
+      "artifact": { "asset": "clarvis-kernel-linux-arm64.tar.gz", "sha256": "<64 hex>", "size": 1 },
+      "kernel_wire_version": 10,
+      "broker_version": 1,
+      "channel_version": 1
+    }
+  }
 }
 ```
 
-Extra fields, a reordered/substituted platform set, mutable/foreign image identity, protocol/base
-drift, malformed source revision, or a version different from the portable release are refused. The
+Extra fields, a missing/substituted target, mutable base identity, artifact hash/size drift,
+protocol/ABI drift, malformed source revision, or a version different from the portable release are refused. The
 manifest is a release-to-runtime identity map; it is not an instruction to build from monorepo
 packages at install time. Production: `RuntimeReleaseManifest`, `createRuntimeReleaseManifest`, and
 `parseRuntimeReleaseManifest` in `tooling/runtime/release-manifest.ts`. Test:
@@ -316,29 +324,24 @@ and `tooling/tests/unit/gitflow-release-git.test.ts`. The source App must be aut
 protected tags; signing keys and external permissions are operator configuration, not established by
 these local tests.
 
-The distribution repository accepts new stable releases only. Candidate runtime images use separate
-GHCR package names associated with the source repository and are recorded in `runtime-candidate.json`
-on source prereleases. Installable candidates add `installation: "source-v1"` to that schema-1
-manifest. `dev-install.sh --candidate [tag]` installs the published source snapshot with the
-candidate's pinned Bun version. It prefetches and verifies the image through an available Docker or
-Podman engine; with no engine it activates the native-capable source candidate and reports that
-container isolation remains unavailable. Failure from every installed engine prevents activation;
-candidates do not
-carry portable stable installers. The shared reader requires the exact manifest key set, RC tag,
-base product version, source repository and revision, Linux platform pair, protocol revision, and
-candidate-only immutable image references. Existing image-only candidates are refused rather than
-silently treated as installable. Production: `packages/code/src/adapters/runtime-candidate.ts`
+The distribution repository accepts new stable releases only. Source prereleases carry
+`runtime-candidate.json`, an embedded schema-2 runtime identity, both Kernel archives/checksums and
+qualification reports. `dev-install.sh --candidate [tag]` installs the published source snapshot
+with its pinned Bun version; base/artifact acquisition remains deferred until Container is selected.
+Candidates carry no portable stable installers. The shared reader requires the exact manifest key
+set, RC tag, product/source identity, Linux targets and wire/broker/channel versions. Older
+image-only candidates are refused. Production: `packages/code/src/adapters/runtime-candidate.ts`
 (`parseRuntimeCandidate`), `packages/code/tooling/candidate-install.ts` (`installCandidate`), and
 `tooling/release/candidate.ts` (`candidateIdentity`). Test:
 `packages/code/tests/unit/candidate-install.test.ts` and
-`packages/code/tests/unit/runtime-image.test.ts`. Official packages are connected to the distribution repository, publicly
-pullable, and grant the source workflow write access. GitHub package visibility and association are
-external configuration that must be checked after initial package creation. Stable activation is
-blocked until both recorded image digests can be pulled without registry credentials. No automatic
-retention deletes published official images or attestations.
+`tooling/tests/unit/runtime-release-manifest.test.ts`. Official base packages are connected to the
+distribution repository, publicly pullable, and grant the source workflow write access. GitHub
+package visibility and association are external configuration that must be checked after initial
+package creation. Stable activation is blocked until the base can be pulled and archives can be
+downloaded without credentials. No automatic retention deletes published artifacts or attestations.
 Production: `.github/workflows/release.yml` (`identity` and `publish` jobs),
 `.github/workflows/candidate.yml`, `tooling/release/candidate.ts` (`candidateIdentity`, `main`).
-Test: `tooling/tests/unit/candidate.test.ts`, `tooling/tests/unit/distribution-workflows.test.ts`;
+Test: `packages/code/tests/unit/candidate-install.test.ts`, `tooling/tests/unit/distribution-workflows.test.ts`;
 registry visibility and access require live verification.
 
 ## 5. Invariants
@@ -490,10 +493,11 @@ Production: `tooling/lib/release-prepare.ts` (`prepareReleaseSources`),
 public-site ownership).
 
 **DIST-18.** A pushed release tag cannot publish portable binaries without also producing an exact
-runtime identity manifest, and no runtime image can be published from manual dispatch. Runtime jobs
-verify `v<root version>` before their first registry push; the carrier and final OCI indexes each
-cover exactly `linux/amd64` and `linux/arm64`, are addressed by digest, and receive registry-backed
-provenance attestations. The portable publication job depends on the runtime job and its final asset
+runtime identity manifest. Manual dispatch publishes neither the base nor Kernel artifacts. Runtime jobs
+verify `v<root version>` before their first registry push; the base OCI index covers exactly
+`linux/amd64` and `linux/arm64`, is addressed by digest, and receives registry-backed provenance.
+Target-specific Kernel archives and checksums are release assets whose source revision, ABI and bytes
+are bound by schema 2. The portable publication job depends on runtime qualification, and its final asset
 allowlist parses `runtime-release.json` against the same product version before minting the
 cross-repository App token. Production: `.github/workflows/release.yml`;
 `createRuntimeReleaseManifest` and `parseRuntimeReleaseManifest` in
@@ -521,9 +525,9 @@ cross-repository App token. Production: `.github/workflows/release.yml`;
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |
-| Runtime tag differs from the root product version | runtime image job fails before GHCR login or push |
+| Runtime tag differs from the root product version | base/artifact publication fails before GHCR login, upload or push |
 | Missing, malformed, mutable, foreign, or version-mismatched `runtime-release.json` | final release allowlist fails before the publication token exists |
-| Manual workflow dispatch | portable artifacts only; runtime-image, runtime-manifest, and release publication jobs are skipped |
+| Manual workflow dispatch | qualification only; base, Kernel artifact, runtime-manifest, and release publication jobs are skipped |
 | Missing or invalid release App variable, secret, installation, or repository permission | token minting fails after all local asset checks and before a draft or public mutation exists |
 
 Production: the root installers, `packages/code/src/update/**`, and
@@ -539,7 +543,7 @@ the exact Bun runtime running the packaging job, OpenTUI's target-native package
 system's archive/launcher conventions. Runtime publication additionally depends on GitHub Container
 Registry, Docker/Buildx, the two digest-pinned base images, and GitHub's OIDC-backed attestation
 service. Portable install and update do not depend on the runtime registry: `runtime-release.json`
-is metadata for the separately configured isolated worker, not part of TUI activation. Neither path
+is metadata resolved only when the operator selects Container placement, not part of TUI activation. Neither path
 depends on Clarvis user configuration, provider credentials, or a remote kernel. Production:
 `packages/code/tooling/release/package.ts`, `tooling/runtime/**`, `.github/workflows/release.yml`,
 `install.sh`, and `install.ps1`.

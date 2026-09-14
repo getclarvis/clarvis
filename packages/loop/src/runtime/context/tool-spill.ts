@@ -3,7 +3,12 @@ import { randomBytes } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { ensureWorkspaceLocalDir, FILE_MODE, workspaceStatePaths } from "@clarvis/paths";
+import {
+  ensureWorkspaceLocalDir,
+  FILE_MODE,
+  workspaceStatePaths,
+  type WorkspaceStatePaths,
+} from "@clarvis/paths";
 
 import type { Logger } from "@clarvis/capability";
 
@@ -38,12 +43,16 @@ export type ToolSpill = (text: string) => Promise<string | undefined>;
  *   the returned path is absolute for that reason. The shell tool's own spill
  *   depends on the same allowance.
  */
-export function createToolSpill(workspaceRoot: string, logger?: Logger): ToolSpill {
-  const paths = workspaceStatePaths(workspaceRoot);
+export function createToolSpill(
+  workspaceRoot: string | WorkspaceStatePaths,
+  logger?: Logger,
+): ToolSpill {
+  const paths =
+    typeof workspaceRoot === "string" ? workspaceStatePaths(workspaceRoot) : workspaceRoot;
   return async (text: string): Promise<string | undefined> => {
     const absPath = paths.toolOutputSpill(randomBytes(4).toString("hex"));
     try {
-      ensureWorkspaceLocalDir(workspaceRoot);
+      ensureWorkspaceLocalDir(paths);
       await writeFile(absPath, text, { encoding: "utf8", mode: FILE_MODE });
       return absPath.split(path.sep).join("/");
     } catch (err) {

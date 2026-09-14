@@ -1,4 +1,4 @@
-# The memory capability: native tools, isolated read-only projection, policy and control plane
+# The memory capability: native tools, policy and control plane
 
 > Implemented at
 > `packages/memory/src/{capability,tools,toolset, tool-contract,handler,policy,settings,config,schemas,seed,review,types,index}.ts`
@@ -9,8 +9,7 @@
 
 This subsystem is the seam between the memory wiki (the document store, delegated to
 [capabilities/memory-store.md](memory-store.md)) and an engine run: it is what makes a workspace's markdown wiki show up to a
-model as an `<memory>` context block plus seven callable tools in a native entry run, or exactly the
-four read operations in an isolated guest, and what stops a run — or the
+model as an `<memory>` context block plus seven callable tools in a native entry run, and what stops a run — or the
 autonomous indexer that shares the same tool surface — from granting itself the owner's authority
 over a document.
 
@@ -19,9 +18,10 @@ folds into a run's `deps.capabilities`. Per run it decides whether memory is act
 (`createMemoryCapability.forRun`), and when it is, assembles three things every agent scope in the run
 sees: a seed block carrying the compiled `PROFILE.md`, a `## Memory` system-prompt section whose
 wording differs for the entry agent versus every subagent, and a toolset — read tools for
-everyone, write tools for a write-enabled native entry agent only. `prepareMemoryRuntime` binds the
-same provider to a provider-opaque host lease whose serializable descriptor contains only the four
-read names; the kernel uses that separate surface for an isolated guest. `tools.ts` is where the
+everyone, write tools for a write-enabled native entry agent only. `prepareMemoryRuntime` remains a
+provider-opaque package utility. Container composes the same native Memory capability from its
+frozen local-provider projection and injects the model broker port for indexing.
+`tools.ts` is where the
 seven native tool bodies actually
 live, host-agnostic (`MemoryToolDef`), so the same module backs both an in-run agent and a
 kernel-exposed control plane. `policy.ts` is the one rule table that keeps a model-facing write
@@ -129,7 +129,7 @@ The returned `Capability` (`createMemoryCapability`):
 | `toolEffects` | `list_memories/query_memories/read_memory/grep_memories → "read"`, `write_memory/edit_memory/delete_memory → "mutate"` (`MEMORY_TOOL_EFFECTS`) |
 | `forRun(ctx)` | see §4 |
 
-### 2.5 `prepareMemoryRuntime` — isolated host lease
+### 2.5 `prepareMemoryRuntime` — provider-opaque preparation utility
 
 `prepareMemoryRuntime(factory, ctx, opts?)` returns `PreparedMemoryRuntime | null` under exactly the
 same activation and provider-resolution gates as `createMemoryCapability.forRun`. Its serializable
@@ -138,6 +138,10 @@ read vocabulary is the selected provider's canonical `MEMORY_READ_TOOL_NAMES` su
 keeps four operations on the host: `seed(task?)`, schema-aware `accepts(name,args)`, read-only
 `invoke(name,args,signal?)`, and `finish(record)` over the canonical `onRunEnd`. It exposes no
 provider/store object, provider key, credentials, path or mutating tool.
+
+The complete Container Kernel uses the native Memory factory directly with projected local-provider
+settings and an injected model port. This provider-opaque utility remains available to other host
+compositions and is not a Container bridge.
 
 Production: `MemoryRuntimeDescriptor`, `PreparedMemoryRuntime`, `prepareMemoryRunInternal` and
 `prepareMemoryRuntime` in `packages/memory/src/capability.ts`. Test:
@@ -608,18 +612,14 @@ statement of the instruction's own content owned by
 [capabilities/memory-indexer.md](memory-indexer.md) §5. Test (this document's half of the three-way
 check): `packages/memory/tests/architecture/write-policy.test.ts`.
 
-**Runtime read-only boundary.** `prepareMemoryRuntime` serializes only a provider digest, seed bound
-and the four canonical read names; its `accepts`/`invoke` map is built exclusively from
-`provider.readTools`. The kernel independently rejects descriptors with extra fields or a changed
-vocabulary, constructs no guest write tools, and rejects a forged mutation before provider
-execution even when `provider.writeTools` exists. Production: `prepareMemoryRunInternal` in
-`packages/memory/src/capability.ts`; `validRuntimeMemoryDescriptor`, `createHostMemoryBridge` and
-`createGuestMemoryCapability` in `packages/kernel/src/runtime/memory-bridge.ts`. Test:
+**Container native boundary.** `prepareMemoryRuntime` remains provider-opaque, while the complete
+Container Kernel composes the native Memory factory with projected local settings. Seed, tools and
+post-run indexing stay inside the guest; only model calls use the host broker. Production:
+`prepareMemoryRunInternal` in `packages/memory/src/capability.ts` and
+`createContainerNativeKernel` in `packages/kernel/src/hosting/container-native.ts`. Test:
 `packages/memory/tests/component/capability.test.ts` (`prepares a provider-opaque runtime lease with
-canonical calls and host run-end`); `packages/kernel/tests/unit/runtime-memory-bridge.test.ts`
-(`rejects forged mutations even when the host provider supports writes`); and
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (guest model request has no
-`write_memory`).
+canonical calls and host run-end`) and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ### Further invariants derived directly from the code (not in the owned INV range but load-bearing
 here)
@@ -654,14 +654,12 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 
 | Condition | Behavior | Cite |
 | --- | --- | --- |
-| `ctx.requestParam("memory") === "off"` | Native `forRun` and isolated `prepareMemoryRuntime` return `null`: no seed, no tools, no ingest for this run | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
-| `factory` absent, or `factory.forOwnerControlPlane` resolves nothing | Native `forRun` and isolated preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
-| `factory.providerFor` resolves `undefined` | Native `forRun` and isolated preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `ctx.requestParam("memory") === "off"` | Native `forRun` and `prepareMemoryRuntime` return `null`: no seed, no tools, no ingest for this run | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `factory` absent, or `factory.forOwnerControlPlane` resolves nothing | Native `forRun` and provider-opaque preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `factory.providerFor` resolves `undefined` | Native `forRun` and provider-opaque preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
 | `factory.providerFor` resolves `{ ok: false, failure }` | logs `memory_provider_unavailable` (with `cause`/`provider` fields) and returns `null` — never silently falls back to a different store | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
-| `provider.seed(...)` throws | logs `memory_seed_failed`; native `seedBlock()` is absent and the isolated seed result is `null`, so the run proceeds without a memory block | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
-| Isolated guest descriptor carries an extra field, changed read vocabulary, invalid digest or excessive seed bound | Guest refuses the descriptor before constructing Memory | `validRuntimeMemoryDescriptor` in packages/kernel/src/runtime/memory-bridge.ts |
-| Isolated guest or forged frame names `write_memory`, `edit_memory` or `delete_memory` | No guest definition exists; the host grant also rejects it as `invalid_request` without executing the provider | `createGuestMemoryCapability` and `createHostMemoryBridge` in packages/kernel/src/runtime/memory-bridge.ts |
-| Isolated `finish` arrives before its exact owner/run trace is durable, or arrives twice | Refused as `unavailable` or `conflict`; no guest-side enqueue fallback | `createHostMemoryBridge` in packages/kernel/src/runtime/memory-bridge.ts |
+| `provider.seed(...)` throws | logs `memory_seed_failed`; native `seedBlock()` is absent and preparation returns a null seed, so the native run proceeds without a memory block | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| Container configuration selects a local `wiki` or `file` provider | The native Container Kernel runs Memory against canonical workspace content/machinery shared with Host/Sandbox; external providers remain `unsupported` before provider startup or inference | `projectContainerConfiguration` in packages/kernel/src/config/container-projection.ts, `prepareContainerDomainMounts` in packages/kernel/src/runtime/container-mounts.ts and `createNativeKernel` in packages/kernel/src/native-kernel.ts |
 | A write/edit/delete tool's argument schema rejects | `fail("Invalid arguments: <path>: <message>")`, first zod issue only | packages/memory/src/tools.ts |
 | A tool body throws | `fail("Tool failed: <message>")` | packages/memory/src/tools.ts |
 | `grep_memories` regex too complex (backreference, lookaround, a quantifier applied to a group, or a pattern carrying more than three of `* + ? { \|`) | Not honoured — falls back to a keyword search rather than failing | packages/memory/src/tool-contract.ts |
@@ -717,13 +715,9 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   engine's eager configuration path may reach it" and because this module is "the only place that
   knows both" the memory package's structural port and the kernel's MCP connection pool
   (packages/kernel/src/memory/memory-server-port.ts doc comment).
-- `packages/kernel/src/runtime/memory-bridge.ts` imports the host-facing
-  `prepareMemoryRuntime`/`MemoryRuntimeDescriptor` surface. It retains the concrete provider and
-  post-run enqueue on the host while projecting only a closed read-only descriptor and exact
-  `runtime.memory` grant to `createGuestMemoryCapability`. Production:
-  `createHostMemoryBridge`, `validRuntimeMemoryDescriptor` and `createGuestMemoryCapability`.
-  Test: `packages/kernel/tests/unit/runtime-memory-bridge.test.ts` and
-  `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
+- `packages/kernel/src/hosting/container-native.ts` keeps Memory native in Container and injects the
+  frozen policy and model resolver. No host-side Memory provider or indexer is constructed. Test:
+  `packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 **Forces the direction:**
 - `packages/memory/tests/architecture/settings-ownership.test.ts` fails the build if `settings.ts` ever value-imports

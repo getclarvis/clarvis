@@ -97,6 +97,8 @@ export interface RunHostDeps {
   project: string;
   workspaceId: string;
   workspace: string;
+  /** Process placement owning the current Kernel connection. */
+  runtimeKind?: () => "native" | "container" | undefined;
   priceFor: (model: string) => CatalogCost | undefined;
   activeProfile: () => string;
   setActiveProfile: (name: string) => void;
@@ -933,6 +935,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function backgroundCurrentRun(): Promise<HostedRunReceipt> {
+    if (deps.runtimeKind?.() === "container")
+      return Promise.reject(
+        new Error(
+          "Isolation Container cannot keep a run alive after the TUI exits. Use /background list to inspect or cancel runs while this connection remains open.",
+        ),
+      );
     if (handoffFlight !== undefined) return handoffFlight;
     const hosting = client.hosting;
     const handle = currentHandle;
@@ -1599,6 +1607,12 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function runBangCommand(cmd: string): boolean {
+    if (deps.runtimeKind?.() === "container") {
+      setStatus([
+        "! commands are unavailable in Isolation Container; use the agent shell tool inside the Container",
+      ]);
+      return false;
+    }
     if (scheduledReserved() || humanSubmissions() > 0 || sessionLoading()) return false;
     if (currentSettlement !== undefined || compactionCalls() > 0 || physicalRunCount() > 0)
       return false;
@@ -2286,7 +2300,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   return {
     runActive,
-    continuesOnExit: () => runActive() && disconnectPolicy() === "continue",
+    continuesOnExit: () =>
+      deps.runtimeKind?.() !== "container" && runActive() && disconnectPolicy() === "continue",
     bashActive,
     compactionActive,
     physicalWorkActive: () =>

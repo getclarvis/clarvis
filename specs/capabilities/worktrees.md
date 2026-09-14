@@ -158,7 +158,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    Test: `packages/tools/tests/integration/shell-escalation.test.ts`;
    `packages/kernel/tests/unit/guard-audit.test.ts`;
    `packages/kernel/tests/integration/guard-auto-review.test.ts`;
-   `packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
+   `packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
 
 6. **Every newly created checkout is nested under the primary worktree's ignored
    `.clarvis/worktrees/` root.**

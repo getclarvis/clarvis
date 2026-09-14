@@ -4,6 +4,7 @@ import {
   deriveAgentShape,
   GRANT_CATALOG,
   grantBadges,
+  isContainerCompatibleProfile,
   profileView,
 } from "../../src/adapters/agents.ts";
 import type { ProfileInfo } from "../../src/adapters/run-types.ts";
@@ -27,6 +28,47 @@ test("profileView: absent grants → unknown; empty grants → []", () => {
   expect(profileView({ name: "u" }).grants).toBe("unknown");
   expect(profileView({ name: "e", grants: [] }).grants).toEqual([]);
   expect(profileView({ name: "e", grants: [] }).canSpawn).toEqual([]);
+});
+
+test("Container compatibility projects shipped core profiles and closes custom graphs", () => {
+  const profiles = [
+    profileView({
+      name: "marshall",
+      scope: "builtin",
+      grants: ["use_skills", "run_commands"],
+      tools: [],
+      canSpawn: ["coder"],
+      defaultSpawn: "coder",
+    }),
+    profileView({
+      name: "coder",
+      scope: "builtin",
+      grants: ["use_skills", "edit_workspace"],
+      tools: [],
+    }),
+    profileView({ name: "admiral", scope: "builtin", grants: ["workflow"], tools: [] }),
+    profileView({ name: "plugin-agent", scope: "plugin", grants: [], tools: [] }),
+    profileView({ name: "custom", scope: "workspace", grants: ["read_workspace"], tools: [] }),
+    profileView({
+      name: "custom-missing-default",
+      scope: "workspace",
+      grants: ["read_workspace"],
+      tools: [],
+      defaultSpawn: "missing",
+    }),
+    profileView({
+      name: "custom-mcp",
+      scope: "workspace",
+      grants: ["read_workspace"],
+      tools: ["server.tool"],
+    }),
+  ];
+  expect(isContainerCompatibleProfile("marshall", profiles)).toBe(true);
+  expect(isContainerCompatibleProfile("admiral", profiles)).toBe(true);
+  expect(isContainerCompatibleProfile("plugin-agent", profiles)).toBe(false);
+  expect(isContainerCompatibleProfile("custom", profiles)).toBe(true);
+  expect(isContainerCompatibleProfile("custom-missing-default", profiles)).toBe(false);
+  expect(isContainerCompatibleProfile("custom-mcp", profiles)).toBe(false);
 });
 
 test("deriveAgentShape: isLead from can_spawn, ask from grants, soft from budget", () => {

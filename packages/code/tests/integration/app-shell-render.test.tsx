@@ -137,6 +137,7 @@ interface SettingsKnobs {
    * mounting fire the one-time seed notification. */
   memoryUnconfigured?: boolean;
   providers?: unknown[];
+  runtime?: Record<string, unknown>;
   sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
@@ -164,6 +165,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
             enabled: k.memoryEnabled ?? true,
             ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
           },
+      runtime: k.runtime,
       sandbox: k.sandbox,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
@@ -569,6 +571,30 @@ test("a live MCP startup failure appears once as a transient warning outside the
   const frame = await captureUntil(t, "MCP unavailable for this run");
   expect(frame).toContain("docs: missing DOCS_TOKEN");
   expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
+  t.renderer.destroy();
+});
+
+test("Container suppresses MCP degraded presentation defensively", async () => {
+  const store = createTranscriptStore();
+  const [notice, setNotice] =
+    createSignal<ReturnType<NonNullable<AppProps["run"]["mcpStartupNotice"]>>>(null);
+  const t = await mountApp(
+    defaultProps({
+      store,
+      mcpStartupNotice: notice,
+      settingsKnobs: () => ({ runtime: { backend: "docker" } }),
+    }),
+  );
+
+  setNotice({
+    sequence: 1,
+    servers: [{ name: "forged", reason: "must stay hidden" }],
+  });
+  const frame = await captureUntil(t, "Docker");
+  expect(frame).not.toContain("MCP unavailable for this run");
+  expect(frame).not.toContain("must stay hidden");
+  expect(store.nodes.some((node) => node.text.includes("must stay hidden"))).toBe(false);
 
   t.renderer.destroy();
 });
@@ -2150,7 +2176,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   expect(out).toContain("isolation");
   expect(out).toContain("review");
   expect(out).not.toContain("close activity");
-  expect(out).toContain("Agents 1 · 1 running");
+  expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
 
   press(t, "escape");
@@ -2164,7 +2190,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   const closedFrame = t.captureCharFrame();
   expect(closedFrame).not.toContain("open / close sidebar");
   expect(closedFrame).toContain("send / steer");
-  expect(closedFrame).toContain("Agents 1 · 1 running");
+  expect(closedFrame).not.toContain("Agents 1 · 1 running");
 
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2179,7 +2205,9 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
   expect(t.renderer.root.findDescendantById("transcript-viewport")?.width).toBe(historyWidthBefore);
 
@@ -2468,7 +2496,9 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
   expect(stillClosed).not.toContain("Lead transcript");
   t.renderer.destroy();
@@ -3143,7 +3173,7 @@ test("clicking a completed agent opens its isolated transcript without a detail 
   t.renderer.destroy();
 });
 
-test("a compact activity strip keeps sub-agents visible when the split sidebar cannot fit", async () => {
+test("the sidebar is the only compact sub-agent roster", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -3162,14 +3192,15 @@ test("a compact activity strip keeps sub-agents visible when the split sidebar c
   });
   const frame = await captureUntil(t, "Lead transcript");
   expect(frame).toContain("responsive explorer");
-  expect(frame).toContain("Agents 1");
-  expect(frame).toContain("1 running");
+  expect(frame).toContain("│ Agents");
+  expect(frame.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
+  expect(frame).not.toContain("Agents 1 · 1 running");
   press(t, "l", { ctrl: true });
   await t.renderOnce();
   await t.renderOnce();
   const closed = t.captureCharFrame();
   expect(closed).not.toContain("Lead transcript");
-  expect(closed).toContain("Agents 1");
+  expect(closed).not.toContain("Agents 1 · 1 running");
   t.renderer.destroy();
 });
 

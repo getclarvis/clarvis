@@ -44,14 +44,6 @@ describe("applyIsolation", () => {
           scope: "global",
           patch: {
             runtime: { backend },
-            sandbox: {
-              type: "native",
-              enabled: true,
-              availability: "required",
-              filesystem: "workspace-write",
-              network: "host",
-              toolchains: { mode: "auto" },
-            },
           },
         },
       ]);

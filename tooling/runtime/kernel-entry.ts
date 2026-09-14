@@ -1,6 +1,11 @@
 #!/usr/bin/env bun
+import { Ajv } from "ajv";
+import * as formatsModule from "ajv-formats";
 import { sanitizeErrorMessage } from "@clarvis/capability";
 import { serveContainerKernel } from "@clarvis/kernel/bootstrap";
+import { installBundledAjvModules } from "../../packages/loop/src/validation/ajv.ts";
+
+installBundledAjvModules({ Ajv, addFormats: formatsModule.default.default });
 
 try {
   const host = serveContainerKernel();

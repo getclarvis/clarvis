@@ -61,6 +61,8 @@ engine returns the complete lowercase SHA-256.
 `runtime/build-artifact.ts` separately runs the pinned Linux Bun builder with the checkout read-only,
 autoload disabled and no network. It emits `clarvis-kernel-<target>.tar.gz`, a checksum sidecar and a
 strict manifest containing the public Kernel wire, broker and channel revisions. The compiled Kernel
+entry statically installs the loop's lazy Ajv dependencies, and qualification instantiates tool
+validation so a binary that boots but still tries to resolve `node_modules` cannot pass. The artifact
 is qualified outside the checkout and is transferred into a content-addressed engine volume; changing
 only Clarvis code does not rebuild the base.
 

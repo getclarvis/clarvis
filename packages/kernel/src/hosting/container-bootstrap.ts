@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { rm, unlink } from "node:fs/promises";
+import { rmdir, unlink } from "node:fs/promises";
 import type { Readable, Writable } from "node:stream";
 import {
   DIR_MODE,
@@ -59,6 +59,16 @@ async function readArtifactManifest(): Promise<RuntimeArtifactManifest> {
   }
 }
 
+/** Remove one completed hosted projection and prune its generation directory when it is empty. */
+export async function removeContainerProjection(path: string): Promise<void> {
+  await unlink(path).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+  });
+  await rmdir(dirname(path)).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
+  });
+}
+
 async function hostedStorage(
   input: ContainerInitialize,
   globalDir: string,
@@ -77,13 +87,7 @@ async function hostedStorage(
       });
     },
     async removeProjection(executionId, generation) {
-      const path = paths.projectionFile(generation, executionId);
-      await unlink(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-      });
-      await rm(dirname(path), { recursive: false }).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT" && error.code !== "ENOTEMPTY") throw error;
-      });
+      await removeContainerProjection(paths.projectionFile(generation, executionId));
     },
     async commit(state) {
       if (state.host_generation !== input.generation)

@@ -20,6 +20,7 @@ test("Container has one full-Kernel composition and no divided execution entry",
 
   const base = readFileSync("Containerfile.runtime", "utf8");
   const artifact = readFileSync("tooling/runtime/build-artifact.ts", "utf8");
+  const entry = readFileSync("tooling/runtime/kernel-entry.ts", "utf8");
   const launcher = readFileSync("packages/kernel/src/hosting/container-host-launcher.ts", "utf8");
   const connector = readFileSync("packages/kernel/src/hosting/connect-local-container.ts", "utf8");
   const backend = readFileSync("packages/kernel/src/runtime/container-kernel-backend.ts", "utf8");
@@ -40,6 +41,9 @@ test("Container has one full-Kernel composition and no divided execution entry",
   expect(artifact).toContain('plan.engine === "podman" ? ["--userns=keep-id"] : []');
   expect(artifact).toContain('plan.engine === "podman" ? ["--security-opt", "label=disable"] : []');
   expect(artifact).toContain('"--format=ustar"');
+  expect(entry).toContain('from "ajv"');
+  expect(entry).toContain('from "ajv-formats"');
+  expect(entry).toContain("installBundledAjvModules({ Ajv, addFormats:");
 
   expect(launcher).not.toContain("executeRun");
   expect(launcher).not.toContain("createFileKernel");

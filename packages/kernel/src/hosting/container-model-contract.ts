@@ -10,6 +10,7 @@ const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const positive = count.positive();
 const text = z.string();
 const id = text.min(1).max(256);
+const toolNamespace = text.max(256);
 const json = z.unknown().refine((value) => value !== undefined);
 const record = z.record(text, json);
 const providerOptions = z.record(text, record).optional();
@@ -60,7 +61,7 @@ const tool = z
   .object({
     fullName: id,
     wireName: id,
-    mcpName: id,
+    mcpName: toolNamespace,
     toolName: id,
     description: text.optional(),
     inputSchema: record,

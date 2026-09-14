@@ -60,6 +60,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   before start, enforces exact capability/NNP/tmpfs policy, shares boot and preparation deadlines,
   revokes subscription-backed model leases synchronously, and reconciles uncertain create/stop/close
   outcomes without releasing workspace ownership early.
+- Compiled Container Kernels now bundle the lazy Ajv validation modules required by the first agent
+  run, preserve the builtin-tool namespace marker across the model broker, and clean hosted
+  projection directories without reporting `EISDIR`.
+- Container agents now receive the admitted Container placement, Docker/Podman engine, network mode
+  and guest workspace root in their system environment while the host bind source remains private.
 - Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
   scope for automatic command review instead of forcing manual approval through missing evidence.
 - Explicit non-forced current-branch pushes and bounded pull-request metadata/check observations now

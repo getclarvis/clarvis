@@ -288,12 +288,19 @@ plugins, skills, hooks, generic MCP and external capability providers remain abs
 explicitly unavailable because its current provider is MCP; internal plan tasks remain available.
 Builtin agents retain their native grants, including Workflow, with only `use_skills` removed.
 Incompatible operator profiles fail before inference instead of losing grants silently.
+Every Container run also receives a required system section through the existing capability seam.
+It names the Container placement, admitted Docker/Podman engine, network mode and guest workspace
+root. It does not reveal the host source path of the workspace bind; host-brokered model requests are
+identified separately from network authority available to guest tools.
 
 One private three-lane stdio channel carries the public Kernel transport, bootstrap control and a
 closed model broker. Real endpoints, SDKs, credentials and subscription state stay on the host. The
 guest sends only a logical provider/model pair and bounded `LLMCallParams`; it cannot dispatch
 configuration, URLs, files or host processes through the broker. Public wire revision 10, broker
 revision 1 and channel revision 1 are negotiated before the client is returned.
+The closed model DTO preserves the native `NamespacedTool` convention: builtin tools use an empty
+`mcpName`, while `fullName`, `wireName` and `toolName` remain nonempty and bounded. This marker does
+not enable MCP discovery or dispatch in the Container.
 
 The selected workspace is the only general host bind mounted read-write at `/workspace` and a
 preflight nonce proves that the selected engine sees the same directory. Private content and state
@@ -317,6 +324,10 @@ immutable content-addressed volume and mounted read-only at `/opt/clarvis`; chan
 rebuild the base. The real-engine qualifier writes explicit scenario evidence so a skipped test
 cannot be reported as passing. A failed artifact-cache verification permits recreation only after
 the engine proves zero Container consumers and confirms removal of that exact volume name.
+The standalone entry statically installs the loop's lazy Ajv modules before serving the Kernel, so
+the compiled executable never falls back to `node_modules` when a run first constructs tool
+validators. Artifact qualification must instantiate that validation path; a successful hello alone
+does not prove the executable's dependency closure.
 
 Effective inspection accepts only the engine's exact representation. Podman must report the precise
 effective and bounding capability sets, its explicit no-new-privileges value, and the canonical
@@ -329,6 +340,8 @@ retains state, artifact and mise volumes. Startup reconciliation inspects the ex
 labels; an unreachable engine or unconfirmed previous process remains a conflict. Loss of either
 the attached process or physical channel starts the same idempotent cleanup. One absolute boot
 deadline covers channel readiness, private initialization and public hello.
+Completed hosted projections unlink their file and prune only an empty generation directory; sibling
+projections keep that directory alive and cleanup never treats a directory as a regular file.
 
 As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
 capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is

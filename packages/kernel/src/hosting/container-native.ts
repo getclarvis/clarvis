@@ -1,4 +1,4 @@
-import { NOOP_LOGGER, type LLMProvider, type Logger } from "@clarvis/capability";
+import { NOOP_LOGGER, type Capability, type LLMProvider, type Logger } from "@clarvis/capability";
 import { executeRun } from "@clarvis/loop";
 import { createFileMemoryStore } from "@clarvis/memory";
 import { createFilePlanRepository, createPlanStore } from "@clarvis/plan";
@@ -31,6 +31,35 @@ export interface ContainerNativeOptions {
   runtime: Extract<RuntimeStatus, { kind: "container" }>;
   logger?: Logger;
   operatorAuthorityFor?: CreateKernelOptions["operatorAuthorityFor"];
+}
+
+/** Describe the admitted placement through the existing capability system-section seam. */
+function createContainerEnvironmentCapability(
+  runtime: Extract<RuntimeStatus, { kind: "container" }>,
+  workspaceRoot: string,
+): Capability {
+  const name = "container-environment";
+  const section = [
+    "# Container environment",
+    "",
+    "Placement: Container Kernel",
+    `Engine: ${runtime.engine}`,
+    `Network: ${runtime.network}`,
+    `Workspace root inside the Container: ${workspaceRoot}`,
+    "Commands and workspace tools execute inside this Container.",
+    "The host path backing the workspace bind is intentionally not exposed inside the Container.",
+    "Clarvis model requests are brokered by the host and do not grant tools additional network access.",
+  ].join("\n");
+  return {
+    name,
+    required: true,
+    forRun: () => ({
+      name,
+      required: true,
+      systemSection: () => section,
+      forAgent: () => ({ attach: () => ({}) }),
+    }),
+  };
 }
 
 /**
@@ -87,6 +116,7 @@ export async function createContainerNativeKernel(options: ContainerNativeOption
       connections: { acquire: unavailable, closeAll: async () => undefined },
       builtins: { tools: true, skills: false, hooks: false },
       allowHostEscalation: false,
+      capabilities: [createContainerEnvironmentCapability(options.runtime, workspaceRoot)],
     },
     planning: {
       workspaceRoot,

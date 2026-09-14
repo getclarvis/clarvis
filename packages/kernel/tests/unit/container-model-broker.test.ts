@@ -109,6 +109,23 @@ describe("Container model admission", () => {
   test("closed native structures, bounded JSON and inline-only media", () => {
     const f = fixture();
     try {
+      expect(
+        decodeContainerModelCall({
+          ...f.request(),
+          input: {
+            messages: [{ role: "user", content: "ok" }],
+            tools: [
+              {
+                fullName: "read_file",
+                wireName: "read_file",
+                mcpName: "",
+                toolName: "read_file",
+                inputSchema: { type: "object" },
+              },
+            ],
+          },
+        }).input.tools[0]?.mcpName,
+      ).toBe("");
       for (const messages of [
         [{ role: "user", content: [{ type: "image", image: "https://host.invalid/private" }] }],
         [

@@ -17,6 +17,39 @@ import * as fileKernel from "../../src/file-kernel.ts";
 import { createLoopbackTransport } from "../../src/transport/loopback.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
 
+test("native runs receive the admitted Container placement through the system section", async () => {
+  let calls = 0;
+  const fixture = await containerNativeFixture({
+    llm: {
+      call: async (params) => {
+        calls++;
+        const system = params.messages.find((message) => message.role === "system")?.content;
+        expect(system).toBeString();
+        expect(system).toContain("# Container environment");
+        expect(system).toContain("Placement: Container Kernel");
+        expect(system).toContain("Engine: podman");
+        expect(system).toContain("Network: none");
+        expect(system).toContain("Workspace root inside the Container:");
+        expect(system).toContain(
+          "host path backing the workspace bind is intentionally not exposed",
+        );
+        return {
+          text: "Container environment received.",
+          usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    const { attachment } = await fixture.start();
+    await attachment.handle.done;
+    await attachment.handle.closed;
+    expect(calls).toBe(1);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("native memory indexer uses the injected model and writable wiki tools", async () => {
   let calls = 0;
   const leaf = "fixture/indexed/MEMORY.md";

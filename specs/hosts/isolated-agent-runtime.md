@@ -83,6 +83,12 @@ Test: `packages/kernel/tests/contract/container-contract.test.ts`;
 operator configuration and provider effects. Container hosting supplies a strict in-memory
 `ContainerConfiguration`, a model provider connected to channel 3, an empty connection manager,
 builtin tools, and fixed `skills=false`, `hooks=false`, `allowHostEscalation=false`.
+The composition also contributes a required system section through the native capability seam. It
+states that the run is in a Container Kernel, names the admitted Docker or Podman engine and network
+mode, and identifies the guest workspace root. The host path backing the bind remains private; the
+section explicitly distinguishes host-brokered model requests from network access available to
+guest tools. Entry agents, delegated children, workflows, Goals and Memory indexing inherit the same
+generation-fixed facts.
 
 Plans use the Markdown provider. Memory uses local wiki or admitted workspace-relative file paths
 and keeps native seed, write, delete and index behavior. Workflows, leaders, Goals, sessions,
@@ -155,6 +161,9 @@ without double-counting cache subsets, and retains the reservation when usage or
 sequence. Remote media and file paths are refused. Duplicate call IDs never dispatch again. EOF,
 shutdown, expiry, credential revocation and generation replacement revoke queued, active and future
 calls without account fallback.
+The tool schema preserves native `NamespacedTool` identity: builtin tools carry the established empty
+`mcpName` marker, while their full, wire and local names remain nonempty and bounded. Accepting that
+marker does not add an MCP catalog or external dispatch path to the guest.
 
 Production: `createContainerModelBroker` in
 `packages/kernel/src/runtime/model-broker-host.ts`;
@@ -223,7 +232,9 @@ links, devices, sockets and special permissions.
 The builder compiles with Bun using `--compile --env=disable`,
 `--no-compile-autoload-dotenv`, `--no-compile-autoload-bunfig`,
 `--no-compile-autoload-tsconfig`, `--no-compile-autoload-package-json` and
-`--reject-unresolved`. The host verifies the archive before transfer. A networkless ephemeral
+`--reject-unresolved`. The entry statically installs the loop's lazy Ajv modules before serving the
+Kernel, and the real-engine canary constructs run-time tool validation instead of treating hello as
+proof of the compiled dependency closure. The host verifies the archive before transfer. A networkless ephemeral
 preparer is created under a deterministic name, inspected for exact policy and mounts before start,
 verifies the same archive hash before extraction, and publishes readiness last. An uncertain create
 or cancellation is reconciled and removed by exact inspected ID. Kernel Containers only receive the
@@ -237,6 +248,7 @@ artifact without rebuilding the base.
 
 Production: `runtimeBaseBuildPlan` in `tooling/runtime/build-image.ts`;
 `runtimeArtifactBuildPlan` in `tooling/runtime/build-artifact.ts`;
+`installBundledAjvModules` in `packages/loop/src/validation/ajv.ts`;
 `validateRuntimeArtifact` and `prepareRuntimeArtifactVolume` in
 `packages/kernel/src/runtime/runtime-artifact.ts`;
 `parseRuntimeReleaseManifest` in `tooling/runtime/release-manifest.ts`.
@@ -287,6 +299,8 @@ Create, inspect, stop and remove uncertainty fails closed. A lost create respons
 the deterministic name plus exact generation/namespace labels; an ambiguous inspect never proves
 absence. A failed engine stop triggers the bounded kill path instead of an unbounded wait. Physical
 channel closure starts the same idempotent cleanup even when no client explicitly calls `close()`.
+Hosted-run cleanup unlinks one projection and prunes its generation directory only when empty, so a
+completed run neither raises a directory-removal error nor removes sibling projections.
 
 Closing the TUI closes the Container. Detaching an observation does not promise survival beyond the
 connection, and the TUI refuses its exit-after-background action. `!command` is also unavailable
@@ -300,5 +314,6 @@ Production: `launchContainerKernel` in
 `packages/kernel/src/hosting/container-launcher.ts`;
 `createRunHost` in `packages/code/src/run-host.ts`.
 Test: `packages/kernel/tests/integration/container-launcher.test.ts`;
+`packages/kernel/tests/unit/container-bootstrap.test.ts`;
 `packages/code/tests/integration/container-run-host.test.ts`;
 `packages/kernel/tests/integration/container-kernel.e2e.test.ts`.

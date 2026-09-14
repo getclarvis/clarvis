@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { containerGuestPaths } from "@clarvis/paths";
 import {
   inspectReservedWorkspacePath,
+  prepareContainerDomainMounts,
   prepareRuntimeMounts,
 } from "../../src/runtime/container-mounts.ts";
 import { containerGitDirectoryTarget } from "../../src/git-workspace.ts";
@@ -98,6 +99,57 @@ function input(
 }
 
 describe("prepareRuntimeMounts", () => {
+  test("maps every durable native domain store to its canonical host directory", async () => {
+    const fixture = await root();
+    const workspace = join(fixture, "workspace");
+    const globalDir = join(fixture, "global");
+    await Promise.all([mkdir(workspace), mkdir(globalDir)]);
+    const mounts = await prepareContainerDomainMounts({
+      workspaceRoot: workspace,
+      globalDir,
+      owner: "owner",
+      projectId: "project",
+      workspaceId: "workspace",
+    });
+    expect(mounts).toHaveLength(8);
+    expect(mounts.map((mount) => mount.target)).toEqual([
+      "/workspace/.clarvis/plans",
+      "/workspace/.clarvis/memory",
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/workspaces\/.+\/plans$/),
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/workspaces\/.+\/memory$/),
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/traces\/.+$/),
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/workspaces\/.+\/trace-locks$/),
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/sessions\/.+$/),
+      expect.stringMatching(/^\/var\/lib\/clarvis\/state\/workflows\/.+$/),
+    ]);
+    for (const mount of mounts) {
+      expect(mount.readOnly).toBe(false);
+      expect(existsSync(mount.source)).toBe(true);
+    }
+  });
+
+  test("refuses a symlink in canonical domain state", async () => {
+    const fixture = await root();
+    const workspace = join(fixture, "workspace");
+    const globalDir = join(fixture, "global");
+    const outside = join(fixture, "outside");
+    await Promise.all([
+      mkdir(join(workspace, ".clarvis"), { recursive: true }),
+      mkdir(globalDir),
+      mkdir(outside),
+    ]);
+    await symlink(outside, join(workspace, ".clarvis", "plans"));
+    await expect(
+      prepareContainerDomainMounts({
+        workspaceRoot: workspace,
+        globalDir,
+        owner: "owner",
+        projectId: "project",
+        workspaceId: "workspace",
+      }),
+    ).rejects.toMatchObject({ code: "unsupported_policy" });
+  });
+
   test("leaves .clarvis to the private content volume and masks .agents outside the workspace", async () => {
     const fixture = await root();
     const workspace = join(fixture, "workspace");

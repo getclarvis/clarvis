@@ -371,6 +371,7 @@ describe("Container Kernel process connection", () => {
       workspaceRoot,
       controlRootMasks: [],
       gitMetadataMounts: [],
+      domainDataMounts: [],
       baseImageId: `sha256:${"f".repeat(64)}`,
       baseAbi: "clarvis-linux-glibc-v1",
       artifact: { volume: "artifact", digest, target: manifest().target },
@@ -461,6 +462,7 @@ describe("Container Kernel process connection", () => {
       reconcilePrevious: async () => {
         reconciled++;
       },
+      terminatePrevious: async () => undefined,
       startKernel: async () => {
         const hostToGuest = new PassThrough();
         const guestToHost = new PassThrough();
@@ -552,6 +554,7 @@ describe("Container Kernel process connection", () => {
       workspaceRoot,
       controlRootMasks: [],
       gitMetadataMounts: [],
+      domainDataMounts: [],
       baseImageId: `sha256:${"7".repeat(64)}`,
       baseAbi: "clarvis-linux-glibc-v1",
       artifact: { volume: "artifact", digest, target: manifest().target },
@@ -622,6 +625,7 @@ describe("Container Kernel process connection", () => {
             message: "engine stopped",
           }),
           reconcilePrevious: async () => undefined,
+          terminatePrevious: async () => undefined,
           startKernel: async () => {
             throw new Error("unexpected start");
           },
@@ -669,6 +673,7 @@ describe("Container Kernel process connection", () => {
         backend: {
           inspect: async () => ({ available: true, engineVersion: "fixture", rootless: true }),
           reconcilePrevious: async () => undefined,
+          terminatePrevious: async () => undefined,
           startKernel: async () => ({
             id: "6".repeat(64),
             process: processStreams,
@@ -710,6 +715,7 @@ describe("Container Kernel process connection", () => {
         backend: {
           inspect: async () => ({ available: true, engineVersion: "fixture", rootless: true }),
           reconcilePrevious: async () => undefined,
+          terminatePrevious: async () => undefined,
           startKernel: async () => {
             throw new Error("unexpected start");
           },

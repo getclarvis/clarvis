@@ -334,7 +334,8 @@ Calling `read_image` resolves the file against the workspace plus the run-owned
 `config.temporaryRoots`, then reads it (`resolvePath` + `readRawFile`, capped at `config.maxImageBytes`,
 default `DEFAULT_MAX_IMAGE_BYTES = 5_000_000` — `packages/tools/src/config.ts`), sniffs its
 format from magic bytes (`sniffImageMime`, `packages/tools/src/lib/image.ts`, PNG/JPEG/GIF/WebP only),
-and returns `{ content: [imagePart(base64, mimeType)] }` or throws `not_an_image`
+verifies the complete PNG chunk stream and every PNG CRC, and returns
+`{ content: [imagePart(base64, mimeType)] }` or throws `not_an_image`
 (`packages/tools/src/tools/read-image.ts`). A successful call's result content is the `imagePart` alone — no text part —
 so whatever flattens a `ToolResult` to `.text` for that call gets an empty string, not a textual echo
 of the image (`packages/tools/src/tools/read-image.ts`; pinned by "produces no text output (flattened text is empty)",
@@ -420,10 +421,11 @@ from the other).
     when capabilities are undeclared.** Production `packages/loop/src/runtime/loop/run-agent.ts`; pinned by the three cases of
     "read_image is offered only to a model that can consume its result"
     (`packages/loop/tests/integration/vision-tool-gating.test.ts`).
-16. **`read_image` only recognizes PNG/JPEG/GIF/WebP by magic bytes and rejects everything else with
-    `not_an_image`, independent of extension.** Production
+16. **`read_image` only recognizes PNG/JPEG/GIF/WebP by magic bytes, verifies PNG chunk CRCs, and
+    rejects unsupported or corrupt PNG data with `not_an_image`, independent of extension.** Production
     `packages/tools/src/tools/read-image.ts`, `packages/tools/src/lib/image.ts`; pinned by
-    "errors not_an_image for a non-image file"
+    "errors not_an_image for a non-image file" and
+    "errors not_an_image before a corrupt PNG reaches model history"
     (`packages/tools/tests/integration/read-image.test.ts`).
 17. **`read_image` is available even on a read-only tool surface.** Production: no read-only gate in
     `read-image.ts`; pinned by "is available in the read-only surface"

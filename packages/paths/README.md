@@ -119,7 +119,7 @@ always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
 history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roots, monitor sidecars and logs, shell and tool-result spills), the memory
-wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segment is
+wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
@@ -150,7 +150,9 @@ repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DAT
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
 Container uses `agentsWorkspaceDir()` as a complete control-root mask target and covers
-`workspacePaths().clarvisDir` with its private content volume; it does not enumerate descendants.
+`workspacePaths().clarvisDir` with its private content volume. Kernel then overlays only the exact
+Plans and Memory descendants selected through the path vocabulary; the mask builder itself does not
+enumerate descendants.
 
 Definition and selection ownership is specified in
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
@@ -394,6 +396,9 @@ mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even
 runs on a different platform. It includes the private Git metadata/common roots used when a Windows
 or POSIX host's linked-worktree indirection must be rewritten for the Linux guest. Namespace
 derivation, volume admission and lifecycle belong to Kernel.
+Kernel uses these builders to bind only canonical native domain stores into a Container: Plans and
+Memory content/machinery, owner-scoped sessions/workflow records/trace records, and trace locks.
+Configuration, credentials, extensions, local UI state and other owners are not part of that map.
 
 ## Owner segments
 

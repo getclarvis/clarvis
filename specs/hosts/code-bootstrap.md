@@ -72,13 +72,13 @@ the checkpoint strip case in [run-status.test.ts](../../packages/code/tests/unit
 
 ### 2.1 The `clarvis` bin
 
-| Property | Value | Source |
-| --- | --- | --- |
-| bin name | `clarvis` | `packages/code/package.json` |
-| bin target | `src/cli.ts` | `packages/code/package.json` |
-| bundle path preferred at runtime | `../dist/index.js` relative to `cli.ts` | `packages/code/src/cli.ts` |
-| source fallback modules | `@opentui/solid/preload`, then `./index.tsx` | `packages/code/src/cli.ts` |
-| package `exports` | absent (application package) | `packages/code/package.json` (no `exports` key) |
+| Property                         | Value                                        | Source                                          |
+| -------------------------------- | -------------------------------------------- | ----------------------------------------------- |
+| bin name                         | `clarvis`                                    | `packages/code/package.json`                    |
+| bin target                       | `src/cli.ts`                                 | `packages/code/package.json`                    |
+| bundle path preferred at runtime | `../dist/index.js` relative to `cli.ts`      | `packages/code/src/cli.ts`                      |
+| source fallback modules          | `@opentui/solid/preload`, then `./index.tsx` | `packages/code/src/cli.ts`                      |
+| package `exports`                | absent (application package)                 | `packages/code/package.json` (no `exports` key) |
 
 The manifest exposes no compatibility alias: the installed executable is `clarvis` only. The
 TypeScript setup requires the exact Bun version pinned by `mise.toml`, performs a frozen root install,
@@ -157,25 +157,25 @@ state-preserving contract in [Portable distribution](../cross-cutting/distributi
 `FLAGS` is declared as "the single source of truth for the CLI surface: parsing, `--help`, the usage
 line and the README synopsis all derive from this table" (`packages/code/src/cli-args.ts`).
 
-| Flag | Alias | Value form | Mode-selecting | Description string (verbatim) | File |
-| --- | --- | --- | --- | --- | --- |
-| `--help` | `-h` | — | yes | `print this help and exit` | `packages/code/src/cli-args.ts` |
-| `--version` | — | — | yes | `print the version and exit` | `packages/code/src/cli-args.ts` |
-| `--print` | `-p` | `<prompt>` (next token) | yes | `run the prompt headless: stream the reply to stdout, exit 0/1` | `packages/code/src/cli-args.ts` |
-| `--agent` | — | `<name>` (next token) | no | `agent to run --print as (default: entry agent)` | `packages/code/src/cli-args.ts` |
-| `--format` | — | `<text\|md>` (next token) | no | `--print output: text (default) or md transcript` | `packages/code/src/cli-args.ts` |
-| `--resume` | — | `<session-id>` (next token) | yes | `resume a saved session` | `packages/code/src/cli-args.ts` |
-| `--continue` | — | — | yes | `resume this workspace's most recent session` | `packages/code/src/cli-args.ts` |
-| `--list` | — | — | yes | `list saved sessions and exit` | `packages/code/src/cli-args.ts` |
-| `--delete` | — | `<session-id>` (next token) | yes | `delete a session and its runs` | `packages/code/src/cli-args.ts` |
-| `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts` |
-| `--update` | — | — | yes | `install the newest eligible Clarvis release and exit` | `packages/code/src/cli-args.ts` (`FLAGS`) |
-| `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts` |
-| `--extension-profile` | — | `<selector>` (next token) | no | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts` (`FLAGS`) |
-| `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts` |
-| `--remote` | — | `<user@host>` (next token) | no | `connect to a Clarvis installation over SSH` | `packages/code/src/cli-args.ts` |
-| `--remote-workspace` | — | `<path>` (next token) | no | `absolute workspace path on the remote host` | `packages/code/src/cli-args.ts` |
-| `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
+| Flag                  | Alias | Value form                                         | Mode-selecting | Description string (verbatim)                                       | File                                      |
+| --------------------- | ----- | -------------------------------------------------- | -------------- | ------------------------------------------------------------------- | ----------------------------------------- |
+| `--help`              | `-h`  | —                                                  | yes            | `print this help and exit`                                          | `packages/code/src/cli-args.ts`           |
+| `--version`           | —     | —                                                  | yes            | `print the version and exit`                                        | `packages/code/src/cli-args.ts`           |
+| `--print`             | `-p`  | `<prompt>` (next token)                            | yes            | `run the prompt headless: stream the reply to stdout, exit 0/1`     | `packages/code/src/cli-args.ts`           |
+| `--agent`             | —     | `<name>` (next token)                              | no             | `agent to run --print as (default: entry agent)`                    | `packages/code/src/cli-args.ts`           |
+| `--format`            | —     | `<text\|md>` (next token)                          | no             | `--print output: text (default) or md transcript`                   | `packages/code/src/cli-args.ts`           |
+| `--resume`            | —     | `<session-id>` (next token)                        | yes            | `resume a saved session`                                            | `packages/code/src/cli-args.ts`           |
+| `--continue`          | —     | —                                                  | yes            | `resume this workspace's most recent session`                       | `packages/code/src/cli-args.ts`           |
+| `--list`              | —     | —                                                  | yes            | `list saved sessions and exit`                                      | `packages/code/src/cli-args.ts`           |
+| `--delete`            | —     | `<session-id>` (next token)                        | yes            | `delete a session and its runs`                                     | `packages/code/src/cli-args.ts`           |
+| `--refresh-models`    | —     | —                                                  | yes            | `refresh the models.dev catalog and exit`                           | `packages/code/src/cli-args.ts`           |
+| `--update`            | —     | —                                                  | yes            | `install the newest eligible Clarvis release and exit`              | `packages/code/src/cli-args.ts` (`FLAGS`) |
+| `--ascii`             | —     | —                                                  | no             | `render glyphs as plain ascii`                                      | `packages/code/src/cli-args.ts`           |
+| `--extension-profile` | —     | `<selector>` (next token)                          | no             | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts` (`FLAGS`) |
+| `--worktree`          | —     | optional next token or `=name`                     | no             | `open a dedicated Git worktree; omit name to generate one`          | `packages/code/src/cli-args.ts`           |
+| `--remote`            | —     | `<user@host>` (next token)                         | no             | `connect to a Clarvis installation over SSH`                        | `packages/code/src/cli-args.ts`           |
+| `--remote-workspace`  | —     | `<path>` (next token)                              | no             | `absolute workspace path on the remote host`                        | `packages/code/src/cli-args.ts`           |
+| `--debug`             | —     | `[=<error\|warn\|info\|debug>]` (inline, optional) | no             | `write bounded application diagnostics; --debug=<level>`            | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
 `FlagSpec.value` consumes the **next** token and is mandatory; `FlagSpec.inlineValue` is attached with
 `=` and is optional; `FlagSpec.optionalValue` accepts either the next token or an `=` value and also
@@ -185,8 +185,13 @@ permits the bare flag (`packages/code/src/cli-args.ts`).
 
 ```ts
 export type WorktreeRequest = true | string;
-export interface RemoteWorkspaceRequest { destination: string; workspace: string }
-interface ExtensionProfileMode { extensionProfileSelector?: string }
+export interface RemoteWorkspaceRequest {
+  destination: string;
+  workspace: string;
+}
+interface ExtensionProfileMode {
+  extensionProfileSelector?: string;
+}
 interface WorkspaceMode extends ExtensionProfileMode {
   worktree?: WorktreeRequest;
   remote?: RemoteWorkspaceRequest;
@@ -196,7 +201,13 @@ export type Mode =
   | ({ kind: "run"; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "resume"; id: SessionId; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "continue"; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
-  | ({ kind: "print"; prompt: string; agent?: string; format: PrintFormat; debug: DebugFlag } & WorkspaceMode)
+  | ({
+      kind: "print";
+      prompt: string;
+      agent?: string;
+      format: PrintFormat;
+      debug: DebugFlag;
+    } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "refresh-models"; debug: DebugFlag } & WorkspaceMode)
@@ -223,58 +234,58 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 
 ### 2.4 Exported functions
 
-| Source | Export | Signature |
-| --- | --- | --- |
-| `packages/code/src/cli-args.ts` | `PrintFormat` | `"text" \| "md"` |
-| `packages/code/src/cli-args.ts` | `DebugFlag` | `{ enabled: boolean; level?: DiagnosticLevel }` |
-| `packages/code/src/cli-args.ts` | `DebugRequest` | `{ enabled: boolean; level: DiagnosticLevel }` |
-| `packages/code/src/cli-args.ts` | `Mode` | union above |
-| `packages/code/src/cli-args.ts` | `RemoteWorkspaceRequest` | `{ destination: string; workspace: string }` |
-| `packages/code/src/cli-args.ts` | `FLAGS` | `readonly FlagSpec[]` |
-| `packages/code/src/cli-args.ts` | `DebugEnv` | index-signature env view naming `CLARVIS_CODE_DEBUG`, `CLARVIS_CODE_DEBUG_LEVEL` |
-| `packages/code/src/cli-args.ts` | `resolveDebugRequest` | `(mode: Mode, env: DebugEnv) => DebugRequest` |
-| `packages/code/src/cli-args.ts` | `usageText` | `() => string` |
-| `packages/code/src/cli-args.ts` | `helpText` | `() => string` |
-| `packages/code/src/cli-args.ts` | `versionText` | `() => string` |
-| `packages/code/src/cli-args.ts` | `productVersion` | `() => string` |
-| `packages/code/src/cli-args.ts` | `parseMode` | `(argv: string[]) => Mode` |
-| `packages/code/src/cli-entry.ts` | `EntryInputs` | `{ distPath: string; distExists: boolean; forceSource: boolean }` |
-| `packages/code/src/cli-entry.ts` | `EntryChoice` | `{kind:"dist"} \| {kind:"source"} \| {kind:"error"; message:string}` |
-| `packages/code/src/cli-entry.ts` | `resolveEntry` | `(inputs: EntryInputs) => EntryChoice` |
-| `packages/code/src/cli-entry.ts` | `privateEntry` | `(argv: readonly string[]) => "remote-kernel" \| undefined` |
-| `packages/code/src/adapters/remote-kernel-arguments.ts` | `encodeRemoteKernelArguments` / `parseRemoteKernelArguments` | closed bounded base64url launch payload |
-| `packages/code/src/cli-mode.ts` | `resolveResumeMeta` | `(store, owner, workspace, mode) => SessionMeta \| null` |
-| `packages/code/src/cli-mode.ts` | `createPrintStream` | `(write: (chunk: string) => void) => (event: RunEvent) => void` |
-| `packages/code/src/cli-mode.ts` | `drainPrintEvents` | `(events, sink) => { transcriptDone: Promise<void>; drained: Promise<void> }` |
-| `packages/code/src/app/layout.ts` | `LayoutMode` / `SecondarySurfaceMode` | `"wide"\|"narrow"\|"single"\|"floor"` / `"closed"\|"split"\|"drawer"` |
-| `packages/code/src/app/layout.ts` | `INSPECTOR_MIN_WIDTH` / `INSPECTOR_MAX_WIDTH` / `INSPECTOR_SPLIT_MIN_WIDTH` | `32` / `56` / `100` |
-| `packages/code/src/app/layout.ts` | `FLOOR_MIN_COLUMNS` / `FLOOR_MIN_ROWS` | `24` / `6` |
-| `packages/code/src/app/layout.ts` | `LayoutController` / `createLayoutController` | content- and viewport-driven reactive controller |
-| `packages/code/src/app/workspace-runtime.ts` | `WorkspaceCallbackTarget<T>` | `{ current(); bind(v); clear() }` |
-| `packages/code/src/app/workspace-runtime.ts` | `createWorkspaceCallbackTarget` | `<T>() => WorkspaceCallbackTarget<T>` |
-| `packages/code/src/app/workspace-runtime.ts` | `isActiveWorkspaceCallbackTarget` | `(candidate, published) => boolean` |
-| `packages/code/src/bootstrap/worktree.ts` | `WorktreeBootstrapResult`, `WorktreeBootstrapDependencies` | selected checkout/result and injectable Git/time/random seams |
-| `packages/code/src/bootstrap/worktree.ts` | `runBootstrapGit` | bounded argv-only Git runner |
-| `packages/code/src/bootstrap/worktree.ts` | `bootstrapWorktree` | `(startingWorkspace, request, deps?) => Promise<WorktreeBootstrapResult>` |
-| `packages/code/src/app/command-composition.ts` | `FeatureCommandDeps` | settings/catalog/keys/code/agents/env/notify |
-| `packages/code/src/app/command-composition.ts` | `CodeCommandDeps` | `AppCommandDeps & { features: FeatureCommandDeps }` |
-| `packages/code/src/app/command-composition.ts` | `registerCodeCommands` | `(deps: CodeCommandDeps) => AppCommandWiring` |
-| `packages/code/src/app/commands.tsx` | `AppCommandDeps` | application command dependency bag |
-| `packages/code/src/app/commands.tsx` | `AppCommandWiring` | `{ doctorDirty; recheck; sandboxInspection; skillAgent; dispose }` |
-| `packages/code/src/app/commands.tsx` | `registerAppCommands` | `(deps: AppCommandDeps) => AppCommandWiring` |
-| `packages/code/src/views/App.tsx` | `AppShell` / `AppRunControls` / `AppSessionControls` / `AppFleet` / `AppBackend` / `AppProps` | see §2.5 |
-| `packages/code/src/views/App.tsx` | `App` | `(props: AppProps) => JSX.Element` |
-| `packages/code/src/views/FatalBoot.tsx` | `runFatalBoot` | `({ renderer, error, retry, quit }) => Promise<boolean>`; `true` means retry recovery, `false` means terminal renderer teardown |
-| `packages/code/src/views/Splash.tsx` | `BANNER` | `string[]`, 8 rows of ASCII art |
-| `packages/code/src/views/Splash.tsx` | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS` | `76` / `24` |
-| `packages/code/src/views/Splash.tsx` | `firstRunSplashFits` | `(width: number, height: number) => boolean` |
-| `packages/code/src/views/Splash.tsx` | `BrandBanner` | `({ width: () => number, compact?: () => boolean }) => JSX.Element` |
-| `packages/code/src/views/Splash.tsx` | `Splash` | `({ agent, model, width, rightInset? }) => JSX.Element` |
-| `packages/code/src/views/PageFrame.tsx` | `PageFrame` | `({ title, subtitle?, interaction, children }) => JSX.Element` |
-| `packages/code/src/views/HeaderRows.tsx` | `HeaderRowsProps` / `HeaderRows` | `{ plan: Accessor<HeaderPlan> }` |
-| `packages/code/src/views/StartupComposer.tsx` | `StartupComposerSnapshot`, `StartupComposerState`, `createStartupComposerState`, `StartupComposer` | one-shot draft/submission bridge and focused pre-runtime input; `StartupComposer` also receives the root-owned product `version` |
-| `packages/code/src/boot-shell.ts` | `BootShell` | renderer/root handoff from the lightweight entry to the runtime |
-| `packages/code/src/runtime.tsx` | `runInteractiveMode`, `runHeadlessMode` | continue interactive or headless dispatch after the lightweight entry |
+| Source                                                  | Export                                                                                             | Signature                                                                                                                        |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/code/src/cli-args.ts`                         | `PrintFormat`                                                                                      | `"text" \| "md"`                                                                                                                 |
+| `packages/code/src/cli-args.ts`                         | `DebugFlag`                                                                                        | `{ enabled: boolean; level?: DiagnosticLevel }`                                                                                  |
+| `packages/code/src/cli-args.ts`                         | `DebugRequest`                                                                                     | `{ enabled: boolean; level: DiagnosticLevel }`                                                                                   |
+| `packages/code/src/cli-args.ts`                         | `Mode`                                                                                             | union above                                                                                                                      |
+| `packages/code/src/cli-args.ts`                         | `RemoteWorkspaceRequest`                                                                           | `{ destination: string; workspace: string }`                                                                                     |
+| `packages/code/src/cli-args.ts`                         | `FLAGS`                                                                                            | `readonly FlagSpec[]`                                                                                                            |
+| `packages/code/src/cli-args.ts`                         | `DebugEnv`                                                                                         | index-signature env view naming `CLARVIS_CODE_DEBUG`, `CLARVIS_CODE_DEBUG_LEVEL`                                                 |
+| `packages/code/src/cli-args.ts`                         | `resolveDebugRequest`                                                                              | `(mode: Mode, env: DebugEnv) => DebugRequest`                                                                                    |
+| `packages/code/src/cli-args.ts`                         | `usageText`                                                                                        | `() => string`                                                                                                                   |
+| `packages/code/src/cli-args.ts`                         | `helpText`                                                                                         | `() => string`                                                                                                                   |
+| `packages/code/src/cli-args.ts`                         | `versionText`                                                                                      | `() => string`                                                                                                                   |
+| `packages/code/src/cli-args.ts`                         | `productVersion`                                                                                   | `() => string`                                                                                                                   |
+| `packages/code/src/cli-args.ts`                         | `parseMode`                                                                                        | `(argv: string[]) => Mode`                                                                                                       |
+| `packages/code/src/cli-entry.ts`                        | `EntryInputs`                                                                                      | `{ distPath: string; distExists: boolean; forceSource: boolean }`                                                                |
+| `packages/code/src/cli-entry.ts`                        | `EntryChoice`                                                                                      | `{kind:"dist"} \| {kind:"source"} \| {kind:"error"; message:string}`                                                             |
+| `packages/code/src/cli-entry.ts`                        | `resolveEntry`                                                                                     | `(inputs: EntryInputs) => EntryChoice`                                                                                           |
+| `packages/code/src/cli-entry.ts`                        | `privateEntry`                                                                                     | `(argv: readonly string[]) => "remote-kernel" \| undefined`                                                                      |
+| `packages/code/src/adapters/remote-kernel-arguments.ts` | `encodeRemoteKernelArguments` / `parseRemoteKernelArguments`                                       | closed bounded base64url launch payload                                                                                          |
+| `packages/code/src/cli-mode.ts`                         | `resolveResumeMeta`                                                                                | `(store, owner, workspace, mode) => SessionMeta \| null`                                                                         |
+| `packages/code/src/cli-mode.ts`                         | `createPrintStream`                                                                                | `(write: (chunk: string) => void) => (event: RunEvent) => void`                                                                  |
+| `packages/code/src/cli-mode.ts`                         | `drainPrintEvents`                                                                                 | `(events, sink) => { transcriptDone: Promise<void>; drained: Promise<void> }`                                                    |
+| `packages/code/src/app/layout.ts`                       | `LayoutMode` / `SecondarySurfaceMode`                                                              | `"wide"\|"narrow"\|"single"\|"floor"` / `"closed"\|"split"\|"drawer"`                                                            |
+| `packages/code/src/app/layout.ts`                       | `INSPECTOR_MIN_WIDTH` / `INSPECTOR_MAX_WIDTH` / `INSPECTOR_SPLIT_MIN_WIDTH`                        | `32` / `56` / `100`                                                                                                              |
+| `packages/code/src/app/layout.ts`                       | `FLOOR_MIN_COLUMNS` / `FLOOR_MIN_ROWS`                                                             | `24` / `6`                                                                                                                       |
+| `packages/code/src/app/layout.ts`                       | `LayoutController` / `createLayoutController`                                                      | content- and viewport-driven reactive controller                                                                                 |
+| `packages/code/src/app/workspace-runtime.ts`            | `WorkspaceCallbackTarget<T>`                                                                       | `{ current(); bind(v); clear() }`                                                                                                |
+| `packages/code/src/app/workspace-runtime.ts`            | `createWorkspaceCallbackTarget`                                                                    | `<T>() => WorkspaceCallbackTarget<T>`                                                                                            |
+| `packages/code/src/app/workspace-runtime.ts`            | `isActiveWorkspaceCallbackTarget`                                                                  | `(candidate, published) => boolean`                                                                                              |
+| `packages/code/src/bootstrap/worktree.ts`               | `WorktreeBootstrapResult`, `WorktreeBootstrapDependencies`                                         | selected checkout/result and injectable Git/time/random seams                                                                    |
+| `packages/code/src/bootstrap/worktree.ts`               | `runBootstrapGit`                                                                                  | bounded argv-only Git runner                                                                                                     |
+| `packages/code/src/bootstrap/worktree.ts`               | `bootstrapWorktree`                                                                                | `(startingWorkspace, request, deps?) => Promise<WorktreeBootstrapResult>`                                                        |
+| `packages/code/src/app/command-composition.ts`          | `FeatureCommandDeps`                                                                               | settings/catalog/keys/code/agents/env/notify                                                                                     |
+| `packages/code/src/app/command-composition.ts`          | `CodeCommandDeps`                                                                                  | `AppCommandDeps & { features: FeatureCommandDeps }`                                                                              |
+| `packages/code/src/app/command-composition.ts`          | `registerCodeCommands`                                                                             | `(deps: CodeCommandDeps) => AppCommandWiring`                                                                                    |
+| `packages/code/src/app/commands.tsx`                    | `AppCommandDeps`                                                                                   | application command dependency bag                                                                                               |
+| `packages/code/src/app/commands.tsx`                    | `AppCommandWiring`                                                                                 | `{ doctorDirty; recheck; sandboxInspection; skillAgent; dispose }`                                                               |
+| `packages/code/src/app/commands.tsx`                    | `registerAppCommands`                                                                              | `(deps: AppCommandDeps) => AppCommandWiring`                                                                                     |
+| `packages/code/src/views/App.tsx`                       | `AppShell` / `AppRunControls` / `AppSessionControls` / `AppFleet` / `AppBackend` / `AppProps`      | see §2.5                                                                                                                         |
+| `packages/code/src/views/App.tsx`                       | `App`                                                                                              | `(props: AppProps) => JSX.Element`                                                                                               |
+| `packages/code/src/views/FatalBoot.tsx`                 | `runFatalBoot`                                                                                     | `({ renderer, error, retry, quit }) => Promise<boolean>`; `true` means retry recovery, `false` means terminal renderer teardown  |
+| `packages/code/src/views/Splash.tsx`                    | `BANNER`                                                                                           | `string[]`, 8 rows of ASCII art                                                                                                  |
+| `packages/code/src/views/Splash.tsx`                    | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS`                                       | `76` / `24`                                                                                                                      |
+| `packages/code/src/views/Splash.tsx`                    | `firstRunSplashFits`                                                                               | `(width: number, height: number) => boolean`                                                                                     |
+| `packages/code/src/views/Splash.tsx`                    | `BrandBanner`                                                                                      | `({ width: () => number, compact?: () => boolean }) => JSX.Element`                                                              |
+| `packages/code/src/views/Splash.tsx`                    | `Splash`                                                                                           | `({ agent, model, width, rightInset? }) => JSX.Element`                                                                          |
+| `packages/code/src/views/PageFrame.tsx`                 | `PageFrame`                                                                                        | `({ title, subtitle?, interaction, children }) => JSX.Element`                                                                   |
+| `packages/code/src/views/HeaderRows.tsx`                | `HeaderRowsProps` / `HeaderRows`                                                                   | `{ plan: Accessor<HeaderPlan> }`                                                                                                 |
+| `packages/code/src/views/StartupComposer.tsx`           | `StartupComposerSnapshot`, `StartupComposerState`, `createStartupComposerState`, `StartupComposer` | one-shot draft/submission bridge and focused pre-runtime input; `StartupComposer` also receives the root-owned product `version` |
+| `packages/code/src/boot-shell.ts`                       | `BootShell`                                                                                        | renderer/root handoff from the lightweight entry to the runtime                                                                  |
+| `packages/code/src/runtime.tsx`                         | `runInteractiveMode`, `runHeadlessMode`                                                            | continue interactive or headless dispatch after the lightweight entry                                                            |
 
 `src/index.tsx` exports **nothing**; it is a bootstrap module whose top level runs
 `main()` and records an unhandled failure as `clarvis failed: <text>` without forcing an immediate
@@ -286,29 +297,29 @@ process exit (`packages/code/src/index.tsx`, `main`).
 activity stores plus five control groups. The process is pinned to one workspace, so these objects
 do not implement runtime worktree switching:
 
-| Prop | Interface | Constructed at | Notable members |
-| --- | --- | --- | --- |
-| `store` | `TranscriptStore` | `packages/code/src/runtime.tsx` (`store`) | `describeToolCall`, `fetchRun` |
-| `activity` | `ActivityStore` | `packages/code/src/runtime.tsx` (`activity`) | — |
-| `shell` | `AppShell` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`shell`) | renderer/platform/debug session, immutable workspace identity, branch/files, optional managed-worktree clean/remove controls, post-paint queue, quit |
-| `run` | `AppRunControls` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`runControls`) | submit/compact/context inspection/cancel/local-command controls; `switching` is always false |
-| `session` | `AppSessionControls` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`sessionControls`) | current-workspace list/catalog/resume/delete/clear/export/status/cost |
-| `fleet` | `AppFleet` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`fleet`) | agents/settings/guard/memory/keys/catalog and refresh operations |
-| `backend` | `AppBackend` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`backendConn`) | client/current-plan reader/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect |
+| Prop       | Interface                                                | Constructed at                                      | Notable members                                                                                                                                      |
+| ---------- | -------------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `store`    | `TranscriptStore`                                        | `packages/code/src/runtime.tsx` (`store`)           | `describeToolCall`, `fetchRun`                                                                                                                       |
+| `activity` | `ActivityStore`                                          | `packages/code/src/runtime.tsx` (`activity`)        | —                                                                                                                                                    |
+| `shell`    | `AppShell` (`packages/code/src/views/App.tsx`)           | `packages/code/src/runtime.tsx` (`shell`)           | renderer/platform/debug session, immutable workspace identity, branch/files, optional managed-worktree clean/remove controls, post-paint queue, quit |
+| `run`      | `AppRunControls` (`packages/code/src/views/App.tsx`)     | `packages/code/src/runtime.tsx` (`runControls`)     | submit/compact/context inspection/cancel/local-command controls; `switching` is always false                                                         |
+| `session`  | `AppSessionControls` (`packages/code/src/views/App.tsx`) | `packages/code/src/runtime.tsx` (`sessionControls`) | current-workspace list/catalog/resume/delete/clear/export/status/cost                                                                                |
+| `fleet`    | `AppFleet` (`packages/code/src/views/App.tsx`)           | `packages/code/src/runtime.tsx` (`fleet`)           | agents/settings/guard/memory/keys/catalog and refresh operations                                                                                     |
+| `backend`  | `AppBackend` (`packages/code/src/views/App.tsx`)         | `packages/code/src/runtime.tsx` (`backendConn`)     | client/current-plan reader/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect                                                 |
 
 ### 2.6 Environment variables read by this subsystem
 
-| Variable | Read at | Effect |
-| --- | --- | --- |
-| `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts` | forces the source entry over the bundle |
-| `CLARVIS_INSTALL_ROOT` | `packages/code/src/update/installation.ts` (`managedInstallation`) | authenticates a versioned portable install for explicit self-update |
-| `CLARVIS_CODE_DEBUG` | `packages/code/src/cli-args.ts` | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts`); its value also doubles as a level (`packages/code/src/cli-args.ts`) |
-| `CLARVIS_CODE_DEBUG_LEVEL` | `packages/code/src/cli-args.ts` | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG` |
-| `CLARVIS_OWNER` | `packages/code/src/startup-foundation.ts`, `packages/code/src/runtime.tsx` | passed as `defaultOwner` to `WorkspaceClientManager.create` |
-| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) and `packages/code/src/adapters/host-kernel-options.ts` (`codeHostEnvironment`) | defaulted to `"exec"` before launcher policy identity or local/remote workspace-kernel construction |
-| `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx` (`runInteractive`) | `dev` flag into `buildRendererConfig`; the runtime passes it to `createPlatform` |
-| `SSH_TTY` / `SSH_CONNECTION` | `packages/code/src/index.tsx` (`runInteractive`) | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"` |
-| `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx` | memory-fuse limit (owned by the memory-pressure adapter) |
+| Variable                        | Read at                                                                                                                          | Effect                                                                                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLARVIS_CODE_SOURCE=1`         | `packages/code/src/cli.ts`                                                                                                       | forces the source entry over the bundle                                                                                                                                |
+| `CLARVIS_INSTALL_ROOT`          | `packages/code/src/update/installation.ts` (`managedInstallation`)                                                               | authenticates a versioned portable install for explicit self-update                                                                                                    |
+| `CLARVIS_CODE_DEBUG`            | `packages/code/src/cli-args.ts`                                                                                                  | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts`); its value also doubles as a level (`packages/code/src/cli-args.ts`) |
+| `CLARVIS_CODE_DEBUG_LEVEL`      | `packages/code/src/cli-args.ts`                                                                                                  | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG`                                                                                           |
+| `CLARVIS_OWNER`                 | `packages/code/src/startup-foundation.ts`, `packages/code/src/runtime.tsx`                                                       | passed as `defaultOwner` to `WorkspaceClientManager.create`                                                                                                            |
+| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) and `packages/code/src/adapters/host-kernel-options.ts` (`codeHostEnvironment`) | defaulted to `"exec"` before launcher policy identity or local/remote workspace-kernel construction                                                                    |
+| `CLARVIS_CODE_DEV`              | `packages/code/src/index.tsx` (`runInteractive`)                                                                                 | `dev` flag into `buildRendererConfig`; the runtime passes it to `createPlatform`                                                                                       |
+| `SSH_TTY` / `SSH_CONNECTION`    | `packages/code/src/index.tsx` (`runInteractive`)                                                                                 | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"`                                                                                                                         |
+| `CLARVIS_TUI_RSS_LIMIT_MB`      | `packages/code/src/views/App.tsx`                                                                                                | memory-fuse limit (owned by the memory-pressure adapter)                                                                                                               |
 
 ## 3. Data and formats
 
@@ -424,11 +435,14 @@ rows after the banner. `packages/code/tests/integration/splash-render.test.tsx`
 (`first-run splash fit keeps one threshold across setup and catalog pickers`) pins both edges.
 
 The lightweight `StartupComposer` also mounts `BrandBanner`. It allows the complete banner from 60
-columns by 16 rows, the exact space needed by its fixed header/input chrome plus the banner and
-connection status. Below either edge it uses `BrandBanner`'s one-line wordmark instead, so first paint
+columns by 17 rows, the exact space needed by its fixed header/input chrome plus the banner, a blank
+separator and connection status. Below either edge it uses `BrandBanner`'s one-line wordmark instead, so first paint
 keeps the empty-run identity without clipping the usable startup input. Test:
 `packages/code/tests/integration/splash-render.test.tsx` (`the startup composer shares the responsive
-Clarvis splash on first paint`).
+Clarvis splash on first paint`). `BrandBanner` gives its column and every text child an explicit
+eight-row/one-row allocation, respectively, and `StartupComposer` gives reactive status a blank row
+plus its own non-shrinking row. `reactive startup progress keeps a blank row below the complete banner`
+pins the separation after a live status update.
 
 ### 3.9 Execution identifier for `--print`
 
@@ -443,15 +457,18 @@ opened `"w", 0o600` (`packages/code/src/runtime.tsx`, `exportSession`).
 
 Four literal fragments, top to bottom on the screen:
 
-- `` glyph("error") + " clarvis failed to start" ``
+- `glyph("error") + " clarvis failed to start"`
 - the run's own error text, from `props.error()`
-- `` "the kernel could not boot " + glyph("emDash") + " fix the cause above and retry; once the app starts, Doctor lists checks and fixes" ``
-- `` props.busy() ? "retrying" + glyph("ellipsis") : "[r] retry [ctrl+c] quit" ``
+- `"the kernel could not boot " + glyph("emDash") + " fix the cause above and retry; once the app starts, Doctor lists checks and fixes"`
+- `props.busy() ? "working" + glyph("ellipsis") : "[r] retry [ctrl+c] quit"` for an ordinary
+  failure. A typed live Container ownership conflict inserts
+  `"[t] terminate previous Container"` between retry and quit. Another failure while Container
+  isolation is selected inserts `"[h] use Host"` instead.
 
 ### 3.12 The `Splash` agent/model line and hint row (`packages/code/src/views/Splash.tsx`, `Splash`)
 
 The idle screen's second block reads `"agent: "` + `props.agent()` then
-`` " " + glyph("separator") + " model: " `` + `props.model()` (`Splash`, agent/model block); its
+`" " + glyph("separator") + " model: "` + `props.model()` (`Splash`, agent/model block); its
 third block joins three literal strings with `glyph("separator")` (`Splash`, hint block):
 
 ```
@@ -465,17 +482,17 @@ joined row reads `Type / for commands · @ for workspace files · Shift+Tab for 
 
 ### 4.1 `cli.ts` — the fast path, in execution order
 
-| # | Step | File |
-| --- | --- | --- |
-| 1 | static imports: `node:fs` `existsSync`, `node:url`, `./cli-args.ts`, `./cli-entry.ts` | `packages/code/src/cli.ts` |
-| 2 | `parseMode(process.argv.slice(2))` | `packages/code/src/cli.ts` |
-| 3 | `help` → write `helpText()`, `process.exit(0)` | `packages/code/src/cli.ts` |
-| 4 | `version` → write `versionText()`, `process.exit(0)` | `packages/code/src/cli.ts` |
-| 5 | compute `distPath` = `../dist/index.js` next to `cli.ts` | `packages/code/src/cli.ts` |
-| 6 | `resolveEntry({ distPath, distExists, forceSource })` | `packages/code/src/cli.ts` |
-| 7 | `error` → write message to stderr, `process.exit(1)` | `packages/code/src/cli.ts` |
-| 8 | `dist` → `await import(pathToFileURL(distPath).href)` | `packages/code/src/cli.ts` |
-| 9 | otherwise → `await import("@opentui/solid/preload")` then `await import("./index.tsx")` | `packages/code/src/cli.ts` |
+| #   | Step                                                                                    | File                       |
+| --- | --------------------------------------------------------------------------------------- | -------------------------- |
+| 1   | static imports: `node:fs` `existsSync`, `node:url`, `./cli-args.ts`, `./cli-entry.ts`   | `packages/code/src/cli.ts` |
+| 2   | `parseMode(process.argv.slice(2))`                                                      | `packages/code/src/cli.ts` |
+| 3   | `help` → write `helpText()`, `process.exit(0)`                                          | `packages/code/src/cli.ts` |
+| 4   | `version` → write `versionText()`, `process.exit(0)`                                    | `packages/code/src/cli.ts` |
+| 5   | compute `distPath` = `../dist/index.js` next to `cli.ts`                                | `packages/code/src/cli.ts` |
+| 6   | `resolveEntry({ distPath, distExists, forceSource })`                                   | `packages/code/src/cli.ts` |
+| 7   | `error` → write message to stderr, `process.exit(1)`                                    | `packages/code/src/cli.ts` |
+| 8   | `dist` → `await import(pathToFileURL(distPath).href)`                                   | `packages/code/src/cli.ts` |
+| 9   | otherwise → `await import("@opentui/solid/preload")` then `await import("./index.tsx")` | `packages/code/src/cli.ts` |
 
 Note what is **not** here: a usage error is not intercepted. `packages/code/src/cli.ts` states this is deliberate
 — "It is a human at a keyboard rather than a scripted call, so it can afford the slow path, and
@@ -484,11 +501,11 @@ step 5, loads the runtime chunk, and is reported by `main()` in `packages/code/s
 
 `resolveEntry` implements this precedence (`packages/code/src/cli-entry.ts`):
 
-| Condition | Result |
-| --- | --- |
-| `forceSource` | `{ kind: "source" }` (even when the bundle exists — pinned at `packages/code/tests/unit/cli-entry.test.ts`) |
-| else `distExists` | `{ kind: "dist" }` |
-| else | `{ kind: "error", message }` |
+| Condition         | Result                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `forceSource`     | `{ kind: "source" }` (even when the bundle exists — pinned at `packages/code/tests/unit/cli-entry.test.ts`) |
+| else `distExists` | `{ kind: "dist" }`                                                                                          |
+| else              | `{ kind: "error", message }`                                                                                |
 
 The decision was extracted out of `cli.ts` for a stated reason: "The launcher in `cli.ts` is invisible
 to coverage — Bun instruments only the test process, and `coverage.ts` allowlists the file for
@@ -520,7 +537,7 @@ launcher only performs it" (`packages/code/src/cli-entry.ts`; the allowlist entr
 11. Require `--remote` and `--remote-workspace` together, reject remote plus `--worktree`, and fold
     workspace, remote and Extension Profile selection into the shared mode fragments before switching on the mode flag.
     `--print` additionally rejects a whitespace-only prompt
-     and a `--format` that is neither `text` nor `md`; `format` defaults to
+    and a `--format` that is neither `text` nor `md`; `format` defaults to
     `"text"`. No mode flag → `{ kind: "run", ascii, debug }`.
 
 `ascii` is computed **unconditionally**, for every mode, unlike `--agent`/`--format`'s explicit
@@ -540,16 +557,16 @@ propagation to those modes, and the `--update` incompatibility.
 
 `packages/code/src/cli-args.ts`:
 
-| `mode` has `debug`? | `--debug` present | `CLARVIS_CODE_DEBUG` | Result `enabled` | Result `level` |
-| --- | --- | --- | --- | --- |
-| no (`help`/`version`/`usage-error`) | — | anything | `false` | `"debug"` |
-| yes | no | absent | `false` | `"debug"` |
-| yes | no | `"1"` | `true` | `"debug"` |
-| yes | no | `"info"` | `true` | `"info"` |
-| yes | no | `"off"` (or `""`/`"0"`/`"false"`/`"no"`) | `false` | `"debug"` |
-| yes | yes (bare) | `"off"` | `true` | `"debug"` |
-| yes | `--debug=warn` | `CLARVIS_CODE_DEBUG_LEVEL=error` | `true` | `"warn"` |
-| yes | no | `CLARVIS_CODE_DEBUG_LEVEL="shout"` only | `false` | `"debug"` |
+| `mode` has `debug`?                 | `--debug` present | `CLARVIS_CODE_DEBUG`                     | Result `enabled` | Result `level` |
+| ----------------------------------- | ----------------- | ---------------------------------------- | ---------------- | -------------- |
+| no (`help`/`version`/`usage-error`) | —                 | anything                                 | `false`          | `"debug"`      |
+| yes                                 | no                | absent                                   | `false`          | `"debug"`      |
+| yes                                 | no                | `"1"`                                    | `true`           | `"debug"`      |
+| yes                                 | no                | `"info"`                                 | `true`           | `"info"`       |
+| yes                                 | no                | `"off"` (or `""`/`"0"`/`"false"`/`"no"`) | `false`          | `"debug"`      |
+| yes                                 | yes (bare)        | `"off"`                                  | `true`           | `"debug"`      |
+| yes                                 | `--debug=warn`    | `CLARVIS_CODE_DEBUG_LEVEL=error`         | `true`           | `"warn"`       |
+| yes                                 | no                | `CLARVIS_CODE_DEBUG_LEVEL="shout"` only  | `false`          | `"debug"`      |
 
 Every row above is an assertion in `packages/code/tests/unit/cli-args.test.ts`. Level
 precedence is `mode.debug.level ?? debugLevel(CLARVIS_CODE_DEBUG_LEVEL) ?? debugLevel(CLARVIS_CODE_DEBUG) ?? "debug"`
@@ -567,15 +584,15 @@ importing `runtime.tsx`; update imports only its updater. An unhandled failure w
 `clarvis failed: <text>` and sets `process.exitCode = 1`, allowing already-started background cleanup
 to drain.
 
-| `mode.kind` | Handler | Runtime graph |
-| --- | --- | --- |
-| `usage-error` | stderr `<message>\n<usageText()>`, exit 1 | not imported |
-| `help` | stdout `helpText()`, exit 0 | not imported |
-| `version` | stdout `versionText()`, exit 0 | not imported |
-| `update` | dynamic `runUpdateCommand` | updater only |
-| `resume` / `continue` | `runInteractive(mode)` calls `prepareInteractiveMode` before creating OpenTUI; only a valid session continues into `StartupComposer` and `runInteractiveMode` | runtime imported for terminal-free preflight |
-| `run` | `runInteractive(mode)` paints `StartupComposer`, then dynamically calls `runInteractiveMode` | imported after startup input paint |
-| `print` / `refresh-models` / `list` / `delete` | dynamic `runHeadlessMode(mode)` | imported on demand |
+| `mode.kind`                                    | Handler                                                                                                                                                       | Runtime graph                                |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `usage-error`                                  | stderr `<message>\n<usageText()>`, exit 1                                                                                                                     | not imported                                 |
+| `help`                                         | stdout `helpText()`, exit 0                                                                                                                                   | not imported                                 |
+| `version`                                      | stdout `versionText()`, exit 0                                                                                                                                | not imported                                 |
+| `update`                                       | dynamic `runUpdateCommand`                                                                                                                                    | updater only                                 |
+| `resume` / `continue`                          | `runInteractive(mode)` calls `prepareInteractiveMode` before creating OpenTUI; only a valid session continues into `StartupComposer` and `runInteractiveMode` | runtime imported for terminal-free preflight |
+| `run`                                          | `runInteractive(mode)` paints `StartupComposer`, then dynamically calls `runInteractiveMode`                                                                  | imported after startup input paint           |
+| `print` / `refresh-models` / `list` / `delete` | dynamic `runHeadlessMode(mode)`                                                                                                                               | imported on demand                           |
 
 Interactive worktree bootstrap, diagnostics and Extension Profile selection are continued by
 `runInteractiveMode`; headless equivalents are continued by `runHeadlessMode`. Both retain
@@ -600,11 +617,12 @@ command has any use for. All complete kernel paths still acquire their kernel th
 (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`).
 
 **`runPrintMode`** (`packages/code/src/runtime.tsx`, `runPrintMode`):
+
 1. Builds `ClarvisDirs` from
    `globalPaths()`/`workspacePaths(workspace)`/`workspaceStatePaths(workspace)`.
 2. Creates a `CodeConfigStore` inside a `createRoot` to get `keySources()`.
 3. Creates and opens `WorkspaceClientManager({ workspaceRoot, globalDir, keySources, memory: true,
-   extensionProfileSelector, logger, openMcpAuthorizationUrl: openPublicUrl })`.
+extensionProfileSelector, logger, openMcpAuthorizationUrl: openPublicUrl })`.
    `--print` is headless only in its output
    and elicitation policy: a remote MCP OAuth challenge may still open the system browser, but the
    current run degrades that server and never waits for the human callback.
@@ -644,16 +662,16 @@ terminal result."
 
 `packages/code/src/runtime.tsx` (`runApp`), in order:
 
-| # | Step | Production |
-| --- | --- | --- |
-| 1 | the thin entry validates TTY/SSH/ASCII policy; resume/continue resolve worktree identity and session existence before any renderer call; a valid invocation then creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `prepareInteractiveMode` in `packages/code/src/runtime.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
-| 2 | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel | `runInteractive`; `prepareStartupFoundation` in `packages/code/src/startup-foundation.ts` |
-| 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx` |
-| 4 | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities | `runApp`; `WorkspaceClientManager.create` |
-| 5 | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
-| 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
-| 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
-| 8 | after `app.boot.painted`, release Markdown warm-up and the optional managed-install release check; resume/continue restore saved content after parser warm-up | `runApp` |
+| #   | Step                                                                                                                                                                                                                                                                        | Production                                                                                                                                                                                                                                          |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | the thin entry validates TTY/SSH/ASCII policy; resume/continue resolve worktree identity and session existence before any renderer call; a valid invocation then creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `prepareInteractiveMode` in `packages/code/src/runtime.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
+| 2   | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel; typed Container phases update the startup status                                                                                     | `runInteractive`; `prepareStartupFoundation` and `containerConnectionStatus` in `packages/code/src/startup-foundation.ts`                                                                                                                           |
+| 3   | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount                                              | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx`                                                                                                                                                                   |
+| 4   | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities                                                                                                                            | `runApp`; `WorkspaceClientManager.create`                                                                                                                                                                                                           |
+| 5   | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host                                                                                                                                                          | `runApp`, `loadFoundation`                                                                                                                                                                                                                          |
+| 6   | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable                                                                                            | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp`                                                                                                                                                          |
+| 7   | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics                                             | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle`                                                                                                                                                                          |
+| 8   | after `app.boot.painted`, release Markdown warm-up and the optional managed-install release check; resume/continue restore saved content after parser warm-up                                                                                                               | `runApp`                                                                                                                                                                                                                                            |
 
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
@@ -661,17 +679,23 @@ OpenTUI input, records content outside Solid/renderable ownership, and accepts E
 Workspace-plugin trust resolution does not enter this bootstrap root. Repository plugins remain
 inactive while the kernel resolves their bounded inventory; after `<App>` mounts, its internal
 command wiring opens the workspace approval modal automatically for `unapproved` or `changed`.
-Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×16 fits and
+Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×17 fits and
 the standard compact wordmark appears below either threshold. The startup-only connection status
-does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts. Its
+does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts. For a
+Container connection it names engine inspection, runtime resolution, workspace inspection,
+workspace/artifact/state preparation and Kernel start from the connector's typed progress callback.
+Its
 header already anchors the root-owned `v<version>` at the right edge, so the product identity does
 not move when the complete application replaces it.
 Replacing the root cannot lose an unsent draft or an accepted task: the latter either starts on a
-runnable Agent Profile or returns as exact composer text. Resume/continue render the same
+runnable Agent Profile or returns as exact composer text. `createStartupComposerState` continuously
+owns that draft; unbinding and `take()` do not read the renderer-owned `InputRenderable`, which may
+already be destroyed during a slow boot handoff. Resume/continue render the same
 bounded frame with input disabled. Production: `createStartupComposerState` and `StartupComposer` in
 `packages/code/src/views/StartupComposer.tsx`, `BootShell` in `packages/code/src/boot-shell.ts`, and
 the handoff in `packages/code/src/index.tsx` and `packages/code/src/runtime.tsx`. Test:
-`packages/code/tests/integration/splash-render.test.tsx`,
+`packages/code/tests/integration/splash-render.test.tsx` (including draft handoff after input
+destruction),
 `packages/code/tests/integration/app-shell-render.test.tsx`, and
 `packages/code/tests/architecture/architecture-boundary.test.ts` (submission before app mount and
 bootstrap teardown ownership through mount), plus
@@ -747,15 +771,15 @@ inert until the object is published. Unpinned: no test in `packages/code/tests/`
 (`packages/code/src/runtime.tsx`, `BootPhase`). It is a mutable cursor set immediately before each step so the
 `catch` can name the step that threw:
 
-| Source | Span | Work |
-| --- | --- | --- |
-| `packages/code/src/runtime.tsx` | `boot.kernel-connect` | `client.connect()` |
-| `packages/code/src/runtime.tsx` | `boot.keys` | `createKeysAdapter(client.secrets)` |
-| `packages/code/src/runtime.tsx` | `boot.list-agents` | `client.config.listAgents()` |
-| `packages/code/src/runtime.tsx` | `boot.settings` | `createSettingsAdapter(...)` |
-| `packages/code/src/runtime.tsx` | `boot.agent-files` | `loadAgentFilesSnapshot(...)` |
-| `packages/code/src/runtime.tsx` | (none) | `createSessionStore(... await loadSessions...)` |
-| `packages/code/src/runtime.tsx` | `boot.profiles` | `runClient.listProfiles(bootAgentSummaries)` |
+| Source                          | Span                  | Work                                            |
+| ------------------------------- | --------------------- | ----------------------------------------------- |
+| `packages/code/src/runtime.tsx` | `boot.kernel-connect` | `client.connect()`                              |
+| `packages/code/src/runtime.tsx` | `boot.keys`           | `createKeysAdapter(client.secrets)`             |
+| `packages/code/src/runtime.tsx` | `boot.list-agents`    | `client.config.listAgents()`                    |
+| `packages/code/src/runtime.tsx` | `boot.settings`       | `createSettingsAdapter(...)`                    |
+| `packages/code/src/runtime.tsx` | `boot.agent-files`    | `loadAgentFilesSnapshot(...)`                   |
+| `packages/code/src/runtime.tsx` | (none)                | `createSessionStore(... await loadSessions...)` |
+| `packages/code/src/runtime.tsx` | `boot.profiles`       | `runClient.listProfiles(bootAgentSummaries)`    |
 
 `reportBootFailure` emits `boot.failed` with `{ phase, error, attempt }` and is extracted
 from the `catch` for a coverage reason stated inline: "Extracted from the `catch` so Bun counts it as
@@ -787,16 +811,18 @@ mounting its provider picker") and `packages/code/tooling/artifact/smoke.ts`.
 "Rendered before the keymap/theme exist — the token signals carry usable defaults, and keys are bound
 straight off the renderer".
 
-| State | Key | Effect | Production symbol |
-| --- | --- | --- | --- |
-| idle | `r` | `setBusy(true)`, call `retry()` | `runFatalBoot` (`onKey`) |
-| idle | `ctrl+c` | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored | `runFatalBoot` (`onKey`) |
-| idle | anything else | ignored | `runFatalBoot` (`onKey`) |
-| busy | `ctrl+c` | prevent propagation and remain on the retry screen | `runFatalBoot` (`onKey`) |
-| busy | anything else | ignored | `runFatalBoot` (`onKey`) |
-| retry resolved | — | `close(true)`: unhook keypress + destroy listener, hide, dispose the Solid root, resolve | `runFatalBoot` (`close`, `onKey`) |
-| retry rejected | — | `setMessage(errorText(e))`, `setBusy(false)` — the screen stays up for another attempt | `runFatalBoot` (`onKey`) |
-| renderer destroyed | — | `close(false)` — resolve `false` without clearing so the surrounding boot returns instead of continuing during shutdown | `runFatalBoot` (`onDestroy`), `runtime.tsx` (`recovered`) |
+| State                                       | Key           | Effect                                                                                                                  | Production symbol                                                   |
+| ------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| idle                                        | `r`           | consume the key, `setBusy(true)`, call `retry()`                                                                        | `runFatalBoot` (`onKey`)                                            |
+| idle, typed Container owner conflict        | `t`           | consume the key, `setBusy(true)`, run the explicit exact-owner termination and reconnect action                         | `runFatalBoot` (`onKey`), `runtime.tsx` (`connectWorkspaceManager`) |
+| idle, other selected-Container boot failure | `h`           | consume the key, save Host through the operator config service and connect again                                        | `runFatalBoot` (`onKey`), `runtime.tsx` (`useHostForBoot`)          |
+| idle                                        | `ctrl+c`      | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored                                            | `runFatalBoot` (`onKey`)                                            |
+| idle                                        | anything else | ignored                                                                                                                 | `runFatalBoot` (`onKey`)                                            |
+| busy                                        | `ctrl+c`      | prevent propagation and remain on the retry screen                                                                      | `runFatalBoot` (`onKey`)                                            |
+| busy                                        | anything else | ignored                                                                                                                 | `runFatalBoot` (`onKey`)                                            |
+| retry resolved                              | —             | `close(true)`: unhook keypress + destroy listener, hide, dispose the Solid root, resolve                                | `runFatalBoot` (`close`, `onKey`)                                   |
+| retry rejected                              | —             | `setMessage(errorText(e))`, `setBusy(false)` — the screen stays up for another attempt                                  | `runFatalBoot` (`onKey`)                                            |
+| renderer destroyed                          | —             | `close(false)` — resolve `false` without clearing so the surrounding boot returns instead of continuing during shutdown | `runFatalBoot` (`onDestroy`), `runtime.tsx` (`recovered`)           |
 
 `runtime.tsx`'s `retry` closure disposes the failed run client first, then re-runs `bootFoundation()`,
 re-reporting any failure before rethrowing so the screen sees it (`packages/code/src/runtime.tsx`,
@@ -808,6 +834,19 @@ for Ctrl+C in both states: idle calls the fatal `quit`, while busy keeps the doc
 state instead of falling through to platform shutdown. Test:
 `packages/code/tests/integration/fatal-boot-render.test.tsx` (`fatal boot owns Ctrl+C ahead of
 bootstrap teardown and ignores it during retry`).
+
+Workspace-manager boot failure uses the same screen before foundation loading.
+`isContainerKernelOwnershipConflict` enables the `t` resolution, and that attempt reconnects with
+`containerOwnershipConflict: "terminate"`. Other failures while
+`isContainerWorkspaceDestination` confirms a selected Container enable `h`; `useHostForBoot` writes
+the ordinary Host projection through `applyIsolation` and reconnects. An ordinary `r` reconnect
+keeps the selected placement and default ownership refusal.
+Production: `packages/code/src/runtime.tsx` (`connectWorkspaceManager`) and
+`packages/code/src/adapters/workspace-client-manager.ts`
+(`isContainerKernelOwnershipConflict`, `connectionPlan`). Test:
+`packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: offers and runs an explicit
+Container ownership resolution") and
+`packages/code/tests/component/workspace-client-manager.test.ts` (typed conflict recognition).
 
 `packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: disposes its root on
 success so the App mounts alone") additionally pins that the root is disposed on success — after
@@ -867,20 +906,20 @@ teardown.
 
 `layoutModeFromDims` (`packages/code/src/app/layout.ts`):
 
-| Condition | `LayoutMode` |
-| --- | --- |
-| `w < 24 \|\| h < 6` | `floor` |
-| `w < 72` | `single` |
-| `w < 100` | `narrow` |
-| otherwise | `wide` |
+| Condition           | `LayoutMode` |
+| ------------------- | ------------ |
+| `w < 24 \|\| h < 6` | `floor`      |
+| `w < 72`            | `single`     |
+| `w < 100`           | `narrow`     |
+| otherwise           | `wide`       |
 
 `secondaryMode` (`packages/code/src/app/layout.ts`, `createLayoutController`):
 
-| explicit `drawerOpen` intent | `w >= 100` | result |
-| --- | --- | --- |
-| false | — | `closed` |
-| true | true | `split` |
-| true | false | `drawer` |
+| explicit `drawerOpen` intent | `w >= 100` | result   |
+| ---------------------------- | ---------- | -------- |
+| false                        | —          | `closed` |
+| true                         | true       | `split`  |
+| true                         | false      | `drawer` |
 
 `sidebarVisible` is exactly `secondaryMode() === "split"`; `contentInset` is `sidebarWidth()`
 when visible, else `0`. `sidebarWidth` is `clamp(round(w * 0.32), 32, 56)` then clamped again
@@ -917,12 +956,12 @@ Two independent mechanisms, both in `App.tsx`:
 
 1. `refuseAtFloor()` returns true at `layoutMode() === "floor"` and is checked before opening
    Activity Detail or a managed-worktree exit prompt. Its TSDoc states the reason: "An overlay
-   opened underneath it painted a shredded card *over* that message — destroying the one instruction
+   opened underneath it painted a shredded card _over_ that message — destroying the one instruction
    that could get the user out — so the request is refused here rather than at each opener".
 2. The floor panel itself is rendered last, absolutely positioned, at `zIndex={FLOAT_Z + 2}`
    (`packages/code/src/views/App.tsx`), showing `terminal too small` and
    `needs ${FLOOR_MIN_COLUMNS}x${FLOOR_MIN_ROWS}, have ${w}x${h}` — i.e. `needs 24x6, have …`. The
-    inline comment says this second half stops "one already open from covering the message".
+   inline comment says this second half stops "one already open from covering the message".
 
 `packages/code/tests/integration/app-shell-render.test.tsx` mounts at 20×8 and asserts
 `needs 24x6` while the ordinary composer controls remain absent.
@@ -954,7 +993,7 @@ the activity line displays `continues after exit`. This projection does not chan
 tool consent, and a later turn defaults to ordinary exit policy.
 A non-empty draft is deliberately excluded from that arming set: "Running `/quit` from the composer
 leaves the command itself sitting in the draft, so counting it would make the slash command arm
-against its own text." — `isDraftNonEmpty` is consulted only to pick the *wording* of an
+against its own text." — `isDraftNonEmpty` is consulted only to pick the _wording_ of an
 already-armed prompt (`" (unsaved changes)"` > `" (run active)"` > `" (draft unsaved)"` > none), never to decide whether to arm. `disarm()` clears `pending` and cancels the pending
 `setTimeout`; the window itself resets `pending` and clears the toast via
 `deps.notify("")` when it elapses unconfirmed.
@@ -1045,8 +1084,8 @@ only when the transcript is empty, no elicitation is pending and the draft is em
 `TranscriptRegion`'s root box clips for the same reason `PageFrame`'s does (`TranscriptRegion`).
 
 `StartupComposer` reuses `BrandBanner` inside its bounded centre rather than copying the banner. It
-forces the compact branch below 16 rows because its fixed header, connection status and focused input
-consume the remaining space; the ordinary 60-column width fallback still applies. Production:
+forces the compact branch below 17 rows because its fixed header, blank status separator, connection
+status and focused input consume the remaining space; the ordinary 60-column width fallback still applies. Production:
 `packages/code/src/views/StartupComposer.tsx` (`STARTUP_SPLASH_MIN_ROWS`, `StartupComposer`) and
 `packages/code/src/views/Splash.tsx` (`BrandBanner`). Test:
 `packages/code/tests/integration/splash-render.test.tsx` (`the startup composer shares the responsive
@@ -1134,13 +1173,13 @@ reads `on`"). Five candidate chip sets are tried widest-first, and the first who
 (chip text plus one separator each) fits `room` wins (`packages/code/src/views/header-projection.ts`,
 `statusChips`, `modelNames`, `memoryLabel`):
 
-| Rung | Chips |
-| --- | --- |
-| 1 | `model.full`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
-| 2 | `model.short`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
-| 3 | `model.short`, `Iso {isolation}`, `{review}`, `mem {memory}` |
-| 4 | `model.short`, `{isolation}`, `{review}` |
-| 5 | `model.short` |
+| Rung | Chips                                                                           |
+| ---- | ------------------------------------------------------------------------------- |
+| 1    | `model.full`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}`  |
+| 2    | `model.short`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
+| 3    | `model.short`, `Iso {isolation}`, `{review}`, `mem {memory}`                    |
+| 4    | `model.short`, `{isolation}`, `{review}`                                        |
+| 5    | `model.short`                                                                   |
 
 If none fits, `statusChips` returns `[]`. The model chip is always `tokens.fg`; Isolation is
 `tokens.warn` for Host, Review is `tokens.warn` for Off, and other status chips are `tokens.muted`
@@ -1173,6 +1212,9 @@ reports local preparation, physical run closure, shell work or compaction. Other
 connection state to `connecting`, pauses loop readiness, and calls `runClient.reconnect(mode)`.
 `/reconnect` selects `connection`, which replaces the transport without restarting the executor;
 `/reconnect reload` and configuration callbacks select `reload`, which requires host quiescence.
+For a Container generation, quiescence means no hosted run in `starting`, `running`, or `finishing`
+state and no running Memory job. A recovered `unknown` outcome remains visible for explicit recovery
+but does not represent current physical work and cannot permanently block a placement change.
 Success reloads local keys/settings/agent adapters and the profile catalogue before publishing
 `ready`. Failure probes the retained client: a rejected reload with a healthy connection remains
 `ready`, while an unavailable connection becomes `failed` and offers `/reconnect`. Host polling
@@ -1421,13 +1463,15 @@ Production: `packages/code/src/views/App.tsx`.
 Pinned only for floor rendering: `packages/code/tests/integration/app-shell-render.test.tsx`;
 the two opener refusals are unpinned.
 
-**INV-CB-33.** `runFatalBoot` accepts `r` repeatedly until one retry succeeds, ignores keys while a
-retry is in flight, and routes idle `ctrl+c` to `quit`; `q` and Escape are inert. It resolves `false`
+**INV-CB-33.** `runFatalBoot` accepts `r` repeatedly until one retry succeeds, admits only an
+explicitly supplied typed resolution key, ignores keys while an action is in flight, and routes idle
+`ctrl+c` to `quit`; `q` and Escape are inert. It resolves `false`
 when renderer teardown wins, and `runApp` treats that result as terminal so profile boot cannot
 continue while shutdown drains. Production: `packages/code/src/views/FatalBoot.tsx`
 (`runFatalBoot`, `onKey`, `onDestroy`) and `packages/code/src/runtime.tsx` (`recovered`). Pinned:
-`packages/code/tests/integration/fatal-boot-render.test.tsx` (retry, key ownership, and terminal
-renderer-teardown cases) and `packages/code/tests/architecture/architecture-boundary.test.ts`.
+`packages/code/tests/integration/fatal-boot-render.test.tsx` (retry, typed resolution, key ownership,
+and terminal renderer-teardown cases) and
+`packages/code/tests/architecture/architecture-boundary.test.ts`.
 
 **INV-CB-34.** `runFatalBoot` disposes its Solid root on success, so the application mounts alone
 rather than on top of it. Production: `packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`,
@@ -1486,9 +1530,10 @@ plumbing in `packages/code/src/runtime.tsx` and `packages/code/src/startup-found
 
 **INV-CB-43.** The first interactive frame preserves Clarvis visual continuity without entering the
 application parser or models-catalog path: one branded `StartupComposer` owns a focused input, a
-distinct startup-readiness marker and the shared `BrandBanner`. At 60×16 or larger it paints the same
-complete eight-row banner as an empty untouched run; below either edge it paints the shared compact
-wordmark. It accepts at most one queued task; the snapshot survives root replacement, starts before
+distinct startup-readiness marker and the shared `BrandBanner`. At 60×17 or larger it paints the same
+complete eight-row banner as an empty untouched run, with every art row and a blank separator
+reserved above connection progress; below either edge it paints the shared compact wordmark. Container progress follows the
+typed connector phases. It accepts at most one queued task; the snapshot survives root replacement, starts before
 complete-app hydration when submitted, and otherwise transfers the exact draft to `App`. It never
 contains the complete app's paint/readiness markers. Production:
 `runInteractive` in `packages/code/src/index.tsx`, `createStartupComposerState` in
@@ -1594,64 +1639,64 @@ before starting the TUI. Production: `packages/code/src/cli-args.ts`, `packages/
 
 ## 6. Failure modes and degradation
 
-| Situation | Handling | Exit / effect | Cite |
-| --- | --- | --- | --- |
-| No `dist/index.js` and no `CLARVIS_CODE_SOURCE` | full remedy text on stderr | exit 1 | `packages/code/src/cli.ts`, `packages/code/src/cli-entry.ts` |
-| Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode in the lightweight entry; the complete runtime is not imported | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts`, `packages/code/src/index.tsx` (`main`) |
-| `--extension-profile` names an invalid or missing Extension Profile | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted | invocation fails or the interactive diagnostics view shows the exact issue | [Extension Profiles](extension-profiles.md#6-failure-modes-and-degradation) |
-| stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/renderer-bootstrap.ts` (`assertInteractiveTTY`) |
-| `--resume <id>` names no session | terminal-free `prepareInteractiveMode` reports `session not found: <id> — run clarvis --list` before renderer creation | exit 1 | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`) |
-| `--continue` with no session in this workspace | terminal-free `prepareInteractiveMode` reports `no session to continue in this workspace — run clarvis --list` before renderer creation | exit 1 | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`) |
-| `--delete <id>` names no session | `session not found: <id>` | exit 1 | `packages/code/src/runtime.tsx` (`runDeleteMode`) |
-| `--delete` trace deletion fails per run | per-execution `try/catch` returning `false`; counted in the summary as `okTraces/total` | exit 0 regardless | `packages/code/src/runtime.tsx` (`runDeleteMode`) |
-| `--refresh-models` throws | `refresh failed: <text>` | exit 1 | `packages/code/src/runtime.tsx` (`runRefreshMode`) |
-| `--update` is unmanaged, unsupported, concurrent, untrusted, or fails staging | one bounded `clarvis update failed: <reason>` line; active version unchanged | exit 1 | `packages/code/src/update/index.ts`, [distribution failure modes](../cross-cutting/distribution-and-updates.md#6-failure-modes-and-degradation) |
-| `--print` with no resolvable entry agent | `no interactive entry agent configured — pass --agent or set a default` | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
-| `--print` run does not complete | `run <status>: <error.message ?? ended_reason ?? status>` | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
-| `--print` throws anywhere | `print failed: <text>`; opened-client release and manager-close errors swallowed | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
-| `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/runtime.tsx` (`runPrintMode`) |
-| `--print` event stream throws mid-iteration | swallowed; `drained` still resolves | the run's `done` still settles | `packages/code/src/cli-mode.ts` |
-| Tree-sitter Markdown warm-up fails | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted | degrade | `packages/code/src/runtime.tsx` (`markdownPreload`) |
-| `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; Ctrl+C exits 1, while `q` is inert | `packages/code/src/runtime.tsx` (`loadFoundation`, `bootFoundation`) |
-| A retry inside `runFatalBoot` throws | message replaced on the same screen, `busy` cleared, screen stays | retryable | `packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`, `onKey`) |
-| `boot.profiles` throws | reported, then rethrown outside the fatal-foundation retry | `clarvis failed: …`, `process.exitCode = 1` | `packages/code/src/runtime.tsx` (`runApp`); `packages/code/src/index.tsx` (`main`) |
-| Models catalogue unavailable after a catalog surface requests it | `catalog.unavailable` at `warn` with `source: "kernel" \| "snapshot"`; `liveCatalog` answers empty on every accessor | picker empty, boot is unaffected | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`, `liveCatalog`) |
-| Worktree branch lookup fails | `worktree.branch.unavailable` at `warn`; header branch stays `undefined` | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
-| Prompt-history persistence fails | `historyFailure` string pushed into the run status line | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
-| Session store errors | routed to `setRunStatus` through `onError` | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
-| `reconnectBackend` while local work is active or preparing | refuses with an explanatory message, no reconnect attempted | `{ ok: false, message }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
-| `reconnectBackend` throws | probes the retained client; keeps `ready` if reachable, otherwise sets `failed` with a connection recovery action | `{ ok: false }` | `packages/code/src/runtime.tsx` (`reconnectBackend`) |
-| Session export fails | `export failed: <text>` returned as the status string | degrade | `packages/code/src/runtime.tsx` (`exportSession`) |
-| An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/runtime.tsx` (`writeExportChunk`) |
-| `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before a kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts`; `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`) |
-| Remote flags are unpaired, combined with `--worktree`, or contain an unsafe SSH destination/remote command | argument or transport admission rejects before a remote kernel handshake | usage error or top-level failure, no mutation replay | `packages/code/src/cli-args.ts`; `packages/kernel/src/hosting/connect-remote-ssh.ts` |
-| SSH needs interactive host-key, password or key-passphrase input | `BatchMode=yes` prevents OpenSSH from prompting after the TUI owns the terminal | startup fails with captured, sanitized SSH diagnostics; establish the host key and key/agent/certificate login first | `connectRemoteKernelOverSsh`; [security](../cross-cutting/security.md) |
-| SSH stdio closes | in-flight runs settle unavailable, connection state exposes `/reconnect`, and the remote host retires conversation authority | future goal continuation pauses; reconnect starts one new SSH process | `WorkspaceClientManager`; `serveRemoteFileKernelOverStdio`; goal-service authority retirement |
-| Worktree ignore protection cannot be created or verified | bootstrap rejects before `git worktree add` or any kernel/session starts; an interactive startup composer may already be painted | top-level `clarvis failed: <text>`, soft exit 1 | `ensureWorktreeIgnore` in `packages/code/src/bootstrap/worktree.ts`; `seedFile` in `packages/paths/src/ensure.ts` |
-| Exit cleanup sees new pending changes or `git worktree remove` fails | checkout and branch are kept; `worktree.remove.failed` records the error before normal exit continues | normal exit | `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`; pre-shutdown removal in `packages/code/src/runtime.tsx` |
-| Resume of a named session fails at boot | `resume failed: <text>` into the status line | degrade | `packages/code/src/runtime.tsx` (`runApp`) |
-| Remote MCP needs OAuth and the browser is ignored | browser flow stays background; that MCP is inactive for the current run | composer and other model/tools continue | [MCP client](../foundations/mcp-client.md), `MCPAuthorizationPendingError` |
-| Any unhandled failure in `main` | `clarvis failed: <text>` on stderr; `process.exitCode = 1` (process still drains) | soft exit 1 | `packages/code/src/index.tsx` (`main`) |
-| Any detached UI task fails | `task.failed` diagnostic with `{ operation, error, observed }`; the observer's own throw becomes `task.observer_failed` | never escapes | `packages/code/src/core/tasks.ts` |
+| Situation                                                                                                                          | Handling                                                                                                                                | Exit / effect                                                                                                        | Cite                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| No `dist/index.js` and no `CLARVIS_CODE_SOURCE`                                                                                    | full remedy text on stderr                                                                                                              | exit 1                                                                                                               | `packages/code/src/cli.ts`, `packages/code/src/cli-entry.ts`                                                                                    |
+| Unknown flag / missing value / mode conflict / bad `--print` prompt or format                                                      | `usage-error` mode in the lightweight entry; the complete runtime is not imported                                                       | stderr `<message>\n<usage>`, exit 1                                                                                  | `packages/code/src/cli.ts`, `packages/code/src/index.tsx` (`main`)                                                                              |
+| `--extension-profile` names an invalid or missing Extension Profile                                                                | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted                     | invocation fails or the interactive diagnostics view shows the exact issue                                           | [Extension Profiles](extension-profiles.md#6-failure-modes-and-degradation)                                                                     |
+| stdout or stdin is not a TTY in an interactive mode                                                                                | guidance naming every headless mode                                                                                                     | exit 2                                                                                                               | `packages/code/src/adapters/renderer-bootstrap.ts` (`assertInteractiveTTY`)                                                                     |
+| `--resume <id>` names no session                                                                                                   | terminal-free `prepareInteractiveMode` reports `session not found: <id> — run clarvis --list` before renderer creation                  | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`)             |
+| `--continue` with no session in this workspace                                                                                     | terminal-free `prepareInteractiveMode` reports `no session to continue in this workspace — run clarvis --list` before renderer creation | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`)             |
+| `--delete <id>` names no session                                                                                                   | `session not found: <id>`                                                                                                               | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`runDeleteMode`)                                                                                               |
+| `--delete` trace deletion fails per run                                                                                            | per-execution `try/catch` returning `false`; counted in the summary as `okTraces/total`                                                 | exit 0 regardless                                                                                                    | `packages/code/src/runtime.tsx` (`runDeleteMode`)                                                                                               |
+| `--refresh-models` throws                                                                                                          | `refresh failed: <text>`                                                                                                                | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`runRefreshMode`)                                                                                              |
+| `--update` is unmanaged, unsupported, concurrent, untrusted, or fails staging                                                      | one bounded `clarvis update failed: <reason>` line; active version unchanged                                                            | exit 1                                                                                                               | `packages/code/src/update/index.ts`, [distribution failure modes](../cross-cutting/distribution-and-updates.md#6-failure-modes-and-degradation) |
+| `--print` with no resolvable entry agent                                                                                           | `no interactive entry agent configured — pass --agent or set a default`                                                                 | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`runPrintMode`)                                                                                                |
+| `--print` run does not complete                                                                                                    | `run <status>: <error.message ?? ended_reason ?? status>`                                                                               | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`runPrintMode`)                                                                                                |
+| `--print` throws anywhere                                                                                                          | `print failed: <text>`; opened-client release and manager-close errors swallowed                                                        | exit 1                                                                                                               | `packages/code/src/runtime.tsx` (`runPrintMode`)                                                                                                |
+| `--print` receives an elicitation                                                                                                  | auto-declined, one stderr line per request                                                                                              | run continues                                                                                                        | `packages/code/src/runtime.tsx` (`runPrintMode`)                                                                                                |
+| `--print` event stream throws mid-iteration                                                                                        | swallowed; `drained` still resolves                                                                                                     | the run's `done` still settles                                                                                       | `packages/code/src/cli-mode.ts`                                                                                                                 |
+| Tree-sitter Markdown warm-up fails                                                                                                 | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted                                                   | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`markdownPreload`)                                                                                             |
+| `loadFoundation` throws on boot                                                                                                    | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen                                                        | interactive retry; Ctrl+C exits 1, while `q` is inert                                                                | `packages/code/src/runtime.tsx` (`loadFoundation`, `bootFoundation`)                                                                            |
+| A retry inside `runFatalBoot` throws                                                                                               | message replaced on the same screen, `busy` cleared, screen stays                                                                       | retryable                                                                                                            | `packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`, `onKey`)                                                                               |
+| `boot.profiles` throws                                                                                                             | reported, then rethrown outside the fatal-foundation retry                                                                              | `clarvis failed: …`, `process.exitCode = 1`                                                                          | `packages/code/src/runtime.tsx` (`runApp`); `packages/code/src/index.tsx` (`main`)                                                              |
+| Models catalogue unavailable after a catalog surface requests it                                                                   | `catalog.unavailable` at `warn` with `source: "kernel" \| "snapshot"`; `liveCatalog` answers empty on every accessor                    | picker empty, boot is unaffected                                                                                     | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`, `liveCatalog`)                                                                          |
+| Worktree branch lookup fails                                                                                                       | `worktree.branch.unavailable` at `warn`; header branch stays `undefined`                                                                | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`runApp`)                                                                                                      |
+| Prompt-history persistence fails                                                                                                   | `historyFailure` string pushed into the run status line                                                                                 | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`runApp`)                                                                                                      |
+| Session store errors                                                                                                               | routed to `setRunStatus` through `onError`                                                                                              | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`runApp`)                                                                                                      |
+| `reconnectBackend` while local work is active or preparing                                                                         | refuses with an explanatory message, no reconnect attempted                                                                             | `{ ok: false, message }`                                                                                             | `packages/code/src/runtime.tsx` (`reconnectBackend`)                                                                                            |
+| `reconnectBackend` throws                                                                                                          | probes the retained client; keeps `ready` if reachable, otherwise sets `failed` with a connection recovery action                       | `{ ok: false }`                                                                                                      | `packages/code/src/runtime.tsx` (`reconnectBackend`)                                                                                            |
+| Session export fails                                                                                                               | `export failed: <text>` returned as the status string                                                                                   | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`exportSession`)                                                                                               |
+| An export write makes no progress                                                                                                  | `new Error("export write made no progress")`                                                                                            | caught by the above                                                                                                  | `packages/code/src/runtime.tsx` (`writeExportChunk`)                                                                                            |
+| `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before a kernel/session starts; an interactive startup composer may already be painted                                | top-level `clarvis failed: <text>`, soft exit 1                                                                      | `packages/code/src/bootstrap/worktree.ts`; `packages/code/src/runtime.tsx` (`runInteractiveMode`, `runHeadlessMode`)                            |
+| Remote flags are unpaired, combined with `--worktree`, or contain an unsafe SSH destination/remote command                         | argument or transport admission rejects before a remote kernel handshake                                                                | usage error or top-level failure, no mutation replay                                                                 | `packages/code/src/cli-args.ts`; `packages/kernel/src/hosting/connect-remote-ssh.ts`                                                            |
+| SSH needs interactive host-key, password or key-passphrase input                                                                   | `BatchMode=yes` prevents OpenSSH from prompting after the TUI owns the terminal                                                         | startup fails with captured, sanitized SSH diagnostics; establish the host key and key/agent/certificate login first | `connectRemoteKernelOverSsh`; [security](../cross-cutting/security.md)                                                                          |
+| SSH stdio closes                                                                                                                   | in-flight runs settle unavailable, connection state exposes `/reconnect`, and the remote host retires conversation authority            | future goal continuation pauses; reconnect starts one new SSH process                                                | `WorkspaceClientManager`; `serveRemoteFileKernelOverStdio`; goal-service authority retirement                                                   |
+| Worktree ignore protection cannot be created or verified                                                                           | bootstrap rejects before `git worktree add` or any kernel/session starts; an interactive startup composer may already be painted        | top-level `clarvis failed: <text>`, soft exit 1                                                                      | `ensureWorktreeIgnore` in `packages/code/src/bootstrap/worktree.ts`; `seedFile` in `packages/paths/src/ensure.ts`                               |
+| Exit cleanup sees new pending changes or `git worktree remove` fails                                                               | checkout and branch are kept; `worktree.remove.failed` records the error before normal exit continues                                   | normal exit                                                                                                          | `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`; pre-shutdown removal in `packages/code/src/runtime.tsx`                  |
+| Resume of a named session fails at boot                                                                                            | `resume failed: <text>` into the status line                                                                                            | degrade                                                                                                              | `packages/code/src/runtime.tsx` (`runApp`)                                                                                                      |
+| Remote MCP needs OAuth and the browser is ignored                                                                                  | browser flow stays background; that MCP is inactive for the current run                                                                 | composer and other model/tools continue                                                                              | [MCP client](../foundations/mcp-client.md), `MCPAuthorizationPendingError`                                                                      |
+| Any unhandled failure in `main`                                                                                                    | `clarvis failed: <text>` on stderr; `process.exitCode = 1` (process still drains)                                                       | soft exit 1                                                                                                          | `packages/code/src/index.tsx` (`main`)                                                                                                          |
+| Any detached UI task fails                                                                                                         | `task.failed` diagnostic with `{ operation, error, observed }`; the observer's own throw becomes `task.observer_failed`                 | never escapes                                                                                                        | `packages/code/src/core/tasks.ts`                                                                                                               |
 
 ## 7. Coupling
 
 ### 7.1 Outward (runtime, static)
 
-| From | To | Nature | Cite |
-| --- | --- | --- | --- |
-| `cli.ts` | `node:fs`, `node:url` | value | `packages/code/src/cli.ts` |
-| `cli.ts` | `./cli-args.ts`, `./cli-entry.ts` | value | `packages/code/src/cli.ts` |
-| `cli-args.ts` | root `../../../package.json` | value (the **only** one), product version | `packages/code/src/cli-args.ts` |
-| `index.tsx` | `@opentui/core`, `@opentui/solid`, `solid-js` | renderer plus the focused startup root | `packages/code/src/index.tsx` |
-| `index.tsx` | `cli-args`, `StartupComposer`, renderer/terminal bootstrap | value; bounded pre-runtime graph | `packages/code/src/index.tsx` |
-| `startup-foundation.ts` | `@clarvis/paths`, `@clarvis/kernel/logger` | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts` |
-| `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap` | type-only options plus dynamic `createFileKernel` factory | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`) |
-| `runtime.tsx` | `@clarvis/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem | complete headless and interactive composition graph | `packages/code/src/runtime.tsx` |
-| `views/App.tsx` | `../app/command-composition.ts` | value: `registerCodeCommands` | `packages/code/src/views/App.tsx` |
-| `views/App.tsx` | `../app/layout.ts` | value | `packages/code/src/views/App.tsx` |
-| `app/command-composition.ts` | `./commands.tsx`, `../features/{agents,providers}/commands.ts` | value | `packages/code/src/app/command-composition.ts` |
-| `app/commands.tsx` | lightweight route metadata, controllers and adapters; registered config/help screens enter through `lazyView` dynamic imports | mixed | `packages/code/src/app/commands.tsx`, `packages/code/src/views/config/lazy-view.tsx` |
+| From                                   | To                                                                                                                            | Nature                                                                | Cite                                                                                 |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `cli.ts`                               | `node:fs`, `node:url`                                                                                                         | value                                                                 | `packages/code/src/cli.ts`                                                           |
+| `cli.ts`                               | `./cli-args.ts`, `./cli-entry.ts`                                                                                             | value                                                                 | `packages/code/src/cli.ts`                                                           |
+| `cli-args.ts`                          | root `../../../package.json`                                                                                                  | value (the **only** one), product version                             | `packages/code/src/cli-args.ts`                                                      |
+| `index.tsx`                            | `@opentui/core`, `@opentui/solid`, `solid-js`                                                                                 | renderer plus the focused startup root                                | `packages/code/src/index.tsx`                                                        |
+| `index.tsx`                            | `cli-args`, `StartupComposer`, renderer/terminal bootstrap                                                                    | value; bounded pre-runtime graph                                      | `packages/code/src/index.tsx`                                                        |
+| `startup-foundation.ts`                | `@clarvis/paths`, `@clarvis/kernel/logger`                                                                                    | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts`                                            |
+| `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap`                                                                                                   | type-only options plus dynamic `createFileKernel` factory             | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`)   |
+| `runtime.tsx`                          | `@clarvis/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem                                                    | complete headless and interactive composition graph                   | `packages/code/src/runtime.tsx`                                                      |
+| `views/App.tsx`                        | `../app/command-composition.ts`                                                                                               | value: `registerCodeCommands`                                         | `packages/code/src/views/App.tsx`                                                    |
+| `views/App.tsx`                        | `../app/layout.ts`                                                                                                            | value                                                                 | `packages/code/src/views/App.tsx`                                                    |
+| `app/command-composition.ts`           | `./commands.tsx`, `../features/{agents,providers}/commands.ts`                                                                | value                                                                 | `packages/code/src/app/command-composition.ts`                                       |
+| `app/commands.tsx`                     | lightweight route metadata, controllers and adapters; registered config/help screens enter through `lazyView` dynamic imports | mixed                                                                 | `packages/code/src/app/commands.tsx`, `packages/code/src/views/config/lazy-view.tsx` |
 
 ### 7.2 Outward (type-only)
 
@@ -1665,18 +1710,18 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 
 ### 7.3 Inward
 
-| Consumer | What it uses | Cite |
-| --- | --- | --- |
-| `src/index.tsx` | parser/help/version plus `StartupComposer`, `BootShell` and renderer bootstrap | `packages/code/src/index.tsx` |
-| `src/startup-foundation.ts` | startup key-source reader, browser opener and `WorkspaceClientManager` | `packages/code/src/startup-foundation.ts` |
-| `src/runtime.tsx` | print/session helpers, workspace callbacks, worktree lifecycle, `runFatalBoot`, `App` and its five control interfaces | `packages/code/src/runtime.tsx` |
-| `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx` |
-| `views/StartupComposer.tsx` | `BrandBanner` | `packages/code/src/views/StartupComposer.tsx` |
-| `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx` |
-| `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
-| `views/config/CatalogPicker.tsx` | `BANNER`, `BrandBanner`, `firstRunSplashFits` | the first-run picker intro |
-| `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx` | `PageFrame` | corresponding `PageFrame` imports |
-| `packages/code/tooling/artifact/build.ts` (via the `build` script) | `src/index.tsx` as the bundle entry | `packages/code/package.json` |
+| Consumer                                                           | What it uses                                                                                                          | Cite                                               |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `src/index.tsx`                                                    | parser/help/version plus `StartupComposer`, `BootShell` and renderer bootstrap                                        | `packages/code/src/index.tsx`                      |
+| `src/startup-foundation.ts`                                        | startup key-source reader, browser opener and `WorkspaceClientManager`                                                | `packages/code/src/startup-foundation.ts`          |
+| `src/runtime.tsx`                                                  | print/session helpers, workspace callbacks, worktree lifecycle, `runFatalBoot`, `App` and its five control interfaces | `packages/code/src/runtime.tsx`                    |
+| `views/App.tsx`                                                    | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS`                                                       | `packages/code/src/views/App.tsx`                  |
+| `views/StartupComposer.tsx`                                        | `BrandBanner`                                                                                                         | `packages/code/src/views/StartupComposer.tsx`      |
+| `views/app/TranscriptRegion.tsx`                                   | `Splash`                                                                                                              | `packages/code/src/views/app/TranscriptRegion.tsx` |
+| `views/onboarding/{SetupView,RecoveryView}.tsx`                    | `BrandBanner`; Setup also uses `firstRunSplashFits`                                                                   | the corresponding imports in each onboarding view  |
+| `views/config/CatalogPicker.tsx`                                   | `BANNER`, `BrandBanner`, `firstRunSplashFits`                                                                         | the first-run picker intro                         |
+| `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx`                 | `PageFrame`                                                                                                           | corresponding `PageFrame` imports                  |
+| `packages/code/tooling/artifact/build.ts` (via the `build` script) | `src/index.tsx` as the bundle entry                                                                                   | `packages/code/package.json`                       |
 
 ### 7.4 What forces the direction
 
@@ -1770,12 +1815,12 @@ Its importers span every layer this document's boundary rules separate:
    answered: nothing now asserts the whole `SettingsFile` shape, so nothing depends on whether the
    protocol's `merged` satisfies it.
 9. **`INV-247` (the ASCII-source rule) and `INV-253`–`INV-266`** are `@clarvis/code` invariants owned
-    by sibling documents; only `INV-243`–`INV-246` and `INV-248`–`INV-252` are restated above.
+   by sibling documents; only `INV-243`–`INV-246` and `INV-248`–`INV-252` are restated above.
 10. **No test exercises `registerCodeCommands`'s disposal ordering or idempotence** (INV-CB-38), nor
     the `--list --help` short-circuit (INV-CB-16), nor the `CLARVIS_AGENT_TOOLS_MAX_GRANT` default
     (INV-CB-40). Those are three concrete gaps in an otherwise well-pinned
     surface.
-12. ~~**`HeaderRowsProps.agentName` is a dead prop.**~~ **Resolved by removal:** the prop is gone.
+11. ~~**`HeaderRowsProps.agentName` is a dead prop.**~~ **Resolved by removal:** the prop is gone.
     `HeaderRowsProps` is now `{ plan: Accessor<HeaderPlan> }` (`packages/code/src/views/HeaderRows.tsx`) and the
     call site passes only `plan` (`packages/code/src/views/App.tsx`), which matches what the render
     body (`packages/code/src/views/HeaderRows.tsx`) ever read. The active-agent name still reaches the row, but
@@ -1786,5 +1831,5 @@ Its importers span every layer this document's boundary rules separate:
     `Mode`; for `--print`/`--list`/`--delete`/`--refresh-models` the value is silently dropped rather
     than rejected the way `--agent`/`--format` are outside `--print`. No test in
     `packages/code/tests/unit/cli-args.test.ts` asserts what `parseMode(["--refresh-models",
-    "--ascii"])` returns, so whether this asymmetry with `--agent`/`--format` is intentional is not
+"--ascii"])` returns, so whether this asymmetry with `--agent`/`--format` is intentional is not
     determinable from the code.

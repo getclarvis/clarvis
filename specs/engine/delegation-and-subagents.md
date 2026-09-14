@@ -310,7 +310,7 @@ any is individually interesting:
 | `basePrompt` | `p.base_prompt`, present only when declared | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
 | `tools` | `p.tools`, verbatim | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
 | `grants` | `p.grants`, present only when declared | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
-| `maxOutputTokens` | `modelConfig.max_output_tokens`, present only when the model config declares one | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
+| `maxOutputTokens` | native provider configuration uses `modelConfig.max_output_tokens` when declared; a closed logical catalog uses its declared output limit or its context window as the conservative ceiling | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
 | `stagnationThreshold` | `p.stagnation_threshold ?? CLARVIS_DEFAULT_STAGNATION_THRESHOLD` | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
 | `callTimeoutMs` | `p.call_timeout_ms ?? CLARVIS_DEFAULT_CALL_TIMEOUT_MS` | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
 | `reasoningSummary` | `p.reasoning_summary ?? CLARVIS_DEFAULT_REASONING_SUMMARY` | `packages/loop/src/runtime/subagents/subagent-profiles.ts` |
@@ -850,8 +850,10 @@ The invariants below are derived directly from this document's own source and it
 The optional `modelExecutionResolver` argument to `resolveSubagentProfiles` replaces native provider
 resolution with exact closed-catalog admission. Entry and delegated profiles retain transport-free
 `modelExecution` metadata through `buildRunSubagentInput` and `toLlmTarget`; unknown pairs throw rather
-than producing a profile without transport configuration. The native unresolved-provider behavior
-above applies only without this resolver. Production:
+than producing a profile without transport configuration. When logical metadata omits an output
+limit, the resolved profile uses the context window as its conservative per-call ceiling so a
+Workflow aggregate budget cannot request more than the broker will admit. The native
+unresolved-provider behavior above applies only without this resolver. Production:
 [`resolveSubagentProfiles`](../../packages/loop/src/runtime/subagents/subagent-profiles.ts) and
 [`buildRunSubagentInput`](../../packages/loop/src/runtime/subagents/delegate-task.ts).
 Test: [`model-execution.test.ts`](../../packages/loop/tests/unit/model-execution.test.ts).

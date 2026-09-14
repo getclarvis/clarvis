@@ -47,6 +47,8 @@ export interface WorkspaceStatePaths {
   memoryMachineryRoot: string;
   /** Where `@clarvis/plan` keeps its compare-and-swap lockfiles. */
   plansLockDir: string;
+  /** Cross-process trace locks for this workspace across runtime placements. */
+  traceLocksDir: string;
   /** Persistent writable state supplied to workspace plugin processes. */
   pluginDataRoot: string;
   /** Persisted prompt history for the terminal UI. */
@@ -192,6 +194,7 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     diagnosticsDir: join(localDir, "diagnostics"),
     memoryMachineryRoot: join(base, "memory"),
     plansLockDir: join(base, "plans"),
+    traceLocksDir: join(base, "trace-locks"),
     pluginDataRoot: join(base, "plugin-data"),
     promptHistoryFile: join(localDir, "prompt-history"),
     codeConfigFile: join(localDir, "code.json"),

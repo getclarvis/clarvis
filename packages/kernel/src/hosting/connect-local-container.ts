@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from "node:crypto";
-import { open, unlink } from "node:fs/promises";
+import { open, readFile, unlink } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { envSchema, type Logger } from "@clarvis/capability";
@@ -21,11 +21,12 @@ import { createDockerKernelBackend } from "../runtime/docker-backend.ts";
 import { createPodmanKernelBackend } from "../runtime/podman-backend.ts";
 import { runContainerPreparer } from "../runtime/container-preparer.ts";
 import {
+  migrateContainerDomainState,
   prepareContainerVolumes,
   resolveContainerVolumeIdentity,
   type ContainerVolumePreparer,
 } from "../runtime/container-volumes.ts";
-import { prepareRuntimeMounts } from "../runtime/container-mounts.ts";
+import { prepareContainerDomainMounts, prepareRuntimeMounts } from "../runtime/container-mounts.ts";
 import {
   resolveContainerImageDigest,
   type ContainerBaseImageSelection,
@@ -49,6 +50,16 @@ export interface LocalContainerReleaseSelection {
   };
 }
 
+/** Observable host-side phase of one local Container connection attempt. */
+export type ContainerConnectionPhase =
+  | "inspecting_engine"
+  | "resolving_runtime"
+  | "inspecting_workspace"
+  | "preparing_workspace"
+  | "preparing_artifact"
+  | "preparing_state"
+  | "starting_kernel";
+
 export interface ConnectLocalContainerKernelOptions {
   readonly workspaceRoot: string;
   readonly globalDir: string;
@@ -62,6 +73,9 @@ export interface ConnectLocalContainerKernelOptions {
   readonly logger?: Logger;
   readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly signal?: AbortSignal;
+  readonly onProgress?: (phase: ContainerConnectionPhase) => void;
+  /** Explicit operator decision to retire the exact currently registered Kernel generation. */
+  readonly ownershipConflict?: "refuse" | "terminate";
 }
 
 /** @internal Typed effect seams for deterministic orchestration tests; production supplies none. */
@@ -70,10 +84,12 @@ export interface LocalContainerConnectorPorts {
   readonly resolveVolumeIdentity?: typeof resolveContainerVolumeIdentity;
   readonly acquireLease?: typeof acquireLocalLease;
   readonly prepareMounts?: typeof prepareRuntimeMounts;
+  readonly prepareDomainMounts?: typeof prepareContainerDomainMounts;
   readonly createOperator?: typeof createOperatorServices;
   readonly verifyWorkspace?: typeof verifySharedWorkspace;
   readonly cacheArtifact?: typeof cacheRuntimeArtifact;
   readonly prepareVolumes?: typeof prepareContainerVolumes;
+  readonly migrateDomainState?: typeof migrateContainerDomainState;
   readonly prepareArtifactVolume?: typeof prepareRuntimeArtifactVolume;
   readonly projectConfiguration?: typeof projectContainerHostConfiguration;
   readonly prepareMise?: typeof prepareMiseVolume;
@@ -401,11 +417,14 @@ export async function connectLocalContainerKernelUsingControl(
   const engine = runtime.backend;
   if (runtime.network === "internet")
     throw kernelError("unsupported", "Container internet network mode is unavailable");
+  const progress = (phase: ContainerConnectionPhase): void => options.onProgress?.(phase);
   const basePreparationSignal =
     options.signal === undefined
       ? AbortSignal.timeout(10 * 60_000)
       : AbortSignal.any([options.signal, AbortSignal.timeout(10 * 60_000)]);
+  progress("inspecting_engine");
   const target = await engineTarget(control, engine, basePreparationSignal);
+  progress("resolving_runtime");
   const release =
     options.release ?? (await options.resolveRelease?.(target, basePreparationSignal));
   if (release === undefined)
@@ -440,6 +459,7 @@ export async function connectLocalContainerKernelUsingControl(
     ...(options.environment ?? process.env),
     CLARVIS_OWNER: options.owner,
   });
+  progress("inspecting_workspace");
   const git = await (ports.discoverWorkspace ?? discoverGitWorkspace)(options.workspaceRoot);
   const identity = await (ports.resolveVolumeIdentity ?? resolveContainerVolumeIdentity)({
     workspaceRoot: git.worktreeRoot,
@@ -448,18 +468,67 @@ export async function connectLocalContainerKernelUsingControl(
   });
   const generation = randomUUID();
   const launchPaths = containerLaunchPaths(identity.namespace, identity.globalRoot);
-  const lease = await (ports.acquireLease ?? acquireLocalLease)(launchPaths.leaseFile, {
-    staleMs: 60_000,
-    waitMs: 0,
+  const createBackend =
+    ports.createBackend ??
+    ((
+      selectedEngine: "docker" | "podman",
+      selectedControl: ContainerControl,
+      signal?: AbortSignal,
+    ) =>
+      selectedEngine === "docker"
+        ? createDockerKernelBackend({ control: selectedControl, signal })
+        : createPodmanKernelBackend({ control: selectedControl, signal }));
+  const backend = createBackend(engine, control, preparationSignal);
+  const acquireLease = ports.acquireLease ?? acquireLocalLease;
+  let lease = await acquireLease(launchPaths.leaseFile, {
+    staleMs: 1_000,
+    waitMs: 1_000,
     heartbeatMs: 5_000,
     signal: preparationSignal,
   });
+  if (lease === null && options.ownershipConflict === "terminate") {
+    const previous = await readFile(launchPaths.registryFile, "utf8").catch(
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      },
+    );
+    let registry: unknown;
+    try {
+      registry = previous === undefined ? undefined : (JSON.parse(previous) as unknown);
+    } catch {
+      throw kernelError("conflict", "Container launch registry requires recovery");
+    }
+    const value = registry as Record<string, unknown> | undefined;
+    if (
+      value?.schema !== 1 ||
+      value.engine !== engine ||
+      typeof value.containerId !== "string" ||
+      typeof value.generation !== "string"
+    )
+      throw kernelError("conflict", "Container launch registry identity conflicts");
+    await backend.terminatePrevious({
+      id: value.containerId,
+      generation: value.generation,
+      namespace: identity.namespace,
+    });
+    lease = await acquireLease(launchPaths.leaseFile, {
+      staleMs: 1_000,
+      waitMs: 30_000,
+      heartbeatMs: 5_000,
+      signal: preparationSignal,
+    });
+  }
   if (lease === null)
-    throw kernelError("conflict", "Another Container Kernel owns this workspace namespace");
+    throw kernelError("conflict", "Another Container Kernel owns this workspace namespace", {
+      kind: "container_kernel_owned",
+      engine,
+    });
   let transferredLease: LocalLease | undefined;
   let mounts: Awaited<ReturnType<typeof prepareRuntimeMounts>> | undefined;
   let operator: ReturnType<typeof createOperatorServices> | undefined;
   try {
+    progress("preparing_workspace");
     mounts = await (ports.prepareMounts ?? prepareRuntimeMounts)({
       workspaceRoot: identity.workspaceRoot,
       workspace: git.workspace,
@@ -482,18 +551,41 @@ export async function connectLocalContainerKernelUsingControl(
       user,
       signal: preparationSignal,
     });
+    progress("preparing_artifact");
     const artifact = await (ports.cacheArtifact ?? cacheRuntimeArtifact)({
       cacheRoot: join(globalPaths(options.globalDir).cache, "runtime-artifacts"),
       source: release.artifact.source,
       selection: release.artifact.selection,
       signal: preparationSignal,
     });
+    progress("preparing_state");
     const data = await (ports.prepareVolumes ?? prepareContainerVolumes)({
       control,
       preparer: preparer(control),
       namespace: identity.namespace,
       generation,
       baseImageId,
+      user,
+      engine,
+      signal: preparationSignal,
+    });
+    const domainDataMounts = await (ports.prepareDomainMounts ?? prepareContainerDomainMounts)({
+      workspaceRoot: identity.workspaceRoot,
+      globalDir: identity.globalRoot,
+      owner: options.owner,
+      projectId: git.project.id,
+      workspaceId: git.workspace.id,
+    });
+    await (ports.migrateDomainState ?? migrateContainerDomainState)({
+      preparer: preparer(control),
+      volumes: data,
+      mounts: domainDataMounts,
+      namespace: identity.namespace,
+      generation,
+      baseImageId,
+      owner: options.owner,
+      projectId: git.project.id,
+      workspaceId: git.workspace.id,
       user,
       engine,
       signal: preparationSignal,
@@ -528,6 +620,7 @@ export async function connectLocalContainerKernelUsingControl(
       workspaceRoot: identity.workspaceRoot,
       controlRootMasks: mounts.controlRootMasks,
       gitMetadataMounts: mounts.gitMetadataMounts,
+      domainDataMounts,
       baseImageId,
       baseAbi: "clarvis-linux-glibc-v1",
       artifact: {
@@ -549,11 +642,7 @@ export async function connectLocalContainerKernelUsingControl(
       limits,
       user,
     } as const;
-    const backend =
-      ports.createBackend?.(engine, control, preparationSignal) ??
-      (engine === "docker"
-        ? createDockerKernelBackend({ control, signal: preparationSignal })
-        : createPodmanKernelBackend({ control, signal: preparationSignal }));
+    progress("starting_kernel");
     return await (ports.launch ?? launchContainerKernel)({
       backend,
       engine,

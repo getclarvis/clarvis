@@ -111,6 +111,7 @@ export async function createContainerNativeKernel(options: ContainerNativeOption
       logger,
       env,
       traceDir: global.tracesDir,
+      traceLocksDir: state.traceLocksDir,
       llm: options.llm,
       modelExecutionResolver: models.resolver,
       connections: { acquire: unavailable, closeAll: async () => undefined },

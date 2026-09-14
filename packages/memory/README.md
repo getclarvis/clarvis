@@ -436,7 +436,7 @@ surfaces and are not duplicated here.
 
 Host, Sandbox and Container runs retain that seven-tool surface when Memory is active. Container
 builds the native local wiki/file provider and lifecycle inside its Kernel, stores documents in its
-private content volume, and routes indexing inference through the host model broker. External Memory
+canonical workspace content and machinery shared with Host/Sandbox, and routes indexing inference through the host model broker. External Memory
 providers are rejected during projection; disabled Memory does not resolve a provider.
 
 The read-only `file` provider accepts at most 64 declared paths, 1 MiB per

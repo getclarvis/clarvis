@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { AGENTS_DIR, CLARVIS_DIR } from "./constants.ts";
 import { globalPaths } from "./global.ts";
@@ -73,6 +74,10 @@ export const containerGuestPaths = Object.freeze({
   contentRoot: posix.join("/workspace", CLARVIS_DIR),
   agentsMask: posix.join("/workspace", AGENTS_DIR),
   globalRoot: "/var/lib/clarvis" as const,
+  workspaceStateRoot: posix.join(
+    "/var/lib/clarvis/state/workspaces",
+    `ws_${createHash("sha256").update("/workspace").digest("hex")}`,
+  ),
   home: "/var/lib/clarvis/home" as const,
   gitMetadataRoot: "/var/lib/clarvis/git-metadata" as const,
   gitCommonRoot: "/var/lib/clarvis/git-metadata/common" as const,

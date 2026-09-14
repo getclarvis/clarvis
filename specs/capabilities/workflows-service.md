@@ -60,7 +60,8 @@ See [self-configuration.md](../hosts/self-configuration.md) for the writer's aut
 ## 2. Surface
 
 Workflow execution is available in Host, Sandbox and Container. Container keeps manager, leaders,
-registry and execution records in its Kernel and uses frozen projected definitions. Plugin
+registry and execution in its Kernel, persists records in the canonical owner-scoped host directory
+shared with Host/Sandbox, and uses frozen projected definitions. Plugin
 definitions remain unavailable; no subset or host bridge substitutes for the workflow.
 
 Production: `createContainerNativeKernel` in

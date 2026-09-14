@@ -1290,6 +1290,32 @@ test("a refused host reload leaves the connected client usable", async () => {
   expect(closes).toBe(1);
 });
 
+test("a replacement is not retained when its profile handshake fails", async () => {
+  let creates = 0;
+  let candidateCloses = 0;
+  const c = createKernelRunClient({
+    createKernel: async () => {
+      creates++;
+      if (creates === 1) return fakeKernel({});
+      return {
+        ...fakeKernel({
+          currentExtensionProfile: async () => {
+            throw new Error("transport closed");
+          },
+        }),
+        close: async () => {
+          candidateCloses++;
+        },
+      };
+    },
+    callbacks: { onEvent: () => {} },
+  });
+  await c.connect();
+  await expect(c.reconnect()).rejects.toThrow("transport closed");
+  expect(candidateCloses).toBe(1);
+  expect(() => c.workspace).toThrow("kernel run client is not connected");
+});
+
 test("capabilities stays readable while reconnect is between kernels", async () => {
   let release!: () => void;
   const replacement = new Promise<void>((r) => (release = r));

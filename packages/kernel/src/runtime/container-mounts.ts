@@ -10,10 +10,18 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { agentsWorkspaceDir, containerGuestPaths, workspacePaths } from "@clarvis/paths";
+import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import {
+  agentsWorkspaceDir,
+  containerGuestPaths,
+  globalPaths,
+  ownerSegment,
+  workspacePaths,
+  workspaceScopeKey,
+  workspaceStatePaths,
+} from "@clarvis/paths";
 import type { WorkspaceRef } from "@clarvis/protocol";
-import { RuntimeLaunchError, type RuntimeProtectedMount } from "./types.ts";
+import { RuntimeLaunchError, type RuntimeDataMount, type RuntimeProtectedMount } from "./types.ts";
 import { containerGitDirectoryTarget } from "../git-workspace.ts";
 
 export interface ContainerMountPreparationInput {
@@ -27,6 +35,112 @@ export interface PreparedRuntimeMounts {
   readonly controlRootMasks: readonly RuntimeProtectedMount[];
   readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
   cleanup(): Promise<void>;
+}
+
+export interface ContainerDomainMountInput {
+  readonly workspaceRoot: string;
+  readonly globalDir: string;
+  readonly owner: string;
+  readonly projectId: string;
+  readonly workspaceId: string;
+}
+
+async function ensureDirectoryBelow(root: string, candidate: string): Promise<string> {
+  const canonicalRoot = await canonicalDirectory(root, "Container data root");
+  const fromRoot = relative(canonicalRoot, resolve(candidate));
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  )
+    throw new RuntimeLaunchError(
+      "unsupported_policy",
+      "Container domain state must remain below its admitted host root",
+    );
+  let current = canonicalRoot;
+  for (const segment of fromRoot.split(sep)) {
+    current = join(current, segment);
+    try {
+      const info = await lstat(current);
+      if (info.isSymbolicLink() || !info.isDirectory())
+        throw new RuntimeLaunchError(
+          "unsupported_policy",
+          "Container domain state paths must contain only real directories",
+        );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await mkdir(current, { mode: 0o700 });
+    }
+  }
+  return current;
+}
+
+/** Prepare only the native domain stores whose contents must survive placement changes. */
+export async function prepareContainerDomainMounts(
+  input: ContainerDomainMountInput,
+): Promise<readonly RuntimeDataMount[]> {
+  const hostWorkspaceRoot = await canonicalDirectory(input.workspaceRoot, "Container workspace");
+  const hostGlobalRoot = await canonicalDirectory(input.globalDir, "Container global root");
+  const hostWorkspace = workspacePaths(hostWorkspaceRoot);
+  const hostState = workspaceStatePaths(hostWorkspaceRoot, {
+    env: { CLARVIS_HOME: hostGlobalRoot },
+  });
+  const stateOwner = workspaceScopeKey(input.owner, input.projectId, input.workspaceId);
+  const owner = ownerSegment(stateOwner);
+  const hostGlobal = globalPaths(hostGlobalRoot);
+  const pairs = [
+    [
+      hostWorkspace.plansRoot,
+      posix.join(containerGuestPaths.contentRoot, "plans"),
+      hostWorkspaceRoot,
+    ],
+    [
+      hostWorkspace.memoryRoot,
+      posix.join(containerGuestPaths.contentRoot, "memory"),
+      hostWorkspaceRoot,
+    ],
+    [
+      hostState.plansLockDir,
+      posix.join(containerGuestPaths.workspaceStateRoot, "plans"),
+      hostGlobalRoot,
+    ],
+    [
+      hostState.memoryMachineryRoot,
+      posix.join(containerGuestPaths.workspaceStateRoot, "memory"),
+      hostGlobalRoot,
+    ],
+    [
+      join(hostGlobal.tracesDir, owner),
+      posix.join(containerGuestPaths.globalRoot, "state", "traces", owner),
+      hostGlobalRoot,
+    ],
+    [
+      hostState.traceLocksDir,
+      posix.join(containerGuestPaths.workspaceStateRoot, "trace-locks"),
+      hostGlobalRoot,
+    ],
+    [
+      join(hostGlobal.sessionsDir, owner),
+      posix.join(containerGuestPaths.globalRoot, "state", "sessions", owner),
+      hostGlobalRoot,
+    ],
+    [
+      join(hostGlobal.workflowRecordsDir, owner),
+      posix.join(containerGuestPaths.globalRoot, "state", "workflows", owner),
+      hostGlobalRoot,
+    ],
+  ] as const;
+  const mounts: RuntimeDataMount[] = [];
+  for (const [source, target, root] of pairs) {
+    mounts.push({
+      source: await ensureDirectoryBelow(root, source),
+      target,
+      type: "directory",
+      readOnly: false,
+    });
+  }
+  return mounts;
 }
 
 /** Inspect one nested control path without following any workspace-relative symlink. */

@@ -8,6 +8,8 @@ export interface ResolveTraceStoreOptions {
   /** Override directory for the trace store; a blank or omitted value falls
    * back to the global traces directory. */
   dir?: string;
+  /** Optional cross-process lock root for a selectively projected trace owner. */
+  locksDir?: string;
   /** Passed straight to the store; see `JsonTraceStoreOptions.logger`. */
   logger?: Logger;
 }
@@ -32,6 +34,7 @@ export function resolveTraceStore(opts: ResolveTraceStoreOptions = {}): Resolved
   const path = trimmed !== undefined && trimmed.length > 0 ? trimmed : globalPaths().tracesDir;
   const store = createJsonTraceStore({
     dir: path,
+    ...(opts.locksDir !== undefined ? { locksDir: opts.locksDir } : {}),
     ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
   });
   return { store, path };

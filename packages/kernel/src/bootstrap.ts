@@ -19,6 +19,7 @@ export { connectContainerKernel } from "./hosting/container-launcher.ts";
 export { launchContainerKernel } from "./hosting/container-host-launcher.ts";
 export { connectLocalContainerKernel } from "./hosting/connect-local-container.ts";
 export type {
+  ContainerConnectionPhase,
   ConnectLocalContainerKernelOptions,
   LocalContainerReleaseSelection,
 } from "./hosting/connect-local-container.ts";

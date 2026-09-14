@@ -45,16 +45,28 @@ exit policy. Unsaved settings still require confirmation, and Ctrl+C still reque
 
 `/reconnect` restores the connection to the existing host without restarting it or replaying work.
 `/reconnect reload` applies saved configuration through an explicit host restart, which is refused
-while physical work is active. A refused reload leaves a healthy connection available. Provider
+while physical work is active. Hosted runs in `starting`, `running`, or `finishing` state block that
+restart; a persisted `unknown` outcome records uncertainty but does not claim that the current
+generation still owns physical work. Memory shutdown releases an in-flight claim back to its shared
+durable queue, and the replacement Kernel recovers it without spending an attempt. A refused reload
+leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
 does not activate a saved Extension Profile.
 For an idle Host/Sandbox/Container selection change, reload resolves the saved placement again,
 retires the previous connection, and publishes the replacement Kernel's effective runtime to the
-header before another run can start. A failed Container replacement never resumes execution on the
-old native placement; the saved choice remains pending reconnect with the launch error visible.
+header before another run can start. If the replacement cannot be admitted, the picker restores the
+previous isolation through the host administrative config service before the manager recovers that
+connection. Expected EOF while retiring Host/Sandbox is not presented as a connection failure.
 For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
 workspace lease is retired before the replacement starts. That expected closure is not presented as
 a connection failure.
+If interactive Container startup finds another live Clarvis generation for the same namespace, the
+fatal boot screen offers an explicit `t` action to terminate that exact registered Container and
+retry. Ordinary retry remains non-destructive, headless commands never choose termination, and
+unconfirmed ownership stays closed.
+Other interactive Container boot failures offer an explicit `h` action that saves Host and boots
+through the normal native connection, so an unavailable selected engine does not trap startup even
+when the native Sandbox is unavailable.
 
 User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
 conversation in the host before spawning, persist their observation under that reservation, and
@@ -357,14 +369,19 @@ which file was refused and why.
 Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
 Solid root. Its header keeps the root-owned `v<version>` visible at the right edge, and its shared
 `BrandBanner` preserves the final screen's visual structure while the
-application chunk and workspace foundation load concurrently. At 60 columns by 16 rows or larger,
+application chunk and workspace foundation load concurrently. At 60 columns by 17 rows or larger,
 the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
 narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
-only the branded header. The connection status remains startup-specific instead of claiming an
-agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
+only the branded header. The banner reserves all eight physical rows, followed by a blank separator
+and a non-shrinking status row, so reactive progress cannot paint over the final banner line. During
+Container startup that status follows the connector's
+engine inspection, runtime resolution, workspace isolation, artifact/state preparation and Kernel
+start phases. It remains startup-specific instead of claiming an agent, model or complete-app
+shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
 exists with a runnable active Agent Profile, that queued task starts before complete-app hydration, and the
-resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the
+resulting store/events survive the root handoff. The state continuously captures the draft and does
+not read renderer-owned input after the startup view is destroyed. If provider/agent setup is not runnable yet, the
 accepted text is restored as the full composer's exact draft instead of disappearing. An unsent draft
 uses the same handoff. Resume/continue keep startup input locked until their saved session is restored.
 If terminal shutdown wins while the foundation or profiles are still loading, a boot latch prevents
@@ -1185,7 +1202,9 @@ Changing `/model` while a run is active is refused until that run settles. If th
 safe context limit is smaller than the latest persisted continuation, the picker shows the estimated
 current size and new limit and requires explicit confirmation. Acceptance mechanically evicts older
 context first and saves the model only after the replacement fits; cancellation or fitting failure
-leaves both model and context unchanged.
+leaves both model and context unchanged. On a Container connection, a successful save immediately
+requests an idle generation reload so the next run uses the selected model. A refused reload keeps
+the committed save visible as pending reconnect instead of claiming that it is active.
 
 Most features go through `KernelClient`. Local shell commands, marketplace
 catalog cloning and platform diagnostics remain client-side seams because the
@@ -1369,9 +1388,14 @@ picker. Docker/Podman runs native Plans, Memory, Workflows and Goals inside the 
 MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
 without Command Review; workspace writes and outbound network remain enabled; Git metadata is
 read-only. Review reads `Not applicable in Container`. When idle, selecting a placement immediately
-reloads the workspace connection and the header reflects the admitted Kernel; a refused transition
-is saved and reported as pending reconnect. Settings, Agent, prompt and model-catalog writes remain
-host-side, notify that the active immutable Container projection is pending, and keep a
+reloads the workspace connection and the header reflects the admitted Kernel. The picker remains
+modal and shows its save/reconnect phase until admission completes; a refused transition remains
+open, restores the previous isolation setting and reports the admitted connection that was kept. Its
+bounded detail area wraps the failure while the standard picker navigation retains the available
+actions. Host confirmation projects the established
+`y`/`n` actions and renders its warning once. Settings, Agent, prompt and model-catalog writes remain
+host-side; `/model` immediately attempts the idle reload, while other saves notify that the active
+immutable Container projection is pending and keep a
 `reconnect pending` warning in the header until a new generation is admitted. They take effect only
 in that new generation. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
 are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
@@ -1380,7 +1404,9 @@ returns the named `unsupported` failure before model work. No elicitation change
 
 Container mounts the selected workspace read-write at `/workspace`, so changes appear on the host
 immediately and there is no Clarvis-owned copy/apply prompt. A private content volume covers
-`.clarvis`, `.agents` is masked and Git metadata is overlaid read-only for primary and linked
+`.clarvis`, then exact writable overlays share Plans, Memory, sessions, Goals, workflow records,
+persisted conversation context and traces with Host/Sandbox. Container-only registry and home state
+remain private. `.agents` is masked and Git metadata is overlaid read-only for primary and linked
 worktrees. A nonce preflight proves the engine sees the same workspace before persistent volumes are
 prepared. The safety promise
 covers the host outside the selected workspace, not workspace destruction or outbound remote effects.

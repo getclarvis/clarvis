@@ -43,7 +43,7 @@ The three built-in definitions have an 11,000-character serialized regression ce
 
 Workflow scheduling is native in Host, Sandbox and Container. Container keeps the manager scheduler,
 workflow registry, leaders and shared budget inside the same Kernel and persists their state in its
-private state volume. Projected builtin/global/workspace definitions are frozen for that generation;
+canonical owner-scoped host state shared with Host/Sandbox. Projected builtin/global/workspace definitions are frozen for that generation;
 plugin definitions remain absent. The root entry exposes `workflowContextOf`,
 `workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition. The
 [isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns the Container boundary.

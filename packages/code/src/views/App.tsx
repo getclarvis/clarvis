@@ -43,6 +43,7 @@ import {
   deriveIsolation,
   deriveRunControls,
   effectiveRunIsolation,
+  type IsolationMode,
 } from "../adapters/execution-safety.ts";
 import { isContainerIsolation } from "../features/run/isolation.ts";
 import type { ThemePreview } from "../theme/theme.ts";
@@ -322,6 +323,7 @@ export interface AppBackend {
   /** Host-reported execution placement and effective container policy. */
   runtime?: () => RuntimeStatus | undefined;
   reconnect: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
+  restoreIsolation?: (isolation: IsolationMode) => Promise<{ ok: boolean; message: string }>;
 }
 
 /** Everything {@link App} needs to render: transcript/activity state, shell handles and the run/session/fleet/backend controls. */
@@ -957,6 +959,7 @@ export function App(props: AppProps): JSX.Element {
     refreshAgentProfiles: props.fleet.refreshAgentProfiles,
     keys: props.fleet.keys,
     reconnectBackend: props.backend.reconnect,
+    ...(props.backend.runtime === undefined ? {} : { runtime: props.backend.runtime }),
     env,
     preview: props.fleet.preview,
     platform: props.shell.platform,
@@ -1582,6 +1585,9 @@ export function App(props: AppProps): JSX.Element {
                 active={lifecycle.active}
                 notify={notify}
                 reload={() => props.backend.reconnect("reload")}
+                {...(props.backend.restoreIsolation === undefined
+                  ? {}
+                  : { restore: props.backend.restoreIsolation })}
                 onClose={() => overlays.dismissTop()}
                 onApplied={() => overlays.dismissTop()}
               />

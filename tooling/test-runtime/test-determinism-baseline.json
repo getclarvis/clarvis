@@ -394,6 +394,22 @@
       "reason": "physical archive, engine, or ownership subprocess is required by this boundary test"
     },
     {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/unit/container-volumes.test.ts",
+      "identity": "subprocess|test:canonical host state wins over divergent legacy domain bytes|Bun.spawn( [\"/bin/bash\", \"-euc\", script, \"fixture\", args[scriptIndex + 2]!, args[scriptIndex + 3]!], { stdout: \"pipe\", stderr: \"pipe\" }, )|0",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical shell execution verifies the fixed migration program against real filesystem state"
+    },
+    {
+      "mechanism": "subprocess",
+      "file": "packages/kernel/tests/unit/container-volumes.test.ts",
+      "identity": "subprocess|test:canonical host state wins over divergent legacy domain bytes|Bun.spawn( [\"/bin/bash\", \"-euc\", script, \"fixture\", args[scriptIndex + 2]!, args[scriptIndex + 3]!], { stdout: \"pipe\", stderr: \"pipe\" }, )|1",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "physical shell execution verifies conflict refusal without replacing canonical data"
+    },
+    {
       "mechanism": "timer",
       "file": "packages/kernel/tests/unit/observability.test.ts",
       "identity": "timer|describe:observationSink/it:stamps an event name on a detached failure and reaches the logger|setTimeout(resolve, 5)|0",

@@ -14,6 +14,7 @@ import type { KernelClient } from "@clarvis/protocol";
 
 import {
   composeLaunchedContainerConnection,
+  isContainerKernelOwnershipConflict,
   WorkspaceClientManager,
 } from "../../src/adapters/workspace-client-manager.ts";
 import { prepareStartupFoundation } from "../../src/startup-foundation.ts";
@@ -29,6 +30,21 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 describe("WorkspaceClientManager", () => {
+  it("recognizes only the typed live Container ownership conflict", () => {
+    expect(
+      isContainerKernelOwnershipConflict({
+        code: "conflict",
+        details: { kind: "container_kernel_owned", engine: "podman" },
+      }),
+    ).toBe(true);
+    expect(
+      isContainerKernelOwnershipConflict({
+        code: "conflict",
+        message: "Another Container Kernel owns this workspace namespace",
+      }),
+    ).toBe(false);
+  });
+
   it("forwards the authenticated Container principal and closes a rejected launch", async () => {
     const root = openTempDir("clarvis-workspace-container-composition-");
     const workspaceRoot = join(root, "workspace");
@@ -254,6 +270,40 @@ describe("WorkspaceClientManager", () => {
     let containerClosed = 0;
     const containerClient: KernelClient = {
       ...backingClient,
+      memory: {
+        ...backingClient.memory,
+        jobs: async () => ({
+          jobs: [],
+          counts: {
+            pending: 1,
+            running: 0,
+            retry_wait: 0,
+            completed: 0,
+            failed: 0,
+          },
+        }),
+      },
+      hosting: {
+        ...backingClient.hosting!,
+        list: async () => [
+          {
+            execution_id: "old-unknown-run",
+            session_id: "old-session",
+            workspace_id: "workspace",
+            host_generation: crypto.randomUUID(),
+            title: "Recovered uncertain run",
+            revision: 1,
+            disconnect_policy: "cancel",
+            execution_state: "unknown",
+            attention: "none",
+            control_epoch: 1,
+            control: "available",
+            config: { agent: "fixture" },
+            created_at: 1,
+            updated_at: 1,
+          },
+        ],
+      },
       localHost: undefined,
       capabilities: {
         ...backingClient.capabilities,
@@ -287,7 +337,9 @@ describe("WorkspaceClientManager", () => {
       const initial = (await manager.open()).client;
       expect(initial.localHost).toBeDefined();
       const placements: string[] = [];
+      const connectionFailures: string[] = [];
       manager.subscribeRuntimePlacement((notice) => placements.push(notice.status.kind));
+      manager.subscribeConnectionFailure((reason) => connectionFailures.push(reason));
 
       writeFileSync(
         join(globalDir, "settings.json"),
@@ -298,6 +350,7 @@ describe("WorkspaceClientManager", () => {
       expect(container.localHost).toBeUndefined();
       expect(container.capabilities.runtime?.kind).toBe("container");
       expect(placements.at(-1)).toBe("container");
+      expect(connectionFailures).toEqual([]);
       await expect(initial.localHost!.inspect()).rejects.toThrow();
 
       writeFileSync(

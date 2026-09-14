@@ -3,7 +3,9 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/pr
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { containerDataVolumeNames } from "@clarvis/paths";
+import { createFilePlanRepository, createPlanStore } from "@clarvis/plan";
+import { containerDataVolumeNames, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import { createFileKernel, loadEnv } from "../../src/bootstrap.ts";
 import { connectLocalContainerKernel } from "../../src/hosting/connect-local-container.ts";
 import { discoverGitWorkspace } from "../../src/git-workspace.ts";
 import { parseRuntimeArtifactManifest } from "../../src/runtime/runtime-artifact.ts";
@@ -103,6 +105,16 @@ test.skipIf(!enabled)(
       mkdir(join(workspaceRoot, ".agents")),
       mkdir(join(workspaceRoot, ".git")),
     ]);
+    const workspace = workspacePaths(workspaceRoot);
+    await mkdir(join(workspace.memoryRoot, "runtime"), { recursive: true });
+    await writeFile(
+      workspace.settingsFile,
+      `${JSON.stringify({ memory: { enabled: true, provider: { kind: "wiki" } } })}\n`,
+    );
+    await writeFile(
+      join(workspace.memoryRoot, "runtime", "MEMORY.md"),
+      "---\ndescription: Cross-placement memory\n---\n# Runtime\n\nPersist this memory.\n",
+    );
     await writeFile(join(workspaceRoot, ".agents", "hidden.txt"), "must stay masked\n");
     const artifact = await artifactSelection(archive!);
     const git = await discoverGitWorkspace(workspaceRoot);
@@ -113,11 +125,27 @@ test.skipIf(!enabled)(
     });
     const data = containerDataVolumeNames(identity.namespace);
     const baseImageId = await inspectBaseImageId(base!);
+    const planStore = createPlanStore({
+      repository: createFilePlanRepository({
+        workspaceRoot,
+        lockDir: workspaceStatePaths(workspaceRoot, {
+          env: { CLARVIS_HOME: globalDir },
+        }).plansLockDir,
+      }),
+    });
+    const seededPlan = await planStore.create({
+      title: "Cross-placement plan",
+      objective: "Remain visible across Container and Host kernels",
+      tasks: [{ title: "Preserve canonical state" }],
+      createdByRun: "container-e2e",
+    });
+    const sessionId = "container-cross-placement";
     const miseDigest = createHash("sha256")
       .update(JSON.stringify({ schema: 3, namespace: identity.namespace, baseImageId }))
       .digest("hex");
     let first: Awaited<ReturnType<typeof connectLocalContainerKernel>> | undefined;
     let second: Awaited<ReturnType<typeof connectLocalContainerKernel>> | undefined;
+    let hostKernel: Awaited<ReturnType<typeof createFileKernel>> | undefined;
     const volumes = [data.content, data.state, `clarvis-mise-v3-${miseDigest}`];
     let failure: unknown;
     const cleanupFailures: unknown[] = [];
@@ -162,6 +190,20 @@ test.skipIf(!enabled)(
       expect((await first.client.files.readFile("visible.txt")).content).toBe(
         "same host workspace\n",
       );
+      expect((await first.client.plans.read(seededPlan.id)).retention).toBe("keep");
+      await first.client.plans.setRetention(seededPlan.id, "discard");
+      await first.client.sessions.save({
+        id: sessionId,
+        title: "Container continuity",
+        project_id: git.project.id,
+        workspace: git.workspace.id,
+        created_at: 1,
+        updated_at: 2,
+        turns: [],
+        totals: { input: 0, output: 0, cached: 0 },
+        pending: [{ role: "user", content: "Persisted Container context" }],
+      });
+      expect((await first.client.memory.reindex()).reindexed).toContain("PROFILE.md");
       await expect(first.client.files.readFile("autoloaded.txt")).rejects.toBeDefined();
       await expect(first.client.files.readFile(".agents/hidden.txt")).rejects.toBeDefined();
       stage = "concurrent-connect";
@@ -174,6 +216,21 @@ test.skipIf(!enabled)(
       stage = "first-close";
       await first.close();
       first = undefined;
+      stage = "host-continuity";
+      hostKernel = await createFileKernel({
+        workspaceRoot,
+        globalDir,
+        defaultOwner: userInfo().username,
+        memory: true,
+        env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      });
+      expect((await hostKernel.plans.read(seededPlan.id)).retention).toBe("discard");
+      expect((await hostKernel.sessions.get(sessionId))?.pending).toEqual([
+        { role: "user", content: "Persisted Container context" },
+      ]);
+      expect((await hostKernel.memory.health()).totals.documents).toBe(2);
+      await hostKernel.close();
+      hostKernel = undefined;
       stage = "second-connect";
       second = await connectLocalContainerKernel(options);
       stage = "second-identity";
@@ -190,6 +247,11 @@ test.skipIf(!enabled)(
         } catch (error) {
           cleanupFailures.push(error);
         }
+      }
+      try {
+        await hostKernel?.close();
+      } catch (error) {
+        cleanupFailures.push(error);
       }
       for (const volume of volumes) {
         try {
@@ -228,6 +290,7 @@ test.skipIf(!enabled)(
           "compiled-kernel-boot",
           "workspace-bind-and-control-mask",
           "concurrent-writer-refusal",
+          "container-to-host-plan-memory-session-context-continuity",
           "same-namespace-reconnect",
           "autoload-sentinel-refusal",
         ],

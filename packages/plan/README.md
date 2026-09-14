@@ -203,7 +203,7 @@ task-closure and retention rules. This behavior does not grant review approval o
 
 Plans is available to Host, Sandbox and Container Kernels. Container uses the native Markdown
 provider, tools, review, CAS, continuation and retention callbacks, with documents persisted in its
-private content volume. An active external provider is incompatible; disabled Plans does not resolve
+canonical workspace plan directory shared with Host/Sandbox. An active external provider is incompatible; disabled Plans does not resolve
 a provider. The placement contract belongs to
 [`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
 

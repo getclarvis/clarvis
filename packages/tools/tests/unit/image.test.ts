@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { sniffImageMime } from "../../src/lib/image.ts";
+import { imageBytesAreValid, sniffImageMime } from "../../src/lib/image.ts";
 
 describe("sniffImageMime", () => {
   it("detects PNG", () => {
@@ -41,5 +41,24 @@ describe("sniffImageMime", () => {
       Buffer.from("WAVE"),
     ]);
     expect(sniffImageMime(wav)).toBeNull();
+  });
+});
+
+describe("imageBytesAreValid", () => {
+  it("accepts a complete PNG whose chunk CRCs match", () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+      "base64",
+    );
+    expect(imageBytesAreValid(png, "image/png")).toBe(true);
+  });
+
+  it("rejects a signature-valid PNG with a corrupt IDAT CRC", () => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    expect(sniffImageMime(png)).toBe("image/png");
+    expect(imageBytesAreValid(png, "image/png")).toBe(false);
   });
 });

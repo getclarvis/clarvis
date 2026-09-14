@@ -92,6 +92,14 @@ export interface RuntimeProtectedMount {
   readonly readOnly: true;
 }
 
+/** One canonical domain-state directory shared by host and Container Kernels. */
+export interface RuntimeDataMount {
+  readonly source: string;
+  readonly target: string;
+  readonly type: "directory";
+  readonly readOnly: false;
+}
+
 /** Immutable mounts and identity for one complete Kernel process. */
 export interface ContainerKernelLaunchSpec {
   readonly generation: string;
@@ -99,6 +107,7 @@ export interface ContainerKernelLaunchSpec {
   readonly workspaceRoot: string;
   readonly controlRootMasks: readonly RuntimeProtectedMount[];
   readonly gitMetadataMounts: readonly RuntimeProtectedMount[];
+  readonly domainDataMounts: readonly RuntimeDataMount[];
   readonly baseImageId: `sha256:${string}`;
   readonly baseAbi: string;
   readonly artifact: {
@@ -130,6 +139,12 @@ export interface ContainerProcessLifecycle {
 export interface ContainerKernelBackend {
   inspect(): Promise<RuntimeAvailability>;
   reconcilePrevious(input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<void>;
+  /** Stop and remove one running Kernel only after its exact persisted identity is confirmed. */
+  terminatePrevious(input: {
     readonly id: string;
     readonly generation: string;
     readonly namespace: string;

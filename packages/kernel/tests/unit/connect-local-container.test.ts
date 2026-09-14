@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { containerLaunchPaths } from "@clarvis/paths";
 import {
   connectLocalContainerKernel,
   connectLocalContainerKernelUsingControl,
@@ -767,6 +768,130 @@ describe("local Container connector preparation", () => {
     ).rejects.toMatchObject({ code: "unsupported" });
   });
 
+  test("retires an exact registered Kernel only after an explicit ownership decision", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-container-takeover-"));
+    roots.push(root);
+    const workspaceRoot = join(root, "workspace");
+    const globalDir = join(root, "global");
+    await Promise.all([mkdir(workspaceRoot), mkdir(globalDir)]);
+    const paths = containerLaunchPaths(namespace, globalDir);
+    await mkdir(paths.root, { recursive: true });
+    await writeFile(
+      paths.registryFile,
+      `${JSON.stringify({
+        schema: 1,
+        engine: "podman",
+        containerId,
+        generation,
+      })}\n`,
+    );
+    const runtime = runtimeSettingsSchema.parse({
+      backend: "podman",
+      network: "none",
+      image_digest: baseImageId,
+    });
+    if (runtime.backend !== "podman") throw new Error("fixture runtime did not parse as Podman");
+    const selection = {
+      productVersion: "0.0.1-beta",
+      sourceRevision: "a".repeat(40),
+      target: "linux-x64" as const,
+      baseAbi: "clarvis-linux-glibc-v1" as const,
+      digest: `sha256:${"e".repeat(64)}` as const,
+      size: 1,
+    };
+    const control: ContainerControl = {
+      run: async (args) =>
+        args[0] === "info"
+          ? {
+              exitCode: 0,
+              stdout: JSON.stringify({ host: { arch: "amd64" } }),
+              stderr: "",
+            }
+          : {
+              exitCode: 0,
+              stdout: JSON.stringify([
+                {
+                  Id: baseImageId.slice("sha256:".length),
+                  Config: {
+                    Labels: {
+                      "io.clarvis.base.abi": "clarvis-linux-glibc-v1",
+                      "io.clarvis.base.revision": "f".repeat(64),
+                    },
+                  },
+                },
+              ]),
+              stderr: "",
+            },
+      attach: () => attached(),
+    };
+    let acquireAttempts = 0;
+    let terminated = false;
+    const marker = new Error("preparation continued");
+    await expect(
+      connectLocalContainerKernelUsingControl(
+        {
+          workspaceRoot,
+          globalDir,
+          owner: "fixture",
+          runtime,
+          ownershipConflict: "terminate",
+          release: {
+            base: { reference: "clarvis-base:local", pull: false },
+            artifact: {
+              source: { kind: "local", archivePath: join(root, "artifact.tar.gz") },
+              selection,
+            },
+          },
+          environment: { HOME: root, PATH: "/bin" },
+        },
+        runtime,
+        control,
+        {
+          resolveVolumeIdentity: async () => ({
+            namespace,
+            globalRoot: globalDir,
+            workspaceRoot,
+            projectId: "fixture-project",
+          }),
+          acquireLease: async (_path, options) => {
+            acquireAttempts += 1;
+            if (acquireAttempts === 1) {
+              expect(options.staleMs).toBe(1_000);
+              expect(options.waitMs).toBe(1_000);
+              return null;
+            }
+            expect(options.staleMs).toBe(1_000);
+            expect(options.waitMs).toBe(30_000);
+            return {
+              assertOwned: async () => undefined,
+              release: async () => true,
+            } as never;
+          },
+          createBackend: () => ({
+            inspect: async () => ({
+              available: true,
+              engineVersion: "fixture",
+              rootless: true,
+            }),
+            reconcilePrevious: async () => undefined,
+            terminatePrevious: async (input) => {
+              expect(input).toEqual({ id: containerId, generation, namespace });
+              terminated = true;
+            },
+            startKernel: async () => {
+              throw new Error("launch must not start");
+            },
+          }),
+          prepareMounts: async () => {
+            throw marker;
+          },
+        },
+      ),
+    ).rejects.toBe(marker);
+    expect(terminated).toBe(true);
+    expect(acquireAttempts).toBe(2);
+  });
+
   test("assembles every admitted preparation result into one immutable launch", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-container-assembly-"));
     roots.push(root);
@@ -824,6 +949,7 @@ describe("local Container connector preparation", () => {
       attach: () => attached(),
     };
     const marker = new Error("launch reached");
+    const phases: string[] = [];
     await expect(
       connectLocalContainerKernelUsingControl(
         {
@@ -836,6 +962,7 @@ describe("local Container connector preparation", () => {
             artifact: { source: { kind: "local", archivePath: artifact.archivePath }, selection },
           },
           environment: { HOME: root, PATH: "/bin" },
+          onProgress: (phase) => phases.push(phase),
         },
         runtime,
         control,
@@ -853,6 +980,15 @@ describe("local Container connector preparation", () => {
             gitMetadataMounts: [],
             cleanup: async () => undefined,
           }),
+          prepareDomainMounts: async () => [
+            {
+              source: join(workspaceRoot, ".clarvis", "plans"),
+              target: "/workspace/.clarvis/plans",
+              type: "directory",
+              readOnly: false,
+            },
+          ],
+          migrateDomainState: async () => undefined,
           createOperator: () =>
             ({ configStore: {}, models: {}, close: async () => undefined }) as never,
           verifyWorkspace: async () => undefined,
@@ -871,6 +1007,13 @@ describe("local Container connector preparation", () => {
               network: "none",
               artifact: { volume: "artifact", digest: selection.digest },
               data: { contentVolume: "content", stateVolume: "state" },
+              domainDataMounts: [
+                {
+                  source: join(workspaceRoot, ".clarvis", "plans"),
+                  target: "/workspace/.clarvis/plans",
+                  readOnly: false,
+                },
+              ],
               miseVolume: "mise",
             });
             throw marker;
@@ -878,6 +1021,15 @@ describe("local Container connector preparation", () => {
         },
       ),
     ).rejects.toBe(marker);
+    expect(phases).toEqual([
+      "inspecting_engine",
+      "resolving_runtime",
+      "inspecting_workspace",
+      "preparing_workspace",
+      "preparing_artifact",
+      "preparing_state",
+      "starting_kernel",
+    ]);
   });
 
   test("the public connector constructs its Podman control before release admission", async () => {

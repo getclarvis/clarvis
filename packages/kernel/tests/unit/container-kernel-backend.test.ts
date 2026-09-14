@@ -56,8 +56,10 @@ async function fixture() {
   const workspaceRoot = join(root, "workspace");
   const mask = join(root, "mask");
   const git = join(root, "git-file");
+  const domain = join(root, "domain");
   await mkdir(workspaceRoot);
   await mkdir(mask);
+  await mkdir(domain);
   await writeFile(git, "gitdir");
   const spec: ContainerKernelLaunchSpec = {
     generation: randomUUID(),
@@ -67,6 +69,14 @@ async function fixture() {
       { source: mask, target: "/workspace/.agents", type: "directory", readOnly: true },
     ],
     gitMetadataMounts: [{ source: git, target: "/workspace/.git", type: "file", readOnly: true }],
+    domainDataMounts: [
+      {
+        source: domain,
+        target: "/workspace/.clarvis/plans",
+        type: "directory",
+        readOnly: false,
+      },
+    ],
     baseImageId: `sha256:${imageId}`,
     baseAbi: "clarvis-linux-glibc-v1",
     artifact: {
@@ -144,6 +154,12 @@ function inspectValue(spec: ContainerKernelLaunchSpec, engine: "docker" | "podma
           Destination: "/var/lib/clarvis",
           Type: "volume",
           Name: spec.data.stateVolume,
+          RW: true,
+        },
+        {
+          Destination: spec.domainDataMounts[0]!.target,
+          Type: "bind",
+          Source: spec.domainDataMounts[0]!.source,
           RW: true,
         },
         {
@@ -307,6 +323,8 @@ describe("complete Container Kernel backend", () => {
     let removeFails = false;
     let removed = false;
     let keepAfterRemove = false;
+    let stopFails = false;
+    let killFails = false;
     let reportedId = id;
     const control: ContainerControl = {
       run: async (args) => {
@@ -334,6 +352,14 @@ describe("complete Container Kernel backend", () => {
         }
         if (args[0] === "container" && args[1] === "ls")
           return { exitCode: 0, stdout: "", stderr: "" };
+        if (args[0] === "stop") {
+          if (stopFails) return { exitCode: 1, stdout: "", stderr: "refused" };
+          running = false;
+        }
+        if (args[0] === "kill") {
+          if (killFails) return { exitCode: 1, stdout: "", stderr: "refused" };
+          running = false;
+        }
         if (args[0] === "rm") {
           if (removeFails) return { exitCode: 1, stdout: "", stderr: "refused" };
           if (!keepAfterRemove) removed = true;
@@ -352,10 +378,13 @@ describe("complete Container Kernel backend", () => {
     );
     reportedId = id;
     running = true;
-    await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
-      "still running",
-    );
+    removed = false;
+    const recoveredCalls = calls.length;
+    await backend.reconcilePrevious({ id, generation, namespace });
+    expect(calls.slice(recoveredCalls)).toContainEqual(["stop", "--time", "10", id]);
+    expect(calls.slice(recoveredCalls)).toContainEqual(["rm", id]);
     running = false;
+    removed = false;
     owned = false;
     await expect(backend.reconcilePrevious({ id, generation, namespace })).rejects.toThrow(
       "ownership is unconfirmed",
@@ -375,6 +404,26 @@ describe("complete Container Kernel backend", () => {
     await expect(
       backend.reconcilePrevious({ id: "short", generation, namespace }),
     ).rejects.toMatchObject({ code: "invalid_launch_spec" });
+
+    removed = false;
+    running = true;
+    const terminationCalls = calls.length;
+    await backend.terminatePrevious({ id, generation, namespace });
+    expect(calls.slice(terminationCalls)).toContainEqual(["stop", "--time", "10", id]);
+    expect(calls.slice(terminationCalls).some((args) => args[0] === "rm")).toBe(false);
+
+    removed = false;
+    running = true;
+    stopFails = true;
+    await backend.terminatePrevious({ id, generation, namespace });
+    expect(calls).toContainEqual(["kill", id]);
+
+    removed = false;
+    running = true;
+    killFails = true;
+    await expect(backend.terminatePrevious({ id, generation, namespace })).rejects.toThrow(
+      "termination is unconfirmed",
+    );
   });
 
   test("sanitizes create failure and cleans a created ID when effective policy drifts", async () => {

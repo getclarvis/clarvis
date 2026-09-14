@@ -147,6 +147,7 @@ export interface BuildRunDepsOptions {
   /** Explicit machinery namespace shared by tools and spill writers. */
   statePaths?: WorkspaceStatePaths;
   traceDir?: string;
+  traceLocksDir?: string;
   /** Exact host-resolved roots. When supplied, the four standard roots are not appended. */
   skillRoots?: SkillRootInput[] | (() => SkillRootInput[]) | SkillRootSnapshotProvider;
   /** Additional roots appended ahead of the four standard Clarvis roots. */
@@ -539,6 +540,7 @@ export async function buildExecuteRunDeps({
   workspaceRoot,
   statePaths,
   traceDir,
+  traceLocksDir,
   skillRoots,
   extraSkillRoots,
   composeSkills,
@@ -584,6 +586,7 @@ export async function buildExecuteRunDeps({
 
   const resolved = resolveTraceStore({
     ...(traceDir !== undefined ? { dir: traceDir } : {}),
+    ...(traceLocksDir !== undefined ? { locksDir: traceLocksDir } : {}),
     ...(forComponent("trace") === undefined ? {} : { logger: forComponent("trace")! }),
   });
 

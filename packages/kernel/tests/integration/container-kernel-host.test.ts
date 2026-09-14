@@ -16,6 +16,8 @@ import { createFileRunHost, type FileRunHost } from "../../src/hosting/file-host
 import * as fileKernel from "../../src/file-kernel.ts";
 import { createLoopbackTransport } from "../../src/transport/loopback.ts";
 import { connectKernelClient } from "../../src/transport/client.ts";
+import { modelCallInput } from "../../src/hosting/container-model-contract.ts";
+import { DISCOVERY_SCHEMA } from "@clarvis/workflows";
 
 test("native runs receive the admitted Container placement through the system section", async () => {
   let calls = 0;
@@ -456,10 +458,23 @@ test("native Workflow manager launches and persists a leader in the Container gr
   const fixture = await containerNativeFixture({
     llm: {
       call: async (params) => {
+        modelCallInput(params);
         const runLeader = params.tools.find((item) => item.toolName === "run_leader");
         if (runLeader === undefined) {
           leaderCalls++;
-          return { text: "Native leader finding.", usage };
+          const submit = params.tools.find((item) => item.toolName === "submit_result");
+          return submit === undefined
+            ? { text: "Native leader finding.", usage }
+            : {
+                toolCalls: [
+                  {
+                    id: "workflow-result",
+                    name: submit.wireName,
+                    arguments: { scope: "fixture", evidence: [], work_items: [], unknowns: [] },
+                  },
+                ],
+                usage,
+              };
         }
         const step = managerStep++;
         if (step === 0)
@@ -468,7 +483,12 @@ test("native Workflow manager launches and persists a leader in the Container gr
               {
                 id: "workflow-leader",
                 name: runLeader.wireName,
-                arguments: { title: "Native leader", prompt: "Inspect the Container graph." },
+                arguments: {
+                  title: "Native leader",
+                  prompt: "Inspect the Container graph.",
+                  profile: "explorer",
+                  expect_schema: DISCOVERY_SCHEMA,
+                },
               },
             ],
             usage,

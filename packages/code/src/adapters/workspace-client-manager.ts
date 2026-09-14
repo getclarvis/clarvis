@@ -86,6 +86,18 @@ export interface ManagedWorkspaceClient {
   release(): Promise<void>;
 }
 
+/** Identify only the connector's typed live-Container ownership conflict. */
+export function isContainerKernelOwnershipConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("details" in error)) return false;
+  const details = error.details;
+  return (
+    typeof details === "object" &&
+    details !== null &&
+    "kind" in details &&
+    details.kind === "container_kernel_owned"
+  );
+}
+
 /** Operator-selected process identity and client-local browser authority; no callbacks cross RPC. */
 export interface WorkspaceClientOptions extends Pick<
   CreateFileKernelOptions,
@@ -93,6 +105,9 @@ export interface WorkspaceClientOptions extends Pick<
 > {
   globalDir: string;
   openMcpAuthorizationUrl?: (url: string) => Promise<boolean>;
+  onContainerProgress?: ConnectLocalContainerKernelOptions["onProgress"];
+  /** One-shot interactive decision to retire the exact registered Container Kernel. */
+  containerOwnershipConflict?: "refuse" | "terminate";
   /** Explicit process destination. Omission resolves local versus Container from operator settings. */
   destination?:
     | { readonly kind: "local" }
@@ -146,6 +161,13 @@ async function selectedDestination(options: WorkspaceClientOptions): Promise<Wor
   }
 }
 
+/** Read whether startup is currently pinned to a Container engine without opening a Kernel. */
+export async function isContainerWorkspaceDestination(
+  options: WorkspaceClientOptions,
+): Promise<boolean> {
+  return (await selectedDestination(options)).kind === "container";
+}
+
 async function connectionPlan(
   options: WorkspaceClientOptions,
   deps: WorkspaceClientDependencies,
@@ -188,39 +210,46 @@ async function connectionPlan(
   const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
   const connect = deps.connectContainerHost ?? connectContainerKernel;
   const resolveRelease = deps.resolveContainerRelease ?? resolveClarvisContainerRelease;
+  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
+  const operator = createOperatorServices({
+    workspaceRoot: options.workspaceRoot,
+    globalDir: options.globalDir,
+    logger: options.logger,
+    subscriptions: false,
+  });
+  let runtime: unknown;
+  try {
+    runtime = operator.configStore.readSettings().operator_merged?.runtime;
+  } finally {
+    await operator.close();
+  }
+  if (
+    typeof runtime !== "object" ||
+    runtime === null ||
+    !("backend" in runtime) ||
+    (runtime.backend !== "docker" && runtime.backend !== "podman")
+  )
+    throw new Error("Container destination requires a Docker or Podman runtime setting");
+  const containerRuntime = runtime as ConnectLocalContainerKernelOptions["runtime"];
   return {
     destination,
     defaultOwner,
     connectHost: async () => {
-      const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
-      const operator = createOperatorServices({
-        workspaceRoot: options.workspaceRoot,
-        globalDir: options.globalDir,
-        logger: options.logger,
-        subscriptions: false,
-      });
-      let runtime: unknown;
-      try {
-        runtime = operator.configStore.readSettings().operator_merged?.runtime;
-      } finally {
-        await operator.close();
-      }
-      if (
-        typeof runtime !== "object" ||
-        runtime === null ||
-        !("backend" in runtime) ||
-        (runtime.backend !== "docker" && runtime.backend !== "podman")
-      )
-        throw new Error("Container destination requires a Docker or Podman runtime setting");
       return connect({
         workspaceRoot: options.workspaceRoot,
         globalDir: options.globalDir,
         owner: defaultOwner,
-        runtime: runtime as ConnectLocalContainerKernelOptions["runtime"],
+        runtime: containerRuntime,
         resolveRelease: (target, signal) =>
           resolveRelease({ currentVersion: productVersion(), target, signal }),
         logger: options.logger,
         environment: process.env,
+        ...(options.onContainerProgress === undefined
+          ? {}
+          : { onProgress: options.onContainerProgress }),
+        ...(options.containerOwnershipConflict === undefined
+          ? {}
+          : { ownershipConflict: options.containerOwnershipConflict }),
       });
     },
   };
@@ -519,23 +548,21 @@ export class WorkspaceClientManager {
       if (mode === "reload" && previousDestination.kind === "ssh")
         throw new Error("SSH workspace reload is unavailable; reconnect instead");
       if (mode === "reload" && previousDestination.kind === "container") {
-        const [runs, jobs] = await Promise.all([
-          previous.hosting?.list() ?? [],
-          previous.capabilities.memory
-            ? previous.memory.jobs({ state: "running", limit: 1 }).catch((error: unknown) => {
-                if ((error as { code?: unknown }).code === "capability_disabled")
-                  return { jobs: [] };
-                throw error;
-              })
-            : { jobs: [] },
-        ]);
-        if (runs.some((run) => run.execution_state !== "closed") || jobs.jobs.length > 0)
+        const runs = await (previous.hosting?.list() ?? []);
+        if (runs.some((run) => ["starting", "running", "finishing"].includes(run.execution_state)))
           throw new Error(
-            "Container configuration is saved and pending reconnect; stop active runs and memory indexing first",
+            "Container configuration is saved and pending reconnect; stop active runs first",
           );
       }
-      if (mode === "reload" && previousDestination.kind === "local")
-        await previous.localHost!.requestRestart();
+      if (mode === "reload" && previousDestination.kind === "local") {
+        this.retiringClients.add(previous);
+        try {
+          await previous.localHost!.requestRestart();
+        } catch (error) {
+          this.retiringClients.delete(previous);
+          throw error;
+        }
+      }
       clearTimeout(this.timer);
       if (mode === "reload" || previousDestination.kind !== "local") {
         await retirePrevious();

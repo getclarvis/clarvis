@@ -305,7 +305,13 @@ not enable MCP discovery or dispatch in the Container.
 The selected workspace is the only general host bind mounted read-write at `/workspace` and a
 preflight nonce proves that the selected engine sees the same directory. Private content and state
 volumes cover `/workspace/.clarvis` and `/var/lib/clarvis`; empty read-only masks cover `.agents`
-control roots. Normal and linked-worktree Git metadata is mounted through an exact read-only list;
+control roots. Exact writable overlays then connect canonical Plans, Memory, owner-scoped sessions,
+workflow records and traces to the same stores used by Host/Sandbox. Goals and persisted
+conversation context follow sessions. Container-only home, hosted registry and lifecycle state stay
+in the private volume, and no settings, credential or extension directory is mounted. A one-time
+bounded preparer marks legacy private domain data as retired after validating the canonical mounts;
+the host stores always win and legacy divergence cannot block boot. Normal and linked-worktree Git
+metadata is mounted through an exact read-only list;
 the launcher rewrites a linked worktree's host-native `.git` indirection to fixed POSIX guest paths,
 including when the host paths use Windows syntax.
 Docker/Podman effective inspect rejects a missing, additional or writable protected bind. Because
@@ -337,9 +343,20 @@ start, while cleanup uses the independently verified generation labels and exact
 One host lease and exact engine registry own each namespace generation. Normal close revokes model
 authority, drains the Kernel, confirms physical exit, removes only the disposable Container and
 retains state, artifact and mise volumes. Startup reconciliation inspects the exact recorded ID and
-labels; an unreachable engine or unconfirmed previous process remains a conflict. Loss of either
-the attached process or physical channel starts the same idempotent cleanup. One absolute boot
-deadline covers channel readiness, private initialization and public hello.
+labels. A dead same-host launcher lease is recoverable after a one-second freshness bound; its exact
+registered Container is stopped and removed before the new generation starts. A live launcher PID,
+unreachable engine or unconfirmed identity remains a conflict. Loss of either the attached process
+or physical channel starts the same idempotent cleanup. One absolute boot deadline covers channel
+readiness, private initialization and public hello.
+The connector emits typed host-side progress before engine inspection, runtime resolution,
+workspace inspection, workspace/artifact/state preparation and Kernel start. This callback carries
+only phase identity and gives interactive clients honest startup feedback without exposing engine
+output or configuration.
+An interactive caller may explicitly resolve a live-owner conflict by terminating the exact
+registry ID after its namespace, generation and Clarvis labels are confirmed. The backend requests
+a graceful stop, uses its bounded kill fallback and waits for the owning launcher to confirm removal
+and release its host lease before another generation can start. Ambiguous registry or engine
+evidence remains a conflict.
 Completed hosted projections unlink their file and prune only an empty generation directory; sibling
 projections keep that directory alive and cleanup never treats a directory as a regular file.
 

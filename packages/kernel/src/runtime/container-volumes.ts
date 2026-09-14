@@ -1,12 +1,18 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { containerDataVolumeNames, containerGuestPaths, globalPaths } from "@clarvis/paths";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  containerDataVolumeNames,
+  containerGuestPaths,
+  globalPaths,
+  ownerSegment,
+  workspaceScopeKey,
+} from "@clarvis/paths";
 import { kernelError } from "../core/errors.ts";
 import type { DockerControl, DockerCommandResult } from "./docker-backend.ts";
 import type { ContainerPreparerPolicy } from "./container-preparer.ts";
-import { RuntimeLaunchError } from "./types.ts";
+import { RuntimeLaunchError, type RuntimeDataMount } from "./types.ts";
 
 /** Host-only identity. Engine, artifact and generation deliberately do not participate. */
 export interface ContainerVolumeIdentity {
@@ -184,6 +190,146 @@ export interface PreparedContainerVolumes {
   readonly namespace: string;
   readonly content: { readonly name: string; readonly subpath: "data"; readonly target: string };
   readonly state: { readonly name: string; readonly subpath: "data"; readonly target: string };
+}
+
+const migrateDomainScript = `
+umask 077
+marker=/legacy-state/data/.domain-state-host-v1
+test ! -L "$marker" || exit 73
+ensure_dir() {
+  if test -e "$1"; then test ! -L "$1" && test -d "$1" || exit 73; else mkdir -m 700 "$1"; fi
+}
+ensure_dir /legacy-state/data/state
+ensure_dir /legacy-state/data/state/workspaces
+ensure_dir "/legacy-state/data/state/workspaces/$2"
+ensure_dir "/legacy-state/data/state/workspaces/$2/plans"
+ensure_dir "/legacy-state/data/state/workspaces/$2/memory"
+ensure_dir "/legacy-state/data/state/workspaces/$2/trace-locks"
+ensure_dir /legacy-state/data/state/traces
+ensure_dir "/legacy-state/data/state/traces/$1"
+ensure_dir /legacy-state/data/state/sessions
+ensure_dir "/legacy-state/data/state/sessions/$1"
+ensure_dir /legacy-state/data/state/workflows
+ensure_dir "/legacy-state/data/state/workflows/$1"
+test ! -e "$marker" || exit 0
+validate_tree() {
+  root="$1"
+  test ! -L "$root" && test -d "$root" || exit 73
+  test -z "$(find "$root" -xdev ! -type d ! -type f -print -quit)" || exit 73
+  test -z "$(find "$root" -xdev -type f -links +1 -print -quit)" || exit 73
+}
+for root in /canonical/0 /canonical/1 /canonical/2 /canonical/3 /canonical/4 /canonical/5 /canonical/6 /canonical/7; do
+  validate_tree "$root"
+done
+printf '1\n' > "$marker.tmp"
+mv "$marker.tmp" "$marker"
+`;
+
+function mountField(name: string, value: string): string {
+  const field = `${name}=${value}`;
+  return /[",\r\n]/u.test(field) ? `"${field.replaceAll('"', '""')}"` : field;
+}
+
+function preparerMount(
+  type: "bind" | "volume",
+  source: string,
+  target: string,
+  engine: "docker" | "podman",
+  readonly: boolean,
+): string {
+  return `type=${type},${mountField("source", source)},${mountField("target", target)}${readonly ? ",readonly" : ""}${type === "bind" && engine === "podman" ? ",relabel=shared" : ""}`;
+}
+
+/** Retire legacy private-volume domain data once; canonical host mounts always win. */
+export async function migrateContainerDomainState(options: {
+  readonly preparer: ContainerVolumePreparer;
+  readonly volumes: PreparedContainerVolumes;
+  readonly mounts: readonly RuntimeDataMount[];
+  readonly namespace: string;
+  readonly generation: string;
+  readonly baseImageId: string;
+  readonly owner: string;
+  readonly projectId: string;
+  readonly workspaceId: string;
+  readonly user: { readonly uid: number; readonly gid: number };
+  readonly engine: "docker" | "podman";
+  readonly signal?: AbortSignal;
+}): Promise<void> {
+  if (options.mounts.length !== 8)
+    throw new RuntimeLaunchError("invalid_launch_spec", "Container domain mount set is incomplete");
+  const stateOwner = ownerSegment(
+    workspaceScopeKey(options.owner, options.projectId, options.workspaceId),
+  );
+  const workspaceStateSegment = basename(containerGuestPaths.workspaceStateRoot);
+  const user = containerVolumeUser(options.user);
+  const ownership = {
+    "io.clarvis.managed": "true",
+    "io.clarvis.state.namespace": options.namespace,
+    "io.clarvis.generation": options.generation,
+    "io.clarvis.state.role": "preparer-domain-migration",
+  };
+  const mounts = [
+    {
+      type: "volume" as const,
+      source: options.volumes.state.name,
+      target: "/legacy-state",
+      writable: true,
+    },
+    ...options.mounts.map((entry, index) => ({
+      type: "bind" as const,
+      source: entry.source,
+      target: `/canonical/${String(index)}`,
+      writable: true,
+    })),
+  ];
+  const createArgs = [
+    "create",
+    "--network",
+    "none",
+    "--read-only",
+    "--user",
+    user,
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges=true",
+    "--pids-limit",
+    "32",
+    "--memory",
+    "134217728",
+    ...Object.entries(ownership).flatMap(([key, value]) => ["--label", `${key}=${value}`]),
+    ...mounts.flatMap((entry) => [
+      "--mount",
+      preparerMount(entry.type, entry.source, entry.target, options.engine, !entry.writable),
+    ]),
+    ...(options.engine === "podman" ? ["--read-only-tmpfs=false", "--userns=keep-id"] : []),
+    "--entrypoint",
+    "/bin/bash",
+    options.baseImageId,
+    "-euc",
+    migrateDomainScript,
+    "clarvis-domain-migration",
+    stateOwner,
+    workspaceStateSegment,
+  ];
+  const { result, evidence } = await options.preparer.run({
+    createArgs,
+    labels: ownership,
+    policy: {
+      user,
+      entrypoint: "/bin/bash",
+      capabilityAdditions: [],
+      pidsLimit: 32,
+      memoryBytes: 134_217_728,
+      mounts,
+    },
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  if (evidence.removed !== true || result.exitCode !== 0) {
+    if (result.exitCode === 73)
+      throw kernelError("conflict", "Container canonical domain paths failed validation");
+    throw new RuntimeLaunchError("operational_failure", "Container domain state migration failed");
+  }
 }
 
 /**

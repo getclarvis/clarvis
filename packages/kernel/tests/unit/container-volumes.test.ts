@@ -7,6 +7,7 @@ import {
   readFile,
   realpath,
   rm,
+  stat,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -15,6 +16,7 @@ import { join } from "node:path";
 import { containerDataVolumeNames, containerGuestPaths, globalPaths } from "@clarvis/paths";
 import {
   containerVolumeUser,
+  migrateContainerDomainState,
   prepareContainerVolumes,
   resolveContainerVolumeIdentity,
   type ContainerVolumePreparer,
@@ -168,6 +170,81 @@ describe("container volume namespace", () => {
 });
 
 describe("container pair admission", () => {
+  test("migrates only the admitted domain directories through one bounded preparer", async () => {
+    const f = fixture();
+    const root = await scratch();
+    const mounts = await Promise.all(
+      Array.from({ length: 8 }, async (_, index) => {
+        const source = join(root, String(index));
+        await mkdir(source);
+        return {
+          source,
+          target: `/target/${String(index)}`,
+          type: "directory" as const,
+          readOnly: false as const,
+        };
+      }),
+    );
+    await migrateContainerDomainState({
+      preparer: f.options.preparer,
+      volumes: {
+        namespace,
+        content: { name: names.content, subpath: "data", target: containerGuestPaths.contentRoot },
+        state: { name: names.state, subpath: "data", target: containerGuestPaths.globalRoot },
+      },
+      mounts,
+      namespace,
+      generation: "test-generation",
+      baseImageId: f.options.baseImageId,
+      owner: "owner",
+      projectId: "project",
+      workspaceId: "workspace",
+      user: f.options.user,
+      engine: "docker",
+    });
+    const request = f.requests[0]!;
+    expect(request.policy.capabilityAdditions).toEqual([]);
+    expect(request.policy.mounts).toHaveLength(9);
+    expect(request.policy.mounts[0]).toEqual({
+      type: "volume",
+      source: names.state,
+      target: "/legacy-state",
+      writable: true,
+    });
+    expect(request.policy.mounts.slice(1).every((mount) => mount.type === "bind")).toBe(true);
+    expect(request.createArgs).not.toContain("--cap-add");
+    expect(request.createArgs).not.toContain("--env");
+    expect(request.createArgs).toContain("/bin/bash");
+  });
+
+  test("refuses an incomplete migration map before creating a preparer", async () => {
+    const f = fixture();
+    await expect(
+      migrateContainerDomainState({
+        preparer: f.options.preparer,
+        volumes: {
+          namespace,
+          content: {
+            name: names.content,
+            subpath: "data",
+            target: containerGuestPaths.contentRoot,
+          },
+          state: { name: names.state, subpath: "data", target: containerGuestPaths.globalRoot },
+        },
+        mounts: [],
+        namespace,
+        generation: "test-generation",
+        baseImageId: f.options.baseImageId,
+        owner: "owner",
+        projectId: "project",
+        workspaceId: "workspace",
+        user: f.options.user,
+        engine: "podman",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_launch_spec" });
+    expect(f.requests).toHaveLength(0);
+  });
+
   test("creates exactly two local named data volumes; private subpaths and bounded preparers", async () => {
     const f = fixture(false);
     const prepared = await prepareContainerVolumes(f.options);
@@ -305,6 +382,83 @@ esac
 }
 
 describe.skipIf(process.platform === "win32")("fixed preparer shell control flow", () => {
+  test("canonical host state wins over divergent legacy domain bytes", async () => {
+    const f = fixture();
+    const root = await scratch();
+    const mounts = await Promise.all(
+      Array.from({ length: 8 }, async (_, index) => {
+        const source = join(root, "canonical", String(index));
+        await mkdir(source, { recursive: true });
+        return {
+          source,
+          target: `/target/${String(index)}`,
+          type: "directory" as const,
+          readOnly: false as const,
+        };
+      }),
+    );
+    await mkdir(join(root, "legacy-content", "data", "plans"), { recursive: true });
+    await mkdir(join(root, "legacy-state", "data"), { recursive: true });
+    await writeFile(join(root, "legacy-content", "data", "plans", "plan.md"), "legacy");
+    await migrateContainerDomainState({
+      preparer: f.options.preparer,
+      volumes: {
+        namespace,
+        content: { name: names.content, subpath: "data", target: containerGuestPaths.contentRoot },
+        state: { name: names.state, subpath: "data", target: containerGuestPaths.globalRoot },
+      },
+      mounts,
+      namespace,
+      generation: "test-generation",
+      baseImageId: f.options.baseImageId,
+      owner: "owner",
+      projectId: "project",
+      workspaceId: "workspace",
+      user: f.options.user,
+      engine: "docker",
+    });
+    const args = f.requests[0]!.createArgs;
+    const scriptIndex = args.indexOf("-euc") + 1;
+    const script = args[scriptIndex]!.replaceAll("/legacy-content", join(root, "legacy-content"))
+      .replaceAll("/legacy-state", join(root, "legacy-state"))
+      .replaceAll("/canonical", join(root, "canonical"));
+    const child = Bun.spawn(
+      ["/bin/bash", "-euc", script, "fixture", args[scriptIndex + 2]!, args[scriptIndex + 3]!],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expect(await child.exited).toBe(0);
+    await expect(readFile(join(root, "canonical", "0", "plan.md"), "utf8")).rejects.toThrow();
+    expect(await readFile(join(root, "legacy-content", "data", "plans", "plan.md"), "utf8")).toBe(
+      "legacy",
+    );
+    const stateRoot = join(root, "legacy-state", "data", "state");
+    const owner = args[scriptIndex + 2]!;
+    const workspace = args[scriptIndex + 3]!;
+    for (const directory of [
+      join(stateRoot, "workspaces", workspace, "plans"),
+      join(stateRoot, "workspaces", workspace, "memory"),
+      join(stateRoot, "workspaces", workspace, "trace-locks"),
+      join(stateRoot, "traces", owner),
+      join(stateRoot, "sessions", owner),
+      join(stateRoot, "workflows", owner),
+    ])
+      expect((await stat(directory)).isDirectory()).toBe(true);
+    expect(
+      await readFile(join(root, "legacy-state", "data", ".domain-state-host-v1"), "utf8"),
+    ).toBe("1\n");
+    await rm(join(root, "legacy-state", "data", ".domain-state-host-v1"));
+    await writeFile(join(root, "canonical", "0", "plan.md"), "different");
+    const divergent = Bun.spawn(
+      ["/bin/bash", "-euc", script, "fixture", args[scriptIndex + 2]!, args[scriptIndex + 3]!],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expect(await divergent.exited).toBe(0);
+    expect(await readFile(join(root, "canonical", "0", "plan.md"), "utf8")).toBe("different");
+    expect(await readFile(join(root, "legacy-content", "data", "plans", "plan.md"), "utf8")).toBe(
+      "legacy",
+    );
+  });
+
   test("new pair publishes markers last and reuse never chowns; ownership conflict refuses unchanged", async () => {
     const f = await scriptFixture();
     expect(await f.run()).toBe(0);

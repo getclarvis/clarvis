@@ -226,10 +226,17 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   }
 
   async function connect(): Promise<void> {
-    if (!kernel) kernel = await createKernel();
-    lastCapabilities = kernel.capabilities;
-    const extensionProfile = await kernel.extensionProfiles.current();
-    lastExtensionProfile = { id: extensionProfile.id, fingerprint: extensionProfile.fingerprint };
+    if (kernel) return;
+    const candidate = await createKernel();
+    try {
+      const extensionProfile = await candidate.extensionProfiles.current();
+      kernel = candidate;
+      lastCapabilities = candidate.capabilities;
+      lastExtensionProfile = { id: extensionProfile.id, fingerprint: extensionProfile.fingerprint };
+    } catch (error) {
+      await candidate.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   async function dispose(): Promise<void> {

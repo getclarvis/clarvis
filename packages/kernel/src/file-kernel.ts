@@ -123,6 +123,8 @@ export interface CreateFileKernelOptions {
   onOwnerRetired?: (owner: string) => void | Promise<void>;
   /** Directory for run traces; when omitted the loop uses its default. */
   traceDir?: string;
+  /** Directory for trace locks when the host scopes cross-placement coordination by workspace. */
+  traceLocksDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
   /** Process-local Extension Profile override (`scope:name`); never persisted. */
@@ -799,6 +801,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         : { extensionAdmission: opts.extensionAdmission }),
       ...(loopBuiltins === undefined ? {} : { builtins: loopBuiltins }),
       ...(opts.traceDir !== undefined ? { traceDir: opts.traceDir } : {}),
+      ...(opts.traceLocksDir !== undefined ? { traceLocksDir: opts.traceLocksDir } : {}),
       ...(opts.onConnectionEvent !== undefined
         ? { onConnectionEvent: opts.onConnectionEvent }
         : {}),

@@ -479,7 +479,7 @@ authority inside the short mutation and after asynchronous preparation. Initial/
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot
 control the conversation. Pause retains physical occupancy, and ordinary input cannot resume it.
 Native Host/Sandbox and complete Container Kernels advertise the service. Container keeps Goal
-state, controls, budgets and continuation inside its private state volume; it does not resume an
+state, controls, budgets and continuation inside the canonical session shared with Host/Sandbox; it does not resume an
 active Goal automatically after reconnect.
 The common client returns explicit unavailability when the optional capability is absent.
 Production: [service.ts](../../packages/kernel/src/goals/service.ts),
@@ -520,7 +520,7 @@ Production: `createGoalCapability` in [capability.ts](../../packages/goal/src/ca
 `createGoalUsageTracker` in [usage.ts](../../packages/kernel/src/goals/usage.ts), and
 `prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts).
 Container Kernel coverage exercises Goal creation, pause and explicit resume using the native domain
-inside its private state volume. Engine qualification also proves boot, persistence and broker
+inside its canonical owner-scoped session state. Engine qualification also proves boot, persistence and broker
 availability; it never resumes an interrupted Goal or replays a stage automatically.
 
 The local `tooling/goal/live.ts` command qualifies the native file host with the existing global

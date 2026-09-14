@@ -121,8 +121,12 @@ plugins, hooks, skills, engine settings, process environment and subscription st
 The projection is canonical-JSON hashed and immutable. Guest configuration reads come from
 `createContainerConfigStore`; all writes and trust changes are unsupported. Workspace changes to
 `.clarvis/settings.json`, agents or workflow definitions do not recompose the current generation.
-An operator save remains host-side and is shown as pending reconnect. Reload refuses while hosted
-runs or Memory indexing are active. Secret and subscription revocation synchronously fences the
+An operator save remains host-side and is shown as pending reconnect. `/model` immediately requests
+an idle reload after its committed save; success admits the selected model into a new generation,
+while failure leaves the save explicitly pending. Reload refuses while a hosted run is physically
+active. Memory shutdown releases an in-flight claim back to the shared durable queue without
+spending an attempt, and the replacement Kernel recovers pending work. A persisted `unknown` outcome
+remains recoverable but does not claim current physical work. Secret and subscription revocation synchronously fences the
 matching broker authority, including automatic subscription invalidation; it does not wait for a
 future reload.
 
@@ -148,7 +152,9 @@ The guest resolves every entry, child, vision, compaction and Memory model throu
 output limits, capabilities, reasoning efforts and prompt-cache mode. It contains no endpoint or
 authentication configuration. When the resolver is present, a run with a non-empty provider
 configuration is invalid and legacy provider resolution is not called. Host and Sandbox retain the
-existing resolver path when this port is absent.
+existing resolver path when this port is absent. If logical metadata omits a maximum output size,
+the guest resolves the model context window as the conservative call ceiling; Workflow aggregate
+budgets therefore cannot construct a request above the broker's independently enforced bound.
 
 The host creates one 256-bit lease for a generation, bound to the physical channel, owner, namespace,
 generation and exact logical model pairs. It expires within 24 hours. The broker independently
@@ -172,7 +178,8 @@ Production: `createContainerModelBroker` in
 `ModelExecutionResolver` in `packages/capability/src/model-execution.ts`.
 Test: `packages/kernel/tests/unit/container-model-broker.test.ts`;
 `packages/kernel/tests/integration/container-model-stream.test.ts`;
-`packages/loop/tests/integration/model-execution-injection.test.ts`.
+`packages/loop/tests/integration/model-execution-injection.test.ts`;
+`packages/loop/tests/unit/model-execution.test.ts`.
 
 ## Filesystem and persistence
 
@@ -189,6 +196,8 @@ The guest mounts:
 | `/workspace` | selected canonical host workspace | read-write |
 | `/workspace/.clarvis` | namespace content volume, `data` subpath | read-write |
 | `/var/lib/clarvis` | namespace state volume, `data` subpath | read-write |
+| Plans and Memory content plus their machinery | exact canonical host workspace/state subdirectories overlaid below the private volumes | read-write |
+| owner-scoped sessions, workflow records and traces | exact canonical host state subdirectories overlaid below the private state volume | read-write |
 | `/workspace/.agents` and protected roots | prepared empty masks | read-only |
 | Git directory and common directory | canonical host metadata; linked-worktree indirection rewritten to fixed POSIX guest targets | read-only |
 | `/opt/clarvis` | artifact digest volume, `payload` subpath | read-only |
@@ -202,14 +211,22 @@ engine ownership; Clarvis returns `unsupported_policy` instead of changing the w
 
 The two data volumes have exact names and labels for schema, namespace and role. Existing label,
 schema, readiness or ownership disagreement fails closed. Existing nonempty partial initialization
-requires recovery. No close or update deletes data volumes. Workspace content is shared with the
-host, while Container Plans, Memory and machine state intentionally remain separate from Host and
-Sandbox state.
+requires recovery. No close or update deletes data volumes. The volumes retain Container-only home,
+hosted registry and physical lifecycle state. Plans, Memory, sessions (including Goals and persisted
+conversation context), workflow records and traces use the same canonical host stores in
+Host/Sandbox and Container, so an idle placement change preserves control and history. The launcher
+binds only the exact owner/workspace subdirectories; settings, credentials, extension state and
+other owners remain outside the guest. Trace records retain their existing owner-scoped global path,
+while their cross-process locks use the workspace state tree. A bounded one-time preparer validates
+the canonical mount roots and marks legacy private-volume domain directories as retired. Canonical
+host data always wins; divergent legacy bytes stay hidden and cannot block a new generation.
 
 Production: `resolveContainerVolumeIdentity` and `prepareContainerVolumes` in
 `packages/kernel/src/runtime/container-volumes.ts`; `containerDataVolumeNames` and
 `containerLaunchPaths` in `packages/paths/src/container.ts`;
-`prepareRuntimeMounts` in `packages/kernel/src/runtime/container-mounts.ts`.
+`prepareRuntimeMounts` and `prepareContainerDomainMounts` in
+`packages/kernel/src/runtime/container-mounts.ts`; `migrateContainerDomainState` in
+`packages/kernel/src/runtime/container-volumes.ts`.
 Test: `packages/kernel/tests/unit/container-volumes.test.ts`;
 `packages/kernel/tests/unit/runtime-mounts.test.ts`;
 `packages/paths/tests/unit/container.test.ts`.
@@ -301,12 +318,24 @@ absence. A failed engine stop triggers the bounded kill path instead of an unbou
 channel closure starts the same idempotent cleanup even when no client explicitly calls `close()`.
 Hosted-run cleanup unlinks one projection and prunes its generation directory only when empty, so a
 completed run neither raises a directory-removal error nor removes sibling projections.
+The local connector projects its inspecting-engine, resolving-runtime, inspecting-workspace,
+preparing-workspace, preparing-artifact, preparing-state and starting-Kernel boundaries through a
+typed, payload-free progress callback. Code renders these phases in its existing startup composer;
+engine output, configuration and credentials never enter that surface.
 
 Closing the TUI closes the Container. Detaching an observation does not promise survival beyond the
 connection, and the TUI refuses its exit-after-background action. `!command` is also unavailable
 because it would run on the application host; agent shell tools still run inside the Container.
 Reconnect waits for exact previous-process reconciliation, starts a new generation in the same
 namespace and does not replay unknown mutations or inference.
+A new TUI may immediately recover a same-host lease whose launcher PID has ended after a one-second
+freshness bound. It validates, stops and removes only the exact registered Container before booting;
+a live launcher PID still identifies another active TUI and remains an explicit ownership conflict.
+An interactive startup conflict exposes a separate operator action to terminate the exact registered
+Container. That action validates the registry, namespace, generation and engine labels, requests the
+bounded stop/kill lifecycle, then waits for the owning launcher to confirm removal and release its
+host lease before retrying. Retry by itself never terminates the owner, headless entrypoints never
+select the action, and ambiguous ownership remains a conflict.
 
 Production: `launchContainerKernel` in
 `packages/kernel/src/hosting/container-host-launcher.ts`;
@@ -315,5 +344,8 @@ Production: `launchContainerKernel` in
 `createRunHost` in `packages/code/src/run-host.ts`.
 Test: `packages/kernel/tests/integration/container-launcher.test.ts`;
 `packages/kernel/tests/unit/container-bootstrap.test.ts`;
+`packages/kernel/tests/unit/connect-local-container.test.ts`;
+`packages/kernel/tests/unit/container-kernel-backend.test.ts`;
+`packages/code/tests/integration/splash-render.test.tsx`;
 `packages/code/tests/integration/container-run-host.test.ts`;
 `packages/kernel/tests/integration/container-kernel.e2e.test.ts`.

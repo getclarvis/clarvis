@@ -110,7 +110,8 @@ function resolveCompactionPrompt(c: CompactionConfigInput | undefined): {
  * @param raw - the declared sub-agent profiles, or `undefined` for none.
  * @param providers - the run's provider configs, used to resolve each profile's
  *   provider credentials and per-model settings (context window, capabilities,
- *   max output tokens).
+ *   max output tokens). A logical model without an explicit output limit uses
+ *   its context window as the conservative per-call ceiling.
  * @param env - the environment defaults filled in wherever a profile leaves a
  *   field unset (compaction, stagnation, timeout, reasoning, retries, stream).
  * @returns a registry mapping each profile's `name` to its
@@ -185,7 +186,10 @@ export function resolveSubagentProfiles(
       env.CLARVIS_DEFAULT_CONTEXT_WINDOW_TOKENS;
     const capabilities = modelExecution?.capabilities ?? modelConfig?.capabilities;
     const capabilitySet = capabilities === undefined ? undefined : new Set(capabilities);
-    const maxOutputTokens = modelExecution?.maxOutputTokens ?? modelConfig?.max_output_tokens;
+    const maxOutputTokens =
+      modelExecution === undefined
+        ? modelConfig?.max_output_tokens
+        : (modelExecution.maxOutputTokens ?? modelExecution.contextWindowTokens);
     const fraction =
       p.compaction?.context_fraction ?? env.CLARVIS_DEFAULT_COMPACTION_CONTEXT_FRACTION;
     const compaction: CompactionConfig = {

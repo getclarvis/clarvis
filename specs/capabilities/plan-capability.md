@@ -722,7 +722,8 @@ Two hooks, in this order (`packages/capability/src/contract.ts` explains why bot
 Plans is native in Host, Sandbox and Container. Container admits the Markdown provider and keeps
 the native plan service, tools, CAS, approval, continuation and retention lifecycle in its Kernel.
 An active external+external provider is rejected during projection; an inactive inherited setting
-does not start that provider. Plan documents persist in the private content volume.
+does not start that provider. Plan documents and locks persist in the canonical workspace stores
+shared with Host/Sandbox.
 
 Production: `projectContainerConfiguration` in
 [`container-projection.ts`](../../packages/kernel/src/config/container-projection.ts) and

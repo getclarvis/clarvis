@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   makeWorkspace,
@@ -40,6 +41,19 @@ describe("read_image", () => {
   it("errors not_an_image for a non-image file", async () => {
     write(root, "notes.txt", "just text, not an image");
     const r = await callTool("read_image", { path: "notes.txt" }, config);
+    expect(r.isError).toBe(true);
+    expect(r.json.error).toBe("not_an_image");
+  });
+
+  it("errors not_an_image before a corrupt PNG reaches model history", async () => {
+    writeFileSync(
+      join(root, "corrupt.png"),
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+    const r = await callTool("read_image", { path: "corrupt.png" }, config);
     expect(r.isError).toBe(true);
     expect(r.json.error).toBe("not_an_image");
   });

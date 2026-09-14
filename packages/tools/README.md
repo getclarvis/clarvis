@@ -37,6 +37,10 @@ a 21,000-character regression ceiling; that is not a provider token count.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.
 
+`read_image` recognizes PNG, JPEG, GIF and WebP from their bytes. PNG input also requires a complete
+chunk stream with valid CRCs, so a signature-only or corrupt file is refused before it can enter
+model history and make later provider calls fail.
+
 `ToolCallHooks.onExecutionStarted` is shell's successful-spawn notification, after review and
 abort-listener installation. Failed spawn and pre-aborted dispatch do not announce execution.
 An abort after process exit does not turn its completed output into an aborted result. The engine

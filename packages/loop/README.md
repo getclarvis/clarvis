@@ -322,8 +322,12 @@ cannot terminate an otherwise productive run merely because that verification al
 `buildExecuteRunDeps` accepts an already-owned `llm`, `connections`, and optional
 `modelExecutionResolver`. An injected LLM bypasses SDK construction and local retry/logging/admission
 wrappers; injected connections bypass MCP/OAuth factories and remain caller-owned on disposal.
+`traceDir` and the optional `traceLocksDir` let a host preserve the record location while placing
+cross-process coordination in an independently mounted workspace state directory.
 The resolver admits only exact catalog pairs with empty request `providers`, supplying metadata to
 entry/delegated profiles, vision and compaction without fabricating native transport configuration.
+When catalog metadata omits a maximum output size, delegated profiles use the context window as a
+conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
 Without it, native provider resolution remains unchanged. These are generic embedding ports, not a
 claim that the Container runtime uses them. See [composition](../../specs/engine/capability-composition.md)
 and [request validation](../../specs/engine/request-and-settings-schema.md).

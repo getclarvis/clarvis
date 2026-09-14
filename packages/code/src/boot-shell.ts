@@ -8,6 +8,7 @@ export interface BootShell {
   readonly shellElapsedMs: number;
   releaseTerminal(): void;
   handoffRendererLifecycle(shutdown: () => unknown): () => void;
+  setStartupStatus(status: string): void;
   takeStartupInput(): StartupComposerSnapshot;
   mount(view: () => JSX.Element): Promise<void>;
 }

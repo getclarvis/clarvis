@@ -49,6 +49,14 @@ test("closed catalog validates exact aliases and projects metadata without nativ
   expect(toLlmTarget(new MockLLM({ script: [] }), profile).modelExecution).toBe(info);
 });
 
+test("closed catalog uses the context window as the conservative output ceiling when absent", () => {
+  const uncapped = { ...info, maxOutputTokens: undefined };
+  const profile = resolveSubagentProfiles(request.profiles, [], env, {
+    resolve: () => uncapped,
+  }).get("solo")!;
+  expect(profile.maxOutputTokens).toBe(uncapped.contextWindowTokens);
+});
+
 test("catalog refuses transports, missing models, vision and judge targets, and resolver aliases", () => {
   const validate = (body: unknown, catalog = resolver) =>
     validateBody(body, env, undefined, { modelExecutionResolver: catalog });

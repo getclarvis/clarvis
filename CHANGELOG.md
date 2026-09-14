@@ -22,8 +22,23 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Changed
 
+- Container `/model` saves now attempt the required idle generation reload immediately, and corrupt
+  PNG tool results are rejected before they can poison subsequent provider calls.
+- Interactive Container startup now offers to terminate an exact, verified previous Clarvis Kernel
+  when it still owns the workspace namespace.
+- Container cold boot now reports its current preparation phase, and the startup banner reserves its
+  full height plus a non-shrinking status row so progress text cannot overwrite the logo, including
+  at the compact-layout boundary. Startup input also survives a slow boot's
+  renderer handoff without reading a destroyed input buffer.
+- Isolation changes now keep the picker open with explicit save/reconnect progress until the new
+  placement is active. A failed placement restores the previous connection and isolation choice;
+  startup through an unavailable Container engine can explicitly return to Host. Host
+  confirmation shows its `y`/`n` decision keys without repeating the warning.
+
 - **Breaking:** Docker/Podman Isolation now serves one complete native Kernel over the public wire.
-  Plans, Memory, Workflows and Goals execute and persist inside namespace volumes; external Tasks,
+  Plans, Memory, Workflows and Goals execute inside the Container and persist in the same canonical
+  stores used by Host/Sandbox, together with sessions, conversation context and traces. Legacy
+  namespace-volume domain data is imported once without overwriting divergent host files. External Tasks,
   plugins, skills, hooks, generic MCP, external capability providers, preview and Command Review
   remain unavailable. Provider configuration, credentials and API requests stay in the host model
   broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by a private content

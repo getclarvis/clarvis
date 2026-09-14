@@ -449,8 +449,10 @@ real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflo
 (`packages/kernel/tests/architecture/workspace-surface.test.ts`, INV-192).
 
 That writer inventory is not a Container visibility allow-list. Docker/Podman covers
-`<ws>/.clarvis` with its private persistent content volume and `<ws>/.agents` with an empty
-read-only mask. Mask sources are host-created outside the selected workspace and removed after
+`<ws>/.clarvis` with its private persistent content volume, overlays only the canonical Plans and
+Memory directories read-write, and covers `<ws>/.agents` with an empty read-only mask. Exact
+owner-scoped session, workflow and trace directories plus workspace machinery are overlaid below
+the private state volume so Host/Sandbox and Container use one durable domain history. Mask sources are host-created outside the selected workspace and removed after
 launch failure or teardown. Production:
 `agentsWorkspaceDir` in `packages/paths/src/workspace.ts` and `prepareRuntimeMounts` in
 `packages/kernel/src/runtime/container-mounts.ts`. Test:
@@ -487,7 +489,7 @@ and `cache/` (`models-dev.json`, `update-check.json`)
 `<global>/state/workspaces/<segment>/`, where `segment = ownerSegment(ownerFromWorkspace(root))`
 (`packages/paths/src/workspace-state.ts`). Under it: `local/` (prompt history, `code.json`, `extension-profile.json`, `diagnostics/`,
 monitor sidecars/logs/exits, shell spills, tool-output spills), `memory/` (the wiki's machinery —
-delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), and
+delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), `trace-locks/` (cross-process trace coordination), and
 `owners/<seg>/{memory,plans}` for a multi-owner deployment. "Nothing here is seeded with a
 `.gitignore`: this tree is not inside anyone's repository, which is the entire point of it."
 (`packages/paths/src/workspace-state.ts`). Confirmed present at runtime by the kernel test:

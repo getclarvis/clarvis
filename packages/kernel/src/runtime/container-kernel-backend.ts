@@ -52,6 +52,7 @@ function mount(type: "bind" | "volume", source: string, target: string, options 
 }
 
 function assertLaunchSpec(spec: ContainerKernelLaunchSpec): void {
+  const domainTargets = new Set(spec.domainDataMounts.map((entry) => entry.target));
   if (
     !uuidPattern.test(spec.generation) ||
     !/^[a-f0-9]{64}$/u.test(spec.namespace) ||
@@ -65,6 +66,11 @@ function assertLaunchSpec(spec: ContainerKernelLaunchSpec): void {
     !Number.isSafeInteger(spec.user.gid) ||
     spec.user.uid < 0 ||
     spec.user.gid < 0 ||
+    domainTargets.size !== spec.domainDataMounts.length ||
+    spec.domainDataMounts.some(
+      (entry) =>
+        entry.type !== "directory" || entry.readOnly !== false || !entry.target.startsWith("/"),
+    ) ||
     Object.values(spec.limits).some((value) => !Number.isSafeInteger(value) || value <= 0)
   )
     throw new RuntimeLaunchError("invalid_launch_spec", "Container Kernel launch spec is invalid");
@@ -77,7 +83,11 @@ async function assertMountSources(spec: ContainerKernelLaunchSpec): Promise<void
       "unsupported_policy",
       "Container workspace is not a real directory",
     );
-  for (const protectedMount of [...spec.controlRootMasks, ...spec.gitMetadataMounts]) {
+  for (const protectedMount of [
+    ...spec.controlRootMasks,
+    ...spec.gitMetadataMounts,
+    ...spec.domainDataMounts,
+  ]) {
     const source = await lstat(protectedMount.source);
     if (
       source.isSymbolicLink() ||
@@ -146,6 +156,7 @@ function createArgs(engine: "docker" | "podman", spec: ContainerKernelLaunchSpec
     ...bindMount(spec.workspaceRoot, "/workspace"),
     ...volumeMount(spec.data.contentVolume, "/workspace/.clarvis", false, "data"),
     ...volumeMount(spec.data.stateVolume, "/var/lib/clarvis", false, "data"),
+    ...spec.domainDataMounts.flatMap((entry) => bindMount(entry.source, entry.target)),
     ...volumeMount(spec.artifact.volume, "/opt/clarvis", true, "payload"),
     ...volumeMount(spec.miseVolume, "/mise", false, "data"),
     ...[...spec.controlRootMasks, ...spec.gitMetadataMounts].flatMap((entry) =>
@@ -252,6 +263,7 @@ function validContainerInspect(
     ["/workspace", "bind", spec.workspaceRoot, true],
     ["/workspace/.clarvis", "volume", spec.data.contentVolume, true],
     ["/var/lib/clarvis", "volume", spec.data.stateVolume, true],
+    ...spec.domainDataMounts.map((entry) => [entry.target, "bind", entry.source, true]),
     ["/opt/clarvis", "volume", spec.artifact.volume, false],
     ["/mise", "volume", spec.miseVolume, true],
     ...[...spec.controlRootMasks, ...spec.gitMetadataMounts].map((entry) => [
@@ -325,6 +337,76 @@ export function createContainerKernelBackend(options: {
       throw new RuntimeLaunchError("operational_failure", "Container ownership is unconfirmed");
     return { id, root };
   };
+  const validatePreviousIdentity = (input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): void => {
+    if (!idPattern.test(input.id) || !uuidPattern.test(input.generation))
+      throw new RuntimeLaunchError("invalid_launch_spec", "Container registry identity is invalid");
+  };
+  const removePrevious = async (input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<void> => {
+    const removed = await options.control.run(["rm", input.id], options.signal);
+    if (removed.exitCode !== 0)
+      throw new RuntimeLaunchError(
+        "operational_failure",
+        "Previous Container cleanup is unconfirmed",
+      );
+    if (
+      (await inspectOwned(
+        input.id,
+        { generation: input.generation, namespace: input.namespace, role: "kernel" },
+        options.signal,
+      )) !== undefined
+    )
+      throw new RuntimeLaunchError(
+        "operational_failure",
+        "Previous Container removal is unconfirmed",
+      );
+  };
+  const stopPrevious = async (input: {
+    readonly id: string;
+    readonly generation: string;
+    readonly namespace: string;
+  }): Promise<boolean> => {
+    const owned = await inspectOwned(
+      input.id,
+      { generation: input.generation, namespace: input.namespace, role: "kernel" },
+      options.signal,
+    );
+    if (owned === undefined) return false;
+    if (owned.id !== exactId(input.id))
+      throw new RuntimeLaunchError(
+        "operational_failure",
+        "Previous Container ownership is unconfirmed",
+      );
+    if (record(owned.root.State)?.Running === true) {
+      const stopped = await options.control.run(["stop", "--time", "10", input.id], options.signal);
+      if (stopped.exitCode !== 0) {
+        const killed = await options.control.run(["kill", input.id], options.signal);
+        if (killed.exitCode !== 0)
+          throw new RuntimeLaunchError(
+            "operational_failure",
+            "Previous Container termination is unconfirmed",
+          );
+      }
+    }
+    const settled = await inspectOwned(
+      input.id,
+      { generation: input.generation, namespace: input.namespace, role: "kernel" },
+      options.signal,
+    );
+    if (settled !== undefined && record(settled.root.State)?.Running === true)
+      throw new RuntimeLaunchError(
+        "operational_failure",
+        "Previous Container termination is unconfirmed",
+      );
+    return true;
+  };
   return {
     async inspect(): Promise<RuntimeAvailability> {
       try {
@@ -362,45 +444,13 @@ export function createContainerKernelBackend(options: {
       }
     },
     async reconcilePrevious(input): Promise<void> {
-      if (!idPattern.test(input.id) || !uuidPattern.test(input.generation))
-        throw new RuntimeLaunchError(
-          "invalid_launch_spec",
-          "Container registry identity is invalid",
-        );
-      const owned = await inspectOwned(
-        input.id,
-        { generation: input.generation, namespace: input.namespace, role: "kernel" },
-        options.signal,
-      );
-      if (owned === undefined) return;
-      if (owned.id !== exactId(input.id))
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          "Previous Container ownership is unconfirmed",
-        );
-      const state = record(owned.root.State);
-      if (state?.Running === true)
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          "Previous Container Kernel is still running",
-        );
-      const removed = await options.control.run(["rm", input.id], options.signal);
-      if (removed.exitCode !== 0)
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          "Previous Container cleanup is unconfirmed",
-        );
-      if (
-        (await inspectOwned(
-          input.id,
-          { generation: input.generation, namespace: input.namespace, role: "kernel" },
-          options.signal,
-        )) !== undefined
-      )
-        throw new RuntimeLaunchError(
-          "operational_failure",
-          "Previous Container removal is unconfirmed",
-        );
+      validatePreviousIdentity(input);
+      if (!(await stopPrevious(input))) return;
+      await removePrevious(input);
+    },
+    async terminatePrevious(input): Promise<void> {
+      validatePreviousIdentity(input);
+      await stopPrevious(input);
     },
     async startKernel(spec): Promise<ContainerProcessLifecycle> {
       if (!inspected)

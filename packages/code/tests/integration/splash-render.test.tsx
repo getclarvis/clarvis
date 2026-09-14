@@ -19,6 +19,7 @@ import {
   firstRunSplashFits,
   Splash,
 } from "../../src/views/Splash.tsx";
+import { containerConnectionStatus } from "../../src/startup-foundation.ts";
 
 const TEST_VERSION = "0.0.4-beta";
 
@@ -97,7 +98,7 @@ test("the startup composer paints honest readiness markers and queues an early t
     () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
     {
       width: 72,
-      height: 16,
+      height: 17,
     },
   );
   await t.renderOnce();
@@ -126,7 +127,7 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
     () => (
       <StartupComposer state={createStartupComposerState()} acceptsInput version={TEST_VERSION} />
     ),
-    { width: 60, height: 16 },
+    { width: 60, height: 17 },
   );
   await complete.renderOnce();
   expect(complete.captureCharFrame()).toContain(".d8888b.");
@@ -136,7 +137,7 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
     () => (
       <StartupComposer state={createStartupComposerState()} acceptsInput version={TEST_VERSION} />
     ),
-    { width: 60, height: 15 },
+    { width: 60, height: 16 },
   );
   await short.renderOnce();
   const shortFrame = short.captureCharFrame();
@@ -155,6 +156,46 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
   expect(narrowFrame).not.toContain(".d8888b.");
   expect(narrowFrame).toContain("C L A R V I S");
   narrow.renderer.destroy();
+});
+
+test("the startup banner reserves every art row above live Container progress", async () => {
+  const state = createStartupComposerState();
+  state.setStatus("starting Container Kernel");
+  const t = await openRender(
+    () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
+    { width: 180, height: 48 },
+  );
+  await t.renderOnce();
+  const rows = t.captureCharFrame().split("\n");
+  const finalBannerRow = rows.findIndex((row) => row.includes(BANNER.at(-1)!.trim()));
+  const progressRow = rows.findIndex((row) => row.includes("starting Container Kernel"));
+  expect(finalBannerRow).toBeGreaterThan(-1);
+  expect(progressRow).toBeGreaterThan(finalBannerRow);
+  t.renderer.destroy();
+});
+
+test("reactive startup progress keeps a blank row below the complete banner", async () => {
+  const state = createStartupComposerState();
+  const t = await openRender(
+    () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
+    { width: 120, height: 17 },
+  );
+  await t.renderOnce();
+  state.setStatus("preparing Container state");
+  await t.renderOnce();
+  const rows = t.captureCharFrame().split("\n");
+  const finalBannerRow = rows.findIndex((row) => row.includes(BANNER.at(-1)!.trim()));
+  const statusRow = rows.findIndex((row) => row.includes("preparing Container state"));
+  expect(finalBannerRow).toBeGreaterThan(-1);
+  expect(rows[finalBannerRow + 1]?.trim()).toBe("");
+  expect(statusRow).toBe(finalBannerRow + 2);
+  t.renderer.destroy();
+});
+
+test("Container connection phases have concrete startup feedback", () => {
+  expect(containerConnectionStatus("inspecting_engine")).toBe("inspecting Container engine");
+  expect(containerConnectionStatus("preparing_artifact")).toBe("preparing Kernel artifact");
+  expect(containerConnectionStatus("starting_kernel")).toBe("starting Container Kernel");
 });
 
 test("the startup composer preserves an unsent draft and keeps resume locked", async () => {
@@ -187,6 +228,20 @@ test("the startup composer preserves an unsent draft and keeps resume locked", a
   expect(frame).toContain("Restoring session");
   expect(frame).not.toContain(APP_READY_MARKER);
   resume.renderer.destroy();
+});
+
+test("the startup composer hands off its draft after its input is destroyed", async () => {
+  const state = createStartupComposerState();
+  const rendered = await openRender(
+    () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
+    { width: 60, height: 12 },
+  );
+  await rendered.renderOnce();
+  await rendered.mockInput.typeText("survive boot handoff");
+  await rendered.renderOnce();
+  rendered.renderer.destroy();
+
+  expect(state.take()).toEqual({ draft: "survive boot handoff" });
 });
 
 test("startup handoff submits only to a runnable Agent Profile and otherwise restores exact input", () => {

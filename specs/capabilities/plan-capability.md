@@ -559,7 +559,7 @@ Two halves, deliberately separated by cost:
 
 | Half | Function | Contents | Republished |
 | --- | --- | --- | --- |
-| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file path, the CAS triple, the approval line, active `in_progress` tasks, open tasks, **all** task statuses | end of transcript, every iteration |
+| appended reminder | `planCasHeader(document, reviewRequired)` (`packages/plan/src/capability/canonical-state.ts`) | plan file and safe one-line name, the CAS triple, the approval line, and exhaustive attention/pending/closed task categories | end of transcript, every iteration |
 | stable spec block | `planSpecBlock(document)` (`packages/plan/src/capability/canonical-state.ts`) | objective, context, per-task `id`/`title`/`detail`/`exit`, validation | appended only when the substance changes |
 
 The block's field set "deliberately mirrors `@clarvis/plan`'s `specDigest` … so these bytes change if
@@ -573,12 +573,22 @@ status alone "can state the exact opposite of what the runtime enforces"
 (`packages/plan/src/capability/canonical-state.ts`); the four cases are pinned at
 `packages/plan/tests/unit/plan-canonical-state.test.ts`.
 
-The header derives its active-task reminder solely from task status. With no `in_progress` task it
-renders `Active task: none.`; with one it names that task in the singular; with several it names all
-their IDs in document order using the plural form. The latter two forms remind the model to record an
-outcome with `transition_plan_task` when the exit criterion is satisfied. They do not select pending
-work, assert completion, or trigger a transition. Production: `activeTaskLine` and `planCasHeader`
-in `packages/plan/src/capability/canonical-state.ts`. Test:
+The header names the plan immediately after its path. `safePlanName` replaces line separators with
+spaces and projects at most 256 Unicode characters without changing the document or either digest.
+It then classifies every task exactly once: `in_progress`, `returned`, and `failed` appear under
+`Tasks requiring attention`; `pending` appears under `Pending tasks`; and `done` plus `abandoned`
+appear under `Closed tasks`. Each item is only `<id> (<status>)`, each empty category renders
+`none.`, and document order is preserved within a category. `taskCategory` exhaustively switches on
+`PlanTaskStatus`, so adding a status requires a deliberate classification before typecheck can pass.
+
+The final guidance is one invariant line of at most 240 Unicode characters. It requires direct work
+to enter `in_progress`, requires the task's published state to be checked after `delegate_task`,
+reserves outcome recording for `transition_plan_task` once exit criteria are met, and keeps returned
+or failed work actionable. It neither initiates delegation nor asserts that spawning and plan state
+changed atomically. `planCasHeader` refuses a result above 32,768 Unicode characters rather than
+silently truncating an id or status; the maximum valid 256-task document with maximum-length ids is
+covered by the renderer test. Production: `planCasHeader`, `taskCategory`, `safePlanName`, and
+`unicodeLength` in `packages/plan/src/capability/canonical-state.ts`. Test:
 `packages/plan/tests/unit/plan-canonical-state.test.ts` and
 `packages/plan/tests/component/plan-orchestration.test.ts`.
 

@@ -129,7 +129,7 @@ test("collapsed tool failures keep identity and diagnosis on separate lines", as
   expect(rows.join("\n")).not.toContain('{"error"');
 });
 
-test("a warning shell folds with its exit diagnosis instead of keeping output open", async () => {
+test("a warning shell keeps its exit diagnosis inline before the guard verdict", async () => {
   const warning: FoldFixtureNode = {
     ...collapsed,
     key: "shell-warning",
@@ -142,11 +142,15 @@ test("a warning shell folds with its exit diagnosis instead of keeping output op
       stdout: "protocol build passed\nkernel build passed",
       stderr: "typecheck failed",
     }),
+    guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
   };
   const rows = await frame(() => <BlockView defaultFolded={() => true} node={warning} />, 110);
   expect(rows[1]).toContain("shell(bun test)");
   expect(rows[1]).toContain("… +3 lines");
-  expect(rows[2]).toContain("exit 2");
+  expect(rows[1]).toContain("exit 2");
+  expect(rows[1]).toContain("approved by judge");
+  expect(rows[1]!.indexOf("exit 2")).toBeLessThan(rows[1]!.indexOf("approved by judge"));
+  expect(rows[2]).not.toContain("exit 2");
   expect(rows.join("\n")).not.toContain("protocol build passed");
   expect(rows.join("\n")).not.toContain("typecheck failed");
 });

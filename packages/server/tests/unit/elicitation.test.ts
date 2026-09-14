@@ -263,9 +263,8 @@ describe("ElicitationController", () => {
     controller.attach(handle);
 
     raise(ASK);
-    for (let attempt = 0; attempt < 50 && logs.find("elicit.answered").length === 0; attempt += 1) {
-      await Bun.sleep(1);
-    }
+    for (let attempt = 0; attempt < 8 && logs.find("elicit.answered").length === 0; attempt += 1)
+      await Promise.resolve();
 
     expect(logs.one("elicit.answered").fields).toMatchObject({
       posture: "relay",

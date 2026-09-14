@@ -30,7 +30,7 @@ async function until(predicate: () => boolean | Promise<boolean>): Promise<void>
   const deadline = performance.now() + 5000;
   while (!(await predicate())) {
     if (performance.now() > deadline) throw new Error("file host condition timed out");
-    await Bun.sleep(1);
+    await Bun.sleep(0);
   }
 }
 

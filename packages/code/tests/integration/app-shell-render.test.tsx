@@ -450,7 +450,7 @@ async function moveReaderAwayFromTail(t: Awaited<ReturnType<typeof openRender>>)
     press(t, "pageup");
     await t.renderOnce();
     if (t.renderer.root.findDescendantById("transcript-reader-indicator") !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await Bun.sleep(0);
   }
   throw new Error(`reader never left the tail:\n${t.captureCharFrame()}`);
 }
@@ -1835,6 +1835,18 @@ test("the removed /planning command is rejected", async () => {
   t.renderer.destroy();
 });
 
+test("the removed /activity command is rejected", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/activity");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await captureUntil(t, "unknown command: /activity");
+  t.renderer.destroy();
+});
+
 test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing it", async () => {
   const doc = {
     id: "plan-active",
@@ -2153,19 +2165,32 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   const out = await captureUntil(t, "Lead transcript");
   const historyOpen = t.renderer.root.findDescendantById("transcript-viewport");
   expect(out).toContain("explorer");
-  expect(out).toContain("Running");
+  expect(out).toContain("0/1 finished · 1 running");
   expect(out).not.toContain("tokens");
   expect(out).toContain("│ Agents");
   expect(out.replace(/\s+/g, " ")).toContain("> Lead transcript");
   expect(out).not.toContain("look around");
   expect(out).not.toContain("Activity detail");
+  expect(out).toContain("[^l] open / close sidebar");
+  expect(out).toContain("send / steer");
+  expect(out).toContain("isolation");
+  expect(out).toContain("review");
+  expect(out).not.toContain("close activity");
+  expect(out).toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
 
   press(t, "escape");
   await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("│ Agents");
+  press(t, "l", { ctrl: true });
+  await t.renderOnce();
   await t.renderOnce();
   const historyExplicitlyClosed = t.renderer.root.findDescendantById("transcript-viewport");
   expect(historyExplicitlyClosed?.width).toBe(historyWidthBefore);
+  const closedFrame = t.captureCharFrame();
+  expect(closedFrame).not.toContain("open / close sidebar");
+  expect(closedFrame).toContain("send / steer");
+  expect(closedFrame).toContain("Agents 1 · 1 running");
 
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2246,7 +2271,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const planOpen = await captureUntil(t, "Intent plan");
   expect(planOpen).toContain("│ Plan");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   const planUpdate: RunEvent[] = [
     ev({
@@ -2275,11 +2300,10 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("│ Plan");
 
-  await t.mockInput.typeText("/activity plan");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedPlan = await captureUntil(t, "Intent plan");
   expect(manuallyReopenedPlan).toContain("│ Plan");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   setWorkflow({
@@ -2309,7 +2333,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const workflowOpen = await captureUntil(t, "Workflow intent leader");
   expect(workflowOpen).toContain("Parallel work");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   setWorkflow((current) => {
     const nodes = new Map(current!.nodes);
@@ -2326,11 +2350,10 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("Parallel work");
 
-  await t.mockInput.typeText("/activity workflow");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedWorkflow = await captureUntil(t, "Later workflow leader");
   expect(manuallyReopenedWorkflow).toContain("Parallel work");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   const firstDelegation: RunEvent[] = [
@@ -2349,7 +2372,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsOpen).toContain("│ Agents");
   expect(agentsOpen).toContain("Lead transcript");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2369,12 +2392,11 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsStillClosed).not.toContain("│ Agents");
   expect(agentsStillClosed).not.toContain("Lead transcript");
 
-  await t.mockInput.typeText("/activity agents");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedAgents = await captureUntil(t, "│ Agents");
   expect(manuallyReopenedAgents).toContain("│ Agents");
   expect(manuallyReopenedAgents).toContain("Lead transcript");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   setWorkflow({
@@ -2404,7 +2426,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const nextWorkflow = await captureUntil(t, "Next workflow leader");
   expect(nextWorkflow).toContain("Parallel work");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   setWorkflow(null);
   const nextSink = store.openRun("exec_intents_next");
@@ -2478,7 +2500,7 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   t.renderer.destroy();
 });
 
-test("Escape closes a narrow-layout inspector drawer without canceling the active run", async () => {
+test("Ctrl+L toggles a narrow inspector while Escape leaves it open", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2505,6 +2527,8 @@ test("Escape closes a narrow-layout inspector drawer without canceling the activ
 
   press(t, "escape");
   await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("│ Agents");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   // Closing the drawer preserves transcript orientation but removes the
@@ -2938,11 +2962,11 @@ test("the split sidebar owns one compact textual agent roster, including after e
   expect(before).toContain("Lead transcript");
   expect(before.match(/2\/3 finished/g)?.length).toBe(1);
   expect(before).toContain("1 running");
-  expect(before).toContain("1 failed");
+  expect(before.split("\n").find((row) => row.includes("2/3 finished"))).not.toContain("failed");
   expect(normalizedBefore).toContain("A1 Scout");
   expect(normalizedBefore).toContain("A2 Reviewer");
   expect(normalizedBefore).toContain("A3 Fixer");
-  expect(before).toContain("Failed: Typechec");
+  expect(before).not.toContain("Typecheck failed");
   expect(before).not.toContain("All agents");
   expect(before).not.toContain("Aggregated transcript");
   expect(before).not.toContain("Activity: working");
@@ -3129,7 +3153,8 @@ test("clicking a completed agent opens its isolated transcript without a detail 
     }),
   ];
   const t = await mountApp(defaultProps({ seedStream: stream }), { width: 140, height: 34 });
-  const frame = await captureUntil(t, "click to read");
+  const frame = await captureUntil(t, "Researcher");
+  expect(frame).not.toContain("click to read");
   const rows = frame.split("\n");
   const researcher = rows
     .map((row, y) => ({ row, y, x: row.lastIndexOf("Researcher") }))
@@ -3139,7 +3164,8 @@ test("clicking a completed agent opens its isolated transcript without a detail 
   const selected = await captureUntil(t, "ISOLATED WORKER RESULT");
   expect(selected).not.toContain("Completed sub-agent response");
   expect(selected).not.toContain("Activity detail");
-  expect(selected).toContain("> A1");
+  expect(selected).toContain("> ");
+  expect(selected).toContain("A1  Researcher");
   t.renderer.destroy();
 });
 
@@ -3164,7 +3190,7 @@ test("a compact activity strip keeps sub-agents visible when the split sidebar c
   expect(frame).toContain("responsive explorer");
   expect(frame).toContain("Agents 1");
   expect(frame).toContain("1 running");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   await t.renderOnce();
   const closed = t.captureCharFrame();
@@ -3201,7 +3227,8 @@ test("the first workflow leader opens and reveals Parallel work", async () => {
   const t = await mountApp(defaultProps({ workflowActivity: workflow }));
   const split = await captureUntil(t, "Visual continuity audit");
   expect(split).toContain("Parallel work");
-  expect(split).toContain("1 leader");
+  expect(split).toContain("0/1 finished · 1 running");
+  expect(split).not.toContain("iterations");
   t.renderer.destroy();
 });
 
@@ -3270,7 +3297,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   const coveredFrame = t.captureCharFrame();
   const coveredRecorder = new TestRecorder(t.renderer);
   coveredRecorder.rec();
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await Bun.sleep(0);
   coveredRecorder.stop();
   for (const recorded of coveredRecorder.recordedFrames) expect(recorded.frame).toBe(coveredFrame);
 

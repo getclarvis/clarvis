@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readCiWorkspaces } from "../lib/ci-workspaces.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -398,9 +399,30 @@ function percentage(value) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+/** Every declared workspace needs a floor, and every floor must still name a declared workspace. */
+export async function coverageWorkspaceFailures(root = repositoryRoot): Promise<string[]> {
+  const workspaces = await readCiWorkspaces(root, "test:coverage");
+  const names = new Set(workspaces.map((workspace) => workspace.name.slice("@clarvis/".length)));
+  return [
+    ...[...names]
+      .filter((name) => !Object.hasOwn(PACKAGE_THRESHOLDS, name))
+      .map((name) => `${name}: workspace has no coverage floor`),
+    ...Object.keys(PACKAGE_THRESHOLDS)
+      .filter((name) => !names.has(name))
+      .map((name) => `${name}: coverage floor has no workspace`),
+  ];
+}
+
 /** Check every workspace's own-source coverage and complete module inventory. */
 export async function checkCoverage(root = repositoryRoot) {
   const failures = [];
+  const inventoryFailures = await coverageWorkspaceFailures(root);
+  if (inventoryFailures.length > 0) {
+    throw new AggregateError(
+      inventoryFailures,
+      "Coverage workspace policy does not match manifests",
+    );
+  }
 
   for (const [packageName, thresholds] of Object.entries(PACKAGE_THRESHOLDS)) {
     const coverage = await readOwnSourceCoverage(packageName, root);

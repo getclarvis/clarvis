@@ -495,11 +495,12 @@ describe("createFileKernel — guard settings loader", () => {
       join(ws, ".clarvis", "agents", "coder.md"),
       `---\nmodel: anthropic/x\ndescription: writes code\n---\n\nYou are a coder.\n`,
     );
-    delete process.env.CLARVIS_FK_UNSET_TEST_KEY;
-
     const kernel = await createFileKernel({
       workspaceRoot: ws,
-      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      env: loadEnv({
+        CLARVIS_LOG_LEVEL: "silent",
+        CLARVIS_FK_UNSET_TEST_KEY: undefined,
+      }),
       traceDir: join(ws, "traces"),
       globalDir: join(ws, "global"),
     });

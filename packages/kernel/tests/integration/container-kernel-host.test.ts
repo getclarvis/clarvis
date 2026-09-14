@@ -373,7 +373,7 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
     );
     release.resolve();
     for (let index = 0; index < 200 && fixture.connection.host.stats().runs !== 0; index += 1)
-      await Bun.sleep(5);
+      await Bun.sleep(0);
     expect(fixture.connection.host.stats().runs).toBe(0);
     const paused = await fixture.connection.client.goals.get(sessionId);
     expect(paused.state.current).toMatchObject({ status: "paused", auto_continuations: 0 });
@@ -396,7 +396,7 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
     for (let index = 0; index < 200; index += 1) {
       completed = (await next.client.goals.get(sessionId)).state.current?.status === "complete";
       if (completed) break;
-      await Bun.sleep(5);
+      await Bun.sleep(0);
     }
     expect(completed).toBe(true);
     expect(calls).toBe(3);

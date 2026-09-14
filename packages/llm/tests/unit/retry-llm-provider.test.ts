@@ -270,15 +270,14 @@ describe("withTransportRetry — signal trips before the backoff sleep starts", 
     ]);
     const controller = new AbortController();
     const wrapped = withTransportRetry(inner, { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 5 });
-    const originalRandom = Math.random;
-    Math.random = (): number => {
+    const random = vi.spyOn(Math, "random").mockImplementation(() => {
       controller.abort();
       return 0.5;
-    };
+    });
     try {
       await expect(wrapped.call(params(controller.signal))).rejects.toBeInstanceOf(ProviderError);
     } finally {
-      Math.random = originalRandom;
+      random.mockRestore();
     }
     expect(inner.calls).toBe(1);
   });
@@ -289,13 +288,12 @@ describe("backoffDelayMs", () => {
     const maxDelayMs = 1000;
     for (let n = 1; n <= 10; n += 1) {
       for (const r of [0, 0.5, 0.9999]) {
-        const orig = Math.random;
-        Math.random = () => r;
+        const random = vi.spyOn(Math, "random").mockReturnValue(r);
         try {
           const d = backoffDelayMs(n, undefined, 500, maxDelayMs);
           expect(d).toBeLessThanOrEqual(maxDelayMs);
         } finally {
-          Math.random = orig;
+          random.mockRestore();
         }
       }
     }

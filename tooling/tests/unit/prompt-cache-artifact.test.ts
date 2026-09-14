@@ -41,7 +41,12 @@ test.skipIf(!supportsHostAuthView)(
         stdout: "pipe",
         stderr: "pipe",
       });
-      const [code, errors] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      const [code, output, errors] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect(output).toBe("");
       expect(errors).toBe("");
       expect(code).toBe(0);
       expect(
@@ -106,7 +111,12 @@ test("artifact observer hashes the JavaScript bytes actually loaded and captures
         stderr: "pipe",
       },
     );
-    const [status, errors] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    const [status, output, errors] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(output).toBe("");
     expect(errors).toBe("");
     expect(status).toBe(0);
     const text = await readFile(evidence, "utf8");

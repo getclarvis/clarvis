@@ -19,7 +19,9 @@ each package's hand-written `bun test <path> <path> …` argument list complete
 (`tooling/lib/source-policy.ts`, `tooling/checks/source-policy.ts`). **Process-global
 mutation**: `mock.module()` is banned outright — zero allowlist entries across package source,
 tests and tooling plus repository tooling (`tooling/checks/source-policy.ts`) — and empty promise catches are budgeted
-against a one-entry baseline (`tooling/checks/source-policy.ts`). **Coverage honesty**:
+against a one-entry baseline (`tooling/checks/source-policy.ts`). **Test determinism** is inventoried by an AST census
+that classifies waits, global mutations, fake timers, mutable `beforeAll` fixtures, listeners and subprocesses
+(`tooling/lib/test-determinism.ts`, `tooling/checks/test-determinism.ts`). **Coverage honesty**:
 `tooling/checks/coverage.ts` sums each package's LCOV counters against a per-package floor *and*
 separately requires that every `src` module produced an `SF:` record at all, so a floor cannot be
 held over a denominator that is missing files nothing imports
@@ -40,11 +42,12 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `typecheck` | workspace typechecks plus `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint plus the root tooling ESLint project | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `lint:intent` | `test:tooling`, then source policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `check:bun-version` | `bun run tooling/checks/bun-version.ts` | `package.json` (`scripts.check:bun-version`) |
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
+| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
@@ -103,6 +106,8 @@ architecture · component · contract · e2e · integration · unit
 | `resolveRepositoryFileReference(reference, file, tree)` | reports explicit repository files that do not exist | `tooling/lib/spec-hygiene.ts`, `resolveRepositoryFileReference` |
 | `extractCalendarDates(text)` | finds literal calendar dates in common numeric and English month-name forms so tracked specs remain timeless | `tooling/lib/spec-hygiene.ts`, `extractCalendarDates` |
 | `extractSourceSizeReferences(text)` | finds inventory-style source-code line counts while preserving behavioral limits and coverage ratios | `tooling/lib/spec-hygiene.ts`, `extractSourceSizeReferences` |
+| `findTestDeterminismOccurrences(file, source)` | `→ {file, line, column, mechanism, identity, packageOwner, classification, reason}[]` | `tooling/lib/test-determinism.ts` |
+| `checkTestDeterminismBaseline(occurrences, baseline)` | `→ {failures, newOccurrences, staleEntries}` | `tooling/lib/test-determinism.ts` |
 | `parseModuleEdges(source, fileName?)` | `→ {specifier, kind, typeOnly, line}[]` | `tooling/lib/package-graph.ts` |
 | `analyzePackageGraph(root)` | `→ report` | `tooling/lib/package-graph.ts`, `analyzePackageGraph` |
 | `renderMarkdown(report)` | `→ string` (English role/dependency table and Mermaid graph) | `tooling/lib/package-graph.ts`, `renderMarkdown` |
@@ -262,21 +267,99 @@ explicitly pinned as *rejected* by the unit test: a flat
 (`tooling/tests/unit/source-policy.test.ts`). Windows-shaped paths are normalised
 (`tooling/tests/unit/source-policy.test.ts`).
 
-Actual population across the 18 workspaces (921 `*.test.*` files, counted by the first segment
-under `tests/`):
+The checker computes the current population from the tree rather than persisting a volatile file
+count. Non-level directories under `tests/` are legal when they contain no `*.test.*` file; helper
+and fixture modules remain outside the census.
 
-| Level | Files |
-| --- | ---: |
-| `unit` | 408 |
-| `integration` | 344 |
-| `component` | 102 |
-| `architecture` | 51 |
-| `contract` | 16 |
-| `e2e` | **0** |
+### 3.1.1 Determinism census and baseline
 
-Non-level directories under `tests/` exist and are legal because they contain no `*.test.*`
-file: `helpers` (16 packages) and `fixtures` (5). Three loose non-test modules sit directly under
-`packages/loop/tests/` — `bun-test.ts`, `env-section.ts`, `prefix-stability.ts`.
+`tooling/checks/test-determinism.ts` scans every `*.test.*` file below the six accepted levels in
+`packages/*/tests` and `tooling/tests`. The importable analyzer
+`tooling/lib/test-determinism.ts` returns `file`, `line`, `column`, `mechanism`, a structural
+`identity`, `packageOwner`, `classification` and `reason`. The mechanism vocabulary covers positive
+`Bun.sleep` waits, positive literal timers, `process.env` mutation, `process.platform` redefinition,
+`process.chdir`, `Math.random` assignment, unrecovered fake timers, mutable `beforeAll` fixtures,
+real listeners and real subprocesses.
+
+`tooling/test-runtime/test-determinism-baseline.json` stores version `1` entries with
+`mechanism`, normalized POSIX `file`, structural `identity`, `package_owner`, one of `migrate`,
+`boundary-canary` or `false-positive`, and a nonempty `reason`. Line and column are observations,
+never persisted identity. `migrate` rows are debt; `boundary-canary` rows document a physical seam;
+`false-positive` is reserved for a structural-analysis limitation. The baseline is compared by
+`checkTestDeterminismBaseline` and can only describe live findings: duplicate, malformed, stale or
+owner-inconsistent rows and any finding absent from the baseline fail the check.
+
+Production: `tooling/lib/test-determinism.ts` and `tooling/checks/test-determinism.ts`. Test:
+`tooling/tests/unit/test-determinism.test.ts` covers AST contrasts, lifecycle restoration, baseline
+validation, path normalization and side-effect-free import.
+
+Deterministic coordination uses test-local spies, deferred milestones and explicit filesystem mtimes
+rather than elapsed time. Tests may replace an existing global callback temporarily, always restoring
+the spy in `finally`; they do not combine fake clocks with sockets, subprocesses or other physical-I/O
+canaries. Filesystem-age fixtures set mtimes explicitly with `fs.utimes`, and Code render fixtures
+use `flush`, bounded `until` diagnostics and `disposeRender`
+(`packages/code/tests/helpers/render-support.ts`, `packages/code/tests/helpers/tracked-render.ts`).
+Physical boundaries wait on their own ready/close milestone and may use a labelled timeout only as a
+fuse.
+
+Test-owned physical resources follow one lifecycle: acquire a case-local temporary root, register
+children, transports, clients, listeners, watchers, streams and file handles as they become live,
+then close them in awaited LIFO order before removing the root. Requesting `kill`, `abort`, `stop` or
+`close` is not settlement by itself; the fixture waits for the process `exited`/stream `close` or the
+server callback and drains child pipes concurrently with execution. A setup or assertion failure
+still attempts every registered cleanup and reports the accumulated failures. Windows removal may
+retry only `EBUSY`, `ENOTEMPTY` and `EPERM`, with a short bound and diagnostics; test assertions are
+never retried. Real process and network canaries keep explicit cwd/environment, dynamic port `0` and
+the bound URL. The package-local `tempRoot` fixtures do not create a runtime package or a production
+dependency.
+
+Test: `packages/memory/tests/integration/file-store-observability.test.ts`,
+`packages/paths/tests/contract/local-lease.test.ts`, `packages/server/tests/unit/sessions.test.ts`,
+`tooling/tests/unit/coverage.test.ts` and the Code render suites exercise temporary spies, explicit
+mtimes and observable settling without changing production defaults.
+
+Production: process, transport and listener contracts remain owned by the unchanged package runtime
+implementations. Test: `packages/hooks/tests/helpers/temp-root.ts` and
+`packages/hooks/tests/unit/temp-root.test.ts` pin confinement, awaited LIFO cleanup, idempotence,
+partial setup, late child settlement and bounded Windows retry;
+`packages/hooks/tests/integration/real-subprocess.test.ts`,
+`packages/kernel/tests/integration/settings-concurrent-writes.test.ts`,
+`packages/code/tests/integration/remote-kernel-process.test.ts` and the MCP Client live-HTTP suites
+exercise the physical boundaries and await teardown before directory removal.
+
+Environment, platform, cwd and random matrices use test-owned frozen snapshots and getter spies,
+restored after the awaited callback; they do not assign to `process.env`, redefine
+`process.platform`, change the runner cwd or overwrite `Math.random`. Where a production seam already
+exists, tests pass it directly (`createMCPClientFactory`, `resolveRegistryKey`, `clarvisSkillRoots`,
+`executableOnPath` and `createSandboxPolicyResolver`); otherwise a narrowly scoped getter spy models
+the default global read without changing the implementation. Real subprocesses remain explicit
+boundary canaries and receive their cwd/environment through spawn options.
+
+Production: `packages/mcp-client/src/client.ts` (`createMCPClientFactory`),
+`packages/llm/src/ai-sdk-adapter.ts` (`resolveRegistryKey`), `packages/skills/src/preset.ts`
+(`clarvisSkillRoots`), `packages/paths/src/which.ts` (`executableOnPath`) and
+`packages/kernel/src/sandbox/policy.ts` (`createSandboxPolicyResolver`). Test:
+`packages/code/tests/helpers/process-fixtures.ts`, the package-local `process-fixtures.ts` helpers,
+`packages/code/tests/unit/process-fixtures.test.ts` and the environment/platform integration suites.
+
+Shell, Git, native-sandbox and container canaries separate admission from execution. An absent opt-in
+gate is `skipped`; once a gate is enabled, a missing executable/backend is `unavailable`, malformed
+digest or context is `misconfigured`, and a failure after successful admission is `failed`. None of
+those outcomes is reported as a pass. Docker and Podman use distinct gates and explicit contexts or
+connections; enabling both in one test process is invalid. Container images must use a complete
+`sha256:` digest, non-network scenarios select `network: "none"`, and cleanup targets only names,
+volumes and generations recorded by that case. Shell/Git policy tests use synthetic argv or local
+repositories; physical adapter canaries retain the real executable and an explicit disposable cwd
+and environment.
+
+Production: the process, sandbox and container adapters remain unchanged. Test:
+`packages/kernel/tests/helpers/native-canary.ts` owns the test-only admission/verdict vocabulary;
+`packages/kernel/tests/unit/native-canary.test.ts` pins skip versus pass, listener denial versus bind
+failure, executable absence versus policy denial, engine absence versus admitted-container failure,
+and expected network denial versus an accidental download failure. The gated container journeys in
+`packages/kernel/tests/integration` consume the admission helper, while
+`packages/tools/tests/integration/sandbox.test.ts` supplies the offline native-sandbox proof with
+synthetic sentinels.
 
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
@@ -487,7 +570,7 @@ Production modules that carry this shape document it locally, including
 | 2 | `build` | `build:packages`, then `build:code` | library emit and `.d.ts` for the reference graph, then the TUI bundle |
 | 3 | `typecheck` | `--parallel` across workspaces, then `typecheck:tooling` | every package's `tsconfig.json`, all of which `include` `tests`, plus root tooling |
 | 4 | `lint:eslint` | `--parallel` across workspaces, then `lint:tooling` | package lint plus the root tooling ESLint project |
-| 5 | `lint:intent` | strictly serial, 9 links | `test:tooling`, then source policy, package graph, spec hygiene, test harness, Bun-version consistency, the no-Python-source check, import-extension policy and release readiness |
+| 5 | `lint:intent` | strictly serial, 10 links | `test:tooling`, then source policy, test determinism, package graph, spec hygiene, test harness, Bun-version consistency, the no-Python-source check, import-extension policy and release readiness |
 | 6 | `knip` | one process, whole monorepo | unused files/exports/dependencies |
 | 7 | `test:coverage` | `--sequential --if-present`, then `coverage:check` | every suite, then the floors and the module inventory |
 
@@ -530,10 +613,34 @@ write.
 Current state: the script exits 0, and a repo-wide search for `mock.module`, `vi.mock` and
 `jest.mock` returns zero hits.
 
+### 4.2.1 `test-determinism.ts`
+
+The checker walks only accepted test levels, parses each source with the TypeScript AST and sorts
+the resulting census by normalized path, mechanism, structural identity and location. Comments and
+strings are therefore data, not findings. Positive waits require a numeric literal greater than zero;
+variable, zero and negative delays are not classified. Environment reads, comparisons, fallbacks and
+spreads do not count as mutation; assignments, indexed writes, `delete` and `Object.assign` do.
+Platform reads do not count, while assignment and `Object.defineProperty(process, "platform", …)` do.
+Fake timers are reported only when no later `useRealTimers` occurs in the owning function, a `finally`
+block or a file lifecycle callback. `beforeAll` receives one additional finding when its callback
+creates a directory, listener, watcher or subprocess. Listener and subprocess calls are inventory
+findings, not automatic prohibitions.
+
+`--report` prints every observation and succeeds during migration. `--check` (the default) loads the
+baseline and fails on any new occurrence or baseline inconsistency, including stale, duplicate,
+malformed, empty-reason or owner-mismatched rows. `--json` emits a stable machine-readable object;
+none of these modes executes when the checker module is imported.
+
 ### 4.3 `coverage.ts`
 
-For each of the 18 entries in `PACKAGE_THRESHOLDS`, in object order
-(`tooling/checks/coverage.ts`):
+`coverageWorkspaceFailures` first compares the manifest workspace inventory with
+`PACKAGE_THRESHOLDS`. A new workspace without a floor, a floor without a workspace, or a missing
+coverage script fails before reports can be accepted. Protocol's absent-LCOV exception does not
+excuse its contract script. Production: `tooling/checks/coverage.ts`, `coverageWorkspaceFailures`
+and `checkCoverage`; `tooling/lib/ci-workspaces.ts`, `readCiWorkspaces`. Test:
+`tooling/tests/unit/coverage.test.ts`, `coverage workspace policy`.
+
+For each entry in `PACKAGE_THRESHOLDS`, in object order (`tooling/checks/coverage.ts`):
 
 1. `readOwnSourceCoverage` reads `packages/<pkg>/coverage/lcov.info` with a bare `readFile`. On
    `ENOENT` it rethrows *unless* the package is in `TYPE_ONLY_PACKAGES`, in which case it first
@@ -736,24 +843,58 @@ Verified against the then-pinned 1.3.11 toolchain: a scratch project with
 `this test timed out after 5000ms`. The claim holds on 1.3.11 as well as on the 1.3.14 the comment
 names.
 
-### 4.8 The CI retry wrapper
+### 4.8 The CI coverage supervisor
 
-`tooling/ci/retry-code-coverage.sh` runs `bun run test:coverage` once; on exit 0 it stops. Otherwise it retries **up to 3 times**, and only while `is_crash_exit` holds. The classifier is a three-value case: 132 (SIGILL, "Bun's @trap"), 134 (SIGABRT),
-139 (SIGSEGV).
+`tooling/ci/retry-code-coverage.sh` execs `tooling/checks/ci-coverage.ts`; it contains no retry
+state machine. Importing `tooling/lib/ci-coverage.ts` starts no process. `runCiCoverage` receives
+an executor, clock, cancellation signal, environment and event sink. It discovers explicit manifest
+workspaces through `readCiWorkspaces`, validates confined real directories and matching package
+names, and requires `test:coverage` for every package before starting any child. New packages are
+included automatically; their coverage floors remain owned only by `PACKAGE_THRESHOLDS`.
 
-| Exit | Retried? | Reason given in the file |
-| --- | --- | --- |
-| 0 | n/a | success |
-| 132 / 134 / 139 | yes, ≤3× | Bun crash signals |
-| 130 (SIGINT) | **no** | "somebody asked this to stop — a cancelled workflow, or Bun killing sibling scripts after one of them failed" |
-| 143 (SIGTERM) | **no** | same |
-| anything else | no | a real test failure |
+Each package is invoked by argv as `bun run test:coverage`, with its own cwd and full script,
+including architecture checks and Protocol's type contract. Package bunfig/preloads therefore retain
+ownership, and the Linux native-sandbox canary environment reaches every child. Coverage stays
+sequential; correctness does not depend on Code's position in the inventory.
 
-Each retry re-runs `bun --filter @clarvis/code test:coverage` **alone**, then `bun run coverage:check`. The file states the precondition that makes that sound: `code` is last in the sequential
-root script, so every other package has already written its lcov; and if any other package died by
-signal its report would be missing and `coverage:check` "fails loudly", because check-coverage reads
-each report with a bare `readFile`. A retry emits a `::warning::` annotation and appends a
-line to `$GITHUB_STEP_SUMMARY`.
+Before each attempt, only the selected package's prior `coverage/lcov.info` is removed, after
+revalidating real package/coverage directories. A failed attempt cannot lend stale LCOV to its retry.
+A successful package advances to the next package. Only Code status 132, 134 or 139 gets up to three
+additional attempts. Recovery resumes the remaining packages, and the global `coverage:check`
+executes exactly once after every package succeeds. Assertions, 130/143, other-package crashes and
+retry exhaustion return failure without global checking. Protocol need not emit LCOV, but must
+successfully execute its contract.
+
+`executeCoverageCommand` inherits logs and waits for child closure. The named POSIX process-group
+predicate gates detached execution; cancellation sends SIGTERM to that group, bounds uncooperative
+children with a kill fuse, and kills residual group members when the active child closes. It then
+settles the active executor before the supervisor can return. An abort during the child, between
+packages or before retry prevents any subsequent execution. The CLI handles SIGINT/SIGTERM with
+130/143 and reports cancellation; job timeouts remain failures. `normalizeCoverageExit` explicitly
+handles Bun's nullable exit code plus signal, mapping known signals to 128 + signal number rather
+than parsing stdout or treating null as success.
+
+The event sink records package, attempt, start/end, duration and result. The CLI emits the retained
+crash annotations and a summary of completed attempts. Executor/clock/cancellation fakes establish
+the supervisor's ordering; small actual subprocess fixtures qualify the pinned Bun script/signal
+boundary and observable-readiness cancellation. These fixtures do not substitute for complete
+remote coverage, floors, sandbox, smoke, Docker, Windows or macOS.
+
+Production: [coverage library](../../tooling/lib/ci-coverage.ts), `runCiCoverage`,
+`executeCoverageCommand`, `normalizeCoverageExit`;
+[coverage CLI](../../tooling/checks/ci-coverage.ts);
+[workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`.
+Test: [supervisor tests](../../tooling/tests/unit/ci-coverage.test.ts), complete scripts,
+manifest-order permutations, classified retries/exhaustion, stale LCOV and cancellation.
+
+The required `linux` aggregator independently requires all seven Linux job results, with the
+exact key set and every result successful. Its `always()` condition cannot itself approve Linux.
+Production: [CI workflow](../../.github/workflows/ci.yml), `jobs.linux`;
+[workflow validator](../../tooling/lib/ci-workflow.ts), `ciWorkflowFailures`.
+Test: [workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), the actual Bash body with
+success/failure/cancellation/skip/missing/unknown/empty fixtures and gate/dependency removal.
+Build transfer and retained platform scopes belong to [build and CI](build-and-ci.md#44-ci-jobs).
+Local `test:coverage` and the sequential `GATE_PHASES` remain unchanged.
 
 ### 4.9 Conformance harnesses
 
@@ -816,7 +957,8 @@ only the owner-specific default").
    Rule: `tooling/lib/source-policy.ts` + enforced at
    `tooling/checks/source-policy.ts`. Pinned by `tooling/tests/unit/source-policy.test.ts`
    (accepts `unit`/`integration`/`e2e`, rejects a flat file and one under `helpers/`).
-   Currently satisfied: 921 test files, 0 unclassified.
+   The gate rejects every unclassified test file; no unclassified path is part of the accepted
+   repository surface.
 
 2. **INV-304 — `mock.module()` appears nowhere in `packages/*/{src,tests,tooling}` or root `tooling/`,
    with no allowlist and no baseline.** Rule: `tooling/checks/source-policy.ts`, matcher at
@@ -825,6 +967,39 @@ only the owner-specific default").
    line/column, and more broadly, which also pins that the matcher ignores comments,
    string literals, `other.module("pkg")`, and a bare property read. Currently satisfied at zero
    occurrences.
+
+3. **INV-312 — the determinism census covers every `*.test.*` file below one of the six accepted
+   test levels and reports structural findings rather than text matches.** Rule:
+   `tooling/checks/test-determinism.ts` and `findTestDeterminismOccurrences` in
+   `tooling/lib/test-determinism.ts`. Test: `tooling/tests/unit/test-determinism.test.ts` (comments,
+   strings, comparisons and reads are negative controls).
+
+4. **INV-313 — only positive literal waits and timers are classified, and process-global reads are
+   not mutations.** Rule: `findTestDeterminismOccurrencesInFile` in
+   `tooling/lib/test-determinism.ts`. Test: `tooling/tests/unit/test-determinism.test.ts` (wait/timer
+   contrasts and direct/indexed/delete environment cases).
+
+5. **INV-314 — a baseline row has a normalized path, structural identity, package owner, allowed
+   classification and nonempty reason; every row describes a live, unique occurrence.** Rule:
+   `checkTestDeterminismBaseline` and `test-determinism-baseline.json`. Test:
+   `tooling/tests/unit/test-determinism.test.ts` (new, stale, duplicate, malformed and owner mismatch
+   cases).
+
+6. **INV-315 — listeners and subprocesses are inventoried and may remain as justified
+   `boundary-canary` rows; they are not blanket-denied.** Rule: the `listener` and `subprocess`
+   mechanisms in `tooling/lib/test-determinism.ts` and their baseline classifications. Test:
+   `tooling/tests/unit/test-determinism.test.ts` (canary fixture).
+
+7. **INV-316 — importing the checker performs no census, file write or CLI exit.** Rule:
+   `if (import.meta.main)` in `tooling/checks/test-determinism.ts`. Test:
+   `tooling/tests/unit/test-determinism.test.ts` (checker import).
+
+8. **INV-317 — every test-owned physical resource settles before its temporary root is removed.**
+   Cleanup is awaited in LIFO order, continues after individual cleanup failures, and process pipes
+   are drained while the child runs; Windows directory-removal retries are bounded and limited to
+   `EBUSY`, `ENOTEMPTY` and `EPERM`. Production: package runtime lifecycle semantics remain
+   unchanged. Test: `packages/hooks/tests/unit/temp-root.test.ts` and the physical boundary suites
+   named in section 3.1.1.
 
 3. **INV-305 — `packages/capability/src/tasks.ts` is the only production file permitted an empty
    promise catch, and it is permitted exactly one.** Rule: `tooling/checks/source-policy.ts` (baseline map)
@@ -860,8 +1035,7 @@ only the owner-specific default").
 
 9. **INV-306 (hard-error half) — an LCOV report that names own-source files but reports zero lines
    is a hard error for a non-type-only package.** Rule: `tooling/checks/coverage.ts`, message
-   `"<pkg>: LCOV report contains no own-source line data"`. **Unpinned** by a test; relied upon in
-   prose by `tooling/ci/retry-code-coverage.sh`.
+   `"<pkg>: LCOV report contains no own-source line data"`. Test: `tooling/tests/unit/coverage.test.ts`, absent runtime LCOV and empty own-source reports.
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
@@ -972,7 +1146,7 @@ only the owner-specific default").
     `["src","tests"]` (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
     **Unpinned.**
 
-24. **Repository checker tests are first-class classified suites.** Ten focused test files live under
+24. **Repository checker tests are first-class classified suites.** Focused checker test files live under
     `tooling/tests/unit/`; the repository-metadata and stream-metrics test files live under
     `tooling/tests/architecture/`. `bun run test:tooling` executes both trees and the supported root
     `test` and `lint:intent` commands invoke that script (`package.json`, `scripts.test:tooling`,
@@ -996,7 +1170,7 @@ only the owner-specific default").
     (`.githooks/pre-commit`). `build` sits immediately before `typecheck` because
     `typecheck` resolves cross-package types through the built `dist/*.d.ts`, so running it against a
     stale `dist` reports errors that do not exist. `lint:intent` has its own inner order —
-    `test:tooling`, `check:source-policy`, `check:graph`, `check:specs`, `check:harness`,
+    `test:tooling`, `check:source-policy`, `check:test-determinism`, `check:graph`, `check:specs`, `check:harness`,
     `check:bun-version`, `check:bun-sources`, `check:imports` and `check:release`
     (`package.json`, `scripts.lint:intent`). ~~**Unpinned**: the order is a literal in
     one npm script, and nothing asserts it.~~ **Pinned** for the top-level chain:
@@ -1028,6 +1202,7 @@ only the owner-specific default").
 | Condition | Handler | Outcome |
 | --- | --- | --- |
 | Any task-intent violation | `tooling/checks/source-policy.ts` | all violations printed under `Task-intent violations:`, `process.exitCode = 1`. Never first-failure-only. |
+| New, stale, duplicate, malformed or owner-mismatched determinism census row | `tooling/checks/test-determinism.ts` and `checkTestDeterminismBaseline` | every failure is printed and `process.exitCode = 1`; `--report` is the explicit migration-only inventory mode |
 | A package directory has no `src`/`tests`/`scripts` | `tooling/checks/source-policy.ts` | `ENOENT` swallowed; any other error rethrows |
 | Missing `coverage/lcov.info`, non-type-only package | `tooling/checks/coverage.ts` | raw `ENOENT` propagates out of `checkCoverage` — an unhandled rejection, not an `AggregateError` |
 | Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts` | `readdir` throws `ENOENT`; pinned by `tooling/tests/unit/coverage.test.ts` |
@@ -1042,7 +1217,7 @@ only the owner-specific default").
 | Git inventory fails for the Bun-source check | `tooling/checks/bun-sources.ts` | throws `git ls-files failed`, appending trimmed stderr when present |
 | Python source path found | `tooling/checks/bun-sources.ts` | every sorted path is printed and `process.exitCode = 1` |
 | Documentation embeds a source line locator, names an explicit repository file that does not exist, or a tracked spec embeds a calendar date or source-size inventory | `tooling/checks/spec-hygiene.ts`; `extractLineQualifiedReferences`, `resolveRepositoryFileReference`, `extractCalendarDates`, and `extractSourceSizeReferences` in `tooling/lib/spec-hygiene.ts` | every unstable, missing, dated, or source-size reference is reported and `process.exitCode = 1`; illustrative paths use visible placeholders, chronology stays in `CHANGELOG.md`, and behavioral line limits remain legal |
-| Bun dies by SIGILL/SIGABRT/SIGSEGV in CI | `tooling/ci/retry-code-coverage.sh` | up to 3 retries of `@clarvis/code` alone, then `coverage:check` |
+| Code dies by SIGILL/SIGABRT/SIGSEGV in CI | `tooling/lib/ci-coverage.ts`, `runCiCoverage` | up to 3 additional Code attempts, then remaining packages and global checking |
 | Bun dies by SIGINT/SIGTERM in CI | `tooling/ci/retry-code-coverage.sh` | never retried |
 | Preload temp-dir cleanup fails at exit | `tooling/test-runtime/clarvis-home-preload.ts` | swallowed; "the OS reaps the temp dir" |
 | A conformance harness lacks an optional capability | `packages/memory/src/testing.ts` | the case returns early rather than failing |
@@ -1059,14 +1234,18 @@ fail-hard. Notably, `coverage.ts` has no partial mode — there is no flag to ch
 | Consumer | Dependency | Kind | What forces it |
 | --- | --- | --- | --- |
 | `tooling/lib/source-policy.ts` | `typescript` | runtime, static | `import ts from "typescript"`; the `mock.module` matcher is an AST walk, not a regex |
+| `tooling/lib/test-determinism.ts` | `typescript` | runtime, static | structural test census over TypeScript/TSX source; no package runtime imports it |
 | `tooling/lib/package-graph.ts` | `typescript` | runtime, static | used for both `createSourceFile` and `parseConfigFileTextToJson` (JSONC tsconfigs) |
 | `tooling/checks/import-extensions.ts` | `typescript` | runtime, static | the import-extension policy parses module specifiers through the TypeScript AST |
 | `tooling/tests/architecture/stream-metrics-drift.test.ts` | `typescript` | runtime, static | `ts.createScanner` with `skipTrivia` is what makes comments non-material |
-| `tooling/checks/coverage.ts` | none beyond `node:fs/promises`, `node:path`, `node:url` | — | it parses LCOV with `split`/`startsWith`, no library |
-| `tooling/checks/bun-version.ts` | none beyond `node:fs`, `node:path`, `node:url` | — | validates the exact mise pin against every runtime and declaration surface |
+| `tooling/checks/coverage.ts` | `tooling/lib/ci-workspaces.ts` plus filesystem/path APIs | runtime, static | manifest inventory and LCOV coverage policy must agree |
+| `tooling/lib/ci-coverage.ts` | workspace manifests and the Bun child-process boundary | runtime, subprocess | package cwd, full scripts, cancellation and classified retry |
+| `tooling/lib/ci-workflow.ts` | Bun YAML, `workflowSecurityFailures`, `checkGateChain`, `checkRootBuild` | runtime, static | independent CI must retain the local sequential gate and workflow security |
+| `tooling/checks/bun-version.ts` | Bun YAML plus `node:fs`, `node:path`, `node:url` | — | validates the exact mise pin against every runtime and declaration surface |
 | `tooling/checks/bun-sources.ts` | Git executable plus `node:fs`/`node:path`/`node:url` | subprocess | Git supplies the tracked-and-unignored path inventory; the script performs no recursive filesystem scan |
 | `tooling/test-runtime/clarvis-home-preload.ts` | `@clarvis/paths` | runtime, static | — it must not spell `CLARVIS_HOME` itself; `HOME_ENV` is owned at `packages/paths/src/roots.ts` |
 | `tooling/checks/package-graph.ts` | `specs/package-coupling-analysis.md` | runtime, filesystem | only under `--check-doc` |
+| `tooling/checks/test-determinism.ts` | `tooling/test-runtime/test-determinism-baseline.json` and accepted test trees | runtime, filesystem | the CLI reads the baseline and source files only when it is the main module |
 
 `typescript` is a root `devDependency` (`package.json`, `devDependencies.typescript`), which is what
 lets these four repository-tooling modules import it from the repository root.
@@ -1075,9 +1254,9 @@ lets these four repository-tooling modules import it from the repository root.
 
 - **Every commit**, through `.githooks/pre-commit` → `package.json`
   (`scripts.check:pre-commit`).
-- **CI's linux job**, which runs `bun run lint` (hence `lint:intent`) and
-  `bash tooling/ci/retry-code-coverage.sh` (`.github/workflows/ci.yml`). CI job layout belongs to
-  *build-tooling-ci-and-platform*.
+- **CI's independent Linux gates**: `checks` runs `lint:intent` and `test:cache`, `coverage` runs
+  the sequential supervisor, and `linux` requires every gate's success (`.github/workflows/ci.yml`).
+  Job layout and shared build transfer belong to [build and CI](build-and-ci.md).
 - **Every package's `test:coverage` script**, which must write `coverage/lcov.info` where
   `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts`), i.e. the `coverageDir`
   setting in each package's `bunfig.toml` is part of this contract.
@@ -1103,9 +1282,10 @@ inventory and parses every TypeScript file's module specifiers.
 | repo `tooling/tests` | yes | yes | yes | mock-module only | no | yes | yes |
 | repo `tooling/ci` | no¹ | no¹ | no¹ | no¹ | no | no¹ | no¹ |
 
-¹ `tooling/ci/retry-code-coverage.sh` is the sole exception because its behavior is GitHub Actions
-shell orchestration rather than importable repository logic. It remains isolated and temporary
-pending the Bun 1.4 canary described in `specs/known-issues.md`.
+¹ Shell entries under `tooling/ci/` remain outside TypeScript tooling globs.
+`tooling/ci/retry-code-coverage.sh` is only a thin exec entry; its supervisor, process adapter and
+artifact libraries live under `tooling/checks/` and `tooling/lib/`, covered by every tooling gate.
+The independent Bun retirement canary remains described in `specs/known-issues.md`.
 
 Root tooling has its own TypeScript and ESLint projects (`tooling/tsconfig.json`,
 `tooling/eslint.config.js`); root package scripts also include it in Prettier and Knip. The

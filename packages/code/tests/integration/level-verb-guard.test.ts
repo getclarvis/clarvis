@@ -21,7 +21,7 @@ function press(renderer: CliRenderer, name: string): void {
 }
 
 async function settle(): Promise<void> {
-  await new Promise((r) => setTimeout(r, 10));
+  await Bun.sleep(0);
 }
 
 /**

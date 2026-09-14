@@ -12,7 +12,6 @@ import type {
   WorkflowNodeActivity,
   WorkflowSequenceActivity,
 } from "../adapters/workflow-projection.ts";
-import { formatElapsed, tickNow } from "./spinner.ts";
 import { lifecycleLabel, uiLifecycle } from "../ui/presentation.ts";
 import { followSelection } from "../ui/patterns/list-navigation.ts";
 import { compactKey } from "../keys/keyspec.ts";
@@ -20,20 +19,26 @@ import { taskTone } from "./blocks.tsx";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
 
 const CONTEXT_WIDTH = 16;
-const MAX_DISPLAY_ELAPSED_MS = 7 * 24 * 60 * 60 * 1_000;
 export const PLAN_SIDEBAR_TASK_LIMIT = 12;
+export const AGENT_SIDEBAR_ROW_LIMIT = 16;
+export const WORKFLOW_SIDEBAR_ROW_LIMIT = 16;
 
-function planTaskPriority(status: string): number {
+function activityStatusPriority(status: string): number {
   switch (status) {
     case "in_progress":
+    case "running":
       return 0;
     case "pending":
     case "returned":
+    case "spawned":
       return 1;
     case "done":
+    case "ok":
       return 2;
     case "failed":
     case "abandoned":
+    case "error":
+    case "cancelled":
       return 3;
     default:
       return 1;
@@ -57,7 +62,7 @@ export function planTaskWindow(
     .map((task, index) => ({ task, index }))
     .sort(
       (left, right) =>
-        planTaskPriority(left.task.status) - planTaskPriority(right.task.status) ||
+        activityStatusPriority(left.task.status) - activityStatusPriority(right.task.status) ||
         left.index - right.index,
     );
   const currentPosition = Math.max(
@@ -75,12 +80,6 @@ export function planTaskWindow(
     hiddenAfter: ordered.length - end,
     currentIndex,
   };
-}
-
-function displayElapsed(startedAt: number | undefined, endedAt = tickNow()): string {
-  if (startedAt === undefined) return "";
-  const elapsed = endedAt - startedAt;
-  return elapsed >= 0 && elapsed <= MAX_DISPLAY_ELAPSED_MS ? formatElapsed(elapsed) : "";
 }
 
 function compactTokens(value: number): string {
@@ -120,25 +119,59 @@ export function rosterSummary(raw: string | undefined, limit = 120): string | un
   return activityPreview(raw, limit);
 }
 
-/** Progress vocabulary shared by the sidebar's All-agents row and its roster. */
+/** Compact progress vocabulary for the Agents section header. */
 export function subagentProgress(
   agents: readonly Pick<ActivityStore["subagents"][number], "status">[],
-): { total: number; settled: number; running: number; failed: number; label: string } {
+): { total: number; settled: number; running: number; label: string } {
   const total = agents.length;
   const settled = agents.filter(
     (agent) => agent.status === "done" || agent.status === "error",
   ).length;
   const running = agents.filter((agent) => agent.status === "running").length;
-  const failed = agents.filter((agent) => agent.status === "error").length;
   const suffix = running > 0 ? ` ${glyph("separator")} ${running} running` : "";
-  return { total, settled, running, failed, label: `${settled}/${total} finished${suffix}` };
+  return { total, settled, running, label: `${settled}/${total} finished${suffix}` };
 }
 
-function agentOutcome(agent: ActivityStore["subagents"][number]): string | undefined {
-  const summary = rosterSummary(agent.summary);
-  if (agent.status === "error") return summary ? `Failed: ${summary}` : "Failed";
-  if (agent.status === "done") return summary ? `Result: ${summary}` : "Completed";
-  return undefined;
+function subagentTone(
+  status: ActivityStore["subagents"][number]["status"],
+): ReturnType<typeof taskTone> {
+  switch (status) {
+    case "running":
+      return taskTone("in_progress");
+    case "done":
+      return taskTone("done");
+    case "error":
+      return taskTone("failed");
+    case "spawned":
+      return taskTone("pending");
+  }
+}
+
+/** Compact progress vocabulary for the Parallel work section header. */
+export function workflowProgress(leaders: readonly Pick<WorkflowNodeActivity, "status">[]): {
+  total: number;
+  settled: number;
+  running: number;
+  label: string;
+} {
+  const total = leaders.length;
+  const settled = leaders.filter((leader) => leader.status !== "running").length;
+  const running = leaders.filter((leader) => leader.status === "running").length;
+  const suffix = running > 0 ? ` ${glyph("separator")} ${running} running` : "";
+  return { total, settled, running, label: `${settled}/${total} finished${suffix}` };
+}
+
+function workflowTone(status: WorkflowNodeActivity["status"]): ReturnType<typeof taskTone> {
+  switch (status) {
+    case "running":
+      return taskTone("in_progress");
+    case "ok":
+      return taskTone("done");
+    case "error":
+      return taskTone("failed");
+    case "cancelled":
+      return taskTone("abandoned");
+  }
 }
 
 function SectionHeader(props: {
@@ -294,24 +327,49 @@ export function Sidebar(props: {
   width?: Accessor<number>;
   workflow?: Accessor<WorkflowActivity | null>;
   reveal?: Accessor<SidebarRevealIntent | null>;
+  footerHint?: Accessor<string>;
+  onClose?: () => void;
 }): JSX.Element {
   const renderer = useRenderer();
   let activityScrollEl: ScrollBoxRenderable | undefined;
-  const leaders = (): WorkflowNodeActivity[] => {
+  const [agentScrollEl, setAgentScrollEl] = createSignal<ScrollBoxRenderable>();
+  const leaderEntries = (): { node: WorkflowNodeActivity; handle: number }[] => {
     const workflow = props.workflow?.();
     if (!workflow) return [];
     return [...workflow.nodes.values()]
       .filter((node) => node.kind === "leader")
-      .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+      .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
+      .map((node, handle) => ({ node, handle }))
+      .sort(
+        (left, right) =>
+          activityStatusPriority(left.node.status) - activityStatusPriority(right.node.status) ||
+          left.handle - right.handle,
+      );
   };
+  const leaders = (): WorkflowNodeActivity[] => leaderEntries().map((entry) => entry.node);
+  const agents = () =>
+    [...props.activity.subagents].sort(
+      (left, right) =>
+        activityStatusPriority(left.status) - activityStatusPriority(right.status) ||
+        left.order - right.order,
+    );
   const hasContent = (): boolean =>
     props.activity.plan !== null ||
     leaders().length > 0 ||
     props.workflow?.()?.sequence !== undefined ||
     props.activity.subagents.length > 0;
   const progress = () => subagentProgress(props.activity.subagents);
-  const progressLabel = (): string =>
-    `${progress().label}${progress().failed > 0 ? ` ${glyph("separator")} ${progress().failed} failed` : ""}`;
+  const parallelProgress = () => workflowProgress(leaders());
+  const selectedAgentIndex = (): number =>
+    Math.max(
+      0,
+      agents().findIndex((agent) => agent.id === props.selected?.()),
+    );
+  const scrollSelectedAgent = (): void =>
+    agentScrollEl()?.scrollChildIntoView(`sidebar-agent-${selectedAgentIndex()}`);
+  const scheduleScrollSelectedAgent = (): void => queueMicrotask(scrollSelectedAgent);
+  followSelection(agentScrollEl, "sidebar-agent-", selectedAgentIndex);
+  onMount(scheduleScrollSelectedAgent);
   createEffect(() => {
     const reveal = props.reveal?.();
     if (reveal === null || reveal === undefined) return;
@@ -358,15 +416,7 @@ export function Sidebar(props: {
         </Show>
         <Show when={leaders().length > 0 || props.workflow?.()?.sequence !== undefined}>
           <box id="sidebar-section-workflow" flexDirection="column">
-            <SectionHeader
-              label="Parallel work"
-              meta={
-                props.workflow?.()?.sequence?.status === "awaiting_manager"
-                  ? "awaiting Admiral"
-                  : `${leaders().length} ${leaders().length === 1 ? "leader" : "leaders"}`
-              }
-              pad
-            />
+            <SectionHeader label="Parallel work" meta={parallelProgress().label} pad />
             <Show when={props.workflow?.()?.sequence}>
               {(sequence: Accessor<WorkflowSequenceActivity>) => (
                 <text wrapMode="word" selectable={false}>
@@ -378,28 +428,34 @@ export function Sidebar(props: {
                 </text>
               )}
             </Show>
-            <For each={leaders()}>
-              {(node, index) => {
-                const elapsed = (): string =>
-                  displayElapsed(node.startedAt, node.endedAt ?? tickNow());
-                return (
-                  <box flexDirection="column" paddingTop={1}>
-                    <text wrapMode="word" selectable={false}>
-                      <span style={{ fg: tokens.accent2 }}>{`L${index() + 1}  `}</span>
-                      <span style={{ fg: tokens.fg }}>{cleanTitle(node.title)}</span>
-                    </text>
-                    <text fg={tokens.muted} selectable={false}>
-                      {`${lifecycleLabel(uiLifecycle(node.status))}${elapsed() ? ` · ${elapsed()}` : ""}${node.iterations === undefined ? "" : ` · ${node.iterations} iterations`}`}
-                    </text>
-                  </box>
-                );
-              }}
-            </For>
+            <scrollbox
+              id="sidebar-workflow-scroll"
+              maxHeight={Math.min(WORKFLOW_SIDEBAR_ROW_LIMIT, Math.max(4, leaders().length))}
+              minHeight={0}
+              verticalScrollbarOptions={scrollbarOptions()}
+            >
+              <For each={leaderEntries()}>
+                {(entry, index) => {
+                  const node = () => entry.node;
+                  const tone = () => workflowTone(node().status);
+                  return (
+                    <box id={`sidebar-leader-${index()}`} height={1} flexShrink={0}>
+                      <text wrapMode="none" truncate selectable={false}>
+                        <span style={{ fg: tone().fg }}>{`${tone().glyph} `}</span>
+                        <span style={{ fg: tokens.muted }}>
+                          {`L${entry.handle + 1}  ${cleanTitle(node().title)}`}
+                        </span>
+                      </text>
+                    </box>
+                  );
+                }}
+              </For>
+            </scrollbox>
           </box>
         </Show>
         <Show when={props.activity.subagents.length > 0}>
           <box id="sidebar-section-agents" flexDirection="column">
-            <SectionHeader label="Agents" meta={progressLabel()} pad />
+            <SectionHeader label="Agents" meta={progress().label} pad />
             <box
               flexDirection="column"
               paddingTop={1}
@@ -411,53 +467,62 @@ export function Sidebar(props: {
                 </span>
               </text>
             </box>
-            <For each={props.activity.subagents}>
-              {(agent) => {
-                const selected = (): boolean => props.selected?.() === agent.id;
-                const elapsed = (): string =>
-                  agent.status === "running" ? displayElapsed(agent.startedAt) : "";
-                return (
-                  <box
-                    flexDirection="column"
-                    paddingTop={1}
-                    onMouseDown={() => props.onSelectSubagent?.(agent.id)}
-                  >
-                    <text wrapMode="word" selectable={false}>
-                      <span style={{ fg: selected() ? tokens.accent : tokens.muted }}>
-                        {(selected() ? "> " : "  ") + `A${agent.order + 1}  `}
-                      </span>
-                      <span style={{ fg: tokens.fg }}>{cleanTitle(agent.title)}</span>
-                    </text>
-                    <text fg={tokens.muted} wrapMode="word" selectable={false}>
-                      {`${lifecycleLabel(uiLifecycle(agent.status))}${elapsed() ? ` · ${elapsed()}` : ""}`}
-                    </text>
-                    <Show when={agentOutcome(agent)}>
-                      {(outcome: Accessor<string>) => (
-                        <text
-                          fg={agent.status === "error" ? tokens.del : tokens.muted}
-                          wrapMode="none"
-                          truncate
-                          selectable={false}
-                        >
-                          {`${outcome()}${agent.summary ? " · click to read" : ""}`}
-                        </text>
-                      )}
-                    </Show>
-                    <Show when={selected() && (agent.profile ?? agent.model)}>
-                      <text fg={tokens.muted} wrapMode="word" selectable={false}>
-                        {`Agent Profile ${agent.profile ?? "default"}${agent.model ? ` ${glyph("separator")} ${agent.model}` : ""}`}
+            <scrollbox
+              ref={(el: ScrollBoxRenderable) => setAgentScrollEl(el)}
+              maxHeight={Math.min(
+                AGENT_SIDEBAR_ROW_LIMIT,
+                Math.max(4, props.activity.subagents.length),
+              )}
+              minHeight={0}
+              onSizeChange={scheduleScrollSelectedAgent}
+              verticalScrollbarOptions={scrollbarOptions()}
+            >
+              <For each={agents()}>
+                {(agent, index) => {
+                  const selected = (): boolean => props.selected?.() === agent.id;
+                  const tone = () => subagentTone(agent.status);
+                  return (
+                    <box
+                      id={`sidebar-agent-${index()}`}
+                      height={1}
+                      flexShrink={0}
+                      onMouseDown={() => props.onSelectSubagent?.(agent.id)}
+                    >
+                      <text wrapMode="none" truncate selectable={false}>
+                        <span style={{ fg: selected() ? tokens.accent : tokens.muted }}>
+                          {selected() ? "> " : "  "}
+                        </span>
+                        <span style={{ fg: tone().fg }}>{`${tone().glyph} `}</span>
+                        <span style={{ fg: selected() ? tokens.fg : tokens.muted }}>
+                          {`A${agent.order + 1}  ${cleanTitle(agent.title)}`}
+                        </span>
                       </text>
-                    </Show>
-                  </box>
-                );
-              }}
-            </For>
+                    </box>
+                  );
+                }}
+              </For>
+            </scrollbox>
           </box>
         </Show>
         <Show when={!hasContent()}>
           <text fg={tokens.muted}>No run activity to inspect</text>
         </Show>
       </scrollbox>
+      <Show when={props.footerHint?.()}>
+        {(hint: Accessor<string>) => (
+          <text
+            fg={tokens.muted}
+            height={1}
+            flexShrink={0}
+            wrapMode="none"
+            truncate
+            selectable={false}
+            onMouseDown={() => props.onClose?.()}
+          >
+            {hint()}
+          </text>
+        )}
+      </Show>
     </box>
   );
 }

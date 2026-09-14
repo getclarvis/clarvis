@@ -165,11 +165,11 @@ command's current availability only while it is the active consumer; registratio
 subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEntryView.canAct`).
 
 The application composition adds one contextual navigation action after registry construction:
-`activity.open` exposes `/activity` plus `plan`, `workflow` and `agents` subcommands whenever any
-run-activity section exists. Bare `/activity` chooses the first available section; the explicit
-subcommands reveal their named section. This is the keyboard-accessible reopen route after Escape
-closes the responsive Sidebar (`packages/code/src/views/App.tsx`, `openActivitySidebar` and the
-`activity.open` registration). The production-shaped command paths are pinned by
+`activity.toggle` has the portable `Ctrl+L` binding whenever any run-activity section exists. It
+closes the responsive Sidebar when open and otherwise reveals the first available Agents, Parallel
+work or Plan section. It has no slash-command surface, and Escape does not close the Sidebar
+(`packages/code/src/views/App.tsx`, `toggleActivitySidebar` and the `activity.toggle`
+registration). The production-shaped command path is pinned by
 `packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
 independent once-per-run sidebar reveals").
 
@@ -967,13 +967,14 @@ configuration. `Ctrl+E` belongs only to expanding or collapsing the Task editor,
 changes editor state. The renderer keeps Kitty keyboard reporting in its conservative mode and
 never requests all-key escape reports, so terminal-native dead-key and IME text composition remains
 intact. A literal `ß` remains composer text.
-No global physical sidebar binding exists; `/activity`
-and `/activity [plan|workflow|agents]` are contextual slash actions. The first live Plan, first
+`Ctrl+L` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
+surface or opens the first available Agents, Parallel work or Plan section. No `/activity` slash
+action exists. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
 reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
 later updates of the intent that opened it, while the first event for another section may still
-reveal it. Escape only suppresses that repeated automatic reveal: `/activity` can reopen any
-available section explicitly. The bounded agent/workflow footer strip remains a pointer reopen route,
+reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+L` performs
+the explicit toggle. The bounded agent/workflow footer strip remains a pointer reopen route,
 whose split or drawer presentation is determined by the viewport; Plan never contributes footer
 text.
 
@@ -984,7 +985,7 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 `packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
 `packages/code/src/app/layout.ts` (`createLayoutController`), and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
-`visibleSubagentContext`, `closeActivitySidebar`, `openActivitySidebar`, the `activity.open` command
+`visibleSubagentContext`, `closeActivitySidebar`, `openActivitySidebar`, the `activity.toggle` command
 and `compactActivityStrip`). Tests:
 `packages/code/tests/integration/interaction.test.ts`,
 `packages/code/tests/integration/app-shell-render.test.tsx`,

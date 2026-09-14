@@ -71,7 +71,6 @@ describe("readAuthConfig and createAuthConfigSource", () => {
       });
       expect(source.current().clients).toHaveLength(1);
 
-      await Bun.sleep(5);
       writeFileSync(
         file,
         JSON.stringify(
@@ -85,7 +84,6 @@ describe("readAuthConfig and createAuthConfigSource", () => {
       );
       expect(source.current().clients).toHaveLength(2);
 
-      await Bun.sleep(5);
       writeFileSync(file, "{ truncated");
       expect(source.current().clients).toHaveLength(2);
       expect(audit.find("auth.config.reload_failed")).toHaveLength(1);
@@ -117,7 +115,6 @@ describe("readAuthConfig and createAuthConfigSource", () => {
         audit: logs.loggers.audit,
       });
 
-      await Bun.sleep(5);
       writeFileSync(
         file,
         JSON.stringify(
@@ -159,7 +156,6 @@ describe("readAuthConfig and createAuthConfigSource", () => {
         audit: logs.loggers.audit,
       });
 
-      await Bun.sleep(5);
       unlinkSync(file);
       expect(source.current().clients).toHaveLength(1);
 
@@ -188,7 +184,6 @@ describe("readAuthConfig and createAuthConfigSource", () => {
         audit: logs.loggers.audit,
       });
       source.current();
-      await Bun.sleep(5);
       source.current();
       expect(logs.records).toHaveLength(0);
     } finally {

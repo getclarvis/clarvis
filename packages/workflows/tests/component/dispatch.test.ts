@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createSemaphore, type Usage } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
@@ -206,22 +206,37 @@ describe("beginDispatch", () => {
 
   test("waits for a child outside the batch to free a slot, rather than dropping the queue", async () => {
     let foreign: ReturnType<typeof occupy> = [];
-    const s = session([unit("a"), unit("b"), unit("c")], { maxLiveChildren: 3 }, (registry) => {
-      foreign = occupy(registry, 2);
-    });
-
-    const dispatch = s.dispatch!;
-    // One unit got the last slot; the other two are queued behind children this
-    // dispatch cannot settle itself.
-    expect(dispatch.queuedCount()).toBe(2);
-    setTimeout(() => {
+    const pendingTimers: Array<() => void> = [];
+    const timeout = spyOn(globalThis, "setTimeout").mockImplementation(((
+      callback: Parameters<typeof setTimeout>[0],
+    ) => {
+      if (typeof callback !== "function") throw new Error("unexpected timer handler");
+      pendingTimers.push(callback as () => void);
+      return { unref: () => {} } as unknown as ReturnType<typeof setTimeout>;
+    }) as unknown as typeof setTimeout);
+    const clear = spyOn(globalThis, "clearTimeout").mockImplementation(() => {});
+    try {
+      const s = session([unit("a"), unit("b"), unit("c")], { maxLiveChildren: 3 }, (registry) => {
+        foreign = occupy(registry, 2);
+      });
+      const dispatch = s.dispatch!;
+      // One unit got the last slot; the other two are queued behind children this
+      // dispatch cannot settle itself.
+      expect(dispatch.queuedCount()).toBe(2);
+      const run = dispatch.run();
+      for (let attempt = 0; attempt < 20 && pendingTimers.length === 0; attempt += 1)
+        await Promise.resolve();
       for (const handle of foreign) handle.settled({ status: "completed", result: "done" });
-    }, 60);
+      pendingTimers.shift()?.();
 
-    const outcomes = await dispatch.run();
-    expect(outcomes.map((o) => o.key)).toEqual(["a", "b", "c"]);
-    expect(outcomes.every((o) => o.status === "completed")).toBe(true);
-    dispatch.end("done");
+      const outcomes = await run;
+      expect(outcomes.map((o) => o.key)).toEqual(["a", "b", "c"]);
+      expect(outcomes.every((o) => o.status === "completed")).toBe(true);
+      dispatch.end("done");
+    } finally {
+      clear.mockRestore();
+      timeout.mockRestore();
+    }
   });
 
   test("gives up on a queue no slot can ever free, instead of waiting forever", async () => {

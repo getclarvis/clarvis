@@ -223,8 +223,22 @@ async function oauthMcpFixture(
 }
 
 afterEach(async () => {
-  await Promise.allSettled(cleanups.splice(0).map((cleanup) => cleanup()));
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  for (const root of roots.splice(0).reverse()) {
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "OAuth transport cleanup failed");
 });
 
 describe("remote MCP OAuth transport", () => {

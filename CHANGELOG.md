@@ -7,8 +7,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ### Added
 
-- Plan reminders now highlight every `in_progress` task as active and remind the model to record its
-  outcome when its exit criterion is satisfied.
+- Plan reminders now name the plan and group compact task ids/statuses into attention, pending, and
+  closed work, making returned or failed work actionable without repeating task titles.
 - Composer `$name` inserts a skill mention. The kernel expands unique user-invocable skills that do
   not name an `agent`; `$clarvis-configure` stays literal and does not start native configuration.
 - Settings > Isolation is the dedicated global placement screen for Host, native Sandbox, Docker, or

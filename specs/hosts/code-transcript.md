@@ -195,7 +195,7 @@ of native residence. No section grouping, status-based ordering or rendering-bat
 | `views/truncate.ts` | `truncateEnd`, `truncateStart`, `fmtCount`, `moreChip`, `padColumn` | — |
 | `views/spinner.ts` | `SPINNER_FRAMES`, `SPINNER_ASCII`, `charForFrame`, `spinnerChar`, `thinkingDots`, `tickNow`, `formatElapsed` (re-export), `useSpinnerClock` | — |
 | `views/Prose.tsx` | `Prose`, `stripDocChrome` | — |
-| `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `Sidebar` | source symbols |
+| `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `AGENT_SIDEBAR_ROW_LIMIT`, `WORKFLOW_SIDEBAR_ROW_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `workflowProgress`, `Sidebar` | source symbols |
 | `views/activity-detail.ts` | `ActivityDetail`, `activityPreview` | source symbols |
 | `views/overlays/ActivityDetail.tsx` | `ActivityDetail` | source symbol |
 | `core/marks.ts` | `MarkForms`, `MarkName`, `GLYPHS`/`GlyphForms`/`GlyphName` aliases, `applyAsciiMode`, `asciiMode`, `mark`, `glyph` (`@deprecated`), `borderChars` | — |
@@ -540,8 +540,9 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
 The header renders as one truncated, non-wrapping row so tool identity remains stable whatever the
-terminal width. A collapsed error or non-zero shell warning adds one separately truncated diagnostic
-row below the header instead of competing with its signature and metadata for horizontal space. Its header parts, in
+terminal width. A collapsed shell error or warning with an authoritative non-zero exit code appends
+`exit <code>` inline immediately before the guard verdict. Other collapsed errors add one separately
+truncated diagnostic row below the header instead of competing with its signature and metadata. Its header parts, in
 order: status glyph, `toolDisplayLabel` in accent, then **either** the composing label **or** the signature — never both,
 the signature preferring resident `node.signature` over live `formatToolCall`. Then
 elapsed time while running, or elapsed time when settled and
@@ -953,8 +954,8 @@ the Sidebar owns compact plan detail, `Ctrl+P` owns the full plan, and Plan cont
 `compactActivityStrip` (`packages/code/src/views/App.tsx`). App owns three
 independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
-`/activity plan`, `/activity workflow` and `/activity agents` may explicitly reopen a chosen section;
-bare `/activity` chooses the first available one. A pointer intent remains available later when the
+`Ctrl+L` closes an open Sidebar or reopens the first available Agents, Parallel work or Plan
+section. A pointer intent remains available later when the
 footer contains agent or workflow activity. `createLayoutController.secondaryMode` projects either
 explicit source of intent as split or drawer.
 
@@ -968,9 +969,10 @@ workflow or Agents content below the viewport. When closed, the Lead transcript
 mounts no replacement roster; `App`'s clickable footer activity strip
 preserves agent waiting/running/done/failed counts and workflow leader count without consuming
 transcript height, and composes them after canonical Context/Session state rather than replacing it.
-Plan never contributes to that strip. Clicking it is the explicit intent that opens a split at
-eligible widths or a drawer otherwise; `/activity` remains the keyboard-accessible route for every
-section after Escape. Plain Tab never changes Lead/child selection: at shell level it clears
+The strip and the ordinary footer shortcuts remain unchanged while the Sidebar is open. Plan never
+contributes to that strip. Clicking it is the explicit intent that opens a split at
+eligible widths or a drawer otherwise; `Ctrl+L` is the sole keyboard toggle and Escape leaves the
+Sidebar unchanged. Plain Tab never changes Lead/child selection: at shell level it clears
 transcript block focus and returns to the composer, while a focused screen may own Tab for its local
 focus order. Shift+Tab opens the agent picker. Clicking any sidebar agent, including a settled
 summary row, selects only that agent's isolated transcript; it does not open `ActivityDetail`. While both
@@ -980,7 +982,9 @@ presented in two adjacent regions.
 
 **Frame.** The `Sidebar` root is `props.width?.()` wide or 44 columns, never shrinks, carries a left
 border whose colour is `tokens.accent` while `props.focused()` and `tokens.muted` otherwise, and
-sits at `zIndex={1}`. The body is a single ScrollBox holding up to three section-owner boxes — Plan,
+sits at `zIndex={1}`. A fixed footer inside the root names the registered `Ctrl+L` toggle for opening
+and closing the surface; opening the Sidebar does not filter or otherwise reproject the application
+footer below the composer. The body is a single ScrollBox holding up to three section-owner boxes — Plan,
 Parallel work, Agents — each introduced by `SectionHeader`. `SidebarRevealIntent` identifies the
 section and execution context; after layout, `Sidebar` asks the native ScrollBox to reveal that whole
 owner. When `hasContent()` — a plan, at least one leader, a sequence checkpoint or at least one sub-agent — is false, the
@@ -1026,7 +1030,7 @@ and `↓ N later tasks`, and `currentIndex`. `PlanSummary` keeps the current row
 
 **Plan access outside the Sidebar.** The first live Plan may reveal the Sidebar once for its
 execution. After that surface is explicitly closed, later Plan updates cannot reopen it
-automatically, but `/activity plan` can reveal it again. Plan contributes no footer summary.
+automatically, but `Ctrl+L` can reveal it again when it is the first available section. Plan contributes no footer summary.
 `Ctrl+P` opens the complete plan surface. No plan task, title, loading row or live Plan pane mounts
 between the transcript and composer; plan churn therefore cannot resize the history region or move
 its newest row. Pinned by
@@ -1036,33 +1040,38 @@ the transcript tail when the sidebar is closed") and
 intent).
 
 **Parallel work.** Leaders come straight from the workflow projection: every node with `kind ===
-"leader"`, ordered by `startedAt` (the workflow block in `Sidebar`). Each row
-prints a synthetic `L1`, `L2`, … handle, `cleanTitle(node.title)` — first non-blank line, whitespace
-collapsed — and a muted `status · elapsed · N iterations` line, where each of the last two segments
-is omitted when it has no value. The header meta counts and singularizes the leaders. Leader handles
-are derived directly from the current sorted projection; there is no retained id ledger across runs.
+"leader"`, ordered by `startedAt` (the workflow block in `Sidebar`). `workflowProgress` counts every
+non-running leader as settled and formats `S/T finished`, appending ` · N running` only while work is
+active. It adds no failure total. A bounded inner ScrollBox renders one row per leader: the Plan-tone
+status glyph, a synthetic `L1`, `L2`, … handle and truncated `cleanTitle(node.title)` — first
+non-blank line with whitespace collapsed. Lifecycle words, elapsed time and iteration counts do not
+compete with the compact summary. Handles are assigned by the original `startedAt` order, then the
+visible rows use the Plan priority: running, pending, done, failed. There is no retained id ledger
+across runs, and reordering never renumbers a leader.
 
 The same section may exist with no leader row when `WorkflowActivity.sequence` is present. An
-`awaiting_manager` sequence changes the header meta to `awaiting Admiral` and renders
-`Checkpoint r<revision>: next <round>` above the roster; other statuses render their current
-round/session. This intentionally survives the last leader settling at a semantic checkpoint.
+`awaiting_manager` sequence renders `Checkpoint r<revision>: next <round>` above the roster; other
+statuses render their current round/session. The header remains the common progress form, including
+`0/0 finished` when the checkpoint exists without leaders. This intentionally survives the last
+leader settling at a semantic checkpoint.
 Production: `Sidebar` (`hasContent`, workflow `Show`, sequence line). Test:
 `packages/code/tests/integration/sidebar-render.test.tsx` (`an idle round checkpoint remains visible
-as awaiting the Admiral`).
+below compact workflow progress`).
 
-**Agents.** The header meta starts with `subagentProgress(...).label` and appends `· N failed` when
-needed. `subagentProgress` counts `done` and `error` as *settled*, `running` separately, `error` as
-*failed*, and formats `S/T finished`, appending ` · N running` only while something is running.
+**Agents.** The header meta is `subagentProgress(...).label`. `subagentProgress` counts `done` and
+`error` as *settled*, `running` separately, and formats `S/T finished`, appending ` · N running`
+only while something is running. It adds no aggregate failure count; each failed worker's glyph owns
+that status.
 The first row is the one-line main target `Lead transcript`, with its cursor drawn on the
 **negation** of `props.focused()`; clicking it calls `onShowAllAgents`, which `TranscriptRegion`
 wires to clearing the selection and restoring the Lead-only view. Progress belongs to the section
-header and is not repeated on this row. Then one row per sub-agent in store order: cursor, handle and `cleanTitle`, followed by one
-`status · elapsed` line. A live agent has no second `Activity: working` or waiting line because its
-lifecycle already communicates that state. A settled agent adds the bounded `Failed: <summary>` /
-`Result: <summary>` outcome, degrading to bare `Failed` / `Completed` when there is no summary; the
-selected row may additionally show `Profile <name> · <model>`. Clicking either a live or settled
-row performs the same selection-only action; the child's retained tool/answer nodes then render in
-its isolated transcript. Sub-agent handles use the separate `A<n>` namespace derived from canonical
+header and is not repeated on this row. Then a bounded inner ScrollBox renders one row per sub-agent
+in Plan status priority—running, pending, done, failed—with spawn order as its stable tie-breaker:
+cursor, status glyph, handle and truncated `cleanTitle`. The row contains no lifecycle
+word, elapsed time, result summary, profile/model copy or read affordance; complete information
+belongs to the selected isolated transcript. The list follows the selected worker without moving the
+Plan or Parallel work owners in the outer Sidebar scroll. Clicking either a live or settled row
+performs the same selection-only action. Sub-agent handles use the separate `A<n>` namespace derived from canonical
 zero-based spawn `order`, so a workflow leader cannot renumber an agent and a later run cannot inherit
 an earlier run's id allocation.
 
@@ -1073,26 +1082,16 @@ accents the panel border while it *removes* the cursor from the `Lead transcript
 (`packages/code/src/views/Sidebar.tsx`, `Sidebar`). The main row is current exactly when no
 individual agent is.
 
-**`activityPreview` / `rosterSummary` — one plain line, deliberately.**
-`activityPreview` owns Markdown stripping, whitespace collapse and bounded ellipsis; `rosterSummary`
-delegates to it for compatibility. An absent input, or one that strips to nothing, yields
-`undefined`. `rosterSummary`'s TSDoc gives the reason: the sidebar is "a navigation and status
-surface, not a second Markdown reader", and
-keeping this to one stripped line prevents a worker's table, code fence or long final answer from
-competing with the selected isolated transcript where that result can be read in context.
+**`activityPreview` / `rosterSummary`.** `activityPreview` owns Markdown stripping, whitespace
+collapse and bounded ellipsis; `rosterSummary` delegates to it for compatibility. The compact
+Agents roster no longer renders that preview because results belong to the selected isolated
+transcript.
 
 A selected child uses the same row viewport as Lead, without a synthetic section header or
 status-based reordering. Its continuous lifecycle remains in the Agents surface; immutable Lead
 markers navigate by delegation identity. Production: `TranscriptViewport` and `TranscriptRowView`
 in `packages/code/src/views/transcript/`. Test:
 `packages/code/tests/integration/transcript-window-render.test.tsx`.
-
-**Elapsed times are bounded.** `displayElapsed` in `packages/code/src/views/Sidebar.tsx` defers to
-`formatElapsed`, but returns the empty string for a negative span or one over
-`MAX_DISPLAY_ELAPSED_MS = 7 days` — a clock skew or a bogus `startedAt` shows nothing rather than an
-absurd duration. The `Sidebar` component shows a sub-agent's elapsed time **only while running** and
-a leader's live or frozen at `endedAt`. Both read `tickNow()` (section 4.14), which is what
-re-renders them.
 
 **`contextMeter` is exported, tested, and mounted nowhere.** It computes `frac` — clamped to 1, and
 0 when the window is 0 — `filled` over `CONTEXT_WIDTH = 16`, a three-band colour (`tokens.del` at ≥
@@ -1464,8 +1463,9 @@ JSON key/value presentation is absent.
 `split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
 or Plan/workflow pane in the Lead transcript. The footer retains bounded agent/workflow activity
 beside canonical Context/Session state and reopens the surface on click, while Plan contributes no
-footer text. `/activity [plan|workflow|agents]` explicitly reopens any available section after
-Escape. The first live Plan, first workflow state/leader and first delegation own independent
+footer text. Opening the Sidebar changes neither that strip nor the ordinary footer action
+projection; its own fixed footer names `Ctrl+L` as the sole keyboard toggle. Escape does not close
+the Sidebar, and no `/activity` command exists. The first live Plan, first workflow state/leader and first delegation own independent
 once-per-execution automatic intents that
 open/reveal their whole section. Closing one is sticky only for repeated events of that intent; the
 first event for another section may reopen and reorient the Sidebar. The Agents intent keeps `Lead
@@ -1473,17 +1473,20 @@ transcript` selected and opens no `ActivityDetail`. Repeated updates cannot flap
 long Plan cannot clip a later revealed section. An individually focused agent mounts only one compact
 context row. Tab remains the keyboard route through the roster in both split and drawer modes. Any
 agent-row activation only selects that child's isolated transcript; it never opens `ActivityDetail`
-automatically. Production:
+automatically. The Agents and Parallel work headers report settled/total and only add a running
+count while work is active; both bounded inner scrolls render each child as one plan-tone status
+glyph, handle and title without failure totals, lifecycle or execution-detail copy. Their visible
+order follows Plan status priority while their projected handles remain stable. Production:
 `packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, focused-agent context and the two
 `Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
 owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanContext`,
 `visibleSubagentContext`, `requestAutomaticSidebar`, `closeActivitySidebar`,
-`openActivitySidebar`, the `activity.open` command and `compactActivityStrip`). Tests:
+`openActivitySidebar`, the `activity.toggle` command and `compactActivityStrip`). Tests:
 `packages/code/tests/integration/transcript-region-render.test.tsx`,
 `packages/code/tests/integration/sidebar-render.test.tsx` (including the settled-row negative
 `ActivityDetail` case), and
 `packages/code/tests/integration/app-shell-render.test.tsx` (the independent Plan/workflow/Agents
-auto-reveal contract, per-intent sticky close, `/activity` reopening, long-Plan reveal and
+auto-reveal contract, per-intent sticky close, `Ctrl+L` toggling, long-Plan reveal and
 completed-agent selection).
 
 **INV-T49.** Lead has exactly two navigable immutable delegation markers; the selected child uses the same row store and viewport. No child section is automatically folded or reordered by status.
@@ -1765,10 +1768,9 @@ concept; its consumers are outside this document.
 `run` node's equivalents (`packages/code/src/core/transcript/types.ts`) are never read by any renderer in
 `blocks.tsx` — the run block prints only the outcome word and elapsed time, and the
 subagent block prints only its brief. Nor does the sidebar render them: it holds the same
-figures through `ActivityStore` and paints none of them (INV-T45). A leader row's `N iterations`
-(the workflow block in `Sidebar`) is the one counter any of these surfaces prints, and it
-comes from the workflow projection rather than from a transcript node. Whether the node fields have
-any renderer at all is still not determinable: nothing this document or the sidebar reads consumes them.
+figures through `ActivityStore` and paints none of them (INV-T45). Workflow iteration counts likewise
+remain in the projection and outside the compact Sidebar roster. Whether the node fields have any
+renderer at all is still not determinable: nothing this document or the sidebar reads consumes them.
 
 **No test covers `renderTranscriptMarkdown`'s omission of `subagent`, `plan`, `annotation` and
 `error` nodes.** `packages/code/src/views/transcript-markdown.ts` silently yields nothing for those four kinds;

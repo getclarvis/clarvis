@@ -4,6 +4,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { buildTransport, BunStdioClientTransport } from "@clarvis/mcp-client";
 import { MissingEnvVarsError, type McpServerConfig } from "@clarvis/capability";
 import { createRecordingLogger } from "../helpers/recording-logger.ts";
+import { environmentFixture } from "../helpers/process-fixtures.ts";
 
 const tool = (t: Partial<McpServerConfig>): McpServerConfig => ({
   name: "x",
@@ -32,19 +33,15 @@ describe("buildTransport", () => {
   });
 
   it("resolves a ${VAR} header from env at construct time", () => {
-    process.env.CLARVIS_TEST_TOK_039 = "secret-value";
-    try {
-      const t = buildTransport(
-        tool({
-          transport: "http",
-          url: "https://example.com/mcp",
-          headers: { Authorization: "Bearer ${CLARVIS_TEST_TOK_039}" },
-        }),
-      );
-      expect(t).toBeInstanceOf(StreamableHTTPClientTransport);
-    } finally {
-      delete process.env.CLARVIS_TEST_TOK_039;
-    }
+    const t = buildTransport(
+      tool({
+        transport: "http",
+        url: "https://example.com/mcp",
+        headers: { Authorization: "Bearer ${CLARVIS_TEST_TOK_039}" },
+      }),
+      environmentFixture({ ...process.env, CLARVIS_TEST_TOK_039: "secret-value" }),
+    );
+    expect(t).toBeInstanceOf(StreamableHTTPClientTransport);
   });
 
   it("throws when a ${VAR} header references an absent env var (connection fails, no literal sent)", () => {
@@ -68,14 +65,14 @@ describe("buildTransport", () => {
     const cwdOf = (t: unknown): unknown => paramsOf(t).cwd;
 
     it("falls back to the defaultCwd when the server declares none", () => {
-      const t = buildTransport(tool({ command: "node", args: [] }), process.env, "/ws");
+      const t = buildTransport(tool({ command: "node", args: [] }), environmentFixture(), "/ws");
       expect(cwdOf(t)).toBe("/ws");
     });
 
     it("lets an explicit server cwd win over the defaultCwd", () => {
       const t = buildTransport(
         tool({ command: "node", args: [], cwd: "/srv" }),
-        process.env,
+        environmentFixture(),
         "/ws",
       );
       expect(cwdOf(t)).toBe("/srv");
@@ -89,21 +86,17 @@ describe("buildTransport", () => {
   });
 
   it("stdio resolves a ${VAR} env value and accepts cwd", () => {
-    process.env.CLARVIS_TEST_ENV_039 = "secret-value";
-    try {
-      const t = buildTransport(
-        tool({
-          transport: "stdio",
-          command: "node",
-          args: ["-e", ""],
-          env: { AUTH_TOKEN: "${CLARVIS_TEST_ENV_039}" },
-          cwd: "/tmp",
-        }),
-      );
-      expect(t).toBeInstanceOf(BunStdioClientTransport);
-    } finally {
-      delete process.env.CLARVIS_TEST_ENV_039;
-    }
+    const t = buildTransport(
+      tool({
+        transport: "stdio",
+        command: "node",
+        args: ["-e", ""],
+        env: { AUTH_TOKEN: "${CLARVIS_TEST_ENV_039}" },
+        cwd: "/tmp",
+      }),
+      environmentFixture({ ...process.env, CLARVIS_TEST_ENV_039: "secret-value" }),
+    );
+    expect(t).toBeInstanceOf(BunStdioClientTransport);
   });
 
   it("stdio throws when an env ${VAR} references an absent var", () => {
@@ -145,9 +138,14 @@ describe("buildTransport", () => {
 describe("buildTransport url requirement", () => {
   it("hands the stdio transport the logger a refused frame is reported through", () => {
     const recording = createRecordingLogger();
-    const built = buildTransport(tool({ command: "node", args: [] }), process.env, undefined, {
-      logger: recording.logger,
-    });
+    const built = buildTransport(
+      tool({ command: "node", args: [] }),
+      environmentFixture(),
+      undefined,
+      {
+        logger: recording.logger,
+      },
+    );
     expect((built as unknown as { parameters: { logger?: unknown } }).parameters.logger).toBe(
       recording.logger,
     );
@@ -155,10 +153,15 @@ describe("buildTransport url requirement", () => {
 
   it("wires a stderr sink onto the stdio transport it builds", () => {
     const seen: Array<[string, string]> = [];
-    const built = buildTransport(tool({ command: "node", args: [] }), process.env, undefined, {
-      onServerStderr: (mcp, line) => seen.push([mcp, line]),
-      maxServerStderrBytes: 64,
-    });
+    const built = buildTransport(
+      tool({ command: "node", args: [] }),
+      environmentFixture(),
+      undefined,
+      {
+        onServerStderr: (mcp, line) => seen.push([mcp, line]),
+        maxServerStderrBytes: 64,
+      },
+    );
     const push = (built as unknown as { parameters: { onStderr?: (text: string) => void } })
       .parameters.onStderr;
     push?.("boom\n");
@@ -167,9 +170,14 @@ describe("buildTransport url requirement", () => {
 
   it("flushes an unterminated final stderr line when the child's stream ends", async () => {
     const seen: Array<[string, string]> = [];
-    const built = buildTransport(tool({ command: "node", args: [] }), process.env, undefined, {
-      onServerStderr: (mcp, line) => seen.push([mcp, line]),
-    });
+    const built = buildTransport(
+      tool({ command: "node", args: [] }),
+      environmentFixture(),
+      undefined,
+      {
+        onServerStderr: (mcp, line) => seen.push([mcp, line]),
+      },
+    );
     const reader = built as unknown as {
       readStderr(stream: ReadableStream<Uint8Array>): Promise<void>;
     };

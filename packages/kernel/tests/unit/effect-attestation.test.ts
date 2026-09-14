@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { buildGuardContext, posixDialect, type GuardContext } from "@clarvis/tools/guard";
@@ -23,24 +23,15 @@ import corpus from "../fixtures/effect-review-corpus.json" with { type: "json" }
 const root = resolve(".");
 const head = "a".repeat(40);
 const literal = "\"$(cat <<'EOF'\nmessage $(literal)\nEOF\n)\"";
-const inheritedOverrides = new Map<string, string>();
-beforeEach(() => {
-  for (const [name, value] of Object.entries(process.env)) {
-    if (
-      value !== undefined &&
-      /^(?:GIT_|GH_|GITHUB_|LD_|DYLD_|BASH_FUNC_)|^(?:ENV|BASH_ENV|NODE_OPTIONS|PYTHONPATH|RUBYOPT)$/.test(
-        name,
-      )
-    ) {
-      inheritedOverrides.set(name, value);
-      delete process.env[name];
-    }
-  }
-});
-afterEach(() => {
-  for (const [name, value] of inheritedOverrides) process.env[name] = value;
-  inheritedOverrides.clear();
-});
+const attestationEnvironmentName =
+  /^(?:GIT_|GH_|GITHUB_|LD_|DYLD_|BASH_FUNC_)|^(?:PATH|HOME|USERPROFILE|SYSTEMROOT|APPDATA|LOCALAPPDATA|XDG_CONFIG_HOME|XDG_CONFIG_DIRS|ENV|BASH_ENV|NODE_OPTIONS|PYTHONPATH|RUBYOPT)$/i;
+
+function ambientAttestationEnvironment(): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => attestationEnvironmentName.test(name)),
+  );
+}
+
 function context(command: string): GuardContext {
   return buildGuardContext(
     "shell",
@@ -54,17 +45,19 @@ function context(command: string): GuardContext {
     posixDialect,
   );
 }
-function fixture(runChange: Record<string, unknown> = {}, prChange: Record<string, unknown> = {}) {
+function fixture(
+  runChange: Record<string, unknown> = {},
+  prChange: Record<string, unknown> = {},
+  environmentOverrides: Readonly<Record<string, string | undefined>> = {},
+) {
   const calls: ProcessRunRequest[] = [];
   return {
     calls,
     registry: createGuardEffectRegistry(),
-    environment: Object.fromEntries(
-      ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "APPDATA", "GH_CONFIG_DIR"].map((key) => [
-        key,
-        process.env[key],
-      ]),
-    ),
+    environment: {
+      ...ambientAttestationEnvironment(),
+      ...environmentOverrides,
+    },
     runner: {
       async run(request: ProcessRunRequest) {
         calls.push(request);
@@ -113,17 +106,10 @@ describe("closed effect attestation", () => {
     "LD_PRELOAD",
     "BASH_ENV",
   ])("refuses an inherited %s override before querying or approving a target", async (name) => {
-    const previous = process.env[name];
-    try {
-      process.env[name] = "unattested-override";
-      const deps = fixture();
-      const result = await attestShell(context("git commit -m approved"), deps);
-      expect(result.reviewability).toBe("human_only");
-      expect(deps.calls).toHaveLength(0);
-    } finally {
-      if (previous === undefined) delete process.env[name];
-      else process.env[name] = previous;
-    }
+    const deps = fixture({}, {}, { [name]: "unattested-override" });
+    const result = await attestShell(context("git commit -m approved"), deps);
+    expect(result.reviewability).toBe("human_only");
+    expect(deps.calls).toHaveLength(0);
   });
   portable("recaptures lookup roots without passing unrelated environment to probes", async () => {
     const deps = fixture();
@@ -292,7 +278,7 @@ describe("closed effect attestation", () => {
             calls.push(params);
             const payload = JSON.parse(params.messages[1]!.content as string);
             const compile = params.tools?.[0]?.wireName === "compile";
-            if (!compile && changeEnvironment) process.env.GIT_DIR = "/unattested-repository";
+            if (!compile && changeEnvironment) deps.environment.GIT_DIR = "/unattested-repository";
             const envelope = compile
               ? {
                   version: 1,
@@ -345,7 +331,6 @@ describe("closed effect attestation", () => {
       expect(calls).toHaveLength(2);
       expect((await resolved!.guard!(context("git push"))).verdict).toBe("deny");
       expect(calls).toHaveLength(2);
-      const previous = process.env.GIT_DIR;
       try {
         changeEnvironment = true;
         const changed = context(`git commit -m ${literal} -m followup`);
@@ -360,8 +345,7 @@ describe("closed effect attestation", () => {
           }),
         ).toMatchObject({ allowed: false });
       } finally {
-        if (previous === undefined) delete process.env.GIT_DIR;
-        else process.env.GIT_DIR = previous;
+        delete deps.environment.GIT_DIR;
       }
     },
   );

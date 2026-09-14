@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import { gitCloneAsync, validateGitUrl } from "../../src/adapters/plugin-install.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const made: string[] = [];
 afterEach(() => {
@@ -69,16 +70,16 @@ test("a clone cannot inherit repository routing from the process that launched C
   }
 
   const names = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"] as const;
-  const previous = new Map(names.map((name) => [name, process.env[name]]));
-  for (const name of names) process.env[name] = join(root, "parent", name);
+  const env = spyOnProcessEnv(
+    environmentFixture({
+      ...process.env,
+      ...Object.fromEntries(names.map((name) => [name, join(root, "parent", name)])),
+    }),
+  );
   try {
     await expect(gitCloneAsync(`file://${source}`, checkout)).resolves.toBeUndefined();
   } finally {
-    for (const name of names) {
-      const value = previous.get(name);
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
+    env.mockRestore();
   }
   expect(spawnSync("git", ["-C", checkout, "rev-parse", "HEAD"], { env: environment }).status).toBe(
     0,

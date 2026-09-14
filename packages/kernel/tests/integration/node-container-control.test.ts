@@ -1,17 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, it } from "bun:test";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 
 import { createNodeDockerControl, createNodePodmanControl } from "../../src/local.ts";
+import { tempRoot } from "../helpers/temp-root.ts";
 
-let root = "";
-let executable = "";
-
-beforeAll(async () => {
-  if (process.platform === "win32") return;
-  root = await mkdtemp(join(tmpdir(), "clarvis-container-control-"));
-  executable = join(root, "engine-fixture");
+async function fixture() {
+  const temp = await tempRoot("clarvis-container-control-");
+  const executable = temp.path("engine-fixture");
   await writeFile(
     executable,
     `#!/bin/sh
@@ -44,13 +39,25 @@ esac
 `,
   );
   await chmod(executable, 0o755);
-});
-
-afterAll(async () => {
-  if (root.length > 0) await rm(root, { recursive: true, force: true });
-});
+  return { temp, root: temp.root, executable };
+}
 
 const unixIt = process.platform === "win32" ? it.skip : it;
+
+function isolatedIt(
+  name: string,
+  body: (resources: Awaited<ReturnType<typeof fixture>>) => void | Promise<void>,
+): void {
+  unixIt(name, async () => {
+    const resources = await fixture();
+    try {
+      await body(resources);
+    } finally {
+      await resources.temp.cleanup();
+      expect(resources.temp.pending()).toEqual([]);
+    }
+  });
+}
 
 function attachedOutput(
   attached: ReturnType<ReturnType<typeof createNodeDockerControl>["attach"]>,
@@ -62,70 +69,76 @@ function attachedOutput(
 }
 
 describe("Node container engine controls", () => {
-  unixIt("runs Docker and Podman with explicit routing and filtered environments", async () => {
-    const docker = createNodeDockerControl({
-      executable,
-      context: "desktop-linux",
-      environment: { VISIBLE: "docker" },
-    });
-    await expect(docker.run(["inspect", "image"])).resolves.toEqual({
-      exitCode: 7,
-      stdout: "out:--context desktop-linux inspect image:docker",
-      stderr: "problem",
-    });
+  isolatedIt(
+    "runs Docker and Podman with explicit routing and filtered environments",
+    async ({ executable }) => {
+      const docker = createNodeDockerControl({
+        executable,
+        context: "desktop-linux",
+        environment: { VISIBLE: "docker" },
+      });
+      await expect(docker.run(["inspect", "image"])).resolves.toEqual({
+        exitCode: 7,
+        stdout: "out:--context desktop-linux inspect image:docker",
+        stderr: "problem",
+      });
 
-    const remotePodman = createNodePodmanControl({
-      executable,
-      connection: "machine",
-      environment: { VISIBLE: "podman" },
-    });
-    await expect(remotePodman.run(["info"])).resolves.toEqual({
-      exitCode: 7,
-      stdout: "out:--connection machine info:podman",
-      stderr: "problem",
-    });
+      const remotePodman = createNodePodmanControl({
+        executable,
+        connection: "machine",
+        environment: { VISIBLE: "podman" },
+      });
+      await expect(remotePodman.run(["info"])).resolves.toEqual({
+        exitCode: 7,
+        stdout: "out:--connection machine info:podman",
+        stderr: "problem",
+      });
 
-    const localPodman = createNodePodmanControl({
-      executable,
-      connection: "local",
-      environment: { VISIBLE: "local" },
-    });
-    await expect(localPodman.run(["version"])).resolves.toMatchObject({
-      stdout: "out:version:local",
-    });
-  });
+      const localPodman = createNodePodmanControl({
+        executable,
+        connection: "local",
+        environment: { VISIBLE: "local" },
+      });
+      await expect(localPodman.run(["version"])).resolves.toMatchObject({
+        stdout: "out:version:local",
+      });
+    },
+  );
 
-  unixIt("rejects invalid configuration and already-cancelled commands", async () => {
-    expect(() =>
-      createNodeDockerControl({ executable: "docker", context: "ctx", environment: {} }),
-    ).toThrow("absolute");
-    expect(() => createNodeDockerControl({ executable, context: "", environment: {} })).toThrow(
-      "explicit",
-    );
-    expect(() =>
-      createNodePodmanControl({ executable: "podman", connection: "local", environment: {} }),
-    ).toThrow("absolute");
-    expect(() => createNodePodmanControl({ executable, connection: "", environment: {} })).toThrow(
-      "explicit",
-    );
+  isolatedIt(
+    "rejects invalid configuration and already-cancelled commands",
+    async ({ executable }) => {
+      expect(() =>
+        createNodeDockerControl({ executable: "docker", context: "ctx", environment: {} }),
+      ).toThrow("absolute");
+      expect(() => createNodeDockerControl({ executable, context: "", environment: {} })).toThrow(
+        "explicit",
+      );
+      expect(() =>
+        createNodePodmanControl({ executable: "podman", connection: "local", environment: {} }),
+      ).toThrow("absolute");
+      expect(() =>
+        createNodePodmanControl({ executable, connection: "", environment: {} }),
+      ).toThrow("explicit");
 
-    const cancellation = new AbortController();
-    cancellation.abort("cancelled");
-    await expect(
-      createNodeDockerControl({ executable, context: "ctx", environment: {} }).run(
-        ["inspect"],
-        cancellation.signal,
-      ),
-    ).rejects.toThrow("Docker cancelled");
-    await expect(
-      createNodePodmanControl({ executable, connection: "local", environment: {} }).run(
-        ["inspect"],
-        cancellation.signal,
-      ),
-    ).rejects.toThrow("Podman cancelled");
-  });
+      const cancellation = new AbortController();
+      cancellation.abort("cancelled");
+      await expect(
+        createNodeDockerControl({ executable, context: "ctx", environment: {} }).run(
+          ["inspect"],
+          cancellation.signal,
+        ),
+      ).rejects.toThrow("Docker cancelled");
+      await expect(
+        createNodePodmanControl({ executable, connection: "local", environment: {} }).run(
+          ["inspect"],
+          cancellation.signal,
+        ),
+      ).rejects.toThrow("Podman cancelled");
+    },
+  );
 
-  unixIt("bounds command output and propagates active cancellation", async () => {
+  isolatedIt("bounds command output and propagates active cancellation", async ({ executable }) => {
     const docker = createNodeDockerControl({
       executable,
       context: "ctx",
@@ -151,7 +164,7 @@ describe("Node container engine controls", () => {
     await expect(pending).rejects.toThrow("stop requested");
   });
 
-  unixIt("times out commands and reports spawn failures", async () => {
+  isolatedIt("times out commands and reports spawn failures", async ({ root, executable }) => {
     const docker = createNodeDockerControl({
       executable,
       context: "ctx",
@@ -161,78 +174,83 @@ describe("Node container engine controls", () => {
     await expect(docker.run(["wait"])).rejects.toThrow("Docker command timed out");
 
     const podman = createNodePodmanControl({
-      executable: join(root, "missing-engine"),
+      executable: `${root}/missing-engine`,
       connection: "local",
       environment: {},
     });
     await expect(podman.run(["info"])).rejects.toBeInstanceOf(Error);
   });
 
-  unixIt.each(["Docker", "Podman"] as const)(
-    "reaps %s commands that ignore SIGTERM before rejecting cancellation",
-    async (engine) => {
-      const pidFile = join(root, `stubborn-${engine}.pid`);
-      const opts = { executable, environment: { PID_FILE: pidFile }, timeoutMs: 1_000 };
-      const control =
-        engine === "Docker"
-          ? createNodeDockerControl({ ...opts, context: "ctx" })
-          : createNodePodmanControl({ ...opts, connection: "local" });
-      const controller = new AbortController();
-      let settled = false;
-      const pending = control.run(["stubborn"], controller.signal).then(
-        () => {
-          settled = true;
-          throw new Error("command unexpectedly completed");
-        },
-        (error: unknown) => {
-          settled = true;
-          return error;
-        },
-      );
-      let pid: number | undefined;
-      try {
-        const deadline = Date.now() + 2_000;
-        while (pid === undefined && Date.now() < deadline) {
-          const text = await readFile(pidFile, "utf8").catch(() => "");
-          if (/^\d+$/u.test(text)) pid = Number(text);
-          else await Bun.sleep(5);
+  for (const engine of ["Docker", "Podman"] as const) {
+    isolatedIt(
+      `reaps ${engine} commands that ignore SIGTERM before rejecting cancellation`,
+      async ({ temp, executable }) => {
+        const pidFile = temp.path(`stubborn-${engine}.pid`);
+        const opts = { executable, environment: { PID_FILE: pidFile }, timeoutMs: 1_000 };
+        const control =
+          engine === "Docker"
+            ? createNodeDockerControl({ ...opts, context: "ctx" })
+            : createNodePodmanControl({ ...opts, connection: "local" });
+        const controller = new AbortController();
+        let settled = false;
+        const pending = control.run(["stubborn"], controller.signal).then(
+          () => {
+            settled = true;
+            throw new Error("command unexpectedly completed");
+          },
+          (error: unknown) => {
+            settled = true;
+            return error;
+          },
+        );
+        let pid: number | undefined;
+        try {
+          const deadline = Date.now() + 2_000;
+          while (pid === undefined && Date.now() < deadline) {
+            const text = await readFile(pidFile, "utf8").catch(() => "");
+            if (/^\d+$/u.test(text)) pid = Number(text);
+            else await Bun.sleep(5);
+          }
+          expect(pid).toBeDefined();
+          controller.abort(new Error("stop requested"));
+          await Bun.sleep(50);
+          expect(settled).toBe(false);
+          process.kill(pid!, 0);
+          expect(await pending).toMatchObject({ message: "stop requested" });
+          expect(() => process.kill(pid!, 0)).toThrow();
+        } finally {
+          controller.abort();
+          if (pid !== undefined) {
+            try {
+              process.kill(pid, "SIGKILL");
+            } catch {}
+          }
+          await pending;
         }
-        expect(pid).toBeDefined();
-        controller.abort(new Error("stop requested"));
-        await Bun.sleep(50);
-        expect(settled).toBe(false);
-        process.kill(pid!, 0);
-        expect(await pending).toMatchObject({ message: "stop requested" });
-        expect(() => process.kill(pid!, 0)).toThrow();
-      } finally {
-        controller.abort();
-        if (pid !== undefined) {
-          try {
-            process.kill(pid, "SIGKILL");
-          } catch {}
-        }
-        await pending;
-      }
+      },
+    );
+  }
+
+  isolatedIt(
+    "attaches bidirectional streams and exposes process termination",
+    async ({ executable }) => {
+      const docker = createNodeDockerControl({
+        executable,
+        context: "ctx",
+        environment: {},
+      });
+      await expect(attachedOutput(docker.attach(["attach"]))).resolves.toBe("ready:ping");
+
+      const podman = createNodePodmanControl({
+        executable,
+        connection: "remote",
+        environment: {},
+      });
+      await expect(attachedOutput(podman.attach(["attach"]))).resolves.toBe("ready:ping");
+
+      const waiting = podman.attach(["wait"]);
+      waiting.kill("SIGTERM");
+      await expect(waiting.exited).resolves.toBeNull();
     },
   );
-
-  unixIt("attaches bidirectional streams and exposes process termination", async () => {
-    const docker = createNodeDockerControl({
-      executable,
-      context: "ctx",
-      environment: {},
-    });
-    await expect(attachedOutput(docker.attach(["attach"]))).resolves.toBe("ready:ping");
-
-    const podman = createNodePodmanControl({
-      executable,
-      connection: "remote",
-      environment: {},
-    });
-    await expect(attachedOutput(podman.attach(["attach"]))).resolves.toBe("ready:ping");
-
-    const waiting = podman.attach(["wait"]);
-    waiting.kill("SIGTERM");
-    await expect(waiting.exited).resolves.toBeNull();
-  });
 });

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createSandboxPolicyResolver } from "../../src/sandbox/policy.ts";
+import { environmentFixture } from "../helpers/process-fixtures.ts";
+import { SANDBOX_CACHE_PROBE_PATH } from "../fixtures/sandbox-cache-probe.ts";
 
 describe("sandbox host policy", () => {
   it("does not change native Sandbox settings when Container is selected", () => {
@@ -47,10 +49,16 @@ describe("sandbox host policy", () => {
       store.writeSettings("workspace", {
         sandbox: { type: "native", toolchains: { include: ["bun"] } },
       });
-      const previousPath = process.env.PATH;
-      process.env.PATH = previousPath ? `${bin}${delimiter}${previousPath}` : bin;
+      const environment = environmentFixture({
+        ...process.env,
+        PATH: process.env.PATH ? `${bin}${delimiter}${process.env.PATH}` : bin,
+      });
       try {
-        const inspection = await createSandboxPolicyResolver(store, workspace).inspect();
+        const inspection = await createSandboxPolicyResolver(
+          store,
+          workspace,
+          environment,
+        ).inspect();
         expect(inspection.backend).toMatchObject({
           type: process.platform === "darwin" ? "seatbelt" : "bubblewrap",
           available: true,
@@ -61,7 +69,6 @@ describe("sandbox host policy", () => {
         });
         expect(inspection.toolchains[0]).not.toHaveProperty("version");
       } finally {
-        process.env.PATH = previousPath;
         rmSync(root, { recursive: true, force: true });
       }
     },
@@ -114,15 +121,17 @@ describe("sandbox host policy", () => {
       store.writeSettings("workspace", {
         sandbox: { type: "native", toolchains: { include: ["bun"] } },
       });
-      const previousPath = process.env.PATH;
-      process.env.PATH = bin;
+      const environment = environmentFixture({ ...process.env, PATH: bin });
       try {
-        const inspection = await createSandboxPolicyResolver(store, workspace).inspect();
+        const inspection = await createSandboxPolicyResolver(
+          store,
+          workspace,
+          environment,
+        ).inspect();
         expect(inspection.toolchains[0]).toMatchObject({ id: "bun", available: true });
         expect(inspection.toolchains[0]).not.toHaveProperty("version");
         expect(existsSync(sentinel)).toBe(false);
       } finally {
-        process.env.PATH = previousPath;
         rmSync(root, { recursive: true, force: true });
       }
     },
@@ -187,37 +196,23 @@ describe("sandbox host policy", () => {
 
   it("caches discovery until the environment changes or refresh is requested", async () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-cache-"));
-    const globalDir = join(root, "global");
-    const workspace = join(root, "workspace");
     const bin = join(root, "runtime", "bin");
-    const executable = join(bin, "bun");
-    mkdirSync(workspace, { recursive: true });
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(executable, "#!/bin/sh\necho 1.0.0\n", { mode: 0o755 });
-    const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
-    store.writeSettings("workspace", {
-      sandbox: {
-        type: "native",
-        toolchains: { include: ["bun"] },
-      },
-    });
-    const previousPath = process.env.PATH;
-    process.env.PATH = bin;
     try {
-      const resolver = createSandboxPolicyResolver(store, workspace);
-      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
-
-      rmSync(executable);
-      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
-      expect((await resolver.inspect({ refresh: true })).toolchains[0]?.available).toBe(false);
-
-      writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-      const otherBin = join(root, "other");
-      mkdirSync(otherBin);
-      process.env.PATH = `${otherBin}:${bin}`;
-      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
+      const child = Bun.spawn({
+        cmd: [process.execPath, SANDBOX_CACHE_PROBE_PATH, root],
+        env: { ...process.env, PATH: bin },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect(stderr).toBe("");
+      expect(exitCode).toBe(0);
+      expect(JSON.parse(stdout)).toEqual([true, true, false, true]);
     } finally {
-      process.env.PATH = previousPath;
       rmSync(root, { recursive: true, force: true });
     }
   });

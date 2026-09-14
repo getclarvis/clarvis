@@ -62,7 +62,7 @@ async function until(condition: () => boolean | Promise<boolean>): Promise<void>
   const deadline = performance.now() + 5000;
   while (!(await condition())) {
     if (performance.now() > deadline) throw new Error("hosted transport condition timed out");
-    await Bun.sleep(1);
+    await Bun.sleep(0);
   }
 }
 

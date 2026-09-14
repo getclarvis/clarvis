@@ -52,7 +52,7 @@ async function frame(node: TranscriptNode): Promise<string> {
   let out = "";
   let stable = 0;
   for (let index = 0; index < 80; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 8));
+    await Bun.sleep(0);
     await t.renderOnce();
     const next = t.captureCharFrame();
     const ready = diffRenderables(t.renderer.root).every((renderable) => renderable.opacity === 1);

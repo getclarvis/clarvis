@@ -12,7 +12,15 @@ import {
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  const failures: unknown[] = [];
+  for (const cleanup of cleanups.splice(0).reverse()) {
+    try {
+      await cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "local host cleanup failed");
 });
 
 async function until(predicate: () => Promise<boolean>, timeout = 10_000): Promise<void> {

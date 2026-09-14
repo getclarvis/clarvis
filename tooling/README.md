@@ -19,6 +19,15 @@ Root tooling is TypeScript unless a shell is the behavior under test or the work
 shell control flow. It participates in `bun run typecheck`, `bun run lint:eslint`,
 `bun run format:check`, `bun run knip`, and the supported root `bun run test` command.
 
+`lib/test-determinism.ts` and `checks/test-determinism.ts` own the repository-wide test determinism
+census. The checker parses every `*.test.*` file below the six accepted test levels, inventories
+positive waits/timers, process-global mutation, fake-timer lifecycle, mutable `beforeAll` fixtures,
+listeners and subprocesses, and compares the result with
+`test-runtime/test-determinism-baseline.json`. `bun run check:test-determinism` is fail-closed on
+new or stale rows; `--report` is the migration inventory and `--json` is the stable CI/inspection
+format. Listener and subprocess rows can remain only as explicitly justified `boundary-canary`
+entries. The analyzer is importable without running the CLI, and no runtime package depends on it.
+
 The real-Git release fixture uses `withoutGitRepositoryEnvironment` from `@clarvis/paths` before
 starting child processes. This keeps hook and linked-worktree repository context out of its
 disposable checkout and bare remote, including child tag automation.

@@ -13,7 +13,7 @@ import {
   Suspense,
 } from "solid-js";
 import { useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
-import { KeymapProvider, reactiveMatcherFromSignal } from "@opentui/keymap/solid";
+import { KeymapProvider } from "@opentui/keymap/solid";
 import type {
   CliRenderer,
   MouseEvent,
@@ -74,8 +74,7 @@ import type { McpStartupNotice, RunHost } from "../run-host.ts";
 import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
-import { uiCommand } from "../keys/actions.ts";
-import { commandKeyLabel, LAYER } from "../keys/keyspec.ts";
+import { commandKeyLabel } from "../keys/keyspec.ts";
 import { createCommands, type CommandEffects } from "../keys/commands.ts";
 import {
   classifySlashSubmit,
@@ -605,6 +604,10 @@ export function App(props: AppProps): JSX.Element {
     setSidebarReveal({ section, context: `manual:${manualSidebarReveal}` });
     layout.setDrawerOpen(true);
   };
+  const toggleActivitySidebar = (): void => {
+    if (layout.drawerOpen()) closeActivitySidebar();
+    else openActivitySidebar();
+  };
 
   createEffect(() => {
     const context = visiblePlanContext(props.store, props.activity);
@@ -699,9 +702,7 @@ export function App(props: AppProps): JSX.Element {
     quit: quitConfirm.quit,
     dismissTopOverlay: () => {
       if (closeTransientOverlay() || overlays.dismissTop()) return true;
-      if (!layout.drawerOpen()) return false;
-      closeActivitySidebar();
-      return true;
+      return false;
     },
     isRunActive: () => props.run.active(),
     isDraftNonEmpty: draftNonEmpty,
@@ -810,29 +811,6 @@ export function App(props: AppProps): JSX.Element {
     );
   };
 
-  onMount(() => {
-    const off = interaction.keymap.registerLayer({
-      enabled: reactiveMatcherFromSignal(drawerOpen),
-      priority: LAYER.TRANSIENT,
-      commands: [
-        uiCommand({
-          id: "sidebar.drawer.close",
-          title: "Close activity drawer",
-          description: "Return to the transcript",
-          category: "escape",
-          surfaces: ["footer"],
-          footerLabel: "close activity",
-          hintPriority: 100,
-          hintGroup: "escape",
-          essential: true,
-          run: closeActivitySidebar,
-        }),
-      ],
-      bindings: [{ key: "escape", cmd: "sidebar.drawer.close" }],
-    });
-    onCleanup(off);
-  });
-
   const commandEffects: CommandEffects = {
     clearSession: () => {
       props.session.clear();
@@ -858,25 +836,14 @@ export function App(props: AppProps): JSX.Element {
   };
   const commands = createCommands(interaction, commandEffects, overlays.ui);
   commands.registerAction({
-    name: "activity.open",
-    title: "Run activity",
-    desc: "Reopen the current Plan, parallel workflow, or sub-agent sidebar",
-    slash: "/activity",
-    surface: "slash",
+    name: "activity.toggle",
+    title: "Toggle run activity sidebar",
+    desc: "Open or close the current Plan, parallel workflow, or sub-agent sidebar",
+    slash: false,
+    surface: "internal",
     group: "navigate",
     enabled: sidebarHasContent,
-    subcommands: [
-      { name: "plan", desc: "Reveal the current Plan" },
-      { name: "workflow", desc: "Reveal parallel workflow leaders" },
-      { name: "agents", desc: "Reveal delegated sub-agents" },
-    ],
-    route: (args) => {
-      const section = args.trim().split(/\s+/)[0];
-      if (section !== "plan" && section !== "workflow" && section !== "agents") return false;
-      openActivitySidebar(section);
-      return true;
-    },
-    run: () => openActivitySidebar(),
+    run: toggleActivitySidebar,
   });
   let notifiedMissingEntryAgent = false;
   let entryAgentPromptQueued = false;
@@ -1311,7 +1278,6 @@ export function App(props: AppProps): JSX.Element {
     return detail.join(` ${glyph("separator")} `);
   };
   const compactActivityStrip = (): string => {
-    if (secondaryMode() === "split") return "";
     const counts = {
       waiting: props.activity.subagents.filter((agent) => agent.status === "spawned").length,
       running: props.activity.subagents.filter((agent) => agent.status === "running").length,
@@ -1389,6 +1355,12 @@ export function App(props: AppProps): JSX.Element {
   const footerNavigationWidth = (): number => {
     const strip = footerRunStrip();
     return Math.max(0, dims().w - (strip ? Bun.stringWidth(strip) + 2 : 0));
+  };
+  const activitySidebarHint = (): string => {
+    const toggleKey = commandKeyLabel(interaction.keymap, "activity.toggle", {
+      visibility: "registered",
+    });
+    return `${toggleKey === undefined ? "Ctrl+L" : `[${toggleKey}]`} open / close sidebar`;
   };
 
   createEffect(() => {
@@ -1541,6 +1513,7 @@ export function App(props: AppProps): JSX.Element {
                   contentInset,
                   width: () => dims().w,
                   height: () => dims().h,
+                  sidebarHint: activitySidebarHint,
                 }}
                 contextWindow={contextWindow}
                 agent={agentName}
@@ -1799,9 +1772,6 @@ export function App(props: AppProps): JSX.Element {
                   overlays.overlay() === "none" &&
                   transientOverlay() === "none" &&
                   !props.run.switching?.()
-                }
-                actionFilter={
-                  drawerOpen() ? (action) => action.id === "sidebar.drawer.close" : undefined
                 }
               />
             }

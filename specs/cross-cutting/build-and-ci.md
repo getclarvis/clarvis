@@ -13,7 +13,7 @@ solution over per-package `composite` emit projects, `tsconfig.json`), one share
 configuration applied through each package's shim (`eslint.config.base.js`), a Knip pass run
 once from the root (`package.json`, `scripts.knip`), a locally-enforced pre-commit gate
 (`.githooks/pre-commit`),
-three GitHub Actions CI jobs split by platform (`.github/workflows/ci.yml`), a six-target portable
+independent Linux CI gates plus the retained Windows/macOS jobs (`.github/workflows/ci.yml`), a six-target portable
 release matrix delegated to [distribution and updates](distribution-and-updates.md), and a separate
 bundling path for the one package that is never emitted by `tsc` — the terminal UI
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
@@ -68,7 +68,8 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
 | `lint` | `lint:eslint && lint:intent && knip` | `package.json` (`scripts.lint`) |
 | `lint:eslint` | workspace lint followed by `lint:tooling` | `package.json` (`scripts.lint:eslint`) |
-| `lint:intent` | `test:tooling`, then source-policy, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `lint:intent` | `test:tooling`, then source-policy, test determinism, graph, spec, harness, Bun-version, Bun-source, import-extension and release-readiness checks | `package.json` (`scripts.lint:intent`) |
+| `check:test-determinism` | AST census in check mode; accepts `--report` and `--json` for migration and inspection | `package.json` (`scripts.check:test-determinism`) |
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |
@@ -307,7 +308,10 @@ NOT add a `schedule:` or `push:` trigger".
 | `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts` | smoke timeout, default `90_000` |
 | `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
 | `CI` | `packages/tools/tests/contract/grep-parity.test.ts` | when set, `rg` must be installed (TEST-01) |
-| `GITHUB_STEP_SUMMARY` | `tooling/ci/retry-code-coverage.sh` | retry notes appended when present |
+| `GITHUB_STEP_SUMMARY` | `tooling/checks/ci-coverage.ts`, `tooling/checks/ci-artifacts.ts` | package outcomes, retry notes and build-transfer measurements |
+| `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`, `CI_BUILD_PRODUCER_ATTEMPT` | `tooling/checks/ci-artifacts.ts` | same-run artifact identity with distinct producer and consumer attempts |
+| `CI_BUILD_ARTIFACT_ID`, `CI_BUILD_ARTIFACT_DIGEST`, `CI_BUILD_TAR_DIGEST` | `tooling/lib/ci-artifacts.ts`, `requireBuildProducer` | complete immutable producer receipt required before download |
+| `CI_UPLOAD_STARTED_MS`, `CI_DOWNLOAD_STARTED_MS` | `tooling/checks/ci-artifacts.ts` | transfer durations including step-transition overhead |
 | `BUN_JSC_useConcurrentGC` / `BUN_JSC_numberOfGCMarkers` / `BUN_JSC_useConcurrentJIT` | `.github/workflows/segfault-canary.yml` (`jobs.canary.steps[name=measure].run`) | canary JSC arms |
 
 ## 3. Data and formats
@@ -481,9 +485,10 @@ tally in `packages/tools/src/lib/text.ts`, and every `apply_patch`, `diff` and `
 validator compares that complete generated block with `specs/package-coupling-analysis.md`; optional
 dependencies carry the suffix `(optional)` in the dependency column.
 
-`tooling/ci/retry-code-coverage.sh` writes a GitHub annotation
-(`::warning::bun crashed (exit N) …`) and, when `GITHUB_STEP_SUMMARY` is set, a markdown bullet
-`- bun crash (exit N): retry k/3 of @clarvis/code test:coverage`.
+`tooling/checks/ci-coverage.ts` emits structured package/attempt/start/end/duration/result records,
+a GitHub `::warning::` annotation for each classified retry, and package outcomes in
+`GITHUB_STEP_SUMMARY`. `tooling/checks/ci-artifacts.ts` records archive bytes, packaging, upload,
+download and restoration durations, plus both run attempts and the immutable artifact ID.
 
 `.github/workflows/segfault-canary.yml` (`jobs.canary.steps[name=measure].run`) appends a
 `## segfault-canary result` block with the arm, the
@@ -590,13 +595,47 @@ cross-package types through the built `dist/*.d.ts` (§4.2). The hook is install
 
 ### 4.4 CI jobs
 
-**`linux`**, `ubuntu-latest`, runs the full build, typecheck, formatting, lint, runtime artifact build,
-coverage-with-classified-crash retry, and real-PTY artifact smoke. It installs and executes ripgrep
-and Bubblewrap before tests because CI makes grep parity and the Linux native-sandbox canary hard
-contracts. On Ubuntu's AppArmor-restricted host it loads the packaged `bwrap-userns-restrict`
-profile and proves a minimal sandbox launch; it does not disable the host-wide namespace protection.
-`CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the coverage suite. Production:
-`.github/workflows/ci.yml` (`jobs.linux`).
+Linux gates use separate runners and depend only on a completed shared build:
+
+| Job ID | Dependencies | Gate |
+| --- | --- | --- |
+| `build` | none | frozen install, full build, artifact smoke, tar packaging and upload |
+| `typecheck` | build | restore, full workspace and tooling typecheck, including tests |
+| `lint` | build | restore, `lint:eslint` |
+| `knip` | build | restore, `knip` |
+| `checks` | build | restore, separate `format:check`, `lint:intent`, `test:cache` steps |
+| `coverage` | build | restore, native Linux preparation, sequential coverage supervisor |
+| `server-image` | none | self-contained Docker build with the existing Dockerfile and root context |
+| `linux` | all seven gates above | fail-closed required-result aggregation |
+
+Every host Bun job installs the exact mise version, records `bun --version && bun --revision`,
+and installs its own dependencies with `bun install --frozen-lockfile`. Installation is not a build.
+Only `build` emits the shared Linux build, including the Code bundle; upload follows both build and
+smoke success. Its consumers restore that build before checking it and never silently rebuild.
+Docker independently validates the image boundary. Finite timeouts remain conservative: 15 minutes
+for build and ordinary Linux gates, 30 for coverage, and 5 for aggregation. Windows/macOS retain
+their existing bounds. No required job or step uses `continue-on-error` or an optional gate condition.
+
+The `coverage` job installs and executes ripgrep and Bubblewrap, loads the packaged
+`bwrap-userns-restrict` AppArmor profile, and proves a minimal sandbox launch without disabling
+host-wide protection. `CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the complete coverage scripts.
+
+The public required contexts remain exactly `linux`,
+`tools, paths, plan, memory, keyboard policy (windows)`, and `keyboard policy (macos)`.
+The release workflow consumes these literal names. `linux` has `always()` and all seven Linux
+needs; it installs nothing and downloads nothing. Its Bash step receives `toJSON(needs)` through
+an environment variable, then jq requires exactly one JSON object, the exact dependency key set,
+and `result == "success"` for every entry. Failure, cancellation, skip, missing/unknown results,
+malformed input, and an empty object cannot approve the required status. The job condition only
+admits the aggregator; the explicit result check decides success.
+
+Production: [CI workflow](../../.github/workflows/ci.yml), `jobs`;
+[workflow validator](../../tooling/lib/ci-workflow.ts), `ciWorkflowFailures`;
+[Bun version checker](../../tooling/checks/bun-version.ts), `bunVersionFailures`.
+Test: [CI workflow tests](../../tooling/tests/unit/ci-workflow.test.ts), including mutations that
+remove each gate/dependency and fixtures executing the actual YAML Bash body;
+[Bun version tests](../../tooling/tests/unit/bun-version.test.ts), per-job setup/evidence validation.
+The validator reuses `workflowSecurityFailures`; other workflows retain their existing policies.
 
 **`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned
 release asset after checking its SHA-256 and executing it in the same step. Then it runs four
@@ -624,41 +663,66 @@ stable `keyboard policy (macos)` status context required by both permanent-branc
 adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
 (`jobs.sandbox-macos`).
 
-All three jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
+All host Bun jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
 repository on push to `main` and `develop` and pull request; the earlier account-specific billing incident remains
 historical evidence in [Known issues](../known-issues.md), not current workflow behavior.
 
-### 4.5 The crash-signal retry (`tooling/ci/retry-code-coverage.sh`)
+### 4.5 Shared build identity and coverage supervision
 
-Bun 1.4 includes the upstream Worker lifetime fix, but the wrapper remains temporarily until the
-GitHub-runner retirement canary records at least 30 coverage runs without exits 132, 134 or 139.
-The historical diagnosis and retirement evidence belong to `specs/known-issues.md`; this section
-specifies only the wrapper state machine while it exists.
+The build tar contains exclusively workspace `dist` directories, their internal incremental files,
+and `ci-build-manifest.json`. The manifest records schema, actual `git rev-parse HEAD`, run ID,
+producer attempt, Bun version/revision, OS/architecture, lockfile SHA-256, exact build directories,
+and every member's path, kind, permissions, size and checksum. Node modules, configuration,
+credentials and user state are not transported. Regular files and directories are the supported
+build format; links and special members are rejected even when apparently internal.
 
-State machine, with `status` the exit code of the previous command:
+The producer exports the immutable Actions artifact ID/digest, tar digest and producer attempt.
+Consumers download only that ID within the current run, with digest mismatches configured as errors.
+The Actions digest verifies the transport container; the separately bound tar digest and member
+checksums verify the bytes restored. Missing producer outputs fail before download and explicitly
+require a full workflow rerun, without cache or artifact-name fallback.
 
-| State | Condition | Next | Effect |
-| --- | --- | --- | --- |
-| start | — | `t0` | run `bun run test:coverage` |
-| `t0` | `status == 0` | exit 0 | — |
-| `t0`/`retry` | `status ∈ {132,134,139}` and `attempt < 3` | `retry` | annotate, run `bun --filter @clarvis/code test:coverage` |
-| `retry` | `status == 0` | exit `coverage:check`'s status | `bun run coverage:check` then `exit $?` |
-| any | any other status, or attempts exhausted | exit `status` | — |
+A failed-job rerun may reuse a successful producer from an earlier attempt of the same run. The
+manifest is compared with the producer's output attempt, not the current consumer attempt; both are
+logged. Commit, run, Bun, lockfile and platform identity must still match. The CLI reads the actual
+checkout identity in each consumer rather than trusting an event SHA.
 
-`is_crash_exit` accepts exactly 132 (SIGILL), 134 (SIGABRT), 139 (SIGSEGV). The comment records why it is not `>= 128`: "SIGINT (130) and SIGTERM (143) mean somebody asked this to
-stop — a cancelled workflow, or Bun killing sibling scripts after one of them failed. That second case
-is real and measured: under `bun --workspaces --parallel`, a failing package makes Bun SIGINT its
-siblings and the run exits 130". The same comment records why re-running only `@clarvis/code` is sound: it is
-the last workspace in the sequential root script (`package.json`, `scripts.test`), so every other
-package's lcov is already on disk, and a missing one would fail `coverage:check` loudly.
+Before any destination mutation, restoration verifies the tar digest, strict USTAR headers, exact
+inventory and every checksum. It rejects absolute/traversing/out-of-scope paths, duplicate members,
+missing members, links, devices and unsupported tar extensions. Files are written into fresh staging
+and then replace only verified workspace build directories. Existing symlinked parents or build
+destinations are refused. This assumes a CI-owned checkout without a concurrent hostile writer;
+it does not claim to close the repository's documented filesystem TOCTOU boundary.
 
-The canary (`.github/workflows/segfault-canary.yml`,
-`jobs.canary.steps[name=measure].run`) is the measurement counterpart: `set +e` is applied first
-because "GitHub runs `run:` blocks under `bash -e` … Without this the first crash — the very thing
-being measured — aborts the step, and every batch reports a sample size of one". It counts
-`status >= 128` as a crash and **aborts the whole batch** on any other non-zero status, printing
-"real test failure … batch invalid".
+Production: [artifact library](../../tooling/lib/ci-artifacts.ts), `packCiBuild`,
+`validateCiBuild`, `restoreCiBuild`, `readBuildIdentity`, and `requireBuildProducer`;
+[workspace inventory](../../tooling/lib/ci-workspaces.ts), `readCiWorkspaces`;
+[artifact CLI](../../tooling/checks/ci-artifacts.ts).
+Test: [artifact tests](../../tooling/tests/unit/ci-artifacts.test.ts), round trip, modes/dotfiles,
+identity/integrity failures, invalid members/destinations and earlier-producer reruns.
+
+Artifact logs and step summaries record size, packaging, upload, download and restoration time.
+Transfer timers include inter-step overhead; Actions step durations identify checkout, Bun setup,
+and installation costs, with frozen installs additionally timed. The proposed Linux median of
+4–5 minutes is a measurement hypothesis, not a guaranteed budget or a local-test result. Evaluate
+complete remote runs, including preparation/transfer and runner scheduling, and retain their run
+identities and attempt-specific results when comparing the critical path. Coverage remains
+sequential across packages; no coverage sharding is required by this topology.
+
+`tooling/ci/retry-code-coverage.sh` is a thin exec entry for the importable CI coverage supervisor.
+It runs each package's complete script once in manifest order, with at most three additional
+attempts only for Code exits 132/134/139. A recovered Code attempt continues the remaining packages;
+the global checker runs only after all finish. Assertions, other-package crashes and 130/143 are
+never retried. Nullable Bun signal exits are normalized explicitly. Cancellation settles the active
+child and prevents further packages/retries. The detailed process and LCOV contract belongs to
+[test architecture](test-architecture.md#48-the-ci-coverage-supervisor).
+The local root coverage script and pre-commit phase order remain unchanged and have no CI retry.
+
+Bun 1.4's upstream Worker fix does not retire this mitigation. The independent GitHub-runner canary
+still requires at least 30 Code coverage iterations without 132/134/139; its historical rates,
+diagnosis and retirement criterion remain in [Known issues](../known-issues.md).
+The canary's wider signal accounting and real-test-failure abort remain unchanged.
 
 ### 4.6 `code` build → smoke → launch
 
@@ -934,7 +998,7 @@ Production: `packages/code/src/cli-entry.ts`.
 Test: `packages/code/tests/unit/cli-entry.test.ts`.
 
 **BUILD-19.** In CI, `rg` must be present.
-Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.windows`, `jobs.sandbox-macos` install
+Production: `.github/workflows/ci.yml` (`jobs.coverage`, `jobs.windows`, `jobs.sandbox-macos` install
 steps); `packages/server/Dockerfile` (runtime package-install step) does the
 same for the image.
 Test: `packages/tools/tests/contract/grep-parity.test.ts` — "ripgrep must be installed in CI
@@ -942,15 +1006,26 @@ Test: `packages/tools/tests/contract/grep-parity.test.ts` — "ripgrep must be i
 
 **BUILD-20.** Linux and macOS CI must execute the real native-sandbox canary; generated argv/profile
 tests alone do not establish host enforcement.
-Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`,
+Production: `.github/workflows/ci.yml` (`jobs.coverage`, `jobs.sandbox-macos`,
 `CLARVIS_NATIVE_SANDBOX_CANARY`).
 Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
 host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
 toolchain through the real native backend`).
 
-**BUILD-21.** The crash retry accepts exactly 132/134/139 and never retries 130 or 143.
-Production: `tooling/ci/retry-code-coverage.sh`.
-Unpinned — there is no test for this shell script.
+Container canaries retain separate Docker and Podman opt-in gates. With neither gate enabled they are
+skipped; after either gate is enabled, an absent executable is reported unavailable and malformed or
+missing digest/context input fails as misconfigured instead of becoming a skip. A complete
+`sha256:` digest and explicit Docker context or Podman connection are required, and enabling both
+engine gates in one process is invalid. Test:
+`packages/kernel/tests/helpers/native-canary.ts`,
+`packages/kernel/tests/unit/native-canary.test.ts`, and the gated `*.e2e.test.ts` files under
+`packages/kernel/tests/integration`.
+
+**BUILD-21.** The CI retry accepts only Code exits 132/134/139, with three additional attempts, and
+never retries 130/143 or another package. Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage`
+and `normalizeCoverageExit`; `tooling/ci/retry-code-coverage.sh` is only the CLI entry.
+Test: `tooling/tests/unit/ci-coverage.test.ts`, classified retry, continuation, cancellation and the
+pinned Bun subprocess signal boundary.
 
 **BUILD-21.** Line endings are normalized to LF for every text file at checkout, and `bun.lock` is
 kept verbatim.
@@ -990,7 +1065,7 @@ it is a filesystem property). states the distinction explicitly: "these tests ar
 suppressed because the product is broken on Windows, not because they do not apply to it."
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
-version in `mise.toml`: all three CI jobs, the release package matrix, the release publication gate,
+version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
 their runtime evidence, the crash-canary default and its evidence, both Docker stages, all 19
 `engines.bun` fields, root `@types/bun`, and the declared plus resolved lockfile entry.
 Production: `bunVersionFailures` in `tooling/checks/bun-version.ts` validates the snapshot, and `package.json`
@@ -1134,9 +1209,11 @@ no publish, registry, release-manifest or running-container commit path. Product
 | Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, removes both temp dirs, `exit 1` | `packages/code/tooling/artifact/smoke.ts`; the failure marker is `packages/code/tooling/artifact/pty.ts` |
 | Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts` |
 | No `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts` |
-| Bun dies by signal 132/134/139 during CI tests | up to 3 retries of `@clarvis/code` alone; if a retry passes, `coverage:check` is re-run and its status returned | `tooling/ci/retry-code-coverage.sh` |
+| Code dies by signal 132/134/139 during CI tests | up to 3 additional Code attempts, then remaining packages and the global checker | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |
 | Bun dies by 130 or 143 | passed straight through, never retried | `tooling/ci/retry-code-coverage.sh` |
-| A package other than `code` dies by signal | its lcov is missing, so `coverage:check` fails loudly; the wrapper cannot mask it | stated at `tooling/ci/retry-code-coverage.sh` |
+| A package other than `code` dies by signal | return that failure immediately, without retry or global checking | `tooling/lib/ci-coverage.ts`, `runCiCoverage` |
+| Shared build is absent, corrupt or has mismatched identity/inventory | fail before restoration; no fallback build or cache | `tooling/lib/ci-artifacts.ts` |
+| Any Linux dependency fails, cancels, skips or is missing | required `linux` fails through explicit aggregation | `.github/workflows/ci.yml`, `jobs.linux` |
 | Canary batch hits a real test failure | prints `"real test failure (exit N) -- batch invalid"`, tails 60 log lines, exits with that status | `.github/workflows/segfault-canary.yml` (`jobs.canary.steps[name=measure].run`) |
 | A missing entry in `specs/package-coupling-analysis.md` | `checkDocument` reports `"document is missing package row X"`; `process.exitCode = 1` | `tooling/lib/package-graph.ts`, `tooling/checks/package-graph.ts` |
 | Root version is invalid, a workspace or lock entry declares `version`, a workspace is not private, or an unapproved module imports the root manifest | `check:graph` reports the exact manifest, lock path, or source-policy violation | `tooling/lib/package-architecture.ts` (product-version policy helpers) |
@@ -1167,6 +1244,8 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts` and `packages/code/tooling/artifact/smoke.ts` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts` uses `HOME_ENV` | static value import |
 | `docker` | Linux CI server-image build, default local base/artifact builder, live Container canary, and base GHCR release jobs | external process |
 | `podman` | explicit alternative accepted by the isolated-runtime build helper; never selected implicitly | external process |
+| GNU tar | `tooling/lib/ci-artifacts.ts` creates strict USTAR; restoration uses validated bytes and filesystem APIs | external process |
+| Bash and jq | `.github/workflows/ci.yml`, required Linux aggregation and its executable fixtures | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts` | external process |
 
 **What depends on this subsystem.**
@@ -1208,8 +1287,7 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
 
 1. **Several build-time rules are unpinned.** No test asserts the `external` list
    (`packages/code/tooling/artifact/build.ts`) or the `splitting` option, the
-   `.gitattributes` normalization, the canary's least-privilege workflow fields, or any behaviour
-   of `tooling/ci/retry-code-coverage.sh`. Each is enforced only by the build or CI failing at the moment it
+   `.gitattributes` normalization, or the canary's least-privilege workflow fields. Each is enforced only by the build or CI failing at the moment it
    is broken. Interactive PTY reproduction belongs to `tui-driver`; the repository owns only the
    automated artifact boot contract through `bun run smoke`.
 

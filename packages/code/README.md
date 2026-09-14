@@ -514,14 +514,14 @@ delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` ex
 the Task editor, so `Ctrl+G` has no editing behavior. Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
 `ß` remains ordinary text. Both pickers are loaded on first use and retained after their first
-mount. There is no global
-physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
+mount. `Ctrl+L` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
+the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
 split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
-closes either presentation but does not block `/activity`. The footer activity strip remains an
+does not close either presentation. The footer activity strip remains an
 explicit pointer route when agents or workflows contribute it; Plan never appears there.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
@@ -555,7 +555,10 @@ appears only for a leader whose complete task is available and opens that task o
 page. The manager and legacy records without a persisted task do not advertise or bind `T`. Above
 the tree, the latest persisted sequence state names an `awaiting_manager` checkpoint, its revision
 and proposed next round. The live Parallel work section shows the same checkpoint even when no
-leader remains live, so an Admiral decision cannot disappear with the last child.
+leader remains live, so an Admiral decision cannot disappear with the last child. Its header and
+leader roster mirror the compact Plan/Agents grammar: settled/total plus active running count, then
+one plan-tone status glyph, handle and title per leader in an isolated bounded scroll. Lifecycle
+words, elapsed time, iteration counts and failure totals stay out of this summary surface.
 
 A `workflow_review` prompt begins with the safe `cancel` enum value and no preselected UI answer.
 The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
@@ -669,7 +672,9 @@ verdict and answerer, for example `approved by judge` or `denied by judge`; the
 guard mode and internal review facts do not occupy transcript chrome. The same
 annotation is included in Markdown export and survives reopening the run. Shell
 calls remain individual transcript rows, so each settled call retains its own
-verdict and answerer.
+verdict and answerer. A collapsed non-zero shell result keeps `exit <code>` in
+that same header immediately before the guard verdict instead of consuming a
+separate diagnostic row; longer non-exit diagnostics remain below the header.
 
 Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
 workspace choice inherits the global policy. Changing Isolation leaves Review and its command policy
@@ -962,8 +967,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   rows, not to already-painted Markdown history.
 - Delegation briefs and terminal sub-agent results are absent from the Lead transcript. Its two
   lifecycle markers contain only bounded, friendly identity/status copy; the settled marker never
-  rewrites the spawned marker. The Sidebar keeps bounded one-line status/result summaries; clicking
-  an agent selects its isolated transcript and does not open result detail automatically. Inside that
+  rewrites the spawned marker. The Sidebar keeps each agent to one glyph-and-title row inside its
+  own bounded scroll; clicking an agent selects its isolated transcript and does not open result
+  detail automatically. Inside that
   isolated transcript, the first explicit selection expands that child's section so its delegation
   card and worker tools/answers are immediately readable. A manual collapse remains sticky across a
   return to Lead and reselection, while a sibling still receives its own one-time expansion; neither
@@ -989,18 +995,21 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
   child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
-  Sidebar closed, the aggregate transcript stays unobstructed. `/activity` reopens the first
-  available section, while `/activity plan`, `/activity workflow` and `/activity agents` select one
-  explicitly even after Escape made its automatic reveal sticky. The footer keeps a pointer target
+  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+L` reopens the first available
+  Agents, Parallel work or Plan section and closes the surface when it is open. The footer keeps a pointer target
   only when agent or workflow activity contributes its bounded strip; clicking that strip reopens
   the responsive surface. Plan never contributes footer text. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
   changing Lead/child selection; Return activates or submits the currently focused component.
   Shift+Tab opens the agent picker, and clicking an agent selects only that agent's transcript.
-  Workflow progress never contributes a row
-  to the Lead transcript. Workflow leaders use run-local `L<n>` handles and sub-agents use the
+  Agent progress reports only settled/total and the running count while work is active; failures
+  stay encoded in each row's status glyph instead of adding header or result copy. Workflow progress
+  never contributes a row to the Lead transcript. Agent and workflow rosters use the Plan's status
+  priority—running, pending, done, then failed—without changing their stable handles. Workflow leaders use run-local `L<n>` handles and sub-agents use the
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
+  Opening the Sidebar never replaces the shortcuts or activity/run strip below the composer. A fixed
+  line inside the Sidebar names `Ctrl+L` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
   projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows

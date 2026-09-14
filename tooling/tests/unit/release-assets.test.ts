@@ -50,9 +50,8 @@ async function writeArchive(
       stdout: "ignore",
       stderr: "pipe",
     });
-    if ((await child.exited) !== 0) {
-      throw new Error(`fixture tar failed: ${await new Response(child.stderr).text()}`);
-    }
+    const [exitCode, errors] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    if (exitCode !== 0) throw new Error(`fixture tar failed: ${errors}`);
     const digest = createHash("sha256")
       .update(await Bun.file(join(directory, name)).bytes())
       .digest("hex");

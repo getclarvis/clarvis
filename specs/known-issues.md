@@ -832,19 +832,27 @@ test; real-PTY validation remains required for that visual property.
 
 ### Mitigations in place
 
-`tooling/ci/retry-code-coverage.sh` wraps the CI test step and retries a Bun crash signal (132/134/139) up
-to 3× by re-running `@clarvis/code` alone, then `coverage:check`. All of it is intact:
-`MAX_RETRIES=3`, `is_crash_exit` matching exactly `132 | 134 | 139`, the loop, the narrowed re-run and the `coverage:check`.
+The retained retry now belongs to `runCiCoverage` in
+[the coverage supervisor](../tooling/lib/ci-coverage.ts); `tooling/ci/retry-code-coverage.sh` is a
+thin CLI entry. It runs complete workspace scripts sequentially, identifying the package whose
+process actually completed. Only Code exits 132/134/139 get up to three additional attempts.
+Recovery continues the remaining workspaces before global coverage validation.
 
-- A real test failure is never retried.
-- Neither is 130/143 — SIGINT/SIGTERM mean *somebody asked this to stop*, and
-  `bun --workspaces --parallel` reports a sibling-kill as 130, so a blanket "retry anything ≥ 128"
-  would silently re-run genuine failures. The argument is preserved in the script's own header, including the measurement that a failing package under the current `--sequential` root
-  script exits 3 rather than 130 — and the note that the wrapper does not rely on that staying true.
-- It cannot mask a crash in another package: that package's lcov would be missing and
-  `coverage:check` throws. That argument depends on `@clarvis/code` being the **last**
-  workspace in the sequential run, which `package.json` and `package.json` still make true. A
-  reordering of the `workspaces` array silently weakens this.
+- A real test failure is never retried, nor is a crash in another package.
+- Neither is 130/143. The historical measurement that parallel Bun fan-out can report sibling
+  termination as 130 remains the reason a blanket signal retry would be unsafe. The old sequential
+  root probe reported an ordinary failure as 3, not 130. The supervisor does not depend on fan-out
+  translating signals consistently: its adapter handles nullable exit codes plus actual signals,
+  qualified by small subprocess fixtures with the pinned Bun runtime.
+- The earlier argument that Code was necessarily last was incorrect for observed sequential
+  fan-out ordering. Its position in the root manifest did not prove all other workspaces had passed.
+  The supervisor therefore tracks each completed package explicitly and does not infer completion
+  from another package's LCOV. It removes only the selected package's old LCOV before every attempt.
+- Cancellation waits for the active child and prevents the next package or retry.
+
+Production: `tooling/lib/ci-coverage.ts`, `runCiCoverage` and `executeCoverageCommand`.
+Test: [supervisor tests](../tooling/tests/unit/ci-coverage.test.ts), order permutations, retry
+classification/exhaustion, real Bun signal conversion, stale reports and cancellation.
 
 At the historical 31% rate the expected residual red after three retries was ~0.9%.
 
@@ -861,8 +869,8 @@ wrapper remains wired into the Linux test step, so the restored workflow exercis
 separate migration. Bun 1.4.0 is installed locally and carries the upstream fix; there is still no
 post-restoration GitHub-runner sample recorded here. The
 retirement gate is at least 30 `@clarvis/code` coverage iterations on Bun 1.4 with zero exits 132,
-134 or 139. Until that sample exists, `tooling/ci/retry-code-coverage.sh` remains the sole isolated
-shell exception. The pre-commit hook invokes `bun run check:pre-commit` directly, not the retry.
+134 or 139. Until that sample exists, the Code-only retry remains in the coverage supervisor
+behind `tooling/ci/retry-code-coverage.sh`. The pre-commit hook invokes `bun run check:pre-commit` directly, not the retry.
 
 Two files in the tree point a reader at this document by path —
 `tooling/ci/retry-code-coverage.sh` and `.github/workflows/segfault-canary.yml` (top comment) — which is the
@@ -889,7 +897,7 @@ file was loading at the time, and `exited with code 1`.
 
 **This is not the `code` segfault** and must not be filed under it — different package, different
 exit code, no `panic`. That distinction is still operational rather than editorial: the retry
-wrapper matches `132 | 134 | 139` and nothing else (`tooling/ci/retry-code-coverage.sh`), so an exit-1
+supervisor accepts Code's `132 | 134 | 139` and nothing else (`tooling/lib/ci-coverage.ts`), so an exit-1
 death of this kind is never retried and never re-runs `@clarvis/code`.
 
 ### The `--isolate` theory was wrong; the cause is a leaked pino destination in our own suite
@@ -1330,7 +1338,7 @@ write/read-only behavior, scratch writes, undeclared-path and process isolation,
 networking, and the kernel toolchain-inspection path (`packages/tools/tests/integration/sandbox.test.ts`,
 `enforces the native sandbox against real host resources`;
 `packages/kernel/tests/integration/sandbox-policy.test.ts`, `inspects a discovered toolchain without
-executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.linux` and
+executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.coverage` and
 `jobs.sandbox-macos`).
 
 **A resolved Seatbelt regression made installed Apple Git look absent.** A real Clarvis
@@ -1480,8 +1488,8 @@ point at a `specs/known-issues.md` that is not part of this corpus, so the measu
 retry's expected residual failure rate, and whether any canary arm has been run are unknown to these
 documents." Every checkable part of that is now stale, and this is the file it named.
 
-Verified: `tooling/ci/retry-code-coverage.sh` reads "specs/known-issues.md). A death by one of
-the crash signals is retried; a real" and `.github/workflows/segfault-canary.yml` (top comment) reads
+Verified: `tooling/ci/retry-code-coverage.sh` still names this document for the retained crash
+policy and retirement canary, and `.github/workflows/segfault-canary.yml` (top comment) reads
 "@clarvis/code suite (see specs/known-issues.md). One arm per dispatch;". Both paths resolve. (The
 report cites the path literal is, the earlier lines being
 the surrounding prose.) The rate is carried above under *The rate, measured* — 26 of 84 runs, 31.0%,

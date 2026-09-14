@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  checkCoverage,
+  coverageWorkspaceFailures,
   findUnmeasuredSources,
   readOwnSourceCoverage,
   staleReport,
@@ -25,7 +27,78 @@ async function fixture(source: string): Promise<string> {
   return root;
 }
 
+describe("coverage workspace policy", () => {
+  async function census() {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-coverage-inventory-"));
+    fixtureRoots.push(root);
+    const { workspaces } = JSON.parse(await Bun.file("package.json").text()) as {
+      workspaces: string[];
+    };
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces }));
+    for (const workspace of workspaces) {
+      await mkdir(join(root, workspace), { recursive: true });
+      await writeFile(
+        join(root, workspace, "package.json"),
+        await Bun.file(join(workspace, "package.json")).text(),
+      );
+    }
+    return { root, workspaces };
+  }
+
+  test("matches every current workspace to the existing coverage policy", async () => {
+    expect(await coverageWorkspaceFailures()).toEqual([]);
+  });
+
+  test("rejects a new workspace without a floor before accepting any reports", async () => {
+    const { root, workspaces } = await census();
+    workspaces.push("packages/new-package");
+    await mkdir(join(root, "packages/new-package"));
+    await writeFile(
+      join(root, "packages/new-package/package.json"),
+      JSON.stringify({ name: "@clarvis/new-package", scripts: { "test:coverage": "bun test" } }),
+    );
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces }));
+    expect(await coverageWorkspaceFailures(root)).toEqual([
+      "new-package: workspace has no coverage floor",
+    ]);
+    await expect(checkCoverage(root)).rejects.toThrow("Coverage workspace policy");
+  });
+
+  test("rejects a floor whose workspace was removed", async () => {
+    const { root, workspaces } = await census();
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        workspaces: workspaces.filter((workspace) => workspace !== "packages/code"),
+      }),
+    );
+    expect(await coverageWorkspaceFailures(root)).toEqual([
+      "code: coverage floor has no workspace",
+    ]);
+    await expect(checkCoverage(root)).rejects.toThrow("Coverage workspace policy");
+  });
+
+  test("protocol's LCOV exception does not excuse a missing contract script", async () => {
+    const { root } = await census();
+    await writeFile(
+      join(root, "packages/protocol/package.json"),
+      JSON.stringify({ name: "@clarvis/protocol", scripts: {} }),
+    );
+    await expect(coverageWorkspaceFailures(root)).rejects.toThrow("missing test:coverage script");
+  });
+});
+
 describe("type-only coverage", () => {
+  test("rejects an empty runtime report rather than accepting a partial denominator", async () => {
+    const root = await fixture("export interface Contract { id: string }\n");
+    await mkdir(join(root, "packages", "kernel", "coverage"), { recursive: true });
+    await writeFile(
+      join(root, "packages", "kernel", "coverage", "lcov.info"),
+      "TN:\nend_of_record\n",
+    );
+    await expect(readOwnSourceCoverage("kernel", root)).rejects.toThrow("no own-source line data");
+  });
+
   test("accepts an absent LCOV report only for a declared type-only package", async () => {
     const root = await fixture("export interface Contract { id: string }\n");
 

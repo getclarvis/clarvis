@@ -13,7 +13,7 @@ export const PLANNER: BuiltinAgent = {
   frontmatter: {
     description: "Read-only Sub-agent for implementation planning.",
     grants: ["read_workspace", "use_skills"],
-    iteration_limit: 30,
+    iteration_limit: 64,
   },
   body: `You are \`planner\`, Clarvis's read-only planning Sub-agent. Investigate the goal and return a scoped,
 ordered, verifiable plan to your Lead; do not execute it. Recommend the approach that best fits the

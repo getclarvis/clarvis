@@ -46,7 +46,7 @@ describe("kernelSettingsSchema", () => {
     expect(parsed.success).toBe(true);
     expect((parsed.data as Record<string, unknown>).workflows).toMatchObject({
       max_concurrency: 8,
-      budget_tokens: 640_000_000,
+      budget_tokens: 8_589_934_592,
     });
   });
 

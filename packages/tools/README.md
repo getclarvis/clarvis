@@ -155,8 +155,8 @@ the host after review when Isolation is Sandbox. Isolation Host already runs uns
 field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
 `require_escalated`: the guest has no channel to the machine host and no placement fallback. In
 native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
-`deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`ask` by default,
-or configured `deny`). Without a usable judge model it asks a human. Host-command review bypasses
+`deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`deny` by default;
+explicit `ask` may use a human). An unavailable judge follows the same fallback. Host-command review bypasses
 session coverage and never offers `allow_session`, including human fallback; clean judge decisions
 retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
 `gh auth token`, Git `--exec` helpers, and

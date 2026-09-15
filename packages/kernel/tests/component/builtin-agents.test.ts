@@ -113,7 +113,7 @@ describe("the agent fleet Clarvis ships", () => {
 
 describe("the shipped admiral agent", () => {
   test("uses the full lead-session soft iteration allowance", () => {
-    expect(ADMIRAL.frontmatter.iteration_limit).toBe(200);
+    expect(ADMIRAL.frontmatter.iteration_limit).toBe(256);
   });
 
   test("carries the workflow grant, which is the only thing that routes a run as a workflow", () => {
@@ -156,7 +156,7 @@ describe("the shipped admiral agent", () => {
 
 describe("the shipped marshall agent", () => {
   test("uses the full lead-session soft iteration allowance", () => {
-    expect(MARSHALL.frontmatter.iteration_limit).toBe(200);
+    expect(MARSHALL.frontmatter.iteration_limit).toBe(256);
   });
 
   test("uses separate tools for independent spawning and tracked delegation", () => {
@@ -179,6 +179,7 @@ describe("the shipped Sub-agent leaves", () => {
     for (const name of ["coder", "explorer", "planner"] as const) {
       const agent = readBuiltinAgent(name)!;
       const prompt = agent.body.replace(/\s+/g, " ");
+      expect(agent.frontmatter.iteration_limit).toBe(64);
       expect(agent.frontmatter.can_spawn).toBeUndefined();
       expect(prompt).toContain(`You are \`${name}\``);
       expect(prompt).toContain("When delegated");

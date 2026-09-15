@@ -10,6 +10,6 @@ export function resolveEffectReviewSettings(
     ...operator,
     timeout_ms: Math.min(operator?.timeout_ms ?? 20000, workspace?.timeout_ms ?? Infinity),
     max_retries: Math.min(operator?.max_retries ?? 1, workspace?.max_retries ?? Infinity),
-    on_unsure: workspace?.on_unsure === "deny" ? "deny" : (operator?.on_unsure ?? "ask"),
+    on_unsure: workspace?.on_unsure === "deny" ? "deny" : (operator?.on_unsure ?? "deny"),
   };
 }

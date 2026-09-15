@@ -154,7 +154,7 @@ run's hard `ResolvedConfig`: `max_tokens`, bounded only when
 | Key | Default | Read at |
 | --- | --- | --- |
 | `CLARVIS_DEFAULT_TIMEOUT_MS` | `300000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/run-shape.ts` |
-| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `200` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
+| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `256` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
 | `CLARVIS_DEFAULT_ELICIT_WAIT_MS` | `1_800_000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
 | `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | `5000`, capped at `60_000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/orchestrator.ts` |
 | `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `2000` (`packages/capability/src/env.ts`) | `packages/loop/src/runtime/execute-run.ts` (`executeRun`, `raceWithBudget`); `packages/loop/src/runtime/orchestrator.ts` (`wrap`) |

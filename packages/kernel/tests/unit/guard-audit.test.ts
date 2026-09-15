@@ -286,7 +286,10 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: {
+          guard_mode: "auto",
+          guard_judge: { prompt: "judge", on_unsure: "ask" },
+        } as never,
         llm,
       }),
     );
@@ -318,7 +321,10 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: {
+          guard_mode: "auto",
+          guard_judge: { prompt: "judge", on_unsure: "ask" },
+        } as never,
         llm,
         elicit,
       }),
@@ -360,7 +366,6 @@ describe("guard audit records", () => {
     expect(denied).toEqual({
       allowed: false,
       answerer: "unavailable",
-      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
     });
     const escalation = records.find((r) => r.fields.event === "guard.escalation.no_channel");
     expect(escalation?.level).toBe("warn");

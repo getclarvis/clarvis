@@ -189,14 +189,14 @@ is only cited here as the wiring that reaches this subsystem's constructors.
 | Variable | Default | File | Consumed by |
 | --- | --- | --- | --- |
 | `CLARVIS_TOKEN_CEILING` | `200_000_000` | `packages/capability/src/env.ts` | request-validation ceiling on `total_token_limit` |
-| `CLARVIS_ITERATION_CEILING` | `200` | `packages/capability/src/env.ts` | request-validation ceiling on `iteration_limit` |
+| `CLARVIS_ITERATION_CEILING` | `256` | `packages/capability/src/env.ts` | request-validation ceiling on `iteration_limit` |
 | `CLARVIS_TIMEOUT_CEILING_MS` | `600000` (max `2_147_483_647`) | `packages/capability/src/env.ts` | ceiling on `budget.timeout_ms` / `call_timeout_ms` |
 | `CLARVIS_ESCALATION_CEILING` | `20` | `packages/capability/src/env.ts` | ceiling on `budget.max_escalations` |
 | `CLARVIS_DEFAULT_TIMEOUT_MS` | `300000` | `packages/capability/src/env.ts` | `resolveConfig`'s `timeout_ms` fallback (`packages/loop/src/runtime/run-shape.ts`), which seeds `createComputeClock` |
 | `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT` | `160_000_000` | `packages/capability/src/env.ts` | request-validation default, scaled 4x with the iteration default |
 | `CLARVIS_DEFAULT_MAX_ESCALATIONS` | `5` | `packages/capability/src/env.ts` | `SoftBudget`'s `maxEscalations` fallback (`packages/loop/src/runtime/entry-inputs.ts`) |
 | `CLARVIS_DEFAULT_ELICIT_WAIT_MS` | `1_800_000` | `packages/capability/src/env.ts` | wait bound passed to `buildSoftLimitAsk`/`buildGuardEscalationAsk` |
-| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `200` | `packages/capability/src/env.ts` | `IterationCounter` soft-mode cap fallback |
+| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `256` | `packages/capability/src/env.ts` | `IterationCounter` soft-mode cap fallback |
 | `CLARVIS_DEFAULT_STAGNATION_THRESHOLD` | `3` | `packages/capability/src/env.ts` | `createStagnationGuard`'s hard `threshold` fallback |
 | `CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD` | `2` | `packages/capability/src/env.ts` | `createStagnationGuard`'s `soft` fallback |
 | `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` | `packages/capability/src/env.ts` (doc `packages/capability/src/env.ts`) | `escalateGuardTrip`'s `maxEscalations`, deliberately separate from `CLARVIS_DEFAULT_MAX_ESCALATIONS` (comment, `packages/capability/src/env.ts`) |

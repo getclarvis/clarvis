@@ -107,7 +107,7 @@ service, the model retries the same `shell` or `monitor_start` command with
 `sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
 spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
 `allow` executing and `deny` refusing. Unsure, failed or malformed review follows `on_unsure`
-(default `ask`, configured `deny` respected); no usable model asks a human. Host-command asks never
+(default `deny`; explicit `ask` may use a human); an unavailable model follows the same fallback. Host-command asks never
 use session coverage or offer `allow_session`, including fallback; clean exact-call judge memoization
 remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
 Isolated container runs reject the field. Mode `off` proceeds without a reviewer. Executable Git

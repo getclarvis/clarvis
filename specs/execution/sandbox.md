@@ -500,8 +500,8 @@ Bubblewrap only on Linux and Seatbelt only on macOS; unsupported hosts never gue
 including stored `availability: "optional"`. Per-call `forceBare` is the only remaining unsandbox
 path and is gated by command review. For native Sandbox `require_escalated`, Review `on` requires
 a human; Auto may judge the host effect after deny-list enforcement (`allow` executes, `deny`
-refuses). Unsure, failed or malformed review follows `on_unsure` (default `ask`, configured `deny`
-respected); no usable model asks a human. The call's judge facts use Host placement and omit native
+refuses). Unsure, failed or malformed review follows `on_unsure` (default `deny`; explicit `ask` may
+use a human); an unavailable model follows the same fallback. The call's judge facts use Host placement and omit native
 network restrictions. Host-command asks bypass session coverage and never offer `allow_session`,
 including human fallback; clean exact-call judge memoization remains separate. Review `off` is
 unchanged. Docker/Podman reject escalation; on Host the field is a no-op under normal review.

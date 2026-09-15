@@ -315,7 +315,7 @@ Leaders cannot launch leaders: the host strips workflow and auxiliary plans/memo
 can_spawn controls local children, not the workflow catalogue. Round profile selects a non-manager
 leader; omission uses default_spawn. Custom managers need workflow and a valid spawn topology.
 
-settings.workflows tunes max_concurrency (1..20), max_total_leaders (1..255) and budget_tokens
+settings.workflows tunes max_concurrency (1..20), max_total_leaders (1..512) and budget_tokens
 (positive output-token ceiling or null). This auxiliary budget and concurrency headroom do not erase
 manager/profile iteration, child, model or budget limits.
 

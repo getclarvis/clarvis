@@ -11,7 +11,10 @@ test("Auto reuses exact human session consent but still denies listed commands a
   let questions = 0;
   let denied: string[] = [];
   const resolver = createGuardResolver({
-    loadSettings: () => ({ guard: { type: "shell", mode: "auto", denied_commands: denied } }),
+    loadSettings: () => ({
+      effect_review: { on_unsure: "ask" },
+      guard: { type: "shell", mode: "auto", denied_commands: denied },
+    }),
     sessionAllowlistFor: () => allowlist,
   });
   const ctx = {

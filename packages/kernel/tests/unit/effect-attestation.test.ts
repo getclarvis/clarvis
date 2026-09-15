@@ -202,6 +202,34 @@ describe("closed effect attestation", () => {
       "owner/repo",
     ]);
   });
+  portable("attests watched checks for the current open pull request", async () => {
+    const deps = fixture();
+    const result = await attestShell(
+      context("gh pr checks 7 --repo owner/repo --watch --interval 10"),
+      deps,
+    );
+    expect(result.facts[0]).toMatchObject({
+      id: "github.checks.observe",
+      attestation: "complete",
+      target: { labels: { repo: "owner/repo", branch: "feature", pr: 7 } },
+    });
+    expect(deps.calls.at(-1)?.args.slice(0, 5)).toEqual([
+      "pr",
+      "view",
+      "7",
+      "--repo",
+      "owner/repo",
+    ]);
+  });
+  portable.each([
+    "gh pr checks feature --watch",
+    "gh pr checks 7 --interval 10",
+    "gh pr checks 7 --watch --interval 0",
+    "gh pr checks 7 --watch --interval",
+    "gh pr checks 7 --web",
+  ])("keeps unsupported checks observation under human-only attestation: %s", async (command) => {
+    expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");
+  });
   portable.each([
     "gh pr view 7",
     "gh pr view 7 --json body",
@@ -210,6 +238,80 @@ describe("closed effect attestation", () => {
   ])("keeps unsupported pull-request observation under human review: %s", async (command) => {
     expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");
   });
+  portable.each([
+    "gh pr checks 7 --repo owner/repo --watch --interval 10",
+    "gh pr view 7 --repo owner/repo --json number,state,title,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup,url",
+  ])(
+    "attempts review and denies an invalid reviewer response without a human prompt: %s",
+    async (command) => {
+      const deps = fixture();
+      const services = createCapabilityServices();
+      const ledger = createOperatorAuthorityRuntime({
+        owner: "owner",
+        executionId: "run",
+        seed: {
+          binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+          evidence: [
+            {
+              id: "operator",
+              source: "start",
+              text: "Monitor the required CI checks for pull request 7 without merging it.",
+              execution_id: "run",
+            },
+          ],
+        },
+      });
+      services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
+      let reviewerCalls = 0;
+      let humanPrompts = 0;
+      const resolver = createGuardResolver({
+        loadSettings: () => ({
+          effect_review: { rollout: "local", max_retries: 0 },
+          providers: [{ name: "anthropic", kind: "anthropic" }],
+          defaultModel: "anthropic/test",
+        }),
+        effectRunner: deps.runner,
+        effectEnvironment: deps.environment,
+      });
+      const resolved = await resolver({
+        owner: "owner",
+        executionId: "run",
+        workspaceRoot: root,
+        services,
+        env: {},
+        request: { guard_mode: "auto" },
+        elicit: async () => {
+          humanPrompts++;
+          return { action: "accept", content: { decision: "allow" } };
+        },
+        llm: {
+          async call() {
+            reviewerCalls++;
+            return {
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+              toolCalls: [],
+            };
+          },
+        },
+      } as unknown as RunCapabilityContext);
+      const call = context(command);
+      const decision = await resolved!.guard!(call);
+      expect(decision).toMatchObject({
+        verdict: "ask",
+        analysis: { reviewability: "static" },
+        effect: { id: "github.checks.observe", attestation: "complete" },
+      });
+      expect(
+        await resolved!.elicit!({ tool: "shell", args: call.args, shell: call.shell, ...decision }),
+      ).toMatchObject({
+        allowed: false,
+        answerer: "judge",
+        review: { effect_id: "github.checks.observe", failure_kind: "invalid_response" },
+      });
+      expect(reviewerCalls).toBe(1);
+      expect(humanPrompts).toBe(0);
+    },
+  );
   portable.each(corpus.shell_human_only)("inert corpus never infers %s", async (command) => {
     expect((await attestShell(context(command), fixture())).reviewability).toBe("human_only");
   });

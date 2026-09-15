@@ -23,7 +23,7 @@ export const ADMIRAL: BuiltinAgent = {
     ],
     can_spawn: ["coder", "explorer", "planner", "marshall"],
     default_spawn: "coder",
-    iteration_limit: 200,
+    iteration_limit: 256,
     reasoning_effort: "high",
   },
   body: `You are \`admiral\`, Clarvis's workflow Lead. Own the user's outcome through orchestration

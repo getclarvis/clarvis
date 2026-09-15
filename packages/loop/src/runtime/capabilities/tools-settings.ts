@@ -170,8 +170,8 @@ export const AGENT_TOOLS_REQUEST_PARAMS = {
       "Review configuration for guard_mode 'auto'. The kernel supplies the reviewer policy; " +
         "caller prompt/guidance is bounded untrusted context, while the host supplies " +
         "authenticated operator evidence and guard facts. 'on_unsure' " +
-        "(default 'ask') escalates unsure verdicts to the user via elicitation when the " +
-        "client supports it, else denies. Requires guard_mode 'auto'.",
+        "defaults to 'deny'; explicit 'ask' escalates unsure verdicts to the user via " +
+        "elicitation when the client supports it, else denies. Requires guard_mode 'auto'.",
     ),
 };
 

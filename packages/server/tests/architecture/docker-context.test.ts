@@ -50,8 +50,8 @@ describe("server image build context", () => {
     expect(dockerfile).not.toContain("RUN bun run build\n");
   });
 
-  it("scales the image run budget with the 200-iteration soft limit", () => {
+  it("keeps the image ceiling aligned with the power-of-two iteration limit", () => {
     expect(dockerfile).toContain("CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000");
-    expect(dockerfile).toContain("CLARVIS_ITERATION_CEILING=200");
+    expect(dockerfile).toContain("CLARVIS_ITERATION_CEILING=256");
   });
 });

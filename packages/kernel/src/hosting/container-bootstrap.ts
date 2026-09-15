@@ -108,7 +108,7 @@ function assertArtifact(manifest: RuntimeArtifactManifest, input: ContainerIniti
     manifest.target !== target ||
     manifest.baseAbi !== input.runtime.baseAbi ||
     manifest.baseAbi !== CONTAINER_BASE_ABI ||
-    manifest.kernelWireVersion !== 10 ||
+    manifest.kernelWireVersion !== 11 ||
     manifest.brokerVersion !== 1 ||
     manifest.channelVersion !== 1
   )
@@ -245,7 +245,7 @@ export function serveContainerKernel(
               generation: admitted.generation,
               artifactDigest: admitted.artifactDigest,
               configDigest: admitted.configDigest,
-              kernelWireVersion: 10,
+              kernelWireVersion: 11,
               brokerVersion: 1,
             });
           } catch (error) {

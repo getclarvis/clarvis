@@ -2,18 +2,82 @@
 
 ## Ownership and authority
 
-`@clarvis/goal` owns objective state, bounded schemas, user-control transitions, execution policy and
-criteria evaluation. It does not depend on the loop, kernel, plan or protocol packages. The host owns
-the authenticated conversation, durable session transaction, physical run lifecycle, authority and
-evidence lookup. `GoalRepository` describes a transaction over the existing session document; it is
-not another authoritative store. `GoalRuntimePort` binds model operations to one host-selected entry
-agent and run. Children return their work to that entry rather than controlling the objective.
+`@clarvis/goal` owns objective state, bounded schemas, user-control transitions, semantic formulation,
+execution policy and criteria evaluation. It has a one-way dependency on `@clarvis/loop` for generic
+run executor types and invocation; the loop does not name Goal behavior. It does not depend on the
+kernel, plan or protocol packages. The host owns the authenticated conversation, durable session
+transaction, physical run lifecycle, authority and evidence lookup. `GoalRepository` describes a
+transaction over the existing session document; it is not another authoritative store.
+`GoalRuntimePort` binds model operations to one host-selected entry agent and work run. Children
+return their work to that entry rather than controlling the objective.
 
 Production: the ports in [ports.ts](../../packages/goal/src/ports.ts), strict schemas in
 [schemas.ts](../../packages/goal/src/schemas.ts), and user controls in
 [control.ts](../../packages/goal/src/control.ts).
 Test: `goal user controls` in [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts) verifies
 session isolation, physical exclusion, CAS and operation replay.
+
+## Semantic formulation agent
+
+Every non-literal creation uses a separate bounded `goal-agent` run. Auto mode treats the projected
+conversation trajectory as primary. Guided mode treats its validated seed as the newest authoritative
+request; trajectory and workspace reads may resolve references and retain already stated limits, but
+cannot delete, replace or widen the seed. Literal mode never invokes this runtime. There is no
+background observer, second Goal machine, draft queue or public job catalog.
+
+The fixed prompt asks for an observable result rather than implementation steps, separates context,
+quotations and meta commentary from operational authorization, preserves later corrections and
+pivots, decomposes coherent compound requests into criteria, and exposes explicit constraints,
+exclusions and necessary assumptions. It never infers permission, publication, spend, destruction or
+external contact. Workspace and quoted content are untrusted data. When materially different readings
+remain plausible, or a required artifact cannot be read completely, the only valid result is
+`insufficient_context` with one short question and reason.
+
+The strict structured result is either ready or insufficient. Ready output contains objective,
+qualitative/human criteria, constraints, exclusions, assumptions and normative source paths. Unknown
+fields, empty strings, duplicate normalized semantics and bounds violations are rejected. The model
+cannot supply host criteria, IDs, revisions, limits, digests, execution identities, provider settings
+or authority. `formulationCriteria` normalizes descriptions and assigns ordered `criterion-NN` IDs.
+Invalid output fails the operation without partial creation or fallback to the seed.
+
+The run uses fixed profile and entry `goal-agent`, `shared_prompt: ""`, no MCP servers, no declared
+tools, no spawnable agents and only the `read_workspace` grant. Its output schema contributes the
+generic `submit_result`. The Kernel replaces, rather than extends, dependencies with the canonical
+Tools capability, whose effective surface derives from `@clarvis/tools` `readOnlyTools`. Therefore
+read file(s), image, directory, glob, grep, diff, file stat and tree operations may be available;
+write/edit/shell/monitor and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
+surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
+continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.
+
+The default request takes the ordinary run's resolved token allowance as its own independent budget
+and stops at 120,000 ms or eight iterations. Each provider call is
+limited to 60,000 ms with at most one transport retry. Existing environment ceilings may only lower
+these values. The non-contributable `goals.agent` settings block may select a model and override the
+formulation token allowance while lowering the other limits; omitted model inherits `default_model`,
+while an explicit invalid model fails on
+use without falling back to the current profile. The run has host-minted execution and agent-instance
+IDs, its own persisted trace, no conversation turn, and provider `callPurpose: "goal"`.
+
+`projectGoalTrajectory` reconstructs every persisted `continue_from` ancestor reachable from
+non-pending conversation turns, then orders sanitized user messages, final-answer assistant results,
+terminal status, accepted steering and user elicitation answers by timestamp. It excludes system and
+developer prompts, reasoning, tool arguments/results, opaque provider metadata, pending turns and the
+slash command. Guided seed travels once in its own field. Simultaneous entry/byte bounds retain recent
+corrections first and encode omitted counts plus partial-chain state. The host hashes the exact
+canonical projection sent and derives ordered source execution IDs; absent or partial continuation
+records set truncation rather than masquerading as a complete conversation.
+
+Production: [request.ts](../../packages/goal/src/agent/request.ts),
+[prompt.ts](../../packages/goal/src/agent/prompt.ts), [run.ts](../../packages/goal/src/agent/run.ts),
+[settings.ts](../../packages/goal/src/settings.ts), and
+[agent-runtime.ts](../../packages/kernel/src/goals/agent-runtime.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and the announced-surface
+assertion in
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+Production: `projectGoalTrajectory` in
+[trajectory.ts](../../packages/kernel/src/goals/trajectory.ts).
+Test: [goal-trajectory.test.ts](../../packages/kernel/tests/unit/goal-trajectory.test.ts) covers
+continuation recovery, ordering, correction priority, sanitization, exclusion and stable digest.
 
 `update_goal` accepts an object with one `update` property. Its nested discriminated alternatives
 describe exactly the progress, checkpoint, candidate and blocked arguments accepted at dispatch.
@@ -29,9 +93,11 @@ and valid/privileged action cases in [capability.test.ts](../../packages/goal/te
 
 ## Client presentation boundary
 
-The Code goal parser recognizes only explicit control verbs. `/goal -- <text>` protects a literal
-objective beginning with a reserved word. A malformed control is refused rather than forwarded as
-an objective. The presentation controller subscribes before its initial state read, coalesces
+The Code goal parser recognizes only explicit control verbs. `/goal auto` formulates from trajectory;
+`/goal <seed>` formulates with the seed as primary; `/goal -- <text>` creates literal text without a
+model call, so `/goal -- auto` is valid. `auto` and control verbs remain reserved only in their exact
+documented forms. A malformed reserved control is refused rather than reinterpreted as a seed. The
+presentation controller subscribes before its initial state read, coalesces
 invalidations and suppresses late reads after a conversation generation changes. It never starts
 or schedules a run. Local presentation generations do not cross the goal service seam as authority.
 
@@ -48,13 +114,19 @@ control or recovered receipt remains successful if its independent follow-up sta
 controller reports a stale view and keeps the confirmed receipt instead of inviting a conflicting
 retry.
 
-`registerGoalCommands` exposes `/goal`, literal objective creation and the edit/pause/resume/cancel/
-clear controls through the normal Code registry. Unsupported hosts refuse controls explicitly.
-The deterministic form stages objective, bounded criteria and finite limits in one reviewed mutation;
+`registerGoalCommands` exposes `/goal`, explicit auto/guided formulation, literal objective creation
+and the edit/pause/resume/cancel/clear controls through the normal Code registry. Formulation prepares
+an empty conversation when needed, never dispatches the slash command to the ordinary model, does not
+open a pre-creation form, and does not silently replace a current Goal. Created opens the existing
+view; insufficient, stale and failed outcomes show one question/message without automatic retry.
+Unsupported hosts refuse controls explicitly. The deterministic form stages objective, bounded
+criteria, constraints, exclusions, assumptions and finite limits in one reviewed mutation;
 replacement retains the previous goal and requires confirmation. Editing a terminal goal also uses
 replacement. Physical work, including unknown work without a live hosted reference, blocks editing.
-The view distinguishes durable goal status, physical execution, completion candidate, checkpoint and
-qualitative model assessment. A paused goal may still have a running physical stage.
+The view distinguishes durable status, physical execution, origin, semantic arrays, normative source
+paths/digests, completion candidate, checkpoint and qualitative model assessment. A semantic edit
+announces that it converts the whole definition to literal and clears source bindings; limit-only
+edits preserve them. A paused goal may still have a running physical stage.
 Human criteria display pending or accepted status from the host's persisted acceptance for the
 same criterion and objective revision. The acceptance picker excludes criteria already accepted
 for that revision; missing, foreign-criterion or older-revision approvals remain pending.
@@ -114,11 +186,31 @@ Creation over an existing goal requires explicit replacement review. Replacement
 goal identity and archives the old record atomically. An active but physically idle old commitment is
 marked cancelled when replaced; completed commitments retain completion in the audit.
 
-`revision` is the CAS revision of state; `objective_revision` changes only with objective/criteria
-edits; `control_revision` fences pending admission and late completion. Human acceptance updates its
+The current record keeps `constraints`, `exclusions`, `assumptions`, normative `sources` and `origin`
+beside the existing objective and criteria. Each semantic array and the sources array contains at
+most 16 items; text and confined paths are at most 4,096 characters and every source digest is a
+lowercase SHA-256. Guided origin retains the normalized seed up to 16,384 characters. Auto/guided
+origin also records the formulation execution, captured full-session revision, host-derived source
+execution IDs, digest and truncation state of the exact canonical trajectory, and optional measured
+formulation usage. Pre-release records without these fields decode with empty arrays and literal
+origin and are canonically rewritten by the next host publication; no parallel version or migrator
+exists.
+
+A source is normative only when it defines the requested result, was read completely and
+successfully in that formulation run, and was reread through the confined workspace service before
+commit. The model supplies only a path; the host computes its digest. A missing, partial, invented or
+changed read fails closed. Later drift does not redefine the Goal: the view reports attention and
+completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the
+Goal authorizes changing are execution evidence, not normative sources.
+
+`revision` is the CAS revision of state; `objective_revision` changes with any objective, criteria,
+constraint, exclusion or assumption edit; `control_revision` fences pending admission and late
+completion. Human acceptance updates its
 record and CAS revision without revoking the running commitment. Edits retain all consumption and
-continuation counts. Objective edits invalidate candidates and human acceptance; limit-only edits
-do not manufacture new evidence. Terminal goals cannot silently reopen.
+continuation counts. Semantic edits invalidate candidates and human acceptance, clear normative
+sources and convert the complete definition to literal because the edit is a new explicit user
+declaration. Limit-only edits retain provenance and do not manufacture new evidence. Terminal goals
+cannot silently reopen.
 
 Each control carries an operation ID and expected revision. The parsed request and session identity
 form the receipt fingerprint. An exact replay returns its known receipt without repeating execution
@@ -135,6 +227,62 @@ Production: `GoalControlContext` and `applyGoalControl` in
 Test: `replays the reserved start receipt independently of changed configuration defaults` in
 [domain.test.ts](../../packages/goal/tests/unit/domain.test.ts), and the IPC goal journey in
 [file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+
+Formulation requests carry session ID, expected Goal-state revision, operation ID and the strict
+auto/guided discriminator. Auto forbids a seed; guided requires a nonempty normalized seed. The
+fingerprint includes mode and guided seed. Every terminal analysis outcome receives a receipt in the
+same ring, including insufficient, stale and provider/schema failure. An identical concurrent
+operation shares its process promise; replay after settlement reads the durable receipt. Reusing an
+operation ID for a different mode or seed conflicts.
+
+Before inference the service checks operator authority, expected Goal revision, absence of any
+current Goal and absence of physical conversation work. It captures the complete Session revision,
+trajectory, configuration and host-owned IDs, then releases all session transactions during the
+semantic run. Auto with no eligible user message records a deterministic question without a model
+call. Ready output and normative sources are validated before a short transaction compares the full
+captured Session revision. A change records only `stale_context`; insufficient and failure record
+only their receipts. Ready calls `applyGoalFormulation`, persists Goal/receipt and reserves the work
+execution before using the same start/compensation routine as literal creation.
+
+Measured formulation usage is added once to Session totals in the receipt transaction and copied to
+origin for audit when a Goal is created. It never charges `GoalRecord.consumption`, whose budget starts
+with the admitted work run. The semantic execution is not a conversation turn and work settlement
+cannot count it again.
+
+Production: `GoalFormulateRequest` and `GoalFormulateResult` in
+[protocol goals.ts](../../packages/protocol/src/goals.ts), `applyGoalFormulation` and
+`recordGoalFormulationReceipt` in [control.ts](../../packages/goal/src/control.ts), and
+`createGoalService` in [service.ts](../../packages/kernel/src/goals/service.ts).
+
+### Independent semantic completion proof
+
+Every non-checkpoint final attempt for literal, guided and auto origins first passes deterministic
+candidate, human, host-evidence and normative-source validation. A valid attempt then starts a
+separate read-only `goal-agent` run at the Goal gate. Literal definitions are authoritative as
+written; guided definitions remain subordinate to their exact seed and normative sources; auto
+definitions remain faithful to projected trajectory and sources. Candidate prose is not proof.
+
+The host requires exact verdict coverage for definition, objective and qualitative criteria,
+validates evidence IDs, binds inspected paths to successful complete trace reads and computes all
+digests. `GoalRun.verifications` retains the newest four audits. Any relevant definition, candidate,
+final-attempt, evidence, artifact or revision change makes a proof stale. Source drift blocks before
+inference and never adopts new bytes. An unchanged negative proof is reused. The Goal gate remains
+order `-200`, before Plan order `-100`; a later Plan nudge changes the final attempt and requires a
+new Goal proof.
+
+Only a current `achieved` proof lets the gate pass. After physical closure, settlement performs no
+model call and `settleGoalRun` remains the sole writer of `status: complete`. A verifier verdict is
+therefore fenced audit evidence, not completion authority.
+
+Production: `verifyCompletion` and `readCompletionProof` in
+[runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts), `recordGoalVerification` in
+[verification-state.ts](../../packages/goal/src/verification-state.ts), and the gate in
+[capability.ts](../../packages/goal/src/capability.ts). Test:
+[verification.test.ts](../../packages/goal/tests/unit/verification.test.ts) and
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+Test: [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
+covers the real file host, IPC, provider adapter, read-only tools, source digest, separate trace,
+single work admission, empty auto, receipt replay, Session CAS and source drift.
 
 Archive capacity is eight goals and each goal retains at most 256 run bindings. The goal slice is
 bounded to 1 MiB within the existing session limit; ordinary controls leave 64 KiB for settlement
@@ -209,6 +357,12 @@ The strict `goals` configuration block is owned by the lightweight `@clarvis/goa
 and registered by the kernel before settings parsing. It uses whole-block last-scope precedence:
 a workspace block replaces the global block, including omission of its optional token cap or
 deadline. Plugins cannot contribute this block, and it adds no model-callable run parameter.
+
+Its optional `agent.model` selects only the semantic formulation model and otherwise inherits
+`default_model`. `agent.formulation` may override `max_net_tokens` and lower `timeout_ms`, `max_iterations`,
+`call_timeout_ms` and `max_retries` from the resolved-run-budget/120,000/eight/60,000/one defaults. The
+ordinary execution ceilings still apply. Plugins, Code requests and model output cannot contribute
+or override these host values.
 
 Creation and replacement resolve limits in this order: explicit user control, effective `goals`
 configuration, then domain defaults. An omitted `max_net_tokens` inherits the finite entry run
@@ -473,7 +627,8 @@ single-count usage, complete serialized prefix/cache identity, stagnation, incom
 refusal and pause/cancel races. These controlled-SDK tests are separate from TUI and Container qualification.
 
 `createFileRunHost` registers this policy in its ordinary prepared execution path. It exposes a
-connection-scoped `GoalService` with availability, state, receipt lookup and strict user controls.
+connection-scoped `GoalService` with availability, state, receipt lookup, semantic formulation and
+strict user controls.
 Observer connections receive reads; writes resolve the actual registry controller and revalidate
 authority inside the short mutation and after asynchronous preparation. Initial/resumed execution
 uses the registry's internal start with that proof. Foreign peers and stale proof copies cannot

@@ -64,7 +64,7 @@ async function boundedText(response: Response): Promise<string> {
 interface ReleaseTarget {
   base: { image: string; digest: `sha256:${string}`; abi: "clarvis-linux-glibc-v1" };
   artifact: { asset: string; sha256: string; size: number };
-  kernel_wire_version: 10;
+  kernel_wire_version: 11;
   broker_version: 1;
   channel_version: 1;
 }
@@ -92,7 +92,7 @@ function releaseTarget(value: unknown, target: "linux-x64" | "linux-arm64"): Rel
     typeof artifact.size !== "number" ||
     !Number.isSafeInteger(artifact.size) ||
     artifact.size <= 0 ||
-    root.kernel_wire_version !== 10 ||
+    root.kernel_wire_version !== 11 ||
     root.broker_version !== 1 ||
     root.channel_version !== 1
   )
@@ -104,7 +104,7 @@ function releaseTarget(value: unknown, target: "linux-x64" | "linux-arm64"): Rel
       abi: "clarvis-linux-glibc-v1",
     },
     artifact: { asset: artifact.asset, sha256: artifact.sha256, size: artifact.size },
-    kernel_wire_version: 10,
+    kernel_wire_version: 11,
     broker_version: 1,
     channel_version: 1,
   };

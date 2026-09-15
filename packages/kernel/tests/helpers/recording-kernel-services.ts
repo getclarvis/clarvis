@@ -24,6 +24,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       availability: record("goals.availability"),
       get: record("goals.get"),
       control: record("goals.control"),
+      formulate: record("goals.formulate"),
       receipt: record("goals.receipt"),
     },
     localHost: {

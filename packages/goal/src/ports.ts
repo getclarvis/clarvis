@@ -1,4 +1,4 @@
-import type { Logger } from "@clarvis/capability";
+import type { FinalizeAttempt, Logger } from "@clarvis/capability";
 import type { GoalCheckpoint, GoalEvidenceRef, GoalRecord, GoalState } from "./schemas.ts";
 import type { GoalCompletionValidation } from "./criteria.ts";
 import type { GoalCandidateInput, GoalCheckpointInput, GoalProgressInput } from "./model-input.ts";
@@ -49,6 +49,19 @@ export interface GoalRuntimePort {
   progress(input: GoalProgressInput, signal?: AbortSignal): Promise<void>;
   checkpoint(input: GoalCheckpointInput, signal?: AbortSignal): Promise<GoalCheckpoint>;
   candidate(input: GoalCandidateInput, signal?: AbortSignal): Promise<GoalCompletionValidation>;
+  /** Deterministic candidate and host/human evidence validation; this never invokes a model. */
   validateCompletion(signal?: AbortSignal): Promise<GoalCompletionValidation>;
+  /** Independently verify one exact proposed final result and persist its fenced audit. */
+  verifyCompletion(
+    attempt: Exclude<FinalizeAttempt, { mode: "checkpoint" }>,
+    signal?: AbortSignal,
+  ): Promise<
+    GoalCompletionValidation & {
+      verdict?: "achieved" | "not_achieved" | "inconclusive";
+      verification_execution_id?: string;
+    }
+  >;
+  /** Read an already persisted achieved proof for the exact physically settled result. */
+  readCompletionProof(result: unknown, signal?: AbortSignal): Promise<GoalCompletionValidation>;
   blocked(reason: string, signal?: AbortSignal): Promise<void>;
 }

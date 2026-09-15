@@ -154,19 +154,19 @@ describe("goal through the real file host and SDK HTTP", () => {
       status: "complete",
       auto_continuations: 1,
       consumption: {
-        input: 3060,
-        output: 30,
-        net_tokens: 3090,
+        input: 4100,
+        output: 40,
+        net_tokens: 4140,
         usage_unknown: false,
         cache_estimated: true,
       },
     });
     expect(goal.consumption.cached).toBeUndefined();
     expect((await f.client.sessions.get("conversation"))!.totals).toEqual({
-      input: 3060,
-      output: 30,
+      input: 4100,
+      output: 40,
     });
-    expect(f.requests).toHaveLength(3);
+    expect(f.requests).toHaveLength(4);
   });
 
   it("blocks an otherwise valid checkpoint when the actual SDK response omitted usage", async () => {
@@ -318,8 +318,8 @@ describe("goal through the real file host and SDK HTTP", () => {
     const finished = (await f.client.goals.get("conversation")).state.current!;
     expect(finished.runs.map((run) => run.automatic)).toEqual([false, false]);
     expect(finished.consumption.usage_unknown).toBe(false);
-    expect(f.requests).toHaveLength(3);
-    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
+    expect(f.requests).toHaveLength(4);
+    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
     expect(f.requests[1]!.messages.slice(0, f.requests[0]!.messages.length)).toEqual(
       f.requests[0]!.messages,
     );

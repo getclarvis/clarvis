@@ -188,6 +188,13 @@ export const OPERATIONS = {
       invoke: (services, params) =>
         services.goals.control(params.request as Parameters<GoalService["control"]>[0]),
     },
+    formulate: {
+      method: "goals.formulate",
+      metadata: write(),
+      encode: (request) => ({ request }),
+      invoke: (services, params) =>
+        services.goals.formulate(params.request as Parameters<GoalService["formulate"]>[0]),
+    },
     receipt: {
       method: "goals.receipt",
       metadata: read(),

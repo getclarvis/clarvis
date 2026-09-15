@@ -321,6 +321,56 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
     llm: {
       call: async (params) => {
         const step = calls++;
+        const verificationMessage = [...params.messages].reverse().find((message) => {
+          if (message.role !== "user" || typeof message.content !== "string") return false;
+          try {
+            return "required_targets" in (JSON.parse(message.content) as object);
+          } catch {
+            return false;
+          }
+        });
+        if (verificationMessage !== undefined) {
+          const payload = JSON.parse(verificationMessage.content as string) as {
+            required_targets: { qualitative_criterion_ids: string[] };
+          };
+          return {
+            toolCalls: [
+              {
+                id: "goal-verification",
+                name: params.tools.find((tool) => tool.toolName === "submit_result")!.wireName,
+                arguments: {
+                  verdict: "achieved",
+                  summary: "Container Goal independently verified",
+                  assessments: [
+                    {
+                      scope: "definition",
+                      verdict: "satisfied",
+                      rationale: "Definition passed",
+                      evidence_ids: [],
+                      inspected_paths: [],
+                    },
+                    {
+                      scope: "objective",
+                      verdict: "satisfied",
+                      rationale: "Objective passed",
+                      evidence_ids: [],
+                      inspected_paths: [],
+                    },
+                    ...payload.required_targets.qualitative_criterion_ids.map((criterion_id) => ({
+                      scope: "criterion",
+                      criterion_id,
+                      verdict: "satisfied",
+                      rationale: "Criterion passed",
+                      evidence_ids: [],
+                      inspected_paths: [],
+                    })),
+                  ],
+                },
+              },
+            ],
+            usage,
+          };
+        }
         const tool = params.tools.find((item) => item.toolName === "update_goal");
         if (tool === undefined) throw new Error("fixture missing native Goal tool");
         if (step === 0) {
@@ -438,7 +488,7 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
     });
     await resumedRun.handle.closed;
     expect((await next.client.goals.get(sessionId)).state.current?.status).toBe("complete");
-    expect(calls).toBe(3);
+    expect(calls).toBe(4);
   } finally {
     release.resolve();
     await next?.close();

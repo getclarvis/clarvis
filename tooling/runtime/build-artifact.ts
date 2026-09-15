@@ -179,7 +179,7 @@ async function main(): Promise<void> {
       dirty,
       target: plan.target,
       baseAbi: "clarvis-linux-glibc-v1",
-      kernelWireVersion: 10,
+      kernelWireVersion: 11,
       brokerVersion: 1,
       channelVersion: 1,
       entrypoint: "bin/clarvis-kernel",

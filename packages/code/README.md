@@ -84,13 +84,25 @@ also uses hosted turn admission and waits for physical closure. The host must re
 execution to continue; restarting an interrupted host does not replay tools or restore a live run.
 See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
 
-`/goal` shows the conversation's objective, criteria, limits, consumption and physical execution.
-`/goal <objective>` creates and starts it under finite host limits; `/goal -- <objective>` protects
-literal text beginning with a control word. Existing goals open replacement review. `/goal edit`
-opens a deterministic form for objective, criteria and limits; editing a terminal goal requires
-confirmed replacement. Pause, resume, cancel and clear use explicit host controls. Pause alone
-stops future stages; `pause --running` also requests cancellation of the bound run. Editing waits
-for physical closure, including unknown work that requires recovery.
+`/goal` shows the conversation's objective, semantic definition, origin, normative source snapshots,
+limits, consumption, physical execution and latest independent completion verdict. The view includes
+the verifier execution ID and unsatisfied or inconclusive assessments. It labels an achieved LLM
+verdict as fenced audit evidence rather than completion authority; only post-closure Kernel
+settlement may show the Goal as complete. `/goal auto` explicitly asks the Goal agent to formulate
+from the existing trajectory. `/goal <seed>` asks it to treat the seed as primary and use trajectory
+and confined reads only to resolve and enrich that request. Neither mode opens the form or sends the
+slash command to the ordinary conversation model. `/goal -- <objective>` bypasses inference and
+creates that exact literal text, including `/goal -- auto`; an empty literal is refused.
+
+Any current Goal blocks formulation until the user reviews, cancels or clears it. A created
+formulation opens the existing Goal view; insufficient, stale or failed outcomes show their one
+question or actionable message and never retry analysis automatically. `/goal edit` opens a
+deterministic form for objective, criteria, constraints, exclusions, assumptions and limits. A
+semantic edit warns that saving converts the complete definition to literal and clears normative
+source bindings; a limit-only edit preserves them. Editing a terminal goal requires confirmed
+replacement. Pause, resume, cancel and clear use explicit host controls. Pause alone stops future
+stages; `pause --running` also requests cancellation of the bound run. Editing waits for physical
+closure, including unknown work that requires recovery.
 An edit submits only fields changed from the reviewed snapshot; a no-op closes locally, and a
 limit-only edit does not revise the objective or clear its candidate and human approvals. Once a
 mutation receipt is confirmed, a failed follow-up read leaves the view stale with an error but does

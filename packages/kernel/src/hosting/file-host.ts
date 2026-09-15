@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { goalsSettingsSchema } from "@clarvis/goal/settings";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
@@ -230,6 +231,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             "Goal requires explicit resume by a live conversation controller",
           );
         registry!.assertController(context.conversation);
+        const goalAgent = kernel.goalAgentRuntime(owner);
         return prepareHostedGoalTurn({
           params,
           context,
@@ -240,9 +242,38 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             workspaceRoot: options.kernel.workspaceRoot,
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
           }),
+          async validateDefinitionSources(sources) {
+            for (const source of sources) {
+              try {
+                const current = await kernel.files.readFile(source.path);
+                if (createHash("sha256").update(current.content).digest("hex") !== source.digest)
+                  return false;
+              } catch {
+                return false;
+              }
+            }
+            return true;
+          },
+          verification: {
+            workspaceRoot: options.kernel.workspaceRoot,
+            workspaceReadAvailable: goalAgent.workspaceReadAvailable,
+            policy: goalAgent.verification,
+            createRuntime: (trackModel) => kernel.goalAgentRuntime(owner, trackModel),
+            readRun: async (executionId) => {
+              try {
+                return await kernel.runs.get(executionId);
+              } catch (error) {
+                if (toKernelError(error).code === "not_found") return null;
+                throw error;
+              }
+            },
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readFile: (path) => kernel.files.readFile(path),
+          },
           prepareExecution,
           logger,
           priceFor: (model) => prices.get(model),
+          onChange: (sessionId) => goalChanges.notify(sessionId),
         });
       },
     });
@@ -365,6 +396,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           throw kernelError("resource_exhausted", "previous local connections are still closing");
         const connection = owned.connect(role);
         roles.set(connection.peer.id, role);
+        const goalAgentAvailability = kernel.goalAgentRuntime(owner);
         goalServices.set(
           connection.peer.id,
           createGoalService({
@@ -385,11 +417,37 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
                 goalControls--;
               };
             },
-            defaultLimits: async () =>
-              goalsSettingsSchema.parse((await kernel.config.getSettings()).merged.goals ?? {}),
+            defaultLimits: async () => {
+              const settings = goalsSettingsSchema.parse(
+                (await kernel.config.getSettings()).merged.goals ?? {},
+              );
+              return {
+                max_auto_continuations: settings.max_auto_continuations,
+                max_no_progress_checkpoints: settings.max_no_progress_checkpoints,
+                ...(settings.max_net_tokens === undefined
+                  ? {}
+                  : { max_net_tokens: settings.max_net_tokens }),
+                ...(settings.deadline_at === undefined
+                  ? {}
+                  : { deadline_at: settings.deadline_at }),
+              };
+            },
             entryTokenLimit: (params) => kernel.prepareRun(params, owner).tokenLimit,
             logger,
             subscribe: async (sessionId, listener) => goalChanges.subscribe(sessionId, listener),
+            transactions: sessions,
+            readRun: async (executionId) => {
+              try {
+                return await kernel.runs.get(executionId);
+              } catch (error) {
+                if (toKernelError(error).code === "not_found") return null;
+                throw error;
+              }
+            },
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readWorkspaceFile: (path) => kernel.files.readFile(path),
+            formulateRun: (input) => kernel.goalAgentRuntime(owner).run(input),
+            workspaceReadAvailable: goalAgentAvailability.workspaceReadAvailable,
           }),
         );
         return {

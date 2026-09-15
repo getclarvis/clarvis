@@ -68,7 +68,7 @@ Every workspace has one primary architectural role:
 | host contract | `protocol` | Transport-neutral DTOs and the `KernelClient` service contract | No internal package dependency |
 | execution service | `llm`, `mcp-client`, `supervision`, `trace`, `tools`, `hooks`, `skills` | Provider, transport, observation and machine-action implementations used by the engine or host | Foundations; a same-role edge only when one service genuinely builds on another, currently `hooks -> tools` |
 | engine | `loop` | Embeddable execution and orchestration policy | Foundations and execution services; `hooks`, `skills` and `tools` remain optional |
-| product capability | `memory`, `plan`, `goal`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
+| product capability | `memory`, `plan`, `goal`, `tasks`, `workflows` | Independently owned features composed by a host | Foundations; `goal`, `memory` and `workflows` may execute the loop, and `workflows` may use supervision |
 | host implementation | `kernel` | Implements `protocol`, composes the engine and product capabilities, and owns local host policy | Host contract and any lower package it actually composes |
 | application | `code`, `server` | User-facing terminal application and MCP-over-HTTP facade | `kernel`, `protocol`, and only those foundations whose concerns the application itself owns |
 
@@ -79,6 +79,20 @@ composition dependencies directly rather than hiding them behind a lower barrel
 (`packages/kernel/package.json`, `dependencies`). Loop declares its execution services and keeps
 Hooks, Skills and Tools optional (`packages/loop/package.json`, `optionalDependencies`). Protocol
 has no internal dependency field (`packages/protocol/package.json`).
+
+Goal's `@clarvis/loop` edge is the same one-way executor ownership used by Memory and Workflows:
+`@clarvis/goal` constructs an ordinary isolated `RunRequest` and calls the generic executor, while
+Loop has no dependency on Goal and no Goal-specific branch. The Goal source imports only executor/run
+types from Loop; Kernel supplies the runtime implementation and isolated capability dependencies.
+Production: `PACKAGE_EDGE_EXCEPTIONS` in
+[package-architecture.ts](../../tooling/lib/package-architecture.ts), Goal's manifest and build
+reference, `runGoalAgent` in [run.ts](../../packages/goal/src/agent/run.ts), and
+`runGoalVerification` in [verification.ts](../../packages/goal/src/agent/verification.ts). Both
+formulation and completion verification use the same one-way edge; neither adds a Goal branch to
+Loop.
+Test: `limits engine execution to the capabilities that own it` in
+[package-architecture.test.ts](../../tooling/tests/unit/package-architecture.test.ts) and the generated
+[package coupling report](../package-coupling-analysis.md).
 
 ### 2.2 Ownership terms
 
@@ -357,13 +371,13 @@ applications
 
 host implementation
   kernel
-      |-- product capabilities         memory, plan, tasks, workflows
+      |-- product capabilities         goal, memory, plan, tasks, workflows
       |-- engine                       loop
       |-- execution services           only those it composes directly
       `-- foundations + protocol
 
 engine and capabilities
-  memory, workflows --> loop
+  goal, memory, workflows --> loop
   plan, tasks --------> capability/paths only
   loop ---------------> execution services + foundations
 

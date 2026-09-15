@@ -103,7 +103,7 @@ async function writeReleaseSet(directory: string): Promise<void> {
                 sha256: "c".repeat(64),
                 size: 1024,
               },
-              kernel_wire_version: 10,
+              kernel_wire_version: 11,
               broker_version: 1,
               channel_version: 1,
             },

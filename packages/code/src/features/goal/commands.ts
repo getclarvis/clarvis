@@ -52,6 +52,22 @@ export function registerGoalCommands(
         if (!deps.goals.available())
           throw new Error(deps.goals.failure() || "Goals are unavailable on this host.");
         const current = deps.goals.view()?.state.current;
+        if (command.kind === "formulate") {
+          if (current !== undefined)
+            throw new Error(
+              "A goal already exists; review, cancel or clear it before formulating another.",
+            );
+          const receipt = await deps.goals.formulate(command.mode, command.seed);
+          if (receipt.formulation.outcome === "created") open();
+          else
+            deps.notify(
+              receipt.formulation.question ??
+                receipt.formulation.message ??
+                "Goal formulation did not create a goal.",
+              "warn",
+            );
+          return;
+        }
         if (command.kind === "edit" || (command.kind === "create" && current !== undefined)) {
           const physical = deps.goals.view()?.physical_run;
           if (
@@ -99,8 +115,9 @@ export function registerGoalCommands(
     surface: "slash",
     group: "actions",
     desc: "Inspect or control this conversation's persistent objective",
-    args: [{ name: "<objective> | -- <literal objective>" }],
+    args: [{ name: "auto | <seed> | -- <literal objective>" }],
     subcommands: [
+      { name: "auto", desc: "Formulate from this conversation's trajectory" },
       { name: "edit", desc: "Review the objective, criteria and limits" },
       { name: "pause", desc: "Pause future stages; --running also cancels the bound run" },
       { name: "resume", desc: "Revalidate and resume within the remaining limits" },

@@ -1,6 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import type { GoalControlRequest, GoalService, GoalView as GoalViewDto } from "@clarvis/protocol";
+import type {
+  GoalControlRequest,
+  GoalFormulateRequest,
+  GoalFormulateResult,
+  GoalService,
+  GoalView as GoalViewDto,
+} from "@clarvis/protocol";
 import { createCommands, type CommandUi } from "../../src/keys/commands.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import { registerGoalCommands } from "../../src/features/goal/commands.ts";
@@ -22,6 +28,11 @@ const settled = () => new Promise<void>((resolve) => setImmediate(resolve));
 function fixture(initial: GoalViewDto = goalView()) {
   let state = initial;
   const requests: GoalControlRequest[] = [];
+  const formulations: GoalFormulateRequest[] = [];
+  let formulationOutcome: GoalFormulateResult["formulation"] = {
+    mode: "guided",
+    outcome: "created",
+  };
   const opened: string[] = [];
   const notices: string[] = [];
   const keys = createFakeKeymap();
@@ -31,6 +42,15 @@ function fixture(initial: GoalViewDto = goalView()) {
     get: async () => structuredClone(state),
     subscribe: async () => () => {},
     receipt: async () => null,
+    formulate: async (request) => {
+      formulations.push(request);
+      return {
+        operation_id: request.operation_id,
+        revision: state.state.revision,
+        fingerprint: "fixture",
+        formulation: { ...formulationOutcome, mode: request.mode },
+      };
+    },
     control: async (request) => {
       requests.push(request);
       state = { ...state, state: { ...state.state, revision: state.state.revision + 1 } };
@@ -61,6 +81,7 @@ function fixture(initial: GoalViewDto = goalView()) {
   cleanup.push(() => controls.dispose());
   return {
     requests,
+    formulations,
     opened,
     notices,
     keys,
@@ -76,6 +97,9 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     notify: (message: string) => {
       notices.push(message);
+    },
+    formulationOutcome(value: GoalFormulateResult["formulation"]) {
+      formulationOutcome = value;
     },
   };
 }
@@ -108,7 +132,7 @@ test("goal slash controls never dispatch a prompt and preserve invalid syntax", 
   expect(f.requests[1]?.action).toEqual({ kind: "pause", running: true });
 });
 
-test("an existing goal opens replacement review without sending a mutation", async () => {
+test("an existing goal refuses guided formulation without replacement", async () => {
   const f = fixture();
   cleanup.push(
     createRoot((dispose) => {
@@ -126,8 +150,71 @@ test("an existing goal opens replacement review without sending a mutation", asy
     }),
   );
   await settled();
-  expect(f.opened).toEqual(["goal.open"]);
+  expect(f.opened).toEqual([]);
   expect(f.requests).toHaveLength(0);
+  expect(f.notices.some((notice) => notice.includes("already exists"))).toBe(true);
+});
+
+test("guided and auto commands formulate outside the composer while literal escape stays direct", async () => {
+  const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
+  let commands!: ReturnType<typeof createCommands>;
+  cleanup.push(
+    createRoot((dispose) => {
+      commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  expect(commands.route("goal.open", "implemente a spec 123")).toBe(true);
+  await settled();
+  expect(f.formulations[0]).toMatchObject({ mode: "guided", seed: "implemente a spec 123" });
+  expect(f.opened).toEqual(["goal.open"]);
+
+  f.opened.splice(0);
+  commands.route("goal.open", "auto");
+  await settled();
+  expect(f.formulations[1]).toMatchObject({ mode: "auto" });
+  expect(f.formulations[1]).not.toHaveProperty("seed");
+
+  commands.route("goal.open", "-- auto");
+  await settled();
+  expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "auto" });
+  expect(f.formulations).toHaveLength(2);
+});
+
+test("a clarification result is shown once without automatically repeating analysis", async () => {
+  const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
+  f.formulationOutcome({
+    mode: "auto",
+    outcome: "insufficient_context",
+    question: "Qual resultado você quer?",
+  });
+  cleanup.push(
+    createRoot((dispose) => {
+      const commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      commands.route("goal.open", "auto");
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  await settled();
+  expect(f.notices).toContain("Qual resultado você quer?");
+  expect(f.formulations).toHaveLength(1);
+  expect(f.opened).toEqual([]);
 });
 
 test("goal view separates pause from physical execution and identifies qualitative assessment", async () => {
@@ -151,6 +238,40 @@ test("goal view separates pause from physical execution and identifies qualitati
   f.keys.press("x");
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "pause", running: true });
+});
+
+test("goal view exposes guided provenance and the complete semantic definition", async () => {
+  const f = fixture(
+    goalView({
+      status: "paused",
+      constraints: ["Preserve compatibility"],
+      exclusions: ["Do not publish"],
+      assumptions: ["The referenced contract is current"],
+      sources: [{ path: "specs/capabilities/goals.md", digest: "a".repeat(64) }],
+      origin: {
+        kind: "guided",
+        seed: "Implement the Goal contract",
+        formulation_execution_id: "formulation-1",
+        source_session_revision: 2,
+        source_execution_ids: ["conversation-1"],
+        trajectory_digest: "b".repeat(64),
+        trajectory_truncated: false,
+      },
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Origin: guided");
+  expect(frame).toContain("Constraints");
+  expect(frame).toContain("Preserve compatibility");
+  expect(frame).toContain("Exclusions");
+  expect(frame).toContain("Do not publish");
+  expect(frame).toContain("Assumptions");
+  expect(frame).toContain("The referenced contract is current");
+  expect(frame).toContain("Normative sources");
+  expect(frame).toContain("specs/capabilities/goals.md");
 });
 
 test("goal form displays explicit whole-goal limits and submits its pinned revision", async () => {
@@ -234,6 +355,46 @@ test("saving an unchanged goal review closes without a host mutation", async () 
 test("goal detail renders durable progress diagnostics and accepts a pending human criterion", async () => {
   const run = {
     ...goalRun("stage-1", "closed"),
+    verifications: [
+      {
+        verification_execution_id: "verification-1",
+        control_revision: 1,
+        objective_revision: 1,
+        definition_digest: "a".repeat(64),
+        candidate_digest: "b".repeat(64),
+        final_attempt_digest: "c".repeat(64),
+        evidence_digest: "d".repeat(64),
+        verdict: "not_achieved" as const,
+        summary: "Independent review found one missing result",
+        assessments: [
+          {
+            scope: "definition" as const,
+            verdict: "satisfied" as const,
+            rationale: "Definition is faithful",
+            evidence_ids: [],
+            inspected_paths: [],
+          },
+          {
+            scope: "objective" as const,
+            verdict: "unsatisfied" as const,
+            rationale: "Observable result is incomplete",
+            evidence_ids: [],
+            inspected_paths: [],
+          },
+          {
+            scope: "criterion" as const,
+            criterion_id: "artifact",
+            verdict: "inconclusive" as const,
+            rationale: "Artifact could not be established",
+            evidence_ids: [],
+            inspected_paths: [],
+          },
+        ],
+        inspected_artifacts: [],
+        usage: { kind: "measured" as const, input: 10, output: 2, cached: 0 },
+        verified_at: 2,
+      },
+    ],
     progress: { summary: "Implementation completed", evidence: [] },
     checkpoint: {
       summary: "Stage verified",
@@ -283,7 +444,7 @@ test("goal detail renders durable progress diagnostics and accepts a pending hum
   view.attention = "Review is required";
   const f = fixture(view);
   await f.goals.refresh();
-  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 38 });
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 44 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Goal: blocked (Awaiting review)");
@@ -293,6 +454,11 @@ test("goal detail renders durable progress diagnostics and accepts a pending hum
   expect(frame).toContain("Completion candidate: All automated checks passed");
   expect(frame).toContain("Progress: Implementation completed");
   expect(frame).toContain("Checkpoint: Stage verified");
+  expect(frame).toContain("Independent verification: not_achieved · verification-1");
+  expect(frame).toContain("objective: unsatisfied · Observable result is incomplete");
+  expect(frame).toContain("artifact: inconclusive · Artifact could not be established");
+  expect(frame).toContain("an achieved LLM verdict is");
+  expect(frame).toContain("fenced audit evidence, not completion authority");
 
   f.keys.press("a");
   await rendered.renderOnce();

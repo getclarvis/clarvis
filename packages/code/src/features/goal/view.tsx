@@ -1,6 +1,11 @@
 import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { GoalControlAction, GoalRecord } from "@clarvis/protocol";
+import type {
+  GoalControlAction,
+  GoalRecord,
+  GoalVerification,
+  GoalVerificationAssessment,
+} from "@clarvis/protocol";
 import type { ViewHost } from "../../keys/commands.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
@@ -224,6 +229,7 @@ export function GoalView(
                 verticalScrollbarOptions={scrollbarOptions()}
               >
                 <text fg={tokens.fg}>{current().objective}</text>
+                <text fg={tokens.muted}>{`Origin: ${current().origin.kind}`}</text>
                 <text
                   fg={tokens.accent}
                 >{`Goal: ${current().status}${current().reason ? ` (${current().reason})` : ""}`}</text>
@@ -271,10 +277,68 @@ export function GoalView(
                     >{`${criterion.kind === "qualitative" ? "Model assessment" : criterion.kind === "human" ? `Human approval (${humanAccepted(current(), criterion.id) ? "accepted" : "pending"})` : "Host check"}: ${criterion.description}`}</text>
                   )}
                 </For>
+                <Show when={current().constraints.length > 0}>
+                  <text fg={tokens.accent} marginTop={1}>
+                    Constraints
+                  </text>
+                  <For each={current().constraints}>
+                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                  </For>
+                </Show>
+                <Show when={current().exclusions.length > 0}>
+                  <text fg={tokens.accent} marginTop={1}>
+                    Exclusions
+                  </text>
+                  <For each={current().exclusions}>
+                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                  </For>
+                </Show>
+                <Show when={current().assumptions.length > 0}>
+                  <text fg={tokens.accent} marginTop={1}>
+                    Assumptions
+                  </text>
+                  <For each={current().assumptions}>
+                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                  </For>
+                </Show>
+                <Show when={current().sources.length > 0}>
+                  <text fg={tokens.accent} marginTop={1}>
+                    Normative sources
+                  </text>
+                  <For each={current().sources}>
+                    {(source) => <text fg={tokens.fg}>{`${source.path} · ${source.digest}`}</text>}
+                  </For>
+                </Show>
                 <Show when={current().candidate}>
                   <text
                     fg={tokens.muted}
                   >{`Completion candidate: ${current().candidate!.summary}`}</text>
+                </Show>
+                <Show
+                  when={current()
+                    .runs.flatMap((run) => run.verifications)
+                    .at(-1)}
+                >
+                  {(verification: Accessor<GoalVerification>) => (
+                    <>
+                      <text
+                        fg={verification().verdict === "achieved" ? tokens.accent : tokens.warn}
+                      >{`Independent verification: ${verification().verdict} · ${verification().verification_execution_id}`}</text>
+                      <text fg={tokens.muted}>{verification().summary}</text>
+                      <For
+                        each={verification().assessments.filter(
+                          (assessment: GoalVerificationAssessment) =>
+                            assessment.verdict !== "satisfied",
+                        )}
+                      >
+                        {(assessment: GoalVerificationAssessment) => (
+                          <text
+                            fg={tokens.warn}
+                          >{`${assessment.scope === "criterion" ? assessment.criterion_id : assessment.scope}: ${assessment.verdict} · ${assessment.rationale}`}</text>
+                        )}
+                      </For>
+                    </>
+                  )}
                 </Show>
                 <Show when={current().runs.at(-1)?.progress}>
                   <text
@@ -290,8 +354,8 @@ export function GoalView(
                   fg={tokens.muted}
                 >{`${current().runs.length} stages · ${goals.view()?.state.archive.length ?? 0} archived goals`}</text>
                 <text fg={tokens.muted}>
-                  A saved checkpoint ends one stage. Goal completion is a separate host decision;
-                  model assessment is not independent verification.
+                  A saved checkpoint ends one stage. Goal completion is a separate host decision; an
+                  achieved LLM verdict is fenced audit evidence, not completion authority.
                 </text>
               </scrollbox>
             )}

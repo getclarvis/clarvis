@@ -44,6 +44,31 @@ Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 Test: automatic-stage and delayed-goal-read cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
+Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
+host rejects it before inference when a Goal or physical run already owns the conversation. Its
+separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock
+is released. After a ready result passes the full-session revision CAS, the host publishes Goal and
+receipt before calling the same `startControlled` path used by literal creation. Insufficient, stale
+and failed outcomes publish only a receipt and therefore create no hosted observation. Code recovers
+that receipt without resubmitting analysis.
+
+Production: `createGoalService` in [service.ts](../../packages/kernel/src/goals/service.ts),
+`startControlled` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), and
+`createGoalController` in [controller.ts](../../packages/code/src/features/goal/controller.ts).
+Test: [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
+and formulation recovery in
+[goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts).
+
+Goal completion verification is internal to the active hosted turn, not a public RPC operation or
+post-run job. The order `-200` Goal gate starts a distinct read-only execution while the primary run
+is still open. Both share controller cancellation, runtime placement, deadline and usage accounting,
+but retain separate execution IDs and traces. The session lock is not held during inference;
+persistence rechecks all fences. Physical closure invokes a read-only proof check, never another
+model call. Production: `prepareHostedGoalTurn` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and `verifyCompletion` in
+[runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts). Test:
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+
 `WorkspaceClientManager` discovers or launches Code's companion `local-host` entry, selected by
 `resolveLocalKernelArtifact`. The application entry composes the local subscription manager,
 memory and lazy runtime factory without importing the renderer. Closing the manager closes its

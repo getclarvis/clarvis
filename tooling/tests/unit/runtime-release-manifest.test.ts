@@ -16,7 +16,7 @@ const target = (name: "linux-x64" | "linux-arm64", byte: string) => ({
     sha256: (byte === "a" ? "c" : "d").repeat(64),
     size: 1024,
   },
-  kernel_wire_version: 10 as const,
+  kernel_wire_version: 11 as const,
   broker_version: 1 as const,
   channel_version: 1 as const,
 });

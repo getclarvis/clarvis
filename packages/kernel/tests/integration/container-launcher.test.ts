@@ -29,7 +29,7 @@ function manifest(): RuntimeArtifactManifest {
     dirty: true,
     target: process.arch === "arm64" ? "linux-arm64" : "linux-x64",
     baseAbi: "clarvis-linux-glibc-v1",
-    kernelWireVersion: 10,
+    kernelWireVersion: 11,
     brokerVersion: 1,
     channelVersion: 1,
     entrypoint: "bin/clarvis-kernel",

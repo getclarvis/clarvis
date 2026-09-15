@@ -163,7 +163,7 @@ Roles are architectural ownership, not a literal dependency chain or physical di
 Use the generated coupling report for exact edges. Three relationships are especially easy to
 reverse:
 
-- `memory` and `workflows` sit above `loop` and may execute runs; the loop does not name them.
+- `goal`, `memory` and `workflows` sit above `loop` and may execute runs; the loop does not name them.
 - `plan` and `tasks` are host-registered capabilities beside the loop.
 - `protocol` is transport-agnostic. `code` and `server` consume the `KernelClient` contract, while
   `kernel` implements it over the loop.

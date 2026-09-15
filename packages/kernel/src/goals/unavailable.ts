@@ -12,6 +12,7 @@ export function unavailableGoalService(
     availability: async () => ({ available: false, reason }),
     get: refuse,
     control: refuse,
+    formulate: refuse,
     receipt: refuse,
     subscribe: refuse,
   };

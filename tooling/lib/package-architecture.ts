@@ -63,6 +63,7 @@ const ROLE_DEPENDENCIES: Readonly<Record<PackageRole, readonly PackageRole[]>> =
 
 const PACKAGE_EDGE_EXCEPTIONS = new Set([
   "@clarvis/hooks\0@clarvis/tools",
+  "@clarvis/goal\0@clarvis/loop",
   "@clarvis/memory\0@clarvis/loop",
   "@clarvis/workflows\0@clarvis/loop",
   "@clarvis/workflows\0@clarvis/supervision",

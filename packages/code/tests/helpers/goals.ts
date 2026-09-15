@@ -16,6 +16,11 @@ export function goalView(overrides: Partial<GoalRecord> = {}, physical?: HostedR
         objective_revision: 1,
         objective: "Verify the fixture",
         criteria: [{ id: "objective", description: "Fixture is complete", kind: "qualitative" }],
+        constraints: [],
+        exclusions: [],
+        assumptions: [],
+        sources: [],
+        origin: { kind: "literal" },
         status: "active",
         created_at: 1,
         updated_at: 1,
@@ -53,5 +58,6 @@ export function goalRun(executionId: string, phase: GoalRun["phase"] = "running"
     automatic: true,
     phase,
     admitted_at: 1,
+    verifications: [],
   };
 }

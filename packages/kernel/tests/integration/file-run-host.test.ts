@@ -53,14 +53,79 @@ async function fixture(
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      const wire = (await request.json()) as { prompt_cache_key: string };
-      const result = await responder.call({
-        model: "test",
-        provider: "fixture",
-        messages: [],
-        tools: [],
-        promptCacheKey: wire.prompt_cache_key,
-      });
+      const wire = (await request.json()) as {
+        prompt_cache_key: string;
+        messages?: Array<{ content?: unknown }>;
+      };
+      let verificationIds: string[] | undefined;
+      for (const message of [...(wire.messages ?? [])].reverse()) {
+        if (typeof message.content !== "string") continue;
+        try {
+          const payload = JSON.parse(message.content) as {
+            required_targets?: { qualitative_criterion_ids?: unknown };
+          };
+          if (
+            Array.isArray(payload.required_targets?.qualitative_criterion_ids) &&
+            payload.required_targets.qualitative_criterion_ids.every((id) => typeof id === "string")
+          ) {
+            verificationIds = payload.required_targets.qualitative_criterion_ids;
+            break;
+          }
+        } catch {
+          continue;
+        }
+      }
+      const result =
+        verificationIds === undefined
+          ? await responder.call({
+              model: "test",
+              provider: "fixture",
+              messages: [],
+              tools: [],
+              promptCacheKey: wire.prompt_cache_key,
+            })
+          : {
+              toolCalls: [
+                {
+                  id: "verification-result",
+                  name: "submit_result",
+                  arguments: {
+                    verdict: "achieved",
+                    summary: "Controlled verifier passed",
+                    assessments: [
+                      {
+                        scope: "definition",
+                        verdict: "satisfied",
+                        rationale: "Definition passed",
+                        evidence_ids: [],
+                        inspected_paths: [],
+                      },
+                      {
+                        scope: "objective",
+                        verdict: "satisfied",
+                        rationale: "Objective passed",
+                        evidence_ids: [],
+                        inspected_paths: [],
+                      },
+                      ...verificationIds.map((criterion_id) => ({
+                        scope: "criterion",
+                        criterion_id,
+                        verdict: "satisfied",
+                        rationale: "Criterion passed",
+                        evidence_ids: [],
+                        inspected_paths: [],
+                      })),
+                    ],
+                  },
+                },
+              ],
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cached_tokens: 0,
+                cache_write_tokens: 0,
+              },
+            };
       const calls = result.toolCalls ?? [];
       const chunk = {
         id: "file-host-fixture",
@@ -322,8 +387,11 @@ describe("file kernel behind the hosted RPC", () => {
     await until(() => f.host.stats().runs === 0);
     const view = await f.client.goals.get("conversation");
     expect(view.state.current).toMatchObject({ status: "complete", auto_continuations: 1 });
-    expect(view.state.current!.runs.map((run) => run.execution_id)).toEqual(f.entered);
-    expect(f.entered).toHaveLength(2);
+    const primaryExecutions = view.state.current!.runs.map((run) => run.execution_id);
+    expect(f.entered.filter((executionId) => primaryExecutions.includes(executionId))).toEqual(
+      primaryExecutions,
+    );
+    expect(f.entered).toHaveLength(3);
     expect(view.physical_run).toBeUndefined();
     await until(() => invalidations.length >= 5);
     expect(
@@ -332,10 +400,10 @@ describe("file kernel behind the hosted RPC", () => {
     unsubscribe();
     expect(new Set(f.goalLlm!.calls.map((call) => call.promptCacheKey)).size).toBe(1);
     const session = (await f.client.sessions.get("conversation"))!;
-    expect(session.turns.map((turn) => turn.execution_id)).toEqual(f.entered);
+    expect(session.turns.map((turn) => turn.execution_id)).toEqual(primaryExecutions);
     expect(session.agent_instance_id).toBeDefined();
     expect(await f.client.goals.control(request)).toEqual(receipt);
-    expect(f.entered).toHaveLength(2);
+    expect(f.entered).toHaveLength(3);
   });
 
   test("pause retains physical work, fences foreign control and prevents automatic continuation", async () => {
@@ -452,7 +520,7 @@ describe("file kernel behind the hosted RPC", () => {
       async () => (await next.goals.get("conversation")).state.current?.status === "complete",
     );
     await until(() => f.host.stats().runs === 0);
-    expect(f.entered).toHaveLength(2);
+    expect(f.entered).toHaveLength(3);
     expect(
       (await next.goals.get("conversation")).state.current!.consumption.net_tokens,
     ).toBeGreaterThan(0);

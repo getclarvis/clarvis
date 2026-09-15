@@ -98,7 +98,7 @@ Essential controls:
 | `/doctor` | Inspect configuration, dependencies, and recoverable setup problems      |
 | `/model`  | Choose the default model                                                 |
 | `/effort` | Choose the default reasoning effort supported by that model              |
-| `/goal`   | Create, inspect and control a persistent bounded objective                |
+| `/goal`   | Create, inspect and control a persistent bounded objective               |
 | `Ctrl+S`  | Choose Host, native Sandbox, Docker, or Podman isolation                 |
 | `Ctrl+G`  | Choose Off, Approval, or automatic LLM command review                    |
 
@@ -243,27 +243,27 @@ the RC's pinned Bun version, and an engine when Container is selected. See the
 Clarvis is one product made from 19 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
-| Package                                        | Role                | Path                   | Description                                                          |
-| ---------------------------------------------- | ------------------- | ---------------------- | -------------------------------------------------------------------- |
-| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                         |
-| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary.         |
-| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                            |
-| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                        |
-| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                            |
-| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                     |
-| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.               |
-| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                        |
-| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                          |
-| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                        |
-| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                        |
-| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                          |
-| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                             |
-| [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Persistent objectives, checkpoints and bounded continuation policy.  |
-| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                         |
-| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                         |
-| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.           |
-| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling. |
-| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.           |
+| Package                                        | Role                | Path                   | Description                                                           |
+| ---------------------------------------------- | ------------------- | ---------------------- | --------------------------------------------------------------------- |
+| [`@clarvis/capability`](packages/capability)   | foundation          | `packages/capability`  | Cross-cutting capability and port contracts.                          |
+| [`@clarvis/paths`](packages/paths)             | foundation          | `packages/paths`       | Global, workspace, and generated-state directory vocabulary.          |
+| [`@clarvis/protocol`](packages/protocol)       | host contract       | `packages/protocol`    | Transport-neutral Kernel client contract.                             |
+| [`@clarvis/llm`](packages/llm)                 | execution service   | `packages/llm`         | Provider layer behind the `LLMProvider` port.                         |
+| [`@clarvis/mcp-client`](packages/mcp-client)   | execution service   | `packages/mcp-client`  | MCP transports, connections, and pooling.                             |
+| [`@clarvis/supervision`](packages/supervision) | execution service   | `packages/supervision` | Run-scoped parent/child observation and control.                      |
+| [`@clarvis/trace`](packages/trace)             | execution service   | `packages/trace`       | Run trace recording, persistence, and wire projection.                |
+| [`@clarvis/tools`](packages/tools)             | execution service   | `packages/tools`       | Coding, filesystem, shell, and monitor tools.                         |
+| [`@clarvis/hooks`](packages/hooks)             | execution service   | `packages/hooks`       | Operator-declared workspace hook execution.                           |
+| [`@clarvis/skills`](packages/skills)           | execution service   | `packages/skills`      | `SKILL.md` discovery and progressive loading.                         |
+| [`@clarvis/loop`](packages/loop)               | engine              | `packages/loop`        | Embeddable agent-loop engine.                                         |
+| [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                           |
+| [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
+| [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
+| [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                          |
+| [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
+| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |
+| [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The `clarvis` terminal UI, including conversation prompt scheduling.  |
+| [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.            |
 
 The [architecture overview](https://clarvis.dev/explanation/how-clarvis-works) explains the product
 model. The generated

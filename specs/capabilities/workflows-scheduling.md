@@ -161,9 +161,9 @@ states other than `awaiting_manager` are non-progressing refusals that spawn not
 
 | Key | Schema | Default |
 | --- | --- | --- |
-| `max_concurrency` | int, positive, `.max(WORKFLOWS_MAX_CONCURRENCY)` = 20 | 4 (`WORKFLOWS_DEFAULTS.max_concurrency`) |
-| `max_total_leaders` | int, positive, `.max(WORKFLOWS_MAX_TOTAL_LEADERS)` = 255 | 32; cumulative across every workflow tool call in one manager run |
-| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 640 000 000 (`WORKFLOWS_DEFAULTS.budget_tokens`): four times the manager's 160-million-token primary run budget |
+| `max_concurrency` | int, positive, `.max(WORKFLOWS_MAX_CONCURRENCY)` = 20 | 10 (`WORKFLOWS_DEFAULTS.max_concurrency`) |
+| `max_total_leaders` | int, positive, `.max(WORKFLOWS_MAX_TOTAL_LEADERS)` = 512 | 512; cumulative across every workflow tool call in one manager run |
+| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 8 589 934 592 (`WORKFLOWS_DEFAULTS.budget_tokens`): a power-of-two ceiling, about 54 times the manager's 160-million-token primary run budget |
 
 There is **no per-run request param**: `workflowsSettingsSpec` declares no `requestParams`, and its
 TSDoc states the capability is constructed by the host's workflow service, never by the loop from a
@@ -171,8 +171,8 @@ run-request field.
 
 `managerLiveChildrenFloor(maxConcurrency)` returns
 `min(AGENTS_MAX_LIVE_CHILDREN, floor(max(1, maxConcurrency)) + 4)`, the 4 being
-`MANAGER_REGISTRY_HEADROOM` in `packages/workflows/src/settings.ts`. At the default concurrency it equals the supervision
-default exactly (`packages/workflows/tests/unit/settings.test.ts`).
+`MANAGER_REGISTRY_HEADROOM` in `packages/workflows/src/settings.ts`. At the default concurrency it
+returns 14 slots: 10 leaders plus four slots of manager headroom (`packages/workflows/tests/unit/settings.test.ts`).
 
 ## 3. Data and formats
 
@@ -1011,8 +1011,8 @@ throws after resolving still settles the item as failed` and the trace-sink faul
 `packages/workflows/tests/component/observability.test.ts`.
 
 **INV-W34.** The three-field `workflows` settings block is `strict`, `lastWins`, not
-plugin-contributable, and exposes no per-run request param. `max_total_leaders` defaults to 32 and is
-bounded at 255. Production: `workflowsConfigSchema` and `workflowsSettingsSpec`.
+plugin-contributable, and exposes no per-run request param. `max_total_leaders` defaults to 512 and is
+bounded at 512. Production: `workflowsConfigSchema` and `workflowsSettingsSpec`.
 Test: `packages/workflows/tests/unit/settings.test.ts` pins the schema's bounds and defaults;
 **the absence of a request param is unpinned in this package** (no test asserts
 `workflowsSettingsSpec.requestParams === undefined`).

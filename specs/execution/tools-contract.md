@@ -441,8 +441,8 @@ produces.
 
 Native Sandbox `require_escalated` is a `host_command` ask after deny-list enforcement: Review `on`
 requires a human, while Auto may judge the host effect (`allow` executes, `deny` refuses). Unsure,
-failed and malformed responses follow `on_unsure` (default `ask`, configured `deny` respected);
-no usable model asks a human. Session coverage and `allow_session` never apply to host-command asks,
+failed and malformed responses follow `on_unsure` (default `deny`; explicit `ask` may use a human);
+an unavailable model follows the same fallback. Session coverage and `allow_session` never apply to host-command asks,
 including human fallback; clean exact-call judge memoization remains separate. Review `off` supplies
 no guard, and on Host the field is a no-op under normal command policy. Production: `createShellGuard`
 in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver` in

@@ -10,7 +10,7 @@ test("workspace settings cannot choose a reviewer, enable rollout or increase bo
       timeout_ms: 120000,
       max_retries: 2,
     }),
-  ).toEqual({ timeout_ms: 20000, max_retries: 1, on_unsure: "ask" });
+  ).toEqual({ timeout_ms: 20000, max_retries: 1, on_unsure: "deny" });
   expect(
     resolveEffectReviewSettings(
       {

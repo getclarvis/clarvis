@@ -812,11 +812,20 @@ describe("settings run assembler · prompt cache", () => {
     expect(await ttlFor({}, { guard_mode: "on" })).toBe("1h");
   });
 
-  it("parks Auto on a human when the reviewer provider cannot resolve", async () => {
-    expect(await ttlFor({}, { guard_mode: "auto" })).toBe("1h");
-    expect(await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } })).toBe(
-      "1h",
-    );
+  it("does not park Auto on a human when the reviewer provider cannot resolve by default", async () => {
+    expect(await ttlFor({}, { guard_mode: "auto" })).toBeUndefined();
+    expect(
+      await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } }),
+    ).toBeUndefined();
+  });
+
+  it("parks Auto on a human when unresolved review explicitly selects ask", async () => {
+    expect(
+      await ttlFor(
+        {},
+        { guard_mode: "auto", guard_judge: { model: "openrouter/m", on_unsure: "ask" } },
+      ),
+    ).toBe("1h");
   });
 
   it("leaves the TTL to the loop when the guard is off", async () => {

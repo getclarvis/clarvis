@@ -26,7 +26,7 @@ import type { PlansMode } from "@clarvis/protocol";
 /** The subset of merged config settings this assembler reads when building a run
  * request; deliberately loose, since the config store owns the full schema. */
 interface EngineSettings {
-  effect_review?: { model?: string };
+  effect_review?: { model?: string; on_unsure?: "ask" | "deny" };
   default_model?: string;
   default_vision_model?: string;
   default_reasoning_effort?: string;
@@ -530,6 +530,7 @@ export function createSettingsRunAssembler(
                 merged.providers,
                 options.modelExecutionResolver,
               ),
+              params.guard_judge?.on_unsure ?? merged.effect_review?.on_unsure,
             )
           ? { prompt_cache_ttl: "1h" as const }
           : {}),

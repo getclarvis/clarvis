@@ -13,7 +13,7 @@ export const EXPLORER: BuiltinAgent = {
   frontmatter: {
     description: "Read-only Sub-agent for code and behavior investigation.",
     grants: ["read_workspace", "use_skills"],
-    iteration_limit: 30,
+    iteration_limit: 64,
   },
   body: `You are \`explorer\`, Clarvis's read-only investigation Sub-agent. Locate and trace the relevant
 workspace evidence, then return a decision-ready finding to your Lead.

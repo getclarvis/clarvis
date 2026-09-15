@@ -657,7 +657,7 @@ describe("createGuardResolver", () => {
     expect(prompts).toBe(2);
   });
 
-  it("never accepts a model allow without authenticated operator authority evidence", async () => {
+  it("denies without asking when authenticated operator authority evidence is absent", async () => {
     let judged = false;
     let asked = false;
     const resolver = createGuardResolver({
@@ -682,11 +682,11 @@ describe("createGuardResolver", () => {
       }),
     );
     expect(await resolution!.elicit!(bashReq("echo hi"))).toMatchObject({
-      allowed: true,
-      answerer: "human",
+      allowed: false,
+      answerer: "judge",
       review: { relation: "none" },
     });
-    expect(asked).toBe(true);
+    expect(asked).toBe(false);
     expect(judged).toBe(false);
   });
 });

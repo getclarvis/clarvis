@@ -122,8 +122,9 @@ export function resolveGuardMode(
  * @param param - the per-run `guard_mode` request override, if any.
  * @param guard - the guard settings block supplying the default.
  * @param judgeConfigured - whether the effective reviewer model/provider resolves.
- * @returns `true` for mode `on`, and for mode `auto` without a resolvable reviewer.
- * @remarks Auto falls back to human review when its model/provider cannot resolve. Such runs
+ * @param onUnsure - whether unavailable automatic review explicitly falls back to a human.
+ * @returns `true` for mode `on`, and for mode `auto` without a reviewer when fallback is `ask`.
+ * @remarks Auto denies by default when its model/provider cannot resolve. Explicit `ask` runs
  *   park repeatedly mid-conversation, which is what makes the extended
  *   prompt-cache TTL worth its higher write price; the loop cannot derive this
  *   itself because guard mode is resolved from host settings it never sees.
@@ -132,9 +133,10 @@ export function guardParksOnHuman(
   param: GuardMode | undefined,
   guard: GuardConfig | undefined,
   judgeConfigured: boolean,
+  onUnsure: "ask" | "deny" | undefined = "deny",
 ): boolean {
   const mode = resolveGuardMode(param, guard);
-  return mode === "on" || (mode === "auto" && !judgeConfigured);
+  return mode === "on" || (mode === "auto" && !judgeConfigured && onUnsure === "ask");
 }
 
 /**
@@ -453,8 +455,11 @@ function createGuardRuntimeResolver(
             humanElicit,
           )
         : undefined;
+    const onUnsure =
+      ctx.request.guard_judge?.on_unsure ?? settings.effect_review?.on_unsure ?? "deny";
     const chosenHuman =
-      guardMode === "on" || (guardMode === "auto" && judgeElicit === undefined)
+      guardMode === "on" ||
+      (guardMode === "auto" && judgeElicit === undefined && onUnsure === "ask")
         ? humanElicit
         : undefined;
     audit.info(
@@ -478,6 +483,15 @@ function createGuardRuntimeResolver(
       judgeElicit !== undefined ||
       humanElicit !== undefined
         ? async (req) => {
+            if (
+              req.escalate === "human" ||
+              req.matched === "credential_file" ||
+              req.matched === "dangerous" ||
+              req.dangerous === true
+            ) {
+              if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
+              return humanElicit(req);
+            }
             if (effectEnabled && guardMode === "auto") {
               if (req.matched !== "host_command" && (await approval?.covers(req)) === true) {
                 recordAnswer(audit, "session_allowlist", true, false);
@@ -487,17 +501,14 @@ function createGuardRuntimeResolver(
               const original = calls.get(req.args);
               const callLocalReview =
                 original?.shell !== undefined &&
-                req.escalate !== "human" &&
-                req.matched !== "credential_file" &&
-                req.matched !== "dangerous" &&
-                req.dangerous !== true &&
                 batch?.facts.length === 1 &&
                 batch.facts[0]?.id === "external.unknown";
               if (callLocalReview) {
-                if (judgeElicit === undefined)
-                  return humanElicit === undefined
-                    ? noHumanChannel(audit, ctx.executionId)
-                    : humanElicit(req);
+                if (judgeElicit === undefined) {
+                  if (onUnsure === "ask" && humanElicit !== undefined) return humanElicit(req);
+                  recordAnswer(audit, "judge", false, false);
+                  return { allowed: false, answerer: "judge" };
+                }
                 const answer = await judgeElicit(req);
                 if (answer.answerer === "judge")
                   recordAnswer(audit, "judge", answer.allowed, false);
@@ -538,10 +549,7 @@ function createGuardRuntimeResolver(
                 recordAnswer(audit, "judge", result.decision === "allow", false);
                 return { allowed: result.decision === "allow", answerer: "judge", review };
               }
-              if (
-                (ctx.request.guard_judge?.on_unsure ?? settings.effect_review?.on_unsure) === "deny"
-              )
-                return { allowed: false, answerer: "judge", review };
+              if (onUnsure !== "ask") return { allowed: false, answerer: "judge", review };
               const answer =
                 humanElicit === undefined
                   ? noHumanChannel(audit, ctx.executionId)
@@ -568,29 +576,21 @@ function createGuardRuntimeResolver(
                 ? { ...answer, review }
                 : { allowed: answer, answerer: "human", review };
             }
-            if (req.escalate === "human") {
-              if (humanElicit === undefined) return noHumanChannel(audit, ctx.executionId);
-              return humanElicit(req);
-            }
             const afterCoverage = (covered: boolean): ReturnType<GuardElicit> => {
               if (covered) {
                 recordAnswer(audit, "session_allowlist", true, false);
                 return { allowed: true, answerer: "session_allowlist" };
               }
-              if (
-                req.matched === "credential_file" ||
-                req.matched === "dangerous" ||
-                req.dangerous === true
-              )
-                return humanElicit === undefined
-                  ? noHumanChannel(audit, ctx.executionId)
-                  : humanElicit(req);
               if (judgeElicit !== undefined)
                 return judgeElicit(req).then((answer) => {
                   if (answer.answerer === "judge")
                     recordAnswer(audit, "judge", answer.allowed, false);
                   return answer;
                 });
+              if (guardMode === "auto" && onUnsure !== "ask") {
+                recordAnswer(audit, "judge", false, false);
+                return { allowed: false, answerer: "judge" };
+              }
               if (chosenHuman === undefined) return noHumanChannel(audit, ctx.executionId);
               return chosenHuman(req);
             };

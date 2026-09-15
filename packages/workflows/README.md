@@ -148,7 +148,7 @@ and the programmatic parsers, so a caller cannot bypass a schema by invoking the
 
 These are safety ceilings, not fan-out tuning. `max_concurrency` controls how many admitted leaders
 run at once; `max_total_leaders` controls how many leaders the manager may register cumulatively
-across every tool call and round (default 32, configurable to 255). An ad-hoc leader reserves one
+across every tool call and round (default 512, configurable to 512). An ad-hoc leader reserves one
 slot; a work-item batch and a round reserve their complete leader count atomically. If the complete
 unit does not fit, it registers zero children and leaves an awaiting checkpoint unchanged. Once the
 supervision registry accepts a leader, that registration is counted before its trace is published;
@@ -275,12 +275,12 @@ the workflow detail vocabulary.
 
 ## Settings
 
-The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `4`, maximum `20`, the
-leader-wide cap on concurrently running leaders), `max_total_leaders` (default `32`, maximum `255`,
-the cumulative registration cap for one manager), and `budget_tokens` (default `640000000`, with explicit
+The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `10`, maximum `20`, the
+leader-wide cap on concurrently running leaders), `max_total_leaders` (default `512`, maximum `512`,
+the cumulative registration cap for one manager), and `budget_tokens` (default `8589934592`, with explicit
 `null` as the opt-out, an output-token ceiling summed across all auxiliary workflow agents). Its
-640-million-token default is four times the manager's independent 160-million-token primary run
-budget. That ceiling
+8,589,934,592-token default is a power-of-two ceiling, about 54 times the manager's independent
+160-million-token primary run budget. That ceiling
 covers the manager's in-process child agents plus every leader and leader sub-agent, including their
 compaction, vision and billable retry attempts. Only the manager/Admiral uses the independent
 primary run budget. `runManagerWorkflow` constructs both budgets anew for every execution; neither
@@ -300,8 +300,8 @@ holds a live-child slot in `@clarvis/supervision`'s registry for as long as it r
 concurrency above `agents.max_live_children` admits leaders the registry then refuses to register.
 `managerLiveChildrenFloor(max_concurrency)` is that coupling — the kernel raises the manager run's
 `agents.max_live_children` to it, keeping an operator's own higher value. At the default concurrency
-it returns exactly the supervision default, so an unconfigured workspace is unaffected; the headroom
-above the leaders covers each dispatch session's baton and an ad-hoc `run_leader` waiting for a
+it reserves 14 live-child slots (10 leaders plus four slots of manager headroom); the headroom above
+the leaders covers each dispatch session's baton and an ad-hoc `run_leader` waiting for a
 permit. Raising `max_concurrency` without it buys a longer queue and no extra parallelism.
 
 **Manager designation is not a field here**: a run is a workflow when its entry agent profile carries

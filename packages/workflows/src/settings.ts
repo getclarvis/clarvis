@@ -36,7 +36,7 @@ export const WORKFLOWS_CAPABILITY_NAME = "workflows";
 export const WORKFLOWS_MAX_CONCURRENCY = 20;
 
 /** Absolute cumulative leader ceiling accepted by the settings contract. */
-export const WORKFLOWS_MAX_TOTAL_LEADERS = 255;
+export const WORKFLOWS_MAX_TOTAL_LEADERS = 512;
 
 /**
  * Live-child slots a manager needs on top of its running leaders.
@@ -83,9 +83,9 @@ export function managerLiveChildrenFloor(maxConcurrency: number): number {
  * grant on its entry agent profile, not by any field here.
  */
 export const WORKFLOWS_DEFAULTS = {
-  max_concurrency: 4,
-  max_total_leaders: 32,
-  budget_tokens: 640_000_000,
+  max_concurrency: 10,
+  max_total_leaders: 512,
+  budget_tokens: 8_589_934_592,
 } as const;
 
 /** The `workflows:` settings block: `max_concurrency` (the leader-wide live

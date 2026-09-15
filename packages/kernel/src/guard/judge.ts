@@ -157,7 +157,7 @@ export function createJudgeElicit(
   const verdicts = new Map<string, Promise<JudgeElicitAnswer>>();
 
   const fallback = async (req: ElicitRequest, note: string): Promise<JudgeElicitAnswer> => {
-    if (cfg.on_unsure === "deny" || humanElicit === undefined)
+    if (cfg.on_unsure !== "ask" || humanElicit === undefined)
       return { allowed: false, answerer: "judge" };
     const reason = req.reason ? `${req.reason}\n\n${note}` : note;
     return {

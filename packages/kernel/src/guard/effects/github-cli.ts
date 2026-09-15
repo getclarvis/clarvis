@@ -11,6 +11,8 @@ export async function githubCommand(
 ): Promise<GuardEffectFact> {
   if (argv[0] === "gh" && argv[1] === "pr" && argv[2] === "view")
     return githubPullRequestView(deps, cwd, argv);
+  if (argv[0] === "gh" && argv[1] === "pr" && argv[2] === "checks")
+    return githubPullRequestChecks(deps, cwd, argv);
   if (argv[0] !== "gh" || argv[1] !== "run" || argv[2] !== "rerun") {
     const id =
       argv[1] === "pr" && ["create", "edit"].includes(argv[2] ?? "")
@@ -139,11 +141,54 @@ async function githubPullRequestView(
     (repo !== undefined && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))
   )
     return effectFact(deps, "github.checks.observe");
+  return githubPullRequestObservation(deps, cwd, id, repo);
+}
+
+async function githubPullRequestChecks(
+  deps: EffectAttestorDeps,
+  cwd: string,
+  argv: string[],
+): Promise<GuardEffectFact> {
+  let id: string | undefined;
+  let repo: string | undefined;
+  let watch = false;
+  let interval: string | undefined;
+  for (let at = 3; at < argv.length; at++) {
+    const value = argv[at] ?? "";
+    if (/^[1-9][0-9]*$/.test(value) && id === undefined) id = value;
+    else if (value === "--repo" && repo === undefined && argv[at + 1] !== undefined)
+      repo = argv[++at];
+    else if (value === "--watch" && !watch) watch = true;
+    else if (value === "--interval" && interval === undefined && argv[at + 1] !== undefined)
+      interval = argv[++at];
+    else return effectFact(deps, "github.checks.observe");
+  }
+  const number = Number(id);
+  const refreshSeconds = Number(interval);
+  if (
+    id === undefined ||
+    !Number.isSafeInteger(number) ||
+    (repo !== undefined && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) ||
+    (interval !== undefined &&
+      (!watch || !/^[1-9][0-9]*$/.test(interval) || !Number.isSafeInteger(refreshSeconds)))
+  )
+    return effectFact(deps, "github.checks.observe");
+  return githubPullRequestObservation(deps, cwd, id, repo);
+}
+
+async function githubPullRequestObservation(
+  deps: EffectAttestorDeps,
+  cwd: string,
+  id: string,
+  repo: string | undefined,
+): Promise<GuardEffectFact> {
+  const number = Number(id);
   const git = await repository(deps, cwd);
   const origin = await githubRemote(deps, cwd);
   repo ??= origin;
   if (repo === undefined || origin !== repo.toLowerCase())
     return effectFact(deps, "github.checks.observe");
+  repo = repo.toLowerCase();
   const pr = JSON.parse(
     await query(deps, cwd, "gh", [
       "pr",

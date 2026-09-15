@@ -91,14 +91,16 @@ Git probes resolve repository root, current branch and HEAD. An explicit non-for
 branch to a named GitHub remote also resolves the push URL and binds its repository, destination,
 HEAD and upstream-setting intent; implicit refspecs, another source or destination, additional
 options and every force spelling retain human review. A JSON `gh pr view` observation with the
-supported metadata/check fields resolves the canonical origin and binds the requested open PR to
-the current branch and HEAD. GitHub failed-only rerun probes additionally correlate the canonical
+supported metadata/check fields, or numeric `gh pr checks` with optional canonical `--repo`,
+optional `--watch`, and a positive `--interval` only alongside `--watch`, resolves the canonical origin and binds the requested open
+PR to the current branch and HEAD. GitHub failed-only rerun probes additionally correlate the canonical
 origin, run ID, completed failed state, supported event, branch, SHA and open PR head. Probes use an
 injected argv-only `ProcessRunner`, a three-second timeout and 16 KiB combined output cap. They never
 execute the reviewed mutation. The resolver reattests shell effects before returning a model allow.
 Network, authentication, malformed output or target mismatch closes the attestation. Unsupported
-external variants retain human review; registry membership is not proof that every CLI spelling has
-a complete attestor.
+external variants retain a human-only attestation; Auto denies them by default and uses a human only
+under explicit `on_unsure: "ask"`. Registry membership is not proof that every CLI spelling has a
+complete attestor.
 Probe lookup and configuration roots are recaptured from the actual shell spawn environment through
 `resolveEffectEnvironment`. Unmatched inherited Git/GitHub overrides or executable-loading variables
 close attestation before any query; arbitrary environment values are not copied into probes. The
@@ -169,6 +171,10 @@ Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-re
 fallback and temporary rollout stage. The file kernel accepts the model and rollout only from global
 operator settings. Workspace configuration may lower timeout/retry limits or require denial on
 uncertainty. A plugin cannot contribute this block. Explicit run reviewer overrides remain supported.
+The fallback defaults to `deny`: `unsure`, missing authority coverage, an unavailable reviewer,
+provider failure, timeout, or malformed structured output returns a denial to the calling model so it
+can choose another command. `on_unsure: "ask"` is the explicit opt-in for human fallback; human-only
+policy decisions such as credential, dangerous-command, and explicit escalation asks remain human.
 `guard_judge.prompt` is deprecated guidance; `guidance` is the typed replacement. Neither replaces the
 first system message, `EFFECT_REVIEW_POLICY`, which is owned by the kernel. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; an absent prompt does not disable Auto.
 

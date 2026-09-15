@@ -249,7 +249,7 @@ describe("call-local command judge", () => {
         defaultModel: "anthropic/test",
         authority: ledger.reader,
       },
-      {},
+      { on_unsure: "ask" },
       async (value) => {
         human.push(value);
         return false;
@@ -261,7 +261,7 @@ describe("call-local command judge", () => {
     expect(human[0]?.reason).toContain("authority changed");
   });
 
-  it("falls back without inference when authenticated evidence is absent", async () => {
+  it("denies without inference when authenticated evidence is absent", async () => {
     let calls = 0;
     let prompts = 0;
     const judge = createJudgeElicit(
@@ -276,10 +276,10 @@ describe("call-local command judge", () => {
         return true;
       },
     )!;
-    expect(await judge(request("bun test"))).toEqual({ allowed: true, answerer: "human" });
-    expect(await judge(request("bun test"))).toEqual({ allowed: true, answerer: "human" });
+    expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "judge" });
+    expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "judge" });
     expect(calls).toBe(0);
-    expect(prompts).toBe(2);
+    expect(prompts).toBe(0);
   });
 
   it("memoizes a clean exact denial", async () => {
@@ -307,7 +307,7 @@ describe("call-local command judge", () => {
     expect(calls).toBe(1);
   });
 
-  it("does not cache unsure decisions denied by policy", async () => {
+  it("does not cache unsure decisions denied by default", async () => {
     let calls = 0;
     let prompts = 0;
     const judge = createJudgeElicit(
@@ -331,7 +331,7 @@ describe("call-local command judge", () => {
         defaultModel: "anthropic/test",
         authority: authority().reader,
       },
-      { on_unsure: "deny" },
+      {},
       async () => {
         prompts++;
         return true;
@@ -343,7 +343,7 @@ describe("call-local command judge", () => {
     expect(prompts).toBe(0);
   });
 
-  it("does not cache invalid responses or provider failures", async () => {
+  it("denies and does not cache invalid responses or provider failures by default", async () => {
     for (const failure of ["invalid", "invalid_json", "throw"] as const) {
       let calls = 0;
       let prompts = 0;
@@ -381,10 +381,10 @@ describe("call-local command judge", () => {
           return false;
         },
       )!;
-      expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "human" });
-      expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "human" });
+      expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "judge" });
+      expect(await judge(request("bun test"))).toEqual({ allowed: false, answerer: "judge" });
       expect(calls).toBe(2);
-      expect(prompts).toBe(2);
+      expect(prompts).toBe(0);
     }
   });
 
@@ -396,7 +396,7 @@ describe("call-local command judge", () => {
         providers: [{ name: "anthropic", kind: "anthropic" }],
         defaultModel: "anthropic/test",
       },
-      {},
+      { on_unsure: "ask" },
       async () => {
         prompts++;
         throw new Error("controller disconnected");

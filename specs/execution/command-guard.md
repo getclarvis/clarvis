@@ -135,7 +135,7 @@ a `z.undefined()` field that exists solely "so that trying it explains why".
 | Param | Schema |
 | --- | --- |
 | `guard_mode` | `z.enum(["off","on","auto"])` |
-| `guard_judge` | `.strict()` object : `guidance?` and deprecated `prompt?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"ask"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
+| `guard_judge` | `.strict()` object : `guidance?` and deprecated `prompt?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"deny"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
 
 Both reach the request schema through `capabilityRequestParamFields`
 (`packages/loop/src/runtime/capabilities/settings-specs.ts`) and the spec's
@@ -627,8 +627,9 @@ immutable effect registry, creates the shared `EffectReviewService` over the run
 and creates one call-local argv reviewer for generic shell asks. Review `off` returns no guard.
 Review `on` preserves the human channel. Review `auto` prefers complete effect attestation; a sole
 `external.unknown` from an ordinary shell miss goes to the argv reviewer. Known credential and
-dangerous asks, explicit human escalation and human-only registered effects stay on the human path.
-Absence of a model/provider follows the human fallback. Deterministic denies and exact static allows
+dangerous asks plus explicit human escalation stay on the human path. Human-only registered effects
+deny by default, while explicit `on_unsure: "ask"` selects human fallback. Absence of a model/provider
+follows that same fallback. Deterministic denies and exact static allows
 finish before any model call. Shadow mode computes effect evidence while preserving the existing
 call-local Auto or human result.
 
@@ -643,7 +644,7 @@ The composed elicit applies session coverage only to the exact analyzable non-ho
 uses `EffectReviewService.review` for a complete registered effect and `createJudgeElicit` for an
 ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
 keyed by the authority revision and complete guard request, including the raw command, and install no
-grant. `unsure` goes to the human channel when `on_unsure` is `ask`, otherwise it denies. Human
+grant. `unsure` denies by default and goes to the human channel only when `on_unsure` is explicitly `ask`. Human
 answers and operational failures are not cached as clean verdicts. `matched: "host_command"` never
 receives sticky session consent.
 
@@ -984,23 +985,24 @@ broken.
     `packages/tools/tests/integration/shell-escalation.test.ts`.
 
 40. **Mode `auto` builds a reviewer when a model resolves; `guard_judge` is optional guidance and
-    overrides.** Unavailable models fall back to the human channel. Production:
+    overrides.** Unavailable models deny by default and fall back to a human only under explicit
+    `on_unsure: "ask"`. Production:
     `packages/kernel/src/guard/resolver.ts`. Test: `packages/kernel/tests/unit/guard.test.ts`.
 
-41. **A judge failure or malformed response is not memoized and escalates to the human when the
-    default `on_unsure: "ask"` policy and a human channel permit it; otherwise it denies.** The
+41. **A judge failure or malformed response is not memoized and denies under the default
+    `on_unsure: "deny"`; explicit `on_unsure: "ask"` may escalate it to a human.** The
     final audit answerer is `human` when that fallback answers, never incorrectly `judge`.
     in `createGuardResolver`. Tests: `packages/kernel/tests/unit/guard.test.ts` (`"routes call
     failures and malformed responses to the human channel"`) and
     `packages/kernel/tests/unit/guard-audit.test.ts` (`"attributes a judge failure fallback to the
     human who answered it"`).
 
-42. **A judge that cannot be constructed degrades the run to mode `on`, it does not disarm the
-    `packages/kernel/src/guard/resolver.ts` falls back to `humanElicit`. Pinned:
+42. **A judge that cannot be constructed denies Auto asks by default; explicit `on_unsure: "ask"`
+    falls back to `humanElicit` without disarming the guard.** `packages/kernel/src/guard/resolver.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 
-43. **`on_unsure: "deny"` never reaches the human, even when a human channel exists; an omitted
-    `cfg.on_unsure !== "deny"` treats `undefined` the same as `"ask"`.**
+43. **An omitted `on_unsure` is `"deny"` and never reaches the human, even when a human channel
+    exists; only explicit `"ask"` selects human fallback.**
     `packages/loop/src/runtime/capabilities/tools-settings.ts`. Pinned:
     `packages/kernel/tests/unit/guard.test.ts`.
 

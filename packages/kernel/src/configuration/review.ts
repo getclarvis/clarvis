@@ -72,7 +72,8 @@ export function createConfigurationReview(
       if (
         receipt.decision === "deny" ||
         (receipt.decision === "unsure" &&
-          (ctx.request.guard_judge?.on_unsure ?? settings.effect_review?.on_unsure) === "deny")
+          (ctx.request.guard_judge?.on_unsure ?? settings.effect_review?.on_unsure ?? "deny") !==
+            "ask")
       )
         throw new Error("Configuration effect was denied by authority review.");
       allowed = receipt.decision === "allow";

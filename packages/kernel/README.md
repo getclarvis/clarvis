@@ -753,8 +753,9 @@ as contained. Host and disabled native policies do not. Explicit per-call unsand
 Host, with native network restrictions omitted; Auto may judge it, while `on` requires a human.
 Complete effect attestations refine syntactic opacity into mechanically covered effects after
 deterministic denials. This includes an explicit non-forced push of the checked-out branch to a
-resolved GitHub remote and bounded JSON inspection of its current open pull request; ambiguous
-refspecs, force variants and unsupported observation fields remain closed. Other ordinary
+resolved GitHub remote, bounded JSON inspection of its current open pull request, and numeric
+`gh pr checks` observation with optional `--watch` and a positive `--interval` only alongside it; ambiguous
+refspecs, force variants and unsupported observation flags remain closed. Other ordinary
 Host/Sandbox asks and allow-list misses can use the call-local argv reviewer in Auto, including
 options, wrappers, dynamic arguments and environment prefixes.
 Review `on`, credential-file asks, forced `rm` and `sudo` remain human decisions. A nonempty deny
@@ -782,18 +783,17 @@ reviving the prior envelope, refusals or consumed effects. Synthetic continuatio
 changes cannot reactivate settled evidence.
 
 A resolved judge reports which channel ultimately answered. An `allow` or `deny` is attributed to
-the judge; `unsure`, a provider failure, or a malformed response routes to the human channel when
-the default `on_unsure: "ask"` policy and an interactive host permit it. Without that channel — or
-with `on_unsure: "deny"` — the same inconclusive outcomes still fail closed. Failed and malformed
-attempts are not memoized, so fixing a transient provider problem restores automatic review without
-restarting the session.
+the judge; `unsure`, a provider failure, a malformed response, or an unavailable reviewer denies by
+default. Explicit `on_unsure: "ask"` may route those inconclusive outcomes to an interactive human
+channel. Failed and malformed attempts are not memoized, so fixing a transient provider problem
+restores automatic review without restarting the session.
 
 A `shell` or `monitor_start` call with `sandbox_permissions: "require_escalated"` under Isolation
 Sandbox is a `host_command` ask, after deny-list matches and undecidability with a nonempty deny
 list are rejected. The resolver passes `allowHostJudge: true` to `createShellGuard` only in Auto;
 otherwise this ask carries `escalate: "human"`. Auto's judge may allow or deny the host effect;
-unsure, failed and malformed responses follow `on_unsure` (`ask` by default, configured `deny`
-respected). An absent usable model routes to a human. Host-command asks bypass volatile session
+unsure, failed and malformed responses follow `on_unsure` (`deny` by default; explicit `ask` may
+use a human). An absent usable model follows the same fallback. Host-command asks bypass volatile session
 coverage and never offer `allow_session`, even on human fallback; clean exact-call judge memoization
 remains separate. Isolation Host already runs unsandboxed, so the field does not add
 a second prompt. Mode `off` supplies no guard and proceeds without command review, honoring the
@@ -902,9 +902,9 @@ five. That is what lets `@clarvis/code` reach its first prompt, and `@clarvis/se
 request, against a directory nothing has ever written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
 `createFileKernel` hands the run assembler, so a request naming no agent still resolves.
 
-The two shipped leaders, `marshall` and `admiral`, each declare a 200-iteration soft session limit;
-the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. The explicit lead
-value matches the product default instead of shadowing it with the former 50-iteration profile cap.
+The two shipped leaders, `marshall` and `admiral`, each declare a 256-iteration soft session limit;
+the `coder`, `explorer`, and `planner` children each declare 64 iterations. These power-of-two
+limits distinguish lead and child capacity without relying on the former 50-iteration profile cap.
 
 The builtin bodies define roles and the minimum harness handoff contract, not a generic engineering
 handbook. Leads act directly unless delegation is explicitly requested under the shared policy:

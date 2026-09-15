@@ -1072,7 +1072,7 @@ describe("WorkflowsService", () => {
       revision: 1,
       next_round_id: "second",
       leaders_started: 1,
-      max_total_leaders: 32,
+      max_total_leaders: 512,
     });
 
     const detail = await kernel.workflows.get(handle.execution_id);
@@ -1082,7 +1082,7 @@ describe("WorkflowsService", () => {
       revision: 2,
       round_id: "second",
       leaders_started: 2,
-      max_total_leaders: 32,
+      max_total_leaders: 512,
     });
     expect(detail.leader_count).toBe(2);
     await kernel.close();
@@ -1152,7 +1152,7 @@ describe("WorkflowsService", () => {
       revision: 2,
       round_id: "first",
       leaders_started: 1,
-      max_total_leaders: 32,
+      max_total_leaders: 512,
     });
     expect(detail.sequence?.next_round_id).toBeUndefined();
     expect(detail.sequence?.next_pass).toBeUndefined();

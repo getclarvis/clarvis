@@ -70,7 +70,7 @@ jobs:
           bun run runtime:qualify --engine podman --base "$published_base" --artifact "$artifact" --report "build/candidate/${{ matrix.target }}/qualification-podman-${{ matrix.target }}.json"
           artifact_sha="$(cut -d' ' -f1 "$artifact.sha256")"
           artifact_size="$(stat -c %s "$artifact")"
-          BASE_IMAGE="$BASE_REPOSITORY" BASE_DIGEST="$base_digest" ARTIFACT_SHA="$artifact_sha" ARTIFACT_SIZE="$artifact_size" TARGET="${{ matrix.target }}" bun -e 'const target=process.env.TARGET; await Bun.write("build/candidate/"+target+"/target.json", JSON.stringify({base:{image:process.env.BASE_IMAGE,digest:process.env.BASE_DIGEST,abi:"clarvis-linux-glibc-v1"},artifact:{asset:"clarvis-kernel-"+target+".tar.gz",sha256:process.env.ARTIFACT_SHA,size:Number(process.env.ARTIFACT_SIZE)},kernel_wire_version:10,broker_version:1,channel_version:1},null,2)+"\\n")'
+          BASE_IMAGE="$BASE_REPOSITORY" BASE_DIGEST="$base_digest" ARTIFACT_SHA="$artifact_sha" ARTIFACT_SIZE="$artifact_size" TARGET="${{ matrix.target }}" bun -e 'const target=process.env.TARGET; await Bun.write("build/candidate/"+target+"/target.json", JSON.stringify({base:{image:process.env.BASE_IMAGE,digest:process.env.BASE_DIGEST,abi:"clarvis-linux-glibc-v1"},artifact:{asset:"clarvis-kernel-"+target+".tar.gz",sha256:process.env.ARTIFACT_SHA,size:Number(process.env.ARTIFACT_SIZE)},kernel_wire_version:10,broker_version:1,channel_version:1},null,2)+"\n")'
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: candidate-${{ matrix.target }}
@@ -104,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#v}"; VERSION="${VERSION%%-rc.*}"
-          VERSION="$VERSION" bun -e 'const x=await Bun.file("build/candidate/candidate-linux-x64/target.json").json(); const a=await Bun.file("build/candidate/candidate-linux-arm64/target.json").json(); await Bun.write("build/candidate/runtime-input.json",JSON.stringify({schema_version:2,version:process.env.VERSION,source_revision:process.env.GITHUB_SHA,targets:{"linux-x64":x,"linux-arm64":a}},null,2)+"\\n")'
+          VERSION="$VERSION" bun -e 'const x=await Bun.file("build/candidate/candidate-linux-x64/target.json").json(); const a=await Bun.file("build/candidate/candidate-linux-arm64/target.json").json(); await Bun.write("build/candidate/runtime-input.json",JSON.stringify({schema_version:2,version:process.env.VERSION,source_revision:process.env.GITHUB_SHA,targets:{"linux-x64":x,"linux-arm64":a}},null,2)+"\n")'
           bun run tooling/runtime/release-manifest.ts build/candidate/runtime-input.json build/candidate/runtime-release.json
           find build/candidate -mindepth 2 -type f -exec mv {} build/candidate/ \;
           bun run tooling/release/candidate.ts manifest

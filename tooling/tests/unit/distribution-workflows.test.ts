@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { workflowSecurityFailures } from "../../checks/release-readiness.ts";
 
 interface Workflow {
@@ -11,6 +13,76 @@ interface Workflow {
 }
 const candidateSource = readFileSync(".github/workflows/candidate.yml", "utf8");
 const stableSource = readFileSync(".github/workflows/release.yml", "utf8");
+
+function targetFixture(target: "linux-x64" | "linux-arm64") {
+  return {
+    base: {
+      image: "ghcr.io/getclarvis/clarvis-runtime-base",
+      digest: `sha256:${"a".repeat(64)}`,
+      abi: "clarvis-linux-glibc-v1",
+    },
+    artifact: {
+      asset: `clarvis-kernel-${target}.tar.gz`,
+      sha256: "b".repeat(64),
+      size: 1024,
+    },
+    kernel_wire_version: 10,
+    broker_version: 1,
+    channel_version: 1,
+  };
+}
+
+function expectWorkflowJsonWriters(
+  source: string,
+  paths: {
+    targetDirectory: string;
+    inputDirectories: readonly [string, string];
+    targetOutput: string;
+    aggregateOutput: string;
+  },
+): void {
+  const snippets = [...source.matchAll(/bun -e '([^']*Bun\.write[^']*)'/gu)].map(
+    (match) => match[1],
+  );
+  expect(snippets).toHaveLength(2);
+  const directory = mkdtempSync(join(tmpdir(), "clarvis-workflow-json-"));
+  try {
+    mkdirSync(join(directory, paths.targetDirectory), { recursive: true });
+    for (const [inputDirectory, target] of paths.inputDirectories.map((value, index) => [
+      value,
+      index === 0 ? "linux-x64" : "linux-arm64",
+    ]) as readonly (readonly [string, "linux-x64" | "linux-arm64"])[]) {
+      mkdirSync(join(directory, inputDirectory), { recursive: true });
+      writeFileSync(
+        join(directory, inputDirectory, "target.json"),
+        `${JSON.stringify(targetFixture(target), null, 2)}\n`,
+      );
+    }
+    const env = {
+      ...process.env,
+      BASE_IMAGE: "ghcr.io/getclarvis/clarvis-runtime-base",
+      BASE_DIGEST: `sha256:${"a".repeat(64)}`,
+      ARTIFACT_SHA: "b".repeat(64),
+      ARTIFACT_SIZE: "1024",
+      TARGET: "linux-x64",
+      VERSION: "0.2.0",
+      GITHUB_SHA: "c".repeat(40),
+    };
+    for (const snippet of snippets) {
+      const result = Bun.spawnSync(["bun", "-e", snippet], { cwd: directory, env, stderr: "pipe" });
+      expect(result.stderr.toString()).toBe("");
+      expect(result.exitCode).toBe(0);
+    }
+    expect(() =>
+      JSON.parse(readFileSync(join(directory, paths.targetOutput), "utf8")),
+    ).not.toThrow();
+    expect(() =>
+      JSON.parse(readFileSync(join(directory, paths.aggregateOutput), "utf8")),
+    ).not.toThrow();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
 
 test("distribution workflows separate candidate and stable publication and gate real engine qualification", () => {
   const candidate = Bun.YAML.parse(candidateSource) as Workflow;
@@ -52,4 +124,25 @@ test("distribution workflows separate candidate and stable publication and gate 
         expect(result.stderr.toString()).toBe("");
         expect(result.exitCode).toBe(0);
       }
+});
+
+test("distribution workflow JSON writers emit parseable target and aggregate manifests", () => {
+  expectWorkflowJsonWriters(candidateSource, {
+    targetDirectory: "build/candidate/linux-x64",
+    inputDirectories: [
+      "build/candidate/candidate-linux-x64",
+      "build/candidate/candidate-linux-arm64",
+    ],
+    targetOutput: "build/candidate/linux-x64/target.json",
+    aggregateOutput: "build/candidate/runtime-input.json",
+  });
+  expectWorkflowJsonWriters(stableSource, {
+    targetDirectory: "build/runtime/linux-x64",
+    inputDirectories: [
+      "build/runtime/kernel-input-linux-x64",
+      "build/runtime/kernel-input-linux-arm64",
+    ],
+    targetOutput: "build/runtime/linux-x64/target.json",
+    aggregateOutput: "build/runtime/runtime-input.json",
+  });
 });

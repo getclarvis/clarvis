@@ -38,7 +38,7 @@ function protectSkillPackages(
   }
 }
 
-/** Require the operator-authorized configuration route for authored workspace configuration. */
+/** Admit reviewed canonical authoring and route operational configuration to its restricted writer. */
 function protectWorkspaceConfiguration(
   name: string,
   args: Record<string, unknown>,

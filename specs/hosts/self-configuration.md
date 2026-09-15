@@ -83,10 +83,11 @@ Test: [configuration.test.ts](../../packages/paths/tests/unit/configuration.test
 | `delete` | `expected_revision` | remove one existing regular file |
 
 Stale or omitted revisions, empty/ambiguous/missing edit matches, malformed settings JSON and settings
-schema violations reject without writing. Settings validation uses the owning kernel schema. Agent Profile frontmatter rejects unknown fields; skill manifests use the same bounded parser as
-discovery before any mutation. Other
-authored formats retain their normal loader validation and trust checks. File reads and writes are
-bounded to 256 KiB; new parents and files use the shared private modes.
+schema violations reject without writing. Settings validation uses the owning kernel schema. Agent
+Profile frontmatter rejects unknown fields; skill manifests use the same bounded parser as discovery;
+workflow definitions use the real artifact parser and their existing brief files. Each fails before
+review or mutation. Other authored formats retain their normal loader validation and trust checks.
+File reads and writes are bounded to 256 KiB; new parents and files use the shared private modes.
 
 Clarvis roots permit `settings.json`, context/policy prompts, and authored `agents`, `skills`,
 `plugins`, `workflows`, `extension-profiles` and `runtime-recipes` trees. Shared roots permit `skills`,
@@ -164,7 +165,16 @@ fixtures alone do not establish a completed interactive journey or platform qual
 
 ## Prepared file-tool batches
 
-Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. Only tools whose mutations reach this callback defer their initial authoring review. The host validates every resulting authored document before reviewing a complete batch, including common workspace targets and any new skill membership. Operational or private destinations cannot enter this path. Review uses the same authority reader and `EffectReviewService` as the restricted writer. Captured revisions are rechecked before staging; drift, invalid content, denial or cancellation leave the batch unapplied. The existing portable parent-directory TOCTOU limitation remains.
+Ordinary entry-agent file tools bind a host-owned `MutationReview` through guard resolution. A batch
+enters this path only when it contains at least one canonical workspace Agent Profile, `WORKFLOW.md`,
+or `SKILL.md` destination; ordinary workspace targets may accompany it, while selected skill
+packages remain protected. Tools whose mutations reach the callback defer their initial authoring
+review. The host validates each canonical authored document, captures every batch target and any
+new-skill membership, then reviews the complete batch once. Operational or private configuration
+destinations cannot enter this path. Review uses the same authority reader and
+`EffectReviewService` as the restricted writer. Captured revisions are rechecked before staging;
+drift, invalid content, denial, or cancellation leaves the batch unapplied. The existing portable
+parent-directory TOCTOU limitation remains.
 
 When the entry agent first asks the operator about that bounded edit through `ask_user`, an accepted
 answer becomes fresh evidence before the next mutation review. The effect judge receives both the

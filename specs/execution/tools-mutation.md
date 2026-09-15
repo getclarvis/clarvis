@@ -471,8 +471,8 @@ lock-ordering deadlock between them.
     the unconditional `return decoded.bom ? BOM + out : out;`).
     Test: `packages/tools/tests/integration/edit-file.test.ts` ("BUG-07", line terminators) ("preserves a UTF-8 BOM through an edit").
 
-13. **Selected skill packages and workspace-authored Clarvis configuration are immutable to
-    ordinary native mutation tools.** Before guard review or
+13. **Selected skill packages stay immutable to ordinary native mutation tools; canonical workspace
+    authoring requires one complete host review.** Before guard review or
     handler dispatch, `protectSkillPackages` extracts every path through `buildGuardContext` and
     applies `assertOutsideRoots` to `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`,
     `move`, `copy`, `mkdir`, and `remove`. This applies even if the skill directory is nested under
@@ -482,20 +482,26 @@ lock-ordering deadlock between them.
     defined by the shell and sandbox contracts. Production: `packages/tools/src/core.ts` and
     `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/api.test.ts`.
 
-    `protectWorkspaceConfiguration` applies the same dispatcher boundary to the workspace
-    `.clarvis` and `.agents` roots resolved through `configurationRoots`. It rejects every listed
-    mutation tool when its target is in those roots. `copy` may read a configuration source when its
-    destination is outside configuration. `replace` filters both authored roots from directory
-    traversal, while still allowing a project-root replacement over ordinary files. The structured
-    error directs the operator to the consent-bearing `/clarvis-configure` route. Command execution
-    keeps the separate posture in
-    [tools-shell-and-monitor.md](tools-shell-and-monitor.md); the builtin guide prohibits treating
-    it as an alternate configuration writer. Production: `protectWorkspaceConfiguration` in
-    `packages/tools/src/core.ts`, `assertOutsideRoots` in `packages/tools/src/lib/paths.ts`, and
-    `configurationRoots` in `packages/paths/src/configuration.ts`, and `scopeFiles` in
-    `packages/tools/src/tools/replace.ts`. Test:
-    `packages/tools/tests/integration/api.test.ts` ("requires /clarvis-configure for authored
-    workspace configuration mutations").
+    `protectWorkspaceConfiguration` separately classifies the workspace `.clarvis` and `.agents`
+    roots resolved through `configurationRoots`. Operational destinations are rejected before
+    mutation and direct the agent to `configure_clarvis`; private destinations remain denied.
+    In the generic `@clarvis/tools` API, canonical Agent Profile, `WORKFLOW.md`, and `SKILL.md`
+    destinations pass only when the guard returns an approved `ask` with a complete
+    `clarvis.authoring.write` effect. A partial, missing, or unapproved effect remains denied. The file
+    kernel instead gives an editing entry agent the host-owned `MutationReview`: atomic tools prepare
+    final bytes for the complete batch, the host validates each canonical document, captures every
+    target and exact revision, reviews all effects together, and commits all or none. `copy` may still
+    read configuration into an ordinary destination.
+    Recursive `replace` discovers only bounded canonical authoring leaves inside an explicitly named
+    configuration scope and otherwise filters both roots. Command execution keeps the separate
+    posture in [tools-shell-and-monitor.md](tools-shell-and-monitor.md) and is not an alternate writer.
+    Production: `protectWorkspaceConfiguration` in `packages/tools/src/core.ts`,
+    `isCanonicalAuthoringPath` in `packages/tools/src/guard/authoring-path.ts`, `MutationReview` in
+    `packages/tools/src/lib/atomic.ts`, and `createAuthoringMutationReview` in
+    `packages/kernel/src/configuration/authoring-mutations.ts`. Test:
+    `packages/tools/tests/integration/api.test.ts` ("requires complete authoring review and never
+    admits operational settings through it") and the prepared-batch cases in
+    `packages/kernel/tests/integration/direct-configuration.test.ts`.
 
 14. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem
     mutation; `replace` refuses the same way on a non-dry-run commit, through the shared

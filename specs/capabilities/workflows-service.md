@@ -78,6 +78,7 @@ Production: `createContainerNativeKernel` in
 | `WorkflowDefinition` | interface | `packages/workflows/src/artifact.ts` | `name`, `description`, `args`, `rounds`, `repeat?`, `synthesis`, `dir` |
 | `WorkflowLoadError` | interface | `packages/workflows/src/artifact.ts` | `{ dir, message }` — one failed load |
 | `WorkflowRegistry` | interface | `packages/workflows/src/artifact.ts` | `{ workflows, errors }` — the outcome of a scan |
+| `validateWorkflowDocument(raw, { directory })` | function | `packages/workflows/src/artifact.ts` | Validates prospective bytes with the same compiler as discovery, including existing brief files; throws on any defect |
 | `loadWorkflow(dir)` | function | `packages/workflows/src/artifact.ts` | Loads and validates one workflow directory; throws on any defect |
 | `loadWorkflows(roots)` | function | `packages/workflows/src/artifact.ts` | Scans roots (ascending precedence), collecting per-directory failures rather than throwing |
 
@@ -378,12 +379,14 @@ how the call is issued and how its result is validated.
 
 ## 4. Behavior
 
-### 4.1 Loading one workflow document — `loadWorkflowWithBudget` (`packages/workflows/src/artifact.ts`)
+### 4.1 Loading or validating one workflow document (`packages/workflows/src/artifact.ts`)
 
-1. Read `<dir>/WORKFLOW.md` bounded to `WORKFLOW_LIMITS.artifactBytes` via
+1. `loadWorkflow` reads `<dir>/WORKFLOW.md` bounded to `WORKFLOW_LIMITS.artifactBytes` via
    `readBoundedWorkflowFile`, which opens the fixed inode, `fstat`s it, rejects a non-regular file,
    and reads at most `maxBytes+1` bytes to detect an over-limit file without trusting `stat().size`
-   alone (`packages/workflows/src/artifact.ts`).
+   alone, then passes those bytes to `validateWorkflowDocument`. A caller supplying prospective
+   bytes reaches the same compiler after an explicit UTF-8 byte-limit check, without replacing the
+   on-disk document.
 2. `splitFrontmatter` requires a leading `---` fence (`FRONTMATTER` regex, `packages/workflows/src/artifact.ts`);
    anything else throws "missing or misaligned YAML frontmatter".
 3. The Markdown body (the synthesis) is bounded to `WORKFLOW_LIMITS.textChars`
@@ -401,6 +404,14 @@ how the call is issued and how its result is validated.
 7. The **first** round must have `over.kind === "once"` — "there is no earlier round to consume"
    (`packages/workflows/src/artifact.ts`).
 8. `repeat.rounds` may only name round ids that exist (`packages/workflows/src/artifact.ts`).
+
+The restricted configuration writer calls `validateWorkflowDocument` before it attests or mutates
+a canonical `workflows/<name>/WORKFLOW.md`. Because a workflow document resolves its brief files as
+part of compilation, those operational files must already exist. Production:
+`configurationFileOperation` in
+[files.ts](../../packages/kernel/src/configuration/files.ts). Test:
+`validates prospective workflow definitions before previewing or writing them` in
+[configuration-files.test.ts](../../packages/kernel/tests/unit/configuration-files.test.ts).
 
 ### 4.2 Reading a brief — `readBrief` (`packages/workflows/src/artifact.ts`)
 
@@ -473,7 +484,11 @@ fan out, and unable to. Silent, and only visible as a manager that never delegat
 accepting either a bare string or the first element of an array, else `undefined`
 (`packages/kernel/src/application/workflow-policy.ts`). `leaderProfiles()` returns every configured agent **except** one
 carrying the `workflow` grant itself (`packages/kernel/src/application/workflow-policy.ts`) — a manager cannot select another
-manager as its leader profile.
+manager as its leader profile. When a leader request omits `profile`, `assembleLeader` uses that
+resolved default when present and otherwise falls back to the manager's own profile. It always calls
+`stripWorkflowGrant` on the assembled leader request, so this fallback reuses the manager persona
+without recursively granting the child the workflow capability
+(`packages/kernel/src/workflows/workflows-service.ts`).
 
 ### 4.5 Executing a manager turn — `runManagerWorkflow`
 
@@ -990,17 +1005,18 @@ trace.
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`starts the manager while
 semantic title generation is still in flight`).
 
-**INV-286.** A `run_leader` call that names no `profile` resolves to the manager profile's
-`default_spawn` — never to the manager's own profile, and never failing with "no agent given" — and the
-spawn is recorded as a second node in the tree: one `workflow_run_started` / `workflow_run_completed`
-pair sharing a `run_id`, whose `parent_run_id` is the manager's run, plus live `workflow_run_progress`
-while it works. The persisted record then shows exactly one `leader` edge carrying that title and task,
-and `leader_count` is 1.
+**INV-286.** A `run_leader` call that names no `profile` resolves first to the manager profile's
+`default_spawn` and, when that is absent, to the manager's own profile with its `workflow` grant
+removed. The spawn is recorded as a second node in the tree: one `workflow_run_started` /
+`workflow_run_completed` pair sharing a `run_id`, whose `parent_run_id` is the manager's run, plus
+live `workflow_run_progress` while it works. The persisted record then shows exactly one `leader` edge
+carrying that title and task, and `leader_count` is 1.
 Production: `assembleLeader`, `WorkflowsServiceConfig.resolveLeaderDefault`, and the
 `workflow_run_started` branch of `observe` in
 `packages/kernel/src/workflows/workflows-service.ts`.
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`fans out a leader via
-run_leader and records it as a second tree node`).
+run_leader and records it as a second tree node`; `falls back to the manager profile without its
+workflow grant when default_spawn is absent`).
 
 **INV-287.** A manager's live-children ceiling is raised to what its configured leader concurrency
 needs: the assembled manager body carries

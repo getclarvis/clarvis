@@ -59,12 +59,15 @@ image ID are inspected before any preparer runs. Docker and Podman IDs are norma
 engine returns the complete lowercase SHA-256.
 
 `runtime/build-artifact.ts` separately runs the pinned Linux Bun builder with the checkout read-only,
-autoload disabled and no network. It emits `clarvis-kernel-<target>.tar.gz`, a checksum sidecar and a
-strict manifest containing the public Kernel wire, broker and channel revisions. The compiled Kernel
-entry statically installs the loop's lazy Ajv dependencies, and qualification instantiates tool
-validation so a binary that boots but still tries to resolve `node_modules` cannot pass. The artifact
-is qualified outside the checkout and is transferred into a content-addressed engine volume; changing
-only Clarvis code does not rebuild the base.
+autoload disabled and no network. Its root remains read-only while a 768 MiB, non-executable `/tmp`
+tmpfs supplies only the scratch space required by `bun build --compile`; Podman's implicit read-only
+tmpfs behavior is disabled so the declared mount remains authoritative. It emits
+`clarvis-kernel-<target>.tar.gz`, a checksum sidecar and a strict manifest containing the public
+Kernel wire, broker and channel revisions. The compiled Kernel entry statically installs the loop's
+lazy Ajv dependencies, and qualification instantiates tool validation so a binary that boots but
+still tries to resolve `node_modules` cannot pass. The artifact is qualified outside the checkout
+and is transferred into a content-addressed engine volume; changing only Clarvis code does not
+rebuild the base.
 
 `runtime/release-manifest.ts` owns schema 2: one root product version and source commit map each Linux
 target to an immutable base image/digest/ABI plus the artifact basename, SHA-256, size and wire

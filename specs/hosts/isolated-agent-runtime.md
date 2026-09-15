@@ -249,9 +249,12 @@ links, devices, sockets and special permissions.
 The builder compiles with Bun using `--compile --env=disable`,
 `--no-compile-autoload-dotenv`, `--no-compile-autoload-bunfig`,
 `--no-compile-autoload-tsconfig`, `--no-compile-autoload-package-json` and
-`--reject-unresolved`. The entry statically installs the loop's lazy Ajv modules before serving the
-Kernel, and the real-engine canary constructs run-time tool validation instead of treating hello as
-proof of the compiled dependency closure. The host verifies the archive before transfer. A networkless ephemeral
+`--reject-unresolved`. The build Container keeps its root and source checkout read-only and provides
+only a 768 MiB `/tmp` tmpfs with `rw`, `nosuid`, `nodev` and `noexec` for Bun's compiler scratch;
+Podman implicit tmpfs behavior is disabled so that exact declared mount owns the writable surface.
+The entry statically installs the loop's lazy Ajv modules before serving the Kernel, and the
+real-engine canary constructs run-time tool validation instead of treating hello as proof of the
+compiled dependency closure. The host verifies the archive before transfer. A networkless ephemeral
 preparer is created under a deterministic name, inspected for exact policy and mounts before start,
 verifies the same archive hash before extraction, and publishes readiness last. An uncertain create
 or cancellation is reconciled and removed by exact inspected ID. Kernel Containers only receive the

@@ -456,9 +456,12 @@ an individual guest session, owns that pinned bootstrap version.
 `io.clarvis.base.abi` plus its input revision. `tooling/runtime/build-artifact.ts` separately compiles
 `tooling/runtime/kernel-entry.ts` with Bun autoload disabled and exports
 `clarvis-kernel-<target>.tar.gz`, its strict manifest and checksum. Product code never enters the
-base image. Docker and Podman store the base independently; the same verified archive is transferred
-to an immutable engine volume at launch. `runtimeLocalImageId` accepts only full lowercase local
-image IDs and keeps OCI manifest digests distinct.
+base image. The artifact builder retains a read-only root and checkout while granting Bun only a
+768 MiB, non-executable `/tmp` tmpfs for compiler scratch; Podman's implicit read-only tmpfs behavior
+is disabled so this explicit mount is the complete writable scratch surface. Docker and Podman store
+the base independently; the same verified archive is transferred to an immutable engine volume at
+launch. `runtimeLocalImageId` accepts only full lowercase local image IDs and keeps OCI manifest
+digests distinct.
 
 `tooling/runtime/qualify-container.ts` validates the pair, runs the real-engine Kernel E2E outside
 the checkout and requires a scenario evidence file before writing a passing report. Release manifest
@@ -1178,7 +1181,9 @@ monorepo`).
 
 **BUILD-38.** A production Container base contains no Clarvis product code. Repository source compilation is confined to
 `Containerfile.runtime-development`; that builder must use the exact Bun version in `mise.toml` and
-must emit the manifest-bound archive. The base uses a
+must emit the manifest-bound archive. Direct artifact compilation keeps the Container root and
+checkout read-only, with only a 768 MiB `rw,nosuid,nodev,noexec` `/tmp` tmpfs admitted for Bun's
+compiler scratch. The base uses a
 digest-pinned Debian slim input and may acquire mise only from the
 exact versioned amd64/arm64 archives after matching their source-owned SHA-256 values; curl, archive
 utilities, language runtimes and compilers remain outside the final stage. Production:

@@ -458,6 +458,40 @@ captures decreasing stop-mode ceilings across two automatic continuations and re
 token/iteration settings before inference. Product host registration is required before this internal
 composition is an available goal control surface.
 
+The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
+persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
+from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
+override it; the host token ceiling still caps either value. `buildGoalAgentRequest` keeps fixed
+defaults of 120,000 ms, eight entry iterations, 60,000 ms per provider call and one transport retry;
+the ordinary environment/provider ceilings can lower those values again during validation. It has no
+soft escalation, elicitation or spawn budget. Measured semantic usage is committed once to Session
+totals and copied to formulation origin, never to `GoalRecord.consumption`; the later work run starts
+with the full separately resolved Goal allowance. Failed or invalid semantic outcomes retain measured
+usage when the executor supplied it.
+
+Production: `GOAL_FORMULATION_DEFAULTS` and `buildGoalAgentRequest` in
+[request.ts](../../packages/goal/src/agent/request.ts), `goalAgentRuntime` in
+[kernel.ts](../../packages/kernel/src/kernel.ts), `GoalAgentRunFailure` in
+[run.ts](../../packages/goal/src/agent/run.ts), and accounting in
+[service.ts](../../packages/kernel/src/goals/service.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and formulation accounting
+in [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
+Each admitted Goal stage partitions its remaining pursuit allowance before launch. The verification
+reserve is `min(stage_token_limit, floor(remaining/2))`; the primary request receives the positive
+remainder. If both cannot remain positive, the Goal becomes `budget_limited` before a run starts.
+Verification defaults to 32,000 net tokens per stage, 16,000 per attempt, three attempts, six
+iterations, 90,000 ms total, 60,000 ms per call and one retry, all lowerable by host ceilings.
+Attempts share one sub-ledger.
+
+Primary and verifier providers pass through the same deadline wrapper and usage tracker. Settlement
+debits their aggregate once to Goal consumption and Session totals; individual verifier usage
+remains audit data and is never added again. Production: `GOAL_VERIFICATION_DEFAULTS` in
+[verification.ts](../../packages/goal/src/agent/verification.ts) and `prepareHostedGoalTurn` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts) and
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
+
 ### 4.4 The output-token reservation (`packages/loop/src/runtime/loop/output-budget.ts`)
 
 `withOutputTokenBudget(llm, budget)` wraps every `.call`:

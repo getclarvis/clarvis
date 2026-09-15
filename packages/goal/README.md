@@ -1,8 +1,10 @@
 # `@clarvis/goal`
 
-Persistent conversation objectives and bounded continuation policy. This private product capability
-owns the domain without depending on the kernel, loop, plans or a transport. The host supplies
-session transactions, execution authority and evidence verification.
+Persistent conversation objectives, semantic formulation and bounded continuation policy. This
+private product capability owns the domain without depending on the kernel, plans or a transport.
+It depends on `@clarvis/loop` only for the generic run executor contract used by its bounded
+formulation runtime; the loop does not name Goals. The host supplies session transactions, execution
+authority, isolated executor dependencies and evidence verification.
 
 The owning contract is [goals](../../specs/capabilities/goals.md). Hosting, plan finalization and
 prompt-cache behavior retain their owning package contracts; domain tests alone do not qualify
@@ -14,6 +16,9 @@ automatic continuation, a TUI journey, a container or an installed artifact.
   Creation resolves omitted limits from host configuration and the finite entry budget only after
   checking replay. The raw parsed control determines the fingerprint; later configuration changes
   cannot alter a known receipt. Start receipts may retain the host's reserved execution identity.
+- `applyGoalFormulation` reuses the same create reducer after the host validates a semantic proposal.
+  `recordGoalFormulationReceipt` stores created, insufficient, stale and failed outcomes in the
+  existing bounded receipt audit without creating a draft store.
 - `admitGoalRun`, `advanceGoalRun` and `settleGoalRun` separate durable intent, physical lifecycle,
   confirmed usage and semantic status. Late usage belongs to its original goal, including archives.
 - `recordGoalCheckpoint`, `recordGoalCandidate` and `validateGoalCandidate` retain scoped evidence,
@@ -45,6 +50,51 @@ After measured budget exhaustion, an unsuccessful stage leaves the goal `budget_
 retains its own failed/cancelled outcome and any overrun. Missing usage still blocks accounting;
 a later user pause or cancellation remains authoritative. Resume alone does not grant more tokens.
 
+## Semantic formulation
+
+`runGoalAgent` executes a fixed `goal-agent` profile through the generic loop executor. Auto mode
+treats the bounded trajectory as primary; guided mode treats the validated seed as primary and uses
+trajectory and workspace reads only to resolve it. Both require structured `submit_result`; invalid
+output is a failed operation and never falls back to command text. `formulationCriteria` assigns
+deterministic host-owned IDs and accepts only qualitative or human criteria.
+
+The request has no MCP servers, skills, hooks, workflows, memory, plans, Goal control or delegation.
+It carries only `read_workspace`, a finite stop-mode budget, an empty shared prompt and the strict
+formulation output schema. The Kernel replaces the capability list with its canonical Tools
+capability, so the effective file surface comes from `@clarvis/tools` `readOnlyTools`; this package
+does not maintain another allowlist. `callPurpose: "goal"` identifies the provider call without
+putting semantic payloads in logs.
+
+`GoalRecord` keeps constraints, exclusions, assumptions, normative source snapshots and literal,
+guided or auto origin alongside its existing objective and criteria. Old pre-release state decodes
+these arrays empty with literal origin. A semantic edit increments `objective_revision`, invalidates
+the old candidate and acceptances, clears sources and converts the whole definition to literal.
+Limit-only edits retain formulation provenance.
+
+Production: `buildGoalAgentRequest`, `goalAgentPrompt`, `runGoalAgent` and
+`goalFormulationResultSchema` under [src/agent](src/agent), plus `applyGoalFormulation` in
+[control.ts](src/control.ts). Test: [agent-run.test.ts](tests/unit/agent-run.test.ts) covers the fixed
+request, schema rejection, deterministic criterion IDs, accounting and backward-compatible decode.
+
+## Independent completion verification
+
+Every final result for a literal, guided or auto Goal passes a separate `goal-agent` verification
+run before the Goal finalization gate accepts it. The strict `achieved`, `not_achieved` or
+`inconclusive` verdict covers definition fidelity, the objective and every qualitative criterion.
+Host and human criteria remain deterministic prerequisites and cannot be overruled by the model.
+
+`recordGoalVerification` persists at most four fenced audits on the primary `GoalRun`. The Kernel,
+not the model, calculates definition, candidate, final-attempt, evidence and inspected-artifact
+digests. A current `achieved` proof lets the gate pass; negative proof produces one bounded recovery
+nudge and is reused for an unchanged attempt. Settlement performs no inference and completes only
+after physical closure when the exact achieved proof remains current. An LLM verdict is audit
+evidence, never completion authority.
+
+Production: `buildGoalVerificationRequest` and `validateGoalVerificationResult` in
+[verification.ts](src/agent/verification.ts), `recordGoalVerification` in
+[verification-state.ts](src/verification-state.ts), and the gate in
+[capability.ts](src/capability.ts). Test: [verification.test.ts](tests/unit/verification.test.ts).
+
 ## Entry capability
 
 `@clarvis/goal/settings` is a lightweight entry for `goalsSettingsSpec`, `goalsSettingsSchema` and
@@ -54,6 +104,14 @@ Its optional `max_net_tokens` overrides the finite entry budget for the whole ob
 `max_auto_continuations` defaults to 8 and `max_no_progress_checkpoints` to 3. `deadline_at` is an
 optional absolute Unix timestamp in milliseconds. These defaults are copied only when creating or
 replacing a goal; changes to configuration never rewrite existing limits, usage or receipts.
+The non-contributable `goals.agent` block may select a model or override the formulation token
+allowance. When omitted, that allowance equals the ordinary run token budget resolved from merged
+settings or the host fallback; it belongs only to the formulation run and is capped by the same host
+ceiling. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight iterations,
+60,000 ms per call and one transport retry. An omitted model inherits `default_model`; an explicit
+invalid model fails when formulation is invoked.
+Its `verification` block separately defaults to a 32,000-token stage reserve, 16,000 tokens per
+attempt, three attempts, six iterations, 90,000 ms total and 60,000 ms per call.
 
 `createGoalCapability` consumes a host-bound `GoalRuntimePort` and requires activation for that
 session, execution and persisted entry-agent instance. It contributes `get_goal` and `update_goal`

@@ -150,6 +150,17 @@ async function fixture(mode: "checkpoint" | "blocked" | "review") {
   const run = async (execution_id: string, continue_from?: string) => {
     await host.admit(execution_id);
     const { port, evidence } = await host.runtime(execution_id);
+    const verifiedPort = {
+      ...port,
+      async verifyCompletion() {
+        const validation = await port.validateCompletion();
+        return {
+          ...validation,
+          verdict: validation.valid ? ("achieved" as const) : ("inconclusive" as const),
+        };
+      },
+      readCompletionProof: () => port.validateCompletion(),
+    };
     return executeRun({
       owner: "owner",
       onEvent: (event) => evidence.observe(event),
@@ -200,7 +211,7 @@ async function fixture(mode: "checkpoint" | "blocked" | "review") {
         llm: adapter,
         capabilityRegistry: createCapabilityRegistry({ specs: [plansSettingsSpec] }),
         capabilities: [
-          createGoalCapability(port),
+          createGoalCapability(verifiedPort),
           createPlansCapability({
             factory: {
               storeFor: async () => ({ key: "markdown", providerKind: "markdown", store }),

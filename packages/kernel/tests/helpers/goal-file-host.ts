@@ -22,6 +22,24 @@ export type GoalFixtureResponse = (
   { text: string } | { name: string; arguments: Record<string, unknown> }
 ) & { usage?: "missing" | "no_cache" };
 
+function verificationTargets(request: GoalFixtureRequest): string[] | undefined {
+  for (const message of [...request.messages].reverse()) {
+    const content = message.content;
+    if (typeof content !== "string") continue;
+    try {
+      const payload = JSON.parse(content) as {
+        required_targets?: { qualitative_criterion_ids?: unknown };
+      };
+      const ids = payload.required_targets?.qualitative_criterion_ids;
+      if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) continue;
+      return ids;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 /** Real file host, IPC, provider HTTP and SDK; only the provider's responses are controlled. */
 export async function createGoalFileHostFixture(
   options: {
@@ -31,6 +49,7 @@ export async function createGoalFileHostFixture(
     planRetention?: "keep" | "discard";
     memory?: boolean;
     preserveRecentTokens?: number;
+    budgetTokenLimit?: number;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-file-host-"));
@@ -62,6 +81,40 @@ export async function createGoalFileHostFixture(
     let respond: (request: GoalFixtureRequest) => Promise<GoalFixtureResponse> = async () => {
       throw new Error("Goal fixture responder was not installed");
     };
+    let verifyRespond = async (
+      _request: GoalFixtureRequest,
+      ids: string[],
+    ): Promise<GoalFixtureResponse> => ({
+      name: "submit_result",
+      arguments: {
+        verdict: "achieved",
+        summary: "Independent fixture verification established completion",
+        assessments: [
+          {
+            scope: "definition",
+            verdict: "satisfied",
+            rationale: "The persisted fixture definition retains its requested outcome",
+            evidence_ids: [],
+            inspected_paths: [],
+          },
+          {
+            scope: "objective",
+            verdict: "satisfied",
+            rationale: "The controlled fixture result satisfies the objective",
+            evidence_ids: [],
+            inspected_paths: [],
+          },
+          ...ids.map((criterion_id) => ({
+            scope: "criterion",
+            criterion_id,
+            verdict: "satisfied",
+            rationale: "The controlled fixture satisfies this qualitative criterion",
+            evidence_ids: [],
+            inspected_paths: [],
+          })),
+        ],
+      },
+    });
     const started = performance.now();
     const timeoutMs = options.timeoutMs ?? 30000;
     const provider = Bun.serve({
@@ -75,7 +128,9 @@ export async function createGoalFileHostFixture(
           if (requests.length > 24 || performance.now() - started > timeoutMs)
             throw new Error("Goal fixture physical-call or duration limit exceeded");
           const index = requests.length;
-          const result = await respond(body);
+          const targets = verificationTargets(body);
+          const result =
+            targets === undefined ? await respond(body) : await verifyRespond(body, targets);
           const usage = { input: 1000 + index * 10, output: 10, cached: 500 };
           if (result.usage !== "missing") usages.push(usage);
           const chunk = {
@@ -159,6 +214,9 @@ export async function createGoalFileHostFixture(
         plans: { mode: options.plansMode ?? "on", retention: options.planRetention ?? "keep" },
         ...(options.memory === true ? { memory: { enabled: true } } : {}),
         guard: { type: "shell", mode: "off" },
+        ...(options.budgetTokenLimit === undefined
+          ? {}
+          : { budget: { on_exceed: "stop", total_token_limit: options.budgetTokenLimit } }),
       }),
     );
     await mkdir(global.agentsDir);
@@ -256,6 +314,9 @@ export async function createGoalFileHostFixture(
       close,
       setResponder(value: typeof respond) {
         respond = value;
+      },
+      setVerificationResponder(value: typeof verifyRespond) {
+        verifyRespond = value;
       },
       async until(predicate: () => boolean | Promise<boolean>) {
         const deadline = performance.now() + timeoutMs;

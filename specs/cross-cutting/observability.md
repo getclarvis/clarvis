@@ -67,6 +67,33 @@ or output. Production: `callReviewerWithTrace` in
 `packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/reviewer-trace.test.ts`
 and `packages/kernel/tests/unit/observability.test.ts`.
 
+Goal formulation follows the same separation. Its semantic `executeRun` is persisted normally under
+its own execution ID and each actual provider call carries host-owned purpose `goal`. The operation
+log `goal.formulation.completed` contains only session/formulation IDs, mode, terminal outcome,
+duration when known and token/cache counts. `goal.formulation.failed` likewise carries IDs only.
+Neither log contains seed, objective, criteria, trajectory, prompt, tool arguments/results, source
+paths/digests, provider metadata or response. The run trace remains the owner-scoped execution audit;
+the operation log is never used for recovery, and receipt recovery never emits or replays another
+model call.
+
+Production: formulation diagnostics in
+[service.ts](../../packages/kernel/src/goals/service.ts), purpose propagation in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts), and the Container purpose codec in
+[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) verifies `callPurpose`,
+while [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
+verifies the separate persisted execution and receipt replay.
+
+Independent Goal verification also persists as its own ordinary execution/trace with purpose
+`goal`. The bounded `GoalRun.verifications` record keeps only host-computed digests, verdict,
+assessments, inspected artifact snapshots, usage and execution ID. Diagnostics may carry IDs,
+verdict, counts, duration and usage only; they never include definition, seed, trajectory,
+candidate, result, prompt, rationale, paths, digests or raw tool payloads. Verifier trace reads do
+not enter the primary run's `GoalEvidenceSource`. Production: `runGoalVerification` in
+[verification.ts](../../packages/goal/src/agent/verification.ts) and persistence in
+[runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts). Test:
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+
 ## 2. Surface
 
 ### 2.1 The port (`@clarvis/capability`)
@@ -309,6 +336,8 @@ Guard-specific audit records observed:
 | --- | --- | --- | --- |
 | `guard.resolved` | info | `mode, source, judge_configured, human_channel` | `packages/kernel/src/guard/resolver.ts` |
 | `guard.decision` | info | `verdict, matched, mode, tool, reason?, escalate?, command_digest?` | `packages/kernel/src/guard/resolver.ts` |
+| `goal.verification.completed` | info | `execution_id, verification_execution_id, verdict, assessment_count, artifact_count, elapsed_ms, input_tokens?, output_tokens?, cached_tokens?` | `packages/kernel/src/goals/runtime-port.ts` |
+| `goal.verification.failed` | warn | `execution_id, verification_execution_id, input_tokens?, output_tokens?, cached_tokens?` | `packages/kernel/src/goals/runtime-port.ts` |
 | `guard.elicit.answered` | info | `answer: "allow"\|"allow_session"\|"deny", answerer: "human"\|"judge"\|"session_allowlist"` | `packages/kernel/src/guard/resolver.ts` |
 | `guard.escalation.no_channel` | warn | `run_id` | `packages/kernel/src/guard/resolver.ts` |
 

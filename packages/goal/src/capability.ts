@@ -273,16 +273,17 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                             ),
                           };
                         }
-                        const validation = await port.validateCompletion();
+                        const validation = await port.verifyCompletion(attempt);
                         if (validation.valid) return { kind: "pass" };
                         if (
                           !finalNudged &&
                           (attempt.mode !== "text" || (attempt.text?.trim().length ?? 0) > 0)
                         ) {
                           finalNudged = true;
+                          const detail = validation.reasons.slice(0, 4).join("; ");
                           return {
                             kind: "nudge",
-                            note: "The goal has no valid completion candidate. Read get_goal, then use update_goal candidate with every current criterion, checkpoint for remaining work, or blocked for a missing decision. A final answer alone cannot complete the goal.",
+                            note: `${detail || "Independent Goal verification did not establish completion"}. Read get_goal, continue the missing work, record a revised candidate, or checkpoint/blocked when appropriate.`,
                           };
                         }
                         return {

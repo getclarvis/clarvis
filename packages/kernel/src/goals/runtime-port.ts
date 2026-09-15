@@ -1,4 +1,10 @@
-import { NOOP_LOGGER, composePromptCacheKey, type Logger } from "@clarvis/capability";
+import {
+  NOOP_LOGGER,
+  composePromptCacheKey,
+  type FinalizeAttempt,
+  type Logger,
+  type TraceEvent,
+} from "@clarvis/capability";
 import {
   GoalError,
   blockGoalRun,
@@ -9,6 +15,11 @@ import {
   recordGoalCandidate,
   recordGoalCheckpoint,
   recordGoalProgress,
+  recordGoalVerification,
+  currentGoalVerification,
+  goalFinalAttemptDigest,
+  validateGoalVerificationResult,
+  verificationAssessmentSummary,
   validateGoalCandidate,
   type GoalCompletionValidation,
   type GoalRecord,
@@ -16,15 +27,22 @@ import {
   type GoalRuntimeBinding,
   type GoalRuntimePort,
   type GoalState,
+  type GoalUsage,
+  type GoalVerificationInput,
+  type GoalVerificationRunResult,
 } from "@clarvis/goal";
+import { generateExecutionId } from "@clarvis/trace";
+import { randomUUID } from "node:crypto";
 import type { GoalEvidenceSnapshot, GoalEvidenceSource } from "./evidence.ts";
 import { goalEvidenceDigest } from "./evidence.ts";
+import { verificationArtifactsCurrent, verifyTraceInspectedArtifacts } from "./trace-reads.ts";
+import type { GoalVerificationProjection } from "./verification-input.ts";
 import { kernelError } from "../core/errors.ts";
 import { toGoalKernelError } from "./errors.ts";
 
 /** Metadata-only notification emitted after the private session write succeeds. */
 export interface GoalRuntimeChange {
-  kind: "progress" | "checkpoint" | "candidate" | "blocked";
+  kind: "progress" | "checkpoint" | "candidate" | "verification" | "blocked";
   session_id: string;
   goal_id: string;
   execution_id: string;
@@ -45,6 +63,20 @@ export function createGoalRuntimePort(options: {
   logger?: Logger;
   now?: () => number;
   onChange?: (change: GoalRuntimeChange) => void;
+  verification?: {
+    project(
+      goal: GoalRecord,
+      attempt: Exclude<FinalizeAttempt, { mode: "checkpoint" }>,
+      evidence: GoalEvidenceSnapshot,
+      validation: GoalCompletionValidation,
+    ): Promise<GoalVerificationProjection>;
+    reserveAttempt(): GoalVerificationInput["budget"] | undefined;
+    finishAttempt(usage: GoalUsage | undefined): void;
+    run(input: GoalVerificationInput): Promise<GoalVerificationRunResult>;
+    readTrace(executionId: string): readonly TraceEvent[] | undefined;
+    readFile(path: string): Promise<{ path: string; content: string }>;
+    validateDefinitionSources(sources: GoalRecord["sources"]): Promise<boolean>;
+  };
 }): GoalRuntimePort {
   const binding = Object.freeze({ ...options.binding });
   composePromptCacheKey({
@@ -178,6 +210,266 @@ export function createGoalRuntimePort(options: {
         };
       return result;
     }, signal);
+  const proof = async (
+    attempt: Exclude<FinalizeAttempt, { mode: "checkpoint" }>,
+    signal?: AbortSignal,
+  ) => {
+    const { goal, evidence } = await snapshot("validate", signal);
+    if (goal.candidate?.execution_id !== binding.execution_id)
+      return {
+        goal,
+        evidence,
+        validation: {
+          valid: false,
+          reasons: ["The current stage has no completion candidate"],
+          qualitative_criteria: [],
+          revision: goal.revision,
+        },
+      };
+    const validation = await validateGoalCandidate(goal, goal.candidate, evidence);
+    return { goal, evidence, validation };
+  };
+  const verifyCompletion: GoalRuntimePort["verifyCompletion"] = (attempt, signal) =>
+    guard(async () => {
+      const initial = await proof(attempt, signal);
+      if (!initial.validation.valid || options.verification === undefined)
+        return initial.validation.valid
+          ? {
+              ...initial.validation,
+              valid: false,
+              reasons: ["Independent Goal verification is unavailable"],
+            }
+          : initial.validation;
+      if (!(await options.verification.validateDefinitionSources(initial.goal.sources)))
+        return {
+          ...initial.validation,
+          valid: false,
+          reasons: ["A normative Goal source changed or disappeared before verification"],
+          verdict: "inconclusive",
+        };
+      const projected = await options.verification.project(
+        initial.goal,
+        attempt,
+        initial.evidence,
+        initial.validation,
+      );
+      const existing = currentGoalVerification(initial.goal, projected.fence);
+      if (
+        existing !== undefined &&
+        (await verificationArtifactsCurrent(existing.inspected_artifacts, (path) =>
+          options.verification!.readFile(path),
+        ))
+      )
+        return {
+          valid: existing.verdict === "achieved",
+          reasons:
+            existing.verdict === "achieved"
+              ? []
+              : [existing.summary, ...verificationAssessmentSummary(existing.assessments)],
+          qualitative_criteria: projected.qualitative_criterion_ids,
+          revision: initial.goal.revision,
+          verdict: existing.verdict,
+          verification_execution_id: existing.verification_execution_id,
+        };
+      const budget = options.verification.reserveAttempt();
+      if (budget === undefined)
+        return {
+          valid: false,
+          reasons: [
+            "Independent Goal verification exhausted its bounded attempts or token reserve",
+          ],
+          qualitative_criteria: projected.qualitative_criterion_ids,
+          revision: initial.goal.revision,
+          verdict: "inconclusive",
+        };
+      const verificationExecutionId = generateExecutionId();
+      let completed: GoalVerificationRunResult;
+      try {
+        completed = await options.verification.run({
+          execution_id: verificationExecutionId,
+          agent_instance_id: randomUUID(),
+          session_id: binding.session_id,
+          projection: projected.projection,
+          signal,
+          budget,
+        });
+        options.verification.finishAttempt(completed.usage);
+      } catch (error) {
+        const usage =
+          typeof error === "object" && error !== null && "usage" in error
+            ? (error as { usage?: GoalUsage }).usage
+            : undefined;
+        options.verification.finishAttempt(usage);
+        signal?.throwIfAborted();
+        logger.warn(
+          {
+            event: "goal.verification.failed",
+            execution_id: binding.execution_id,
+            verification_execution_id: verificationExecutionId,
+            ...(usage?.kind === "measured"
+              ? {
+                  input_tokens: usage.input,
+                  output_tokens: usage.output,
+                  ...(usage.cached === undefined ? {} : { cached_tokens: usage.cached }),
+                }
+              : {}),
+          },
+          "Independent Goal verification failed",
+        );
+        return {
+          valid: false,
+          reasons: ["Independent Goal verification failed without establishing completion"],
+          qualitative_criteria: projected.qualitative_criterion_ids,
+          revision: initial.goal.revision,
+          verdict: "inconclusive",
+          verification_execution_id: verificationExecutionId,
+        };
+      }
+      const result = validateGoalVerificationResult(
+        completed.result,
+        projected.qualitative_criterion_ids,
+        projected.evidence_ids,
+      );
+      const inspectedPaths = result.assessments.flatMap((assessment) => assessment.inspected_paths);
+      if (initial.goal.sources.some((source) => !inspectedPaths.includes(source.path)))
+        throw new GoalError(
+          "invalid_request",
+          "Independent Goal verification did not inspect every normative source",
+        );
+      const artifacts = await verifyTraceInspectedArtifacts({
+        trace: options.verification.readTrace(completed.execution_id) ?? [],
+        paths: [...new Set(inspectedPaths)],
+        readFile: (path) => options.verification!.readFile(path),
+      });
+      if (
+        options.evidence.generation !== initial.evidence.generation ||
+        !(await options.verification.validateDefinitionSources(initial.goal.sources))
+      )
+        throw new GoalError(
+          "conflict",
+          "Goal evidence or normative sources changed during verification",
+        );
+      const refreshed = await options.verification.project(
+        initial.goal,
+        attempt,
+        initial.evidence,
+        initial.validation,
+      );
+      if (
+        JSON.stringify(refreshed.fence) !== JSON.stringify(projected.fence) ||
+        refreshed.projection !== projected.projection
+      )
+        throw new GoalError("conflict", "Goal conversation changed during verification");
+      const verification = {
+        verification_execution_id: completed.execution_id,
+        control_revision: projected.fence.control_revision,
+        objective_revision: projected.fence.objective_revision,
+        definition_digest: projected.fence.definition_digest,
+        candidate_digest: projected.fence.candidate_digest,
+        final_attempt_digest: projected.fence.final_attempt_digest,
+        evidence_digest: projected.fence.evidence_digest,
+        verdict: result.verdict,
+        summary: result.summary,
+        assessments: result.assessments,
+        inspected_artifacts: artifacts,
+        usage: completed.usage,
+        verified_at: now(),
+      };
+      const committed = await options.repository.transact(binding.session_id, (previous) => {
+        if (previous === undefined) throw new GoalError("conflict", "Goal state is absent");
+        if (options.evidence.generation !== initial.evidence.generation)
+          throw new GoalError(
+            "conflict",
+            "Goal evidence changed before verification was persisted",
+          );
+        const state = recordGoalVerification(previous, {
+          ...projected.fence,
+          verification,
+          now: now(),
+        });
+        return { state, result: state.current! };
+      });
+      const persisted = currentGoalVerification(committed, projected.fence);
+      if (persisted === undefined)
+        throw new GoalError("conflict", "Goal verification lost its persistence fence");
+      logger.info(
+        {
+          event: "goal.verification.completed",
+          execution_id: binding.execution_id,
+          verification_execution_id: persisted.verification_execution_id,
+          verdict: persisted.verdict,
+          assessment_count: persisted.assessments.length,
+          artifact_count: persisted.inspected_artifacts.length,
+          elapsed_ms: completed.elapsed_ms,
+          ...(persisted.usage.kind === "measured"
+            ? {
+                input_tokens: persisted.usage.input,
+                output_tokens: persisted.usage.output,
+                ...(persisted.usage.cached === undefined
+                  ? {}
+                  : { cached_tokens: persisted.usage.cached }),
+              }
+            : {}),
+        },
+        "Independent Goal verification completed",
+      );
+      try {
+        options.onChange?.({
+          kind: "verification",
+          session_id: binding.session_id,
+          goal_id: binding.goal_id,
+          execution_id: binding.execution_id,
+          revision: committed.revision,
+        });
+      } catch {
+        logger.warn(
+          { event: "goal.notification.failed", execution_id: binding.execution_id },
+          "Goal verification is durable but its observer failed",
+        );
+      }
+      return {
+        valid: persisted.verdict === "achieved",
+        reasons:
+          persisted.verdict === "achieved"
+            ? []
+            : [persisted.summary, ...verificationAssessmentSummary(persisted.assessments)],
+        qualitative_criteria: projected.qualitative_criterion_ids,
+        revision: committed.revision,
+        verdict: persisted.verdict,
+        verification_execution_id: persisted.verification_execution_id,
+      };
+    }, signal);
+  const readCompletionProof: GoalRuntimePort["readCompletionProof"] = (result, signal) =>
+    guard(async () => {
+      const attempt =
+        typeof result === "string"
+          ? ({ mode: "text", text: result } as const)
+          : ({ mode: "submit", value: result } as const);
+      const initial = await proof(attempt, signal);
+      if (!initial.validation.valid || options.verification === undefined)
+        return initial.validation;
+      const projected = await options.verification.project(
+        initial.goal,
+        attempt,
+        initial.evidence,
+        initial.validation,
+      );
+      if (goalFinalAttemptDigest(result) !== projected.fence.final_attempt_digest)
+        return { ...initial.validation, valid: false, reasons: ["Terminal result changed"] };
+      const verification = currentGoalVerification(initial.goal, projected.fence);
+      const current =
+        verification !== undefined &&
+        verification.verdict === "achieved" &&
+        (await verificationArtifactsCurrent(verification.inspected_artifacts, (path) =>
+          options.verification!.readFile(path),
+        ));
+      return {
+        valid: current,
+        reasons: current ? [] : ["No current achieved verification matches the terminal result"],
+        qualitative_criteria: projected.qualitative_criterion_ids,
+        revision: initial.goal.revision,
+      };
+    }, signal);
   return {
     binding,
     logger,
@@ -249,6 +541,8 @@ export function createGoalRuntimePort(options: {
         return validateCompletion(signal);
       }, signal),
     validateCompletion,
+    verifyCompletion,
+    readCompletionProof,
     blocked: (reason, signal) =>
       guard(async () => {
         await mutate(

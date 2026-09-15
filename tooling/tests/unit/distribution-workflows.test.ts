@@ -26,7 +26,7 @@ function targetFixture(target: "linux-x64" | "linux-arm64") {
       sha256: "b".repeat(64),
       size: 1024,
     },
-    kernel_wire_version: 10,
+    kernel_wire_version: 11,
     broker_version: 1,
     channel_version: 1,
   };

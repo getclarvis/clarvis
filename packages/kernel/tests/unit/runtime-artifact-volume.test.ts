@@ -33,7 +33,7 @@ async function fixture(): Promise<CachedRuntimeArtifact> {
       dirty: true,
       target: "linux-x64",
       baseAbi: "clarvis-linux-glibc-v1",
-      kernelWireVersion: 10,
+      kernelWireVersion: 11,
       brokerVersion: 1,
       channelVersion: 1,
       entrypoint: "bin/clarvis-kernel",

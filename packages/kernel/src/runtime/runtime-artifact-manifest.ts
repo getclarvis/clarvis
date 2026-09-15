@@ -37,7 +37,7 @@ export interface RuntimeArtifactFile {
 export interface RuntimeArtifactManifest extends RuntimeArtifactIdentity {
   readonly schemaVersion: 1;
   readonly dirty: boolean;
-  readonly kernelWireVersion: 10;
+  readonly kernelWireVersion: 11;
   readonly brokerVersion: 1;
   readonly channelVersion: 1;
   readonly entrypoint: "bin/clarvis-kernel";
@@ -154,7 +154,7 @@ export function parseRuntimeArtifactManifest(
     typeof m.dirty !== "boolean" ||
     !["linux-x64", "linux-arm64"].includes(String(m.target)) ||
     m.baseAbi !== "clarvis-linux-glibc-v1" ||
-    m.kernelWireVersion !== 10 ||
+    m.kernelWireVersion !== 11 ||
     m.brokerVersion !== 1 ||
     m.channelVersion !== 1 ||
     m.entrypoint !== "bin/clarvis-kernel" ||
@@ -207,7 +207,7 @@ export function parseRuntimeArtifactManifest(
     dirty: m.dirty,
     target: m.target as RuntimeArtifactIdentity["target"],
     baseAbi: "clarvis-linux-glibc-v1",
-    kernelWireVersion: 10,
+    kernelWireVersion: 11,
     brokerVersion: 1,
     channelVersion: 1,
     entrypoint: "bin/clarvis-kernel",

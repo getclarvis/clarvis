@@ -13,7 +13,7 @@ export interface RuntimeReleaseTarget {
     readonly abi: "clarvis-linux-glibc-v1";
   };
   readonly artifact: { readonly asset: string; readonly sha256: string; readonly size: number };
-  readonly kernel_wire_version: 10;
+  readonly kernel_wire_version: 11;
   readonly broker_version: 1;
   readonly channel_version: 1;
 }
@@ -66,7 +66,7 @@ function target(value: unknown, expected: (typeof RUNTIME_TARGETS)[number]): Run
     !Number.isSafeInteger(artifact.size) ||
     artifact.size <= 0 ||
     artifact.size > 512 * 1024 * 1024 ||
-    root.kernel_wire_version !== 10 ||
+    root.kernel_wire_version !== 11 ||
     root.broker_version !== 1 ||
     root.channel_version !== 1
   )
@@ -78,7 +78,7 @@ function target(value: unknown, expected: (typeof RUNTIME_TARGETS)[number]): Run
       abi: "clarvis-linux-glibc-v1",
     },
     artifact: { asset: artifact.asset, sha256: artifact.sha256, size: artifact.size },
-    kernel_wire_version: 10,
+    kernel_wire_version: 11,
     broker_version: 1,
     channel_version: 1,
   };

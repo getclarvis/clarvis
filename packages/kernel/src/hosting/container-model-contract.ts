@@ -101,7 +101,7 @@ export const containerModelCallSchema = z
     runId: id,
     sessionId: id.optional(),
     agentInstanceId: id.optional(),
-    purpose: z.enum(["generation", "memory", "compaction"]),
+    purpose: z.enum(["generation", "memory", "compaction", "goal"]),
     provider: id,
     model: id,
     input: containerModelInputSchema,

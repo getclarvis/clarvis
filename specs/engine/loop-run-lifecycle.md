@@ -768,6 +768,15 @@ short-circuits on the first non-`pass`, returning the gate's **ordinal** as its 
 doc comment states the ordinal is stable because gates are folded in capability
 registration order.
 
+Goal uses this generic ordering without adding a Loop branch. Its order `-200` gate performs a
+host-composed independent semantic verification of the exact attempt before the Plan gate at
+`-100`. A verifier verdict is persisted audit input to the gate, not an engine terminal verdict and
+not completion authority. A later gate nudge creates another attempt and traverses the earlier Goal
+gate again. Production: `createGoalCapability` in
+[capability.ts](../../packages/goal/src/capability.ts) and `runGates` in
+[loop-contract.ts](../../packages/loop/src/runtime/loop/loop-contract.ts). Test:
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+
 **Forced tool after a nudge**: `noteGateNudged` sets `forceToolNextIteration` when
 `input.forceToolOnNudge === true` (`packages/loop/src/runtime/loop/run-agent.ts`), and
 `takeForcedChoice` consumes it exactly once, returning `"required"`. The one-shot

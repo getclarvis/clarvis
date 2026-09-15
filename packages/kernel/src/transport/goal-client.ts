@@ -69,6 +69,16 @@ export function createGoalClient(options: {
       async control(request) {
         return checked(decodeGoalReceipt(await requests.control(request), request.operation_id));
       },
+      async formulate(request) {
+        const receipt = checked(
+          decodeGoalReceipt(await requests.formulate(request), request.operation_id),
+        );
+        if (receipt.formulation === undefined) {
+          options.protocolViolation("Goal formulation response omitted its outcome");
+          throw kernelError("unavailable", "Invalid goal formulation response from the kernel");
+        }
+        return { ...receipt, formulation: receipt.formulation };
+      },
       async receipt(sessionId, operationId) {
         const value = await requests.receipt(sessionId, operationId);
         return value === null ? null : checked(decodeGoalReceipt(value, operationId));

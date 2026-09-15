@@ -20,7 +20,7 @@ export function candidateIdentity(tag: string, version: string, sha: string, rep
     version,
     source_revision: sha,
     repository,
-    kernel_wire_version: 10,
+    kernel_wire_version: 11,
     broker_version: 1,
     channel_version: 1,
     targets: ["linux-x64", "linux-arm64"],

@@ -111,14 +111,14 @@ The separate `runtime-release.json` is schema 2 and contains exactly the followi
     "linux-x64": {
       "base": { "image": "ghcr.io/getclarvis/clarvis-base", "digest": "sha256:<64 hex>", "abi": "clarvis-linux-glibc-v1" },
       "artifact": { "asset": "clarvis-kernel-linux-x64.tar.gz", "sha256": "<64 hex>", "size": 1 },
-      "kernel_wire_version": 10,
+      "kernel_wire_version": 11,
       "broker_version": 1,
       "channel_version": 1
     },
     "linux-arm64": {
       "base": { "image": "ghcr.io/getclarvis/clarvis-base", "digest": "sha256:<64 hex>", "abi": "clarvis-linux-glibc-v1" },
       "artifact": { "asset": "clarvis-kernel-linux-arm64.tar.gz", "sha256": "<64 hex>", "size": 1 },
-      "kernel_wire_version": 10,
+      "kernel_wire_version": 11,
       "broker_version": 1,
       "channel_version": 1
     }

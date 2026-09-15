@@ -181,7 +181,7 @@ export async function runGoalFileHostJourney(
   );
   expect(session.totals).toEqual(totals);
   const leaderKey = `conversation_${session.agent_instance_id!}`;
-  expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
+  expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(3);
   const lead = f.requests.filter((request) => request.prompt_cache_key === leaderKey);
   expect(lead).toHaveLength(8);
   for (let index = 1; index < lead.length; index++) {
@@ -192,7 +192,7 @@ export async function runGoalFileHostJourney(
   }
   expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("done");
   expect(await f.client.goals.control(create)).toEqual(receipt);
-  expect(f.requests).toHaveLength(10);
+  expect(f.requests).toHaveLength(11);
 
   return { goal, session, requests: f.requests, stageSnapshots };
 }

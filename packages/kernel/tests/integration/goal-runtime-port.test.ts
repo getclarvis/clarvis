@@ -79,6 +79,65 @@ async function settle(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("durable host goal runtime port", () => {
+  it("refuses completion without a candidate or an independent verifier", async () => {
+    const f = await fixture();
+    const { port } = await f.runtime();
+    expect(await port.validateCompletion()).toMatchObject({
+      valid: false,
+      reasons: ["The current stage has no completion candidate"],
+    });
+    expect(await port.verifyCompletion({ mode: "text", text: "Unproven result" })).toMatchObject({
+      valid: false,
+      reasons: ["The current stage has no completion candidate"],
+    });
+    await port.candidate(candidate());
+    expect(await port.verifyCompletion({ mode: "text", text: "Candidate result" })).toMatchObject({
+      valid: false,
+      reasons: ["Independent Goal verification is unavailable"],
+    });
+  });
+
+  it("fails closed when the independent verification reserve is exhausted", async () => {
+    const f = await fixture();
+    const { port } = await f.runtime("first", {
+      verification: {
+        project: async (goal, attempt) => ({
+          projection: JSON.stringify({ objective: goal.objective, attempt }),
+          fence: {
+            goal_id: goal.goal_id,
+            execution_id: "first",
+            control_revision: goal.control_revision,
+            objective_revision: goal.objective_revision,
+            definition_digest: "a".repeat(64),
+            candidate_digest: "b".repeat(64),
+            final_attempt_digest: "c".repeat(64),
+            evidence_digest: "d".repeat(64),
+          },
+          qualitative_criterion_ids: ["objective"],
+          evidence_ids: [],
+        }),
+        reserveAttempt: () => undefined,
+        finishAttempt: () => {
+          throw new Error("unused");
+        },
+        run: async () => {
+          throw new Error("unused");
+        },
+        readTrace: () => undefined,
+        readFile: async () => {
+          throw new Error("unused");
+        },
+        validateDefinitionSources: async () => true,
+      },
+    });
+    await port.candidate(candidate());
+    expect(await port.verifyCompletion({ mode: "text", text: "Candidate result" })).toMatchObject({
+      valid: false,
+      verdict: "inconclusive",
+      reasons: [expect.stringContaining("exhausted")],
+    });
+  });
+
   it("interprets the real trace mapper's flat tool names without treating goal controls as evidence", async () => {
     const f = await fixture({ criteria: [toolCriterion] });
     const { port, evidence } = await f.runtime();

@@ -8,6 +8,8 @@ import {
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
+  type ProviderConfig,
+  type LLMProvider,
   type Logger,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -89,6 +91,16 @@ import type { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
 import { kernelError } from "./core/errors.ts";
 import { createUnavailableProviderAuthService } from "./subscriptions/unavailable.ts";
 import { createStorageService } from "./storage/storage-service.ts";
+import {
+  GOAL_FORMULATION_DEFAULTS,
+  GOAL_VERIFICATION_DEFAULTS,
+  type GoalAgentRunInput,
+  type GoalAgentRunResult,
+  type GoalVerificationInput,
+  type GoalVerificationPolicy,
+  type GoalVerificationRunResult,
+} from "@clarvis/goal";
+import { createKernelGoalAgentRuntime } from "./goals/agent-runtime.ts";
 
 /**
  * The kernel services whose data belongs to one owner.
@@ -184,6 +196,16 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   prepareRun(params: StartRunParams, owner?: string, goal?: GoalExecutionPolicy): PreparedKernelRun;
   /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
   readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
+  /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
+  goalAgentRuntime(
+    owner?: string,
+    trackModel?: (provider: LLMProvider) => LLMProvider,
+  ): {
+    workspaceReadAvailable: boolean;
+    run(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
+    verify(input: GoalVerificationInput): Promise<GoalVerificationRunResult>;
+    verification: GoalVerificationPolicy;
+  };
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
@@ -442,6 +464,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       guardReviewerModelCallProjector,
     ]),
   };
+  const executeRun: RunExecutor =
+    opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
   if (levelEnabled(logger, "debug")) {
     logger.debug(
       {
@@ -993,6 +1017,140 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       residentOwner(owner, false).prepareRun(params, goal),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
+    goalAgentRuntime(owner = defaultOwner, trackModel) {
+      const merged = opts.configStore.readSettings().merged as Record<string, unknown>;
+      const goalSettings =
+        typeof merged.goals === "object" && merged.goals !== null
+          ? (merged.goals as Record<string, unknown>)
+          : {};
+      const agentSettings =
+        typeof goalSettings.agent === "object" && goalSettings.agent !== null
+          ? (goalSettings.agent as Record<string, unknown>)
+          : {};
+      const configuredModel =
+        typeof agentSettings.model === "string"
+          ? agentSettings.model
+          : typeof merged.default_model === "string"
+            ? merged.default_model
+            : opts.assemblerOptions?.defaultModel;
+      const formulation =
+        typeof agentSettings.formulation === "object" && agentSettings.formulation !== null
+          ? (agentSettings.formulation as GoalAgentRunInput["budget"])
+          : undefined;
+      const runBudget =
+        typeof merged.budget === "object" && merged.budget !== null
+          ? (merged.budget as { total_token_limit?: unknown })
+          : undefined;
+      const ordinaryRunTokenLimit =
+        typeof runBudget?.total_token_limit === "number"
+          ? runBudget.total_token_limit
+          : (opts.assemblerOptions?.fallbackTokenLimit ??
+            runDeps.env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT);
+      const verificationSettings =
+        typeof agentSettings.verification === "object" && agentSettings.verification !== null
+          ? (agentSettings.verification as Partial<GoalVerificationPolicy>)
+          : {};
+      const verification: GoalVerificationPolicy = {
+        stage_token_limit: Math.min(
+          verificationSettings.stage_token_limit ?? GOAL_VERIFICATION_DEFAULTS.stage_token_limit,
+          runDeps.env.CLARVIS_TOKEN_CEILING,
+        ),
+        attempt_token_limit: Math.min(
+          verificationSettings.attempt_token_limit ??
+            GOAL_VERIFICATION_DEFAULTS.attempt_token_limit,
+          runDeps.env.CLARVIS_TOKEN_CEILING,
+        ),
+        max_attempts: Math.min(
+          verificationSettings.max_attempts ?? GOAL_VERIFICATION_DEFAULTS.max_attempts,
+          GOAL_VERIFICATION_DEFAULTS.max_attempts,
+        ),
+        iteration_limit: Math.min(
+          verificationSettings.iteration_limit ?? GOAL_VERIFICATION_DEFAULTS.iteration_limit,
+          runDeps.env.CLARVIS_ITERATION_CEILING,
+        ),
+        timeout_ms: Math.min(
+          verificationSettings.timeout_ms ?? GOAL_VERIFICATION_DEFAULTS.timeout_ms,
+          runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
+        ),
+        call_timeout_ms: Math.min(
+          verificationSettings.call_timeout_ms ?? GOAL_VERIFICATION_DEFAULTS.call_timeout_ms,
+          runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
+          runDeps.env.CLARVIS_RETRY_AFTER_CEILING_MS,
+        ),
+        max_retries: Math.min(
+          GOAL_VERIFICATION_DEFAULTS.max_retries,
+          runDeps.env.CLARVIS_RETRY_CEILING,
+        ),
+      };
+      return {
+        workspaceReadAvailable:
+          runDeps.env.CLARVIS_AGENT_TOOLS_ENABLED === true &&
+          (runDeps.capabilities ?? []).filter((capability) => capability.name === "tools")
+            .length === 1 &&
+          runDeps.env.CLARVIS_AGENT_TOOLS_MAX_GRANT !== "none",
+        run: (input) => {
+          if (configuredModel === undefined)
+            throw kernelError(
+              "invalid_request",
+              "Goal agent has no model and no default_model is set",
+            );
+          const runtime = createKernelGoalAgentRuntime({
+            owner: residentOwner(owner, false).stateOwner,
+            model: configuredModel,
+            providers:
+              runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
+                ? (merged.providers as ProviderConfig[])
+                : [],
+            deps: runDeps,
+            executeRun,
+          });
+          return runtime.run({
+            ...input,
+            budget: {
+              max_net_tokens: Math.min(
+                formulation?.max_net_tokens ?? ordinaryRunTokenLimit,
+                runDeps.env.CLARVIS_TOKEN_CEILING,
+              ),
+              timeout_ms: Math.min(
+                formulation?.timeout_ms ?? GOAL_FORMULATION_DEFAULTS.timeout_ms,
+                runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
+              ),
+              max_iterations: Math.min(
+                formulation?.max_iterations ?? GOAL_FORMULATION_DEFAULTS.max_iterations,
+                runDeps.env.CLARVIS_ITERATION_CEILING,
+              ),
+              call_timeout_ms: Math.min(
+                formulation?.call_timeout_ms ?? GOAL_FORMULATION_DEFAULTS.call_timeout_ms,
+                runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
+                runDeps.env.CLARVIS_RETRY_AFTER_CEILING_MS,
+              ),
+              max_retries: Math.min(
+                formulation?.max_retries ?? GOAL_FORMULATION_DEFAULTS.max_retries,
+                runDeps.env.CLARVIS_RETRY_CEILING,
+              ),
+            },
+          });
+        },
+        verification,
+        verify: (input) => {
+          if (configuredModel === undefined)
+            throw kernelError(
+              "invalid_request",
+              "Goal agent has no model and no default_model is set",
+            );
+          return createKernelGoalAgentRuntime({
+            owner: residentOwner(owner, false).stateOwner,
+            model: configuredModel,
+            providers:
+              runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
+                ? (merged.providers as ProviderConfig[])
+                : [],
+            deps: trackModel === undefined ? runDeps : { ...runDeps, llm: trackModel(runDeps.llm) },
+            executeRun,
+          }).verify(input);
+        },
+      };
+    },
     listAgents: () => config.listAgents(),
     startMemoryRecovery,
     async close(): Promise<void> {

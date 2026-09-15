@@ -158,7 +158,7 @@ test("ready has only the admitted revisions and exact digest identity", () => {
     generation: input.generation,
     artifactDigest: input.artifactDigest,
     configDigest: input.configDigest,
-    kernelWireVersion: 10,
+    kernelWireVersion: 11,
     brokerVersion: 1,
   };
   expect(containerReadySchema.safeParse(ready).success).toBe(true);

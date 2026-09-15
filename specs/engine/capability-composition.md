@@ -540,6 +540,44 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
   (`packages/loop/src/runtime/loop/run-agent.ts`) — a gate that declares no `fastAcceptOk` is treated as trivially passable, so
   a capability that never implements it never blocks the fast path.
 
+### 4.5 Host-isolated Goal formulation
+
+`@clarvis/goal` may invoke the ordinary `executeRun` contract for its semantic formulation agent,
+but the loop remains generic and contains no Goal branch. The Kernel supplies a copied
+`ExecuteRunDeps` whose capability list replaces the ordinary host list with exactly the canonical
+Tools capability. The fixed Goal profile grants only `read_workspace`, so Tools derives its effective
+surface from `readOnlyTools`; the Goal package does not filter a full capability set or duplicate the
+tool allowlist. Missing/disabled Tools leaves the run with no tool substitute.
+
+The run request has an empty MCP server list, no spawn authority, fixed entry/profile/output schema,
+finite stop-mode budget and the host-owned call purpose `goal`. `executeRun` forwards that purpose to
+the existing provider-call port without inspecting it or changing capability activation. No Goal
+state, prompt, provider selection, source digest or host path enters the generic engine contract.
+
+Production: `createKernelGoalAgentRuntime` in
+[agent-runtime.ts](../../packages/kernel/src/goals/agent-runtime.ts), `buildGoalAgentRequest` in
+[request.ts](../../packages/goal/src/agent/request.ts), and `executeRun` in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and the effective tool
+catalog assertion in
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
+### 4.6 Goal verification at the generic gate seam
+
+Goal reuses the isolated runtime for `verify`, but composition remains outside Loop. The Goal
+capability contributes its order `-200` finalization gate; Plan remains order `-100`, and the generic
+ordered sweep knows neither name. A later gate nudge changes the final attempt and traverses Goal
+verification again. Checkpoint and blocked paths do not start a verifier.
+
+The Kernel replaces capabilities with canonical read-only Tools plus generic `submit_result`; no
+mutation capability, MCP server, extension or delegation surface is inherited. Production:
+`createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts),
+`createKernelGoalAgentRuntime` in
+[agent-runtime.ts](../../packages/kernel/src/goals/agent-runtime.ts), and
+`prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[verification.test.ts](../../packages/goal/tests/unit/verification.test.ts) and
+[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+
 ## 5. Invariants
 
 **INV-068.** `BUILTIN_CAPABILITY_NAMES` (`packages/loop/src/runtime/orchestrator.ts`) is a

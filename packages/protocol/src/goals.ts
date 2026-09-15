@@ -20,6 +20,25 @@ export interface GoalCriterion {
     | { kind: "artifact_digest"; path: string; digest: string };
 }
 
+export interface GoalDefinitionSource {
+  path: string;
+  digest: string;
+}
+
+export interface GoalFormulationOrigin {
+  formulation_execution_id: string;
+  source_session_revision: number;
+  source_execution_ids: string[];
+  trajectory_digest: string;
+  trajectory_truncated: boolean;
+  formulation_usage?: GoalUsage;
+}
+
+export type GoalOrigin =
+  | { kind: "literal" }
+  | ({ kind: "guided"; seed: string } & GoalFormulationOrigin)
+  | ({ kind: "auto" } & GoalFormulationOrigin);
+
 export interface GoalEvidenceRef {
   id: string;
   execution_id: string;
@@ -62,6 +81,33 @@ export interface GoalProgress {
 export type GoalUsage =
   { kind: "unknown" } | { kind: "measured"; input: number; output: number; cached?: number };
 
+export type GoalVerificationVerdict = "achieved" | "not_achieved" | "inconclusive";
+
+export interface GoalVerificationAssessment {
+  scope: "definition" | "objective" | "criterion";
+  criterion_id?: string;
+  verdict: "satisfied" | "unsatisfied" | "inconclusive";
+  rationale: string;
+  evidence_ids: string[];
+  inspected_paths: string[];
+}
+
+export interface GoalVerification {
+  verification_execution_id: string;
+  control_revision: number;
+  objective_revision: number;
+  definition_digest: string;
+  candidate_digest: string;
+  final_attempt_digest: string;
+  evidence_digest: string;
+  verdict: GoalVerificationVerdict;
+  summary: string;
+  assessments: GoalVerificationAssessment[];
+  inspected_artifacts: GoalDefinitionSource[];
+  usage: GoalUsage;
+  verified_at: number;
+}
+
 export interface GoalRun {
   execution_id: string;
   admission_id: string;
@@ -78,6 +124,7 @@ export interface GoalRun {
   checkpoint?: GoalCheckpoint;
   progress?: GoalProgress;
   candidate?: GoalCandidate;
+  verifications: GoalVerification[];
 }
 
 /** Bounded host-owned audit record; a completion candidate is not a completion commit. */
@@ -89,6 +136,11 @@ export interface GoalRecord {
   objective_revision: number;
   objective: string;
   criteria: GoalCriterion[];
+  constraints: string[];
+  exclusions: string[];
+  assumptions: string[];
+  sources: GoalDefinitionSource[];
+  origin: GoalOrigin;
   status: GoalStatus;
   reason?: string;
   created_at: number;
@@ -125,6 +177,23 @@ export interface GoalReceipt {
   execution_id?: string;
   goal_id?: string;
   status?: GoalStatus;
+  formulation?: {
+    formulation_execution_id?: string;
+    mode: "auto" | "guided";
+    outcome: "created" | "insufficient_context" | "stale_context" | "failed";
+    question?: string;
+    message?: string;
+  };
+}
+
+export type GoalFormulateRequest = {
+  session_id: string;
+  expected_revision: number;
+  operation_id: string;
+} & ({ mode: "auto"; seed?: never } | { mode: "guided"; seed: string });
+
+export interface GoalFormulateResult extends GoalReceipt {
+  formulation: NonNullable<GoalReceipt["formulation"]>;
 }
 
 /** Optional private-session field, writable only by the host's short transaction. */
@@ -143,7 +212,15 @@ export type GoalControlAction =
       criteria?: GoalCriterion[];
       limits?: Partial<GoalLimits>;
     }
-  | { kind: "edit"; objective?: string; criteria?: GoalCriterion[]; limits?: Partial<GoalLimits> }
+  | {
+      kind: "edit";
+      objective?: string;
+      criteria?: GoalCriterion[];
+      constraints?: string[];
+      exclusions?: string[];
+      assumptions?: string[];
+      limits?: Partial<GoalLimits>;
+    }
   | { kind: "pause"; running?: boolean }
   | { kind: "resume" | "cancel" | "clear" }
   | { kind: "accept"; criterion_id: string; objective_revision: number };
@@ -171,6 +248,7 @@ export interface GoalService {
   availability(): Promise<{ available: boolean; reason?: string }>;
   get(sessionId: string): Promise<GoalView>;
   control(request: GoalControlRequest): Promise<GoalReceipt>;
+  formulate(request: GoalFormulateRequest): Promise<GoalFormulateResult>;
   receipt(sessionId: string, operationId: string): Promise<GoalReceipt | null>;
   /** Install a bounded live subscription before reading state; disposal releases it at the host. */
   subscribe(sessionId: string, listener: (change: GoalChange) => void): Promise<() => void>;

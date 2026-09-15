@@ -144,6 +144,46 @@ performs creation, checkpoint continuation and completion through the real FileK
 `/goal` commands observe these host-owned stages through the same service. The guest bridge runs the
 canonical capability against closed host operations; real engine, complete local/remote,
 real-provider and installed-artifact qualification require separate evidence.
+`GoalService.formulate` owns the interactive semantic pre-run. It checks the full
+session/Goal/physical-work fence before inference, projects bounded owner-scoped conversation
+evidence, and runs `goal-agent` without holding the session transaction. The isolated dependency set
+replaces the host capability list with canonical Tools; only its read-only surface and generic
+`submit_result` are reachable. There are no MCP, skill, hook, workflow, plan, memory, Goal control or
+delegation ports. The host supplies model/provider/runtime placement, stamps identities, verifies
+complete trace-backed normative reads, rereads confined files and computes their SHA-256 digests.
+
+Every terminal analysis outcome is retained in the existing receipt ring. Ready output creates one
+Goal through `applyGoalFormulation`, persists its receipt and formulation usage, then enters the same
+reserved-start/compensation path as literal creation. Insufficient, stale and failed outcomes create
+no Goal or work run. Concurrent identical operations share one process promise; persisted receipt
+recovery never repeats a committed creation. The semantic run has its own trace and execution ID,
+does not create a conversation turn and uses provider call purpose `goal`. Completion revalidates
+normative digests; drift keeps the Goal incomplete and appears as attention until explicit edit or
+reformulation.
+
+Production: `projectGoalTrajectory` in [trajectory.ts](src/goals/trajectory.ts),
+`createKernelGoalAgentRuntime` in [agent-runtime.ts](src/goals/agent-runtime.ts),
+`createGoalService` in [service.ts](src/goals/service.ts), and host wiring in
+[file-host.ts](src/hosting/file-host.ts). Test:
+[goal-trajectory.test.ts](tests/unit/goal-trajectory.test.ts) and
+[goal-formulate-service.test.ts](tests/integration/goal-formulate-service.test.ts).
+Before the Goal gate accepts a final answer, `createGoalRuntimePort` performs deterministic
+candidate/source/evidence validation and starts a separate read-only verifier through the same
+runtime placement. Trace-backed reads become digest-bound inspected artifacts; a short transaction
+persists the verdict only while definition, candidate, result, evidence and revisions remain
+current. Negative or inconclusive verdicts return bounded guidance to the primary run. Settlement
+only reads a matching achieved proof after physical closure and never calls a model.
+
+`prepareHostedGoalTurn` reserves `min(stage_token_limit, floor(remaining/2))` for verification and
+caps the primary run with the remainder. Both provider paths share one deadline and usage tracker,
+so primary and verifier calls enter Goal consumption and Session totals exactly once. Native,
+stdio/remote and complete Container hosting use this composition; Container reads inside its guest
+Kernel against the mounted workspace, with only model calls brokered by the host.
+
+Production: [runtime-port.ts](src/goals/runtime-port.ts),
+[verification-input.ts](src/goals/verification-input.ts), [trace-reads.ts](src/goals/trace-reads.ts)
+and [hosted-turn.ts](src/goals/hosted-turn.ts). Test:
+[goal-verification.test.ts](tests/integration/goal-verification.test.ts).
 `createGoalRuntimePort` implements the bound model operations over that private repository. It
 revalidates execution/revision after asynchronous evidence reads and again in the short transaction.
 Notifications follow successful durable publication; a notification failure does not roll back state.
@@ -1111,6 +1151,8 @@ workspace scope is a file inside the agent's own working tree.
 | debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                          |
 | debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                               |
 | debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                       |
+| info  | `goal.verification.completed`                                  | `execution_id`, `verification_execution_id`, `verdict`, counts, `elapsed_ms`, token counts      |
+| warn  | `goal.verification.failed`                                     | `execution_id`, `verification_execution_id`, optional token counts                              |
 | warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                           |
 | warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                      |
 | warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                                  |

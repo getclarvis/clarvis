@@ -916,7 +916,7 @@ describe("local Container connector preparation", () => {
         ...selection,
         schemaVersion: 1 as const,
         dirty: true,
-        kernelWireVersion: 10 as const,
+        kernelWireVersion: 11 as const,
         brokerVersion: 1 as const,
         channelVersion: 1 as const,
         entrypoint: "bin/clarvis-kernel" as const,

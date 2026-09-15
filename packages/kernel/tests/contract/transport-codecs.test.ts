@@ -161,7 +161,7 @@ describe("goal wire state and subscriptions", () => {
   });
 
   it("rejects malformed replies and receipts for another operation", async () => {
-    for (const method of ["availability", "get", "control", "receipt"] as const) {
+    for (const method of ["availability", "get", "control", "formulate", "receipt"] as const) {
       const transport = transportForGoals();
       const client = await connectKernelClient(transport);
       transport.onRequest = () =>
@@ -179,11 +179,56 @@ describe("goal wire state and subscriptions", () => {
             ? client.goals.get("conversation")
             : method === "control"
               ? client.goals.control(request)
-              : client.goals.receipt("conversation", "expected");
+              : method === "formulate"
+                ? client.goals.formulate({
+                    session_id: "conversation",
+                    expected_revision: 0,
+                    operation_id: "expected",
+                    mode: "auto",
+                  })
+                : client.goals.receipt("conversation", "expected");
       await expect(pending).rejects.toMatchObject({ code: "unavailable" });
       expect(transport.closeCount).toBe(1);
       await client.close();
     }
+  });
+
+  it("round-trips the strict formulation union and requires its terminal outcome", async () => {
+    const transport = transportForGoals();
+    const client = await connectKernelClient(transport);
+    transport.onRequest = (_method, params) => {
+      const operationId = (params as { request: { operation_id: string; mode: "auto" | "guided" } })
+        .request.operation_id;
+      return {
+        operation_id: operationId,
+        fingerprint: "a".repeat(64),
+        revision: 1,
+        formulation: { mode: "guided", outcome: "insufficient_context", question: "Which one?" },
+      };
+    };
+    const receipt = await client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "guided",
+      mode: "guided",
+      seed: "Keep this exact seed",
+    });
+    expect(receipt.formulation).toEqual({
+      mode: "guided",
+      outcome: "insufficient_context",
+      question: "Which one?",
+    });
+    expect(transport.requests.at(-1)).toMatchObject({
+      method: OPERATIONS.goals.formulate.method,
+      params: {
+        request: {
+          mode: "guided",
+          seed: "Keep this exact seed",
+          operation_id: "guided",
+        },
+      },
+    });
+    await client.close();
   });
 
   it("installs before acknowledgement, scopes invalidations and releases exactly once", async () => {

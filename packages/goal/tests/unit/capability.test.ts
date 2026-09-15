@@ -114,6 +114,22 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         revision: state.current!.revision,
       };
     },
+    verifyCompletion: async () => {
+      calls.push("validate");
+      return {
+        valid: completionValid,
+        reasons: completionValid ? [] : ["Independent verification did not establish completion"],
+        qualitative_criteria: ["objective"],
+        revision: state.current!.revision,
+        verdict: completionValid ? "achieved" : "not_achieved",
+      };
+    },
+    readCompletionProof: async () => ({
+      valid: completionValid,
+      reasons: completionValid ? [] : ["No achieved proof"],
+      qualitative_criteria: ["objective"],
+      revision: state.current!.revision,
+    }),
     blocked: async (reason) => {
       calls.push("blocked");
       state.current!.status = "blocked";
@@ -224,6 +240,10 @@ describe("host-bound goal capability", () => {
         accepted_at: 4,
       },
     ];
+    goal.constraints = ["Keep the public protocol compatible"];
+    goal.exclusions = ["Do not publish"];
+    goal.assumptions = ["The fixture represents the requested surface"];
+    goal.sources = [{ path: "specs/capabilities/goals.md", digest: "a".repeat(64) }];
     f.port.read = async () => ({
       goal: structuredClone(goal),
       evidence: [
@@ -243,10 +263,11 @@ describe("host-bound goal capability", () => {
       1,
     );
     expect(f.blocks[0]!.content).toContain('"id":"quality"');
-    expect(result).toMatchObject({
-      kind: "result",
-      text: expect.stringContaining('"accepted_human_criteria":["review"]'),
-    });
+    expect(f.blocks[0]!.content).toContain('"constraints":["Keep the public protocol compatible"]');
+    expect(result.kind).toBe("result");
+    if (result.kind !== "result") throw new Error("Expected get_goal result");
+    expect(result.text).toContain('"accepted_human_criteria":["review"]');
+    expect(result.text).toContain('"normative_sources":[{"path":"specs/capabilities/goals.md"');
   });
 
   it.each(["session_id", "agent_instance_id", "executionId"] as const)(

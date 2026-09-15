@@ -9,10 +9,17 @@ export interface GoalDraft {
   previousObjective?: string;
   objective: string;
   criteria: GoalCriterion[];
+  constraints?: string[];
+  exclusions?: string[];
+  assumptions?: string[];
+  resetsFormulationOrigin?: boolean;
   limits: Partial<GoalLimits>;
   initial?: {
     objective: string;
     criteria: GoalCriterion[];
+    constraints?: string[];
+    exclusions?: string[];
+    assumptions?: string[];
     limits: Partial<GoalLimits>;
   };
 }
@@ -36,6 +43,11 @@ export function createGoalDraft(
     ...(current === undefined ? {} : { previousObjective: current.objective }),
     objective: objective ?? current?.objective ?? "",
     criteria: objective === undefined ? structuredClone(current?.criteria ?? []) : [],
+    constraints: objective === undefined ? structuredClone(current?.constraints ?? []) : [],
+    exclusions: objective === undefined ? structuredClone(current?.exclusions ?? []) : [],
+    assumptions: objective === undefined ? structuredClone(current?.assumptions ?? []) : [],
+    resetsFormulationOrigin:
+      current !== undefined && (current.origin.kind !== "literal" || current.sources.length > 0),
     limits: structuredClone(current?.limits ?? {}),
     ...(current === undefined
       ? {}
@@ -43,6 +55,9 @@ export function createGoalDraft(
           initial: {
             objective: current.objective,
             criteria: structuredClone(current.criteria),
+            constraints: structuredClone(current.constraints),
+            exclusions: structuredClone(current.exclusions),
+            assumptions: structuredClone(current.assumptions),
             limits: structuredClone(current.limits),
           },
         }),
@@ -79,11 +94,28 @@ export function goalDraftAction(draft: GoalDraft): GoalControlAction | undefined
   ) as Partial<GoalLimits>;
   const objectiveChanged = objective !== draft.initial.objective;
   const criteriaChanged = JSON.stringify(draft.criteria) !== JSON.stringify(draft.initial.criteria);
-  if (!objectiveChanged && !criteriaChanged && Object.keys(limits).length === 0) return undefined;
+  const constraintsChanged =
+    JSON.stringify(draft.constraints ?? []) !== JSON.stringify(draft.initial.constraints ?? []);
+  const exclusionsChanged =
+    JSON.stringify(draft.exclusions ?? []) !== JSON.stringify(draft.initial.exclusions ?? []);
+  const assumptionsChanged =
+    JSON.stringify(draft.assumptions ?? []) !== JSON.stringify(draft.initial.assumptions ?? []);
+  if (
+    !objectiveChanged &&
+    !criteriaChanged &&
+    !constraintsChanged &&
+    !exclusionsChanged &&
+    !assumptionsChanged &&
+    Object.keys(limits).length === 0
+  )
+    return undefined;
   return {
     kind: "edit",
     ...(objectiveChanged ? { objective } : {}),
     ...(criteriaChanged ? { criteria: structuredClone(draft.criteria) } : {}),
+    ...(constraintsChanged ? { constraints: structuredClone(draft.constraints ?? []) } : {}),
+    ...(exclusionsChanged ? { exclusions: structuredClone(draft.exclusions ?? []) } : {}),
+    ...(assumptionsChanged ? { assumptions: structuredClone(draft.assumptions ?? []) } : {}),
     ...(Object.keys(limits).length === 0 ? {} : { limits }),
   };
 }

@@ -14,6 +14,10 @@ export function goalModelView({ goal, evidence }: GoalRuntimeSnapshot): Record<s
       goal.criteria.length === 0
         ? [{ id: "objective", kind: "qualitative", description: goal.objective }]
         : goal.criteria,
+    constraints: goal.constraints,
+    exclusions: goal.exclusions,
+    assumptions: goal.assumptions,
+    normative_sources: goal.sources,
     status: goal.status,
     reason: goal.reason,
     limits: goal.limits,
@@ -39,12 +43,16 @@ export function goalContextBlock({ goal }: GoalRuntimeSnapshot): string {
   return [
     "<goal>",
     "The latest goal reminder describes current state; prior reminders are history. " +
-      "The host store controls authority. Use get_goal for the complete objective and criteria.",
+      "The host store controls authority. Use get_goal for the complete semantic definition and criteria.",
     JSON.stringify({
       goal_id: goal.goal_id,
       objective_revision: goal.objective_revision,
       objective: goal.objective.slice(0, 4096),
       criteria: criteria.length === 0 ? [{ id: "objective", kind: "qualitative" }] : criteria,
+      constraints: goal.constraints.map((item) => item.slice(0, 192)),
+      exclusions: goal.exclusions.map((item) => item.slice(0, 192)),
+      assumptions: goal.assumptions.map((item) => item.slice(0, 192)),
+      normative_sources: goal.sources,
       status: goal.status,
     }),
     "Pass one update object to update_goal: progress to record work, checkpoint with summary and next_step to request " +

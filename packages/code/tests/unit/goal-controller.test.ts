@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import type {
   GoalChange,
   GoalControlRequest,
+  GoalFormulateRequest,
   GoalReceipt,
   GoalService,
   GoalView,
@@ -25,6 +26,7 @@ function fixture() {
   let current: GoalView = { state: { version: 1, revision: 0, archive: [], receipts: [] } };
   const subscriptions = new Set<(change: GoalChange) => void>();
   const requests: GoalControlRequest[] = [];
+  const formulations: GoalFormulateRequest[] = [];
   const receipts = new Map<string, GoalReceipt>();
   const order: string[] = [];
   const updates: Array<{ binding: GoalBinding; view: GoalView }> = [];
@@ -57,6 +59,18 @@ function fixture() {
       receipts.set(request.operation_id, receipt);
       return receipt;
     },
+    async formulate(request) {
+      formulations.push(request);
+      const receipt = {
+        operation_id: request.operation_id,
+        fingerprint: "fixture",
+        revision: current.state.revision + 1,
+        formulation: { mode: request.mode, outcome: "created" as const },
+      };
+      current = { state: { ...current.state, revision: receipt.revision } };
+      receipts.set(request.operation_id, receipt);
+      return receipt;
+    },
     async receipt(_sessionId, operationId) {
       return receipts.get(operationId) ?? null;
     },
@@ -77,6 +91,7 @@ function fixture() {
     controller,
     service,
     requests,
+    formulations,
     receipts,
     order,
     updates,
@@ -145,6 +160,42 @@ describe("goal presentation controller", () => {
     ]);
     expect(new Set(f.requests.map((request) => request.operation_id)).size).toBe(2);
     expect(f.requests.every((request) => request.session_id === "new-conversation")).toBe(true);
+  });
+
+  it("materializes a conversation for guided and auto formulation while preserving the seed", async () => {
+    const f = fixture();
+    f.bind(null);
+    await f.controller.formulate("guided", "  implement exactly this  ");
+    await f.controller.formulate("auto");
+    expect(f.preparations()).toBe(1);
+    expect(f.formulations).toEqual([
+      {
+        session_id: "new-conversation",
+        expected_revision: 0,
+        operation_id: "operation-1",
+        mode: "guided",
+        seed: "  implement exactly this  ",
+      },
+      {
+        session_id: "new-conversation",
+        expected_revision: 1,
+        operation_id: "operation-2",
+        mode: "auto",
+      },
+    ]);
+  });
+
+  it("recovers a lost formulation reply without starting another analysis", async () => {
+    const f = fixture();
+    const formulate = f.service.formulate.bind(f.service);
+    f.service.formulate = async (request) => {
+      await formulate(request);
+      throw new Error("Reply lost");
+    };
+    const receipt = await f.controller.formulate("guided", "formulate me");
+    expect(receipt.formulation).toMatchObject({ mode: "guided", outcome: "created" });
+    expect(f.formulations).toHaveLength(1);
+    expect(f.controller.pendingOperation()).toBeUndefined();
   });
 
   it("recovers a committed change whose reply was lost without repeating its mutation", async () => {

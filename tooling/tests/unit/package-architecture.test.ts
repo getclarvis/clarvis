@@ -81,6 +81,7 @@ describe("package architecture policy", () => {
   });
 
   it("limits engine execution to the capabilities that own it", () => {
+    expect(packageDependencyViolation("@clarvis/goal", "@clarvis/loop")).toBeUndefined();
     expect(packageDependencyViolation("@clarvis/memory", "@clarvis/loop")).toBeUndefined();
     expect(packageDependencyViolation("@clarvis/workflows", "@clarvis/loop")).toBeUndefined();
     expect(

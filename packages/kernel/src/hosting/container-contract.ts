@@ -145,7 +145,7 @@ export const containerReadySchema = z
     generation: z.uuid(),
     artifactDigest: digest,
     configDigest: digest,
-    kernelWireVersion: z.literal(10),
+    kernelWireVersion: z.literal(11),
     brokerVersion: z.literal(CONTAINER_BROKER_VERSION),
   })
   .strict();

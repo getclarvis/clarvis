@@ -50,7 +50,7 @@ function manifest(): RuntimeArtifactManifest {
     ...identity,
     schemaVersion: 1,
     dirty: false,
-    kernelWireVersion: 10,
+    kernelWireVersion: 11,
     brokerVersion: 1,
     channelVersion: 1,
     entrypoint: "bin/clarvis-kernel",

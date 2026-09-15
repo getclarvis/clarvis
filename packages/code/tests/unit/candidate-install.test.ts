@@ -16,7 +16,7 @@ const target = (name: "linux-x64" | "linux-arm64", hash: string) =>
       sha256: (hash === "b" ? "d" : "e").repeat(64),
       size: 1024,
     },
-    kernel_wire_version: 10,
+    kernel_wire_version: 11,
     broker_version: 1,
     channel_version: 1,
   }) as const;
@@ -34,7 +34,7 @@ const candidate = {
   version: "1.2.3",
   source_revision: revision,
   repository: "getclarvis/clarvis",
-  kernel_wire_version: 10,
+  kernel_wire_version: 11,
   broker_version: 1,
   channel_version: 1,
   targets: ["linux-x64", "linux-arm64"],

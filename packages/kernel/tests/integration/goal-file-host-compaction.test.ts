@@ -140,14 +140,16 @@ describe("goal compaction through the real file host and SDK", () => {
     expect(goal.runs.map((run) => run.disposition)).toEqual(["checkpoint", "final"]);
     expect(goal.runs.every((run) => run.phase === "closed")).toBe(true);
     expect(summaryCalls).toBe(1);
-    expect(f.requests).toHaveLength(10);
+    expect(f.requests).toHaveLength(11);
     expect(f.errors).toEqual([]);
     const compactions = events.filter((event) => event.type === "compaction");
     expect(compactions).toHaveLength(1);
     expect(compactions[0]).toMatchObject({ operation: "summarization", requested: true });
-    const lead = f.requests.filter((request) => request.tools?.length);
+    const lead = f.requests.filter((request) =>
+      request.tools?.some((tool) => tool.function.name === "get_goal"),
+    );
     expect(lead).toHaveLength(9);
-    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
+    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
     for (let index = 1; index < lead.length; index++) {
       const before = lead[index - 1]!;
       const after = lead[index]!;

@@ -96,6 +96,15 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
+The independent Goal verifier never continues the primary run and never shares its cache key. It
+uses a host-minted agent instance and isolated `goal-agent` request, while the primary Goal's
+session/instance cache identity remains stable. Proof reuse is a Kernel digest decision and performs
+no provider call. Production: `buildGoalVerificationRequest` in
+[verification.ts](../../packages/goal/src/agent/verification.ts) and runtime composition in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
+[goal-file-host-compaction.test.ts](../../packages/kernel/tests/integration/goal-file-host-compaction.test.ts)
+and [goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
 all tool results. A pause received during inference must not insert a user reminder inside the
 assistant-call/tool-result exchange. The complete exchange persists unchanged into resume; cached

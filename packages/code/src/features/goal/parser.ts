@@ -2,7 +2,8 @@
 export type GoalCommand =
   | { kind: "show" | "edit" | "resume" | "cancel" | "clear" }
   | { kind: "pause"; running: boolean }
-  | { kind: "create"; objective: string };
+  | { kind: "create"; objective: string }
+  | { kind: "formulate"; mode: "auto" | "guided"; seed?: string };
 
 /** Parse only the explicit reserved verbs; -- introduces a literal objective. */
 export function parseGoalCommand(raw: string): GoalCommand {
@@ -19,11 +20,18 @@ export function parseGoalCommand(raw: string): GoalCommand {
       throw new Error(`Usage: /goal ${first}. Use /goal -- <text> for a literal objective.`);
     return { kind: first };
   }
+  if (first === "auto") {
+    if (rest !== "")
+      throw new Error("Usage: /goal auto. Use /goal -- <text> for a literal objective.");
+    return { kind: "formulate", mode: "auto" };
+  }
   const objective = first === "--" ? rest : text;
   if (first.startsWith("--") && first !== "--")
     throw new Error("Unknown goal option. Use /goal -- <text> for a literal objective.");
   if (!objective) throw new Error("An objective is required after /goal --.");
   if (objective.length > 16384)
     throw new Error("A goal objective may contain at most 16384 characters.");
-  return { kind: "create", objective };
+  return first === "--"
+    ? { kind: "create", objective }
+    : { kind: "formulate", mode: "guided", seed: objective };
 }

@@ -472,6 +472,12 @@ test("goal state stays visible when idle and does not replace the physical run o
       get: async () => goalView({ status: "paused" }),
       subscribe: async () => () => {},
       receipt: async () => null,
+      formulate: async (request) => ({
+        operation_id: request.operation_id,
+        revision: 1,
+        fingerprint: "fixture",
+        formulation: { mode: request.mode, outcome: "created" },
+      }),
       control: async () => {
         throw new Error("No control expected");
       },

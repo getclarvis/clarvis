@@ -891,6 +891,14 @@
     },
     {
       "mechanism": "subprocess",
+      "file": "tooling/tests/unit/distribution-workflows.test.ts",
+      "identity": "subprocess|expectWorkflowJsonWriters|Bun.spawnSync([\"bun\", \"-e\", snippet], { cwd: directory, env, stderr: \"pipe\" })|0",
+      "package_owner": "tooling",
+      "classification": "boundary-canary",
+      "reason": "Executes each real workflow Bun snippet so shell and JavaScript escaping must produce parseable JSON at the physical process boundary."
+    },
+    {
+      "mechanism": "subprocess",
       "file": "tooling/tests/unit/gitflow-release-git.test.ts",
       "identity": "subprocess|test:signed candidate sequence and final merge tag survive retries without rewriting refs|Bun.spawnSync(argv, { cwd, env: withoutGitRepositoryEnvironment(env), stdout: \"pipe\", stderr: \"pipe\", })|0",
       "package_owner": "tooling",

@@ -380,6 +380,7 @@ back to the literal `"skill"` (`packages/skills/src/registry.ts`; pinned at
 | `MAX_SKILL_RESOURCE_CHARS` | 50 000 | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_RESOURCE_FILE_BYTES` | 8 388 608 (8 MiB) | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` | 33 554 432 (32 MiB) | `packages/skills/src/limits.ts` |
+| `MAX_SKILL_EXECUTION_SNAPSHOT_BYTES` | 67 108 864 (64 MiB) | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_SIDECAR_BYTES` | 16 384 | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_SIDECAR_CHARS` | 8 000 | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_LABEL_CHARS` | 128 | `packages/skills/src/limits.ts` |
@@ -560,8 +561,9 @@ Snapshot consumers pair that walk with exported `hashBoundedFile`. It opens the 
 applies `fstat` to that descriptor, streams raw bytes through a fixed 64 KiB buffer, rejects a file
 over 8 MiB or one that changes while read, and returns its SHA-256 digest, exact byte count and mode.
 It does not decode binary resources or retain a complete file allocation. Kernel snapshot consumers
-sum those exact byte counts and reject their captured skill surface after 32 MiB of resource
-content; the per-file and aggregate budgets are deliberately distinct. Production:
+sum those exact byte counts and reject a skill after 32 MiB of resource content or the complete
+execution snapshot after 64 MiB across captured skills and manifests; the per-skill and global
+budgets are deliberately distinct. Production:
 `hashBoundedFile` in `packages/skills/src/bounded-read.ts`, `skillSurface` inside
 `createPluginContributions` in `packages/kernel/src/plugins/plugin-contributions.ts`, and the
 `loadDigest` callback inside `createExtensionProfileManager` in

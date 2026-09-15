@@ -51,7 +51,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `knip` | `knip` | `package.json` (`scripts.knip`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
-| `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
+| `test` | `test:tooling` followed by 19 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
@@ -234,11 +234,11 @@ without the registry it was built from disappearing underneath it.
 | Key | Root value | Per-package value | Source |
 | --- | --- | --- | --- |
 | `[install] linker` | `"hoisted"` | absent | `bunfig.toml` |
-| `[test] preload` | `["./tooling/test-runtime/clarvis-home-preload.ts"]` | present in 17 of 18 packages; absent only from type-only `protocol` | `bunfig.toml` |
-| `[test] coverageReporter` | `["text","lcov"]` | same in all 18 | `bunfig.toml` |
-| `[test] coverageDir` | `"coverage"` | same in all 18 | `bunfig.toml` |
-| `[test] coverageSkipTestFiles` | `true` | same in all 18 | `bunfig.toml` |
-| `[test] coveragePathIgnorePatterns` | **absent** | `["../**"]` in all 18 | e.g. `packages/loop/bunfig.toml` |
+| `[test] preload` | `["./tooling/test-runtime/clarvis-home-preload.ts"]` | present in 18 of 19 packages; absent only from type-only `protocol` | `bunfig.toml` |
+| `[test] coverageReporter` | `["text","lcov"]` | same in all 19 | `bunfig.toml` |
+| `[test] coverageDir` | `"coverage"` | same in all 19 | `bunfig.toml` |
+| `[test] coverageSkipTestFiles` | `true` | same in all 19 | `bunfig.toml` |
+| `[test] coveragePathIgnorePatterns` | **absent** | `["../**"]` in all 19 | e.g. `packages/loop/bunfig.toml` |
 | `[test] timeout` | **deliberately absent** | absent everywhere | `bunfig.toml` |
 | `[test] coverageThreshold` | absent | absent | (grep of all 19 bunfigs returns nothing) |
 
@@ -501,7 +501,7 @@ package's semantic role, direct dependencies and consumer count; optional depend
 the suffix `(optional)`. `checkDocument` compares the complete generated block against that output
 (`tooling/lib/package-graph.ts`, `renderMarkdown` and `checkDocument`).
 
-Running the analyzer against the tree today: 18 packages, 47 internal edges, 3 optional edges, zero
+Running the analyzer against the tree today: 19 packages, 51 internal edges, 3 optional edges, zero
 `errors`.
 
 ### 3.6 Per-package `test` / `test:coverage` argument lists
@@ -1039,7 +1039,7 @@ only the owner-specific default").
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
     workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts`, reinforced by
-    `coveragePathIgnorePatterns = ["../**"]` in all 18 package bunfigs. ~~**Unpinned.**~~
+    `coveragePathIgnorePatterns = ["../**"]` in all 19 package bunfigs. ~~**Unpinned.**~~
     **Pinned on its reinforcement half:** `checkPackageHarness` fails any package bunfig
     whose `[test] coveragePathIgnorePatterns` omits `"../**"`, naming the consequence — "workspace
     dependencies enter this package's ratios" (`tooling/lib/test-harness.ts`, over
@@ -1141,7 +1141,7 @@ only the owner-specific default").
     `tooling/lib/package-graph.ts`. Pinned by `tooling/tests/unit/package-graph.test.ts`.
 
 23. **Every package's `tsconfig.json` includes its `tests` tree**, so the gate's `typecheck` phase
-    type-checks test sources. Verified by reading all 18: fourteen use
+    type-checks test sources. Verified by reading all 19: fourteen use
     `["src/**/*.ts","tests/**/*.ts"]`, and `code`, `kernel`, `protocol`, `server` use
     `["src","tests"]` (e.g. `packages/protocol/tsconfig.json`, `packages/kernel/tsconfig.json`).
     **Unpinned.**
@@ -1324,7 +1324,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
    `component` from `integration`. The one observable regularity is the `architecture` idiom
    (§4.10) and the `contract` idiom (§4.9); the other four are conventional only.
 
-3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 18
+3. **`e2e` is a declared level with zero members.** No `tests/e2e` directory exists in any of the 19
    packages. It is pinned as *accepted* by `tooling/tests/unit/source-policy.test.ts`, so it is live
    vocabulary, but nothing uses it.
 
@@ -1346,7 +1346,7 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
 
 6. ~~**No test asserts the per-package test harness configuration.**~~ **Resolved.**
    `tooling/checks/test-harness.ts`, backed by `tooling/lib/test-harness.ts` and
-   `tooling/tests/unit/test-harness.test.ts`, discovers all 18 packages and fails when a runtime package's
+   `tooling/tests/unit/test-harness.test.ts`, discovers all 19 packages and fails when a runtime package's
    `test` script reaches no `bun test`, any reached invocation omits `--timeout 60000`, a package
    bunfig lacks the shared preload or `coveragePathIgnorePatterns = ["../**"]`, a forbidden
    `timeout`/`coverageThreshold` key appears, or the root gate stops being the required sequential

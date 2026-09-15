@@ -56,6 +56,13 @@ describe("runtime settings", () => {
     },
   );
 
+  it.each(["docker", "podman"] as const)(
+    "rejects unsupported %s internet networking",
+    (backend) => {
+      expect(() => runtimeSettingsSchema.parse({ backend, network: "internet" })).toThrow();
+    },
+  );
+
   it("accepts only the closed operator-owned Docker recipe contract", () => {
     expect(
       runtimeSettingsSchema.parse({

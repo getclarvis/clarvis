@@ -240,7 +240,7 @@ the RC's pinned Bun version, and an engine when Container is selected. See the
 
 ## Packages
 
-Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation
+Clarvis is one product made from 19 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
 | Package                                        | Role                | Path                   | Description                                                          |

@@ -255,11 +255,14 @@ plugin contribution changes may still require /reconnect reload.
 
 ## Memory, plans, goals and tasks
 
-These capabilities are inactive in Container; explicit use fails before inference.
+Memory, plans, goals and workflows remain available in Container through native providers and
+projected definitions. External providers and Tasks remain unavailable; those requests fail before
+inference.
 
-- memory: {enabled: true} configures execution memory; model can select an indexer model. The host
-  must compose memory, and a run's memory: off disables it. The wiki, provider and editorial policies
-  are separate. Use memory tools for wiki changes rather than editing indexes or queues.
+- memory: {enabled: true} configures execution memory; model can select an indexer model. Host and
+  Container compose the canonical workspace wiki, and a run's memory: off disables it. The wiki,
+  provider and editorial policies are separate. Use memory tools for wiki changes rather than
+  editing indexes or queues.
 - plans: {mode: on|off|review, retention: keep|discard} controls planning. review adds human plan
   approval before execution. Plans are kept by default; do not delete them as routine cleanup.
   Memory providers are wiki, file (paths), mcp, executable or plugin; plan providers are markdown,
@@ -282,7 +285,8 @@ ${configurationExample("capabilities")}
 goals configures /goal creation: max_net_tokens is the total cap, inheriting the finite entry budget
 once if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is
 optional absolute Unix milliseconds. Nearest whole block wins. Settings neither create nor edit goals;
-the operator uses /goal edit for existing limits. Resume keeps spend/counts. Workflows are unsupported.
+the operator uses /goal edit for existing limits. Resume keeps spend/counts. Container workflows use
+projected definitions; external providers are unsupported.
 
 ## Author and configure workflows
 

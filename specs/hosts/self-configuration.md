@@ -11,8 +11,10 @@ gates still apply, including to this embedded guide.
 
 An explicit configuration skill request in Docker/Podman fails because skills are unavailable. The
 guest configuration service is read-only and the Code facade routes authenticated settings/model/
-login actions to operator services on the host. Saved changes remain pending until an explicit
-reconnect; they never mutate the active generation or switch placement.
+login actions to operator services on the host. Container still provides native Memory, Plans and
+Goals plus projected Workflows; external capability providers remain unavailable. Saved changes
+remain pending until an explicit reconnect; they never mutate the active generation or switch
+placement.
 
 Production: `createDirectConfigurationCapability` in
 [direct-configuration.ts](../../packages/kernel/src/configuration/direct-configuration.ts),

@@ -387,7 +387,7 @@ export async function connectLocalContainerKernel(
   options: ConnectLocalContainerKernelOptions,
 ): Promise<LaunchedContainerKernel> {
   const runtime = runtimeSettingsSchema.parse(options.runtime);
-  if (runtime.backend === "native" || runtime.network === "internet")
+  if (runtime.backend === "native")
     throw kernelError(
       "unsupported",
       "Container requires Docker/Podman with none or outbound network",
@@ -415,8 +415,6 @@ export async function connectLocalContainerKernelUsingControl(
   ports: LocalContainerConnectorPorts = {},
 ): Promise<LaunchedContainerKernel> {
   const engine = runtime.backend;
-  if (runtime.network === "internet")
-    throw kernelError("unsupported", "Container internet network mode is unavailable");
   const progress = (phase: ContainerConnectionPhase): void => options.onProgress?.(phase);
   const basePreparationSignal =
     options.signal === undefined

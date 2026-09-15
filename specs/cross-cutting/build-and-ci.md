@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-This subsystem is everything that turns 18 workspace source directories into something runnable and keeps them
+This subsystem is everything that turns 19 workspace source directories into something runnable and keeps them
 consistent while they change: one Bun workspace (`package.json`, `workspaces`) with a single root
 lockfile (`bun.lock` is the only lockfile in the tree), a two-layer TypeScript configuration (a `tsc -b`
 solution over per-package `composite` emit projects, `tsconfig.json`), one shared ESLint/Prettier
@@ -62,7 +62,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:packages` | `tsc -b` | `package.json` (`scripts.build:packages`) |
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
-| `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
+| `test` | `test:tooling`, followed by 19 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
 | `coverage:check` | `bun run tooling/checks/coverage.ts` | `package.json` (`scripts.coverage:check`) |
 | `typecheck` | workspace typechecks followed by `typecheck:tooling` | `package.json` (`scripts.typecheck`) |
@@ -76,7 +76,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `format` / `format:check` | workspace formatting plus root tooling and repository workflows | `package.json` (`scripts.format*`) |
 | `check:pre-commit` | `format:check && build && typecheck && lint:eslint && lint:intent && knip && test:coverage` | `package.json` (`scripts.check:pre-commit`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
-| `build:<pkg>` × 18 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
+| `build:<pkg>` × 19 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
 | `link` | `bun --filter @clarvis/code link` | `package.json` (`scripts.link`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
 | `runtime:base:build` | build the ABI-pinned Container base without product code | `package.json` (`scripts.runtime:base:build`) |
@@ -242,7 +242,7 @@ its `src`, tests, artifact builders and benchmarks,
 
 Root `bunfig.toml` sets `[install] linker = "hoisted"` and a `[test]` block with
 `preload = ["./tooling/test-runtime/clarvis-home-preload.ts"]`, `coverageReporter = ["text","lcov"]`,
-`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 18 workspace packages
+`coverageDir = "coverage"`, `coverageSkipTestFiles = true`. Every one of the 19 workspace packages
 has its own `bunfig.toml` repeating those three coverage keys plus
 `coveragePathIgnorePatterns = ["../**"]` (e.g. `packages/capability/bunfig.toml`). Every package
 that runs `bun test` also preloads the shared home redirector; only the type-only `protocol` package

@@ -51,7 +51,7 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/u)
         .optional(),
-      network: z.enum(["none", "internet", "outbound"]).default("outbound"),
+      network: z.enum(["none", "outbound"]).default("outbound"),
       limits: defaultedLimits,
       executable: z.string().min(1).optional(),
       connection: z.string().min(1).optional(),
@@ -65,7 +65,7 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
         .string()
         .regex(/^sha256:[a-f0-9]{64}$/u)
         .optional(),
-      network: z.enum(["none", "internet", "outbound"]).default("outbound"),
+      network: z.enum(["none", "outbound"]).default("outbound"),
       limits: defaultedLimits,
       executable: z.string().min(1).optional(),
       connection: z.string().min(1).optional(),

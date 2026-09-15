@@ -125,7 +125,6 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           ...options.composition,
           ...options.kernel,
           owner,
-          operatorAuthorityFor: (run) => registry?.operatorAuthorityFor(run),
         })
       ).kernel;
     }

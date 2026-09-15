@@ -55,6 +55,8 @@ export const MAX_SKILL_RESOURCE_CHARS = 50_000;
 export const MAX_SKILL_RESOURCE_FILE_BYTES = 8 * 1024 * 1024;
 /** Maximum aggregate resource bytes retained in one skill snapshot. */
 export const MAX_SKILL_RESOURCE_SNAPSHOT_BYTES = 32 * 1024 * 1024;
+/** Maximum aggregate bytes retained by one complete execution snapshot. */
+export const MAX_SKILL_EXECUTION_SNAPSHOT_BYTES = 64 * 1024 * 1024;
 
 /** Maximum on-disk size of one harness-directed sidecar. */
 export const MAX_SKILL_SIDECAR_BYTES = 16 * 1024;

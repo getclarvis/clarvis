@@ -937,10 +937,14 @@ FIFO, deleting the `summary` field of the evicted ones.
 ```
 startRun ──> live.set(executionId, handleP)
              started = handleP.then(h => { wireElicit(h); return {h, pump: pumpEvents(id, h)} })
-             done   = started.then(({handle}) => handle.done)
-             closed = started.then(async ({handle, pump}) => { await handle.closed; await pump })
-                             .catch(reportCloseFailure)
-                             .finally(() => live.delete(executionId) if unchanged)
+             ordinary done   = started.then(({handle}) => handle.done)
+             ordinary closed = started.then(async ({handle, pump}) => { await handle.closed; await pump })
+             hosted done     = started.then(async ({handle}) => { await handle.done; await handle.closed })
+             hosted closed   = started.then(async ({handle, pump}) => {
+               await handle.closed; await pump; await handle.settleObservation()
+             })
+             both branches .catch(reportCloseFailure)
+               .finally(() => live.delete(executionId) if unchanged)
 ```
 
 `pumpEvents` diverts every `memory_ingest` event to `onMemoryIngest` and

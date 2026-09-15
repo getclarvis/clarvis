@@ -61,6 +61,26 @@ it("preserves full-read limits while allowing bounded resource pagination", () =
   });
 });
 
+it("allows several per-skill snapshots within the global execution budget", () => {
+  const root = mkdtempSync(join(tmpdir(), "skill-snapshot-global-limit-"));
+  cleanup.push(() => rmSync(root, { recursive: true, force: true }));
+  const skills = [];
+  for (let index = 0; index < 5; index++) {
+    const dir = join(root, `skill-${index}`);
+    mkdirSync(dir);
+    writeFileSync(
+      join(dir, "SKILL.md"),
+      `---\nname: skill-${index}\ndescription: Snapshot test\n---\nSkill.\n`,
+    );
+    writeFileSync(join(dir, "reference.bin"), Buffer.alloc(7 * 1024 * 1024, index));
+    const provider = createAgentSkills({ workspace: root, roots: [{ path: root }] });
+    skills.push(provider.loadSkill(`skill-${index}`)!);
+  }
+  const snapshot = captureSkillExecution(skills);
+  cleanup.push(snapshot.close);
+  expect(snapshot.contents).toHaveLength(5);
+});
+
 it("validates prospective documents with the same root-specific discovery policy", () => {
   const directory = join(tmpdir(), "review");
   expect(validateSkillDocument("Review tests.", { directory }).name).toBe("review");

@@ -26,6 +26,12 @@ case "$*" in
   *wait*)
     sleep 10
     ;;
+  *drain*)
+    printf '%s' "$$" > "$PID_FILE"
+    (sleep 0.3) &
+    printf ready
+    exit 0
+    ;;
   *attach*)
     printf 'ready:'
     cat
@@ -163,6 +169,39 @@ describe("Node container engine controls", () => {
     controller.abort(new Error("stop requested"));
     await expect(pending).rejects.toThrow("stop requested");
   });
+
+  isolatedIt(
+    "keeps a completed command successful while inherited output drains",
+    async ({ temp, executable }) => {
+      const pidFile = temp.path("drain.pid");
+      const controller = new AbortController();
+      const docker = createNodeDockerControl({
+        executable,
+        context: "ctx",
+        environment: { PID_FILE: pidFile },
+      });
+      const pending = docker.run(["drain"], controller.signal);
+      const deadline = Date.now() + 1_000;
+      let pid: number | undefined;
+      while (pid === undefined && Date.now() < deadline) {
+        const text = await readFile(pidFile, "utf8").catch(() => "");
+        if (/^\d+$/u.test(text)) pid = Number(text);
+        else await Bun.sleep(5);
+      }
+      expect(pid).toBeDefined();
+      const exited = Date.now() + 1_000;
+      while (pid !== undefined && Date.now() < exited) {
+        try {
+          process.kill(pid, 0);
+          await Bun.sleep(5);
+        } catch {
+          break;
+        }
+      }
+      controller.abort(new Error("late cancellation"));
+      await expect(pending).resolves.toMatchObject({ exitCode: 0, stdout: "ready" });
+    },
+  );
 
   isolatedIt("times out commands and reports spawn failures", async ({ root, executable }) => {
     const docker = createNodeDockerControl({

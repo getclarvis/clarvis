@@ -165,7 +165,8 @@ can serve only offset zero and never reinterprets the byte cursor as a character
 
 `hashBoundedFile` streams raw bytes through a fixed buffer, without decoding or retaining the whole
 file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public
-8 MiB per-file limit and a distinct 32 MiB aggregate resource budget. This lets binary resources
+8 MiB per-file limit, a 32 MiB aggregate resource budget per skill, and a 64 MiB aggregate execution
+snapshot budget across captured skills and manifests. This lets binary resources
 participate in identity while keeping model-facing text disclosure and snapshot memory accounting
 independently bounded. Their canonical catalog projection also includes `dependencies.tools`, so a
 sidecar change that alters model-visible skill availability invalidates both plugin and standalone

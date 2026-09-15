@@ -17,6 +17,7 @@ import { NOOP_LOGGER } from "@clarvis/capability";
 import type { SkillContent } from "./types.ts";
 import { readBoundedText, readBoundedTextChunk } from "./bounded-read.ts";
 import {
+  MAX_SKILL_EXECUTION_SNAPSHOT_BYTES,
   MAX_SKILL_RESOURCE_BYTES,
   MAX_SKILL_RESOURCE_CHARS,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -73,7 +74,10 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
         );
         skillBytes += bytes.length;
         total += bytes.length;
-        if (skillBytes > MAX_SKILL_RESOURCE_SNAPSHOT_BYTES || total > 64 * 1024 * 1024)
+        if (
+          skillBytes > MAX_SKILL_RESOURCE_SNAPSHOT_BYTES ||
+          total > MAX_SKILL_EXECUTION_SNAPSHOT_BYTES
+        )
           throw new Error("Skill execution snapshot exceeds its byte budget.");
         const path = join(dir, ...parts);
         mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE });
@@ -83,7 +87,7 @@ export function captureSkillExecution(skills: readonly SkillContent[]) {
       const path = join(dir, "SKILL.md");
       const { bytes: manifest } = captureBytes(skill.path, skill.dir, MAX_SKILL_RESOURCE_BYTES);
       total += manifest.length;
-      if (total > 64 * 1024 * 1024)
+      if (total > MAX_SKILL_EXECUTION_SNAPSHOT_BYTES)
         throw new Error("Skill execution snapshot exceeds its byte budget.");
       writeFileSync(path, manifest, { mode: FILE_MODE });
       contents.set(skill.name, {

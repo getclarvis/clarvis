@@ -242,7 +242,6 @@ export function RunControlsPanel(
         );
         break;
       case 2:
-        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum(
           "Memory for this session",
           MEMORY_CHOICES,
@@ -251,7 +250,6 @@ export function RunControlsPanel(
         );
         break;
       case 3:
-        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
           detachObserved("run_controls_plan_retention", () =>
             applyPlanRetention(value as PlanRetention),
@@ -351,11 +349,7 @@ export function RunControlsPanel(
           setting={{
             label: "Memory for this session",
             configured: deps.memory.mode(),
-            effective: isContainerIsolation(state().isolation)
-              ? "Unavailable in Container"
-              : state().memory === "off"
-                ? "off"
-                : "on",
+            effective: state().memory === "off" ? "off" : "on",
             source: "session",
             applies: "next run",
             mutation: "immediate",
@@ -375,11 +369,7 @@ export function RunControlsPanel(
                 : scopedPlans()!.retention === "keep"
                   ? "keep plans"
                   : "delete after success",
-            effective: isContainerIsolation(state().isolation)
-              ? "Unavailable in Container"
-              : state().plans.retention === "keep"
-                ? "keep plans"
-                : "delete after success",
+            effective: state().plans.retention === "keep" ? "keep plans" : "delete after success",
             source: settingSource("plans"),
             applies: "next run",
             mutation: "immediate",

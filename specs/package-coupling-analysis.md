@@ -151,7 +151,7 @@ flowchart LR
 - **Internal consumers** counts the workspace packages that depend on the row's package.
 - **Role** comes from the central registry in `tooling/lib/package-architecture.ts`; `check:graph`
   rejects packages without one and dependencies that violate the role policy.
-- A leaf with zero dependencies and many consumers (`capability` at 13, `paths` at 10) is a
+- A leaf with zero dependencies and many consumers (`capability` at 14, `paths` at 10) is a
   vocabulary package: everything above it is allowed to name it, and it may name nothing.
 - A package with zero consumers (`code`, `server`) is an application: it is the top of the graph and
   nothing in the workspace may depend on it.

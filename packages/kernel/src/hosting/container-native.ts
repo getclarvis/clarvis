@@ -18,7 +18,6 @@ import { createContainerExtensionProfileService } from "../config/container-exte
 import { createSettingsRunAssembler } from "../runs/settings-assembler.ts";
 import { kernelError } from "../core/errors.ts";
 import { withRunLease } from "../runs/run-lease.ts";
-import type { CreateKernelOptions } from "../kernel.ts";
 
 /** Internal composition inputs; bootstrap supplies fixed guest roots and pipe-bound identity. */
 export interface ContainerNativeOptions {
@@ -30,7 +29,6 @@ export interface ContainerNativeOptions {
   owner: string;
   runtime: Extract<RuntimeStatus, { kind: "container" }>;
   logger?: Logger;
-  operatorAuthorityFor?: CreateKernelOptions["operatorAuthorityFor"];
 }
 
 /** Describe the admitted placement through the existing capability system-section seam. */
@@ -163,7 +161,6 @@ export async function createContainerNativeKernel(options: ContainerNativeOption
         ownershipMode: "single",
         acquireRunLease,
         executeRun: executeLeased,
-        operatorAuthorityFor: options.operatorAuthorityFor,
         globalConfigDir: options.globalDir,
         configStore,
         configService: createConfigService(configStore),

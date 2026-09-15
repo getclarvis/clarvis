@@ -57,6 +57,7 @@ export function createNodeContainerControl(options: NodeContainerControlOptions)
         let stderrBytes = 0;
         let failure: Error | undefined;
         let settled = false;
+        let exited = false;
         let killTimer: ReturnType<typeof setTimeout> | undefined;
         let drainTimer: ReturnType<typeof setTimeout> | undefined;
         const stop = (error: Error, immediate = false): void => {
@@ -68,9 +69,13 @@ export function createNodeContainerControl(options: NodeContainerControlOptions)
             killTimer = setTimeout(() => terminate(child, "SIGKILL"), KILL_GRACE_MS);
           }
         };
-        const abort = (): void => stop(cancelled());
+        const abort = (): void => {
+          if (!exited) stop(cancelled());
+        };
         const timer = setTimeout(
-          () => stop(new Error(`${options.engine} command timed out`), true),
+          () => {
+            if (!exited) stop(new Error(`${options.engine} command timed out`), true);
+          },
           bounded(runOptions.timeoutMs, timeoutMs, 1_000, 30 * 60 * 1_000),
         );
         const finish = (exitCode: number | null): void => {
@@ -107,6 +112,8 @@ export function createNodeContainerControl(options: NodeContainerControlOptions)
           failure ??= error;
         });
         child.once("exit", (exitCode) => {
+          exited = true;
+          clearTimeout(timer);
           drainTimer = setTimeout(() => {
             stop(new Error(`${options.engine} output did not close after process exit`), true);
             child.stdout.destroy();

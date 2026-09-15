@@ -316,6 +316,22 @@
     {
       "mechanism": "positive-wait",
       "file": "packages/kernel/tests/integration/node-container-control.test.ts",
+      "identity": "positive-wait|describe:Node container engine controls|Bun.sleep(5)|1",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "polls a real child-process and filesystem boundary before asserting post-exit cancellation is harmless"
+    },
+    {
+      "mechanism": "positive-wait",
+      "file": "packages/kernel/tests/integration/node-container-control.test.ts",
+      "identity": "positive-wait|describe:Node container engine controls|Bun.sleep(5)|2",
+      "package_owner": "@clarvis/kernel",
+      "classification": "boundary-canary",
+      "reason": "polls a real child-process and filesystem boundary before asserting post-exit cancellation is harmless"
+    },
+    {
+      "mechanism": "positive-wait",
+      "file": "packages/kernel/tests/integration/node-container-control.test.ts",
       "identity": "positive-wait|describe:Node container engine controls|Bun.sleep(50)|0",
       "package_owner": "@clarvis/kernel",
       "classification": "migrate",

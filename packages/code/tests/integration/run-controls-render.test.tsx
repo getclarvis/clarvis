@@ -481,6 +481,20 @@ test("Run controls exposes retention without a planning-mode control", async () 
   t.renderer.destroy();
 });
 
+test("Container Run controls keep native Memory and plan retention available", async () => {
+  const { host, deps } = mount({ runtime: { backend: "docker" } });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 110,
+    height: 40,
+  });
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("Memory for this session  on");
+  expect(frame).toContain("Completed plans  keep plans");
+  expect(frame).not.toContain("Unavailable in Container");
+  t.renderer.destroy();
+});
+
 test("changing completed-plan retention preserves mode, nudge budget and provider", async () => {
   const { host, deps, press, writes } = mount({
     plans: {

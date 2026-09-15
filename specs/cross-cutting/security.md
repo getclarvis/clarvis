@@ -1097,8 +1097,9 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
     This boundary protects host integrity outside the selected workspace. It is not network
     hermeticity: ordinary `outbound` can reach public, host and LAN destinations and can exfiltrate
-    readable workspace content; `none` is explicit offline policy and unenforced `internet` remains
-    refused. Root filesystem read-only, capability drop, no-new-privileges, resource bounds, private
+    readable workspace content; `none` is explicit offline policy and the unsupported `internet`
+    value is rejected by the runtime settings schema before launch. Root filesystem read-only,
+    capability drop, no-new-privileges, resource bounds, private
     temporary storage, immutable image identity and repository build-context filtering remain. The
     exact local base image ID, ABI and revision are admitted before any preparer executes. Every
     privileged preparer is inspected before start for exact mounts, complete capability drop,
@@ -1182,7 +1183,7 @@ Production: `createDirectConfigurationCapability` and `configurationFileOperatio
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
 | Container protected mount has a symlink, wrong kind or missing source | `prepareRuntimeMounts` and `assertMountSources` | `RuntimeLaunchError("unsupported_policy")` before Container start |
-| Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
+| Container `internet` policy requested without public-only enforcement | The runtime settings schema rejects the value before engine effects; bootstrap and backend validators also admit only `none` or `outbound` | `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`, `parseContainerInitialize` and Docker/Podman backend validators; runtime and adapter tests |
 | Operational Docker or Podman startup failure | Original bounded Container failure; no native probe, replay or fallback | `connectLocalContainerKernel`; launcher tests |
 | Runtime base, artifact, effective-policy or Kernel handshake failure | No fallback; the launch fails closed | `connectLocalContainerKernel`; artifact and launcher tests |
 | Runtime recipe path/content, build, base or derived-image identity failure | No fallback and no uncustomized launch; the host reports the bounded sanitized recipe error | `resolveDockerRuntimeRecipe`; runtime recipe tests |

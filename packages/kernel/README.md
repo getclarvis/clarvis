@@ -613,9 +613,10 @@ whole plugin checkout: plugin roots carry the host approval marker, and `buildRe
 publishes that skill's own `dir` as its `executionRoot`. Skill-resource fingerprints use
 `hashBoundedFile` to stream raw bytes into SHA-256 without decoding or retaining the complete file,
 capped by `MAX_SKILL_RESOURCE_FILE_BYTES` at 8 MiB per resource and
-`MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` at 32 MiB aggregate. The aggregate is per plugin for packaged
-skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Extension Profile inventory
-(`standaloneCatalog`).
+`MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` at 32 MiB per skill. The complete execution snapshot additionally
+uses `MAX_SKILL_EXECUTION_SNAPSHOT_BYTES` at 64 MiB across captured skills and manifests. The per-skill
+aggregate is per plugin for packaged skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for
+standalone Extension Profile inventory (`standaloneCatalog`).
 
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
 from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take

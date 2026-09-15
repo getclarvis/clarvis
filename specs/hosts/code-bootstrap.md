@@ -988,9 +988,11 @@ decision (the double-tap `^C` path, and `/quit`, where typing the command is its
 quits immediately from a state where nothing is at stake.". But the gate does not simply
 trust that flag: a dirty view or a run that will be cancelled on exit still requires confirmation.
 Mechanically, `atStake = dirtyView || deps.isRunAtRisk()` and the gate arms whenever `confirm || atStake`.
-An observed hosted run with confirmed `continue` policy is not at risk merely because it is active;
-the activity line displays `continues after exit`. This projection does not change host policy or
-tool consent, and a later turn defaults to ordinary exit policy.
+An observed hosted run with confirmed `continue` policy is not at risk merely because it is active
+only when the workspace manager confirms that its local Host/Sandbox lifecycle outlives this TUI;
+the activity line then displays `continues after exit`. Container and SSH processes are connection
+owned, never receive that projection and remain at risk on exit. This projection does not change
+host policy or tool consent, and a later turn defaults to ordinary exit policy.
 A non-empty draft is deliberately excluded from that arming set: "Running `/quit` from the composer
 leaves the command itself sitting in the draft, so counting it would make the slash command arm
 against its own text." — `isDraftNonEmpty` is consulted only to pick the _wording_ of an

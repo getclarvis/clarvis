@@ -255,7 +255,8 @@ plugin contribution changes may still require /reconnect reload.
 
 ## Memory, plans, goals and tasks
 
-These capabilities are inactive in Container; explicit use fails before inference.
+Plans, Memory, Goals and native Workflows run in Container. Tasks, Extensions and external
+capability providers do not; incompatible use fails before inference.
 
 - memory: {enabled: true} configures execution memory; model can select an indexer model. The host
   must compose memory, and a run's memory: off disables it. The wiki, provider and editorial policies
@@ -274,15 +275,16 @@ These capabilities are inactive in Container; explicit use fails before inferenc
   tasks.* grant and the required task binding/mode. An uncertain remote result must be reconciled
   instead of blindly repeated. General MCP availability alone does not implement the Tasks protocol.
 
-Merge only the capability blocks the user wants. This Tasks example also requires the matching MCP
-server above, installed with clarvis.tasks.v2 support; a fake server name cannot activate Tasks.
+Merge only the wanted capability blocks. In Container, omit Tasks and use native Memory/Plan
+providers. The Tasks block below is for Host/Sandbox and also requires the matching MCP server above
+with clarvis.tasks.v2 support; a fake server name cannot activate Tasks.
 
 ${configurationExample("capabilities")}
 
 goals configures /goal creation: max_net_tokens is the total cap, inheriting the finite entry budget
 once if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is
 optional absolute Unix milliseconds. Nearest whole block wins. Settings neither create nor edit goals;
-the operator uses /goal edit for existing limits. Resume keeps spend/counts. Workflows are unsupported.
+the operator uses /goal edit for existing limits. Resume keeps spend/counts.
 
 ## Author and configure workflows
 
@@ -333,18 +335,17 @@ current profile. Preview proves structure rather than provider health or future 
 
 ## Remote VPS connections
 
---remote <destination> --remote-workspace <absolute-path> keeps the TUI local and runs Clarvis on the
-SSH host. Both flags are required and conflict with --worktree. The remote installation owns files,
-sessions, settings, OAuth, capabilities, tools and runtime; local credentials/config are not copied.
-VPS browser/inspection/runtime-retry/reload controls are unavailable; /reconnect starts fresh SSH.
+--remote <destination> --remote-workspace <absolute-path> connects the local TUI to Clarvis on SSH.
+Both flags are required and conflict with --worktree. The remote owns files, state, credentials,
+tools and runtime; local configuration is not copied. Browser, host inspection and runtime controls
+are unavailable; /reconnect starts a new SSH Kernel. SSH stdio owns it, so /background cannot outlive
+the TUI; list, attach and cancel work only in that connection.
 
-OpenSSH encrypts/authenticates the kernel stdio stream; Clarvis opens no listener or second crypto.
-SSH aliases, keys, certificates and local ssh-agent work, with port/agent/X11 forwarding disabled.
-Clarvis has no --identity-file/password store, leaves StrictHostKeyChecking to OpenSSH configuration
-and forces BatchMode=yes so failures cannot prompt over the TUI. Test
-ssh -o BatchMode=yes <destination> true first; unlock protected keys in ssh-agent. Local and remote
-Code hosts default their tool ceiling to exec; CLARVIS_AGENT_TOOLS_MAX_GRANT can narrow it. The VPS
-sees plaintext and remains trusted.
+OpenSSH protects the stdio stream; Clarvis opens no listener. Aliases, keys, certificates and local
+ssh-agent work, but forwarding is disabled. Clarvis stores no identity/password, leaves host-key
+policy to OpenSSH and forces BatchMode=yes. Test ssh -o BatchMode=yes <destination> true first and
+unlock protected keys in ssh-agent. Local and remote Code hosts default to an exec tool ceiling;
+CLARVIS_AGENT_TOOLS_MAX_GRANT can narrow it. The VPS sees plaintext and remains trusted.
 
 ## TUI loops, background runs and reload
 
@@ -371,9 +372,9 @@ count. Normal context, tools, approval and budgets apply. Drafts, attachments, d
 defer; timers never steer. Failure, exhausted budget, cancellation, relevant config/session change or
 disconnect pauses until resume. TUI closure forgets schedules; conversation resume restores none.
 
-/background hands off the current eligible run, exiting after host confirmation of durable continuation
-on Host/Sandbox. Container refuses this handoff because its Kernel is owned by the TUI process;
-/background list, attach and cancel remain available while that connection is alive.
+/background hands off an eligible run only on local Host/Sandbox, after the host confirms durable
+continuation. Container and SSH refuse because their Kernels belong to the current client channel;
+list, attach and cancel remain available while that connection is alive.
 Reopen the same workspace to choose that run or a new conversation. /background list shows runs;
 /attach <execution-id> attaches exactly; another controller requires explicit takeover for control.
 /background cancel <execution-id> requests scoped cancellation.

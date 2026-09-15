@@ -890,8 +890,10 @@ pinned configuration. The configuration tool authors files and includes new-skil
 Other installation/selection, workspace trust, credentials, UI preferences, loop registration and
 background controls retain their operator interfaces. A working default model is needed.
 Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
-be replaced by an installed skill. Discovery and resources for other skills retain their existing
-snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).
+be replaced by an installed skill. A composer `$clarvis-configure` mention remains literal instead
+of loading the configuration guide implicitly; use `/clarvis-configure` or ask for configuration in
+the ordinary conversation. Discovery and resources for other skills retain their existing snapshot
+and confinement rules. See [the skills contract](../../specs/execution/skills.md).
 
 ## The agent fleet ships as data
 

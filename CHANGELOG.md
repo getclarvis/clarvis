@@ -5,63 +5,76 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.2.0] - Unreleased
+
 ### Added
 
-- Plan reminders now name the plan and group compact task ids/statuses into attention, pending, and
-  closed work, making returned or failed work actionable without repeating task titles.
-- Composer `$name` inserts a skill mention. The kernel expands unique user-invocable skills that do
-  not name an `agent`; `$clarvis-configure` stays literal and does not start native configuration.
-- Settings > Isolation is the dedicated global placement screen for Host, native Sandbox, Docker, or
-  Podman. Native Sandbox details stay in Settings > Sandbox. Run Controls and `Ctrl+S` share the
-  same writer; a workspace cannot choose a runtime.
-- Simple Podman isolation now accepts `{ "backend": "podman" }` with the same product-owned limits
-  and outbound default as Docker. Podman has no recipe; both Container engines fail closed.
-- `./dev-install.sh` now builds the version-independent local Container base in each installed
-  Docker/Podman engine, then compiles one architecture-matched Kernel artifact. A missing engine is
-  skipped; native mode remains available when neither engine is present.
+- Isolation and command review are independent controls. `Ctrl+S` selects Host, native Sandbox,
+  Docker or Podman, while `Ctrl+G` selects Off, Approval or Auto review for native placements.
+  Settings > Isolation and Run Controls expose the same choices; runtime placement remains
+  global-only.
+- `/background`, `/background list`, `/attach` and scoped cancellation let a local Host/Sandbox run
+  continue after its TUI closes and return to the same execution later. Container and SSH retain
+  list, attach and cancel only while their current client connection is alive.
+- `/goal` creates and controls a persistent objective with bounded automatic continuation,
+  checkpoints, token limits, deadlines and human or command-based completion criteria.
+- `/loop` schedules interval or cron prompts for the current conversation while the TUI remains
+  open, with pause, resume, cancellation and bounded run counts.
+- `--remote` with `--remote-workspace` keeps the TUI local while an authenticated OpenSSH channel
+  runs a process-owned Clarvis host on another machine.
+- Clarvis can author its own bounded configuration through the reviewed `configure_clarvis` writer.
+  `/clarvis-configure` loads the embedded guide in the current conversation without changing agent
+  or placement.
+- Composer `$name` mentions expand a unique user-invocable skill into the current turn without
+  starting another run. Agent-backed skills, environment-shaped tokens and the reserved
+  `$clarvis-configure` name stay literal.
+- A global or workspace `shared-agent.md` can replace or disable the common fleet prompt without
+  copying every Agent Profile.
+- A focused shell invocation can be interrupted without cancelling the complete agent run.
+- Plan reminders name the plan and group compact task ids/statuses into attention, pending and
+  closed work so returned or failed work is actionable without repeating task titles.
+- Source release candidates now carry qualified Container artifacts separately from stable
+  installers. `./dev-install.sh --candidate` installs a candidate in an isolated checkout, while
+  ordinary `./dev-install.sh` prepares each available local Docker/Podman engine and one matching
+  Kernel artifact for development.
 
 ### Changed
 
-- Container `/model` saves now attempt the required idle generation reload immediately, and corrupt
-  PNG tool results are rejected before they can poison subsequent provider calls.
-- Interactive Container startup now offers to terminate an exact, verified previous Clarvis Kernel
-  when it still owns the workspace namespace.
-- Container cold boot now reports its current preparation phase, and the startup banner reserves its
-  full height plus a non-shrinking status row so progress text cannot overwrite the logo, including
-  at the compact-layout boundary. Startup input also survives a slow boot's
-  renderer handoff without reading a destroyed input buffer.
-- Isolation changes now keep the picker open with explicit save/reconnect progress until the new
-  placement is active. A failed placement restores the previous connection and isolation choice;
-  startup through an unavailable Container engine can explicitly return to Host. Host
-  confirmation shows its `y`/`n` decision keys without repeating the warning.
-
 - **Breaking:** Docker/Podman Isolation now serves one complete native Kernel over the public wire.
   Plans, Memory, Workflows and Goals execute inside the Container and persist in the same canonical
-  stores used by Host/Sandbox, together with sessions, conversation context and traces. Legacy
-  namespace-volume domain data is imported once without overwriting divergent host files. External Tasks,
-  plugins, skills, hooks, generic MCP, external capability providers, preview and Command Review
-  remain unavailable. Provider configuration, credentials and API requests stay in the host model
-  broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by a private content
-  volume, `.agents` is masked and Git metadata is read-only; missing nested mount targets fail before
-  engine create. Public wire revision 10, broker revision 1 and channel revision 1 replace the private
-  worker protocol.
+  stores used by Host/Sandbox, together with sessions, conversation context and traces. External
+  Tasks, plugins, skills, hooks, generic MCP, external capability providers, preview and Command
+  Review remain unavailable. Provider configuration, credentials and API requests stay in the host
+  model broker. The placement never falls back to Sandbox/Host. `.clarvis` is covered by private
+  storage, `.agents` is masked and Git metadata is read-only.
 - Container distribution now separates a version-independent Debian base from the compiled
-  `clarvis-kernel-<target>.tar.gz` artifact. Updating Clarvis no longer rebuilds a final product image;
-  launch transfers a verified content-addressed artifact into an immutable engine volume.
+  `clarvis-kernel-<target>.tar.gz` artifact. Launch verifies and transfers that artifact into an
+  immutable engine volume instead of rebuilding a versioned product image.
+- Docker and Podman share product-owned resource limits and outbound networking by default. Docker
+  alone supports an advanced operator-owned runtime recipe. Both engines fail closed; selecting an
+  unavailable or invalid Container never silently falls back to Sandbox or Host.
+- Isolation changes remain in their picker through save, reconnect and admission. Failed changes
+  restore the previous connection and choice; startup through an unavailable Container can offer an
+  explicit Host recovery. Container `/model` saves attempt the required idle generation reload.
+- The transcript now uses native OpenTUI scrolling and one semantic row model for streaming and
+  settled content, preserving the reader's position while new work arrives and returning explicit
+  submissions to the live tail.
 - The interactive TUI now recovers from high process RSS locally and silently. Sustained pressure
   drops reconstructible completed tool bodies; the 2 GiB limit only blocks expensive new admissions.
   `/recover-memory`, the memory banner, and host rebuilds are gone. The footer may show
   `Restoring the interface…`; a definitive failure notifies once. Independent hosted work is not
   cancelled. `/clear`, `/quit`, and `/exit` remain available.
-- `host_vcs` is gone. Host Git or credential needs that the sandbox cannot satisfy retry the same
-  `shell` or `monitor_start` command with `sandbox_permissions: "require_escalated"` and a
-  justification. Isolation Sandbox reviews that one host effect; Isolation Host is already
-  unsandboxed; Docker/Podman guests reject the field.
-- Review Auto may judge Isolation Sandbox `require_escalated` host execution from attested facts.
-  Approval stays human-only. Host-command asks never use session coverage or `allow_session`.
+- Builtin leads and sub-agents use stronger shared communication and evidence handoff instructions;
+  the compact sidebar owns agent/workflow counts instead of repeating them in the footer.
 
 ### Fixed
 
+- Auto review now denies uncertainty, model failures and malformed answers by default; only an
+  explicit operator-global `on_unsure: "ask"` selects human fallback. The picker says so directly.
+- `$clarvis-configure` remains literal despite the embedded guide intentionally having no agent
+  override, preserving explicit configuration disclosure.
+- SSH sessions no longer claim that a promoted run can survive TUI exit: the SSH stdio channel owns
+  its remote Kernel and closes it when the connection ends.
 - Switching between Host/Sandbox and Docker/Podman now replaces the workspace connection while idle,
   immediately updates the effective Isolation header, and cleans a failed Container composition so
   the namespace is not left owned by a leaked generation.
@@ -78,6 +91,10 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 - Compiled Container Kernels now bundle the lazy Ajv validation modules required by the first agent
   run, preserve the builtin-tool namespace marker across the model broker, and clean hosted
   projection directories without reporting `EISDIR`.
+- Container cold boot reports its preparation phase without overwriting the logo or losing startup
+  input during renderer handoff. Interactive startup can retire an exact verified prior Container
+  Kernel that still owns the namespace.
+- Corrupt PNG tool results are refused before they can enter a later provider request.
 - Container agents now receive the admitted Container placement, Docker/Podman engine, network mode
   and guest workspace root in their system environment while the host bind source remains private.
 - Long accepted user prompts and slim follow-up turns now retain their authenticated conversation
@@ -94,31 +111,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   build cannot silently retain an older compiled guest through a stale cross-stage `COPY` layer.
 - Settled Markdown no longer keeps a tall streaming height as blank rows above the run outcome.
 
-## [0.2.0] - 2026-09-07
-
-### Added
-
-- Isolation is now independent from command review in the TUI: Host, native Sandbox, and lazy Docker
-  placement can be combined with Off, Approval, or automatic LLM review.
-- Docker isolation uses an immutable minimal runtime image, host-owned model/skill/Plan/Memory
-  bridges, persistent workspace-scoped `mise` tool caches, and bounded loopback service exposure.
-- Advanced global runtime recipes can build a reusable operator-customized Docker image on first use
-  without exposing the recipe as a guest tool or modifying the canonical release image.
-
-### Changed
-
-- Container runs mount the selected workspace directly; linked Git worktrees remain ordinary
-  operator-managed checkouts, while non-Git directories can use the same isolation mode.
-- Runtime startup is demand-driven. An operational Docker startup failure falls back to required
-  native sandboxing by default and reports the effective placement; integrity and policy failures
-  still fail closed.
-
 ### Security
 
-- Container guests do not receive Memory mutation tools or host credential/skill paths. Existing
-  Clarvis workspace control paths are mounted read-only, while the selected project remains
-  intentionally writable and default outbound networking can reach host/LAN peers and transmit
-  readable workspace data.
+- Container guests receive no provider credentials, engine socket, host shell, host skill paths or
+  extension executables. The selected workspace remains intentionally writable and default outbound
+  networking can reach remote services and transmit readable workspace data; the isolation promise
+  protects the host outside that workspace, not the workspace itself.
+- Review Auto evaluates attested effects and authenticated operator scope. Dangerous operations,
+  credentials and Approval-mode decisions remain human-only; review events persist no prompt,
+  response, command arguments or operator evidence payloads.
 
 ## [0.1.1] - 2026-09-04
 

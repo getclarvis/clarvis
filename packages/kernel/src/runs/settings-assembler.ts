@@ -380,8 +380,8 @@ function buildProfile(
  * {@link renderSkillPrompt} seed per expandable skill (user-invocable, no
  * `agent` field) after those messages. This is the harness analog of
  * `load_skill` on an already-open turn: it does not fork a run, does not
- * expand `/clarvis-configure`-style agent skills, and skips a name already
- * seeded by `params.skill`.
+ * expand agent-backed skills or the reserved `$clarvis-configure` guide, and
+ * skips a name already seeded by `params.skill`.
  */
 export function createSettingsRunAssembler(
   store: Pick<

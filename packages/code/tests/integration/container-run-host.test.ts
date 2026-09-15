@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "bun:test";
 
-test("Container-only local actions fail before host shell or durable handoff effects", () => {
+test("Container shell and connection-owned handoff fail before host effects", () => {
   const source = readFileSync("src/run-host.ts", "utf8");
   const bang = source.indexOf(
     'if (deps.runtimeKind?.() === "container")',
@@ -12,13 +12,20 @@ test("Container-only local actions fail before host shell or durable handoff eff
   expect(shell).toBeGreaterThan(bang);
 
   const background = source.indexOf(
-    'if (deps.runtimeKind?.() === "container")',
+    "if (!deps.backgroundHandoffSurvivesExit())",
     source.indexOf("async function backgroundCurrentRun"),
   );
   const handoff = source.indexOf("hosting.detach", source.indexOf("function backgroundCurrentRun"));
   expect(background).toBeGreaterThan(-1);
   expect(handoff).toBeGreaterThan(background);
-  expect(source).toContain('deps.runtimeKind?.() !== "container" && runActive()');
+  expect(source).toContain(
+    "deps.backgroundHandoffSurvivesExit() && runActive() && disconnectPolicy()",
+  );
+
+  const runtime = readFileSync("src/runtime.tsx", "utf8");
+  expect(runtime).toMatch(
+    /offerOnStartup:\s*mode\.kind === "run" && workspaceManager\.backgroundHandoffSurvivesExit/,
+  );
 });
 
 test("Container submission keeps native Plans and Memory fields while refusing Tasks explicitly", () => {

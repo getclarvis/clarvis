@@ -734,6 +734,7 @@ function mount(over: Partial<RunHostDeps> = {}): {
       elicit: createElicitSlot(),
       owner: "test-owner",
       workspace: "/tmp",
+      backgroundHandoffSurvivesExit: () => true,
       priceFor: () => undefined,
       activeProfile: () => "coder",
       setActiveProfile: () => {},
@@ -766,7 +767,10 @@ function mount(over: Partial<RunHostDeps> = {}): {
   };
 }
 
-function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
+function mountHosted(
+  policy: HostedRunRef["disconnect_policy"] = "continue",
+  backgroundHandoffSurvivesExit = true,
+) {
   const fake = fakeClient();
   const handle = fake.client.startRun({ executionId: "exec_hosted" });
   const run = fake.runs[0]!;
@@ -838,6 +842,7 @@ function mountHosted(policy: HostedRunRef["disconnect_policy"] = "continue") {
     delete: () => false,
   };
   const mounted = mount({
+    backgroundHandoffSurvivesExit: () => backgroundHandoffSurvivesExit,
     sessionStore: sessions,
     client: {
       ...fake.client,
@@ -1006,6 +1011,24 @@ test.each(["continue", "cancel"] as const)(
     expect(f.calls.writes).toBe(0);
   },
 );
+
+test("a connection-owned host neither advertises exit survival nor attempts background handoff", async () => {
+  const f = mountHosted("continue", false);
+  const observing = f.host.attachHostedRun(f.ref);
+  await flush();
+  let detachCalls = 0;
+  f.hosting.detach = async () => {
+    detachCalls++;
+    throw new Error("must not detach");
+  };
+  expect(f.host.continuesOnExit()).toBe(false);
+  await expect(f.host.backgroundCurrentRun()).rejects.toThrow(
+    "available only on a local Host or Sandbox",
+  );
+  expect(detachCalls).toBe(0);
+  f.host.teardownRuns();
+  await observing;
+});
 
 test("an explicit cancel still controls an attached background run", async () => {
   const f = mountHosted();

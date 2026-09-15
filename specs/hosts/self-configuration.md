@@ -7,7 +7,9 @@ The operator requests configuration changes in the ordinary conversation. The fi
 capability. Host and Sandbox retain their configured runtime and entry agent. The builtin
 `clarvis-configure` skill is optional guidance with no agent override. Loading its body neither grants
 access nor requires the operator to repeat the request as a slash command. Host/environment skill
-gates still apply, including to this embedded guide.
+gates still apply, including to this embedded guide. Its reserved `$clarvis-configure` composer
+mention stays literal so configuration guidance is loaded only through the explicit slash route or
+the normal on-demand skill tool.
 
 An explicit configuration skill request in Docker/Podman fails because skills are unavailable. The
 guest configuration service is read-only and the Code facade routes authenticated settings/model/

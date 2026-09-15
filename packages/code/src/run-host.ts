@@ -99,6 +99,8 @@ export interface RunHostDeps {
   workspace: string;
   /** Process placement owning the current Kernel connection. */
   runtimeKind?: () => "native" | "container" | undefined;
+  /** True only when a confirmed hosted handoff survives closing this client connection. */
+  backgroundHandoffSurvivesExit: () => boolean;
   priceFor: (model: string) => CatalogCost | undefined;
   activeProfile: () => string;
   setActiveProfile: (name: string) => void;
@@ -935,10 +937,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function backgroundCurrentRun(): Promise<HostedRunReceipt> {
-    if (deps.runtimeKind?.() === "container")
+    if (!deps.backgroundHandoffSurvivesExit())
       return Promise.reject(
         new Error(
-          "Isolation Container cannot keep a run alive after the TUI exits. Use /background list to inspect or cancel runs while this connection remains open.",
+          "This connection cannot keep a run alive after the TUI exits. Background handoff is available only on a local Host or Sandbox; use /background list to inspect or cancel runs while this connection remains open.",
         ),
       );
     if (handoffFlight !== undefined) return handoffFlight;
@@ -2301,7 +2303,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   return {
     runActive,
     continuesOnExit: () =>
-      deps.runtimeKind?.() !== "container" && runActive() && disconnectPolicy() === "continue",
+      deps.backgroundHandoffSurvivesExit() && runActive() && disconnectPolicy() === "continue",
     bashActive,
     compactionActive,
     physicalWorkActive: () =>

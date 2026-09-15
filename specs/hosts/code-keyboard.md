@@ -793,8 +793,9 @@ The composer owns one additional exclusivity rule for the row above it. `InputDo
 `LeadActivityLine` so the menu replaces that band instead of stacking with `ready`, `thinking` or
 `working`. When visible during a run, the activity line owns phase, elapsed time, iteration and
 the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. A hosted run with confirmed
-continuation also displays `continues after exit` before the elapsed detail; this is presentation
-of host policy, not a grant or another key binding. The canonical footer is deliberately stable across that lifecycle: it keeps
+continuation displays `continues after exit` before the elapsed detail only when its local
+Host/Sandbox lifecycle can outlive the TUI; this is presentation of host policy, not a grant or
+another key binding. The canonical footer is deliberately stable across that lifecycle: it keeps
 Context plus cumulative Session token totals/cost before and after settlement and never repeats
 `Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
 (`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,

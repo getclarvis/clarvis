@@ -27,9 +27,11 @@ share the same windowing math
 
 Hosted backends add `/background`, `/background list`, `/background cancel <execution-id>` and
 `/attach <execution-id>` through the same deterministic command registry. Invalid arguments return
-`block` so the composer retains them. No command is forwarded to the model. The startup discovery
-view rechecks interaction ownership after its list request and cannot replace a newly typed draft.
-The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
+`block` so the composer retains them. No command is forwarded to the model. The command description
+scopes exit-surviving handoff to local Host/Sandbox; Container and SSH retain the management
+subcommands but reject bare `/background`. Startup discovery is offered only for that local durable
+lifecycle, rechecks interaction ownership after its list request and cannot replace a newly typed
+draft. The complete lifecycle is owned by [hosted runs](hosted-runs.md#code-integration).
 
 Production: `registerBackgroundCommands` in
 [commands.ts](../../packages/code/src/features/background/commands.ts), registered by
@@ -668,7 +670,9 @@ explicitly retains the pending reconnect state. Armed Host
 confirmation replaces the ordinary picker actions with `use host`/`keep isolation` and does not
 repeat its warning in the footer. A later Container failure remains failed until the operator chooses
 a placement and starts a new run. `ReviewPicker` marks Off/Approval/Auto in native placement, writes through `applyReviewMode` at
-the current scope, preserves command policy and leaves Isolation untouched; under Container it
+the current scope, preserves command policy and leaves Isolation untouched. Auto's visible detail
+states that reviewer uncertainty is denied by default; only the explicit operator-global
+`on_unsure: "ask"` policy selects human fallback. Under Container it
 renders `Not applicable in Container` and does not overwrite that policy. Both are lazy `retain-one`
 portal boundaries, so neither module enters first boot and each native tree is reused after first
 open. Production:

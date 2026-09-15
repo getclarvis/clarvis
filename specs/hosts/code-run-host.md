@@ -157,7 +157,7 @@ Test: takeover without reattachment and observer-to-controller result consumptio
 | Member | Signature | File |
 | --- | --- | --- |
 | `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
-| `continuesOnExit` | `Accessor<boolean>` — the active observed run has confirmed host `continue` policy; later admissions reset the projection | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`, `attachHostedRun`) |
+| `continuesOnExit` | `Accessor<boolean>` — the active observed run has confirmed host `continue` policy and the connection lifecycle can outlive the TUI; later admissions reset the projection | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`, `attachHostedRun`) |
 | `bashActive` | `Accessor<boolean>` | `packages/code/src/run-host.ts` |
 | `compactionActive` | `Accessor<boolean>` — live compaction pipeline state | `packages/code/src/run-host.ts` (`RunHost`) |
 | `physicalWorkActive` | `Accessor<boolean>` — remains true until every run handle and local command settles | `packages/code/src/run-host.ts` (`RunHost`) |
@@ -208,6 +208,7 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` and `EXPORT_INCOMPLETE_PREFIX`.
 | `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context"\|"currentExtensionProfile">>` | yes | `packages/code/src/run-host.ts` |
 | `elicit` | `Pick<ElicitSlot, "cancelPending">` | yes | `packages/code/src/run-host.ts` |
 | `owner` / `project` / `workspaceId` / `workspace` | `string` | yes | `packages/code/src/run-host.ts` |
+| `backgroundHandoffSurvivesExit` | `() => boolean` — explicit destination lifecycle supplied by `WorkspaceClientManager`; true only for local Host/Sandbox | yes | `packages/code/src/run-host.ts` |
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `packages/code/src/run-host.ts` |
 | `activeProfile` / `setActiveProfile` | agent selection | yes | `packages/code/src/run-host.ts` |
 | `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `packages/code/src/run-host.ts` |
@@ -228,6 +229,15 @@ workflow, it only tracks that the kernel already will.
 
 Defaults applied at construction: `runBash ?? runLocalBash` and
 `presentStatus ?? plainStatusLine`.
+
+`backgroundCurrentRun` consults `backgroundHandoffSurvivesExit` before any hosting mutation, and
+`continuesOnExit` requires the same fact in addition to an active run's `continue` policy. Container
+and SSH may still list, attach or cancel through their current connection, but cannot advertise or
+commit survival after that channel closes. Production: `WorkspaceClientManager.backgroundHandoffSurvivesExit`
+and `RunHost.backgroundCurrentRun`. Test: the connection-owned handoff case in
+[`run-host.test.ts`](../../packages/code/tests/component/run-host.test.ts) and destination/transition
+cases in
+[`workspace-client-manager.test.ts`](../../packages/code/tests/component/workspace-client-manager.test.ts).
 
 ### 2.3 `KernelRunClient` (`packages/code/src/adapters/kernel-run-client.ts`)
 

@@ -38,6 +38,9 @@ test("Container has one full-Kernel composition and no divided execution entry",
     "--reject-unresolved",
   ])
     expect(artifact, flag).toContain(flag);
+  expect(artifact).toContain('"--read-only"');
+  expect(artifact).toContain('"/tmp:rw,nosuid,nodev,noexec,size=805306368"');
+  expect(artifact).toContain('plan.engine === "podman" ? ["--read-only-tmpfs=false"] : []');
   expect(artifact).toContain('plan.engine === "podman" ? ["--userns=keep-id"] : []');
   expect(artifact).toContain('plan.engine === "podman" ? ["--security-opt", "label=disable"] : []');
   expect(artifact).toContain('"--format=ustar"');

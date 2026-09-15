@@ -18,8 +18,10 @@ canonical refresh and confirmed revision sequencing. Its usage adapter converts 
 and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
 the companion `local-host` entry and owns its connection, while the host owns execution and history.
 
-`/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
-uncertain handoff leaves the interface open.
+On a local Host or Sandbox connection, `/background` confirms that the current hosted run may
+continue, then closes the TUI. Container and SSH Kernels are owned by the current client channel, so
+they refuse an exit-surviving handoff; list, attach and cancel remain available while that
+connection is alive. A failed or uncertain handoff leaves the interface open.
 An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
 after its cause is resolved. Uncertain or unclassified failures retain their operation identity
 and use receipt lookup without repeating the mutation. Reopening the same workspace offers the
@@ -39,15 +41,17 @@ the displayed host/run identity. The host records this operator verification in 
 before releasing its physical-work block. The conversation is archived and new work requires a new
 conversation; existing history and any known result remain. Failed confirmation or persistence keeps
 the recovery pending. The application does not infer physical closure from a missing host process.
-After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
-that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
-exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+After attachment through a local Host/Sandbox connection, the activity line says `continues after
+exit` for a promoted run. `/quit` closes that TUI without asking about losing the run or cancelling
+it; a new turn defaults to ordinary exit policy. Container and SSH attachments never show that
+promise. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
 
-`/reconnect` restores the connection to the existing host without restarting it or replaying work.
-`/reconnect reload` applies saved configuration through an explicit host restart, which is refused
-while physical work is active. Hosted runs in `starting`, `running`, or `finishing` state block that
-restart; a persisted `unknown` outcome records uncertainty but does not claim that the current
-generation still owns physical work. Memory shutdown releases an in-flight claim back to its shared
+For local connections, `/reconnect` restores the connection to the existing host without restarting
+it or replaying work. `/reconnect reload` applies saved configuration through an explicit host
+restart, which is refused while physical work is active. Hosted runs in `starting`, `running`, or
+`finishing` state block that restart. A persisted `unknown` outcome records uncertainty but does not
+claim that the current generation still owns physical work. Memory shutdown releases an in-flight
+claim back to its shared
 durable queue, and the replacement Kernel recovers it without spending an attempt. A refused reload
 leaves a healthy connection available. Provider
 credential saves and extension activation request that same reload path; connection recovery alone
@@ -59,7 +63,9 @@ previous isolation through the host administrative config service before the man
 connection. Expected EOF while retiring Host/Sandbox is not presented as a connection failure.
 For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
 workspace lease is retired before the replacement starts. That expected closure is not presented as
-a connection failure.
+a connection failure. Closing the TUI or SSH stream also closes that remote host, cancels its
+physical runs under the hosted disconnect policy and pauses future Goal continuations. Saved history
+remains available, but `/background` cannot make work survive the channel.
 If interactive Container startup finds another live Clarvis generation for the same namespace, the
 fatal boot screen offers an explicit `t` action to terminate that exact registered Container and
 retry. Ordinary retry remains non-destructive, headless commands never choose termination, and
@@ -675,7 +681,8 @@ Before a shell command runs, the guard rules on it. Its mode lives in
 
 - **`off`** — no ruling at all.
 - **`on`** (default) — an `ask` verdict becomes a confirmation prompt for you.
-- **`auto`** — an LLM answers each `ask` instead of interrupting you.
+- **`auto`** — an LLM reviews each `ask`; uncertainty denies by default, while an explicit
+  `effect_review.on_unsure: "ask"` selects human fallback.
 
 On first setup, Clarvis writes a visible, editable starter `allowed_commands`
 list into global settings. It covers conventional inspection, build, test, lint
@@ -716,8 +723,9 @@ it comes back on the next boot.
 model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
 files provide guidance below that policy, never authority. When both exist, Code preserves the
 operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
-Code sends guidance only when present. Docker/Podman runs do not run Auto Guard; an explicit
-Review `on` or `auto` request is incompatible with those placements.
+Code sends guidance only when present. An unsure, failed or malformed review is denied by default;
+only operator-global `on_unsure: "ask"` sends that outcome to a person. Docker/Podman runs do not run
+Auto Guard; an explicit Review `on` or `auto` request is incompatible with those placements.
 
 It is plain prose — no frontmatter, no schema. Write the standing rules you would
 apply yourself:

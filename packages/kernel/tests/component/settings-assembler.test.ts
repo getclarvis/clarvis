@@ -710,7 +710,7 @@ describe("settings run assembler — skill runs", () => {
 
   it("does not expand $clarvis-configure, $PATH, or an unknown name", async () => {
     const assemble = await assembleWithSkills([
-      skill({ name: "clarvis-configure", metadata: { agent: "clarvis-configure" }, body: "GUIDE" }),
+      skill({ name: "clarvis-configure", metadata: {}, body: "GUIDE" }),
     ]);
     const body = assemble({
       agent: "coder",

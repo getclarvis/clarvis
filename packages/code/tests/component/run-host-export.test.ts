@@ -118,6 +118,7 @@ function mount(
       project: "prj_test",
       workspaceId: "ws_test",
       workspace: "/tmp",
+      backgroundHandoffSurvivesExit: () => true,
       priceFor: () => undefined,
       activeProfile: () => "coder",
       setActiveProfile: () => {},

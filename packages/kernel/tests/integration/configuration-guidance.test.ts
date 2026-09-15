@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
 import { buildExecuteRunDeps, type AgentProfile } from "@clarvis/loop";
+import { parseSharedPromptDocument } from "@clarvis/loop/host";
 import { MockLLM } from "@clarvis/loop/testing";
 import { configurationRoots, globalPaths, type ConfigurationRoot } from "@clarvis/paths";
 import { createAgentSkills } from "@clarvis/skills";
@@ -72,6 +73,14 @@ describe("configuration guide against product loaders", () => {
       expect(snapshot.merged).toMatchObject(JSON.parse(EXAMPLES[name].content));
     },
   );
+
+  it("parses the documented shared prompt through the public product parser", () => {
+    expect(parseSharedPromptDocument(EXAMPLES.sharedAgent.content)).toEqual({
+      ok: true,
+      mode: "replace",
+      body: "Coordinate work carefully, preserve unrelated changes, and report validation evidence.",
+    });
+  });
 
   it("assembles the documented reviewer overlay into Marshall's executable child graph", () => {
     const f = fixture();

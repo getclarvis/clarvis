@@ -1171,6 +1171,7 @@ async function runApp(
       workspaceId: input.client.workspace.id,
       workspace: input.workspacePath,
       runtimeKind: () => input.client.capabilities.runtime?.kind,
+      backgroundHandoffSurvivesExit: () => workspaceManager.backgroundHandoffSurvivesExit,
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
@@ -1547,7 +1548,7 @@ async function runApp(
               return hosting;
             },
             workspaceId: workspaceRef().id,
-            offerOnStartup: mode.kind === "run",
+            offerOnStartup: mode.kind === "run" && workspaceManager.backgroundHandoffSurvivesExit,
             handoff: () => runHost.backgroundCurrentRun(),
             attach: (ref, control) => runHost.attachHostedRun(ref, control),
             newConversation: () => runHost.clearSession(),

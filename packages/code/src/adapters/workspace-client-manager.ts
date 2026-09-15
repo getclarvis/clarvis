@@ -353,6 +353,11 @@ export class WorkspaceClientManager {
     return this.kernel.workspace;
   }
 
+  /** True only when the independently owned local host can outlive this client connection. */
+  get backgroundHandoffSurvivesExit(): boolean {
+    return this.destination.kind === "local";
+  }
+
   async open(workspaceId = this.current.id): Promise<ManagedWorkspaceClient> {
     if (this.closed) throw new Error("workspace client is closed");
     if (workspaceId !== this.current.id) throw new Error("this process is pinned to one workspace");

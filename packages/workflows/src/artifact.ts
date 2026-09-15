@@ -248,24 +248,12 @@ function readBrief(
   return brief;
 }
 
-/**
- * Load one workflow directory.
- *
- * @param dir - the directory holding `WORKFLOW.md`.
- * @returns the validated definition.
- * @throws Error naming the field or file at fault.
- */
-function loadWorkflowWithBudget(
+/** Compile already-supplied workflow bytes through the same rules as filesystem discovery. */
+function compileWorkflowDocument(
+  raw: string,
   dir: string,
   catalogBudget?: WorkflowCatalogBudget,
 ): WorkflowDefinition {
-  const documentPath = join(dir, WORKFLOW_FILE);
-  const raw = readBoundedWorkflowFile(
-    documentPath,
-    WORKFLOW_FILE,
-    WORKFLOW_LIMITS.artifactBytes,
-    catalogBudget,
-  );
   const { data, body } = splitFrontmatter(raw);
   if (body.length > WORKFLOW_LIMITS.textChars) {
     throw new Error(
@@ -346,9 +334,53 @@ function loadWorkflowWithBudget(
   };
 }
 
+/**
+ * Load one workflow directory.
+ *
+ * @param dir - the directory holding `WORKFLOW.md`.
+ * @returns the validated definition.
+ * @throws Error naming the field or file at fault.
+ */
+function loadWorkflowWithBudget(
+  dir: string,
+  catalogBudget?: WorkflowCatalogBudget,
+): WorkflowDefinition {
+  const documentPath = join(dir, WORKFLOW_FILE);
+  const raw = readBoundedWorkflowFile(
+    documentPath,
+    WORKFLOW_FILE,
+    WORKFLOW_LIMITS.artifactBytes,
+    catalogBudget,
+  );
+  return compileWorkflowDocument(raw, dir, catalogBudget);
+}
+
+/**
+ * Validate prospective `WORKFLOW.md` bytes with the same compiler used by discovery.
+ *
+ * @param raw - the complete prospective document.
+ * @param options - the workflow directory whose name and existing briefs the document references.
+ * @returns the compiled definition without changing the document on disk.
+ * @throws Error naming any size, schema, name, selector, brief or repetition defect.
+ */
+export function validateWorkflowDocument(
+  raw: string,
+  options: { directory: string },
+): WorkflowDefinition {
+  if (Buffer.byteLength(raw) > WORKFLOW_LIMITS.artifactBytes) {
+    throw new WorkflowFileLimitError(WORKFLOW_FILE, WORKFLOW_LIMITS.artifactBytes);
+  }
+  return compileWorkflowDocument(raw, options.directory);
+}
+
 /** Load one workflow without sharing a catalogue-wide resource budget. */
 export function loadWorkflow(dir: string): WorkflowDefinition {
-  return loadWorkflowWithBudget(dir);
+  const raw = readBoundedWorkflowFile(
+    join(dir, WORKFLOW_FILE),
+    WORKFLOW_FILE,
+    WORKFLOW_LIMITS.artifactBytes,
+  );
+  return validateWorkflowDocument(raw, { directory: dir });
 }
 
 /**

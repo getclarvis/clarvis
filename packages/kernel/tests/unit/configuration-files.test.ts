@@ -90,6 +90,51 @@ describe("native configuration files", () => {
     }
   });
 
+  it("validates prospective workflow definitions before previewing or writing them", () => {
+    const f = fixture();
+    const root = "workspace_clarvis";
+    const briefPath = "workflows/review/briefs/review.md";
+    f.call({
+      operation: "write",
+      root,
+      path: briefPath,
+      content: "Review the requested scope.",
+      expected_revision: null,
+    });
+    const path = "workflows/review/WORKFLOW.md";
+    const invalid = `---
+name: review
+description: Review a scope.
+rounds:
+  - id: inspect
+    type: free
+    title: Inspect scope
+    over: sometimes
+    brief: briefs/review.md
+---
+Synthesize the review.
+`;
+    const request: ConfigurationFileRequest = {
+      operation: "write",
+      root,
+      path,
+      content: invalid,
+      expected_revision: null,
+    };
+    expect(() => configurationFileMutationFacts(f.roots, request)).toThrow("is not a selector");
+    expect(() => f.call(request)).toThrow("is not a selector");
+    expect(f.call({ operation: "read", root, path })).toEqual({ content: null, revision: null });
+
+    const content = invalid.replace("over: sometimes", "over: once");
+    expect(configurationFileMutationFacts(f.roots, { ...request, content })).toMatchObject({
+      root,
+      expectedRevision: null,
+      surface: "authoring",
+    });
+    expect(f.call({ ...request, content })).toMatchObject({ written: true });
+    expect(readFileSync(join(f.roots[root], path), "utf8")).toBe(content);
+  });
+
   it("previews a complete mutation fact without applying the write", () => {
     const f = fixture();
     const request: ConfigurationFileRequest = {

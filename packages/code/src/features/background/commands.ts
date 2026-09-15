@@ -51,7 +51,7 @@ export function registerBackgroundCommands(
     slash: "/background",
     surface: "slash",
     group: "actions",
-    desc: "Keep the current run alive and close the TUI after confirmation",
+    desc: "Manage hosted runs; handoff is local Host/Sandbox only",
     subcommands: [
       { name: "list", desc: "View running work and results in this workspace" },
       { name: "cancel", desc: "Request cancellation of an exact hosted execution" },

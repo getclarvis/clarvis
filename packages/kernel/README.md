@@ -857,12 +857,18 @@ The operator can request changes in the ordinary conversation; `/clarvis-configu
 embedded guidance with no agent override. Loading it does not grant authority. Each mutation uses
 the host-owned authority reader and the shared effect reviewer; human mode reviews the concrete
 operation, while automatic mode can reuse covered authorization. Container skill admission rejects
-this route before inference and directs the operator to Host/Sandbox.
+this conversational route before inference and directs the operator to Host/Sandbox. Host-owned
+Settings and provider controls remain available to the Code facade while a Container is connected.
 
 The restricted writer provides `list`, `read`, `write`, `edit` and `delete` across the four authored
-roots. It validates settings and agent fields, binds mutations to exact revisions, and excludes
-private state, credentials and links. An external edit during review causes conflict. Workspace
-trust carries only across the authorized target bytes when every other input is unchanged.
+roots. It validates settings, Agent Profiles, Skills, and Workflows, binds mutations to exact
+revisions, and excludes private state, credentials and links. An external edit during review causes
+conflict. Workspace trust carries only across the authorized target bytes when every other input is
+unchanged. An editing entry agent may also use ordinary atomic file tools for canonical workspace
+Agent Profile, `WORKFLOW.md`, or `SKILL.md` authoring. `createAuthoringMutationReview` prepares the
+complete batch, validates each canonical document, captures every target and exact revision, reviews
+it once through the same host authority, and commits all or none. Operational configuration, global
+roots, private targets, and selected skill packages do not enter that route.
 Standalone skill changes request a coalesced refresh after captured users settle, without changing
 the host process. Skill snapshots keep resource and helper bytes together. See
 [self-configuration.md](../../specs/hosts/self-configuration.md).
@@ -871,11 +877,12 @@ The `clarvis-configure` guide ships as TypeScript data in
 [`src/skills/clarvis-configure.ts`](src/skills/clarvis-configure.ts), requires no generated files,
 and remains available with an empty custom Extension Profile. Its `use_skills` and host/environment
 gates are the same as other skills. It directs protected operations to the available restricted
-writer in the current conversation.
+writer or reviewed canonical workspace authoring path in the current conversation and prohibits
+shell as a fallback.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
 models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,
-remote SSH, `/loop` scheduling and background runs. For remote connections it distinguishes the
+Isolation, Review, remote SSH, `/loop` scheduling and background runs. For remote connections it distinguishes the
 local TUI from the remote installation, delegates keys/host verification to OpenSSH, requires login
 preparation outside the TUI and records the disabled forwarding/machine-control boundaries. It
 distinguishes TUI-owned, in-memory schedules from runs
@@ -883,15 +890,18 @@ that continue in the workspace host, and explains attachment, cancellation and c
 Its [TypeScript examples](src/skills/configuration-examples.ts) are rendered verbatim in the guide
 and exercised against the product loaders. They include a complete workflow with its brief and
 Admiral launcher, a nonempty Extension Profile with exact plugin/skill identities, and settings
-fragments for the configurable services. Workflow files are loaded on the next manager run;
+fragments for the configurable services, strict shared-agent frontmatter, and a valid Auto Review
+block. Workflow files are loaded on the next manager run;
 Extension Profile selection uses the operator's preview/confirmation and `/reconnect reload` flow
 when the host is idle. Plain `/reconnect` restores a connection to the same host without applying
-pinned configuration. The configuration tool authors files and includes new-skill membership in the same review.
+pinned configuration. Either reviewed authoring path includes new-skill membership in the same change.
 Other installation/selection, workspace trust, credentials, UI preferences, loop registration and
 background controls retain their operator interfaces. A working default model is needed.
 Loading it grants no configuration, filesystem or credential authority. Its reserved name cannot
-be replaced by an installed skill. Discovery and resources for other skills retain their existing
-snapshot and confinement rules. See [the skills contract](../../specs/execution/skills.md).
+be replaced by an installed skill. A composer `$clarvis-configure` mention remains literal instead
+of loading the configuration guide implicitly; use `/clarvis-configure` or ask for configuration in
+the ordinary conversation. Discovery and resources for other skills retain their existing snapshot
+and confinement rules. See [the skills contract](../../specs/execution/skills.md).
 
 ## The agent fleet ships as data
 
@@ -1265,6 +1275,11 @@ provider import to the kernel.
 See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
 validation and separate deterministic, live-provider and installed-artifact qualification.
 
-`createAuthoringMutationReview` binds ordinary file-tool batches to the same `createConfigurationReview` and authority reader used by `configure_clarvis`. It validates final bytes, reviews one complete batch (including local skill membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds. Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases remain held through async file mutation and rollback companion changes on failure.
+`createAuthoringMutationReview` binds ordinary file-tool batches to the same
+`createConfigurationReview` and authority reader used by `configure_clarvis`. It validates each
+canonical document, captures every target, reviews one complete batch (including local skill
+membership), rechecks revisions, and carries trust only after the asynchronous transaction succeeds.
+Concurrent changes to other executable inputs withhold trust. Profile definition/selection leases
+remain held through async file mutation and rollback companion changes on failure.
 
 Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).

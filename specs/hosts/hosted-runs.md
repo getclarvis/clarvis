@@ -83,13 +83,26 @@ verifies sequenced notices, failed-poll recovery and browser callbacks fenced to
 transition ordering and intent; [app-commands.test.tsx](../../packages/code/tests/integration/app-commands.test.tsx)
 verifies the connection and reload routes.
 
-`/background` requests a durable handoff for the selected run and exits only after its receipt.
+`/background` requests a durable handoff for the selected run and exits only after its receipt on a
+local Host/Sandbox connection whose independently owned host survives client disconnect.
 Uncertain handoff remains visible and consults the same operation receipt instead of replaying start.
 A draft received during handoff keeps the TUI open even after the run has entered background.
 The exit path restores the terminal and prints the execution identity; it bypasses checkout removal.
 
-Opening a workspace offers runs with `continue` policy after first paint, unless a draft, active run
-or blocking interaction already owns the TUI. `/background list` makes discovery available later.
+Container and SSH processes are owned by the current client channel and refuse that handoff before
+any hosting mutation. Their list, attach and cancel controls remain useful only while the same
+connection is alive. The workspace manager exposes this lifecycle fact explicitly; Code does not
+infer it from the Kernel's native/container runtime label.
+
+| Connection destination | `/background` survives TUI exit | List, attach and cancel |
+| --- | --- | --- |
+| local Host or Sandbox | yes, after a confirmed host receipt | current or reopened TUI while the local host exists |
+| Docker or Podman | no | current Container connection only |
+| SSH remote | no | current SSH stdio connection only; saved history persists after closure |
+
+Opening a local workspace offers runs with `continue` policy after first paint, unless a draft,
+active run or blocking interaction already owns the TUI. `/background list` makes discovery
+available later.
 The bounded host list shows identity, state, configuration and attention. Enter attaches, observes
 another TUI's controlled run, or opens a closed result. Taking another controller requires explicit
 confirmation. Starting another conversation does not attach to the listed run.
@@ -121,7 +134,8 @@ physical/ack ordering, abandoned observations, observer attachments and acknowle
 [hosted-registry.test.ts](../../packages/kernel/tests/component/hosted-registry.test.ts) covers forty
 foreground turns while retaining an unseen background result.
 
-The observed run's confirmed `continue` policy is projected through `RunHost.continuesOnExit`.
+The observed run's confirmed `continue` policy is projected through `RunHost.continuesOnExit` only
+when `WorkspaceClientManager.backgroundHandoffSurvivesExit` confirms the connection lifecycle.
 The activity line shows `continues after exit`; `/quit` does not arm the run-loss confirmation for
 that run. Dirty views retain their confirmation and explicit cancellation remains available.
 This projection grants no tool consent and does not transfer `continue` to a later turn: ordinary
@@ -579,7 +593,9 @@ process starts, for example through SSH. The stdio process therefore binds its s
 operator, fixes owner and canonical workspace from server-side inputs, sets
 `exposeLocalControls: false`, and publishes neither a listener nor a Clarvis connection credential.
 Its hosted capability may expose the server-owned `default_owner` needed by an application client;
-the client must not derive that namespace with path rules from another operating system.
+the client must not derive that namespace with path rules from another operating system. Hosted
+list, attach and cancel remain available during the channel, but this process ownership means a
+background handoff cannot survive TUI or SSH exit.
 It acquires the ordinary durable workspace lease, so another local or remote host cannot serve the
 same workspace generation concurrently. EOF, pipe failure or explicit close shuts down the host,
 persists the existing durable state and releases the lease. This bootstrap does not make generic

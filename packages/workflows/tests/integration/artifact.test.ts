@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadWorkflow, loadWorkflows, WORKFLOW_FILE } from "@clarvis/workflows/artifact";
+import {
+  loadWorkflow,
+  loadWorkflows,
+  validateWorkflowDocument,
+  WORKFLOW_FILE,
+} from "@clarvis/workflows/artifact";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
 
 const roots: string[] = [];
@@ -55,6 +60,23 @@ describe("loadWorkflow", () => {
     expect(workflow.rounds[0]?.fanout).toBe(1);
     expect(workflow.synthesis).toContain("Say what was found.");
     expect(workflow.args).toEqual([]);
+  });
+
+  test("validates prospective bytes with the same compiler without replacing the document", () => {
+    const { dir } = write("probe", "not a workflow");
+    expect(validateWorkflowDocument(MINIMAL, { directory: dir })).toMatchObject({
+      name: "probe",
+      rounds: [{ over: { kind: "once" }, brief: "Do the thing." }],
+    });
+    expect(readFileSync(join(dir, WORKFLOW_FILE), "utf8")).toBe("not a workflow");
+    expect(() =>
+      validateWorkflowDocument(MINIMAL.replace("name: probe", "name: elsewhere"), {
+        directory: dir,
+      }),
+    ).toThrow(/does not match its directory/u);
+    expect(() =>
+      validateWorkflowDocument("x".repeat(WORKFLOW_LIMITS.artifactBytes + 1), { directory: dir }),
+    ).toThrow(/byte limit/u);
   });
 
   test("compiles the compact selector, accept and repeat forms", () => {

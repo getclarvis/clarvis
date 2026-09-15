@@ -61,6 +61,9 @@ test("slash commands perform explicit actions and preserve invalid syntax withou
       f.ui,
     );
     registerBackgroundCommands(commands.scope(), f);
+    expect(commands.entries().find((entry) => entry.name === "background.open")?.desc).toBe(
+      "Manage hosted runs; handoff is local Host/Sandbox only",
+    );
     expect(commands.route("background.open", "list")).toBe(true);
     expect(commands.route("background.open", "cancel exec_background")).toBe(true);
     expect(commands.route("background.attach", "exec_background")).toBe(true);

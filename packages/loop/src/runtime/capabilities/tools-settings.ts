@@ -34,10 +34,11 @@ const guardSchema = z
       .optional()
       .describe(
         "Default guard mode for runs that do not pass guard_mode: 'off' disables the " +
-          "guard, 'on' relays 'ask' verdicts as confirmation prompts, 'auto' has an " +
-          "LLM answer each ask — deny verdicts are always enforced first, and the " +
-          "client must supply the judge prompt per run (without one, runs behave as " +
-          "'on'). Default when absent: 'on'. Disabling the guard is an explicit, " +
+          "guard, 'on' relays 'ask' verdicts as confirmation prompts, 'auto' lets an " +
+          "LLM review eligible exact effects under kernel-owned policy and host-owned " +
+          "operator evidence. Deny verdicts are always enforced first; custom guidance " +
+          "is optional and uncertainty denies by default. Default when absent: 'on'. " +
+          "Disabling the guard is an explicit, " +
           "persisted choice: write 'off' rather than deleting this block.",
       ),
     allowed_commands: boundedPatternList

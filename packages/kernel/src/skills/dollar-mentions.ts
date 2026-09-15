@@ -6,8 +6,8 @@
  * Slash invocation (`/name`, including `/clarvis-configure`) is a different
  * path: it either seeds a dedicated skill run or replaces the current turn
  * through `getPrompt`. A `$name` token never forks a run and never expands a
- * skill that names an `agent`. Missing, non-invocable, agent-backed, or
- * denylisted names stay literal text.
+ * skill that names an `agent`. Missing, non-invocable, agent-backed,
+ * product-reserved, or denylisted names stay literal text.
  */
 
 import type { SkillsProvider } from "@clarvis/loop";
@@ -30,6 +30,9 @@ const DOLLAR_ENV_DENYLIST = new Set([
   "TERM",
   "XDG_CONFIG_HOME",
 ]);
+
+/** Product-owned guides that remain explicit slash commands instead of implicit prompt expansion. */
+const DOLLAR_LITERAL_SKILL_NAMES = new Set(["clarvis-configure"]);
 
 /**
  * `$` plus a skill-shaped identifier: leading letter, then letters, digits,
@@ -96,7 +99,8 @@ export function extractDollarSkillMentions(text: string): string[] {
  * @param skills - the skills source; absent, nothing expands.
  * @param skipName - a skill already seeded by the `skill` start param.
  * @returns seeds in mention order, each skill at most once. Unknown,
- *   ambiguous, non-invocable, and agent-backed names are ignored.
+ *   ambiguous, non-invocable, agent-backed, and product-reserved names are
+ *   ignored.
  */
 export function dollarSkillSeeds(
   text: string,
@@ -106,7 +110,7 @@ export function dollarSkillSeeds(
   if (skills === undefined) return [];
   const seeds: string[] = [];
   for (const name of extractDollarSkillMentions(text)) {
-    if (skipName === name) continue;
+    if (skipName === name || DOLLAR_LITERAL_SKILL_NAMES.has(name)) continue;
     const listed = skills
       .listSkills()
       .filter((skill) => skill.name === name && skill.userInvocable);

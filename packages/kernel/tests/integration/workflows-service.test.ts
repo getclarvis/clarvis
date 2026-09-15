@@ -923,6 +923,63 @@ describe("WorkflowsService", () => {
     await kernel.close();
   });
 
+  it("falls back to the manager profile without its workflow grant when default_spawn is absent", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-manager-fallback-"));
+    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-manager-fallback-global-"));
+    const configStore = seededConfig();
+    configStore.writeAgent("workspace", "manager", {
+      frontmatter: {
+        model: "anthropic/x",
+        tools: [],
+        grants: ["workflow"],
+        can_spawn: ["leader"],
+      },
+      body: "You are the manager.",
+    });
+    const deps = buildDeps(
+      ws,
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_leader",
+                  arguments: { title: "Fallback", prompt: "use the manager persona" },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { text: "manager synthesis" },
+          ],
+        },
+        { name: "leader", when: () => true, script: [{ text: "fallback findings" }] },
+      ],
+    );
+    const kernel = createInProcessKernel({
+      deps,
+      workspaceRoot: ws,
+      ...kernelIdentity(ws),
+      configStore,
+      globalConfigDir,
+    });
+
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "decompose this" }],
+      agent: "manager",
+    });
+    for await (const event of handle.events) void event;
+    expect((await handle.done).status).toBe("completed");
+
+    const leaderCall = (deps.llm as MockLLM).calls.find((call) => !IS_MANAGER(call));
+    expect(JSON.stringify(leaderCall?.messages)).toContain("You are the manager.");
+    expect(leaderCall?.tools?.some((tool) => tool.wireName === "run_leader")).toBe(false);
+    await kernel.close();
+  });
+
   it("creates a fresh auxiliary token ledger for every manager execution", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-"));
     const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-global-"));

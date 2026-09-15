@@ -22,6 +22,7 @@ import { kernelSettingsSchema } from "../config/capability-registry.ts";
 import type { ConfigurationMutationFacts } from "../guard/effects/configuration.ts";
 import { agentFrontmatterSchema, splitAgentFrontmatter } from "@clarvis/loop/host";
 import { validateSkillDocument } from "@clarvis/skills";
+import { validateWorkflowDocument, WORKFLOW_FILE } from "@clarvis/workflows/artifact";
 
 const MAX_BYTES = 256 * 1024;
 const MAX_ENTRIES = 200;
@@ -206,6 +207,9 @@ export function configurationFileOperation(
       directory: join(root, ...parents),
       ...(request.root.endsWith("_agents") ? { validation: "agent-skills" as const } : {}),
     });
+  }
+  if (parts[0] === "workflows" && parts.length === 3 && parts[2] === WORKFLOW_FILE) {
+    validateWorkflowDocument(content, { directory: join(root, ...parents) });
   }
   if (parts.length === 1 && parts[0] === "settings.json") {
     try {

@@ -37,7 +37,7 @@ The three built-in definitions have an 11,000-character serialized regression ce
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `@clarvis/workflows`          | `createWorkflowsCapability`, `WORKFLOW_GRANT`, `BUILTIN_WORKFLOWS`, `resolveWorkflowDefinitions`, the ledger, cumulative leader counter, semaphore, elicit mux, `runLeader`, workflow trace detail/projector/narrowing APIs, `workflowsSettingsSpec` |
 | `@clarvis/workflows/schemas`  | the zod schemas for the workflow document and the discovery/result payloads                                                                                                                                                                          |
-| `@clarvis/workflows/artifact` | `loadWorkflows` and the `WORKFLOW.md` loader                                                                                                                                                                                                         |
+| `@clarvis/workflows/artifact` | `loadWorkflow`, `loadWorkflows` and prospective `WORKFLOW.md` validation                                                                                                                                                                             |
 
 ## The workflow tools
 
@@ -172,6 +172,12 @@ frontmatter validated by zod, plus a Markdown body that is the synthesis brief. 
 global root first and the workspace root second, so precedence is `workspace > global > built-in`.
 An override replaces the complete definition; it is not merged round by round. A malformed document
 is diagnosed and contributes no override, leaving a same-named built-in available.
+
+`validateWorkflowDocument(raw, { directory })` compiles prospective `WORKFLOW.md` bytes through the
+same bounds, schema, name, selector, acceptance, repetition and brief rules as the filesystem loader.
+The referenced briefs must already exist below `directory`. The restricted writer uses this entry
+before effect review or mutation, so a malformed workflow cannot replace valid bytes or reach a
+prepared authoring prompt.
 
 The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
 and a separate skill launcher targeting Admiral. The ordinary restricted writer can create those files;

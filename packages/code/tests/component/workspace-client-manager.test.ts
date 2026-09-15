@@ -237,6 +237,7 @@ describe("WorkspaceClientManager", () => {
         ),
       );
       expect(manager.defaultOwner).toBe("container-owner");
+      expect(manager.backgroundHandoffSurvivesExit).toBe(false);
       expect((await manager.open()).client.localHost).toBeUndefined();
       expect(selectedTarget).toBe("linux-x64");
       expect(receivedOwner).toBe("container-owner");
@@ -335,6 +336,7 @@ describe("WorkspaceClientManager", () => {
     );
     try {
       const initial = (await manager.open()).client;
+      expect(manager.backgroundHandoffSurvivesExit).toBe(true);
       expect(initial.localHost).toBeDefined();
       const placements: string[] = [];
       const connectionFailures: string[] = [];
@@ -347,6 +349,7 @@ describe("WorkspaceClientManager", () => {
       );
       await manager.invalidate(manager.current.id);
       const container = (await manager.open()).client;
+      expect(manager.backgroundHandoffSurvivesExit).toBe(false);
       expect(container.localHost).toBeUndefined();
       expect(container.capabilities.runtime?.kind).toBe("container");
       expect(placements.at(-1)).toBe("container");
@@ -359,6 +362,7 @@ describe("WorkspaceClientManager", () => {
       );
       await manager.invalidate(manager.current.id);
       const local = (await manager.open()).client;
+      expect(manager.backgroundHandoffSurvivesExit).toBe(true);
       expect(containerClosed).toBe(1);
       expect(local.localHost).toBeDefined();
       expect(local.capabilities.runtime?.kind).not.toBe("container");
@@ -667,6 +671,7 @@ describe("WorkspaceClientManager", () => {
       const failures: string[] = [];
       manager.subscribeConnectionFailure((reason) => failures.push(reason));
       expect(manager.defaultOwner).toBe("remote-owner");
+      expect(manager.backgroundHandoffSurvivesExit).toBe(false);
       expect(manager.current.path).toBe("/srv/remote/project");
       expect(JSON.stringify(launches[0])).toContain("operator@example.test");
       await manager.recover(manager.current.id);

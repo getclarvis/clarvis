@@ -36,6 +36,14 @@ can_spawn: [coder, explorer, planner, reviewer]
 default_spawn: coder
 ---`,
   },
+  sharedAgent: {
+    path: "shared-agent.md",
+    language: "yaml",
+    content: `---
+mode: replace
+---
+Coordinate work carefully, preserve unrelated changes, and report validation evidence.`,
+  },
   extensionProfile: {
     path: "extension-profiles/review.json",
     language: "json",
@@ -142,6 +150,14 @@ current session_id and revision with workflow_decide at any checkpoint. Report a
     language: "json",
     content: `{
   "runtime": {"backend": "docker", "network": "outbound"}
+}`,
+  },
+  review: {
+    path: "settings.json",
+    language: "json",
+    content: `{
+  "guard": {"type": "shell", "mode": "auto"},
+  "effect_review": {"on_unsure": "deny"}
 }`,
   },
 } as const;

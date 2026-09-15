@@ -335,6 +335,7 @@ test("the review picker preserves saved approval while Container makes it inappl
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Select command review");
   expect(frame).toContain("Not applicable in Container");
+  expect(frame).toContain("uncertainty is denied by default");
 
   press("down");
   press("return");

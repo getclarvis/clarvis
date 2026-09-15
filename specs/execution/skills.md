@@ -865,8 +865,8 @@ is a third path: `extractDollarSkillMentions` / `dollarSkillSeeds` in
 `packages/kernel/src/skills/dollar-mentions.ts` inject one `renderSkillPrompt` user message per
 expandable skill (exactly one user-invocable match, no `agent` field) after the current turn's
 messages, in appearance order, skipping a name already seeded by the `skill` start param. Agent-backed
-skills including `clarvis-configure`, denylisted `$PATH`-style tokens, and unknown names stay
-literal and never fork a run. The run-request side of `/name` remains
+skills, the product-reserved `$clarvis-configure` guide, denylisted `$PATH`-style tokens, and unknown
+names stay literal and never fork a run. The run-request side of `/name` remains
 `resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts`; skill-driven agent
 routing itself belongs to [`specs/capabilities/workflows-service.md`](../capabilities/workflows-service.md).
 

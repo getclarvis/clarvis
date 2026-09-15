@@ -74,8 +74,8 @@ export function HeaderRows(props: HeaderRowsProps): JSX.Element {
             {props.plan().urgent!.text}
           </text>
         </Show>
-        <text fg={props.plan().version.color} flexShrink={0} paddingLeft={1} wrapMode="none">
-          {props.plan().version.text}
+        <text fg={props.plan().version.color} flexShrink={0} wrapMode="none">
+          {` ${props.plan().version.text}`}
         </text>
       </box>
     </box>

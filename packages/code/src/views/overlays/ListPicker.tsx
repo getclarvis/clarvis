@@ -84,6 +84,10 @@ export function ListPicker<T>(props: {
   active?: Accessor<boolean>;
   /** Resets transient filter and selection state when a retained host receives a new picker spec. */
   resetKey?: Accessor<unknown>;
+  /** Keeps this overlay modal while an asynchronous choice is being committed. */
+  locked?: Accessor<boolean>;
+  /** Projects an armed confirmation layer instead of the picker's ordinary actions. */
+  confirmationActive?: Accessor<boolean>;
 }): JSX.Element {
   const [term, setTerm] = createSignal("");
   const [sel, setSel] = createSignal(props.initialIndex ?? 0);
@@ -110,6 +114,7 @@ export function ListPicker<T>(props: {
   createEffect(() => props.onSelect?.(rows()[clamp(sel())], clamp(sel())));
 
   function confirm(): void {
+    if (props.locked?.()) return;
     const item = rows()[clamp(sel())];
     if (item !== undefined) props.onConfirm(item);
   }
@@ -122,6 +127,7 @@ export function ListPicker<T>(props: {
 
   const toVerbSpec = (v: ListPickerVerb<T>): VerbSpec => {
     const run = (): void => {
+      if (props.locked?.()) return;
       const item = rows()[clamp(sel())];
       if (item !== undefined) v.run(item);
     };
@@ -136,7 +142,9 @@ export function ListPicker<T>(props: {
       nav: {
         count: () => rows().length,
         index: sel,
-        setIndex: (i) => setSel(clamp(i)),
+        setIndex: (i) => {
+          if (!props.locked?.()) setSel(clamp(i));
+        },
         lettersNav: !props.filter,
         showArrows: true,
         activate: {
@@ -148,7 +156,10 @@ export function ListPicker<T>(props: {
       escape: { label: props.escLabel ?? "cancel" },
       ...(props.active ? { enabled: props.active } : {}),
     };
-    if (props.onClose) level.escape!.run = props.onClose;
+    if (props.onClose)
+      level.escape!.run = () => {
+        if (!props.locked?.()) props.onClose?.();
+      };
     if (props.guards) level.guards = props.guards;
     return level;
   };
@@ -213,6 +224,7 @@ export function ListPicker<T>(props: {
    * box's mouse parity instead of trading it away.
    */
   const onWheel = (event: { scroll?: { direction: string; delta: number } }): void => {
+    if (props.locked?.()) return;
     const scroll = event.scroll;
     if (!scroll) return;
     const step = Math.max(1, Math.trunc(scroll.delta)) * (scroll.direction === "up" ? -1 : 1);
@@ -238,7 +250,10 @@ export function ListPicker<T>(props: {
           <InteractionNavigationBar
             interaction={{ keymap: props.keymap } as Interaction}
             actionFilter={(action) =>
-              action.id.startsWith("ui.list.") || action.id.startsWith("ui.level.")
+              !props.locked?.() &&
+              (props.confirmationActive?.()
+                ? action.id.startsWith("confirm.")
+                : action.id.startsWith("ui.list.") || action.id.startsWith("ui.level."))
             }
             actionTransform={(action) => {
               if (action.id === "ui.list.activate")
@@ -278,7 +293,9 @@ export function ListPicker<T>(props: {
                 id={`${idPrefix}${at()}`}
                 base={props.base}
                 cells={props.cells(item(), () => at() === clamp(sel()))}
-                onSelect={() => setSel(at())}
+                onSelect={() => {
+                  if (!props.locked?.()) setSel(at());
+                }}
                 onConfirm={confirm}
               />
             );

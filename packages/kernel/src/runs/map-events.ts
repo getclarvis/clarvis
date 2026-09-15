@@ -388,6 +388,7 @@ export function capabilityEventToProto(
  */
 export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER): RunEvent | null {
   if (isWorkflowPersistedTraceEvent(ev)) return workflowEventToProto(ev);
+  if (ev.type === "guard_reviewer_model_call") return null;
   if (!isBuiltinTraceEvent(ev)) {
     reportUnmapped(logger, "engine", String(ev.type), undefined, "not_builtin");
     return null;
@@ -407,6 +408,9 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         status: endedReasonToStatus(ev.reason),
         reason: ev.reason,
         ...(ev.code === undefined ? {} : { code: ev.code }),
+        ...(ev.reason === "completed" && ev.disposition !== undefined
+          ? { disposition: ev.disposition }
+          : {}),
       };
 
     case "lead_iteration_started":
@@ -464,6 +468,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         tool: ev.tool_name,
         server: ev.mcp_name,
         arguments: ev.arguments as Record<string, unknown>,
+        ...(ev.control !== undefined ? { control: ev.control } : {}),
       };
     case "tool_output_delta":
       return {
@@ -473,6 +478,17 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...sub(ev.subagent_instance_id),
         call_id: ev.call_id,
         chunk: ev.chunk,
+      };
+    case "tool_call_announced":
+      return {
+        type: "tool_call_announced",
+        at: ev.occurred_at,
+        agent: ev.agent,
+        ...sub(ev.subagent_instance_id),
+        call_id: ev.call_id,
+        tool: ev.tool_name,
+        iteration: ev.iteration,
+        attempt: ev.attempt,
       };
     case "tool_input_delta":
       return {
@@ -501,6 +517,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         ...(ev.error !== null ? { error: ev.error } : {}),
         ...(ev.diff !== undefined ? { diff: ev.diff } : {}),
         ...(ev.guard !== undefined ? { guard: ev.guard } : {}),
+        ...(ev.interruption !== undefined ? { interruption: ev.interruption } : {}),
       };
 
     case "model_reasoning":

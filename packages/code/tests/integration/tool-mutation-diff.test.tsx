@@ -153,10 +153,16 @@ function mutationEvent(tool: "edit_file" | "multi_edit" | "apply_patch", lead: b
   });
 }
 
-test("lead edit, multi_edit and apply_patch calls show their mutation body past the line gate", async () => {
+test("successful mutations start folded and explicit expansion reveals their bounded diff", async () => {
   for (const tool of ["edit_file", "multi_edit", "apply_patch"] as const) {
     const node = nodesFor([mutationEvent(tool, true)]).find((item) => item.kind === "tool_call")!;
-    const out = await frame(node, false, { defaultFolded: true, height: 100 });
+    const folded = await frame(node, false, { defaultFolded: true, height: 100 });
+    expect(folded).not.toContain("lead-visible-54");
+    const out = await frame(node, false, {
+      defaultFolded: true,
+      override: "expanded",
+      height: 100,
+    });
     expect(out).toContain("lead-visible-54");
     expect(out).not.toContain("… +58 lines");
   }

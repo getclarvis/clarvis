@@ -61,6 +61,7 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 | `probeSandbox(deps?)` | Platform dispatcher and production probe |
 | `probeBubblewrap(deps?)` / `probeSeatbelt(deps?)` | Backend probes, also exported for host diagnostics and tests |
 | `sandboxCommand(args)` | Builds a bare, Bubblewrap, or Seatbelt spawn specification without executing it |
+| `sandboxWouldApply(sandbox, forceBare?)` | Probe-free containment-or-failure commitment shared with command construction; false for absent/disabled policies or explicit bare execution |
 | `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | Discovers existing host temp roots: environment-selected plus `/tmp` on POSIX, environment-selected only on Windows; never conveys lifecycle ownership |
 | `discoverLinkedGitMetadataPaths(workspaceRoot)` | Pins a valid linked worktree's common Git metadata root |
 | `discoverToolchains(include?)` | Resolves requested toolchain executables, install roots, and managers without executing them |
@@ -69,6 +70,15 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 Production: `packages/tools/src/sandbox.ts` (`NativeSandbox`, `SandboxProbe`, `probeSandbox`,
 `sandboxCommand`, `systemTemporaryRoots`, `discoverLinkedGitMetadataPaths`, `discoverToolchains`) and
 `packages/tools/src/sandbox-entry.ts`.
+
+`sandboxWouldApply` accepts the tools policy with an optional settings-level `enabled` field. Both
+required and legacy optional availability commit to native containment or failure; the predicate
+does not claim a successful backend launch and does not repeat the probe. `sandboxCommand` uses
+the same predicate before selecting its backend, so a disabled policy can never be reported as
+contained while producing a bare spawn. No approval verdict follows from this placement fact.
+Production: `sandboxWouldApply` and `sandboxCommand` in
+[sandbox.ts](../../packages/tools/src/sandbox.ts). Test: the commitment and disabled/bare cases in
+[sandbox-placement.test.ts](../../packages/tools/tests/unit/sandbox-placement.test.ts).
 
 `packages/tools/src/index.ts` re-exports `SandboxConfig` and the lightweight
 `systemTemporaryRoots` discovery helper from the package root. Hosts that need backend probes,
@@ -88,7 +98,7 @@ The contributed settings block is strict and not plugin-contributable:
 | --- | --- | --- |
 | `type` | required literal `"native"` | Select the host-native backend |
 | `enabled` | optional boolean; enabled unless `false` | Whether a run receives the block |
-| `availability` | `"required"` by default; `"optional"` | Fail closed or explicitly fall back to the host |
+| `availability` | `"required"` by default; `"optional"` is accepted and treated as required | Fail closed when the native backend cannot apply its policy |
 | `filesystem` | `"workspace-write"` by default; `"workspace-read-only"` | Workspace and linked Git metadata posture |
 | `network` | `"host"` by default; `"none"` | Share or deny host networking |
 | `pass_env` | bounded list | Extra host variable names admitted to the minimal environment |
@@ -205,9 +215,9 @@ A sandboxed command does not inherit `process.env`. `minimalEnv` creates:
   `node_modules/.bin` entries;
 - present `LANG`, `TZ`, `TERM`, `NO_COLOR`, every `LC_*`, and explicitly named `passEnv` values.
 
-The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. An
-`optional` fallback uses that same scrubbed bare path; it never restores provider credentials merely
-because the backend is unavailable.
+The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. Per-call
+`forceBare` uses that same scrubbed bare path; an unavailable backend never restores provider
+credentials.
 
 Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`, `withoutSecrets`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`does not pass provider
@@ -375,14 +385,12 @@ probeSandbox`).
 
 `sandboxCommand` resolves the host shell, then:
 
-1. no `sandbox` → return the bare shell with `secretEnvNames` removed;
-2. unavailable plus `availability: "optional"` → emit `tools.sandbox_unavailable` and return that
-   scrubbed bare shell;
-3. unavailable with required/default availability → throw `ToolError("io_error", "Native sandbox is
+1. `forceBare` or no `sandbox` → return the bare shell with `secretEnvNames` removed;
+2. unavailable, including stored `availability: "optional"` → throw `ToolError("io_error", "Native sandbox is
    required: <reason>")` before a command process starts;
-4. available Seatbelt → validate paths, build the parameterized profile, and return
+3. available Seatbelt → validate paths, build the parameterized profile, and return
    `/usr/bin/sandbox-exec`;
-5. available Bubblewrap → validate paths and return `bwrap` argv.
+4. available Bubblewrap → validate paths and return `bwrap` argv.
 
 The returned `sandboxed` bit reports what will actually run, not what was requested. Shell and monitor
 diagnostics consume it; callers never infer wrapping by reparsing argv.
@@ -391,7 +399,7 @@ Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`),
 `packages/tools/src/tools/shell.ts` (`runCommand`), and
 `packages/tools/src/tools/monitor.ts` (`monitor_start`). Tests:
 `packages/tools/tests/integration/sandbox.test.ts` and
-`packages/tools/tests/unit/observability.test.ts` (`tools.sandbox_unavailable`).
+`packages/tools/tests/unit/observability.test.ts` (`fails closed instead of logging a silent optional fallback`).
 
 ### 4.3 Host path policy
 
@@ -440,8 +448,8 @@ and `packages/kernel/tests/contract/config-service.test.ts`.
 
 The Sandbox panel stages the strict `type: "native"` block, edits availability/filesystem/network/
 environment/toolchain policy, refreshes host inspection, and labels the actual backend as Bubblewrap
-or Seatbelt. Run controls and Doctor use `SandboxInspection.backend`; required unavailability is an
-error/fail-closed warning, optional unavailability says commands run directly, and `host-proc` names
+or Seatbelt. Run controls and Doctor use `SandboxInspection.backend`; unavailability is an
+error/fail-closed warning even when stored availability is `optional`, and `host-proc` names
 its reduced isolation. Cold boot defers backend probing and passive inventory until a surface needs
 them.
 
@@ -460,6 +468,25 @@ Production: `packages/code/src/views/config/SandboxConfigPanel.tsx` (`SandboxCon
 `packages/code/tests/integration/run-controls-render.test.tsx`, and
 `packages/code/tests/integration/doctor.test.ts`.
 
+### 4.6 Native Sandbox and Container are separate placements
+
+Native Sandbox keeps the integrated host composition described in this document. Docker and Podman
+select the complete Kernel Container contract in
+[isolated-agent-runtime.md](../hosts/isolated-agent-runtime.md): native domain services run inside
+the Container while Command Review, extensions and host process authority stay absent. The selected
+workspace remains writable and Git metadata is read-only. Selecting Container does not rewrite the
+persisted native Sandbox policy.
+
+Neither engine falls back to Sandbox or Host. Engine acquisition, image, policy, mount, handshake or
+guest failures are returned from the selected Container placement. The operator must explicitly
+select Sandbox/Host and begin a new run; a Container run is never replayed natively.
+
+Production: `packages/kernel/src/hosting/connect-local-container.ts`
+(`connectLocalContainerKernel`) and `packages/kernel/src/sandbox/policy.ts`
+(`effectiveSandboxSettings`). Tests:
+`packages/code/tests/component/workspace-client-manager.test.ts` and
+`packages/kernel/tests/integration/sandbox-policy.test.ts`.
+
 ## 5. Invariants
 
 **INV-S1 — Platform selection is local and explicit.** One `type: "native"` policy selects
@@ -469,13 +496,24 @@ Bubblewrap only on Linux and Seatbelt only on macOS; unsupported hosts never gue
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`dispatches the native backend by
   platform`).
 
-**INV-S2 — Required isolation fails closed before the command.** An unavailable required/default
-sandbox throws; only explicit `availability: "optional"` may run bare, and that degradation is
-logged.
+**INV-S2 — Required isolation fails closed before the command.** An unavailable sandbox throws,
+including stored `availability: "optional"`. Per-call `forceBare` is the only remaining unsandbox
+path and is gated by command review. For native Sandbox `require_escalated`, Review `on` requires
+a human; Auto may judge the host effect after deny-list enforcement (`allow` executes, `deny`
+refuses). Unsure, failed or malformed review follows `on_unsure` (default `deny`; explicit `ask` may
+use a human); an unavailable model follows the same fallback. The call's judge facts use Host placement and omit native
+network restrictions. Host-command asks bypass session coverage and never offer `allow_session`,
+including human fallback; clean exact-call judge memoization remains separate. Review `off` is
+unchanged. Docker/Podman reject escalation; on Host the field is a no-op under normal review.
+
+Production: `createShellGuard` in `packages/kernel/src/guard/shell-guard.ts` and `createGuardResolver`
+in `packages/kernel/src/guard/resolver.ts`. Test:
+`packages/kernel/tests/integration/guard-auto-review.test.ts` and
+`packages/kernel/tests/unit/guard.test.ts`.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`fails closed when the native sandbox is
-  required but unavailable`) and `packages/tools/tests/unit/observability.test.ts`.
+  optional but unusable`) and `packages/tools/tests/unit/observability.test.ts`.
 
 **INV-S3 — Non-degraded backends enforce the same configured host boundary.** Both allow the declared
 workspace posture, primary scratch and compatible temporary roots, deny every other undeclared host
@@ -508,7 +546,7 @@ skill package roots, including a skill directory nested beneath the workspace.
   `packages/tools/tests/integration/config.test.ts` (skill-root merge).
 
 **INV-S6 — Provider secrets are absent by default on every branch.** Native backends start from
-`minimalEnv`; bare/optional paths subtract `secretEnvNames` from a copy without mutating
+`minimalEnv`; bare/`forceBare` paths subtract `secretEnvNames` from a copy without mutating
 `process.env`.
 
 - Production: `packages/tools/src/sandbox.ts` (`minimalEnv`, `withoutSecrets`, `sandboxCommand`).
@@ -604,6 +642,15 @@ macOS canary packs a local package fixture outside the sandbox, then requires np
 execute, and materialize its output inside Seatbelt with `network: "none"`. Network enforcement is
 proved independently by INV-S14, so public-registry latency cannot fail this package-execution gate.
 
+**INV-S16 — Container selection never changes or invokes native Sandbox.** Docker/Podman failure is
+reported in place. Only a new explicit operator selection can place a later run in native Sandbox.
+
+- Production: `connectLocalContainerKernel` in
+  `packages/kernel/src/hosting/connect-local-container.ts` and `effectiveSandboxSettings` in
+  `packages/kernel/src/sandbox/policy.ts`.
+- Test: `packages/code/tests/component/workspace-client-manager.test.ts` and
+  `packages/kernel/tests/integration/sandbox-policy.test.ts`.
+
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
   `SEATBELT_SYSTEM_READ_FILTERS`, `SEATBELT_SYSTEM_METADATA_FILTERS`) and
   `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`).
@@ -624,6 +671,7 @@ proved independently by INV-S14, so public-registry latency cannot fail this pac
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
 | Required backend unavailable | `ToolError("io_error")`; no command spawn |
+| Docker or Podman fails before guest execution | Original bounded Container failure; no native execution, latch or replay |
 | Relative, broad, canonically broad, or workspace-containing mechanism path | `ToolError("invalid_input")` |
 | Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned |
 | Missing configured extra path | Omitted from resolved roots and surfaced unavailable in inspection |
@@ -690,4 +738,4 @@ OS promise. This external platform risk is tracked in [`../known-issues.md`](../
 
 There is no native Windows backend in this contract. Adding one requires its own backend probe,
 policy compiler, real-host canary, protocol mode, security review, and documentation change; an
-optional bare fallback is not Windows sandbox support.
+per-call host spawn is not Windows sandbox support.

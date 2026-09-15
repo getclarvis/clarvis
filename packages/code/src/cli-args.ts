@@ -33,6 +33,12 @@ export interface DebugRequest {
 /** A launch-time request for a dedicated Git worktree. `true` asks Clarvis to name it. */
 export type WorktreeRequest = true | string;
 
+/** One SSH destination and canonical workspace selected by the operator. */
+export interface RemoteWorkspaceRequest {
+  destination: string;
+  workspace: string;
+}
+
 interface ExtensionProfileMode {
   /** Extension Profile selected for this process, with CLI precedence. */
   extensionProfileSelector?: string;
@@ -41,6 +47,8 @@ interface ExtensionProfileMode {
 interface WorkspaceMode extends ExtensionProfileMode {
   /** Resolve this invocation into a dedicated worktree before any host service boots. */
   worktree?: WorktreeRequest;
+  /** Connect through process-owned SSH stdio instead of local workspace discovery. */
+  remote?: RemoteWorkspaceRequest;
 }
 
 /** The parsed shape of a CLI invocation, one variant per mode {@link parseMode} can resolve `argv` to. */
@@ -57,7 +65,7 @@ export type Mode =
     } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | ({ kind: "refresh-models"; debug: DebugFlag } & ExtensionProfileMode)
+  | ({ kind: "refresh-models"; debug: DebugFlag } & WorkspaceMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
@@ -115,6 +123,16 @@ export const FLAGS: readonly FlagSpec[] = [
     flag: "--worktree",
     optionalValue: "name",
     desc: "open a dedicated Git worktree; omit name to generate one",
+  },
+  {
+    flag: "--remote",
+    value: "<user@host>",
+    desc: "connect to a Clarvis installation over SSH",
+  },
+  {
+    flag: "--remote-workspace",
+    value: "<path>",
+    desc: "absolute workspace path on the remote host",
   },
   {
     flag: "--debug",
@@ -294,9 +312,14 @@ export function parseMode(argv: string[]): Mode {
       `${seen.has("--agent") ? "--agent" : "--format"} applies only with -p/--print`,
     );
   if (mode === "--update") {
-    const incompatible = ["--ascii", "--worktree", "--extension-profile", "--debug"].find((flag) =>
-      seen.has(flag),
-    );
+    const incompatible = [
+      "--ascii",
+      "--worktree",
+      "--remote",
+      "--remote-workspace",
+      "--extension-profile",
+      "--debug",
+    ].find((flag) => seen.has(flag));
     if (incompatible !== undefined) {
       return usageError(`${incompatible} does not apply with --update`);
     }
@@ -312,15 +335,26 @@ export function parseMode(argv: string[]): Mode {
     ...(debugFlagLevel === undefined ? {} : { level: debugFlagLevel }),
   };
   const rawWorktree = seen.get("--worktree");
+  const remoteDestination = seen.get("--remote");
+  const remoteWorkspace = seen.get("--remote-workspace");
+  if ((remoteDestination === undefined) !== (remoteWorkspace === undefined))
+    return usageError("--remote and --remote-workspace must be provided together");
+  if (rawWorktree !== undefined && remoteDestination !== undefined)
+    return usageError("--worktree cannot be combined with --remote");
   const extensionProfileSelector = seen.get("--extension-profile");
   const selectedWorkspace: WorkspaceMode =
-    rawWorktree === undefined && extensionProfileSelector === undefined
+    rawWorktree === undefined &&
+    remoteDestination === undefined &&
+    extensionProfileSelector === undefined
       ? {}
       : {
           ...(rawWorktree === undefined
             ? {}
             : { worktree: rawWorktree === "" ? true : rawWorktree }),
           ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+          ...(remoteDestination === undefined
+            ? {}
+            : { remote: { destination: remoteDestination, workspace: remoteWorkspace! } }),
         };
   switch (mode) {
     case "--print": {
@@ -351,7 +385,7 @@ export function parseMode(argv: string[]): Mode {
       return {
         kind: "refresh-models",
         debug,
-        ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+        ...selectedWorkspace,
       };
     case "--update":
       return { kind: "update" };

@@ -44,7 +44,7 @@ export interface CatalogProvider {
 
 /** The UI's read/seed/fill interface over a loaded (kernel) model catalog. */
 export interface ModelsCatalog {
-  source: "cache" | "bundle";
+  source: ModelCatalog["source"];
   providers(): CatalogProvider[];
   provider(id: string): CatalogProvider | undefined;
   models(providerId: string): CatalogModel[];

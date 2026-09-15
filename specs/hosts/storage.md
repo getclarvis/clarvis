@@ -29,6 +29,16 @@ Stable logical categories are `traces`, `sessions`, `workflow_records`, `project
 `memory`, `plans`, `diagnostics`, `run_scratch`, `workspace_state`, and `cache`. A row
 contains no pathname and no persisted content.
 
+Container base/recipe images, artifact/data/mise volumes and disposable Containers are engine-owned
+objects rather than paths under the host Clarvis global root. They are absent from this filesystem
+inventory and `StorageService.cleanup`; the service must not imply it measured or removed engine
+storage. Production: `prepareContainerVolumes` in
+`packages/kernel/src/runtime/container-volumes.ts` and inspection roots in
+`packages/kernel/src/storage/storage-service.ts`. Test:
+`packages/kernel/tests/unit/container-volumes.test.ts`,
+`packages/kernel/tests/integration/container-kernel.e2e.test.ts` and
+`packages/kernel/tests/integration/storage-service.test.ts`.
+
 Git worktree checkout roots are outside this inventory and cleanup service. Code selects or creates
 a checkout before kernel construction and may run explicitly confirmed clean-checkout removal after
 the workspace closes; the kernel still has no `worktrees` storage category or cleanup target.
@@ -37,6 +47,14 @@ Production: `CATEGORIES` and the inspection roots in
 `packages/code/src/bootstrap/worktree.ts`. Test:
 `packages/kernel/tests/integration/storage-service.test.ts` and
 `packages/code/tests/integration/worktree-bootstrap.test.ts`.
+
+Container process registry and host lease live under `containerLaunchPaths(namespace)` and carry only
+generation/engine/Container/base/artifact lifecycle identity. Domain state lives in the guest state
+volume; the selected workspace is mounted in place and is never copied into host runtime state.
+Production: `containerLaunchPaths` in `packages/paths/src/container.ts` and
+`launchContainerKernel` in `packages/kernel/src/hosting/container-host-launcher.ts`. Test:
+`packages/paths/tests/unit/container.test.ts` and
+`packages/kernel/tests/integration/container-launcher.test.ts`.
 
 ## Inventory boundaries
 
@@ -70,6 +88,11 @@ traces, sessions, workflow records,
 projects, memory, plans, diagnostics, settings, agents, keys and subscriptions cannot be
 expressed as cleanup targets. The TUI always calls dry-run first and asks for confirmation before
 apply.
+
+Likewise, `cache` cleanup names only the rebuildable global filesystem cache. It does not invoke a
+Docker executable, select a Docker context or delete labelled recipe images or mise volumes.
+Engine-cache inspection and explicit cleanup remain an advanced Docker operation until Clarvis
+exposes a separately reviewed engine-storage contract.
 
 Production: `createStorageService.cleanup` in `packages/kernel/src/storage/storage-service.ts`,
 `sweepGlobalStateArtifacts` in `packages/paths/src/housekeeping.ts`, and `StorageView` in
@@ -115,3 +138,5 @@ Test: `packages/paths/tests/integration/housekeeping.test.ts`,
 6. Housekeeping is bounded and preserves recent, occupied and unrecognized state.
 7. Storage maintenance does not read, rewrite or reorder the model message list; prompt-prefix
    stability is unaffected.
+8. Filesystem inventory and cleanup never claim visibility or authority over Docker-managed recipe
+   images or mise volumes.

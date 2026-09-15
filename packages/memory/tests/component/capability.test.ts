@@ -8,6 +8,7 @@ import {
   MEMORY_CAPABILITY_NAME,
   MEMORY_READ_TOOL_NAMES,
   MEMORY_WRITE_TOOL_NAMES,
+  prepareMemoryRuntime,
   type MemoryFactory,
   type MemoryIngestNotice,
 } from "../../src/capability.ts";
@@ -93,6 +94,51 @@ describe("createMemoryCapability", () => {
       ...Object.fromEntries(MEMORY_READ_TOOL_NAMES.map((name) => [name, "read"])),
       ...Object.fromEntries(MEMORY_WRITE_TOOL_NAMES.map((name) => [name, "mutate"])),
     });
+  });
+
+  it("prepares a provider-opaque runtime lease with canonical calls and host run-end", async () => {
+    const events: CapabilityEvent[] = [];
+    const execute = vi.fn().mockResolvedValue({ text: "host memory", isError: false });
+    const readTools = MEMORY_READ_TOOL_NAMES.map((name) =>
+      name === "read_memory" ? { ...memTool(name), execute } : memTool(name),
+    );
+    const writeTools = MEMORY_WRITE_TOOL_NAMES.map(memTool);
+    const memory = fakeMemory();
+    const runtime = await prepareMemoryRuntime(
+      factoryOf(memory, {
+        providerFor: async () => ({
+          ok: true,
+          provider: {
+            kind: "fixture",
+            readTools,
+            writeTools,
+            seed: vi.fn().mockResolvedValue("runtime seed"),
+          },
+          key: `fixture:${"a".repeat(64)}`,
+          seedMaxChars: 7_000,
+        }),
+      }),
+      ctxOf({ emit: (event) => events.push(event) }),
+    );
+
+    expect(runtime?.descriptor).toEqual({
+      providerDigest: "a".repeat(64),
+      seedMaxChars: 7_000,
+      readTools: [...MEMORY_READ_TOOL_NAMES],
+    });
+    await expect(runtime?.seed("task")).resolves.toBe("runtime seed");
+    expect(runtime?.accepts("read_memory", { paths: ["PROFILE.md"] })).toBe(true);
+    expect(runtime?.accepts("write_memory", { path: "PROFILE.md", content: "x" })).toBe(false);
+    expect(runtime?.accepts("read_memory", { paths: [] })).toBe(false);
+    await expect(runtime?.invoke("read_memory", { paths: ["PROFILE.md"] })).resolves.toEqual({
+      text: "host memory",
+      isError: false,
+    });
+    await runtime?.finish(makeExecutionRecord({ id: "runtime-run", owner_key_name: "o" }));
+    expect(events.map((event) => (event.detail as MemoryIngestNotice).phase)).toEqual([
+      "started",
+      "queued",
+    ]);
   });
 
   it("forRun gates: no factory / memory 'off' / forOwner undefined → null (global activation, no grant gate)", async () => {

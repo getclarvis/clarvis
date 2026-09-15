@@ -352,12 +352,34 @@ describe("request options", () => {
 });
 
 describe("result normalization", () => {
+  it("separates missing usage from measured zero and preserves known input without cache detail", () => {
+    expect(normalizeUsage(undefined)).toMatchObject({ usage_unknown: true, cache_unknown: true });
+    const zero = normalizeUsage({
+      inputTokens: 0,
+      outputTokens: 0,
+      inputTokenDetails: { cacheReadTokens: 0 },
+    } as never);
+    expect(zero).toEqual({
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+    });
+    expect(normalizeUsage({ inputTokens: 10, outputTokens: 2 } as never)).toMatchObject({
+      input_tokens: 10,
+      output_tokens: 2,
+      cache_unknown: true,
+    });
+    expect(normalizeUsage({ inputTokens: 10 } as never).usage_unknown).toBe(true);
+  });
+
   it("normalizes partial usage and malformed tool arguments", () => {
     expect(normalizeUsage({ inputTokens: 7, outputTokens: 2 } as never)).toEqual({
       input_tokens: 7,
       output_tokens: 2,
       cached_tokens: 0,
       cache_write_tokens: 0,
+      cache_unknown: true,
     });
     const result = buildCallResult({
       text: "ok\0",

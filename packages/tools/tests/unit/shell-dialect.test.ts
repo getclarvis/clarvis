@@ -65,7 +65,7 @@ describe("analyzeShell — a segment that tokenizes to nothing is undecidable", 
     expect(facts.undecidable).toBe(true);
   });
 
-  it.each([["()"], ["''"], ['""'], ["FOO=bar"], ["timeout 5"]])(
+  it.each([["()"], ["''"], ['""'], ["timeout 5"]])(
     "catches the POSIX source %p, which reduces to no command at all",
     (command) => {
       const facts = analyzeShell(command, posixDialect);
@@ -73,6 +73,17 @@ describe("analyzeShell — a segment that tokenizes to nothing is undecidable", 
       expect(facts.undecidable).toBe(true);
     },
   );
+
+  it("does not treat a NAME=value assignment as a tokenizer failure", () => {
+    const alone = analyzeShell("FOO=bar", posixDialect);
+    expect(alone.segments[0]!.normalized).toBe("");
+    expect(alone.segments[0]!.envAssignments).toEqual(["FOO=bar"]);
+    expect(alone.undecidable).toBe(false);
+
+    const chained = analyzeShell("FOO=bar; ls", posixDialect);
+    expect(chained.undecidable).toBe(false);
+    expect(chained.segments.map((s) => s.normalized)).toEqual(["", "ls"]);
+  });
 
   it("leaves an ordinary command decidable", () => {
     const facts = analyzeShell("ls -la", posixDialect);

@@ -9,6 +9,7 @@ import {
   agentsPluginsDir,
   agentsPluginsDirs,
   agentsSkillsDirs,
+  agentsWorkspaceDir,
   CLARVIS_DIR,
   isAgentsMarketplaceFile,
   MARKETPLACE_FILE,
@@ -52,8 +53,10 @@ describe("globalPaths", () => {
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
     expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(GLOBAL, "extension-profiles"));
+    expect(p.runtimeRecipesDir).toBe(join(GLOBAL, "runtime-recipes"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
+    expect(p.sharedAgentPromptFile).toBe(join(GLOBAL, "shared-agent.md"));
     expect(p.guardJudgeFile).toBe(join(GLOBAL, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(GLOBAL, "memory-policy.md"));
     expect(p.authFile).toBe(join(GLOBAL, "auth.json"));
@@ -72,6 +75,10 @@ describe("globalPaths", () => {
     expect(p.extensionProfileSelectionFile).toBe(join(p.state, "extension-profile.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));
     expect(p.updateCheckCacheFile).toBe(join(p.cache, "update-check.json"));
+    expect(p.runtimeRecipeStateDir).toBe(join(p.state, "runtime-recipes"));
+    expect(p.runtimeRecipeLeaseFile("sha256:recipe")).toBe(
+      join(p.runtimeRecipeStateDir, ownerSegment("sha256:recipe") + ".lock"),
+    );
   });
 
   test("agentFile appends the markdown extension", () => {
@@ -114,6 +121,7 @@ describe("workspacePaths", () => {
     expect(p.skillsDir).toBe(join(p.clarvisDir, "skills"));
     expect(p.pluginsDir).toBe(join(p.clarvisDir, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(p.clarvisDir, "extension-profiles"));
+    expect(p.sharedAgentPromptFile).toBe(join(p.clarvisDir, "shared-agent.md"));
     expect(p.guardJudgeFile).toBe(join(p.clarvisDir, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(p.clarvisDir, "memory-policy.md"));
     expect(p.plansRoot).toBe(join(p.clarvisDir, "plans"));
@@ -153,6 +161,7 @@ describe("workspacePaths", () => {
       p.workflowsDir,
       p.pluginsDir,
       p.extensionProfilesDir,
+      p.sharedAgentPromptFile,
       p.guardJudgeFile,
       p.memoryPolicyFile,
       p.plansRoot,
@@ -198,6 +207,12 @@ describe("agentsSkillsDirs", () => {
     expect(isAbsolute(dirs.user)).toBe(true);
     expect(isAbsolute(dirs.workspace)).toBe(true);
   });
+});
+
+test("agentsWorkspaceDir resolves the complete shared control root", () => {
+  expect(agentsWorkspaceDir("relative-workspace")).toBe(
+    join(resolve("relative-workspace"), AGENTS_DIR),
+  );
 });
 
 describe("agentsPluginsDir", () => {

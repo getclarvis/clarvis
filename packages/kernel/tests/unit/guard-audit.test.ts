@@ -18,6 +18,7 @@ const ROOT = resolve("/tmp/clarvis-kernel-guard-audit-ws");
 function shellFacts(normalized: string, undecidable = false): ShellFacts {
   return {
     paths: [],
+    analysisIssues: [],
     undecidable,
     segments: [
       {
@@ -26,18 +27,26 @@ function shellFacts(normalized: string, undecidable = false): ShellFacts {
         normalized,
         envAssignments: [],
         decidable: !undecidable,
+        analysisIssues: [],
       },
     ],
   };
 }
 
 function ctx(tool: string, args: Record<string, unknown>, shell?: ShellFacts): GuardContext {
+  const sandboxPermissions =
+    args.sandbox_permissions === "require_escalated" || args.sandbox_permissions === "use_default"
+      ? args.sandbox_permissions
+      : undefined;
+  const justification = typeof args.justification === "string" ? args.justification : undefined;
   return {
     tool,
     args,
     config: { workspaceRoot: ROOT } as unknown as GuardContext["config"],
     paths: [],
     ...(shell === undefined ? {} : { shell }),
+    ...(sandboxPermissions !== undefined ? { sandboxPermissions } : {}),
+    ...(justification !== undefined ? { justification } : {}),
   };
 }
 
@@ -78,15 +87,20 @@ describe("createShellGuard onDecision", () => {
     expect(decision).toMatchObject({ verdict: "deny", matched: "deny_list", tool: "shell" });
   });
 
-  it("reports host execution as reviewable by the configured answerer", () => {
-    const [decision] = decisionsFor(
-      { allowedCommands: ["*"] },
-      ctx("host_vcs", { command: "gh pr view 1" }),
-    );
+  it("reports require_escalated sandbox commands as human-escalated host execution", () => {
+    const context = ctx("shell", {
+      command: "gh pr view 1",
+      sandbox_permissions: "require_escalated",
+      justification: "need host gh",
+    });
+    context.config = { ...context.config, sandbox: { type: "native" } } as GuardContext["config"];
+    const [decision] = decisionsFor({ allowedCommands: ["*"] }, context);
     expect(decision).toMatchObject({
       verdict: "ask",
       matched: "host_command",
-      tool: "host_vcs",
+      escalate: "human",
+      tool: "shell",
+      reason: "need host gh",
     });
   });
 
@@ -161,7 +175,7 @@ describe("createShellGuard onDecision", () => {
   it("stays a pure value when no observer is supplied", async () => {
     const guard = createShellGuard({ deniedCommands: ["rm"] });
     const decision = await guard(ctx("shell", { command: "rm -rf x" }, shellFacts("rm -rf x")));
-    expect(decision).toEqual({
+    expect(decision).toMatchObject({
       verdict: "deny",
       reason: "command matches the denied commands list",
     });
@@ -258,7 +272,7 @@ describe("guard audit records", () => {
     expect(answerers).toEqual(["human", "session_allowlist"]);
   });
 
-  it("attributes an auto-mode answer to the judge", async () => {
+  it("does not attribute an unvalidated auto-mode answer to the judge", async () => {
     const llm = {
       call: async () => ({ toolCalls: [{ name: "decide", arguments: { decision: "allow" } }] }),
     } as unknown as RunCapabilityContext["llm"];
@@ -272,17 +286,19 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: {
+          guard_mode: "auto",
+          guard_judge: { prompt: "judge", on_unsure: "ask" },
+        } as never,
         llm,
       }),
     );
     expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
-      allowed: true,
-      answerer: "judge",
+      allowed: false,
+      answerer: "unavailable",
+      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
     });
-    expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields.answerer).toBe(
-      "judge",
-    );
+    expect(records.find((r) => r.fields.event === "guard.elicit.answered")).toBeUndefined();
   });
 
   it("attributes a judge failure fallback to the human who answered it", async () => {
@@ -305,7 +321,10 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: {
+          guard_mode: "auto",
+          guard_judge: { prompt: "judge", on_unsure: "ask" },
+        } as never,
         llm,
         elicit,
       }),
@@ -314,6 +333,7 @@ describe("guard audit records", () => {
     expect(await resolution!.elicit!(bashReq("bun run test"))).toEqual({
       allowed: true,
       answerer: "human",
+      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
       answerer: "human",
@@ -343,7 +363,10 @@ describe("guard audit records", () => {
       ...bashReq("$(x) y", shellFacts("y", true)),
       escalate: "human",
     });
-    expect(denied).toEqual({ allowed: false, answerer: "unavailable" });
+    expect(denied).toEqual({
+      allowed: false,
+      answerer: "unavailable",
+    });
     const escalation = records.find((r) => r.fields.event === "guard.escalation.no_channel");
     expect(escalation?.level).toBe("warn");
     expect(escalation?.fields).toMatchObject({ run_id: "run-1" });
@@ -369,7 +392,7 @@ describe("guard audit records", () => {
   it("writes nothing when no audit logger is supplied", async () => {
     const resolver = createGuardResolver({ loadSettings: () => ({}) });
     const resolution = await resolver(runCtx({ request: { guard_mode: "on" } as never }));
-    expect(await resolution!.guard!(ctx("read_file", { path: "a.ts" }))).toEqual({
+    expect(await resolution!.guard!(ctx("read_file", { path: "a.ts" }))).toMatchObject({
       verdict: "allow",
       mode: "on",
     });

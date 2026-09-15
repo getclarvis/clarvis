@@ -1,3 +1,4 @@
+import { candidateVersion } from "../src/adapters/runtime-candidate.ts";
 import { spawnSync } from "node:child_process";
 import {
   lstat,
@@ -17,20 +18,38 @@ const repositoryRoot = resolve(import.meta.dir, "..", "..", "..");
 const launcherName = "clarvis-develop";
 export const DEVELOPMENT_LAUNCHER_MARKER = "# clarvis-develop managed launcher v1";
 export const DEVELOPMENT_TEMP_ROOT = "/tmp/clarvis-development-temp";
+/** Local OCI engines that can store the source development runtime image. */
+export const DEVELOPMENT_CONTAINER_ENGINES = ["docker", "podman"] as const;
+/** A local OCI engine that can store the source development runtime image. */
+export type DevelopmentContainerEngine = (typeof DEVELOPMENT_CONTAINER_ENGINES)[number];
+/** Tag inspected by source development; never pulled. */
+export const DEVELOPMENT_RUNTIME_IMAGE = "clarvis-base:local";
 const DEVELOPMENT_TEMP_MARKER = ".clarvis-development-temp-root";
 const DEVELOPMENT_TEMP_MARKER_CONTENT = "clarvis-develop temporary workspaces v1\n";
 
 export interface DevelopmentInstallRequest {
   mode: "help" | "install" | "clear-only" | "create-empty-workspace" | "uninstall";
   clear: boolean;
+  candidate?: string;
 }
 
 /** Parse the deliberately small maintenance surface shared by the shell entry and launcher. */
 export function parseDevelopmentInstallArgs(args: readonly string[]): DevelopmentInstallRequest {
   let clear = false;
   let mode: DevelopmentInstallRequest["mode"] = "install";
-  for (const argument of args) {
-    if (argument === "--clear") {
+  let candidate: string | undefined;
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--candidate") {
+      if (candidate !== undefined) throw new Error("--candidate cannot be repeated");
+      candidate = "latest";
+      const next = args[index + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        candidate = next;
+        index += 1;
+        candidateVersion(candidate);
+      }
+    } else if (argument === "--clear") {
       clear = true;
     } else if (argument === "--clear-only") {
       if (mode !== "install") throw new Error("--clear-only cannot be combined with another mode");
@@ -51,16 +70,20 @@ export function parseDevelopmentInstallArgs(args: readonly string[]): Developmen
     }
   }
   if (mode !== "install" && clear) throw new Error("--clear is available only during installation");
-  return { mode, clear };
+  if (candidate !== undefined && (mode !== "install" || clear)) {
+    throw new Error("--candidate cannot be combined with maintenance or clearing modes");
+  }
+  return { mode, clear, ...(candidate === undefined ? {} : { candidate }) };
 }
 
 /** Render help without loading the application or altering the checkout. */
 export function developmentInstallHelp(): string {
   return [
-    "Usage: ./dev-install.sh [--clear | --uninstall | --help]",
+    "Usage: ./dev-install.sh [--candidate [tag] | --clear | --uninstall | --help]",
     "",
-    `Install ${launcherName} from this checkout without building or downloading a release.`,
+    `Default: install ${launcherName} from this checkout and build ${DEVELOPMENT_RUNTIME_IMAGE} for each of Docker and Podman that is installed.`,
     "",
+    "  --candidate [tag]  install a published RC with its pinned Container artifacts",
     "  --clear      delete global state and managed temporary workspaces before installing",
     `  --uninstall  remove only the managed ${launcherName} launcher`,
     "  --help       print this help and exit",
@@ -81,7 +104,11 @@ function shellQuote(value: string): string {
  * @remarks Ordinary runs keep the caller's current directory as the Clarvis workspace. Only the
  * explicit empty-workspace mode changes directory, after allocating its authenticated temp path.
  */
-export function developmentLauncherSource(input: { repository: string; bun: string }): string {
+export function developmentLauncherSource(input: {
+  repository: string;
+  bun: string;
+  candidate?: { tag: string; revision: string };
+}): string {
   const repository = shellQuote(resolve(input.repository));
   const bun = shellQuote(resolve(input.bun));
   return [
@@ -90,6 +117,13 @@ export function developmentLauncherSource(input: { repository: string; bun: stri
     "set -eu",
     `repository=${repository}`,
     `bun=${bun}`,
+    `export CLARVIS_RUNTIME_BASE=${shellQuote(DEVELOPMENT_RUNTIME_IMAGE)}`,
+    'case "$(uname -m)" in',
+    "  x86_64|amd64) clarvis_runtime_target=linux-x64 ;;",
+    "  aarch64|arm64) clarvis_runtime_target=linux-arm64 ;;",
+    '  *) echo "Unsupported Container architecture" >&2; exit 1 ;;',
+    "esac",
+    'export CLARVIS_RUNTIME_ARTIFACT="$repository/dist/runtime/$clarvis_runtime_target/clarvis-kernel-$clarvis_runtime_target.tar.gz"',
     'if [ ! -f "$repository/packages/code/src/cli.ts" ]; then',
     `  printf '%s\\n' "${launcherName}: source checkout not found at $repository; rerun ./dev-install.sh from its new location" >&2`,
     "  exit 1",
@@ -118,6 +152,12 @@ export function developmentLauncherSource(input: { repository: string; bun: stri
     '  cd -- "$workspace"',
     "fi",
     "export CLARVIS_CODE_SOURCE=1",
+    ...(input.candidate === undefined
+      ? ["unset CLARVIS_RUNTIME_CANDIDATE CLARVIS_RUNTIME_CANDIDATE_REVISION"]
+      : [
+          `export CLARVIS_RUNTIME_CANDIDATE=${shellQuote(input.candidate.tag)}`,
+          `export CLARVIS_RUNTIME_CANDIDATE_REVISION=${shellQuote(input.candidate.revision)}`,
+        ]),
     'exec "$bun" "$repository/packages/code/src/cli.ts" "$@"',
     "",
   ].join("\n");
@@ -145,6 +185,7 @@ export async function installDevelopmentLauncher(input: {
   repository: string;
   bun: string;
   binDirectory: string;
+  candidate?: { tag: string; revision: string };
 }): Promise<string> {
   const binDirectory = resolve(input.binDirectory);
   const launcher = join(binDirectory, launcherName);
@@ -306,6 +347,117 @@ function run(command: readonly string[], cwd: string): void {
   }
 }
 
+/** Detect Docker and Podman independently so a host with only one engine still proceeds. */
+export function detectContainerEngines(
+  which: (command: string) => string | null = (command) => Bun.which(command),
+): DevelopmentContainerEngine[] {
+  return DEVELOPMENT_CONTAINER_ENGINES.filter((engine) => which(engine) !== null);
+}
+
+/** Argv for the version-independent development base builder and one explicit engine. */
+export function developmentRuntimeBuildArgv(
+  bun: string,
+  engine: DevelopmentContainerEngine,
+): string[] {
+  const target = process.arch === "arm64" ? "linux-arm64" : "linux-x64";
+  return [
+    bun,
+    "run",
+    "runtime:base:build",
+    "--engine",
+    engine,
+    "--target",
+    target,
+    "--tag",
+    DEVELOPMENT_RUNTIME_IMAGE,
+  ];
+}
+
+/** Argv for the target Linux Kernel archive built after at least one base succeeds. */
+export function developmentRuntimeArtifactArgv(
+  bun: string,
+  engine: DevelopmentContainerEngine,
+): string[] {
+  const target = process.arch === "arm64" ? "linux-arm64" : "linux-x64";
+  return [
+    bun,
+    "run",
+    "runtime:artifact:build",
+    "--engine",
+    engine,
+    "--target",
+    target,
+    "--out",
+    `dist/runtime/${target}`,
+  ];
+}
+
+/** One engine that was present but could not build the local development base. */
+export interface DevelopmentRuntimeImageFailure {
+  readonly engine: DevelopmentContainerEngine;
+  readonly error: string;
+}
+
+/** Outcome of attempting the local development base on each engine. */
+export interface DevelopmentRuntimeImagePreparation {
+  readonly prepared: readonly DevelopmentContainerEngine[];
+  readonly skipped: readonly DevelopmentContainerEngine[];
+  readonly failed: readonly DevelopmentRuntimeImageFailure[];
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Build the local Container base for every installed engine and one target Kernel artifact.
+ *
+ * @remarks Docker and Podman keep separate image stores, so success on one does not
+ * install the other. A missing engine is skipped. When at least one engine is
+ * installed, every installed engine must fail before this throws; one successful
+ * build still returns the failed engines for the installer to report.
+ */
+export function prepareDevelopmentRuntimeImages(input: {
+  readonly repository: string;
+  readonly bun: string;
+  readonly engines?: readonly DevelopmentContainerEngine[];
+  readonly run?: (argv: readonly string[], cwd: string) => void;
+  readonly log?: (message: string) => void;
+}): DevelopmentRuntimeImagePreparation {
+  const log = input.log ?? ((message) => console.log(message));
+  const execute = input.run ?? ((argv, cwd) => run(argv, cwd));
+  const available = new Set(input.engines ?? detectContainerEngines());
+  const skipped = DEVELOPMENT_CONTAINER_ENGINES.filter((engine) => !available.has(engine));
+  const prepared: DevelopmentContainerEngine[] = [];
+  const failed: DevelopmentRuntimeImageFailure[] = [];
+  for (const engine of skipped) {
+    log(`${engine} is not installed; skipping ${DEVELOPMENT_RUNTIME_IMAGE}.`);
+  }
+  for (const engine of DEVELOPMENT_CONTAINER_ENGINES) {
+    if (!available.has(engine)) continue;
+    log(`Building ${DEVELOPMENT_RUNTIME_IMAGE} with ${engine}.`);
+    try {
+      execute(developmentRuntimeBuildArgv(input.bun, engine), input.repository);
+      prepared.push(engine);
+    } catch (error) {
+      const message = errorMessage(error);
+      failed.push({ engine, error: message });
+      log(`Failed to build ${DEVELOPMENT_RUNTIME_IMAGE} with ${engine}: ${message}`);
+    }
+  }
+  if (prepared.length > 0) {
+    execute(developmentRuntimeArtifactArgv(input.bun, prepared[0]!), input.repository);
+  }
+  if (available.size > 0 && prepared.length === 0) {
+    const attempted = DEVELOPMENT_CONTAINER_ENGINES.filter((engine) => available.has(engine));
+    throw new AggregateError(
+      failed.map((item) => new Error(item.error)),
+      `development runtime base build failed through ${attempted.join(" and ")}`,
+    );
+  }
+  return { prepared, skipped, failed };
+}
+
 function repositoryHookIsConfigured(): boolean {
   const child = spawnSync("git", ["config", "--local", "--get", "core.hooksPath"], {
     cwd: repositoryRoot,
@@ -383,8 +535,30 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (request.candidate !== undefined) {
+    const { installCandidate } = await import("./candidate-install.ts");
+    const result = await installCandidate({
+      tag: request.candidate === "latest" ? undefined : request.candidate,
+      installRoot: join(
+        process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share"),
+        "clarvis-candidates",
+      ),
+      binDirectory,
+      bun: process.execPath,
+      bunVersion: Bun.version,
+    });
+    console.log(`Installed ${result.manifest.tag} at ${result.checkout}.`);
+    console.log(
+      "Container base and Kernel artifacts will be verified when Container isolation is selected.",
+    );
+    console.log(
+      `Run ${result.launcher}; rerun --candidate to update. Previous checkouts are retained.`,
+    );
+    return;
+  }
+
   const expected = canonicalBunVersion(await readFile(join(repositoryRoot, "mise.toml"), "utf8"));
-  const steps = request.clear ? 6 : 5;
+  const steps = request.clear ? 7 : 6;
   console.log(`[1/${steps}] Checking Bun ${expected}.`);
   if (Bun.version !== expected) {
     throw new Error(
@@ -408,6 +582,27 @@ async function main(): Promise<void> {
     await clearDevelopmentEnvironment();
     step += 1;
   }
+
+  console.log(`[${step}/${steps}] Building the local Container base and Kernel artifact.`);
+  const images = prepareDevelopmentRuntimeImages({
+    repository: repositoryRoot,
+    bun: process.execPath,
+  });
+  if (images.prepared.length === 0) {
+    console.log(
+      "Docker and Podman are unavailable; native mode remains usable. Container isolation needs an engine and a rerun of this installer.",
+    );
+  } else {
+    console.log(
+      `Container base ready (${DEVELOPMENT_RUNTIME_IMAGE}) and Kernel artifact built: ${images.prepared.join(", ")}.`,
+    );
+    if (images.failed.length > 0) {
+      console.log(
+        `Continuing without ${images.failed.map((item) => item.engine).join(" and ")} because that engine could not build the base.`,
+      );
+    }
+  }
+  step += 1;
 
   console.log(`[${step}/${steps}] Installing the source launcher.`);
   const launcher = await installDevelopmentLauncher({

@@ -18,6 +18,17 @@ retention are specified in [`plan-capability.md`](../../specs/capabilities/plan-
 External providers are governed by
 [`provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
+Model guidance names tools conditionally and takes mutation revisions from the current plan state,
+not guesses. Review restrictions do not grant otherwise unavailable tools. A delegated task's return
+is not closure: the lead must inspect its outcome before recording `done` or genuine `abandoned`.
+The finalization note does not ask for invented evidence or early completion; see
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
+
+`read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
+options for the first page, default limit and absent status/retention filters. Non-null IDs and
+cursors must be nonempty; later pages use only provider-issued cursors. Shared read/list schemas
+generate the advertised catalog and normalize null to absence before the typed provider call.
+
 ## Entry points
 
 | Entry                      | Contents                                                                    |
@@ -27,6 +38,14 @@ External providers are governed by
 | `@clarvis/plan/testing`    | repository and provider-facing `PlanStore` conformance suites               |
 | `@clarvis/plan/capability` | the provider-aware planning capability                                      |
 | `@clarvis/plan/settings`   | the light `plans:` settings contract                                        |
+
+`createPlansCatalogCapability`, exported by the capability entry, lets a host retain
+planning's tools and `delegate_task` schema in an auxiliary continuation without
+opening the source provider. It respects the source `off`/`on`/`review` mode, refuses
+plan calls and tracked spawning, and has no gates, context publication, recovery,
+finalization or retention effects. Memory indexing uses this projection so a paused
+goal's plan remains owned by its primary execution. It is a host API, not a request
+option available to the model.
 
 ## Format
 
@@ -127,6 +146,14 @@ from the same decision carries the one the first just invalidated and is rejecte
 three-call batch measured one write and two conflicts. Serial edits therefore cost a full model round
 trip each, and a plan in the demo workspace reached `revision: 35` that way.
 
+Delegation is another writer, but it is owned by the runtime rather than the child: the child never
+receives plan tools, while the delegation port records `in_progress` and `returned`. Once the Lead
+starts a tracked delegation, sibling `revise_plan` and `transition_plan_task` calls from that same
+model iteration are deferred. The next iteration publishes the runtime's current revision and
+digests before the Lead may mutate again. This preserves the strict CAS check instead of accepting a
+stale digest or letting a child edit the plan. The orchestration and catalog component suites pin
+both sides of this rule.
+
 `applyPlanRevisions` folds the operations in order (so one may build on the last), the batch is
 **all-or-nothing**, and it spends **one `revision` and at most one `spec_revision`** however many
 operations it carries. Both tools still accept their old singular shape (`operation`, or a flat
@@ -140,7 +167,7 @@ only about the envelope, and refusing it would cost the round trip this exists t
 
 A sub-agent's return lands in `returned`, which is **not** closed — the lead must judge it
 explicitly. In the loop, `delegate_task` may claim a task (`in_progress`) and record its return, but
-only `transition_plan_task` may close one.
+only the lead's later `transition_plan_task`, using the next canonical CAS, may close one.
 
 Planning does not turn independent spawning into a plan task. `spawn_subagent` remains the route for
 independent work and carries no `task_id`. The plan capability adds `delegate_task`, which requires
@@ -166,7 +193,19 @@ was refused and the refusal named `revise_plan` as the way forward.
 what it did, so nothing is deleted without an explicit choice.
 
 `discard` removes the file only **after** the terminal record persists, and only on a `completed`
-run. A crash or cancellation always leaves it for recovery.
+run with final disposition. A crash or cancellation always leaves it for recovery.
+
+A checkpoint keeps the current plan, open tasks and reference, including `discard` retention.
+The pending-task gate permits that stage boundary; human review and other finalize gates still run.
+When the engine requests `preserveState` for an interrupted continuing activity, the finalizer also
+retains the current plan instead of changing its status. A later final result follows the ordinary
+task-closure and retention rules. This behavior does not grant review approval or continuation authority.
+
+Plans is available to Host, Sandbox and Container Kernels. Container uses the native Markdown
+provider, tools, review, CAS, continuation and retention callbacks, with documents persisted in its
+canonical workspace plan directory shared with Host/Sandbox. An active external provider is incompatible; disabled Plans does not resolve
+a provider. The placement contract belongs to
+[`isolated-agent-runtime.md`](../../specs/hosts/isolated-agent-runtime.md).
 
 The default is defined once as `DEFAULT_PLAN_RETENTION` in `src/schemas.ts` and mirrored by
 `PLANS_DEFAULTS` in `src/settings.ts`. The component test in
@@ -250,3 +289,20 @@ bun --filter @clarvis/plan format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Prompt-cache continuity
+
+Plan headers remain per-iteration reminders and append after prior history, including identical
+reminders. Each names the current plan and projects every task exactly once, using only its id and
+status: `in_progress`, `returned`, and `failed` require attention; `pending` has not started; and
+`done` or `abandoned` is closed. Document order is preserved within each category, and an empty
+category says `none.`. The invariant closing guidance tells direct work to enter `in_progress`, asks
+the lead to verify the task's published status after `delegate_task`, and reserves outcome recording
+for `transition_plan_task`; it does not perform or promise a transition. The complete reminder is
+bounded to 32,768 Unicode characters, while its one-line plan-name projection is bounded to 256.
+Changed plan bodies append; unchanged bodies stay in place. The newest reminder describes the
+current state, while the store continues to enforce CAS and human approval against historical
+references.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

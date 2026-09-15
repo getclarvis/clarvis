@@ -74,38 +74,30 @@ test("normalizeAgentWrite: rejects a draft that fails the frontmatter schema", (
   expect(() => normalizeAgentWrite(bad)).toThrow("invalid agent frontmatter");
 });
 
-test("an unknown frontmatter key survives the editor round-trip unchanged", () => {
-  const frontmatter = {
-    description: "d",
-    grants: ["read_workspace"],
-    "x-house-style": "terse",
-    presentation: { colour: "amber", tags: ["a", "b"] },
-  };
+test("unknown frontmatter is visible as invalid and rejected by the write schema", () => {
+  const frontmatter = { grants: ["read_workspace"], sandbox: false };
   const file = docToAgentFile({
     name: "foreign",
     scope: "workspace",
     frontmatter,
-    body: "Do the thing.",
+    body: "Review.",
   });
-
-  expect(file.invalid).toBeUndefined();
-  expect(file.frontmatter).toEqual(frontmatter);
-
-  const write = normalizeAgentWrite(file);
-  expect(write.frontmatter).toEqual(frontmatter);
-  expect(write.body).toBe("Do the thing.");
+  expect(file.invalid).toContain("sandbox");
+  expect(file.frontmatter).toEqual({});
+  expect(file.body).toBe("Review.");
+  expect(() => normalizeAgentWrite({ ...file, frontmatter })).toThrow("invalid agent frontmatter");
 });
 
-test("an unknown key alongside a base_prompt promotion still round-trips", () => {
+test("an unknown key cannot promote an unchecked base_prompt", () => {
   const file = docToAgentFile({
     name: "foreign",
     scope: "global",
     frontmatter: { base_prompt: "Be helpful.", "x-house-style": "terse" },
     body: "",
   });
-  expect(file.body).toBe("Be helpful.");
-  expect(file.frontmatter["x-house-style"]).toBe("terse");
-  expect(normalizeAgentWrite(file).frontmatter).toEqual({ "x-house-style": "terse" });
+  expect(file.invalid).toContain("x-house-style");
+  expect(file.body).toBe("");
+  expect(file.frontmatter).toEqual({});
 });
 
 test("a typed field is still validated even when an unknown key is present", () => {
@@ -121,8 +113,8 @@ test("a typed field is still validated even when an unknown key is present", () 
 test("readEnvView: engine defaults when unset; parses CLARVIS_* when set", () => {
   const base = readEnvView({});
   expect(base.budgetOnExceed).toBe("escalate");
-  expect(base.iterationDefault).toBe(200);
-  expect(base.iterationCeiling).toBe(200);
+  expect(base.iterationDefault).toBe(256);
+  expect(base.iterationCeiling).toBe(256);
   expect(base.tokenDefault).toBe(160_000_000);
   expect(base.tokenCeiling).toBe(200_000_000);
   expect(base.maxGrant).toBe("edit");

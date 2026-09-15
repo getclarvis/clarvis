@@ -170,7 +170,7 @@ function mount(
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   for (let index = 0; index < 100 && !predicate(); index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Bun.sleep(0);
   }
   expect(predicate()).toBeTrue();
 }
@@ -324,7 +324,7 @@ test("Work on task rechecks the memory fuse after the agent picker opens", async
 
   mounted.press("w");
   await captureUntil(output, "Choose agent");
-  blockedReason = "New work is blocked by the memory fuse; use /recover-memory.";
+  blockedReason = "Restoring the interface…";
   mounted.press("return");
   await waitFor(() => mounted.errors.length === 1);
 

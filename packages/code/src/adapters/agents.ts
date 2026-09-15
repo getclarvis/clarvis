@@ -40,11 +40,14 @@ interface BudgetLite {
 /** An agent profile as the TUI displays it, derived from the kernel's {@link ProfileInfo}. */
 export interface AgentProfileView {
   name: string;
+  scope?: "global" | "workspace" | "plugin" | "builtin";
   model?: string;
   description?: string;
   canSpawn: string[];
+  defaultSpawn?: string;
   budget?: BudgetLite;
   grants: GrantId[] | "unknown";
+  tools?: string[] | "unknown";
 }
 
 /** Coarse behavioral traits derived from a profile view, used to gate UI affordances. */
@@ -52,6 +55,57 @@ export interface AgentShape {
   isLead: boolean;
   askUserGranted: boolean | "unknown";
   softMode: boolean;
+}
+
+const CONTAINER_NATIVE_GRANTS = new Set([
+  "ask_user",
+  "read_workspace",
+  "edit_workspace",
+  "run_commands",
+  "workflow",
+]);
+const CONTAINER_PROJECTED_BUILTINS = new Set([
+  "marshall",
+  "admiral",
+  "coder",
+  "explorer",
+  "planner",
+]);
+
+/** Whether a visible profile and its complete delegation graph fit Container's native policy. */
+export function isContainerCompatibleProfile(
+  name: string,
+  profiles: readonly AgentProfileView[],
+): boolean {
+  const byName = new Map(profiles.map((profile) => [profile.name, profile]));
+  const settled = new Map<string, boolean>();
+  const visiting = new Set<string>();
+  const visit = (candidate: string): boolean => {
+    const known = settled.get(candidate);
+    if (known !== undefined) return known;
+    if (visiting.has(candidate)) return true;
+    const profile = byName.get(candidate);
+    if (profile === undefined || profile.scope === "plugin") return false;
+    const projectedBuiltin =
+      profile.scope === "builtin" && CONTAINER_PROJECTED_BUILTINS.has(profile.name);
+    if (
+      !projectedBuiltin &&
+      (profile.grants === "unknown" ||
+        profile.tools === undefined ||
+        profile.tools === "unknown" ||
+        profile.tools.length > 0 ||
+        profile.grants.some((grant) => !CONTAINER_NATIVE_GRANTS.has(grant)))
+    )
+      return false;
+    visiting.add(candidate);
+    const compatible =
+      profile.canSpawn.every(visit) &&
+      (profile.defaultSpawn === undefined || visit(profile.defaultSpawn));
+    visiting.delete(candidate);
+    settled.set(candidate, compatible);
+    return compatible;
+  };
+  return visit(name);
 }
 
 /** The global and (if present) workspace Clarvis path sets. */
@@ -72,11 +126,14 @@ export interface ClarvisDirs {
 export function profileView(profile: ProfileInfo): AgentProfileView {
   return {
     name: profile.name,
+    scope: profile.scope,
     model: profile.model,
     description: profile.description,
     canSpawn: profile.canSpawn ?? [],
+    defaultSpawn: profile.defaultSpawn,
     budget: profile.budget,
     grants: profile.grants ? (profile.grants as GrantId[]) : "unknown",
+    tools: profile.tools ?? "unknown",
   };
 }
 

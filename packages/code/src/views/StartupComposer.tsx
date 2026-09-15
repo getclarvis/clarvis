@@ -6,8 +6,8 @@ import { borderChars, glyph } from "../theme/glyphs.ts";
 import { ruleColor } from "../theme/surfaces.ts";
 import { BrandBanner } from "./Splash.tsx";
 
-/** Rows required by the fixed startup chrome plus the complete eight-row Clarvis banner. */
-const STARTUP_SPLASH_MIN_ROWS = 16;
+/** Rows required by fixed startup chrome, complete banner, separator, and progress. */
+const STARTUP_SPLASH_MIN_ROWS = 17;
 
 /** Text accepted by the startup composer before the complete application graph is ready. */
 export interface StartupComposerSnapshot {
@@ -43,6 +43,8 @@ export interface StartupComposerState {
   unbind(input: InputRenderable): void;
   queue(text: string): boolean;
   take(): StartupComposerSnapshot;
+  status(): string;
+  setStatus(status: string): void;
 }
 
 /** Create the single-consumer input bridge shared by the lightweight entrypoint and runtime. */
@@ -51,6 +53,7 @@ export function createStartupComposerState(): StartupComposerState {
   let draft = "";
   let submission: string | undefined;
   let consumed = false;
+  const [status, setStatus] = createSignal("connecting workspace");
   return {
     bind(next) {
       input = next;
@@ -64,7 +67,6 @@ export function createStartupComposerState(): StartupComposerState {
     },
     unbind(current) {
       if (input !== current) return;
-      draft = current.plainText ?? draft;
       input = undefined;
     },
     queue(text) {
@@ -77,9 +79,10 @@ export function createStartupComposerState(): StartupComposerState {
     take() {
       if (consumed) return { draft: "" };
       consumed = true;
-      draft = input?.plainText ?? draft;
       return { draft, ...(submission === undefined ? {} : { submission }) };
     },
+    status,
+    setStatus,
   };
 }
 
@@ -151,11 +154,19 @@ export function StartupComposer(props: {
             compact={() => dims().height < STARTUP_SPLASH_MIN_ROWS}
           />
         </Show>
-        <text fg={queued() ? tokens.accent2 : tokens.muted} wrapMode="none" truncate>
-          {queued()
-            ? `task queued ${glyph("separator")} connecting workspace${glyph("ellipsis")}`
-            : `connecting workspace${glyph("ellipsis")}`}
-        </text>
+        <box height={2} paddingTop={1} flexShrink={0} alignItems="center">
+          <text
+            fg={queued() ? tokens.accent2 : tokens.muted}
+            height={1}
+            flexShrink={0}
+            wrapMode="none"
+            truncate
+          >
+            {queued()
+              ? `task queued ${glyph("separator")} ${props.state.status()}${glyph("ellipsis")}`
+              : `${props.state.status()}${glyph("ellipsis")}`}
+          </text>
+        </box>
       </box>
 
       <box flexDirection="column" flexShrink={0} marginLeft={1} marginRight={1} marginBottom={1}>
@@ -189,7 +200,7 @@ export function StartupComposer(props: {
           {queued()
             ? "Task accepted; it will start as soon as the workspace is ready."
             : props.acceptsInput
-              ? "Type now; Enter queues the task while extensions finish loading."
+              ? "Type now; Enter queues the task while the workspace finishes loading."
               : "The composer unlocks after the saved session is restored."}
         </text>
       </box>

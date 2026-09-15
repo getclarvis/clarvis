@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import {
   closeSessionLifecycle,
   createSession,
@@ -125,6 +125,15 @@ describe("HTTP session admission", () => {
   });
 
   it("sweeps only idle sessions that have no live runs", async () => {
+    let sweep!: () => void;
+    const interval = spyOn(globalThis, "setInterval").mockImplementation(((
+      callback: () => void,
+    ) => {
+      sweep = callback;
+      return { unref: () => {} } as unknown as ReturnType<typeof setInterval>;
+    }) as typeof setInterval);
+    const clear = spyOn(globalThis, "clearInterval").mockImplementation(() => {});
+    const now = spyOn(Date, "now").mockReturnValue(10_000);
     const store = createSessionStore();
     const closed: string[] = [];
     const idle = {
@@ -154,10 +163,18 @@ describe("HTTP session admission", () => {
 
     const stop = store.startSweeper(1);
     try {
-      await Bun.sleep(1_050);
+      expect(interval).toHaveBeenCalledTimes(1);
+      now.mockReturnValue(10_001);
+      sweep();
+      await Promise.resolve();
+      await Promise.resolve();
       expect(closed).toEqual(["idle"]);
     } finally {
       stop();
+      expect(clear).toHaveBeenCalledTimes(1);
+      now.mockRestore();
+      clear.mockRestore();
+      interval.mockRestore();
     }
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { EnvConfig, TracePort } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import type {
@@ -46,6 +47,7 @@ import { buildSubagentInputPersona, userText } from "./subagents/build-subagent-
 import { buildLeadInputPersona } from "./subagents/build-lead-input.ts";
 import type { SubagentAggregate } from "./subagents/delegate-task.ts";
 import type { RunShape } from "./run-shape.ts";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 
 /**
  * The run-scoped dependencies {@link createEntryInput} threads into the entry
@@ -54,6 +56,8 @@ import type { RunShape } from "./run-shape.ts";
  * capabilities and capability-event listener.
  */
 export interface EntryInputDeps {
+  /** Trusted machinery namespace inherited from execution dependencies. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   workspaceRoot: string;
   executionId?: string;
@@ -61,6 +65,8 @@ export interface EntryInputDeps {
   elicit?: Elicit;
   steer?: SteerSource;
   compaction?: CompactionSource;
+  /** Run-local registry of interruptible tool invocations. */
+  toolInterruptRegistry?: ToolInterruptRegistry;
   hooks?: LifecycleHook[];
   logger?: Logger;
   resultContract?: ResultContract;
@@ -165,10 +171,10 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
   const { entryProfile, entryResolved, isLead } = shape;
 
   const elicitWaitMs = request.elicit_wait_ms ?? deps.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
-  const subagentInstanceId = isLead ? undefined : randomUUID();
+  const subagentInstanceId = isLead ? undefined : (request.agent_instance_id ?? randomUUID());
   const subagentTaskBody = isLead ? "" : userText(request.messages);
   const entryHasBuiltins = agentToolsActive(deps.env, entryProfile.grants);
-  const spillToolResult = createToolSpill(deps.workspaceRoot, deps.logger);
+  const spillToolResult = createToolSpill(deps.statePaths ?? deps.workspaceRoot, deps.logger);
   const agents = deps.services?.get(AGENT_REGISTRY_PORT);
 
   const entryRunCaps: readonly RunCapability[] = isLead
@@ -176,6 +182,7 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
         createDelegationRunCapability({
           env: deps.env,
           workspaceRoot: deps.workspaceRoot,
+          ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
           opened,
           profiles: shape.spawnableRegistry,
           ...(entryProfile.default_spawn !== undefined
@@ -200,6 +207,10 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
           ...(deps.capabilityReserved === undefined
             ? {}
             : { capabilityReserved: deps.capabilityReserved }),
+          ...(shape.sharedPrompt !== undefined ? { sharedPrompt: shape.sharedPrompt } : {}),
+          ...(deps.toolInterruptRegistry !== undefined
+            ? { toolInterrupts: deps.toolInterruptRegistry }
+            : {}),
         }),
         ...(deps.runCapabilities ?? []),
       ]
@@ -244,7 +255,13 @@ export function createEntryInput(p: EntryInputParams): EntryInputBuilder {
         ...(softBudget ? { softBudget } : {}),
         ...(softLimitAsk ? { softLimitAsk } : {}),
       },
-      runtime: { trace, ...(signal ? { signal } : {}) },
+      runtime: {
+        trace,
+        ...(signal ? { signal } : {}),
+        ...(deps.toolInterruptRegistry !== undefined
+          ? { toolInterrupts: deps.toolInterruptRegistry }
+          : {}),
+      },
       compaction: entryResolved.compaction,
       ...(entryResolved.compactionPrompt !== undefined
         ? { compactionPrompt: entryResolved.compactionPrompt }

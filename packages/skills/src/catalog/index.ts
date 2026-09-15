@@ -3,16 +3,22 @@ import type { SkillInfo } from "../types.ts";
 export const MAX_SKILL_CATALOG_CHARS = 8_000;
 
 function catalogLine(skill: SkillInfo, compact: boolean): string {
+  const location =
+    skill.source === "builtin"
+      ? "builtin; load by name"
+      : skill.resourceAccess === "remote"
+        ? "remote; load by name; resources via read_skill_resource"
+        : `path: ${skill.path}`;
   return compact
-    ? `- **${skill.name}** (path: ${skill.path})`
-    : `- **${skill.name}** — ${skill.description} (path: ${skill.path})`;
+    ? `- **${skill.name}** (${location})`
+    : `- **${skill.name}** — ${skill.description} (${location})`;
 }
 
 /**
  * Render a bounded skill catalog as Markdown bullets containing each skill's
- * name, description, and absolute `SKILL.md` path for prompt injection.
+ * name, description, and filesystem path or embedded/remote access instructions for prompt injection.
  *
- * @param skills - the skills to list; sorted by name and rendered without
+ * @param skills - builtins precede external skills, each group sorted by name without
  *   mutating the input.
  * @returns the `# Available skills` heading followed by one bullet per listed
  *   skill, or the empty string when nothing is left to list (so nothing is
@@ -35,7 +41,11 @@ function catalogLine(skill: SkillInfo, compact: boolean): string {
 export function renderSkillCatalog(skills: SkillInfo[]): string {
   const listed = skills.filter((s) => s.catalogSuppressed !== true);
   if (listed.length === 0) return "";
-  const sorted = listed.sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = listed.sort(
+    (a, b) =>
+      Number(b.source === "builtin") - Number(a.source === "builtin") ||
+      a.name.localeCompare(b.name),
+  );
   const heading = "# Available skills\n\n";
   const full = `${heading}${sorted.map((skill) => catalogLine(skill, false)).join("\n")}\n`;
   if (full.length <= MAX_SKILL_CATALOG_CHARS) return full;

@@ -4,6 +4,7 @@ import {
   listTools,
   resolveConfig,
   type RuntimeConfig,
+  type MutationReview,
   type Guard,
   type GuardReview,
   type Elicit,
@@ -13,6 +14,8 @@ import {
 import type { NamespacedTool } from "@clarvis/capability";
 import type { ToolResultImage } from "@clarvis/capability";
 import { EXEC_TOOL_NAMES } from "./names.ts";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
+import { isOperatorInterruptedTool } from "../tool-interrupt.ts";
 
 /**
  * Options for {@link createAgentToolset}: the `workspaceRoot`, the `canMutate` /
@@ -20,6 +23,8 @@ import { EXEC_TOOL_NAMES } from "./names.ts";
  * `elicit` and `sandbox` wiring passed through to @clarvis/tools.
  */
 export interface AgentToolsetOptions {
+  /** Trusted resolved machinery namespace, not a model argument. */
+  statePaths?: WorkspaceStatePaths;
   workspaceRoot: string;
   canMutate: boolean;
   canExec: boolean;
@@ -28,8 +33,11 @@ export interface AgentToolsetOptions {
   skillExecutionRoots?: readonly string[];
   onTemporaryRootRegistered?: (root: string) => void;
   guard?: Guard;
+  reviewMutation?: MutationReview;
   elicit?: Elicit;
   sandbox?: SandboxConfig;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
   /** Credential env-var names withheld from every spawned command. */
   secretEnvNames?: readonly string[];
   /**
@@ -47,6 +55,10 @@ export interface AgentToolsetOptions {
  * output, any `images`, and a unified `diff` when the tool produced one.
  */
 export interface AgentToolResult {
+  /** The shell executor returned its structured aborted outcome, not merely an aborted signal. */
+  executionAborted?: boolean;
+  /** Abort grace expired without executor settlement; physical termination is unconfirmed. */
+  abortUnsettled?: boolean;
   isError: boolean;
   text: string;
   images?: ToolResultImage[];
@@ -68,6 +80,8 @@ export interface AgentToolset {
     args: Record<string, unknown>,
     signal?: AbortSignal,
     onOutput?: (chunk: string) => void,
+    onExecutionStarted?: () => void,
+    runSignal?: AbortSignal,
   ) => Promise<AgentToolResult>;
 }
 
@@ -95,33 +109,56 @@ function buildAgentToolDefs(config: RuntimeConfig): NamespacedTool[] {
 
 /** The error result substituted for a tool call that the abort signal preempts. */
 function abortedResult(): AgentToolResult {
-  return { isError: true, text: "Tool call aborted (run cancelled)." };
+  return { isError: true, text: "Tool call aborted." };
 }
 
 /**
  * Race a tool-dispatch promise against the abort `signal`, resolving to
- * {@link abortedResult} the instant the signal fires so a cancelled run never
- * blocks on an in-flight tool. The abort listener is always removed afterward.
+ * {@link abortedResult} immediately for run cancellation. A selective interrupt
+ * allows two seconds for captured output to settle, without claiming termination
+ * if that grace expires. The separate run signal can preempt that grace.
  */
 function raceAbort(
   p: Promise<AgentToolResult>,
   signal: AbortSignal | undefined,
+  runSignal?: AbortSignal,
 ): Promise<AgentToolResult> {
-  if (signal === undefined) return p;
-  if (signal.aborted) return Promise.resolve(abortedResult());
+  if (signal === undefined && runSignal === undefined) return p;
   let resolveAborted!: (value: AgentToolResult) => void;
   const aborted = new Promise<AgentToolResult>((resolve) => {
     resolveAborted = resolve;
   });
-  const onAbort = (): void => resolveAborted(abortedResult());
-  signal.addEventListener("abort", onAbort, { once: true });
-  return Promise.race([p, aborted]).finally(() => signal.removeEventListener("abort", onAbort));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const onAbort = (): void => {
+    if (isOperatorInterruptedTool(signal?.reason) && !runSignal?.aborted) {
+      timer = setTimeout(
+        () =>
+          resolveAborted({
+            isError: true,
+            text: "Tool abort requested, but execution did not settle; process termination is unconfirmed.",
+            abortUnsettled: true,
+          }),
+        2000,
+      );
+    } else resolveAborted(abortedResult());
+  };
+  const onRunAbort = (): void => resolveAborted(abortedResult());
+  signal?.addEventListener("abort", onAbort, { once: true });
+  runSignal?.addEventListener("abort", onRunAbort, { once: true });
+  if (signal?.aborted) onAbort();
+  if (runSignal?.aborted) onRunAbort();
+  return Promise.race([p, aborted]).finally(() => {
+    signal?.removeEventListener("abort", onAbort);
+    runSignal?.removeEventListener("abort", onRunAbort);
+    if (timer !== undefined) clearTimeout(timer);
+  });
 }
 
 const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
   resolve(opts) {
     const config = resolveConfig({
       workspaceRoot: opts.workspaceRoot,
+      ...(opts.statePaths === undefined ? {} : { statePaths: opts.statePaths }),
       readOnly: !opts.canMutate,
       ...(opts.confineToWorkspace !== undefined
         ? { confineToWorkspace: opts.confineToWorkspace }
@@ -134,22 +171,33 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         ? { onTemporaryRootRegistered: opts.onTemporaryRootRegistered }
         : {}),
       ...(opts.guard !== undefined ? { guard: opts.guard } : {}),
+      ...(opts.reviewMutation !== undefined ? { reviewMutation: opts.reviewMutation } : {}),
       ...(opts.elicit !== undefined ? { elicit: opts.elicit } : {}),
       ...(opts.sandbox !== undefined ? { sandbox: opts.sandbox } : {}),
+      ...(opts.allowHostEscalation !== undefined
+        ? { allowHostEscalation: opts.allowHostEscalation }
+        : {}),
       ...(opts.secretEnvNames !== undefined ? { secretEnvNames: opts.secretEnvNames } : {}),
       ...(opts.logger !== undefined ? { logger: opts.logger } : {}),
     });
     return {
       defs: buildAgentToolDefs(config),
-      dispatch: (name, args, signal, onOutput) =>
-        pkgDispatch(name, args, config, signal, onOutput ? { onOutput } : undefined).then((r) => {
+      dispatch: (name, args, signal, onOutput, onExecutionStarted) =>
+        pkgDispatch(name, args, config, signal, {
+          ...(onOutput ? { onOutput } : {}),
+          ...(onExecutionStarted ? { onExecutionStarted } : {}),
+        }).then((r) => {
           const images = r.content
             .filter((p) => p.type === "image")
             .map((p) => ({ data: p.data, mediaType: p.mimeType }));
           const diff = typeof r.meta?.diff === "string" ? r.meta.diff : undefined;
+          const text = contentText(r.content);
           return {
             isError: r.isError,
-            text: contentText(r.content),
+            text,
+            ...(name === "shell" && r.isError && isAbortedShellResult(text)
+              ? { executionAborted: true }
+              : {}),
             ...(images.length > 0 ? { images } : {}),
             ...(diff ? { diff } : {}),
             ...(r.guard ? { guard: r.guard } : {}),
@@ -158,6 +206,21 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
     };
   },
 };
+
+/** Read the trusted builtin's serialized ToolError code, never infer abort from human prose. */
+function isAbortedShellResult(text: string): boolean {
+  try {
+    const result: unknown = JSON.parse(text);
+    return (
+      typeof result === "object" &&
+      result !== null &&
+      "error" in result &&
+      result.error === "aborted"
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Build the loop-owned access/abort policy over an injected coding-tools
  * adapter. Kept out of the package barrel: it exists so policy units do not
@@ -174,14 +237,34 @@ export function createAgentToolsetWithAdapter(
   return {
     defs,
     names,
-    dispatch: (name, args, signal, onOutput) => {
+    dispatch: (name, args, signal, onOutput, onExecutionStarted, runSignal) => {
       if (!names.has(name)) {
         return Promise.resolve({
           isError: true,
           text: `Tool '${name}' is not available to this agent.`,
         });
       }
-      return raceAbort(resolved.dispatch(name, args, signal, onOutput), signal);
+      if (signal?.aborted || runSignal?.aborted) return Promise.resolve(abortedResult());
+      let active = true;
+      const output =
+        onOutput === undefined
+          ? undefined
+          : (chunk: string): void => {
+              if (active && !runSignal?.aborted) onOutput(chunk);
+            };
+      const started =
+        onExecutionStarted === undefined
+          ? undefined
+          : (): void => {
+              if (active && !signal?.aborted && !runSignal?.aborted) onExecutionStarted();
+            };
+      return raceAbort(
+        resolved.dispatch(name, args, signal, output, started),
+        signal,
+        runSignal,
+      ).finally(() => {
+        active = false;
+      });
     },
   };
 }

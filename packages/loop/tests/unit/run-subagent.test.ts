@@ -114,6 +114,24 @@ describe("runSubagent wrapper", () => {
     expect(llm.calls[0]!.messages[0]).toEqual({ role: "system", content: "system rules" });
   });
 
+  it("places the shared prompt between the environment section and the profile prompt", async () => {
+    const llm = new MockLLM({ script: [{ text: "ok" }] });
+    await runSubagent({
+      ...common,
+      task: "the task",
+      sharedPrompt: "SHARED",
+      basePrompt: "system rules",
+      workspaceRoot: "/fake/ws",
+      llm,
+      ledger: createTokenLedger(1_000_000),
+      trace: createTrace(),
+    });
+    expect(llm.calls[0]!.messages[0]).toEqual({
+      role: "system",
+      content: `${ENV_SECTION("/fake/ws")}\n\nSHARED\n\nsystem rules`,
+    });
+  });
+
   it("prepends workspace preamble to basePrompt when workspaceRoot is provided", async () => {
     const llm = new MockLLM({ script: [{ text: "ok" }] });
     await runSubagent({

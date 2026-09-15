@@ -7,7 +7,10 @@ import {
   uiLifecycle,
 } from "../../src/ui/presentation.ts";
 import {
+  compactionNoticeText,
   planMetaText,
+  softLimitNoticeText,
+  thinkingDisplayText,
   transcriptDisplayText,
   transcriptDisplayTextChars,
   TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS,
@@ -115,6 +118,37 @@ test("usage projection covers context, elapsed, iterations, cost and compact cou
     "Workflow  In 1.3M · Out 9.8k · Context 12k / 100k · Context 12% · 1 iteration · 4m12s · $1.234",
   );
   expect(scopedUsageText({ owner: "Run", iterations: 2, cost: 0.5 }, true)).toBe("Run");
+});
+
+test("tool-output shortening is distinct from context compaction", () => {
+  expect(compactionNoticeText("truncation")).toBe("tool output shortened");
+  expect(compactionNoticeText("truncation", 12_000)).toBe("tool output shortened · -12k chars");
+  expect(compactionNoticeText("summarization", 12_000)).toBe(
+    "compaction (summarization) · -12k chars",
+  );
+});
+
+test("thinking removes Markdown chrome without changing ordinary transcript prose", () => {
+  const reasoning: TranscriptNode = {
+    key: "reasoning",
+    kind: "reasoning",
+    status: "running",
+    text: "**Designing createLocalContainerRuntime test****Planning RuntimeHostInput test** · 2 * 3",
+  };
+  const user: TranscriptNode = { ...reasoning, key: "user", kind: "user" };
+  expect(thinkingDisplayText(reasoning)).toBe(
+    "Designing createLocalContainerRuntime test Planning RuntimeHostInput test · 2 * 3",
+  );
+  expect(transcriptDisplayText(user)).toContain("**Designing");
+});
+
+test("iteration soft-limit notices use the TUI's concise iteration-limit wording", () => {
+  expect(softLimitNoticeText("iterations", 200, 200, "continued")).toBe(
+    "iteration limit 200/200 → continued",
+  );
+  expect(softLimitNoticeText("tokens", 90, 100, "continued")).toBe(
+    "soft tokens 90/100 → continued",
+  );
 });
 
 test("plan summaries distinguish completed and failed execution outcomes", () => {

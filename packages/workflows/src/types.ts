@@ -1,3 +1,4 @@
+import type { OperatorAuthorityReader } from "@clarvis/capability";
 /**
  * The core contract of `@clarvis/workflows`: what the manager LLM controls when
  * it fires a leader ({@link LeaderSpec}), what comes back ({@link LeaderResult}),
@@ -59,7 +60,10 @@ export interface LeaderResult {
  *   forces `memory: "off"` because only the primary manager run may enqueue a
  *   memory job for the workflow.
  */
-export type LeaderRequestAssembler = (spec: LeaderSpec, ctx: { parentRunId: string }) => RunRequest;
+export type LeaderRequestAssembler = (
+  spec: LeaderSpec,
+  ctx: { parentRunId: string; runId?: string },
+) => RunRequest | Promise<RunRequest>;
 
 /**
  * The two loop operations workflow orchestration needs at runtime.
@@ -103,6 +107,8 @@ export interface WorkflowSequenceState {
  *   events up to the workflow's event stream; `signal` cancels the whole tree.
  */
 export interface WorkflowCtx {
+  /** Late-resolved read-only host authority; manager briefs never populate this port. */
+  operatorAuthority?: OperatorAuthorityReader;
   deps: ExecuteRunDeps;
   runDeps: WorkflowRunDeps;
   owner: string;

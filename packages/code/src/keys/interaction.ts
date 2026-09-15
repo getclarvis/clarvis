@@ -44,6 +44,8 @@ export interface InteractionEffects {
   /** Suppresses every key except unmodified Escape while the workspace runtime is replaced. */
   interactionBlocked?(): boolean;
   cancelRun(): boolean;
+  interruptFocusedShell(): boolean;
+  canInterruptFocusedShell(): boolean;
   clearInputDraft(): void;
   quit(opts: { confirm: boolean }): void;
   dismissTopOverlay(): boolean;
@@ -57,9 +59,10 @@ export interface InteractionEffects {
    *   screen first uses it to put the user back there.
    */
   openAgentPicker(onClose?: () => void): void;
-  /** Open the canonical safety-preset picker. */
-  openSafetyPresetPicker(): void;
-  cycleGuardMode(): void;
+  /** Open the isolation picker without changing command review. */
+  openIsolationPicker(): void;
+  /** Open the command-review picker without changing isolation. */
+  openReviewPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
   toggleExpandAll(): void;
@@ -103,23 +106,27 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
-  "safety.picker": [
+  "activity.toggle": [{ key: "ctrl+l" }],
+  "isolation.picker": [
     { key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] },
     { key: "ctrl+s" },
   ],
-  "controls.open": [
-    { key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] },
+  "review.picker": [
     { key: "alt+g", minimumProfile: "enhanced", requires: ["meta"] },
+    { key: "ctrl+g" },
   ],
+  "controls.open": [{ key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] }],
   "plan.open": [
     { key: "ctrl+p" },
     { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
   ],
   "transcript.toggleCollapse": [{ key: "ctrl+o" }],
+  "tool.interruptFocused": [],
   "transcript.focusPrev": [{ key: "ctrl+up" }],
   "transcript.focusNext": [{ key: "ctrl+down" }],
   "transcript.scrollPageUp": [{ key: "pageup" }],
   "transcript.scrollPageDown": [{ key: "pagedown" }],
+  "transcript.followTail": [{ key: "end" }],
   "transcript.scrollLineUp": [{ key: "alt+up", minimumProfile: "enhanced", requires: ["meta"] }],
   "transcript.scrollLineDown": [
     { key: "alt+down", minimumProfile: "enhanced", requires: ["meta"] },
@@ -130,11 +137,14 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
 export const DEFAULT_WHEN: Record<string, string> = {
   "focus.next": "overlay==none",
   "agent.picker": "overlay==none",
-  "safety.picker": "overlay==none",
+  "activity.toggle": "overlay==none",
+  "isolation.picker": "overlay==none",
+  "review.picker": "overlay==none",
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
   "transcript.scrollPageUp": "overlay==none",
   "transcript.scrollPageDown": "overlay==none",
+  "transcript.followTail": "overlay==none",
   "transcript.scrollLineUp": "overlay==none",
   "transcript.scrollLineDown": "overlay==none",
   "transcript.toggleCollapse": "overlay==none",
@@ -257,6 +267,10 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
     hintPriority: 50,
     hintGroup: "primary",
   },
+  "tool.interruptFocused": {
+    uiSurfaces: ["full-help"],
+    hintGroup: "mutation",
+  },
   "transcript.focusPrev": {
     uiSurfaces: ["footer", "full-help"],
     footerLabel: "previous block",
@@ -274,6 +288,10 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
     hintGroup: "navigation",
   },
   "transcript.scrollPageDown": {
+    uiSurfaces: ["full-help"],
+    hintGroup: "navigation",
+  },
+  "transcript.followTail": {
     uiSurfaces: ["full-help"],
     hintGroup: "navigation",
   },
@@ -616,6 +634,11 @@ export function createInteraction(
       desc: "Scroll the transcript down one page",
       category: "view",
     }),
+    command("transcript.followTail", () => effects.scrollTranscript(Infinity), {
+      title: "Follow latest transcript",
+      desc: "Return to the conversation tail and follow new rows",
+      category: "view",
+    }),
     command("transcript.scrollLineUp", () => effects.scrollTranscript(-3), {
       title: "Scroll up",
       desc: "Scroll the transcript up a few lines",
@@ -631,10 +654,23 @@ export function createInteraction(
       desc: "Reveal the older turns the transcript window is holding back",
       category: "view",
     }),
+    command(
+      "tool.interruptFocused",
+      () => {
+        effects.interruptFocusedShell();
+      },
+      {
+        title: "Stop focused shell",
+        desc: "Interrupt the focused live shell without cancelling the run",
+        category: "tool",
+        enabled: () => effects.canInterruptFocusedShell(),
+      },
+    ),
   ];
   const offCommands = keymap.registerLayer({ commands });
 
   let offVital: (() => void) | undefined;
+  let offContextualInterrupt: (() => void) | undefined;
   function configureKeyboard(config: KeyboardConfig): void {
     const input = keyboardInput(platform, keymap);
     const id = keyboardEnvironmentId(input);
@@ -665,6 +701,34 @@ export function createInteraction(
     );
     offVital?.();
     offVital = keymap.registerLayer({ priority: LAYER.VITAL, bindings: vital });
+    offContextualInterrupt?.();
+    const interruptKeys = resolveCommandBindings(
+      "tool.interruptFocused",
+      DEFAULT_BINDING_CANDIDATES["tool.interruptFocused"] ?? [],
+      environment,
+      validOverrides,
+    );
+    const cancelKeys = resolveCommandBindings(
+      "run.cancel",
+      DEFAULT_BINDING_CANDIDATES["run.cancel"] ?? [],
+      environment,
+      validOverrides,
+    );
+    const cancelUsesCtrlX = cancelKeys.some((key) => key.replaceAll(" ", "") === "ctrl+x");
+    offContextualInterrupt =
+      interruptKeys.length === 0 && !cancelUsesCtrlX
+        ? keymap.registerLayer({
+            priority: 850,
+            bindings: [
+              {
+                key: "ctrl+x",
+                cmd: "tool.interruptFocused",
+                when: "overlay==none",
+                modal: "none",
+              },
+            ],
+          })
+        : undefined;
     setEnvironmentId(id);
     setKeyboardEnvironment(environment);
     keymap.setData("keyboard.profile", environment.profile);
@@ -692,6 +756,7 @@ export function createInteraction(
     process.off("SIGCONT", onContinue);
     const disposers = [
       offVital,
+      offContextualInterrupt,
       offCommands,
       offWindowRelease,
       offWindowPress,

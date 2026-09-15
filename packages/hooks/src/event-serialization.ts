@@ -159,6 +159,7 @@ const SERIALIZE = {
     mode: c.mode,
     text: clampText(c.text),
     value: clampValue(c.value),
+    ...(c.mode === "checkpoint" ? { checkpoint: clampValue(c.checkpoint) } : {}),
   }),
   pre_delegate_task: (c: PreDelegateTaskContext) => ({
     title: c.title,

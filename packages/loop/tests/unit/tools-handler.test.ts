@@ -8,6 +8,7 @@ import type {
 } from "@clarvis/capability";
 import { buildAgentToolsHandler } from "../../src/runtime/capabilities/tools.ts";
 import type { AgentToolResult, AgentToolset } from "../../src/runtime/tools/builtin/toolset.ts";
+import { OPERATOR_INTERRUPTED_TOOL } from "../../src/runtime/tools/tool-interrupt.ts";
 
 function call(name: string, args: unknown, id = "c1"): LLMToolCall {
   return { id, name, arguments: args };
@@ -72,8 +73,9 @@ function fakeToolset(
     defs: [],
     names: new Set(names),
     calls,
-    async dispatch(name, args, signal, onOutput) {
+    async dispatch(name, args, signal, onOutput, onExecutionStarted) {
       calls.push({ name, args, ...(signal !== undefined ? { signal } : {}) });
+      onExecutionStarted?.();
       onOutput?.("live chunk");
       return result;
     },
@@ -109,6 +111,8 @@ describe("buildAgentToolsHandler", () => {
     expect(handler.matches(call("read_file", {}))).toBe(true);
     expect(handler.matches(call("shell", {}))).toBe(false);
     expect(handler.matches(call("ask_user", {}))).toBe(false);
+    expect(handler.interruptible?.(call("shell", {}))).toBe(true);
+    expect(handler.interruptible?.(call("read_file", {}))).toBe(false);
   });
 
   it("dispatches success through the port and records durable/live trace separately", async () => {
@@ -190,5 +194,46 @@ describe("buildAgentToolsHandler", () => {
 
     expect(toolset.calls[0]?.signal).toBe(signal);
     expect(guards.records).toEqual([]);
+  });
+
+  it.each([
+    { isError: false, text: "completed" },
+    { isError: true, text: "spawn failed" },
+    { isError: true, text: "termination unconfirmed", abortUnsettled: true },
+  ])("does not infer interruption from the signal alone: $text", async (result) => {
+    const { handler, toolset, trace } = build(result, new AbortController().signal);
+    const tool = new AbortController();
+    toolset.dispatch = async (_name, _args, _signal, _output, started) => {
+      started?.();
+      tool.abort(OPERATOR_INTERRUPTED_TOOL);
+      return result;
+    };
+    await handler.handle(call("shell", {}), 1, {
+      signal: tool.signal,
+      control: { toolExecutionId: "token", actions: ["interrupt"] },
+    });
+    expect(trace.records.at(-1)?.detail).toMatchObject({ result: result.text });
+    expect(trace.records.at(-1)?.detail).not.toHaveProperty("interruption");
+  });
+
+  it("publishes start once and rejects late publishers after the terminal result", async () => {
+    const { handler, toolset, trace } = build({ isError: false, text: "ok" });
+    let output!: (chunk: string) => void;
+    let started!: () => void;
+    toolset.dispatch = async (_name, _args, _signal, onOutput, onStarted) => {
+      output = onOutput!;
+      started = onStarted!;
+      started();
+      started();
+      return { isError: false, text: "ok" };
+    };
+    await handler.handle(call("shell", {}), 1, {
+      signal: new AbortController().signal,
+      control: { toolExecutionId: "token", actions: ["interrupt"] },
+    });
+    output("late");
+    started();
+    expect(trace.records.map((r) => r.kind)).toEqual(["tool_call_started", "tool_call"]);
+    expect(trace.signals).toEqual([]);
   });
 });

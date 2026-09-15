@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { makeSymlink } from "../helpers/fixtures.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 import {
   discoverLinkedGitMetadataPaths,
   discoverToolchains,
@@ -34,6 +35,15 @@ function fakeProbeSpawnSync(statuses: ReadonlyArray<number | null>) {
     call += 1;
     return { status };
   };
+}
+
+function withEnvironment<T>(values: Record<string, string | undefined>, callback: () => T): T {
+  const env = spyOnProcessEnv(environmentFixture({ ...process.env, ...values }));
+  try {
+    return callback();
+  } finally {
+    env.mockRestore();
+  }
 }
 
 describe("sandboxCommand", () => {
@@ -141,17 +151,33 @@ describe("sandboxCommand", () => {
     );
   });
 
-  it("falls back explicitly when the native sandbox is optional but unusable", () => {
+  it("fails closed when the native sandbox is optional but unusable", () => {
+    expect(() =>
+      sandboxCommand({
+        command: "echo ok",
+        cwd: "/ws",
+        workspaceRoot: "/ws",
+        sandbox: { type: "native", availability: "optional" },
+        probe: () => ({
+          backend: "unsupported",
+          mode: "unavailable",
+          reason: "no native backend",
+        }),
+        shell: () => ({ flavor: "posix", file: "sh" }),
+      }),
+    ).toThrow("Native sandbox is required: no native backend");
+  });
+
+  it("skips the native probe when forceBare is set", () => {
     const spec = sandboxCommand({
       command: "echo ok",
       cwd: "/ws",
       workspaceRoot: "/ws",
-      sandbox: { type: "native", availability: "optional" },
-      probe: () => ({
-        backend: "unsupported",
-        mode: "unavailable",
-        reason: "no native backend",
-      }),
+      sandbox: { type: "native", availability: "required" },
+      forceBare: true,
+      probe: () => {
+        throw new Error("probe must not run for a bare host spawn");
+      },
       shell: () => ({ flavor: "posix", file: "sh" }),
     });
     expect(spec.file).toBe("sh");
@@ -216,9 +242,7 @@ describe("sandboxCommand", () => {
   it.skipIf(process.platform === "win32")(
     "does not pass provider secrets into a Bubblewrap environment",
     () => {
-      const old = process.env.OPENAI_API_KEY;
-      process.env.OPENAI_API_KEY = "sentinel";
-      try {
+      withEnvironment({ OPENAI_API_KEY: "sentinel" }, () => {
         const spec = sandboxCommand({
           command: "true",
           cwd: "/workspace/sub",
@@ -244,10 +268,7 @@ describe("sandboxCommand", () => {
           "-c",
           "true",
         ]);
-      } finally {
-        if (old === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = old;
-      }
+      });
     },
   );
 
@@ -287,24 +308,24 @@ describe("sandboxCommand", () => {
     () => {
       const root = mkdtempSync(join(tmpdir(), "clarvis-runtime-"));
       mkdirSync(join(root, "bin"));
-      const previous = process.env.PATH;
-      process.env.PATH = `${join(root, "bin")}:/private/not-mounted:/usr/bin`;
       try {
-        const spec = sandboxCommand({
-          command: "true",
-          cwd: "/workspace",
-          workspaceRoot: "/workspace",
-          sandbox: { type: "native", runtimePaths: [root] },
-          probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
+        withEnvironment({ PATH: `${join(root, "bin")}:/private/not-mounted:/usr/bin` }, () => {
+          const spec = sandboxCommand({
+            command: "true",
+            cwd: "/workspace",
+            workspaceRoot: "/workspace",
+            sandbox: { type: "native", runtimePaths: [root] },
+            probe: () => ({ backend: "bubblewrap", mode: "fresh-proc" }),
+          });
+          const sandboxEntries = spec.options.env?.PATH?.split(":") ?? [];
+          expect(sandboxEntries[0]).toBe(join(root, "bin"));
+          expect(sandboxEntries).toContain("/usr/bin");
+          expect(sandboxEntries).toContain("/bin");
+          expect(sandboxEntries).not.toContain("/private/not-mounted");
+          expect(spec.args).toContain(root);
         });
-        const sandboxEntries = spec.options.env?.PATH?.split(":") ?? [];
-        expect(sandboxEntries[0]).toBe(join(root, "bin"));
-        expect(sandboxEntries).toContain("/usr/bin");
-        expect(sandboxEntries).toContain("/bin");
-        expect(sandboxEntries).not.toContain("/private/not-mounted");
-        expect(spec.args).toContain(root);
       } finally {
-        process.env.PATH = previous;
+        rmSync(root, { recursive: true, force: true });
       }
     },
   );
@@ -577,20 +598,19 @@ describe("sandboxCommand", () => {
         '#!/bin/sh\nprintf invoked > "$(dirname "$0")/../entrypoint-ran"\n',
         { mode: 0o755 },
       );
-      const previous = process.env.PATH;
-      process.env.PATH = bin;
       try {
-        const [found] = discoverToolchains(["c-cpp"]);
-        expect(found).toMatchObject({
-          id: "c-cpp",
-          available: true,
-          manager: "custom",
-          root: realpathSync(root),
+        withEnvironment({ PATH: bin }, () => {
+          const [found] = discoverToolchains(["c-cpp"]);
+          expect(found).toMatchObject({
+            id: "c-cpp",
+            available: true,
+            manager: "custom",
+            root: realpathSync(root),
+          });
+          expect(found).not.toHaveProperty("version");
+          expect(existsSync(sentinel)).toBe(false);
         });
-        expect(found).not.toHaveProperty("version");
-        expect(existsSync(sentinel)).toBe(false);
       } finally {
-        process.env.PATH = previous;
         rmSync(root, { recursive: true, force: true });
       }
     },
@@ -605,17 +625,16 @@ describe("sandboxCommand", () => {
       mkdirSync(bin);
       writeFileSync(join(blocked, "bun"), "not executable\n", { mode: 0o644 });
       writeFileSync(join(bin, "bun"), "#!/bin/sh\necho 8.8.8\n", { mode: 0o755 });
-      const previous = process.env.PATH;
-      process.env.PATH = `${blocked}:${bin}`;
       try {
-        const [found] = discoverToolchains(["bun"]);
-        expect(found).toMatchObject({
-          available: true,
-          logicalPath: join(bin, "bun"),
+        withEnvironment({ PATH: `${blocked}:${bin}` }, () => {
+          const [found] = discoverToolchains(["bun"]);
+          expect(found).toMatchObject({
+            available: true,
+            logicalPath: join(bin, "bun"),
+          });
+          expect(found).not.toHaveProperty("version");
         });
-        expect(found).not.toHaveProperty("version");
       } finally {
-        process.env.PATH = previous;
         rmSync(blocked, { recursive: true, force: true });
         rmSync(root, { recursive: true, force: true });
       }
@@ -1078,21 +1097,8 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
  * withholds configured credentials too.
  */
 describe("sandboxCommand — withholding credentials without a sandbox", () => {
-  const withEnv = <T>(vars: Record<string, string>, fn: () => T): T => {
-    const old = new Map(Object.keys(vars).map((k) => [k, process.env[k]]));
-    Object.assign(process.env, vars);
-    try {
-      return fn();
-    } finally {
-      for (const [k, v] of old) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
-    }
-  };
-
   it("subtracts the named variables and keeps everything else", () => {
-    withEnv({ CLARVIS_TEST_SECRET: "sentinel", CLARVIS_TEST_KEEP: "ordinary" }, () => {
+    withEnvironment({ CLARVIS_TEST_SECRET: "sentinel", CLARVIS_TEST_KEEP: "ordinary" }, () => {
       const spec = sandboxCommand({
         command: "true",
         cwd: "/ws",
@@ -1106,7 +1112,7 @@ describe("sandboxCommand — withholding credentials without a sandbox", () => {
   });
 
   it("leaves the real process environment untouched", () => {
-    withEnv({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
+    withEnvironment({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
       sandboxCommand({
         command: "true",
         cwd: "/ws",
@@ -1118,30 +1124,28 @@ describe("sandboxCommand — withholding credentials without a sandbox", () => {
     });
   });
 
-  it("also scrubs when a sandbox is configured but unavailable and optional", () => {
-    // The degraded path is the dangerous one: the operator believes a sandbox is
-    // in force, and the command is in fact running straight on the host.
-    withEnv({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
-      const spec = sandboxCommand({
-        command: "true",
-        cwd: "/ws",
-        workspaceRoot: "/ws",
-        sandbox: { type: "native", availability: "optional" },
-        secretEnvNames: ["CLARVIS_TEST_SECRET"],
-        probe: () => ({
-          backend: "unsupported",
-          mode: "unavailable",
-          reason: "no namespaces here",
+  it("does not fall back to a secret-bearing host spawn when optional isolation is unusable", () => {
+    withEnvironment({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
+      expect(() =>
+        sandboxCommand({
+          command: "true",
+          cwd: "/ws",
+          workspaceRoot: "/ws",
+          sandbox: { type: "native", availability: "optional" },
+          secretEnvNames: ["CLARVIS_TEST_SECRET"],
+          probe: () => ({
+            backend: "unsupported",
+            mode: "unavailable",
+            reason: "no namespaces here",
+          }),
+          shell: () => ({ flavor: "posix", file: "sh" }),
         }),
-        shell: () => ({ flavor: "posix", file: "sh" }),
-      });
-      expect(spec.file).toBe("sh");
-      expect(spec.options.env?.CLARVIS_TEST_SECRET).toBeUndefined();
+      ).toThrow("Native sandbox is required: no namespaces here");
     });
   });
 
   it("passes the environment through untouched when no names are given", () => {
-    withEnv({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
+    withEnvironment({ CLARVIS_TEST_SECRET: "sentinel" }, () => {
       const spec = sandboxCommand({
         command: "true",
         cwd: "/ws",

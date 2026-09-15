@@ -2,6 +2,7 @@ import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { InputRenderable } from "@opentui/core";
 import { PLAN_REVIEW_ELICIT_KIND } from "../adapters/elicit-types.ts";
+import { effectReviewExplanation } from "../core/transcript/effect-review.ts";
 import type {
   ElicitCommandDetail,
   ElicitRequestParams,
@@ -61,10 +62,15 @@ export function ElicitBlock(props: {
   const form = parseElicitForm(props.request);
   const fields = form.fields;
   const isGuard = props.request.kind === "guard_confirm";
+  const isConfiguration = props.request.kind === "configuration_review";
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
   const accent = (): string =>
-    isGuard ? tokens.warn : isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent;
+    isGuard || isConfiguration
+      ? tokens.warn
+      : isPlanReview || isWorkflowReview
+        ? tokens.accent2
+        : tokens.accent;
 
   /** `title` + `revision N · M tasks · retention: keep`, or null when the plan
    * projection has not arrived. */
@@ -307,6 +313,7 @@ export function ElicitBlock(props: {
 
   return (
     <box
+      id="active-elicitation"
       flexDirection="column"
       flexShrink={0}
       width="100%"
@@ -322,11 +329,13 @@ export function ElicitBlock(props: {
       <text fg={accent()} flexShrink={0}>
         {isGuard
           ? glyph("warning") + " Command approval"
-          : isPlanReview
-            ? "Plan approval required"
-            : isWorkflowReview
-              ? "Workflow approval required"
-              : "Agent asks"}
+          : isConfiguration
+            ? "Configuration review"
+            : isPlanReview
+              ? "Plan approval required"
+              : isWorkflowReview
+                ? "Workflow approval required"
+                : "Agent asks"}
       </text>
       <Show when={planSummary()} keyed>
         {(summary: { title: string; meta: string }) => (
@@ -351,6 +360,9 @@ export function ElicitBlock(props: {
           {(detail: ElicitCommandDetail) => (
             <box flexDirection="column" flexShrink={0}>
               <text fg={tokens.fg}>{detail.reason}</text>
+              <For each={effectReviewExplanation(detail)}>
+                {(line) => <text fg={tokens.warn}>{line}</text>}
+              </For>
               <Show when={detail.warning} keyed>
                 {(warning: string) => <text fg={tokens.warn}>{warning}</text>}
               </Show>
@@ -360,7 +372,6 @@ export function ElicitBlock(props: {
           )}
         </Show>
       </box>
-
       <Show when={form.mode === "url"}>
         <box paddingTop={1} flexShrink={0}>
           <text fg={tokens.muted}>{"Open this URL to continue:"}</text>

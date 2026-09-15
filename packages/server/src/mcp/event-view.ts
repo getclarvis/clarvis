@@ -71,6 +71,7 @@ export function viewOf(event: RunEvent): EventView {
     case "tool_output_delta":
       return { level: "debug", logger: "clarvis.tool", label: "tool output" };
     case "tool_input_delta":
+    case "tool_call_announced":
       return { level: "debug", logger: "clarvis.tool", label: `composing ${event.tool}` };
     case "text_delta":
       return { level: "debug", logger: "clarvis.text", label: "generating" };

@@ -84,7 +84,7 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
       const notice = presentProvidersEvent(event);
       deps.notify(notice.message, notice.tone);
     },
-    onReconnect: deps.onBootstrapComplete ? undefined : () => host.dispatch("backend.reconnect"),
+    onReconnect: deps.onBootstrapComplete ? undefined : () => host.dispatch("backend.reload"),
     manageDefaultModel: bootstrap,
   });
   onCleanup(() => ctrl.dispose());

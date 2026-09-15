@@ -16,6 +16,7 @@ COPY packages/hooks/package.json       packages/hooks/
 COPY packages/skills/package.json      packages/skills/
 COPY packages/memory/package.json      packages/memory/
 COPY packages/plan/package.json        packages/plan/
+COPY packages/goal/package.json        packages/goal/
 COPY packages/tasks/package.json       packages/tasks/
 COPY packages/protocol/package.json    packages/protocol/
 COPY packages/loop/package.json        packages/loop/
@@ -56,7 +57,7 @@ ENV NODE_ENV=production \
     CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000 \
     CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000 \
     CLARVIS_TOKEN_CEILING=10000000 \
-    CLARVIS_ITERATION_CEILING=200 \
+    CLARVIS_ITERATION_CEILING=256 \
     CLARVIS_TIMEOUT_CEILING_MS=600000
 
 COPY --from=build /app/node_modules      /app/node_modules

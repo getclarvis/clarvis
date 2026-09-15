@@ -141,7 +141,7 @@ describe("iteration.cache", () => {
     const warned = warnings(logger);
     expect(warned).toHaveLength(1);
     expect(warned[0]?.fields).toMatchObject({ iteration: 2, cached_tokens: 2_000 });
-    expect(warned[0]?.message).toContain("shorter cached prefix");
+    expect(warned[0]?.message).toContain("cache reuse");
   });
 
   it("stays quiet when one large tool result collapses the ratio with the prefix intact", () => {

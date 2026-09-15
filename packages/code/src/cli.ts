@@ -21,9 +21,27 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { helpText, parseMode, productVersion, versionText } from "./cli-args.ts";
-import { resolveEntry } from "./cli-entry.ts";
+import { privateEntry, resolveEntry } from "./cli-entry.ts";
 
-const mode = parseMode(process.argv.slice(2));
+const argv = process.argv.slice(2);
+const privateMode = privateEntry(argv);
+if (privateMode === "remote-kernel") {
+  const remoteDistPath = fileURLToPath(new URL("../dist/remote-host.js", import.meta.url));
+  const remoteChoice = resolveEntry({
+    distPath: remoteDistPath,
+    distExists: existsSync(remoteDistPath),
+    forceSource: process.env.CLARVIS_CODE_SOURCE === "1",
+  });
+  if (remoteChoice.kind === "error") {
+    process.stderr.write(remoteChoice.message + "\n");
+    process.exit(1);
+  }
+  if (remoteChoice.kind === "dist") await import(pathToFileURL(remoteDistPath).href);
+  else await import("./remote-host.ts");
+  process.exit(process.exitCode ?? 0);
+}
+
+const mode = parseMode(argv);
 if (mode.kind === "help") {
   process.stdout.write(helpText() + "\n");
   process.exit(0);

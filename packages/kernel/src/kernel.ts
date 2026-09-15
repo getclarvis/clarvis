@@ -1,16 +1,19 @@
+import type { RunServiceConfig } from "./runs/run-service.ts";
 import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
 import { BUILTIN_GRANT_NAMES, readCapabilitySettings } from "@clarvis/loop/host";
 import {
-  createCapabilityRegistry,
   detachObserved,
+  composePersistedTraceProjectors,
   suppressSecondaryRejection,
   levelEnabled,
   NOOP_LOGGER,
   type Logger,
+  type TraceEvent,
 } from "@clarvis/capability";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
-import { kernelCapabilityRegistry } from "./config/capability-registry.ts";
+import { composeKernelCapabilityRegistry } from "./config/capability-registry.ts";
+import { guardReviewerModelCallProjector } from "./guard/reviewer-trace.ts";
 import { WORKFLOW_GRANT, WORKFLOWS_DEFAULTS, workflowsSettingsSpec } from "@clarvis/workflows";
 import type {
   AgentSummary,
@@ -32,16 +35,26 @@ import type {
   SandboxInspection,
   WorkspaceService,
   WorkspaceRef,
+  StartRunParams,
 } from "@clarvis/protocol";
 import type { PlanFactory } from "@clarvis/plan";
 import type { EventStreamOptions } from "./core/event-stream.ts";
-import { createRunService, type RunRequestAssembler } from "./runs/run-service.ts";
+import {
+  createRunService,
+  type RunExecutor,
+  type RunRequestAssembler,
+  type KernelRunService,
+  type PreparedRunExecution,
+} from "./runs/run-service.ts";
+import { prepareKernelRun, type PreparedKernelRun } from "./runs/prepare-run.ts";
+import type { GoalExecutionPolicy } from "./goals/hosted-turn.ts";
+import { unavailableGoalService } from "./goals/unavailable.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
 import { createSkillsService } from "./skills/skills-service.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
 import { createWorkspaceService } from "./workspace/workspace-service.ts";
-import { createSessionService } from "./sessions/session-service.ts";
+import { createSessionService, type HostSessionStore } from "./sessions/session-service.ts";
 import { createPluginService } from "./plugins/plugin-service.ts";
 import {
   createFileSecretStore,
@@ -56,6 +69,7 @@ import {
 } from "./runs/settings-assembler.ts";
 import {
   createWorkflowsService,
+  type WorkflowsServiceConfig,
   type WorkflowsRuntimeSettings,
 } from "./workflows/workflows-service.ts";
 import { createWorkflowStore } from "./workflows/workflow-store.ts";
@@ -85,7 +99,10 @@ import { createStorageService } from "./storage/storage-service.ts";
  * which is why they are named as a group and reached through
  * {@link InProcessKernel.forOwner}.
  */
-export type OwnerScopedKernel = OwnerServices;
+export type OwnerScopedKernel = OwnerServices & {
+  readonly runs: KernelRunService;
+  readonly sessions: HostSessionStore;
+};
 
 /** Reference-counted lease over one owner-scoped service bundle. */
 export interface OwnerLease<T> {
@@ -107,6 +124,10 @@ export interface OwnerLease<T> {
  * {@link InProcessKernel.forOwner}.
  */
 export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
+  /** Private file-store commit authority; never exposed by the session RPC catalog. */
+  readonly sessions: HostSessionStore;
+  /** Ordinary service with the trusted prepared-request overload used by this host. */
+  readonly runs: KernelRunService;
   /** Absolute workspace root the kernel operates over. */
   readonly workspaceRoot: string;
   /** Stable project shared by every linked workspace. */
@@ -159,6 +180,10 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
    * callers until kernel shutdown.
    */
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
+  /** Prepare immutable execution inputs without launching; owner must come from host authentication. */
+  prepareRun(params: StartRunParams, owner?: string, goal?: GoalExecutionPolicy): PreparedKernelRun;
+  /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
+  readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
@@ -176,6 +201,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
  * Clarvis dir (see {@link createInProcessKernel}).
  */
 export interface CreateKernelOptions {
+  /** Authenticated host controller binding, separate from protocol run parameters. */
+  operatorAuthorityFor?: RunServiceConfig["operatorAuthorityFor"];
   /** Loop execution deps the run service drives (built by `buildExecuteRunDeps`). */
   deps: ExecuteRunDeps;
   /** Absolute workspace root the kernel operates over. */
@@ -186,6 +213,12 @@ export interface CreateKernelOptions {
   workspace: WorkspaceRef;
   /** Settings/agents store the config service and run assembler read from. */
   configStore: ConfigStore;
+  /** Host-owned config service; skips constructing the default service when supplied. */
+  configService?: ConfigService;
+  /** Host-owned secret service; skips both the default service and file secret store. */
+  secretService?: SecretService;
+  /** Host-owned plugin service; skips constructing the default plugin service and its stores. */
+  pluginService?: PluginService;
   /** Overrides how a run request is assembled; defaults to the settings-based assembler. */
   assembleRunRequest?: RunRequestAssembler;
   /** Options passed to the default settings assembler when `assembleRunRequest` is omitted. */
@@ -258,6 +291,10 @@ export interface CreateKernelOptions {
   tasksEnabled?: boolean;
   /** Host lease acquired for each live run in this workspace. */
   acquireRunLease?: () => () => void;
+  /** Placement-neutral loop executor shared by ordinary and workflow runs. */
+  executeRun?: RunExecutor;
+  /** Frozen host projection for native workflow execution without guest definition discovery. */
+  readWorkflowDefinitions?: WorkflowsServiceConfig["readWorkflowDefinitions"];
 }
 
 /** Capability defaults shared by direct and transport-backed local kernels. */
@@ -266,6 +303,12 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   skills: false,
   agent_tools: true,
   tasks: false,
+  runtime: {
+    kind: "native",
+    host_platform: process.platform,
+    isolation: "host",
+    lifecycle: "ready",
+  },
 };
 
 /** Minimal Extension Profile service for embedders that do not use the file-backed host. */
@@ -391,25 +434,13 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
    * declarations are copied too; matching duplicates are harmless and
    * conflicting declarations fail instead of changing a host grant's meaning.
    */
-  const mergedRegistry = createCapabilityRegistry();
-  const seenSpecKeys = new Set<string>();
-  for (const spec of [
-    ...kernelCapabilityRegistry.specs(),
-    ...(opts.deps.capabilityRegistry?.specs() ?? []),
-  ]) {
-    if (seenSpecKeys.has(spec.key)) continue;
-    seenSpecKeys.add(spec.key);
-    mergedRegistry.register(spec);
-  }
-  for (const grant of [
-    ...kernelCapabilityRegistry.grants(),
-    ...(opts.deps.capabilityRegistry?.grants() ?? []),
-  ]) {
-    mergedRegistry.registerGrant(grant);
-  }
+  const mergedRegistry = composeKernelCapabilityRegistry(opts.deps.capabilityRegistry);
   const runDeps: ExecuteRunDeps = {
     ...opts.deps,
     capabilityRegistry: mergedRegistry,
+    persistedTraceProjectors: composePersistedTraceProjectors(opts.deps.persistedTraceProjectors, [
+      guardReviewerModelCallProjector,
+    ]),
   };
   if (levelEnabled(logger, "debug")) {
     logger.debug(
@@ -431,6 +462,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   interface OwnerCacheEntry {
     services: OwnerScopedKernel;
     stateOwner: string;
+    prepareRun(params: StartRunParams, goal?: GoalExecutionPolicy): PreparedKernelRun;
     refs: number;
     runRefs: number;
     runDrained?: Promise<void>;
@@ -466,7 +498,9 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
 
   const ownerOccupancy = (): number => ownerEntries.size + retiringOwners.size;
 
-  const buildOwner = (owner: string): { services: OwnerScopedKernel; stateOwner: string } => {
+  const buildOwner = (
+    owner: string,
+  ): Pick<OwnerCacheEntry, "services" | "stateOwner" | "prepareRun"> => {
     const stateOwner = workspaceScopeKey(owner, opts.project.id, opts.workspace.id);
     const scope: OwnerScope = {
       owner: stateOwner,
@@ -484,30 +518,42 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       assembleRunRequest,
       store: createWorkflowStore({ dir: globalDir, owner: scope.owner }),
       readSettings: () => readWorkflowsSettings(opts.configStore),
+      ...(opts.readWorkflowDefinitions === undefined
+        ? {}
+        : { readWorkflowDefinitions: opts.readWorkflowDefinitions }),
       leaderProfiles: () => workflowPolicy.leaderProfiles(),
       resolveLeaderDefault: (managerAgent) => workflowPolicy.resolveLeaderDefault(managerAgent),
       eventBuffer,
       lifecycle,
+      ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const baseRuns = createRunService({
+      ...(opts.operatorAuthorityFor === undefined
+        ? {}
+        : { operatorAuthorityFor: opts.operatorAuthorityFor }),
       deps: runDeps,
       owner: scope.owner,
       assembleRunRequest,
       eventBuffer,
       isManagerRun: (params) => workflowPolicy.isManagerRun(params),
-      runManagerWorkflow: (params) => workflows.runManagerWorkflow(params),
+      runManagerWorkflow: (params, seed, signal) =>
+        workflows.runManagerWorkflow(params, undefined, seed, signal),
       lifecycle,
       logger: runLogger,
+      ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const runs =
       opts.acquireRunLease === undefined
         ? baseRuns
         : {
             ...baseRuns,
-            async start(params: Parameters<typeof baseRuns.start>[0]) {
+            async start(
+              params: Parameters<typeof baseRuns.start>[0],
+              prepared?: PreparedRunExecution,
+            ) {
               const release = opts.acquireRunLease!();
               try {
-                const handle = await baseRuns.start(params);
+                const handle = await baseRuns.start(params, prepared);
                 // The workspace run lease covers late capability delivery too.
                 // Releasing it at `done` could evict the workspace kernel while
                 // the managed stream is still inside its bounded ingest grace.
@@ -539,7 +585,37 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         enabled: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined,
       }),
     };
-    return { services, stateOwner };
+    return {
+      services,
+      stateOwner,
+      prepareRun(params, goal) {
+        const entry = ownerEntries.get(owner);
+        if (entry === undefined)
+          throw kernelError("unavailable", "run owner generation is no longer resident");
+        return prepareKernelRun(
+          params,
+          {
+            configStore: opts.configStore,
+            ...(opts.assemblerOptions === undefined
+              ? {}
+              : { assemblerOptions: opts.assemblerOptions }),
+            ...(opts.assembleRunRequest === undefined
+              ? {}
+              : { assembleRunRequest: opts.assembleRunRequest }),
+            ...(opts.skillsProvider === undefined ? {} : { skills: opts.skillsProvider }),
+            workflowSettings: readWorkflowsSettings,
+            start: (request, prepared) => {
+              if (ownerEntries.get(owner) !== entry)
+                throw kernelError("unavailable", "prepared run owner generation was retired");
+              return entry.services.runs.start(request, prepared);
+            },
+            startWorkflow: (request, prepared, seed, signal) =>
+              workflows.runManagerWorkflow(request, prepared, seed, signal),
+          },
+          goal,
+        );
+      },
+    };
   };
 
   const retireOwner = (owner: string, entry: OwnerCacheEntry): Promise<void> => {
@@ -629,6 +705,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     const entry: OwnerCacheEntry = {
       services: built.services,
       stateOwner: built.stateOwner,
+      prepareRun: built.prepareRun,
       refs: 0,
       runRefs: 0,
       pinned: pin,
@@ -661,10 +738,10 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       ...services,
       runs: {
         ...runs,
-        async start(params: Parameters<typeof runs.start>[0]) {
+        async start(params: Parameters<typeof runs.start>[0], prepared?: PreparedRunExecution) {
           // Preserve RunService's terminal-handle contract after shutdown. The
           // base service turns this into a failed handle instead of rejecting.
-          if (lifecycle.state !== "open") return runs.start(params);
+          if (lifecycle.state !== "open") return runs.start(params, prepared);
           if (ownerEntries.get(owner) !== entry) {
             throw kernelError("unavailable", `owner '${owner}' is no longer resident`);
           }
@@ -706,7 +783,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
             scheduleOwnerRetirement(owner, entry);
           };
           try {
-            const handle = await runs.start(params);
+            const handle = await runs.start(params, prepared);
             void handle.closed.then(release, release);
             return handle;
           } catch (error) {
@@ -774,77 +851,82 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     },
   });
 
-  const config = createConfigService(opts.configStore, {
-    ...(opts.inspectSandbox !== undefined ? { inspectSandbox: opts.inspectSandbox } : {}),
-    /**
-     * Composed exactly as `executeRun` composes the registry it validates
-     * against: the engine's built-ins, the host registry's declarations, and
-     * every registered capability's own `grants`. A capability declares its
-     * grant on itself rather than on the registry — `use_skills`,
-     * `workflow` and capability-owned grants arrive that way — so reading the
-     * registry alone reported the built-ins only, and every agent carrying one
-     * of those grants would have been judged unrunnable.
-     */
-    knownGrants: () => [
-      ...BUILTIN_GRANT_NAMES,
-      ...mergedRegistry.grants().map((grant) => grant.name),
-      ...(runDeps.capabilities ?? []).flatMap((capability) =>
-        (capability.grants ?? []).map((grant) => grant.name),
-      ),
-      // The workflows capability is injected into a manager's `executeRun`
-      // rather than into `runDeps`, deliberately — only an entry agent carrying
-      // this grant gets one. It is still a grant this kernel accepts, so a
-      // profile naming it is runnable and must not be reported otherwise.
-      WORKFLOW_GRANT,
-    ],
-  });
+  const config =
+    opts.configService ??
+    createConfigService(opts.configStore, {
+      ...(opts.inspectSandbox !== undefined ? { inspectSandbox: opts.inspectSandbox } : {}),
+      /**
+       * Composed exactly as `executeRun` composes the registry it validates
+       * against: the engine's built-ins, the host registry's declarations, and
+       * every registered capability's own `grants`. A capability declares its
+       * grant on itself rather than on the registry — `use_skills`,
+       * `workflow` and capability-owned grants arrive that way — so reading the
+       * registry alone reported the built-ins only, and every agent carrying one
+       * of those grants would have been judged unrunnable.
+       */
+      knownGrants: () => [
+        ...BUILTIN_GRANT_NAMES,
+        ...mergedRegistry.grants().map((grant) => grant.name),
+        ...(runDeps.capabilities ?? []).flatMap((capability) =>
+          (capability.grants ?? []).map((grant) => grant.name),
+        ),
+        // The workflows capability is injected into a manager's `executeRun`
+        // rather than into `runDeps`, deliberately — only an entry agent carrying
+        // this grant gets one. It is still a grant this kernel accepts, so a
+        // profile naming it is runnable and must not be reported otherwise.
+        WORKFLOW_GRANT,
+      ],
+    });
   const skills = createSkillsService({
     skills: opts.skillsProvider,
     ...(opts.assemblerOptions?.skillPlansMode !== undefined
       ? { skillPlansMode: opts.assemblerOptions.skillPlansMode }
       : {}),
   });
-  const secrets = createSecretService(opts.secretStore ?? createFileSecretStore());
+  const secrets =
+    opts.secretService ?? createSecretService(opts.secretStore ?? createFileSecretStore());
   const models = opts.modelCatalogService ?? createModelCatalogService(globalDir, logger);
   const providerAuth = opts.providerAuthService ?? createUnavailableProviderAuthService();
   const files = createWorkspaceService(opts.workspaceRoot);
-  const plugins = createPluginService({
-    globalDir,
-    workspaceRoot: opts.workspaceRoot,
-    ...(opts.home === undefined ? {} : { home: opts.home }),
-    enabledPlugins:
-      opts.activePlugins ??
-      (() => {
-        const snapshot = opts.configStore.readSettings();
-        if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
-        const merged = snapshot.merged as Record<string, unknown>;
-        return Array.isArray(merged.enabledPlugins)
-          ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
-          : [];
-      }),
-    withSelectedMutation: async (_ref, mutation) => {
-      if (selectedPluginMutation) {
-        throw kernelError("conflict", "another selected plugin mutation is already in progress");
-      }
-      if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
-        throw kernelError("conflict", "finish active runs before changing a selected plugin");
-      }
-      selectedPluginMutation = true;
-      try {
+  const plugins =
+    opts.pluginService ??
+    createPluginService({
+      globalDir,
+      workspaceRoot: opts.workspaceRoot,
+      ...(opts.home === undefined ? {} : { home: opts.home }),
+      enabledPlugins:
+        opts.activePlugins ??
+        (() => {
+          const snapshot = opts.configStore.readSettings();
+          if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
+          const merged = snapshot.merged as Record<string, unknown>;
+          return Array.isArray(merged.enabledPlugins)
+            ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
+            : [];
+        }),
+      withSelectedMutation: async (_ref, mutation) => {
+        if (selectedPluginMutation) {
+          throw kernelError("conflict", "another selected plugin mutation is already in progress");
+        }
         if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
           throw kernelError("conflict", "finish active runs before changing a selected plugin");
         }
-        const result = await mutation();
-        selectedPluginRecompositionRequired = true;
-        return result;
-      } finally {
-        selectedPluginMutation = false;
-      }
-    },
-    environment: opts.environment ?? process.env,
-    lifecycle,
-    logger,
-  });
+        selectedPluginMutation = true;
+        try {
+          if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+            throw kernelError("conflict", "finish active runs before changing a selected plugin");
+          }
+          const result = await mutation();
+          selectedPluginRecompositionRequired = true;
+          return result;
+        } finally {
+          selectedPluginMutation = false;
+        }
+      },
+      environment: opts.environment ?? process.env,
+      lifecycle,
+      logger,
+    });
   const storage = createStorageService(globalDir);
   const extensionProfiles = opts.extensionProfileService ?? createBuiltinExtensionProfileService();
   /**
@@ -904,8 +986,13 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     extensionProfiles,
     storage,
     tasks: scoped.tasks,
+    goals: unavailableGoalService(),
     forOwner,
     acquireOwner,
+    prepareRun: (params, owner = defaultOwner, goal) =>
+      residentOwner(owner, false).prepareRun(params, goal),
+    readRunTrace: (executionId, owner = defaultOwner) =>
+      runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
     listAgents: () => config.listAgents(),
     startMemoryRecovery,
     async close(): Promise<void> {
@@ -922,7 +1009,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
  * @param store - the config store to read merged settings from.
  * @returns the resolved {@link WorkflowsRuntimeSettings}.
  */
-function readWorkflowsSettings(store: ConfigStore): WorkflowsRuntimeSettings {
+function readWorkflowsSettings(store: Pick<ConfigStore, "readSettings">): WorkflowsRuntimeSettings {
   const merged = store.readSettings().merged as Record<string, unknown>;
   const block = readCapabilitySettings<{
     max_concurrency?: number;

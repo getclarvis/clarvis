@@ -84,13 +84,13 @@ export function splitSlashArgs(raw: string, count: number): string[] {
   return parts;
 }
 
-/** Splits a `/name args…` line into its command name and trimmed argument tail. */
+/** Split the command token while preserving the argument tail's literal trailing whitespace. */
 export function parseSlashCommand(text: string): { name: string; args: string } | null {
-  const trimmed = text.trim();
+  const trimmed = text.trimStart();
   if (!trimmed.startsWith("/")) return null;
   const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(trimmed);
   if (!m) return null;
-  return { name: m[1]!, args: (m[2] ?? "").trim() };
+  return { name: m[1]!, args: m[2] ?? "" };
 }
 
 /** The text to insert into the prompt when a slash-command completion is accepted. */

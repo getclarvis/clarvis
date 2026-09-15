@@ -3,7 +3,8 @@ import type { HintTone } from "./hint.ts";
 /** The state {@link createQuitConfirm} checks to decide whether quitting needs confirmation. */
 export interface QuitConfirmDeps {
   isDirtyView: () => boolean;
-  isRunActive: () => boolean;
+  /** True when quitting would abandon or cancel the current run, excluding hosted continue policy. */
+  isRunAtRisk: () => boolean;
   isDraftNonEmpty: () => boolean;
   notify: (message: string, tone?: HintTone) => void;
   quit: () => void;
@@ -28,12 +29,10 @@ const CONFIRM_WINDOW_MS = 1500;
  * where typing the command is itself explicit): it quits immediately from a
  * state where nothing is at stake.
  *
- * **The gate still arms whenever work would be lost**, whatever the flag says —
- * a dirty view or a live run. It used to check only the dirty view, and
- * `/quit` passes `confirm: false`, so typing it mid-run discarded a run in
- * flight with no prompt at all. The `(run active)` branch of the message below
- * could not fire, which is the tell: the gate described a state it never
- * reached.
+ * The gate also arms whenever work would be lost: a dirty view or a run that
+ * will be cancelled on exit. A hosted run with confirmed continuation is not
+ * at risk merely because it is active. This gate never changes host policy
+ * or grants tool consent; the caller supplies the current risk projection.
  *
  * A non-empty *draft* is deliberately not in that set on this path. Running
  * `/quit` from the composer leaves the command itself sitting in the draft, so
@@ -55,12 +54,13 @@ export function createQuitConfirm(deps: QuitConfirmDeps): QuitConfirm {
     disarm,
     quit: ({ confirm }) => {
       const dirtyView = deps.isDirtyView();
-      const atStake = dirtyView || deps.isRunActive();
+      const runAtRisk = deps.isRunAtRisk();
+      const atStake = dirtyView || runAtRisk;
       if ((confirm || atStake) && !pending) {
         pending = true;
         const why = dirtyView
           ? " (unsaved changes)"
-          : deps.isRunActive()
+          : runAtRisk
             ? " (run active)"
             : deps.isDraftNonEmpty()
               ? " (draft unsaved)"

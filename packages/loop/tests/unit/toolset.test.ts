@@ -1,5 +1,6 @@
 import { describe, expect, it } from "../bun-test.ts";
 import { getEventListeners } from "node:events";
+import { OPERATOR_INTERRUPTED_TOOL } from "../../src/runtime/tools/tool-interrupt.ts";
 import type { NamespacedTool } from "@clarvis/capability";
 import {
   createAgentToolsetWithAdapter,
@@ -9,7 +10,7 @@ import {
   type AgentToolResult,
 } from "../../src/runtime/tools/builtin/toolset.ts";
 
-const TOOL_NAMES = ["read_file", "write_file", "shell", "host_vcs", "monitor_poll"] as const;
+const TOOL_NAMES = ["read_file", "write_file", "shell", "monitor_poll"] as const;
 
 function definition(name: string): NamespacedTool {
   return {
@@ -43,14 +44,14 @@ function fakeAdapter(
       options.push(opts);
       return {
         defs: TOOL_NAMES.map(definition),
-        dispatch: (name, args, signal, onOutput) => {
+        dispatch: (name, args, signal, onOutput, onExecutionStarted) => {
           calls.push({
             name,
             args,
             ...(signal !== undefined ? { signal } : {}),
             ...(onOutput !== undefined ? { onOutput } : {}),
           });
-          return dispatch(name, args, signal, onOutput);
+          return dispatch(name, args, signal, onOutput, onExecutionStarted);
         },
       };
     },
@@ -94,7 +95,7 @@ describe("createAgentToolset policy", () => {
     expect(created.defs.map((entry) => entry.wireName)).toEqual(["read_file", "write_file"]);
   });
 
-  it.each(["shell", "host_vcs", "unknown"])(
+  it.each(["shell", "monitor_start", "unknown"])(
     "refuses unavailable tool %s without dispatching",
     async (name) => {
       const adapter = fakeAdapter();
@@ -141,7 +142,7 @@ describe("createAgentToolset policy", () => {
 
     await expect(created.dispatch("read_file", {}, AbortSignal.abort())).resolves.toEqual({
       isError: true,
-      text: "Tool call aborted (run cancelled).",
+      text: "Tool call aborted.",
     });
   });
 
@@ -157,7 +158,7 @@ describe("createAgentToolset policy", () => {
     controller.abort();
     await expect(result).resolves.toEqual({
       isError: true,
-      text: "Tool call aborted (run cancelled).",
+      text: "Tool call aborted.",
     });
     expect(getEventListeners(controller.signal, "abort")).toEqual([]);
     settle({ isError: false, text: "late" });
@@ -170,5 +171,71 @@ describe("createAgentToolset policy", () => {
     await created.dispatch("read_file", {}, controller.signal);
 
     expect(getEventListeners(controller.signal, "abort")).toEqual([]);
+  });
+
+  it("selective abort waits for executor output, and cleans both signal listeners", async () => {
+    const tool = new AbortController();
+    const run = new AbortController();
+    let settle!: (result: AgentToolResult) => void;
+    const created = toolset(
+      fakeAdapter(
+        () =>
+          new Promise((resolve) => {
+            settle = resolve;
+          }),
+      ),
+    );
+    const pending = created.dispatch("shell", {}, tool.signal, undefined, undefined, run.signal);
+    tool.abort(OPERATOR_INTERRUPTED_TOOL);
+    const expected = { isError: true, text: "partial", executionAborted: true };
+    settle(expected);
+    expect(await pending).toEqual(expected);
+    expect(getEventListeners(tool.signal, "abort")).toEqual([]);
+    expect(getEventListeners(run.signal, "abort")).toEqual([]);
+  });
+
+  it("global cancel preempts selective grace even when the combined signal cannot fire again", async () => {
+    const tool = new AbortController();
+    const run = new AbortController();
+    const created = toolset(fakeAdapter(() => new Promise(() => {})));
+    const pending = created.dispatch("shell", {}, tool.signal, undefined, undefined, run.signal);
+    tool.abort(OPERATOR_INTERRUPTED_TOOL);
+    const start = performance.now();
+    run.abort();
+    expect(await pending).toEqual({ isError: true, text: "Tool call aborted." });
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(getEventListeners(tool.signal, "abort")).toEqual([]);
+    expect(getEventListeners(run.signal, "abort")).toEqual([]);
+  });
+
+  it("bounds noncooperative selective abort and silences late output/start", async () => {
+    const tool = new AbortController();
+    let output!: (chunk: string) => void;
+    let started!: () => void;
+    let settle!: (result: AgentToolResult) => void;
+    const created = toolset(
+      fakeAdapter((_name, _args, _signal, onOutput, onStarted) => {
+        output = onOutput!;
+        started = onStarted!;
+        return new Promise((resolve) => {
+          settle = resolve;
+        });
+      }),
+    );
+    const events: string[] = [];
+    const pending = created.dispatch(
+      "shell",
+      {},
+      tool.signal,
+      (s) => events.push(s),
+      () => events.push("start"),
+    );
+    tool.abort(OPERATOR_INTERRUPTED_TOOL);
+    expect(await pending).toMatchObject({ isError: true, abortUnsettled: true });
+    output("late");
+    started();
+    settle({ isError: false, text: "late" });
+    expect(events).toEqual([]);
+    expect(getEventListeners(tool.signal, "abort")).toEqual([]);
   });
 });

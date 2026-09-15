@@ -398,6 +398,68 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
     expect(events.at(-1)).toMatchObject({ kind: "plan_updated", detail: { change: "recovery" } });
   });
 
+  it("defers lead plan mutations until delegated task state is published in the next iteration", async () => {
+    const orch = buildPlansOrchestration(makeDeps());
+    await createPlan(orch, {
+      title: "Runtime",
+      objective: "Keep delegation and lead work ordered",
+      tasks: [{ title: "Delegated" }, { title: "Lead" }],
+      validation: [],
+    });
+    const stale = await readPlan(orch);
+    const [delegated, lead] = orch.session.cached()!.tasks;
+
+    expect(await orch.port.markSpawned(delegated!.id)).toBe(true);
+    orch.port.noteSpawned(delegated!.id);
+    expect(await orch.port.markReturned?.(delegated!.id, "child result")).toBe(true);
+
+    const transition = await dispatch(orch.contribution, {
+      id: "stale-lead-transition",
+      name: TRANSITION_PLAN_TASK_TOOL_NAME,
+      arguments: {
+        ...cas(stale),
+        task_id: lead!.id,
+        status: "in_progress",
+      },
+    });
+    expect(transition).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("delegated plan task is still settling"),
+    });
+    expect(orch.session.cached()!.tasks[1]!.status).toBe("pending");
+
+    const revision = await dispatch(orch.contribution, {
+      id: "stale-lead-revision",
+      name: REVISE_PLAN_TOOL_NAME,
+      arguments: {
+        ...cas(stale),
+        operation: { type: "set_objective", objective: "Do not race child state" },
+      },
+    });
+    expect(revision).toMatchObject({
+      kind: "result",
+      text: expect.stringContaining("delegated plan task is still settling"),
+    });
+    expect(orch.session.cached()!.objective).toBe("Keep delegation and lead work ordered");
+
+    await orch.contribution.hooks!.beforeIteration!();
+    const current = await readPlan(orch);
+    const accepted = await dispatch(orch.contribution, {
+      id: "fresh-lead-transition",
+      name: TRANSITION_PLAN_TASK_TOOL_NAME,
+      arguments: {
+        ...cas(current),
+        task_id: lead!.id,
+        status: "in_progress",
+      },
+    });
+    expect(accepted).toMatchObject({
+      kind: "result",
+      text: expect.not.stringContaining("error"),
+    });
+    expect(orch.session.cached()!.tasks[1]!.status).toBe("in_progress");
+  });
+
   it("propagates a planReviewAsk throw when the run is not cancelled", async () => {
     const orch = buildPlansOrchestration(
       makeDeps({
@@ -474,6 +536,39 @@ describe("the delegation port — beforeSpawn / noteSpawned / getTask", () => {
 });
 
 describe("reviewGate", () => {
+  it.each(["approve", "request_changes", "no_human"] as const)(
+    "keeps human review on a checkpoint: %s",
+    async (kind) => {
+      let asks = 0;
+      const orch = buildPlansOrchestration(
+        makeDeps({
+          pendingTaskNudges: 3,
+          planReviewAsk: async (): Promise<PlanReviewDecision> => {
+            asks++;
+            return kind === "request_changes" ? { kind, feedback: "correct the scope" } : { kind };
+          },
+        }),
+      );
+      await createPlan(orch);
+      const attempt = {
+        mode: "checkpoint" as const,
+        disposition: "checkpoint" as const,
+        checkpoint: { summary: "stage", next_step: "continue" },
+      };
+      const review = await orch.contribution.gates![0]!.check(attempt);
+      expect(asks).toBe(1);
+      expect(review.kind).toBe(
+        kind === "approve" ? "pass" : kind === "no_human" ? "terminal" : "nudge",
+      );
+      const pending = orch.contribution.gates![1]!;
+      expect(await pending.check(attempt)).toEqual({ kind: "pass" });
+      expect((await pending.check({ mode: "submit" })).kind).toBe("nudge");
+      if (kind === "request_changes") {
+        expect((await orch.contribution.gates![0]!.check(attempt)).kind).toBe("nudge");
+        expect(asks).toBe(1);
+      }
+    },
+  );
   it("a retry within the same iteration after request_changes hits the already-rejected note, without re-eliciting", async () => {
     let asks = 0;
     const orch = buildPlansOrchestration(
@@ -559,7 +654,7 @@ describe("reviewGate", () => {
 
     let outcome: GateOutcome | undefined;
     for (let round = 0; round < 12; round += 1) {
-      orch.contribution.hooks!.beforeIteration!();
+      await orch.contribution.hooks!.beforeIteration!();
       outcome = await reviewGate.check({ mode: "text" });
       if (outcome.kind === "terminal") break;
       await revisePlanObjective(orch, `round ${round}`);
@@ -590,12 +685,12 @@ describe("reviewGate", () => {
     await createPlan(orch);
     const reviewGate = orch.contribution.gates![0]!;
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await reviewGate.check({ mode: "text" })).kind).toBe("nudge");
     expect(asks).toBe(1);
 
     for (let round = 0; round < 3; round += 1) {
-      orch.contribution.hooks!.beforeIteration!();
+      await orch.contribution.hooks!.beforeIteration!();
       const outcome = await reviewGate.check({ mode: "submit" });
       expect(outcome.kind).toBe("nudge");
       if (outcome.kind === "nudge") expect(outcome.note).toContain("fix X");
@@ -603,7 +698,7 @@ describe("reviewGate", () => {
     expect(asks).toBe(1);
 
     await revisePlanObjective(orch, "addressed the feedback");
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await reviewGate.check({ mode: "text" })).kind).toBe("nudge");
     expect(asks).toBe(2);
   });
@@ -621,11 +716,11 @@ describe("reviewGate", () => {
     const reviewGate = orch.contribution.gates![0]!;
     const contributes = orch.contribution.hooks!.contributesProgress!;
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     await reviewGate.check({ mode: "text" });
     expect(contributes()).toBe(true);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     await reviewGate.check({ mode: "text" });
     expect(contributes()).toBe(false);
   });
@@ -820,7 +915,7 @@ describe("reviewBlocker before any plan exists", () => {
     expect(doc.approved_spec_revision).toBeUndefined();
     expect(blocked(orch, "shell")).toBe(true);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
     expect((await orch.contribution.gates![0]!.check({ mode: "submit" })).kind).toBe("pass");
     expect(asks).toBe(2);
     expect(blocked(orch, "shell")).toBe(false);
@@ -909,11 +1004,11 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     return { ctx, stable, canonical };
   }
 
-  it("does nothing while no plan exists yet", () => {
+  it("does nothing while no plan exists yet", async () => {
     const { ctx, stable, canonical } = recordingCtx();
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
 
     expect(stable).toEqual([]);
     expect(canonical).toEqual([]);
@@ -924,11 +1019,50 @@ describe("hooks.beforeIteration — publishing the plan as canonical context", (
     const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
     await createPlan(orch);
 
-    orch.contribution.hooks!.beforeIteration!();
+    await orch.contribution.hooks!.beforeIteration!();
 
     expect(stable).toHaveLength(1);
     expect(stable[0]).toContain("## Objective");
     expect(canonical).toHaveLength(1);
     expect(canonical[0]).toContain("expected_spec_digest");
+  });
+
+  it("republishes pending, active, returned, and closed work without rewriting prior headers", async () => {
+    const { ctx, canonical } = recordingCtx();
+    const orch = buildPlansOrchestration(makeDeps({}, { ctx }));
+    await createPlan(orch, {
+      title: "Publication lifecycle",
+      objective: "Keep every publication current",
+      tasks: Array.from({ length: 5 }, (_, index) => ({ title: `Task ${index + 1}` })),
+      validation: [],
+    });
+
+    await orch.contribution.hooks!.beforeIteration!();
+    const first = canonical[0]!;
+    expect(first).toContain(
+      "Pending tasks: t1 (pending), t2 (pending), t3 (pending), t4 (pending), t5 (pending)",
+    );
+
+    await transitionTaskTo(orch, "t1", { status: "in_progress" });
+    await orch.contribution.hooks!.beforeIteration!();
+    const second = canonical[1]!;
+    expect(second).toContain("Tasks requiring attention: t1 (in_progress)");
+    expect(second).not.toContain("Task 1");
+    expect(canonical[0]).toBe(first);
+
+    expect(await orch.port.markReturned?.("t1", "complete child summary")).toBeTrue();
+    await orch.contribution.hooks!.beforeIteration!();
+    const third = canonical[2]!;
+    expect(third).toContain("Tasks requiring attention: t1 (returned)");
+    expect(third).not.toContain("Closed tasks: t1");
+    expect(third).not.toContain("complete child summary");
+
+    await transitionTaskTo(orch, "t1", { status: "done", result: "reviewed" });
+    await orch.contribution.hooks!.beforeIteration!();
+    expect(canonical).toHaveLength(4);
+    expect(canonical[3]).toContain("Closed tasks: t1 (done)");
+    expect(canonical[0]).toBe(first);
+    expect(canonical[1]).toBe(second);
+    expect(canonical[2]).toBe(third);
   });
 });

@@ -1,3 +1,5 @@
+import type { CheckpointMetadata } from "./finalization.ts";
+
 /** Author of a {@link Message}: the system prompt, the user, or the assistant. */
 export type MessageRole = "system" | "user" | "assistant";
 
@@ -44,6 +46,8 @@ export interface SteerMessage {
  */
 export interface SteerSource {
   drain(): SteerMessage[];
+  /** Observe admitted arrivals without acknowledging delivery; includes pending messages on subscribe. */
+  onPending?(listener: (message: SteerMessage) => void): () => void;
   /** Optional signal that the consuming loop has finished and will not drain
    * again. A source may use it to reject further input (e.g. re-route a late
    * steer to a fresh run) instead of enqueuing onto a queue no one will read. */
@@ -75,6 +79,8 @@ export interface ToolCallRef {
   id: string;
   name: string;
   arguments: unknown;
+  /** Provider-owned item metadata, separate from the call/result correlation id. */
+  providerOptions?: Record<string, Record<string, unknown>>;
 }
 
 /** An image returned by a tool: `data` (base64/data payload) plus its `mediaType`. */
@@ -416,8 +422,8 @@ export interface AgentProfile {
  * `budget` supply the MCP servers, model providers, and resource caps. Optional
  * fields tune the run: `execution_id` sets/asserts the run's id (a clash raises
  * `execution_id_conflict`); `continue_from` resumes a prior run's persisted
- * trace; `prompt_cache_key` overrides the prompt-cache key (defaulting to the
- * execution id); `prompt_cache_ttl` sets how long a written cache prefix
+ * trace; `session_id` and `agent_instance_id` name the persisted conversation
+ * and agent instance; `prompt_cache_ttl` sets how long a written cache prefix
  * survives; `output_schema` constrains the agent's result;
  * `elicit_wait_ms` bounds user elicitation; and `agents`, `guard_mode`,
  * `guard_judge` toggle or tune the corresponding capabilities for this run.
@@ -445,12 +451,23 @@ export type PromptCacheTtl = "5m" | "1h";
 export interface RunRequest {
   execution_id?: string;
   continue_from?: string;
-  prompt_cache_key?: string;
+  /** Persisted conversation identity; defaults once to the first execution id. */
+  session_id?: string;
+  /** Persisted entry-agent instance, reused when continuing that instance. */
+  agent_instance_id?: string;
   prompt_cache_ttl?: PromptCacheTtl;
   messages: Message[];
   servers: McpServerConfig[];
   profiles: AgentProfile[];
   entry: string;
+  /**
+   * Fleet-wide shared prompt injected ahead of every profile prompt.
+   *
+   * @remarks Omitted ⇒ the engine's built-in default. An empty string disables
+   * the shared layer. A host that resolved an override stamps the winning text
+   * here once so children and continuations of this run do not re-read files.
+   */
+  shared_prompt?: string;
   /**
    * Model used to read the turn's images when the entry agent's own model
    * cannot see them.
@@ -518,16 +535,18 @@ export interface AgentsParam {
   finish_nudges?: number;
 }
 
-/** Command-guard policy: `off` (allow all), `on` (ask for approval), or `auto` (an LLM judge decides, configured by {@link GuardJudgeConfig}). */
+/** Command review: `off` skips this guard, `on` asks a human, and `auto` uses the host reviewer. */
 export type GuardMode = "off" | "on" | "auto";
 
-/** Judge configuration for guard_mode 'auto': the caller supplies the judge's
- * entire system prompt; the host's guard resolver consumes it. */
+/** Optional reviewer overrides and guidance; the host always supplies its invariant policy. */
 export interface GuardJudgeConfig {
-  prompt: string;
+  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
+  prompt?: string;
+  guidance?: string;
   model?: string;
   on_unsure?: "ask" | "deny";
   timeout_ms?: number;
+  max_retries?: number;
 }
 
 /**
@@ -609,13 +628,16 @@ export interface AfterToolUseContext {
  *
  * @remarks `mode` distinguishes a plain-text finish (`text` set) from a
  * structured `submit_result` finish (`value` set, already validated against the
- * run's output schema). `subagentInstanceId` is present when the finalizing
+ * run's output schema), or a stage handoff (`checkpoint` set). The handoff
+ * does not satisfy the final output schema. `subagentInstanceId` is present when the finalizing
  * agent is a sub-agent.
  */
 export interface PreFinalizeContext {
   agent: AgentRole;
   subagentInstanceId?: string;
-  mode: "text" | "submit";
+  mode: "text" | "submit" | "checkpoint";
+  /** Accepted stage handoff under review, never a validated final result. */
+  checkpoint?: CheckpointMetadata;
   /** Final assistant text (mode === "text"). */
   text?: string;
   /** Validated submit_result payload (mode === "submit"). */

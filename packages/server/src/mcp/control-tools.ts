@@ -5,8 +5,8 @@ import { errorResultFrom, toolResult, type ToolResult } from "./results.ts";
 /**
  * Handle `clarvis_steer`: deliver a message to a run in flight on this session.
  *
- * @remarks `accepted` means delivered to a live handle. The kernel's steer is
- * fire-and-forget and never reports that the engine folded the message in.
+ * @remarks Waits for the live handle's acknowledgement. This is a control
+ * acknowledgement, not evidence that the newly requested work is complete.
  */
 export async function handleSteerTool(
   args: {
@@ -21,7 +21,7 @@ export async function handleSteerTool(
     return toolResult({
       execution_id: args.execution_id,
       accepted: true,
-      note: "delivered to the run; the engine applies it at its next turn",
+      note: "steering acknowledged by the run; requested work is not yet confirmed complete",
     });
   } catch (err) {
     return errorResultFrom(err);

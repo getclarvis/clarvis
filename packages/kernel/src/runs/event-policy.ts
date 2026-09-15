@@ -59,6 +59,7 @@ export const RUN_EVENT_POLICY = {
   iteration_started: persisted(),
   iteration_completed: persisted(),
   tool_call_started: persisted(),
+  tool_call_announced: persisted(),
   tool_call: persisted(),
   tool_output_delta: live("engine", ["engine_trace"], "tool_output_delta", true),
   tool_input_delta: live("engine", ["engine_trace"], "tool_input_delta", true),

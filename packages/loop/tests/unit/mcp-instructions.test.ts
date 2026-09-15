@@ -38,10 +38,22 @@ describe("MCP initialize instructions", () => {
     const rendered = renderMcpInstructions([opened("large", "🧭".repeat(40_000))]);
     expect(Array.from(rendered ?? "")).toHaveLength(MAX_MCP_INSTRUCTIONS_SECTION_CHARS);
     expect(rendered?.endsWith("\ud83e")).toBe(false);
+    expect(rendered).toEndWith("[MCP instructions truncated; remaining guidance omitted.]");
   });
 
   it("contributes nothing when no connected server supplied instructions", () => {
     expect(renderMcpInstructions([opened("empty")])).toBeUndefined();
     expect(createMcpInstructionsRunCapability([opened("empty")])).toBeUndefined();
+  });
+
+  it("exposes a rendered section through a prompt-only run capability", () => {
+    const capability = createMcpInstructionsRunCapability([
+      opened("docs", "Search before answering."),
+    ]);
+    expect(capability).toMatchObject({ name: "mcp-instructions" });
+    expect(capability?.systemSection?.({ agent: "subagent", entry: true, grants: [] })).toContain(
+      "Search before answering.",
+    );
+    expect(capability?.forAgent({ agent: "subagent", entry: true, grants: [] })).toBeNull();
   });
 });

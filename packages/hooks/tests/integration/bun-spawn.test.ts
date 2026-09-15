@@ -8,25 +8,17 @@
  * happy course never takes: a process-group kill that fails, and an exit whose
  * pipes a grandchild is still holding open.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, test } from "bun:test";
+import { readFile } from "node:fs/promises";
 import { runHookCommand, type SubprocessRequest } from "@clarvis/hooks";
+import { tempRoot } from "../helpers/temp-root.ts";
 
 const posixShell = process.platform !== "win32";
 
-let workspace = "";
-
-beforeAll(async () => {
-  workspace = await mkdtemp(join(tmpdir(), "clarvis-hooks-bunspawn-"));
-});
-
-afterAll(async () => {
-  if (workspace !== "") await rm(workspace, { recursive: true, force: true });
-});
-
-function request(over: Partial<SubprocessRequest> & { command: string }): SubprocessRequest {
+function request(
+  workspace: string,
+  over: Partial<SubprocessRequest> & { command: string },
+): SubprocessRequest {
   return {
     cwd: workspace,
     env: { PATH: process.env.PATH ?? "" },
@@ -36,35 +28,76 @@ function request(over: Partial<SubprocessRequest> & { command: string }): Subpro
   };
 }
 
+async function waitGone(pid: number, budgetMs = 5_000): Promise<void> {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return;
+    }
+    if (Date.now() >= deadline) throw new Error(`grandchild ${pid} did not exit`);
+    await Bun.sleep(10);
+  }
+}
+
 describe.skipIf(!posixShell)("the Bun spawn adapter", () => {
   test("falls back to the child's own kill when the process group cannot be reaped", async () => {
+    const temp = await tempRoot("clarvis-hooks-bunspawn-");
     // `killTree` is the first attempt and normally succeeds, which leaves the
     // per-child fallback unexercised. Reporting failure forces the adapter's
     // own `kill` to be the thing that stops a hook that overran.
     const groupKills: NodeJS.Signals[] = [];
-    const result = await runHookCommand(request({ command: "sleep 30", timeoutMs: 120 }), {
-      killTree: (_pid, signal) => {
-        groupKills.push(signal);
-        return false;
-      },
-    });
+    try {
+      const result = await runHookCommand(
+        request(temp.root, { command: "sleep 30", timeoutMs: 120 }),
+        {
+          killTree: (_pid, signal) => {
+            groupKills.push(signal);
+            return false;
+          },
+        },
+      );
 
-    expect(result.timedOut).toBe(true);
-    expect(groupKills.length).toBeGreaterThan(0);
-    expect(result.spawnError).toBeUndefined();
+      expect(result.timedOut).toBe(true);
+      expect(groupKills.length).toBeGreaterThan(0);
+      expect(result.spawnError).toBeUndefined();
+    } finally {
+      await temp.cleanup();
+      expect(temp.pending()).toEqual([]);
+    }
   });
 
   test("destroys the pipes when a grandchild holds them open past the drain bound", async () => {
+    const temp = await tempRoot("clarvis-hooks-bunspawn-");
+    const pidFile = temp.path("grandchild.pid");
     // The shell exits immediately while a background grandchild keeps stdout
     // open, so the exit lands but the stream never ends on its own. The drain
     // bound is what closes it, and closing it is what `destroy` does.
-    const result = await runHookCommand(
-      request({ command: "sleep 5 & exit 0", timeoutMs: 4_000 }),
-      {},
-    );
+    try {
+      const result = await runHookCommand(
+        request(temp.root, {
+          command: `sleep 5 & printf '%s' "$!" > '${pidFile}'; exit 0`,
+          timeoutMs: 4_000,
+        }),
+        {},
+      );
+      const grandchild = Number(await readFile(pidFile, "utf8"));
+      temp.register("pipe-holding grandchild", async () => {
+        try {
+          process.kill(grandchild, "SIGKILL");
+        } catch {
+          return;
+        }
+        await waitGone(grandchild);
+      });
 
-    expect(result.exitCode).toBe(0);
-    expect(result.timedOut).toBe(false);
-    expect(result.stdout).toBe("");
+      expect(result.exitCode).toBe(0);
+      expect(result.timedOut).toBe(false);
+      expect(result.stdout).toBe("");
+    } finally {
+      await temp.cleanup();
+      expect(temp.pending()).toEqual([]);
+    }
   });
 });

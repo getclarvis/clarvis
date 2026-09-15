@@ -2,6 +2,10 @@
 
 Records and persists a Clarvis run's trace.
 
+Successful `run_ended` events preserve the accepted `final` or `checkpoint` disposition. A missing
+disposition retains ordinary final semantics. The mapper does not attach it to failed or cancelled
+events; a saved stage must remain distinguishable when clients rebuild their transcript from disk.
+
 ## Contract
 
 Trace vocabulary, recording, persistence, journal recovery, mapping, and retention are specified in
@@ -25,6 +29,9 @@ File-kernel hosts retain traces for 30 days by default. Cleanup receives the exe
 referenced by persisted sessions and never removes those records, so age-based garbage collection
 cannot break resumable conversation history. `CLARVIS_TRACE_TTL_DAYS=0` remains the explicit
 opt-out.
+`resolveTraceStore` also accepts a separate lock directory. Local workspace hosts use that seam so
+the owner-scoped trace records remain at their established global paths while Host/Sandbox and a
+Container coordinate through one selectively mounted workspace lock root.
 
 No external dependencies — `node:fs`, `node:os`, `node:path` and `node:crypto`
 only, over `@clarvis/capability` and `@clarvis/paths`. `@clarvis/loop` depends on
@@ -34,13 +41,11 @@ this package; nothing here may depend on the engine.
 the engine passes the handle straight through, exactly as `LiveContext` satisfies
 `ContextPort`.
 
-For a provider-composed tool call, the engine records one durable `tool_input_delta` announcement
-per attempt and sends later cumulative character counts plus `complete: true` through `signal` only.
-The record may carry both call-scoped argument `chars` and the provider attempt's separate
-`stream_chars` liveness total; neither carries content.
-The announcement makes an interrupted run diagnosable while keeping the journal constant-size with
-respect to argument length. A durable `model_call_retry` retains its bounded failure message; neither
-event retains argument contents.
+The minimal durable `tool_call_announced` contains actor, call identity, tool name, iteration and
+attempt, never partial arguments or progress counters. All `tool_input_delta` reports are live
+signals. Replay can therefore restore an announced call interrupted before execution without
+persisting every delta. A durable `model_call_retry` retains its bounded failure message and closes
+the prior attempt in clients; a client disconnect alone is not an execution outcome.
 
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares
@@ -167,6 +172,18 @@ mechanical eviction.
 
 ## The on-disk format is a contract
 
+`tool_call_started.control` preserves the opaque execution token and its `interrupt` action through
+detail caps, mapping and persistence. It is historical data on replay, never authority to control a
+new run. A confirmed selective terminal carries `tool_call.interruption: { source: "operator" }`;
+the terminal closes the live control. Old events omit both fields. Orphan repair synthesizes an
+operational failure without attributing it to the operator. See the
+[trace contract](../../specs/foundations/trace.md).
+
+The stored response retains an accepted checkpoint's `disposition` and bounded handoff independently
+of execution status. Its metadata is separate from the final result value. Reopening the store must
+preserve that distinction; orphan recovery still reports `interrupted` and does not invent an accepted
+checkpoint from an unfinished journal.
+
 `JsonTraceStore` writes what `@clarvis/kernel` reads back to restore a session.
 Changing what it writes changes what every already-recorded run means, so a
 change there is a deliberate format decision, never a side effect of a
@@ -191,3 +208,10 @@ deletion can race the rewrite and resurrect stale context.
 Terminal `tool_call` rows may include the final command-guard review. The mapper
 preserves that small structured fact so restored sessions can show whether an
 automatic review approved or denied the command and who supplied the answer.
+
+## Authority state
+
+`buildRecord` and trace stores preserve sanitized, versioned `operator_authority_state` as transversal
+host state. Kernel validates its binding and active status before restoration. A recovered record
+without that state grants no authority. It is not mapped into model content or public run events.
+See [effect review](../../specs/execution/effect-review.md).

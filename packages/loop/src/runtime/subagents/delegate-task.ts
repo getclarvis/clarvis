@@ -1,5 +1,6 @@
 import { projected } from "../capability-event.ts";
 import { randomUUID } from "node:crypto";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import {
   DELEGATE_TASK_MAX_CHARS,
   parseDelegateTaskText,
@@ -36,6 +37,7 @@ import { fireObservers } from "../loop/lifecycle-hooks.ts";
 import type { CapabilityEventListener } from "@clarvis/capability";
 import { DELEGATE_TASK_TOOL_NAME } from "../tools/wire-names.ts";
 import type { SPAWN_SUBAGENT_TOOL_NAME } from "../tools/wire-names.ts";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 type ChildSpawnToolName = typeof DELEGATE_TASK_TOOL_NAME | typeof SPAWN_SUBAGENT_TOOL_NAME;
 
@@ -218,6 +220,8 @@ export type { SubagentAggregate };
  * capability event emitter.
  */
 export interface DelegateTaskContext {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   opened: RegistryEntry[];
   profiles: SubagentProfileRegistry;
@@ -250,6 +254,10 @@ export interface DelegateTaskContext {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * the spawned sub-agent's own registry. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -459,8 +467,12 @@ export async function prepareSpawn(
  * the usage sink.
  */
 export interface SubagentRunContext {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   task: string;
   images?: ImagePart[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
   subagentInstanceId: string;
   llm: LLMProvider;
   registry: NamespacedRegistry;
@@ -479,6 +491,7 @@ export interface SubagentRunContext {
   workspaceRoot?: string;
   hooks?: LifecycleHook[];
   usageSink?: SubagentUsageSnapshot;
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -499,10 +512,12 @@ export function buildRunSubagentInput(
   return {
     task: base.task,
     images: base.images,
+    ...(base.sharedPrompt !== undefined ? { sharedPrompt: base.sharedPrompt } : {}),
     basePrompt: profile.basePrompt,
     model: profile.model,
     provider: profile.provider,
     providerConfig: profile.providerConfig,
+    ...(profile.modelExecution === undefined ? {} : { modelExecution: profile.modelExecution }),
     capabilities: profile.capabilities,
     reasoningSummary: profile.reasoningSummary,
     ...(profile.reasoningEffort !== undefined ? { reasoningEffort: profile.reasoningEffort } : {}),
@@ -527,8 +542,10 @@ export function buildRunSubagentInput(
     ...(base.computeRegion !== undefined ? { computeRegion: base.computeRegion } : {}),
     ...(base.steer !== undefined ? { steer: base.steer } : {}),
     workspaceRoot: base.workspaceRoot,
+    ...(base.statePaths === undefined ? {} : { statePaths: base.statePaths }),
     hooks: base.hooks,
     usageSink: base.usageSink,
+    ...(base.toolInterrupts !== undefined ? { toolInterrupts: base.toolInterrupts } : {}),
   };
 }
 
@@ -626,6 +643,7 @@ export async function runPreparedSubagent(
       buildRunSubagentInput(selectedProfile, {
         task: subagentTask,
         images,
+        ...(ctx.sharedPrompt !== undefined ? { sharedPrompt: ctx.sharedPrompt } : {}),
         subagentInstanceId,
         llm: ctx.llm,
         registry,
@@ -640,8 +658,10 @@ export async function runPreparedSubagent(
         ...(ctx.computeRegion !== undefined ? { computeRegion: ctx.computeRegion } : {}),
         ...(ctx.steer !== undefined ? { steer: ctx.steer } : {}),
         workspaceRoot: ctx.workspaceRoot,
+        ...(ctx.statePaths === undefined ? {} : { statePaths: ctx.statePaths }),
         hooks: ctx.hooks,
         usageSink,
+        ...(ctx.toolInterrupts !== undefined ? { toolInterrupts: ctx.toolInterrupts } : {}),
       }),
     ));
   } catch (err) {

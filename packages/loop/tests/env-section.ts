@@ -1,3 +1,4 @@
+import { DEFAULT_SHARED_AGENT_PROMPT } from "../src/runtime/prompts/shared-agent-prompt.ts";
 import { buildSystemSections } from "../src/runtime/subagents/build-subagent-input.ts";
 
 /**
@@ -13,4 +14,16 @@ import { buildSystemSections } from "../src/runtime/subagents/build-subagent-inp
  */
 export function ENV_SECTION(workspaceRoot: string): string {
   return buildSystemSections({ workspaceRoot })[0]!;
+}
+
+/**
+ * The default system head a run opens with: environment, the built-in shared
+ * prompt, then an optional profile prompt.
+ */
+export function SYSTEM_HEAD(workspaceRoot: string, profilePrompt?: string): string {
+  return buildSystemSections({
+    workspaceRoot,
+    sharedPrompt: DEFAULT_SHARED_AGENT_PROMPT,
+    ...(profilePrompt !== undefined ? { profilePrompt } : {}),
+  }).join("\n\n");
 }

@@ -76,7 +76,8 @@ test("cold full-page and floating surfaces remain in lazy chunks", () => {
     { path: "chunk-workflows.js", source: 'text: "no workflows yet"' },
     { path: "chunk-storage.js", source: 'purpose: "Clarvis-owned local files"' },
     { path: "chunk-doctor.js", source: 'title: "Clarvis Doctor"' },
-    { path: "chunk-safety.js", source: 'title: "Select safety preset"' },
+    { path: "chunk-isolation.js", source: 'title: "Select isolation"' },
+    { path: "chunk-review.js", source: 'title: "Select command review"' },
   ];
   expect(() =>
     assertLazySurfaceArtifact({ entrySource: "const boot = true", javascriptChunks }),
@@ -192,4 +193,15 @@ test("portable packaging and installation pin archive commands to the C locale",
   const smoke = readFileSync(new URL("../../tooling/release/smoke.ts", import.meta.url), "utf8");
   expect(smoke).toContain("observed the complete-app marker after");
   expect(smoke).not.toContain("reached first paint in");
+});
+
+test("portable installers remain independent of container engines", () => {
+  const installers = [
+    readFileSync(new URL("../../../../install.sh", import.meta.url), "utf8"),
+    readFileSync(new URL("../../../../install.ps1", import.meta.url), "utf8"),
+  ];
+  for (const installer of installers) {
+    expect(installer.toLowerCase()).not.toContain("docker");
+    expect(installer.toLowerCase()).not.toContain("podman");
+  }
 });

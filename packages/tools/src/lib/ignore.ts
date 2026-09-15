@@ -1,12 +1,9 @@
-import { createRequire } from "node:module";
-import type { Ignore } from "ignore";
+import makeIgnore, { type Ignore } from "ignore";
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { INTERNAL_IGNORE_PATTERNS } from "@clarvis/paths";
 import { warn } from "./log.ts";
-
-const makeIgnore = createRequire(import.meta.url)("ignore") as (options?: object) => Ignore;
 
 /** Ignore files are configuration, not an unbounded content channel. */
 export const MAX_IGNORE_FILE_BYTES = 1024 * 1024;

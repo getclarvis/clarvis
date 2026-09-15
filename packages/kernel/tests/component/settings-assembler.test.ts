@@ -46,6 +46,79 @@ async function assemblerWith(
 }
 
 describe("settings run assembler", () => {
+  it("projects catalog targets without provider transports and refuses missing exact pairs", async () => {
+    const modelExecutionResolver: NonNullable<SettingsAssemblerOptions["modelExecutionResolver"]> =
+      {
+        resolve: (provider, model) =>
+          provider === "alias" && model === "m"
+            ? {
+                provider,
+                model,
+                kind: "openai-codex",
+                contextWindowTokens: 32000,
+                capabilities: [],
+                reasoningEfforts: ["low"],
+                promptCache: "implicit",
+              }
+            : undefined,
+      };
+    const settings = {
+      default_model: "alias/m",
+      providers: [{ name: "alias", kind: "openai", api_key_env: "TEST_ONLY_KEY" }],
+    };
+    const assemble = await assemblerWith({ solo: {} }, settings, { modelExecutionResolver });
+    const body = assemble({
+      agent: "solo",
+      messages: [{ role: "user", content: "Test catalog." }],
+      execution_id: "catalog",
+    }) as RawBody & {
+      providers: unknown[];
+    };
+    expect(body.providers).toEqual([]);
+    expect(body.profiles[0]?.model).toBe("alias/m");
+    expect(() =>
+      validateBody(body, loadEnv({}), undefined, { modelExecutionResolver }),
+    ).not.toThrow();
+    const native = await assemblerWith({ solo: {} }, settings);
+    expect(
+      (native({ agent: "solo", messages: [], execution_id: "native" }) as { providers: unknown[] })
+        .providers,
+    ).toEqual(settings.providers);
+    for (const overrides of [
+      { default_model: "alias/missing" },
+      { default_vision_model: "alias/missing" },
+    ]) {
+      const missing = await assemblerWith(
+        { solo: {} },
+        { ...settings, ...overrides },
+        { modelExecutionResolver },
+      );
+      expect(() => missing({ agent: "solo", messages: [], execution_id: "missing" })).toThrow(
+        /execution catalog/,
+      );
+    }
+  });
+  it("rejects authority overrides read from entry or delegated profile files", () => {
+    for (const name of ["lead", "worker"]) {
+      const store = createMemoryConfigStore({
+        settings: { global: { default_model: "openrouter/m" } },
+      });
+      store.writeAgent("global", "lead", {
+        frontmatter: { can_spawn: ["worker"] },
+        body: "Coordinate.",
+      });
+      store.writeAgent("global", "worker", {
+        frontmatter: { grants: ["read_workspace"] },
+        body: "Review.",
+      });
+      store.writeAgent("global", name, { frontmatter: { sandbox: false }, body: "Override." });
+      const assemble = createSettingsRunAssembler(store);
+      expect(() => assemble({ agent: "lead", messages: [], execution_id: "rejected" })).toThrow(
+        `agent '${name}' has invalid frontmatter`,
+      );
+    }
+  });
+
   it("threads can_spawn/default_spawn and builds the spawnable closure", async () => {
     const assemble = await assemblerWith({
       coder: {
@@ -617,6 +690,70 @@ describe("settings run assembler — skill runs", () => {
       assemble({ agent: "coder", messages: [], skill: { name: "spec" }, execution_id: "e" }),
     ).toThrow(/is not defined/);
   });
+
+  it("injects a $name mention of a skill without an agent into the current turn", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$alpha fix the dialog" }],
+      execution_id: "e",
+    }) as RawBody;
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0]).toEqual({ role: "user", content: "$alpha fix the dialog" });
+    const seed = body.messages[1] as { role: string; content: string };
+    expect(seed.role).toBe("user");
+    expect(seed.content).toContain("--- SKILL ---");
+    expect(seed.content).toContain("ALPHA BODY");
+    expect(body).not.toHaveProperty("hook_user_prompt_expansion");
+    expect(() => validateBody(body, ENV())).not.toThrow();
+  });
+
+  it("does not expand $clarvis-configure, $PATH, or an unknown name", async () => {
+    const assemble = await assembleWithSkills([
+      skill({ name: "clarvis-configure", metadata: { agent: "clarvis-configure" }, body: "GUIDE" }),
+    ]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$clarvis-configure and $PATH and $nope" }],
+      execution_id: "e",
+    }) as RawBody;
+    expect(body.messages).toEqual([
+      { role: "user", content: "$clarvis-configure and $PATH and $nope" },
+    ]);
+  });
+
+  it("keeps a single seed when start already carries skill and the text repeats $name", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "$alpha again" }],
+      skill: { name: "alpha" },
+      execution_id: "e",
+    }) as RawBody;
+    const seeds = body.messages.filter(
+      (message) =>
+        typeof message === "object" &&
+        message !== null &&
+        "content" in message &&
+        typeof message.content === "string" &&
+        message.content.includes("--- SKILL ---"),
+    );
+    expect(seeds).toHaveLength(1);
+    expect((seeds[0] as { content: string }).content).toContain("ALPHA BODY");
+  });
+
+  it("injects $name mentions on continue as well as start", async () => {
+    const assemble = await assembleWithSkills([skill({ name: "alpha", body: "ALPHA BODY" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [{ role: "user", content: "please $alpha now" }],
+      continue_from: "exec_previous",
+      execution_id: "e",
+    }) as RawBody & { continue_from?: string };
+    expect(body.continue_from).toBe("exec_previous");
+    expect(body.messages).toHaveLength(2);
+    expect((body.messages[1] as { content: string }).content).toContain("ALPHA BODY");
+  });
 });
 
 /**
@@ -629,7 +766,7 @@ describe("settings run assembler · prompt cache", () => {
   const START = { agent: "solo", messages: [{ role: "user" as const, content: "hi" }] };
 
   interface CacheBody {
-    prompt_cache_key?: string;
+    session_id?: string;
     prompt_cache_ttl?: string;
   }
 
@@ -641,22 +778,22 @@ describe("settings run assembler · prompt cache", () => {
     return (assemble({ ...START, execution_id: "e", ...params }) as CacheBody).prompt_cache_ttl;
   };
 
-  it("passes an explicit prompt_cache_key and prompt_cache_ttl through", async () => {
+  it("passes an explicit session_id and prompt_cache_ttl through", async () => {
     const assemble = await assemblerWith(SOLO);
     const body = assemble({
       ...START,
       execution_id: "e",
-      prompt_cache_key: "conversation-42",
+      session_id: "conversation-42",
       prompt_cache_ttl: "5m",
     }) as CacheBody;
-    expect(body.prompt_cache_key).toBe("conversation-42");
+    expect(body.session_id).toBe("conversation-42");
     expect(body.prompt_cache_ttl).toBe("5m");
   });
 
   it("omits both when the caller sets neither and no guard parks on a human", async () => {
     const assemble = await assemblerWith(SOLO, { guard: { mode: "off" } });
     const body = assemble({ ...START, execution_id: "e" }) as CacheBody;
-    expect(body.prompt_cache_key).toBeUndefined();
+    expect(body.session_id).toBeUndefined();
     expect(body.prompt_cache_ttl).toBeUndefined();
   });
 
@@ -675,14 +812,20 @@ describe("settings run assembler · prompt cache", () => {
     expect(await ttlFor({}, { guard_mode: "on" })).toBe("1h");
   });
 
-  // Mode `auto` builds the judge only when a guard_judge is configured and
-  // otherwise falls back to the human prompt, so "auto with no judge" parks on a
-  // human exactly as `on` does.
-  it("treats auto WITHOUT a judge as parking on a human, and auto WITH one as not", async () => {
-    expect(await ttlFor({}, { guard_mode: "auto" })).toBe("1h");
+  it("does not park Auto on a human when the reviewer provider cannot resolve by default", async () => {
+    expect(await ttlFor({}, { guard_mode: "auto" })).toBeUndefined();
     expect(
       await ttlFor({}, { guard_mode: "auto", guard_judge: { model: "openrouter/m" } }),
     ).toBeUndefined();
+  });
+
+  it("parks Auto on a human when unresolved review explicitly selects ask", async () => {
+    expect(
+      await ttlFor(
+        {},
+        { guard_mode: "auto", guard_judge: { model: "openrouter/m", on_unsure: "ask" } },
+      ),
+    ).toBe("1h");
   });
 
   it("leaves the TTL to the loop when the guard is off", async () => {

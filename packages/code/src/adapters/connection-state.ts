@@ -2,6 +2,9 @@ import { createSignal, type Accessor } from "solid-js";
 import { glyph } from "../core/marks.ts";
 import type { BackendProbe } from "../onboarding/doctor.ts";
 
+/** Recover an observation connection or explicitly reload an idle host's saved configuration. */
+export type ReconnectMode = "connection" | "reload";
+
 /**
  * The kernel connection as structured state — the single source of truth the
  * header label AND the doctor's backend probe derive from. Nothing may parse

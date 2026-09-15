@@ -31,12 +31,9 @@ const DEFAULT_LIMIT = 2000;
 export const readFile: ToolDef = {
   name: "read_file",
   description:
-    "Read a UTF-8 text file, returned with 1-indexed line-number prefixes (like `cat -n`). Reads " +
-    "up to 2000 lines from `offset`; if more remain, a footer gives the next `offset` to continue " +
-    "from. NEVER use to search large files for a string — use grep. If you do not know the path, " +
-    "use glob or list_dir first. Binary files are rejected. Output is byte-bounded from the head, so " +
-    "an oversized result loses its tail, not its middle — page with `offset` rather than pulling a " +
-    "huge file in one call.",
+    "Read a text file with 1-based line prefixes. Output is byte-bounded and loses its tail; use the footer's next " +
+    "offset to continue. Binary files are rejected. Locate unknown paths with glob; search " +
+    "contents with grep instead of reading a whole file to find a string.",
   bounded: true,
   inputSchema: {
     type: "object",

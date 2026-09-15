@@ -14,6 +14,8 @@
 import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
 import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
+import type { HostedRecoveryResolution } from "./hosting.ts";
+import type { GoalState } from "./goals.ts";
 
 /** Lifecycle status of one turn in a session. */
 export type SessionTurnStatus =
@@ -54,6 +56,8 @@ export interface SessionTurn {
   /** Extension Profile snapshot under which this turn started. */
   extension_profile?: ExtensionProfileRunRef;
   status: SessionTurnStatus;
+  /** Archives this conversation after an unknown run; subsequent work requires a new conversation. */
+  recovery_resolution?: HostedRecoveryResolution;
   /** Epoch-ms start; absent until the turn begins. See {@link Timestamp}. */
   started_at?: Timestamp;
   /** Epoch-ms end; absent while the turn is unfinished. See {@link Timestamp}. */
@@ -67,6 +71,12 @@ export interface SessionTurn {
  */
 export interface Session {
   id: string;
+  /** Assigned before first inference and retained across turns and process restarts. */
+  agent_instance_id?: string;
+  /** Hosted conversation revision. Zero precedes host ownership; hosted writes require a matching value. */
+  revision?: number;
+  /** Private host-owned goal state; client saves cannot create, remove or rewrite it. */
+  goal_state?: GoalState;
   title: string;
   /** Project this conversation belongs to. */
   project_id: string;

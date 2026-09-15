@@ -4,7 +4,9 @@ import {
   parseModelRef,
   resolveProvider,
   ValidationError,
+  type ModelExecutionResolver,
 } from "@clarvis/capability";
+import { rejectCatalogProviders, requireModelExecution } from "../../model-execution.ts";
 import { isWellFormedHttpUrl } from "../../http-url.ts";
 import type { ParsedRunRequest } from "./request-schema.ts";
 
@@ -80,7 +82,11 @@ function referencedProviders(data: ParsedRunRequest): Set<string> {
  * @throws {@link ValidationError} (`duplicate_provider_name` or
  *   `invalid_provider_config`) on the first violation.
  */
-export function rejectProviderConfigIssues(data: ParsedRunRequest): void {
+export function rejectProviderConfigIssues(
+  data: ParsedRunRequest,
+  resolver?: ModelExecutionResolver,
+): void {
+  rejectCatalogProviders(data.providers, resolver);
   const registry = data.providers;
   if (registry.length === 0) return;
   const referenced = referencedProviders(data);
@@ -145,10 +151,20 @@ export function rejectProviderConfigIssues(data: ParsedRunRequest): void {
  *   profile, so nothing else would check it, and an unresolvable one would
  *   surface only as a silently skipped vision pass.
  */
-export function requireResolvableModelProviders(data: ParsedRunRequest): void {
+export function requireResolvableModelProviders(
+  data: ParsedRunRequest,
+  resolver?: ModelExecutionResolver,
+): void {
   const refs = data.profiles.map((p) => p.model);
   if (data.vision_model !== undefined) refs.push(data.vision_model);
+  if (resolver !== undefined && data.guard_judge?.model !== undefined)
+    refs.push(data.guard_judge.model);
   for (const ref of refs) {
+    if (resolver !== undefined) {
+      const parsed = parseModelRef(ref);
+      requireModelExecution(resolver, parsed.provider, parsed.modelId);
+      continue;
+    }
     const token = parseModelRef(ref).provider;
     const resolution = resolveProvider(token, data.providers);
     if (!resolution.ok) {

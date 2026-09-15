@@ -23,6 +23,15 @@ test("toolDisplayLabel translates orchestration internals but preserves MCP iden
   expect(toolDisplayLabel(undefined, "workflow_status")).toBe("Check workflow");
   expect(toolDisplayLabel(undefined, "workflow_decide")).toBe("Decide workflow");
   expect(toolDisplayLabel("github", "search_code")).toBe("github:search_code");
+  expect(toolDisplayLabel(undefined, "configure_clarvis", { operation: "read" })).toBe(
+    "Read configuration",
+  );
+  expect(toolDisplayLabel(undefined, "configure_clarvis", { operation: "write" })).toBe(
+    "Write configuration",
+  );
+  expect(toolDisplayLabel(undefined, "configure_clarvis", { operation: "unknown" })).toBe(
+    "configure_clarvis",
+  );
 });
 
 test("transcript orchestration identity matches only bare builtins, never an MCP leaf collision", () => {
@@ -69,7 +78,6 @@ test("MUTATION_TOOLS pins the registry-derived members — a registry change mus
       "edit_file",
       "multi_edit",
       "apply_patch",
-      "host_vcs",
       "replace",
       "move",
       "copy",

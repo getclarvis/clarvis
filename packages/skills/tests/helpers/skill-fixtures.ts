@@ -13,6 +13,7 @@ export function makeInfo(overrides: Partial<SkillInfo> = {}): SkillInfo {
     userInvocable: overrides.userInvocable ?? true,
     scope: overrides.scope ?? "user",
     source: overrides.source ?? "clarvis",
+    ...(overrides.resourceAccess === undefined ? {} : { resourceAccess: overrides.resourceAccess }),
     root: overrides.root ?? "/roots/skills",
     dir: overrides.dir ?? `/roots/skills/${name}`,
     ...(overrides.executionRoot === undefined ? {} : { executionRoot: overrides.executionRoot }),

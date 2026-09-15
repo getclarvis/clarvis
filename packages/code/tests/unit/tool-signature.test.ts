@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { formatToolCall } from "../../src/views/tools/signature.ts";
+import { formatToolCall, resolveToolCallSignature } from "../../src/views/tools/signature.ts";
 
 const sig = (name: string, args: Record<string, unknown>) => formatToolCall(name, "", args);
 
@@ -7,10 +7,8 @@ test("bash renders its command bare — no quotes between the tool name and what
   expect(sig("shell", { command: "bun test" })).toBe("(bun test)");
 });
 
-test("whitelisted secondary args render labelled as key=value after the primaries", () => {
-  expect(sig("shell", { command: "bun test", cwd: "packages/code" })).toBe(
-    "(bun test, cwd=packages/code)",
-  );
+test("shell omits cwd while other whitelisted secondary args remain labelled", () => {
+  expect(sig("shell", { command: "bun test", cwd: "packages/code" })).toBe("(bun test)");
   expect(sig("read_file", { path: "a.ts", offset: 1, limit: 20 })).toBe(
     "(a.ts, offset=1, limit=20)",
   );
@@ -37,6 +35,31 @@ test("a long path truncates from the START so the basename survives", () => {
 test("an arg-less list_dir shows its implicit default instead of bare parens", () => {
   expect(sig("list_dir", {})).toBe("(.)");
   expect(sig("list_dir", { path: "src" })).toBe("(src)");
+});
+
+test("a resident signature wins over live args, including when args were dropped", () => {
+  expect(
+    resolveToolCallSignature(
+      {
+        mcpName: "read_file",
+        toolName: "",
+        args: { path: "stale.ts" },
+        signature: "(src/live.ts)",
+      },
+      { path: "ignored.ts" },
+    ),
+  ).toBe("(src/live.ts)");
+  expect(
+    resolveToolCallSignature({ mcpName: "read_file", toolName: "", signature: "(src/kept.ts)" }),
+  ).toBe("(src/kept.ts)");
+});
+
+test("without a resident signature, live args still format, and missing args stay honest", () => {
+  expect(resolveToolCallSignature({ mcpName: "read_file", toolName: "" }, { path: "a.ts" })).toBe(
+    "(a.ts)",
+  );
+  expect(resolveToolCallSignature({ mcpName: "read_file", toolName: "" })).toBe("()");
+  expect(resolveToolCallSignature({ mcpName: "list_dir", toolName: "" })).toBe("(.)");
 });
 
 test("read_files joins its paths without JSON noise", () => {
@@ -92,5 +115,27 @@ test("memory reads lead with what was asked for", () => {
   expect(sig("list_memories", { prefix: "infra/" })).toBe("(infra/)");
   expect(sig("grep_memories", { query: "bun install", regex: true, limit: 20 })).toBe(
     "(bun install, regex=true)",
+  );
+});
+
+test("configuration calls show their authored scope and path without mutation payloads", () => {
+  expect(
+    sig("configure_clarvis", {
+      operation: "write",
+      root: "workspace_clarvis",
+      path: "agents/reviewer.md",
+      content: "secret body",
+      expected_revision: "revision",
+    }),
+  ).toBe("(.clarvis/agents/reviewer.md)");
+  expect(
+    sig("configure_clarvis", {
+      operation: "read",
+      root: "global_agents",
+      path: "skills/reviewer/SKILL.md",
+    }),
+  ).toBe("(global:.agents/skills/reviewer/SKILL.md)");
+  expect(sig("configure_clarvis", { operation: "list", root: "workspace_agents", path: "" })).toBe(
+    "(.agents)",
   );
 });

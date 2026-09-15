@@ -48,10 +48,10 @@ export function BrandBanner(props: {
       when={!props.compact?.() && props.width() >= 60}
       fallback={<text fg={tokens.accent}>{glyph("diamond") + SPLASH_WORDMARK}</text>}
     >
-      <box flexDirection="column" flexShrink={0}>
+      <box flexDirection="column" flexShrink={0} height={BANNER.length}>
         <Index each={BANNER}>
           {(line, i) => (
-            <text fg={stops()[i]} wrapMode="none">
+            <text fg={stops()[i]} wrapMode="none" height={1} flexShrink={0}>
               {line()}
             </text>
           )}

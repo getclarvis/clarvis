@@ -25,11 +25,15 @@ function fakeHandle(executionId: string): {
     steer: () => Promise.resolve(),
     compact: () => Promise.resolve(),
     cancel: () => Promise.resolve(),
+    interruptTool: (toolExecutionId) =>
+      Promise.resolve({ tool_execution_id: toolExecutionId, status: "not_running" }),
     respond: (response) => {
       responses.push(response);
       return Promise.resolve();
     },
-    onElicit: (handler) => handlers.push(handler),
+    onElicit: (handler) => {
+      handlers.push(handler);
+    },
     done: Promise.resolve({ execution_id: executionId, status: "completed" }),
     closed: Promise.resolve(),
   };
@@ -259,9 +263,8 @@ describe("ElicitationController", () => {
     controller.attach(handle);
 
     raise(ASK);
-    for (let attempt = 0; attempt < 50 && logs.find("elicit.answered").length === 0; attempt += 1) {
-      await Bun.sleep(1);
-    }
+    for (let attempt = 0; attempt < 8 && logs.find("elicit.answered").length === 0; attempt += 1)
+      await Promise.resolve();
 
     expect(logs.one("elicit.answered").fields).toMatchObject({
       posture: "relay",

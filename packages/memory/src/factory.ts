@@ -9,7 +9,12 @@ import type { Memory } from "./memory-contract.ts";
 import { createIndexWorker, type MemoryIndexWorker } from "./worker.ts";
 
 import { parseModelRef, sanitizeErrorMessage } from "@clarvis/capability";
-import type { CapabilityExecutablePort, LLMProvider, ProviderKind } from "@clarvis/capability";
+import type {
+  CapabilityExecutablePort,
+  LLMProvider,
+  ProviderKind,
+  ModelExecutionResolver,
+} from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { Logger } from "@clarvis/capability";
 import type { ProviderConfig } from "@clarvis/capability";
@@ -35,6 +40,8 @@ export interface MemoryFactorySettings {
 export interface CreateMemoryFactoryOptions {
   /** Provider the control plane's own model calls go through, when it has any. */
   llm: LLMProvider;
+  /** Closed host catalog. When supplied, indexing never derives local provider transports. */
+  modelExecutionResolver?: ModelExecutionResolver;
   /**
    * The engine deps an indexer pass runs against.
    *
@@ -320,7 +327,11 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
     modelRef: string,
     declared: ProviderConfig[] | undefined,
   ): ProviderConfig[] | undefined {
-    const token = parseModelRef(modelRef).provider;
+    const { provider: token, modelId: model } = parseModelRef(modelRef);
+    if (opts.modelExecutionResolver !== undefined) {
+      const resolved = opts.modelExecutionResolver.resolve(token, model);
+      return resolved?.provider === token && resolved.model === model ? [] : undefined;
+    }
     if (declared !== undefined && declared.some((p) => p.name === token)) return declared;
     if (!BUILTIN_PROVIDER_KINDS.has(token)) {
       if (!warnedProviderUnresolved) {

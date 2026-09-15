@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import {
+  deriveIsolation,
+  effectiveRunIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
   modelResolves,
   planRetentionDescription,
   safetyDescription,
-  settingsForPreset,
 } from "../../src/adapters/execution-safety.ts";
 import type { SettingsFile } from "../../src/adapters/settings.ts";
 
@@ -25,44 +26,34 @@ const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
 describe("execution safety", () => {
-  it.each([
-    ["free", {}, "off"],
-    ["judged", {}, "auto"],
-    ["approval", {}, "on"],
-    ["isolated", { sandbox: { type: "native", enabled: true, availability: "required" } }, "off"],
-    ["reviewed", { sandbox: { type: "native", enabled: true, availability: "required" } }, "auto"],
-    ["protected", { sandbox: { type: "native", enabled: true, availability: "required" } }, "on"],
-  ] as const)("derives %s", (preset, settings, guard) => {
-    expect(deriveRunControls(settings, guard, "off").preset).toBe(preset);
+  it("shows active host placement without replacing the idle next-run preference", () => {
+    const host = {
+      kind: "native",
+      host_platform: "linux",
+      isolation: "host",
+      lifecycle: "ready",
+    } as const;
+    expect(effectiveRunIsolation("docker", host, true)).toBe("host");
+    expect(effectiveRunIsolation("docker", host, false)).toBe("docker");
+    expect(effectiveRunIsolation("docker", undefined, true)).toBe("docker");
   });
-
-  it("derives custom for a restricted sandbox", () => {
+  it("derives isolation independently from command review", () => {
+    expect(deriveIsolation({})).toBe("host");
+    expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
+    expect(deriveIsolation(onDisk({ runtime: { backend: "docker" } }))).toBe("docker");
     expect(
-      deriveRunControls(
-        {
-          sandbox: {
-            type: "native",
-            enabled: true,
-            filesystem: "workspace-read-only",
-            network: "none",
+      deriveIsolation(
+        onDisk({
+          runtime: {
+            backend: "podman",
+            executable: "podman",
+            image: "clarvis-runtime@sha256:" + "a".repeat(64),
+            image_digest: "sha256:" + "a".repeat(64),
           },
-        },
-        "off",
-        "off",
-      ).preset,
-    ).toBe("custom");
-  });
-
-  it("maps every preset to explicit guard and sandbox settings", () => {
-    expect(settingsForPreset("free").sandbox?.enabled).toBe(false);
-    expect(settingsForPreset("judged")).toMatchObject({
-      guard: { mode: "auto" },
-      sandbox: { enabled: false },
-    });
-    expect(settingsForPreset("approval").guard?.mode).toBe("on");
-    expect(settingsForPreset("isolated").sandbox?.enabled).toBe(true);
-    expect(settingsForPreset("reviewed").guard?.mode).toBe("auto");
-    expect(settingsForPreset("protected").guard?.mode).toBe("on");
+        }),
+      ),
+    ).toBe("podman");
+    expect(deriveRunControls({}, "auto", "off").isolation).toBe("host");
   });
 
   it("explains the effective behavior", () => {
@@ -108,10 +99,13 @@ describe("execution safety", () => {
       ),
     };
     expect(safetyDescription(sandbox)).toEqual([
-      "Commands use the native sandbox when available and may fall back to the host.",
+      "Commands stay contained; a blocked command can ask to run that one command on the host.",
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);
+    expect(safetyDescription({ ...sandbox, guardMode: "on" })[0]).toBe(
+      "Risky actions ask first; approved commands remain contained. A blocked command can ask to run on the host.",
+    );
 
     expect(safetyDescription(deriveRunControls({}, "off", "off"))).toEqual([
       "Commands run directly without approval.",
@@ -132,6 +126,31 @@ describe("execution safety", () => {
       "Successful runs delete their plan after the result is recorded.",
       "Failed, cancelled or interrupted runs keep their plan.",
     ]);
+  });
+
+  it("describes container isolation without promising a hidden copy or merge", () => {
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "off", "off"),
+      ),
+    ).toEqual([
+      "The full native Kernel runs inside the Container.",
+      "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
+      "The selected workspace is mounted directly; changes appear on the host immediately.",
+      "Outbound network access is enabled and may cause remote effects or expose workspace content.",
+      "Commands run without Command Review.",
+      "Git metadata is read-only; use Sandbox or Host for commits.",
+    ]);
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "podman", network: "none" } }), "on", "off"),
+      ),
+    ).toContain("Commands run without Command Review.");
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "auto", "off"),
+      ),
+    ).toContain("Commands run without Command Review.");
   });
 });
 

@@ -111,6 +111,29 @@ persisted before its access token is returned. Omitted refresh tokens preserve t
 changed account identity or `invalid_grant` removes the record and requires explicit
 reauthentication. Catalog caches are memory-only and keyed by account version.
 
+`disconnect` fences host inference authority synchronously, commits local account removal, and only
+then attempts remote revocation. It does not erase an account connected while that remote request
+is pending. `SubscriptionManagerOptions.onAuthorityRevoked` is an optional synchronous host-only
+sink carrying the scheme and a closed reason, never credentials. It also fences explicit account
+replacement, invalid refresh/continuity, missing or corrupt authority observed during resolution,
+and authentication rejected after refresh. The host sink must revoke its corresponding leases
+without selecting another account; it is not exposed through guest administration or wire params.
+Ordinary refresh rotation for the same account retains its existing semantics.
+
+Production: `SubscriptionManager.disconnect`, `persistConnected`, `currentAccount` and
+`refreshAccount` in [manager.ts](../../packages/kernel/src/subscriptions/manager.ts).
+Test: the host inference authority fencing cases in
+[subscription-manager.test.ts](../../packages/kernel/tests/unit/subscription-manager.test.ts)
+check pre-network revocation, local removal, concurrent replacement preservation and invalid grant.
+
+`createOperatorServices.onSecretChanged` is another host-only synchronous fence. It receives only
+the secret name after a successful synchronous store mutation and before the asynchronous service
+response. Invalid writes do not notify. The launcher is responsible for binding these notifications
+to model leases; merely constructing the administrative services does not create such leases.
+Production: [operator-services.ts](../../packages/kernel/src/config/operator-services.ts).
+Test: the secret authority fencing case in
+[operator-services.test.ts](../../packages/kernel/tests/integration/operator-services.test.ts).
+
 Production: `createFileSubscriptionStore`, `SubscriptionManager.currentAccount`,
 `SubscriptionManager.refreshAccount`, and `SubscriptionManager.getEntitled`.
 
@@ -153,8 +176,8 @@ existing-provider path. The retained real-PTY evidence selected no login action,
 that both safe picker rows render and resize correctly. No live login, refresh, entitlement,
 inference, billing, or packaged-artifact
 canary is retained in this repository. Such canaries require provider-approved eligible accounts and
-may record only status and a one-way account hash. The no-secret picker transcript is retained in
-[`subscription-provider-picker-2026-08-22.txt`](../evidence/subscription-provider-picker-2026-08-22.txt).
+may record only status and a one-way account hash. No no-secret picker transcript is retained in this
+repository.
 
 ## 7. Model calls and billing
 
@@ -162,8 +185,8 @@ The loop resolves subscription authorization only through the host seam passed t
 Resolution occurs inside the SDK fetch callback immediately before I/O; tokens never enter
 `ResolvedProviderConfig`, `LLMCallParams`, request decorators, or traces. Both schemes use a Responses
 factory, streaming and tools. Subscription requests send `store: false`; ChatGPT omits the output cap
-its backend rejects and sends the session-stable `prompt_cache_key` without an inline cache
-breakpoint, while Grok retains its catalog-supported cap. Grok also sends the session-stable
+its backend rejects and sends the session-and-instance-stable `prompt_cache_key` without an inline cache
+breakpoint, while Grok retains its catalog-supported cap. Grok also sends the session-and-instance-stable
 conversation identity both as the Responses body `prompt_cache_key` and, after one-way hashing by the
 credential-owning transport, as `x-grok-conv-id`; it receives no OpenAI explicit-cache breakpoint.
 Provider-issued reasoning parts
@@ -172,16 +195,16 @@ the configured model entry by `addModelFromCatalog`; `supportedReasoningEfforts`
 metadata, and `buildCallTuning` sends the selected effort through the OpenAI Responses provider
 option for both subscription kinds. For a legacy configured model without saved levels,
 `EffortView` obtains only the authenticated entitled catalog; it never substitutes public-catalog
-metadata (`packages/code/src/features/providers/controller.ts:343-358`,
-`packages/code/src/adapters/effort-levels.ts:23-35`,
+metadata (`packages/code/src/features/providers/controller.ts`,
+`packages/code/src/adapters/effort-levels.ts`,
 `packages/code/src/views/config/EffortView.tsx`,
-`packages/llm/src/ai-sdk/request-options.ts:187-194`). A successful call reports
+`packages/llm/src/ai-sdk/request-options.ts`). A successful call reports
 `billing_source: "subscription"` and no synthetic monetary cost. Internal context-summary calls do
 not force Clarvis's `off` effort through this mapping: because an entitled subscription model may
 publish only reasoning levels such as `low` and `high`, the loop omits the compaction override for
 both subscription kinds and lets the provider select a supported default
-(`packages/loop/src/runtime/context/llm-compaction.ts:219-228,254-256`; pinned by
-`packages/loop/tests/unit/llm-compaction.test.ts:485-502`). This prevents a rejected summarizer call
+(`packages/loop/src/runtime/context/llm-compaction.ts`; pinned by
+`packages/loop/tests/unit/llm-compaction.test.ts`). This prevents a rejected summarizer call
 from degrading into the scheduled path's mechanical eviction fallback.
 
 With `store: false`, every provider-issued assistant text item is retained with its item id and
@@ -242,3 +265,13 @@ Remote server authentication, browser cookies, copied CLI state, installed CLI s
 multi-account aliases, and browser PKCE callbacks are outside this phase. `@clarvis/server` exposes
 neither login nor subscription inference; its protocol service reports `unavailable`. Browser login
 may be added later only with provider-registered S256 PKCE and exact loopback callback validation.
+
+### Per-instance affinity and replay
+
+ChatGPT derives `session-id` from SHA-256 of the same composed session/agent key sent as
+`prompt_cache_key`. Its existing `x-client-request-id` semantics remain unchanged; physical attempt
+numbering belongs to the qualification harness. Credentials stay in the host resolver.
+Production: [`createOpenAICodexAdapter`](../../packages/kernel/src/subscriptions/openai-codex.ts).
+Test: [`provider-request-shape.test.ts`](../../packages/llm/tests/integration/provider-request-shape.test.ts).
+The complete [cache contract](../cross-cutting/prompt-cache.md) distinguishes wire replay from
+measured backend reuse and installed-artifact qualification.

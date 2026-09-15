@@ -36,7 +36,7 @@ const subDelta = (wid: string | undefined, text: string, reset: boolean): RunEve
     reset,
   });
 
-const spawn = (wid: string, title: string): RunEvent =>
+const delegationCreated = (wid: string, title: string): RunEvent =>
   ev({
     type: "delegation_created",
     delegation_id: wid,
@@ -236,7 +236,7 @@ test("reasoning deltas are NOT streamed to a live node (avoids flicker); text st
 
 test("a subagent's stream lands on its own attributed node, not the lead's", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(subDelta("w1", "sub says hi", true));
 
@@ -249,7 +249,7 @@ test("a subagent's stream lands on its own attributed node, not the lead's", () 
 
 test("lead and subagent streaming the same iteration number never share a node", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(delta("text", "lead words", true));
   apply(subDelta("w1", "sub words", true));
@@ -264,8 +264,8 @@ test("lead and subagent streaming the same iteration number never share a node",
 
 test("two subagents streaming the same iteration number keep separate nodes", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
-  apply(spawn("w2", "coder"));
+  apply(delegationCreated("w1", "explorer"));
+  apply(delegationCreated("w2", "coder"));
   apply(subIterationStarted("w1"));
   apply(subIterationStarted("w2"));
   apply(subDelta("w1", "from ", true));
@@ -281,7 +281,7 @@ test("two subagents streaming the same iteration number keep separate nodes", ()
 
 test("a subagent's delta leaves the lead's thinking spinner alone", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(subDelta("w1", "working", true));
 
@@ -379,14 +379,17 @@ test("a delta arriving after the call closed does not resurrect the tail", () =>
   expect(closed.liveOutput).toBeUndefined();
 });
 
-test("an unattributable subagent delta is dropped rather than spliced into another span", () => {
+test("an unattributable child delta is isolated rather than spliced into Lead prose", () => {
   const { store, apply } = driver();
   apply(delta("text", "lead words", true));
   apply(subDelta(undefined, " and stolen sub words", false));
 
   const asst = store.nodes.filter((n) => n.kind === "assistant");
-  expect(asst).toHaveLength(1);
-  expect(asst[0]!.text).toBe("lead words");
+  expect(asst.filter((node) => node.subagentId === undefined)).toHaveLength(1);
+  expect(asst.find((node) => node.subagentId === undefined)!.text).toBe("lead words");
+  expect(asst.find((node) => node.attributionIncomplete)).toMatchObject({
+    text: " and stolen sub words",
+  });
 });
 
 const inputDelta = (callId: string, tool: string, chars: number, complete = false): RunEvent =>
@@ -552,16 +555,19 @@ test("a call closed without ever having started drops its composing label", () =
   expect((nodes[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
-test("a placeholder the trace never confirms does not outlive the model call", () => {
+test("a placeholder the trace never confirms settles instead of vanishing", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 512));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(1);
 
   apply(leadIterationStarted(2));
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
-test("a retry drops composing placeholders from the failed provider attempt", () => {
+test("a retry settles named composing tools from the failed provider attempt", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 48_147));
 
@@ -578,7 +584,10 @@ test("a retry drops composing placeholders from the failed provider attempt", ()
     }),
   );
 
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
   expect(store.nodes).toContainEqual(
     expect.objectContaining({ kind: "annotation", text: expect.stringContaining("retrying") }),
   );
@@ -684,7 +693,12 @@ test("a subagent tool lifecycle without its required id cannot leak into Lead hi
 
   for (const event of events) {
     apply(event);
-    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+    expect(
+      store.nodes.filter((node) => node.kind === "tool_call" && node.subagentId === undefined),
+    ).toHaveLength(0);
+    expect(
+      store.nodes.filter((node) => node.kind === "tool_call" && node.attributionIncomplete),
+    ).toHaveLength(1);
   }
 });
 
@@ -698,7 +712,7 @@ test("a real call is never swept, however long it runs across iterations", () =>
 
 test("the lead's next iteration leaves a subagent's live placeholder alone", () => {
   const { store, apply } = driver();
-  apply(spawn("w1", "explorer"));
+  apply(delegationCreated("w1", "explorer"));
   apply(subIterationStarted("w1"));
   apply(
     ev({
@@ -716,16 +730,26 @@ test("the lead's next iteration leaves a subagent's live placeholder alone", () 
 
   apply(leadIterationStarted(2));
   const left = store.nodes.filter((n) => n.kind === "tool_call");
-  expect(left).toHaveLength(1);
-  expect(left[0]!.subagentOrder).toBe(0);
+  expect(left).toHaveLength(2);
+  expect(left.find((node) => node.subagentOrder === 0)).toMatchObject({
+    toolName: "read_file",
+    status: "running",
+  });
+  expect(left.find((node) => node.subagentOrder === undefined)).toMatchObject({
+    toolName: "write_file",
+    status: "error",
+  });
 });
 
-test("a placeholder left by the final model call does not survive the run", () => {
+test("a placeholder left by the final model call settles instead of vanishing", () => {
   const { store, apply } = driver();
   apply(inputDelta("c1", "write_file", 300));
   apply(ev({ type: "run_ended", status: "completed", at: 9, reason: "completed" }));
 
-  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  const leftover = store.nodes.filter((n) => n.kind === "tool_call");
+  expect(leftover).toHaveLength(1);
+  expect(leftover[0]).toMatchObject({ toolName: "write_file", status: "error" });
+  expect((leftover[0] as { inputChars?: number }).inputChars).toBeUndefined();
 });
 
 test("two calls composed in one completion stay separate nodes", () => {
@@ -746,8 +770,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 1,
     transcript_prose_bytes: "ledger payload".length * 2,
-    publication_batches: 1,
-    publication_known_keys: 1,
+
+    sealed_records: 1,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });
@@ -756,8 +780,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 0,
     transcript_prose_bytes: 0,
-    publication_batches: 0,
-    publication_known_keys: 0,
+
+    sealed_records: 0,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });

@@ -23,6 +23,7 @@ import {
 import { toolIdentity } from "../../adapters/tool-identity.ts";
 import { moreChip } from "../truncate.ts";
 import { StableDiff } from "../../ui/patterns/stable-syntax.tsx";
+import { terminalPlainText } from "../../core/terminal-text.ts";
 
 /** The fields a tool result renderer needs from a transcript tool node. */
 export interface ToolCallView {
@@ -107,7 +108,9 @@ function ClampedText(props: {
   full?: boolean;
   wrap?: boolean;
 }): JSX.Element {
-  const c = createMemo(() => clampLines(props.content, props.full ? Infinity : MAX_BODY_LINES));
+  const c = createMemo(() =>
+    clampLines(terminalPlainText(props.content), props.full ? Infinity : MAX_BODY_LINES),
+  );
   return (
     <box flexDirection="column">
       <text fg={props.fg ?? tokens.fg} wrapMode={props.wrap ? "char" : undefined}>

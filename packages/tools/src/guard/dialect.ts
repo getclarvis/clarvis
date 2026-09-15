@@ -1,4 +1,5 @@
 import type { ShellFlavor } from "../lib/platform.ts";
+import type { ShellAnalysisIssue } from "./types.ts";
 
 /**
  * A word produced by a dialect's tokenizer: its unquoted `text`, and whether it
@@ -69,15 +70,28 @@ export interface ShellDialect {
    */
   decidable(segment: string): boolean;
 
+  /** Structured causes; older dialects conservatively fall back to tokenizer_gap. */
+  analysisIssues?(segment: string): Array<Omit<ShellAnalysisIssue, "segmentIndex">>;
+
   /**
    * Reduce a token list to the real argv, recording any stripped prefix
    * assignments.
    *
-   * @remarks Returning an empty `argv` for a non-empty segment is what
-   *   {@link analyzeShell} treats as a tokenizer failure, and it forces the
-   *   command undecidable.
+   * @remarks Returning an empty `argv` *and* empty `envAssignments` for a
+   *   non-empty segment is what {@link analyzeShell} treats as a tokenizer
+   *   failure, and it forces the command undecidable. A segment that is only
+   *   `NAME=value` assignments is not a failure: it recorded the bindings.
    */
   normalize(tokens: string[]): { argv: string[]; envAssignments: string[] };
+
+  /**
+   * Optional rewrite of split sources used for tokenization, decidability and
+   * path extraction. {@link Segment.command} stays the original source.
+   *
+   * @remarks The driver must not branch on {@link ShellDialect.flavor}; a dialect
+   *   that can bind sequential literal assignments implements this, others omit it.
+   */
+  analyzeSources?(command: string, sources: string[]): string[];
 
   /**
    * Classify one token as a path operand.

@@ -71,7 +71,9 @@ export function createAgentSkills(options: AgentSkillsOptions): AgentSkills {
 }
 
 export { discoverSkills } from "./core.ts";
+export { captureSkillExecution } from "./execution-snapshot.ts";
 export { normalizeTools } from "./parse.ts";
+export { validateSkillDocument } from "./registry.ts";
 export type { ParsedSkill } from "./parse.ts";
 
 export { resolveWorkspaceDir, resolveAgainst, expandHome } from "@clarvis/paths";
@@ -95,6 +97,7 @@ export type { SkillConfig, AgentSkillsOptions } from "./config.ts";
 export {
   MAX_SKILL_FILE_BYTES,
   MAX_SKILL_FILE_CHARS,
+  MAX_SKILL_FRONTMATTER_CHARS,
   MAX_SKILL_RESOURCE_BYTES,
   MAX_SKILL_RESOURCE_CHARS,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -125,3 +128,5 @@ export type {
 } from "./types.ts";
 
 export type { PluginBootstrapSkill, ResolvedBootstrapSkill } from "./bootstrap.ts";
+
+export { listSkillDirs, type SkillScanPolicy } from "./scan.ts";

@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
 import { killTree, ownProcessGroup, resolveShell, shellArgs } from "@clarvis/kernel/local";
 import { diagnosticEvent } from "../core/diagnostic-events.ts";
+import { terminalPlainText } from "../core/terminal-text.ts";
+
+export { stripAnsi } from "../core/terminal-text.ts";
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const MAX_CAPTURE_BYTES = 64 * 1024;
@@ -27,15 +30,6 @@ export interface LocalBashOptions {
   maxBytes?: number;
   signal?: AbortSignal;
   env?: NodeJS.ProcessEnv;
-}
-
-const ANSI_RE =
-  // eslint-disable-next-line no-control-regex
-  /[\u001B\u009B][[\]()#;?]*(?:(?:(?:;[-a-zA-Z\d/#&.:=?%@~_]+)*|[a-zA-Z\d]+(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~])/g;
-
-/** Removes ANSI escape sequences (CSI and OSC-style) from `s`. */
-export function stripAnsi(s: string): string {
-  return s.replace(ANSI_RE, "");
 }
 
 interface Collector {
@@ -153,7 +147,7 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
       if (killTimer) clearTimeout(killTimer);
       if (drainTimer) clearTimeout(drainTimer);
       opts.signal?.removeEventListener("abort", onAbort);
-      const stderr = stripAnsi(err.text());
+      const stderr = terminalPlainText(err.text());
       diagnosticEvent("shell.local.exit", {
         exit_code: code,
         duration_ms: Date.now() - startedAt,
@@ -163,7 +157,7 @@ export function runLocalBash(command: string, opts: LocalBashOptions): Promise<L
       });
       resolve({
         exitCode: code,
-        stdout: stripAnsi(out.text()),
+        stdout: terminalPlainText(out.text()),
         stderr: stderr || (spawnError ? spawnError.message : ""),
         signal,
         timedOut,

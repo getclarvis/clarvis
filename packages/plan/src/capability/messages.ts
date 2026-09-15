@@ -6,7 +6,7 @@
 export const PLAN_REVIEW_BYPASS_NOTE =
   "[runtime: this run requires human plan review. A plan written as ordinary text is not reviewed or " +
   "executed. Author the plan with create_plan — once a plan exists, spawning waits for the human's " +
-  "approval of the current revision. You may ask the human to clarify (ask_user) before authoring. " +
+  "approval of the current revision. Use ask_user, if available, for missing decisions. " +
   "If you finalize again without authoring a plan, the run will stop unreviewed.]";
 
 /**
@@ -23,16 +23,13 @@ export const PLAN_REVIEW_BYPASS_NOTE =
  *   before anything spoke, then authored a plan titled "(completed)" describing
  *   work already shipped, and a human "approved" a fait accompli.
  *
- *   It names the read-only tools explicitly because the alternative reading —
- *   "author a plan now" — is what produces an uninformed plan.
+ *   It permits investigation without enumerating tools that this run may not expose.
  */
 export const planReviewUnplannedBlock = (tool: string): string =>
   `blocked: this run requires human plan review and no plan exists yet, so nothing may change ` +
-  `in the workspace before a human approves one. '${tool}' becomes available the moment the plan ` +
-  `is approved. Investigate first with the read-only tools (read_file, read_files, list_dir, glob, ` +
-  `grep, diff, file_stat, tree), then author the plan with create_plan; use ` +
-  `ask_user if you need the human to settle something before you can write it. Do not describe the ` +
-  `plan as ordinary text — prose is neither reviewed nor executed.`;
+  `in the workspace before a human approves one. '${tool}' is blocked by review. Investigate with ` +
+  `available read-only tools, then create_plan; use ask_user, if available, for missing decisions. ` +
+  `Ordinary text is not a reviewable plan. Approval clears this gate, not other tool restrictions.`;
 
 /**
  * Result text for a run-spawning tool refused because the run is held for human
@@ -52,9 +49,9 @@ export const planReviewUnplannedBlock = (tool: string): string =>
 export const planReviewSpawnBlock = (tool: string): string =>
   `blocked: this run is held for human plan review, and '${tool}' starts an independent run whose ` +
   `own tools this gate does not bound — so it stays unavailable until the human approves the plan. ` +
-  `Investigate with the read-only tools, and use spawn_subagent if you need a Sub-agent to inform ` +
-  `the plan: a Sub-agent runs inside this run's own toolset, which is why it is allowed here and a ` +
-  `leader is not. Author the plan with create_plan, then spawn once it is approved.`;
+  `Investigate with available read-only tools; spawn_subagent, if exposed, can help inform the plan ` +
+  `under this run's review gate. Author the plan with create_plan and obtain approval before ` +
+  `starting independent runs.`;
 
 /**
  * Result text for a tool call refused because the plan exists but the human has
@@ -66,8 +63,9 @@ export const planReviewSpawnBlock = (tool: string): string =>
  */
 export const PLAN_REVIEW_AWAITING_APPROVAL_BLOCK =
   "blocked while the plan is awaiting approval. Only plan reads/revisions, skills, user " +
-  "elicitation and sub-agent supervision are available. To present the plan for approval, call " +
-  "submit_result, spawn_subagent, or delegate_task; revise_plan first if the plan still needs changes.";
+  "elicitation and sub-agent supervision may be used when exposed. To request approval, attempt " +
+  "finalization (submit_result when exposed, otherwise final text) or an available child-spawn tool. " +
+  "Use revise_plan first if the plan needs changes.";
 
 /**
  * Termination message for a `plan_review` run that kept finalizing without ever
@@ -83,9 +81,9 @@ export const PLAN_REVIEW_BYPASS_MSG =
  * with `delegate_task` — rather than stopping with prose.
  */
 export const PLAN_REVIEW_EXECUTE_NOTE =
-  "[runtime: the human APPROVED the plan. Execute it now — for each task, either do it yourself and " +
-  "record it with transition_plan_task (its task_id), or delegate it with delegate_task (its task_id). If the " +
-  "plan genuinely needs no execution, you may finalize; otherwise do not stop with prose.]";
+  "[runtime: the human APPROVED the plan. Execute its tasks directly or with delegate_task, if " +
+  "exposed, using exact task_ids. Review returned work and record actual outcomes with " +
+  "transition_plan_task. Approval or delegation alone does not complete the work.]";
 
 /**
  * `delegate_task`'s description when the run is planning, replacing the
@@ -97,9 +95,10 @@ export const PLAN_REVIEW_EXECUTE_NOTE =
  */
 const DELEGATE_TASK_PLAN_DESCRIPTION =
   "Delegate one existing plan task to a Sub-agent. task_id is required and must be copied exactly " +
-  "from the current plan; never invent, guess, or use a placeholder id. Use spawn_subagent instead " +
-  "for independent work that does not implement a plan task. The Sub-agent returns a text result " +
-  "or an error.";
+  "from the current plan. Use spawn_subagent instead for independent work. The child shares the " +
+  "workspace and receives only the brief, not your conversation. Returns a result/error inline or " +
+  "a background handle. Successful work becomes returned, not done: review it, then record its " +
+  "actual outcome with transition_plan_task.";
 
 /**
  * Appended to {@link DELEGATE_TASK_PLAN_DESCRIPTION} under `plan_review`, so the
@@ -152,17 +151,16 @@ export function buildDelegateTaskPlanAugmentation(planReview: boolean): {
  * this same batch.
  */
 export const duplicateBatchTaskId = (taskId: string): string =>
-  `duplicate task_id '${taskId}' in this batch — only one Sub-agent per task_id per iteration; spawn the others in a later turn.`;
+  `duplicate task_id '${taskId}' in this batch — only one Sub-agent per task_id per iteration; inspect the existing attempt before deciding whether another is needed.`;
 
 /**
  * Build the finalization-gate note listing the still-open task `ids` and
- * instructing the Lead to take exactly one closing action per task
- * (`transition_plan_task` or `delegate_task`) before finalizing.
+ * distinguishing work and delegation from an evidence-backed terminal transition.
  */
 export const PENDING_TASKS_NOTE = (ids: string[]): string =>
   `[runtime: ${ids.length} plan task(s) are still open (${ids.join(", ")}). ` +
-  "Do NOT finalize yet — for each remaining task, take exactly one closing action: if you completed it " +
-  "yourself, record it with transition_plan_task (its task_id + a short result); to hand it off, spawn a Sub-agent " +
-  "(delegate_task with its task_id); or, if it is genuinely unnecessary, abandon it with transition_plan_task. " +
-  "Finalize only when no task is left open. If you finalize again with tasks still open, the run will " +
-  "stop unfinished.]";
+  "Do NOT finalize yet. Continue the work directly or with delegate_task if exposed. Delegation " +
+  "and returned/failed states do not close tasks. Review the outcome, then use transition_plan_task: " +
+  "done requires an observed result; abandoned requires a genuine reason to stop. Do not invent " +
+  "success or abandon needed work just to pass this gate. Repeated finalization with open tasks " +
+  "stops the run unfinished.]";

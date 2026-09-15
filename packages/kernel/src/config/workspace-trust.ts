@@ -31,6 +31,7 @@ import type { SettingsData, WorkspaceTrustVerdict } from "@clarvis/protocol";
  *   operator's install list wearing the operator's own authority.
  * - `providers.subscription` attempts to attach global subscription credentials
  *   to a repository-chosen provider declaration or endpoint contract.
+ * - `runtime` can select a host executable, engine connection and broader network grant.
  *
  * Policy fields a repository might merely weaken (`guard`, `sandbox`) are
  * deliberately absent: keeping the list short is what keeps the verdict `inert`
@@ -46,6 +47,7 @@ export const WORKSPACE_RISK_FIELDS = [
   "plans.provider",
   "tasks.provider",
   "providers.subscription",
+  "runtime",
 ] as const;
 
 /** One entry of {@link WORKSPACE_RISK_FIELDS}. */
@@ -163,27 +165,38 @@ function nonSubscriptionProviders(settings: SettingsData): SettingsData["provide
 }
 
 /**
- * Permanently remove subscription-provider declarations and overrides from a workspace.
- * Approval can authorize model selection, but never creates or redirects global credentials.
+ * Permanently remove host-only declarations and subscription overrides from a workspace.
+ * Approval can authorize model selection, but never creates or redirects global credentials or
+ * selects an execution backend.
  */
 export function stripWorkspaceSubscriptionProviders(
   settings: SettingsData,
   protectedProviderNames: ReadonlySet<string> = new Set(),
 ): StrippedWorkspaceSettings {
-  if (!Array.isArray(settings.providers)) return { settings, withheld: [] };
-  const providers = settings.providers.filter(
-    (provider) =>
-      provider.kind !== "openai-codex" &&
-      provider.kind !== "xai-grok" &&
-      !protectedProviderNames.has(provider.name),
-  );
-  if (providers.length === settings.providers.length) return { settings, withheld: [] };
+  const providers = Array.isArray(settings.providers)
+    ? settings.providers.filter(
+        (provider) =>
+          provider.kind !== "openai-codex" &&
+          provider.kind !== "xai-grok" &&
+          !protectedProviderNames.has(provider.name),
+      )
+    : undefined;
+  const removedProviders =
+    providers !== undefined && providers.length !== settings.providers?.length;
+  const removedRuntime = settings.runtime !== undefined;
+  if (!removedProviders && !removedRuntime) return { settings, withheld: [] };
+  const kept = { ...settings };
+  if (removedRuntime) delete kept.runtime;
+  if (removedProviders) {
+    if (providers.length > 0) kept.providers = providers;
+    else delete kept.providers;
+  }
   return {
-    settings:
-      providers.length > 0
-        ? { ...settings, providers }
-        : Object.fromEntries(Object.entries(settings).filter(([key]) => key !== "providers")),
-    withheld: ["providers.subscription"],
+    settings: kept,
+    withheld: [
+      ...(removedProviders ? (["providers.subscription"] as const) : []),
+      ...(removedRuntime ? (["runtime"] as const) : []),
+    ],
   };
 }
 
@@ -196,6 +209,8 @@ export interface WorkspaceExecutableSurface {
   settings?: Record<string, unknown>;
   /** Name-sorted digests of the workspace's `.clarvis/agents/*.md`. */
   agents?: WorkspaceAgentSurface[];
+  /** Digest of the workspace's `shared-agent.md`, when that file exists. */
+  sharedPrompt?: { digest: string };
   /** Workspace Extension Profile selection/definition surface that activates plugins. */
   extensions?: unknown;
 }
@@ -233,19 +248,23 @@ function workspaceAgentSurface(
  *
  * @param settings - the workspace scope's parsed `settings.json`, if any.
  * @param agents - the workspace's agent files as `{ name, content }` pairs.
+ * @param extensions - the workspace Extension Profile surface, if any.
+ * @param sharedPrompt - the workspace `shared-agent.md` contents, if the file exists.
  * @returns the surface, or `undefined` when the workspace contributes nothing
  *   executable — it is inert and must never be prompted about.
- * @remarks Agent files count because an agent's markdown body becomes a system
- *   prompt section verbatim, so a repository that ships one is choosing what the
- *   model is told it is.
+ * @remarks Agent files and the shared prompt count because their markdown bodies
+ *   become system prompt sections verbatim, so a repository that ships one is
+ *   choosing what the model is told it is.
  */
 function workspaceExecutableSurface(
   settings: SettingsData | undefined,
   agents: { name: string; content: string }[] = [],
   extensions?: unknown,
+  sharedPrompt?: string,
 ): WorkspaceExecutableSurface | undefined {
   const risky: Record<string, unknown> = {};
   for (const field of WORKSPACE_RISK_FIELDS) {
+    if (field === "runtime") continue;
     if (field === "providers.subscription") {
       const providers = subscriptionProviders(settings ?? {});
       if (providers.length > 0) risky[field] = providers;
@@ -276,10 +295,18 @@ function workspaceExecutableSurface(
   const hasSettings = Object.keys(risky).length > 0;
   const hasAgents = agents.length > 0;
   const hasExtensions = extensions !== undefined;
-  if (!hasSettings && !hasAgents && !hasExtensions) return undefined;
+  const hasSharedPrompt = sharedPrompt !== undefined;
+  if (!hasSettings && !hasAgents && !hasExtensions && !hasSharedPrompt) return undefined;
   return {
     ...(hasSettings ? { settings: risky } : {}),
     ...(hasAgents ? { agents: workspaceAgentSurface(agents) } : {}),
+    ...(hasSharedPrompt
+      ? {
+          sharedPrompt: {
+            digest: `sha256:${createHash("sha256").update(sharedPrompt).digest("hex")}`,
+          },
+        }
+      : {}),
     ...(hasExtensions ? { extensions } : {}),
   };
 }
@@ -296,8 +323,9 @@ export function workspaceTrustFingerprint(
   settings: SettingsData | undefined,
   agents: { name: string; content: string }[] = [],
   extensions?: unknown,
+  sharedPrompt?: string,
 ): string | undefined {
-  const surface = workspaceExecutableSurface(settings, agents, extensions);
+  const surface = workspaceExecutableSurface(settings, agents, extensions, sharedPrompt);
   if (surface === undefined) return undefined;
   const json = JSON.stringify(canonical(surface));
   return `sha256:${createHash("sha256").update(json).digest("hex")}`;

@@ -1,4 +1,5 @@
 import type { AgentResult } from "./agent-result.ts";
+import type { CheckpointMetadata } from "./finalization.ts";
 import type { ComputeClock } from "./compute-clock.ts";
 import type { ConvergenceGuards } from "./convergence-guards.ts";
 import type { LLMToolCall } from "./llm-port.ts";
@@ -82,14 +83,42 @@ export interface AgentBuildContext {
 /**
  * A tool handler's ruling on a dispatched call: an immediate `result`, a
  * `deferred` continuation to run (optionally under an abort signal), a
- * `terminal` outcome that ends the agent, or `cancelled` when the call was
- * aborted mid-flight.
+ * `finalize` request that passes through all finalize gates after dispatch,
+ * a `terminal` outcome that ends the agent, or `cancelled` when the call was
+ * aborted mid-flight. A checkpoint request does not itself accept the stage.
  */
 export type HandlerVerdict =
   | ({ kind: "result" } & HandlerResult)
   | { kind: "deferred"; run: (signal?: AbortSignal) => Promise<HandlerResult> }
+  | ({ kind: "finalize"; attempt: CheckpointAttempt } & HandlerResult)
   | { kind: "terminal"; result: AgentResult }
   | { kind: "cancelled" };
+
+/**
+ * Engine-facing live control for one physical tool invocation.
+ *
+ * @remarks A structural projection of the protocol `ToolExecutionControl`
+ * envelope, not a shared type. This package must not depend on
+ * `@clarvis/protocol`. The dispatch lifecycle converts camelCase to the
+ * snake_case trace envelope, which the trace mapper preserves.
+ */
+export interface ToolInvocationControl {
+  readonly toolExecutionId: string;
+  readonly actions: readonly ["interrupt"];
+}
+
+/**
+ * Per-call execution context handed to {@link ToolHandler.handle}.
+ *
+ * @remarks `signal` is the effective abort for this invocation. For ordinary
+ * handlers it is the run signal. For an interruptible builtin `shell` it is
+ * `AbortSignal.any([runSignal, toolSignal])`. `control` is present only when
+ * the invocation is currently interruptible.
+ */
+export interface ToolInvocationContext {
+  readonly signal: AbortSignal;
+  readonly control?: ToolInvocationControl;
+}
 
 /**
  * A dispatcher for one family of tool calls: `matches` claims a call, and
@@ -100,14 +129,37 @@ export interface ToolHandler {
   matches(call: LLMToolCall): boolean;
   /** Stable tool identity for lifecycle consumers when the wire name is projected. */
   canonicalName?(call: LLMToolCall): string | undefined;
-  handle(call: LLMToolCall, iteration: number): Promise<HandlerVerdict>;
+  /**
+   * Whether this invocation may receive live operator interrupt control.
+   *
+   * @remarks Only the builtin coding-tools handler returns `true`, and only
+   * when {@link ToolHandler.canonicalName} is `shell`.
+   */
+  interruptible?(call: LLMToolCall): boolean;
+  handle(
+    call: LLMToolCall,
+    iteration: number,
+    context?: ToolInvocationContext,
+  ): Promise<HandlerVerdict>;
 }
 
 /**
- * An agent's bid to finish: either a `text` final answer or a structured
- * `submit` carrying a `value` (the `text` field may still accompany a submit).
+ * An agent's bid to finish: a `text` final answer, a structured `submit`
+ * carrying a `value`, or a capability-requested `checkpoint` with a separate
+ * bounded handoff. Missing disposition retains the ordinary final-result path.
  */
-export type FinalizeAttempt = { mode: "text" | "submit"; value?: unknown; text?: string };
+export type FinalizeAttempt =
+  | { mode: "text" | "submit"; disposition?: "final"; value?: unknown; text?: string }
+  | CheckpointAttempt;
+
+/** A capability requests a stage ending through the ordinary finalize gates. */
+export interface CheckpointAttempt {
+  mode: "checkpoint";
+  disposition: "checkpoint";
+  checkpoint: CheckpointMetadata;
+  value?: never;
+  text?: never;
+}
 
 /**
  * A finalize gate's ruling on a {@link FinalizeAttempt}: `pass` lets it through,
@@ -136,7 +188,12 @@ export interface FinalizeGate {
  * `onFinalizeAccepted` (an agent's finalize was accepted), and `onTeardown` (the
  * agent is winding down).
  *
- * @remarks `onTeardown` may return a promise, which the loop awaits before it
+ * @remarks `beforeIteration` is awaited in contribution order before compaction
+ * or inference. It may return an interruption result to stop the stage, never
+ * successful completion or a checkpoint that would bypass finalization gates. The engine
+ * bounds the whole sweep and retires its signal on completion, timeout or abort;
+ * asynchronous hooks must check that signal before publishing delayed work.
+ * `onTeardown` may return a promise, which the loop awaits before it
  * resolves. A capability holding work that outlives a dispatch — a background
  * child — has to be able to wind it down while the run's trace, MCP pool and
  * usage accounting are all still open; a fire-and-forget teardown would drop
@@ -144,9 +201,9 @@ export interface FinalizeGate {
  * loop resolves is waiting on it.
  */
 export interface OrchestrationHooks {
-  beforeIteration?: () => void;
+  beforeIteration?: (signal?: AbortSignal) => void | AgentResult | Promise<void | AgentResult>;
   afterDispatch?: () => void;
   contributesProgress?: () => boolean;
-  onFinalizeAccepted?: () => void;
+  onFinalizeAccepted?: (attempt: FinalizeAttempt) => void;
   onTeardown?: () => void | Promise<void>;
 }

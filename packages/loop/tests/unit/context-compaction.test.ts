@@ -108,7 +108,7 @@ describe("inline image retained-size accounting", () => {
     expect(liveMessageChars(tool)).toBeGreaterThanOrEqual(2 + 6 + "image/png".length);
   });
 
-  it("releases older images before a context or final snapshot can grow without bound", () => {
+  it("bounds new images without rewriting an earlier result", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     const data = "x".repeat(7_000_000);
     ctx.appendToolMessage("old", "old image", {
@@ -119,9 +119,9 @@ describe("inline image retained-size accounting", () => {
     });
 
     const tools = ctx.messages.filter((m) => m.role === "tool");
-    expect(tools[0]?.images).toBeUndefined();
-    expect(tools[0]?.content).toContain("released to keep the live context");
-    expect(tools[1]?.images).toHaveLength(1);
+    expect(tools[0]?.images).toHaveLength(1);
+    expect(tools[1]?.content).toContain("released to keep the live context");
+    expect(tools[1]?.images).toBeUndefined();
     const retained = tools
       .flatMap((m) => m.images ?? [])
       .reduce((n, image) => n + image.data.length, 0);
@@ -252,7 +252,7 @@ describe("LiveContext — native tool message construction", () => {
 });
 
 describe("canonical-state-driven compaction", () => {
-  it("setCanonicalState keeps ONE canonical message and floats it to the tail on refresh", () => {
+  it("setCanonicalState retains historical reminders and appends the current one", () => {
     const ctx = createLiveContext([{ role: "user", content: "seed" }], DISABLED_COMPACTION, {
       agent: "lead",
     });
@@ -260,12 +260,12 @@ describe("canonical-state-driven compaction", () => {
     ctx.appendAssistant("thinking");
     ctx.setCanonicalState("[state] v2");
     const contents = ctx.messages.map((m) => contentToText(m.content));
-    expect(contents.filter((c) => c.startsWith("[state]"))).toEqual(["[state] v2"]);
-    expect(contents).toEqual(["seed", "thinking", "[state] v2"]);
+    expect(contents.filter((c) => c.startsWith("[state]"))).toEqual(["[state] v1", "[state] v2"]);
+    expect(contents).toEqual(["seed", "[state] v1", "thinking", "[state] v2"]);
     expect(contents.at(-1)).toBe("[state] v2");
   });
 
-  it("a status refresh moves the block to the tail, leaving the prior prefix undisturbed", () => {
+  it("a status refresh appends after the unchanged prior header and tool pair", () => {
     const ctx = createLiveContext([{ role: "user", content: "seed" }], DISABLED_COMPACTION, {
       agent: "lead",
     });
@@ -274,7 +274,13 @@ describe("canonical-state-driven compaction", () => {
     ctx.appendToolMessage("c1", "did the work");
     ctx.setCanonicalState("[state] t1 done");
     const contents = ctx.messages.map((m) => contentToText(m.content));
-    expect(contents).toEqual(["seed", "work", "did the work", "[state] t1 done"]);
+    expect(contents).toEqual([
+      "seed",
+      "[state] t1 pending",
+      "work",
+      "did the work",
+      "[state] t1 done",
+    ]);
     assertValidToolOrdering(ctx.messages);
   });
 });
@@ -322,13 +328,13 @@ describe("LiveContext.cacheBreakpoints", () => {
     expect(ctx.cacheBreakpoints().stable).toBe(0);
   });
 
-  it("skips the canonical block and the runtime note at the tail", () => {
+  it("includes the retained canonical reminder in the cacheable prefix", () => {
     const ctx = lead();
     ctx.appendAssistant("thinking");
     ctx.appendRuntimeNote("tokens_remaining", "[runtime: t=1]");
     ctx.setCanonicalState("[state] v1");
     const { stable } = ctx.cacheBreakpoints();
-    expect(contentToText(ctx.messages[stable]!.content)).toBe("thinking");
+    expect(contentToText(ctx.messages[stable]!.content)).toBe("[state] v1");
   });
 
   // The regression this whole change exists for. Raw indices shift between
@@ -372,7 +378,7 @@ describe("LiveContext.cacheBreakpoints", () => {
     // 15 tool results plus their assistant turn is 31 content blocks — beyond
     // the provider's 20-block backwards search — so this must be exact, not near.
     expect(cachedPrefix(ctx, third.prior)).toEqual(cachedBySecond);
-    expect(contentToText(ctx.messages[third.stable]!.content)).toBe("result c2-14");
+    expect(third.stable).toBe(ctx.messages.length - 1);
   });
 
   it("handles a text-only iteration with no tool calls", () => {
@@ -474,7 +480,7 @@ describe("LiveContext.setStableBlock", () => {
     expect(ctx.messages.filter((m) => contentToText(m.content).startsWith("spec ")).length).toBe(2);
   });
 
-  it("lands ahead of the trailing volatile run, so a note never buries it", () => {
+  it("appends the new stable block after all existing reminders", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.setStableBlock("state_block", "spec v1");
     ctx.appendRuntimeNote("budget", "[runtime: n]");
@@ -484,9 +490,9 @@ describe("LiveContext.setStableBlock", () => {
     expect(ctx.messages.map((m) => contentToText(m.content))).toEqual([
       "seed task",
       "spec v1",
-      "spec v2",
       "[runtime: n]",
       "cas v1",
+      "spec v2",
     ]);
   });
 
@@ -546,7 +552,7 @@ describe("LiveContext.setStableBlock", () => {
     ctx.setStableBlock("state_block", "spec v1");
     ctx.setCanonicalState("[state] header");
     const { stable } = ctx.cacheBreakpoints();
-    expect(contentToText(ctx.messages[stable]!.content)).toBe("spec v1");
+    expect(contentToText(ctx.messages[stable]!.content)).toBe("[state] header");
   });
 
   it("is never evicted, summarized, or force-dropped", () => {
@@ -1374,8 +1380,8 @@ describe("below-threshold / disabled ⇒ byte-identical projection", () => {
   });
 });
 
-describe("appendRuntimeNote — replaceable per-kind runtime notes", () => {
-  it("keeps at most one live note per kind, replacing the earlier value", () => {
+describe("appendRuntimeNote — historical per-kind observations", () => {
+  it("retains both observations while pinning only the latest note per kind", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("tokens_remaining", "[runtime: tokens_remaining=100]");
     ctx.appendAssistant("working");
@@ -1383,12 +1389,15 @@ describe("appendRuntimeNote — replaceable per-kind runtime notes", () => {
     const notes = ctx.messages.filter(
       (m) => typeof m.content === "string" && m.content.includes("tokens_remaining="),
     );
-    expect(notes).toHaveLength(1);
-    expect(notes[0]!.content).toBe("[runtime: tokens_remaining=50]");
+    expect(notes).toHaveLength(2);
+    expect(notes[0]!.content).toBe("[runtime: tokens_remaining=100]");
+    expect(ctx.snapshot().filter((entry) => entry.note_kind === "tokens_remaining")).toHaveLength(
+      1,
+    );
     expect(ctx.messages[ctx.messages.length - 1]!.content).toBe("[runtime: tokens_remaining=50]");
   });
 
-  it("notes of different kinds coexist and replace independently", () => {
+  it("notes of different kinds retain all historical observations", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("tokens_remaining", "tokens v1");
     ctx.appendRuntimeNote("empty_response", "empty v1");
@@ -1396,7 +1405,7 @@ describe("appendRuntimeNote — replaceable per-kind runtime notes", () => {
     const texts = ctx.messages.map((m) => m.content);
     expect(texts).toContain("empty v1");
     expect(texts).toContain("tokens v2");
-    expect(texts).not.toContain("tokens v1");
+    expect(texts).toContain("tokens v1");
   });
 
   it("does not disturb plain appendNote notes (they still accumulate)", () => {
@@ -1481,44 +1490,44 @@ describe("running character total stays equal to the sum of its entries", () => 
   });
 });
 
-describe("volatile entries stay in one trailing run, so a cached prefix survives", () => {
+describe("all historical entries retain their original position", () => {
   const roles = (ctx: ReturnType<typeof createLiveContext>): string[] =>
     ctx.messages.map((m) => m.role);
 
-  it("keeps a runtime note last when ordinary turns arrive after it", () => {
+  it("keeps a runtime note in place when ordinary turns arrive after it", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("tokens_remaining", "note v1");
     ctx.appendAssistantToolCalls("", [call("c1")]);
     ctx.appendToolMessage("c1", "result");
 
-    expect(roles(ctx)).toEqual(["user", "assistant", "tool", "user"]);
-    expect(contentToText(ctx.messages.at(-1)!.content)).toBe("note v1");
+    expect(roles(ctx)).toEqual(["user", "user", "assistant", "tool"]);
+    expect(contentToText(ctx.messages[1]!.content)).toBe("note v1");
   });
 
-  it("keeps the canonical block last, after both the note and the newest tool run", () => {
+  it("keeps the canonical reminder before the newly appended tool run", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("k", "note");
     ctx.setCanonicalState("state v1");
     ctx.appendAssistantToolCalls("", [call("c1")]);
     ctx.appendToolMessage("c1", "result");
 
-    const tail = ctx.messages.slice(-2).map((m) => contentToText(m.content));
+    const tail = ctx.messages.slice(1, 3).map((m) => contentToText(m.content));
     expect(tail).toEqual(["note", "state v1"]);
   });
 
-  it("puts a stable block ahead of the volatile run rather than behind it", () => {
+  it("appends a stable block after the existing note", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("k", "note");
     ctx.setStableBlock("state_block", "the spec");
 
     expect(ctx.messages.map((m) => contentToText(m.content))).toEqual([
       "seed task",
-      "the spec",
       "note",
+      "the spec",
     ]);
   });
 
-  it("never anchors a breakpoint at or after a volatile entry", () => {
+  it("allows breakpoints after historical reminders", () => {
     const ctx = createLiveContext(seed(), DISABLED_COMPACTION, { agent: "lead" });
     ctx.appendRuntimeNote("k", "note");
     ctx.setCanonicalState("digest");
@@ -1528,9 +1537,9 @@ describe("volatile entries stay in one trailing run, so a cached prefix survives
     ctx.appendToolMessage("c2", "result2");
 
     const { stable, prior } = ctx.cacheBreakpoints();
-    const volatileFrom = ctx.messages.length - 2;
+    const historyEnd = ctx.messages.length - 1;
     expect(stable).toBeGreaterThanOrEqual(0);
-    expect(stable).toBeLessThan(volatileFrom);
+    expect(stable).toBe(historyEnd);
     expect(prior).toBeLessThan(stable);
   });
 

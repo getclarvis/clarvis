@@ -17,16 +17,10 @@ export const RESEARCH_WORKFLOW = {
 
 {{args.question}}
 
-Your job is to find the independent lines of enquiry, not to answer the question.
-
-- Establish what is actually being asked, and what an answer would have to contain to count.
-- Return one \`work_item\` per line of enquiry that could be pursued without waiting for another.
-  Give each a short \`title\` for the operator and keep the complete instruction in \`goal\`. Give each
-  a distinct angle — by subsystem, by source, by time period, by the kind of evidence it would
-  produce. Five items that are the same search worded differently are waste.
-- List in \`files\` whatever each item would need to read; set \`mutation: false\`. This is read-only.
-- Put what you could not determine into \`unknowns\` — including whether the question is answerable
-  at all from what is available.`,
+Define what an adequate answer requires, then return independent lines of enquiry in \`work_items\`.
+Each needs a short \`title\`, self-contained \`goal\`, read \`files\`, real \`dependencies\` and
+\`mutation: false\`. Avoid duplicated searches. Record \`unknowns\`, including unavailable evidence
+needed to answer the question. This round frames the research; it does not answer it.`,
       fanout: 1,
     },
     {
@@ -41,18 +35,12 @@ Your job is to find the independent lines of enquiry, not to answer the question
 
 It is one part of the question: {{args.question}}
 
-Stay on your line. Another leader is covering the others, and two leaders answering the same
-sub-question is not redundancy, it is waste.
+Stay on your assigned line and use only available read-only tools.
 
-- Go to primary evidence. Do not answer from what the naming or the documentation implies.
-- Return one \`finding\` per thing you actually established, cited as \`path:line\` or as the source you
-  read. A claim you cannot cite does not go in.
-- Set \`needs_verification: true\` on anything load-bearing for the final answer, anything surprising,
-  and anything you could not fully confirm.
-- Set \`confidence\` on the strength of the evidence, not on how plausible the conclusion feels.
-- Record in \`coverage_gaps\` what you sampled, skipped, or could not reach. This is what keeps the
-  final answer from overclaiming.
-- Do not modify the workspace.`,
+Use primary evidence and cite each finding as \`path:line\` or an exact source. Set
+\`needs_verification: true\` for consequential or uncertain claims and calibrate \`confidence\`
+to the evidence. Record sampled, skipped or unavailable material in \`coverage_gaps\`.
+Do not modify the workspace.`,
       fanout: 1,
     },
     {
@@ -65,23 +53,18 @@ sub-question is not redundancy, it is waste.
         where: { field: "needs_verification" },
       },
       title: "{{item.title}}",
-      brief: `Try to REFUTE this claim, made while researching {{args.question}}:
+      brief: `Independently test this claim, made while researching {{args.question}}:
 
+Finding id: {{item.id}}
 {{item.claim}}
 
 Evidence offered: {{item.evidence}}
 Why it was said to matter: {{item.impact}}
 
-Attack the claim. A researcher's conclusion nobody tried to break is a hypothesis.
-
-- Go to the evidence yourself, and look for what would make the claim false: a counter-example, a
-  source that says otherwise, a case the claim does not cover.
-- Return \`refuted\` when you found it, and name it.
-- Return \`confirmed\` only when you independently reached the same conclusion from the evidence.
-- Return \`inconclusive\` when you could not reach the evidence. That is the honest answer and it is
-  why the value exists — a verification round where everything comes back \`confirmed\` by default is
-  decorative.
-- Do not modify the workspace.`,
+Inspect primary evidence and seek counterexamples using available read-only tools. Copy the
+finding id into \`finding_id\`. Return \`confirmed\` for independent supporting evidence, \`refuted\`
+for contradictory evidence, or \`inconclusive\` if evidence is insufficient. Cite what you observed;
+do not confirm by default or modify the workspace.`,
       fanout: 2,
       accept: { kind: "threshold", field: "verdict", value: "refuted", count: 2 },
     },
@@ -95,19 +78,9 @@ Attack the claim. A researcher's conclusion nobody tried to break is a hypothesi
 
 {{item}}
 
-You are the completeness critic. Your question is not "what did we find?" but "what would make this
-answer wrong?"
-
-- Which of these gaps actually threaten the answer, and which are harmless? Say which, and why.
-- What angle was never tried at all — a source nobody read, a subsystem nobody looked at, a period
-  nobody covered?
-- What is being assumed rather than established?
-- Where a gap turns out to hide something real, return it as a finding with cited evidence, exactly
-  as an investigation round would; the Admiral uses it to decide whether a separate pass is worth
-  authorizing.
-- Leave in \`coverage_gaps\` what genuinely remains unknown. This is the caveat the final answer has
-  to carry, so make it accurate rather than reassuring.
-- Do not modify the workspace.`,
+Identify which gaps or untested assumptions could change the answer. Inspect them with available
+read-only tools; report newly supported findings with evidence and keep unresolved gaps in
+\`coverage_gaps\`. Explain whether another pass could resolve them. Do not modify the workspace.`,
       fanout: 1,
       when: "investigate.coverage_gaps",
     },
@@ -121,15 +94,9 @@ answer wrong?"
   },
   synthesis: `# Synthesis
 
-Answer the question. Do not narrate the research.
-
-- Lead with the answer, then the evidence it rests on. If the evidence does not support an answer,
-  say that instead of assembling one.
-- Every claim you keep must cite where it came from. A claim \`verify\` refuted is gone — not a
-  caveat, not a "some sources suggest".
-- Distinguish what you established from what you inferred. The reader cannot tell them apart from
-  the prose, and the difference is usually what matters.
-- State what remains unknown, using the critic round's gaps. A confident answer to a question the
-  research did not actually settle is the failure mode here.`,
+Answer from cited evidence, separating established facts, inferences and unknowns. If the evidence
+cannot settle the question, say so. \`verify.accepted\` contains claims meeting the refutation
+threshold; exclude them. \`verify.rejected\` means not refuted, not confirmed: preserve uncertainty
+when verification was inconclusive or unavailable. Include reported coverage gaps and skipped rounds.`,
   dir: "builtin:research",
 } satisfies WorkflowDefinition;

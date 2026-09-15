@@ -3,7 +3,7 @@ import { createRoot } from "solid-js";
 import { applyManualBindingEdit } from "../../src/keys/keyboard-profile.ts";
 import { createTranscriptStore } from "../../src/adapters/store.ts";
 
-const known = new Set(["safety.picker", "app.escape", "mcp.prompt.gone"]);
+const known = new Set(["isolation.picker", "app.escape", "mcp.prompt.gone"]);
 
 test("a vital action's non-shadowing issue does not block an unrelated edit", () => {
   // A hand-edited keyboard.json naming a command no longer registered reports
@@ -13,18 +13,18 @@ test("a vital action's non-shadowing issue does not block an unrelated edit", ()
   // editing.
   const result = applyManualBindingEdit({
     saved: { profile: "manual", bindings: { "app.escape": [] } },
-    command: "safety.picker",
+    command: "isolation.picker",
     keys: ["ctrl+b"],
     knownCommands: known,
   });
   expect(result.issues).toBeUndefined();
-  expect(result.config?.bindings?.["safety.picker"]).toEqual(["ctrl+b"]);
+  expect(result.config?.bindings?.["isolation.picker"]).toEqual(["ctrl+b"]);
 });
 
 test("a vital action's shadowing issue still blocks the edit that caused it", () => {
   const result = applyManualBindingEdit({
     saved: { profile: "manual" },
-    command: "safety.picker",
+    command: "isolation.picker",
     keys: ["escape"],
     knownCommands: known,
   });

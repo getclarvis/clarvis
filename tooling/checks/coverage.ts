@@ -1,6 +1,7 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readCiWorkspaces } from "../lib/ci-workspaces.ts";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -27,6 +28,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const PACKAGE_THRESHOLDS = {
   capability: { functions: 1, lines: 1 },
   code: { functions: 0.93, lines: 0.96 },
+  goal: { functions: 0.95, lines: 0.98 },
   hooks: { functions: 1, lines: 1 },
   kernel: { functions: 0.94, lines: 0.97 },
   llm: { functions: 1, lines: 1 },
@@ -79,6 +81,7 @@ const NO_COUNTER_ALLOWLIST = {
     "src/compaction-anchor.ts",
     "src/convergence-guards.ts",
     "src/loop-contract.ts",
+    "src/model-execution.ts",
     "src/output-budget.ts",
     "src/ports.ts",
     "src/usage.ts",
@@ -99,16 +102,26 @@ const NO_COUNTER_ALLOWLIST = {
     // cover is the PTY-driven artifact smoke. Splitting the entry keeps heavy
     // code out of first paint but does not make either module safe to import into
     // the in-process coverage runner.
+    // `src/local-host.ts` boots the companion process. Kernel measures its shared
+    // composition; installed-artifact and PTY checks exercise this entry itself.
     "src/cli.ts",
     "src/index.tsx",
+    "src/local-host.ts",
+    "src/remote-host.ts",
     "src/runtime.tsx",
+  ],
+  goal: [
+    // Type-only: host repository and runtime authority contracts.
+    "src/ports.ts",
   ],
   hooks: [],
   kernel: [
     // Type-only: internal subscription adapter and persistence contracts.
     "src/subscriptions/types.ts",
     // Type-only.
+    "src/runtime/tool-policy.ts",
     "src/config/builtin-agents/types.ts",
+    "src/guard/effects/types.ts",
     "src/connection-health.ts",
     "src/ports/plugin-repository.ts",
     "src/ports/process-runner.ts",
@@ -173,7 +186,7 @@ const NO_COUNTER_ALLOWLIST = {
     // Type-only.
     "src/guard/dialect.ts",
     "src/guard/types.ts",
-    "src/sandbox-entry.ts",
+    "src/guard/effect-review.ts",
     "src/tools/types.ts",
     // Pure re-export barrels for the narrow shell and monitor subpaths.
     "src/monitor-entry.ts",
@@ -386,9 +399,30 @@ function percentage(value) {
   return `${(value * 100).toFixed(2)}%`;
 }
 
+/** Every declared workspace needs a floor, and every floor must still name a declared workspace. */
+export async function coverageWorkspaceFailures(root = repositoryRoot): Promise<string[]> {
+  const workspaces = await readCiWorkspaces(root, "test:coverage");
+  const names = new Set(workspaces.map((workspace) => workspace.name.slice("@clarvis/".length)));
+  return [
+    ...[...names]
+      .filter((name) => !Object.hasOwn(PACKAGE_THRESHOLDS, name))
+      .map((name) => `${name}: workspace has no coverage floor`),
+    ...Object.keys(PACKAGE_THRESHOLDS)
+      .filter((name) => !names.has(name))
+      .map((name) => `${name}: coverage floor has no workspace`),
+  ];
+}
+
 /** Check every workspace's own-source coverage and complete module inventory. */
 export async function checkCoverage(root = repositoryRoot) {
   const failures = [];
+  const inventoryFailures = await coverageWorkspaceFailures(root);
+  if (inventoryFailures.length > 0) {
+    throw new AggregateError(
+      inventoryFailures,
+      "Coverage workspace policy does not match manifests",
+    );
+  }
 
   for (const [packageName, thresholds] of Object.entries(PACKAGE_THRESHOLDS)) {
     const coverage = await readOwnSourceCoverage(packageName, root);

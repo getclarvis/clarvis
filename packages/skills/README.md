@@ -25,6 +25,14 @@ The API separates skill discovery from loading:
 2. load a selected skill's body;
 3. resolve its scripts, references, assets and other resources only when needed.
 
+`renderSkillsSection` treats the catalog as routing, not decoration. A skill the user names is
+loaded before acting. Otherwise a listed skill is loaded when its one-line `description` clearly
+matches the current task, and skipped only with a short reason. Presence in the catalog is not
+itself a reason to load. The user's current instructions take precedence over the skill. If a
+skill is why the run must pause, the section identifies the relevant `SKILL.md` rule. Authors
+should write `description` as that router ("Use when X. Not for Y."), not as a summary of the
+body. Fleet-wide precedence lives in the shared prompt; this section owns discovery and loading.
+
 Discovery reads only a bounded manifest prefix and retains metadata plus a lazy
 body loader. It does not keep every `SKILL.md` body in the catalog. The first
 body disclosure is cached for that registry generation; `refresh()` replaces
@@ -80,20 +88,35 @@ Extension Profiles.
 
 `executionRoot` is a separate, host-controlled opt-in. When present on a root, discovery exposes
 only each selected skill's own directory as that skill's `executionRoot`; it never exposes the
-broader collection or package directory. `load_skill` always identifies the skill directory for
+broader collection or package directory. Filesystem-backed `load_skill` identifies the skill directory for
 relative resource paths and emits the helper-execution hint only for this opted-in field. Execution
 still goes through the normal shell command guard and native sandbox policy.
+
+Host bridges mark tool-only disclosure with `resourceAccess: "remote"`. The catalog then advertises
+loading by name and resource reads through `read_skill_resource`; body disclosure advertises no
+mounted directory or execution root. Bundled helpers must first be read through all resource pages
+and prepared with their relative directory structure in the writable workspace, then invoked
+through the ordinary guarded shell. Remote locations are opaque locators.
+
+`validateSkillDocument` exposes the same bounded-frontmatter parser used by discovery, so the
+restricted configuration writer can validate a candidate before mutation.
+
+`captureSkillExecution` materializes a bounded catalog revision for a host that needs stable helper
+paths and resource bytes while the source is edited. It copies only enumerated resources and manifests,
+rejects links/escapes and limits allocations per file, skill and catalog. The owner must close the
+capture when its users settle. Full reads preserve the normal size errors; chunked reads preserve
+pagination. The loop uses this facility for host-selected snapshots.
 
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
 a resource while enforcing that it stays inside the selected skill directory.
 
 ## Entry points
 
-| Entry                        | Contents                                                                                                       |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                             |
-| `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                 |
-| `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, the `load_skill` tool and its handler, plugin bootstrap resolution |
+| Entry                        | Contents                                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                               |
+| `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                   |
+| `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, strict body/resource tools and handlers, plugin bootstrap resolution |
 
 ```ts
 import { renderSkillCatalog } from "@clarvis/skills/catalog";
@@ -106,21 +129,39 @@ eager configuration path may reach it, or `builtins.skills = false` would still
 load this package on every import of the engine. The loop reaches it through a
 dynamic import instead.
 
-`renderSkillCatalog` includes the exact `SKILL.md` path with each name and description and never
-emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes
+`renderSkillCatalog` includes the exact `SKILL.md` path with each filesystem-backed name and
+description. Host-embedded entries with `source: "builtin"` instead say to load by name and precede
+external entries, keeping product guidance discoverable when a large catalog is truncated.
+`load_skill` identifies them as embedded instructions rather than advertising an execution
+directory. Their `root`, `dir` and `path` are `builtin:` locators, not filesystem paths. The kernel
+owns the shipped `clarvis-configure` body and composition; this package does not import product
+configuration or create builtin files.
+
+The catalog never emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes
 descriptions, then omits a deterministic tail. The capability filters a skill whose
 `agents/openai.yaml` declares `dependencies.tools` entries of `type: mcp` unless the run carries
 that MCP server (including its plugin-qualified form), while the protocol/UI retain the dependency
 metadata for diagnosis.
+
+`./capability` also exports the pure `formatSkillBody`, `formatSkillResourceChunk`,
+`formatSkillResourceLegacy` and `validateResourceChunk` helpers. Native handlers use the same
+disclosure and page validation. The complete Container Kernel has no Skill catalog/tool/bridge and receives no
+Skill or Plugin-bootstrap bytes; explicit Skill use or a custom `use_skills` profile is refused
+before engine/model work. A whole-resource provider never advertises a byte cursor it cannot
+continue.
 
 The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedTextChunk`,
 `hashBoundedFile`, their option/result types, and the bounded skill file/resource limits. The legacy
 whole-resource read remains capped at 256 KiB and 50 000 decoded characters. A chunked read admits a
 complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 256 KiB and 50 000
 characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
-pair. `load_skill` validates every chunk returned by a provider and fails closed on a mismatched,
-unbounded, non-progressing or inexact cursor. A legacy provider without chunk support can serve only
-offset zero and never reinterprets the byte cursor as a character index.
+pair. `load_skill` has the closed shape `{ name }` and only loads the body. Bundled files use the
+separate `read_skill_resource` shape `{ name, resource, offset }`; every field is required, the first
+page uses byte offset zero, and a provider-portable relative path pattern with no regex lookaround
+rejects absolute paths, traversal, drive-qualified paths, backslashes, control characters and empty
+segments. The resource reader validates every chunk returned by a provider and fails closed on a
+mismatched, unbounded, non-progressing or inexact cursor. A legacy provider without chunk support
+can serve only offset zero and never reinterprets the byte cursor as a character index.
 
 `hashBoundedFile` streams raw bytes through a fixed buffer, without decoding or retaining the whole
 file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public
@@ -134,10 +175,10 @@ manifest, selected sidecar when present, and enumerated resources. A host can ar
 monitoring for that exact set before comparing the captured catalog with its pinned digest; the
 sidecar remains unavailable through the resource API.
 
-`LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
-`reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`
-descriptor, so the engine learns the name without loading this optional package
-on its eager path.
+`LOAD_SKILL_TOOL_NAME` and `READ_SKILL_RESOURCE_TOOL_NAME` are owned only here.
+`createSkillsCapability` derives its `reservedWireNames` and `toolEffects` from the two canonical
+descriptors, so the engine learns neither name by duplicating it on the optional package's eager
+path.
 
 ## Parsing behavior
 
@@ -238,9 +279,9 @@ operator greps. Both are set on `AgentSkillsOptions` and carried on the resolved
 `SkillConfig`, which is itself a `SkillDiagnostics` — that is the single struct
 the `scan.ts` helpers take.
 
-Nothing here is traced. Only `load_skill` produces a trace entry; discovery,
-merging, shadowing and sidecar parsing are machinery acting on the state of a
-directory, which fails the trace test on attribution and on volume alike.
+Nothing here is traced. Only the model-facing `load_skill` and `read_skill_resource` calls produce
+trace entries; discovery, merging, shadowing and sidecar parsing are machinery acting on the state
+of a directory, which fails the trace test on attribution and on volume alike.
 
 | Level   | `event`                       | Fields                                                      |
 | ------- | ----------------------------- | ----------------------------------------------------------- |
@@ -305,3 +346,5 @@ bun --filter @clarvis/skills format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+`listSkillDirs` exposes the existing bounded discovery walk with an optional host directory observer. This lets catalogs monitor empty/grouping directories before a manifest arrives, using the same depth, directory-entry and candidate budgets as discovery. `validateSkillDocument` preserves root-specific naming rules; the writer uses the resulting metadata name for membership.

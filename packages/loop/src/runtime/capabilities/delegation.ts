@@ -7,6 +7,7 @@
  */
 import type { ImagePart, LifecycleHook } from "@clarvis/capability";
 import type { EnvConfig } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { Logger } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import type { RegistryEntry } from "@clarvis/mcp-client";
@@ -27,6 +28,7 @@ import { buildDelegationContribution } from "../delegation.ts";
 import type { SubagentAggregate } from "../subagents/delegate-task.ts";
 import type { SubagentProfileRegistry } from "../subagents/subagent-profiles.ts";
 import type { Elicit } from "../tools/ask-user-tool.ts";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 /** Registry name of the delegation (sub-agent spawning) capability. */
 export const DELEGATION_CAPABILITY_NAME = "delegation";
@@ -37,6 +39,8 @@ export const DELEGATION_CAPABILITY_NAME = "delegation";
  * already exist.
  */
 export interface DelegationCapabilityDeps {
+  /** Machinery namespace shared with every descendant. */
+  statePaths?: WorkspaceStatePaths;
   env: EnvConfig;
   workspaceRoot: string;
   opened: RegistryEntry[];
@@ -75,6 +79,10 @@ export interface DelegationCapabilityDeps {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * every sub-agent registry a spawn from this capability mints. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -124,6 +132,7 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               capabilitiesFor,
               ...(scope.clock ? { clock: scope.clock } : {}),
               workspaceRoot: deps.workspaceRoot,
+              ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
               ...(deps.hooks ? { hooks: deps.hooks } : {}),
               ...(deps.logger ? { logger: deps.logger } : {}),
               ...(deps.turnImages !== undefined && deps.turnImages.length > 0
@@ -135,6 +144,8 @@ export function createDelegationRunCapability(deps: DelegationCapabilityDeps): R
               ...(deps.emitCapabilityEvent === undefined
                 ? {}
                 : { emitCapabilityEvent: deps.emitCapabilityEvent }),
+              ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
+              ...(deps.toolInterrupts !== undefined ? { toolInterrupts: deps.toolInterrupts } : {}),
             }),
           };
         },

@@ -57,6 +57,8 @@ export interface SkillDirEntry {
 
 /** Per-root discovery constraints supplied by the host that owns that root. */
 export interface SkillScanPolicy {
+  /** Host observation of bounded discovery directories, including empty candidates. */
+  observeDirectory?(path: string): void;
   /** Whether grouping directories are traversed or only immediate children are inspected. */
   discovery?: "nested" | "immediate";
   /** Whether the canonical manifest filename is matched exactly. */
@@ -92,6 +94,7 @@ export function listSkillDirs(
   maximumSkills = MAX_SKILLS_PER_ROOT + 1,
   policy: SkillScanPolicy = {},
 ): SkillDirEntry[] {
+  policy.observeDirectory?.(root);
   const confinementReal =
     policy.confinementRoot === undefined
       ? undefined
@@ -139,6 +142,7 @@ export function listSkillDirs(
         skipped(diagnostics, "entries", root);
         return done();
       }
+      policy.observeDirectory?.(dir);
       const file = find(dir);
       if (file !== undefined) {
         out.push({ dir, file });

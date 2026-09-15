@@ -25,6 +25,125 @@ const SCHEMA = {
   required: ["name"],
 };
 
+const CHECKPOINT = {
+  mode: "checkpoint" as const,
+  disposition: "checkpoint" as const,
+  checkpoint: { summary: "First change applied", next_step: "Verify the change" },
+};
+
+describe("context preparation admission", () => {
+  it.each(["stop", "cancel"] as const)(
+    "awaits iteration preparation and honors %s before inference",
+    async (mode) => {
+      const llm = new MockLLM({ script: [] });
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      const input = makeInput(llm, {
+        signal: controller.signal,
+        buildContribution: () => ({
+          hooks: {
+            async beforeIteration() {
+              entered.resolve();
+              await release.promise;
+              return {
+                status: "error",
+                partialText: "",
+                error: { code: "state_unavailable", message: "Unavailable" },
+              };
+            },
+          },
+        }),
+      });
+      const pending = runAgent(input);
+      try {
+        await entered.promise;
+        expect(llm.calls).toEqual([]);
+        if (mode === "cancel") controller.abort();
+        else release.resolve();
+        expect(await pending).toMatchObject(
+          mode === "cancel"
+            ? { status: "cancelled" }
+            : { status: "error", error: { code: "state_unavailable" } },
+        );
+        expect(llm.calls).toEqual([]);
+      } finally {
+        release.resolve();
+      }
+    },
+  );
+
+  it("preserves cancellation when preparation also exhausts the shared budget", async () => {
+    const llm = new MockLLM({ script: [] });
+    const controller = new AbortController();
+    const input = makeInput(llm, { maxTokens: 1, signal: controller.signal });
+    const result = await runAgent({
+      ...input,
+      prepareContext: async () => {
+        input.budget.ledger.consume({
+          input_tokens: 1,
+          output_tokens: 0,
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+        });
+        controller.abort();
+      },
+    });
+    expect(result.status).toBe("cancelled");
+    expect(llm.calls).toEqual([]);
+    expect(input.budget.ledger.consumed()).toBe(1);
+  });
+
+  it("attaches once before preparation and appends notes after the existing context", async () => {
+    const llm = new MockLLM({
+      script: [{ toolCalls: [{ name: "submit_result", arguments: { name: "done" } }] }],
+    });
+    const order: string[] = [];
+    const input = makeInput(llm, {
+      buildContribution: (bc) => {
+        order.push("attach");
+        bc.ctx.appendNote("Capability reminder");
+        return {};
+      },
+    });
+    const result = await runAgent({
+      ...input,
+      prepareContext: async (ctx) => {
+        order.push("prepare");
+        ctx.appendNote("Auxiliary reading");
+      },
+    });
+    expect(result.status).toBe("completed");
+    expect(order).toEqual(["attach", "prepare"]);
+    expect(llm.calls[0]!.messages.map((message) => message.content)).toEqual([
+      "go",
+      "Capability reminder",
+      "Auxiliary reading",
+    ]);
+  });
+
+  it.each(["before", "after"] as const)("checks the shared budget %s preparation", async (when) => {
+    const llm = new MockLLM({ script: [] });
+    const input = makeInput(llm, { maxTokens: when === "before" ? 0 : 1 });
+    let prepared = false;
+    const result = await runAgent({
+      ...input,
+      prepareContext: async () => {
+        prepared = true;
+        input.budget.ledger.consume({
+          input_tokens: 1,
+          output_tokens: 0,
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+        });
+      },
+    });
+    expect(result.status).toBe("budget_exhausted");
+    expect(prepared).toBe(when === "after");
+    expect(llm.calls).toEqual([]);
+  });
+});
+
 function makeInput(
   llm: MockLLM,
   opts: {
@@ -88,6 +207,301 @@ function makeInput(
     ...(opts.onContext ? { onContext: opts.onContext } : {}),
   };
 }
+
+describe("gated checkpoint finalization", () => {
+  it("keeps post-tool hook redaction when the handler requests a checkpoint", async () => {
+    let context: LiveContext;
+    const result = await runAgent(
+      makeInput(new MockLLM({ script: [{ toolCalls: [{ name: "checkpoint", arguments: {} }] }] }), {
+        onContext: (value) => {
+          context = value;
+        },
+        hooks: [{ afterToolUse: async () => ({ kind: "deny", message: "sensitive image" }) }],
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              handle: async () => ({
+                kind: "finalize",
+                attempt: CHECKPOINT,
+                text: "stage data",
+                progress: false,
+                images: [{ data: "AAAA", mediaType: "image/png" }],
+              }),
+            },
+          ],
+        }),
+      }),
+    );
+    expect(result.disposition).toBe("checkpoint");
+    const tool = context!.messages.find((message) => message.role === "tool");
+    expect(tool?.content).toBe("DENIED by a workspace hook: sensitive image");
+    expect(tool?.images ?? []).toEqual([]);
+  });
+
+  it("joins deferred work and records every call before consulting gates, without producing a final schema value", async () => {
+    const release = Promise.withResolvers<void>();
+    const requested = Promise.withResolvers<void>();
+    let gates = 0;
+    let afterDispatch = 0;
+    let tailCalls = 0;
+    let context: LiveContext;
+    const accepted: unknown[] = [];
+    const hookAttempts: unknown[] = [];
+    const llm = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            { id: "job", name: "job", arguments: {} },
+            { id: "checkpoint", name: "checkpoint", arguments: {} },
+            { id: "tail", name: "tail", arguments: {} },
+          ],
+        },
+      ],
+    });
+    const running = runAgent(
+      makeInput(llm, {
+        onContext: (value) => {
+          context = value;
+        },
+        hooks: [
+          {
+            preFinalize: async (attempt) => {
+              hookAttempts.push(attempt);
+              return { kind: "pass" };
+            },
+          },
+        ],
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              async handle(call) {
+                if (call.name === "job")
+                  return {
+                    kind: "deferred",
+                    run: async () => {
+                      await release.promise;
+                      return { text: "job settled", progress: true };
+                    },
+                  };
+                if (call.name === "tail") {
+                  tailCalls++;
+                  return { kind: "result", text: "unexpected", progress: false };
+                }
+                requested.resolve();
+                return {
+                  kind: "finalize",
+                  attempt: CHECKPOINT,
+                  text: "checkpoint requested",
+                  progress: false,
+                };
+              },
+            },
+          ],
+          gates: [
+            {
+              async check(attempt) {
+                gates++;
+                expect(afterDispatch).toBe(1);
+                expect(attempt).toEqual(CHECKPOINT);
+                const messages = context.messages;
+                expect(
+                  messages
+                    .filter((message) => message.role === "tool")
+                    .map((message) => message.content),
+                ).toEqual([
+                  "job settled",
+                  "checkpoint requested",
+                  "Tool 'tail' was not completed (the dispatch ended before its result).",
+                ]);
+                return { kind: "pass" };
+              },
+            },
+          ],
+          hooks: {
+            afterDispatch: () => {
+              afterDispatch++;
+            },
+            onFinalizeAccepted: (attempt) => {
+              accepted.push(attempt);
+            },
+          },
+        }),
+      }),
+    );
+    await requested.promise;
+    expect(gates).toBe(0);
+    release.resolve();
+    const result = await running;
+    expect(result).toMatchObject({
+      status: "completed",
+      disposition: "checkpoint",
+      checkpoint: CHECKPOINT.checkpoint,
+    });
+    expect(result.structuredResult).toBeUndefined();
+    expect(result.text).toBeUndefined();
+    expect(tailCalls).toBe(0);
+    expect(gates).toBe(1);
+    expect(accepted).toEqual([CHECKPOINT]);
+    expect(hookAttempts).toEqual([
+      {
+        agent: "subagent",
+        subagentInstanceId: "w1",
+        mode: "checkpoint",
+        checkpoint: CHECKPOINT.checkpoint,
+      },
+    ]);
+  });
+
+  it("bounds a denied checkpoint without manufacturing success", async () => {
+    let accepted = 0;
+    const llm = new MockLLM({
+      script: Array.from({ length: 4 }, () => ({
+        toolCalls: [{ name: "checkpoint", arguments: {} }],
+      })),
+    });
+    const result = await runAgent(
+      makeInput(llm, {
+        noProgressLimit: 2,
+        hooks: [
+          { preFinalize: async () => ({ kind: "deny", message: "verification still required" }) },
+        ],
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              handle: async () => ({
+                kind: "finalize",
+                attempt: CHECKPOINT,
+                text: "requested",
+                progress: false,
+              }),
+            },
+          ],
+          hooks: {
+            onFinalizeAccepted: () => {
+              accepted++;
+            },
+          },
+        }),
+      }),
+    );
+    expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
+    expect(result.checkpoint).toBeUndefined();
+    expect(accepted).toBe(0);
+    expect(llm.calls).toHaveLength(2);
+  });
+
+  it.each(["error", "cancelled"] as const)("preserves a gate's %s status", async (status) => {
+    const result = await runAgent(
+      makeInput(new MockLLM({ script: [{ toolCalls: [{ name: "checkpoint", arguments: {} }] }] }), {
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              handle: async () => ({
+                kind: "finalize",
+                attempt: CHECKPOINT,
+                text: "requested",
+                progress: false,
+              }),
+            },
+          ],
+          gates: [
+            {
+              check: async () => ({
+                kind: "terminal",
+                result: { status, partialText: "stage stopped" },
+              }),
+            },
+          ],
+        }),
+      }),
+    );
+    expect(result).toEqual({ status, partialText: "stage stopped" });
+  });
+
+  it("does not accept a checkpoint if cancellation arrives during a gate", async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    let accepted = false;
+    const running = runAgent(
+      makeInput(new MockLLM({ script: [{ toolCalls: [{ name: "checkpoint", arguments: {} }] }] }), {
+        signal: controller.signal,
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              handle: async () => ({
+                kind: "finalize",
+                attempt: CHECKPOINT,
+                text: "requested",
+                progress: false,
+              }),
+            },
+          ],
+          gates: [
+            {
+              check: async () => {
+                entered.resolve();
+                await release.promise;
+                return { kind: "pass" };
+              },
+            },
+          ],
+          hooks: {
+            onFinalizeAccepted: () => {
+              accepted = true;
+            },
+          },
+        }),
+      }),
+    );
+    await entered.promise;
+    controller.abort();
+    release.resolve();
+    expect(await running).toMatchObject({ status: "cancelled" });
+    expect(accepted).toBe(false);
+  });
+
+  it("rejects malformed checkpoint metadata before any gate sees it", async () => {
+    let gateCalls = 0;
+    const result = await runAgent(
+      makeInput(new MockLLM({ script: [{ toolCalls: [{ name: "checkpoint", arguments: {} }] }] }), {
+        noProgressLimit: 1,
+        buildContribution: () => ({
+          handlers: [
+            {
+              matches: () => true,
+              handle: async () => ({
+                kind: "finalize",
+                attempt: {
+                  ...CHECKPOINT,
+                  checkpoint: { summary: " ", next_step: "x".repeat(4097) },
+                },
+                text: "requested",
+                progress: false,
+              }),
+            },
+          ],
+          gates: [
+            {
+              check: async () => {
+                gateCalls++;
+                return { kind: "pass" };
+              },
+            },
+          ],
+        }),
+      }),
+    );
+    expect(result).toMatchObject({ status: "error", error: { code: "no_progress" } });
+    expect(result.checkpoint).toBeUndefined();
+    expect(gateCalls).toBe(0);
+  });
+});
 
 describe("runAgent terminal outcomes", () => {
   it("routes model calls through a contributed shared output budget", async () => {
@@ -735,8 +1149,8 @@ describe("pre-loop budget exhaustion mirrors the checkpoint exit path", () => {
   });
 });
 
-describe("empty-response runtime note is replaceable (single live note)", () => {
-  it("a second empty completion replaces the earlier note instead of appending another", async () => {
+describe("empty-response runtime notes preserve history", () => {
+  it("a second empty completion appends a fresh reminder", async () => {
     const contribution: AgentLoopContribution = {
       tools: [
         {
@@ -772,6 +1186,6 @@ describe("empty-response runtime note is replaceable (single live note)", () => 
       (m) =>
         typeof m.content === "string" && m.content.includes("the previous completion was empty"),
     );
-    expect(emptyNotes).toHaveLength(1);
+    expect(emptyNotes).toHaveLength(2);
   });
 });

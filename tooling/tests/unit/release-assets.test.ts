@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { RELEASE_TARGETS, releaseAssetSetFailures } from "../../checks/release-assets.ts";
+import { createRuntimeReleaseManifest } from "../../runtime/release-manifest.ts";
 
 const version = "0.0.2-beta";
 
@@ -49,9 +50,8 @@ async function writeArchive(
       stdout: "ignore",
       stderr: "pipe",
     });
-    if ((await child.exited) !== 0) {
-      throw new Error(`fixture tar failed: ${await new Response(child.stderr).text()}`);
-    }
+    const [exitCode, errors] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+    if (exitCode !== 0) throw new Error(`fixture tar failed: ${errors}`);
     const digest = createHash("sha256")
       .update(await Bun.file(join(directory, name)).bytes())
       .digest("hex");
@@ -63,6 +63,14 @@ async function writeArchive(
 
 async function writeReleaseSet(directory: string): Promise<void> {
   for (const target of RELEASE_TARGETS) await writeArchive(directory, target);
+  for (const target of ["linux-x64", "linux-arm64"]) {
+    const name = `clarvis-kernel-${target}.tar.gz`;
+    await writeFile(join(directory, name), `kernel-${target}`);
+    const digest = createHash("sha256").update(`kernel-${target}`).digest("hex");
+    await writeFile(join(directory, `${name}.sha256`), `${digest}  ${name}\n`);
+    for (const engine of ["docker", "podman"])
+      await writeFile(join(directory, `qualification-${engine}-${target}.json`), "{}\n");
+  }
   for (const name of [
     "BUN-LICENSE.md",
     "LICENSE",
@@ -74,6 +82,38 @@ async function writeReleaseSet(directory: string): Promise<void> {
   ]) {
     await writeFile(join(directory, name), `${name}\n`);
   }
+  await writeFile(
+    join(directory, "runtime-release.json"),
+    `${JSON.stringify(
+      createRuntimeReleaseManifest({
+        schema_version: 2,
+        version,
+        source_revision: "a".repeat(40),
+        targets: Object.fromEntries(
+          ["linux-x64", "linux-arm64"].map((target) => [
+            target,
+            {
+              base: {
+                image: "ghcr.io/getclarvis/clarvis-base",
+                digest: `sha256:${"b".repeat(64)}`,
+                abi: "clarvis-linux-glibc-v1",
+              },
+              artifact: {
+                asset: `clarvis-kernel-${target}.tar.gz`,
+                sha256: "c".repeat(64),
+                size: 1024,
+              },
+              kernel_wire_version: 10,
+              broker_version: 1,
+              channel_version: 1,
+            },
+          ]),
+        ) as never,
+      }),
+      null,
+      2,
+    )}\n`,
+  );
   const sidecars = await Promise.all(
     RELEASE_TARGETS.map((target) =>
       readFile(join(directory, `clarvis-v${version}-${target}.tar.gz.sha256`), "utf8"),
@@ -124,6 +164,25 @@ test("rejects an inline source map inside an archive before publication", async 
     await writeFile(join(root, "SHA256SUMS"), sidecars.sort(byChecksumAssetName).join(""));
     expect(await releaseAssetSetFailures(root, `v${version}`)).toContainEqual(
       expect.stringContaining("contains inline source map runtime/debug.js"),
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects a runtime manifest that does not match the product release", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-assets-runtime-test-"));
+  try {
+    await writeReleaseSet(root);
+    const manifest = JSON.parse(await readFile(join(root, "runtime-release.json"), "utf8")) as {
+      version: string;
+    };
+    await writeFile(
+      join(root, "runtime-release.json"),
+      `${JSON.stringify({ ...manifest, version: "0.0.3-beta" })}\n`,
+    );
+    expect(await releaseAssetSetFailures(root, `v${version}`)).toContainEqual(
+      expect.stringContaining("runtime-release.json is invalid"),
     );
   } finally {
     await rm(root, { recursive: true, force: true });

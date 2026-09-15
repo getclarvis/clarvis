@@ -44,6 +44,8 @@ describe("admittedRunCapability", () => {
     };
     const activated: RunCapability = {
       name: "wrapped",
+      required: true,
+      preserveStateOnInterruption: true,
       order: 7,
       seedBlock: () => {
         calls.push("seedBlock");
@@ -67,6 +69,8 @@ describe("admittedRunCapability", () => {
     };
     const admission = createExtensionAdmissionController();
     const wrapped = admittedRunCapability("wrapped", activated, admission);
+    expect(wrapped.required).toBe(true);
+    expect(wrapped.preserveStateOnInterruption).toBe(true);
     const lifecycle = wrapped.lifecycle![0]!;
 
     expect(await wrapped.seedBlock!()).toBe("seed");

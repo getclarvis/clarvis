@@ -129,8 +129,8 @@ function harness(): {
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openSafetyPresetPicker: () => calls.push("safety-picker"),
-      cycleGuardMode: () => calls.push("guard-cycle"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
+      openReviewPicker: () => calls.push("review-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),
@@ -249,6 +249,7 @@ const VIEW_CONTRACT = [
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
   ["sandbox.config", "Sandbox", "internal", "settings"],
+  ["isolation.config", "Isolation", "internal", "settings"],
   ["theme.open", "Theme", "internal", "settings"],
   ["settings.open", "Settings", "slash", undefined],
   ["doctor.open", "Doctor", "slash", "inspect"],

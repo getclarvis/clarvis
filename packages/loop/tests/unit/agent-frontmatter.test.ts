@@ -46,21 +46,23 @@ describe("agentFrontmatterSchema / helpers", () => {
     expect(normalizeTools("a.b, c.d ,")).toEqual(["a.b", "c.d"]);
   });
 
-  it("carries an unknown key through instead of rejecting or stripping it (.loose)", () => {
-    const parsed = agentFrontmatterSchema.safeParse({
-      description: "d",
-      "x-house-style": "terse",
-      presentation: { colour: "amber", tags: ["a", "b"] },
-    });
-    expect(parsed.success).toBe(true);
-    expect(parsed.data).toEqual({
-      description: "d",
-      "x-house-style": "terse",
-      presentation: { colour: "amber", tags: ["a", "b"] },
-    });
+  it("rejects unknown metadata and executor authority overrides", () => {
+    for (const field of [
+      "x-house-style",
+      "presentation",
+      "sandbox",
+      "guard",
+      "endpoint",
+      "credentials",
+      "capabilities",
+    ]) {
+      expect(
+        agentFrontmatterSchema.safeParse({ description: "d", [field]: "override" }).success,
+      ).toBe(false);
+    }
   });
 
-  it("still validates every key it owns while unknown keys pass", () => {
+  it("validates owned fields and preserves valid customization", () => {
     const cases: Record<string, unknown>[] = [
       { model: "not-a-model-ref" },
       { description: 7 },
@@ -77,7 +79,7 @@ describe("agentFrontmatterSchema / helpers", () => {
       { budget: { on_exceed: "explode" } },
     ];
     for (const bad of cases) {
-      expect(agentFrontmatterSchema.safeParse({ ...bad, unknown_key: true }).success).toBe(false);
+      expect(agentFrontmatterSchema.safeParse(bad).success).toBe(false);
     }
     expect(
       agentFrontmatterSchema.safeParse({
@@ -88,7 +90,6 @@ describe("agentFrontmatterSchema / helpers", () => {
         can_spawn: ["explorer"],
         iteration_limit: 4,
         reasoning_effort: "high",
-        unknown_key: true,
       }).success,
     ).toBe(true);
   });

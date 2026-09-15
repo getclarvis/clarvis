@@ -7,10 +7,10 @@ import {
   resolveErrorRenderer,
 } from "../../src/views/tools/registry.tsx";
 import type { TranscriptNode } from "../../src/adapters/store.ts";
-import type { LegacyCollapsibleToolNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 
 let seq = 0;
-function toolNode(over: Partial<LegacyCollapsibleToolNode>): LegacyCollapsibleToolNode {
+function toolNode(over: Partial<FoldFixtureToolNode>): FoldFixtureToolNode {
   return {
     key: `n${seq++}`,
     kind: "tool_call",
@@ -91,6 +91,25 @@ test("read_image shows the path when given", async () => {
 test("read_image with no path arg renders just the marker", async () => {
   const out = await frame(toolNode({ mcpName: "read_image", args: {} }));
   expect(out).toContain("[image]");
+});
+
+test("native configuration renders its concrete action and scoped path without content", async () => {
+  const out = await frame(
+    toolNode({
+      mcpName: "configure_clarvis",
+      args: {
+        operation: "write",
+        root: "workspace_clarvis",
+        path: "agents/reviewer.md",
+        content: "private configuration body",
+      },
+      result: "Write completed.",
+    }),
+  );
+  expect(out).toContain("Write configuration");
+  expect(out).toContain(".clarvis/agents/reviewer.md");
+  expect(out).toContain("Write completed.");
+  expect(out).not.toContain("private configuration body");
 });
 
 test("grep content mode groups matches by path and clamps past the line budget", async () => {

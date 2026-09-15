@@ -8,7 +8,7 @@
  * drive the same cases. See `tests/store.test.ts` for a driver.
  */
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { runBatch, type BatchPrimitives } from "./batch.ts";
 import type { MemoryClock } from "./clock.ts";
@@ -319,6 +319,7 @@ export function createInMemoryMemoryStore(opts: CreateInMemoryStoreOptions = {})
       if (existing !== undefined) return existing;
       const job: MemoryIndexJob = {
         run_id: input.run_id,
+        agent_instance_id: randomUUID(),
         state: "pending",
         enqueued_at: input.at,
         updated_at: input.at,
@@ -339,6 +340,18 @@ export function createInMemoryMemoryStore(opts: CreateInMemoryStoreOptions = {})
       if (next === undefined) return null;
       const claimed: MemoryIndexJob = {
         ...next,
+        agent_instance_id: next.agent_instance_id ?? randomUUID(),
+        indexer_execution_id: `exec_${randomUUID()}`,
+        ...(next.indexer_execution_id === undefined
+          ? {}
+          : {
+              indexer_continue_from: next.indexer_execution_id,
+              indexer_prior_executions: [
+                next.indexer_execution_id,
+                ...(next.indexer_prior_executions ??
+                  (next.indexer_continue_from ? [next.indexer_continue_from] : [])),
+              ],
+            }),
         state: "running",
         attempts: next.attempts + 1,
         updated_at: now,

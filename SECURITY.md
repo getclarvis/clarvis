@@ -29,10 +29,23 @@ Reports are especially useful when they concern workspace confinement, unsafe co
 credential exposure, untrusted MCP/plugin/hook content, release or updater integrity, network trust,
 or a bypass of an explicit approval boundary.
 
-Clarvis is not itself a complete security sandbox. It deliberately sends selected context to the
-configured model provider and can run user-approved tools. Optional host execution, external MCP
+Clarvis offers separate command-review and execution-isolation controls, but neither the native
+Sandbox nor Docker is a complete security boundary. It deliberately sends selected context to the
+configured model provider and can run approved tools. Optional host execution, external MCP
 servers, plugins, hooks, task providers, and local model endpoints keep their own trust boundaries.
-A report that contradicts a documented boundary may still reveal confusing or unsafe behavior, but
-the boundary itself is not represented as isolation.
+
+Docker mounts the selected workspace read-write, so guest changes are host changes. The default
+`outbound` network can reach public, host, and LAN destinations and can transmit any readable
+workspace content; `none` is the explicit offline policy. Clarvis overlays its existing workspace
+control paths read-only and keeps model credentials, host skill locations, Plans, and Memory stores
+behind host-owned bridges, but it cannot protect a secret deliberately placed in the mounted
+workspace. A linked Git worktree can provide a separate checkout, but Clarvis does not review,
+commit, merge, or remove it.
+
+The guest receives no Docker/Podman socket. An operational Docker startup failure may fall back to a
+required native Sandbox when configured, while image-integrity, policy, recipe, and handshake
+failures remain fail-closed. A report that contradicts one of these documented boundaries may still
+reveal confusing or unsafe behavior, but no boundary should be represented as stronger isolation
+than it provides.
 
 For ordinary bugs, support questions, or feature requests, use the public issue forms instead.

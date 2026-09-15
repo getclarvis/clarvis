@@ -1,5 +1,5 @@
 import { renderPlan } from "../format.ts";
-import type { PlanDocument } from "../schemas.ts";
+import type { PlanDocument, PlanTask, PlanTaskStatus } from "../schemas.ts";
 import type { MissingPlanState } from "./session.ts";
 
 /**
@@ -34,7 +34,7 @@ export function missingPlanCanonicalState(missing: MissingPlanState): string {
   return [missingPlanHeader(missing), "", missingPlanSpecBlock(missing)].join("\n");
 }
 
-/** The volatile instruction that replaces a removed plan's stale CAS header. */
+/** Appended tombstone; prior plan publications remain historical context. */
 export function missingPlanHeader(missing: MissingPlanState): string {
   const locator = missing.path ?? missing.id;
   return [
@@ -58,39 +58,90 @@ export function missingPlanSpecBlock(missing: MissingPlanState): string {
 }
 
 /**
- * The small, volatile half of the canonical state: the plan's location, the
+ * The recurring reminder: the plan's location, the
  * compare-and-swap triple, the approval posture, and every task's current
- * status.
+ * status, grouped by the work that requires attention, is pending, or is closed.
  *
  * @param document - the plan being published as canonical state.
  * @param reviewRequired - whether *this run* carries the review gate.
- * @returns the header, a few hundred bytes even for a large plan.
- * @remarks This is the only part re-pinned at the end of the transcript each
- *   iteration, so it is also the only part re-sent uncached every iteration.
- *   Everything here genuinely changes as work advances; the plan's substance
- *   lives in {@link planSpecBlock}, which sits behind the cache breakpoint.
- *   Statuses are listed for **all** tasks so the spec block never has to carry
+ * @returns the bounded header, with every task represented exactly once.
+ * @remarks Each publication is appended after the existing transcript, including
+ *   unchanged reminders. Earlier publications retain their content and position.
+ *   The provider store remains authoritative; a reminder cannot bypass CAS or review.
+ *   IDs and statuses are listed for **all** tasks so the spec block never has to carry
  *   them — carrying them there would make its bytes change on every
  *   `transition_plan_task` and invalidate the cached prefix behind it.
  */
 export function planCasHeader(document: PlanDocument, reviewRequired: boolean): string {
-  const open = document.tasks.filter(
-    (task) => task.status !== "done" && task.status !== "abandoned",
-  );
-  return [
+  const categories = classifyTasks(document.tasks);
+  const header = [
     `Plan file: ${document.path}`,
+    `Plan name: ${safePlanName(document.title)}`,
+    "Plan reminder: the latest publication describes the current state; earlier headers are history.",
     `Pass these unchanged as the expected_* arguments of the next plan mutation:`,
     `  expected_revision: ${document.revision}`,
     `  expected_digest: ${document.digest}`,
     `  expected_spec_digest: ${document.spec_digest}`,
     approvalLine(document, reviewRequired),
-    open.length === 0
-      ? "Open tasks: none"
-      : `Open tasks: ${open.map((task) => `${task.id} (${task.status})`).join(", ")}`,
-    document.tasks.length === 0
-      ? "Task status: (no tasks yet)"
-      : `Task status: ${document.tasks.map((task) => `${task.id} (${task.status})`).join(", ")}`,
+    "Task status: the lists below describe the current plan state and are refreshed before every model iteration.",
+    renderTaskCategory("Tasks requiring attention", categories.attention),
+    renderTaskCategory("Pending tasks", categories.pending),
+    renderTaskCategory("Closed tasks", categories.closed),
+    PLAN_OPERATIONAL_GUIDANCE,
   ].join("\n");
+  if (unicodeLength(header) > PLAN_CAS_HEADER_MAX_CHARS) {
+    throw new RangeError(`Plan CAS header exceeds ${PLAN_CAS_HEADER_MAX_CHARS} characters`);
+  }
+  return header;
+}
+
+const PLAN_CAS_HEADER_MAX_CHARS = 32_768;
+const PLAN_NAME_MAX_CHARS = 256;
+const PLAN_OPERATIONAL_GUIDANCE =
+  "Keep the plan current. Mark direct work in_progress first. After delegate_task, verify the task's published status. Record outcomes with transition_plan_task when exit criteria are met. Review returned and failed tasks before completion.";
+
+type TaskCategory = "attention" | "pending" | "closed";
+
+function taskCategory(status: PlanTaskStatus): TaskCategory {
+  switch (status) {
+    case "in_progress":
+    case "returned":
+    case "failed":
+      return "attention";
+    case "pending":
+      return "pending";
+    case "done":
+    case "abandoned":
+      return "closed";
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function classifyTasks(tasks: readonly PlanTask[]): Record<TaskCategory, PlanTask[]> {
+  const categories: Record<TaskCategory, PlanTask[]> = {
+    attention: [],
+    pending: [],
+    closed: [],
+  };
+  for (const task of tasks) categories[taskCategory(task.status)].push(task);
+  return categories;
+}
+
+function renderTaskCategory(label: string, tasks: readonly PlanTask[]): string {
+  if (tasks.length === 0) return `${label}: none.`;
+  return `${label}: ${tasks.map((task) => `${task.id} (${task.status})`).join(", ")}`;
+}
+
+function safePlanName(title: string): string {
+  const singleLine = title.replace(/\r\n|[\n\r\u2028\u2029]/gu, " ");
+  return Array.from(singleLine).slice(0, PLAN_NAME_MAX_CHARS).join("");
+}
+
+function unicodeLength(value: string): number {
+  return Array.from(value).length;
 }
 
 /**
@@ -125,8 +176,8 @@ export function planSpecBlock(document: PlanDocument): string {
     "The plan's substance, unchanged until it is revised. A revision appends a fresh copy of",
     "this block rather than editing this one, so if more than one appears in this conversation",
     "the LAST one is the plan and every earlier copy is superseded history. Current task",
-    "statuses and the expected_* arguments are pinned separately at the end of this",
-    "conversation; anything omitted here (notes, task results) is available through read_plan.",
+    "statuses and expected_* arguments are in the latest appended plan reminder; the store",
+    "validates every mutation. Anything omitted here (notes, task results) is available through read_plan.",
     "",
     "## Objective",
     "",

@@ -44,6 +44,8 @@ export function createAgentTools(options: AgentToolsOptions): AgentTools {
 
 export { dispatch, listTools } from "./core.ts";
 export type { DispatchResult, ToolInfo } from "./core.ts";
+export { readRawFile } from "./lib/files.ts";
+export type { ReadFileOptions, ReadConfinement } from "./lib/files.ts";
 
 export {
   resolveConfig,
@@ -86,17 +88,25 @@ export {
   POSIX_DEFAULT_ALLOWED_COMMANDS,
   WINDOWS_DEFAULT_ALLOWED_COMMANDS,
   buildGuardContext,
+  resolveCandidate,
   withinWorkspace,
   touchesOutside,
+  isDangerousCommand,
 } from "./guard/index.ts";
 export type {
   Verdict,
   GuardDecision,
+  GuardPlacement,
+  GuardCallFacts,
   GuardAnswerer,
   GuardElicitAnswer,
   GuardReview,
   Segment,
   ShellFacts,
+  ShellAnalysisIssue,
+  ShellAnalysisIssueKind,
+  ShellAnalysisImpact,
+  GuardReviewability,
   PathFact,
   GuardContext,
   Guard,
@@ -116,3 +126,6 @@ export { sweepMonitors } from "./lib/monitor.ts";
 
 export { setWarnSink, warn, NOOP_TOOLS_LOGGER } from "./lib/log.ts";
 export type { WarnSink, ToolsLogger, ToolsWarning } from "./lib/log.ts";
+export type { GuardEffectCallFact, EffectReviewDetail } from "./guard/effect-review.ts";
+
+export type { MutationReview, FileOp } from "./lib/atomic.ts";

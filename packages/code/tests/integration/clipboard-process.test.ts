@@ -97,3 +97,38 @@ test("stdin and binary stdout round-trip without string conversion", async () =>
   expect(result.stdout).toEqual(png);
   expect(result.exitCode).toBe(0);
 });
+
+test("a synchronous spawn failure is returned as a normalized process error", async () => {
+  const result = await runClipboardProcess(
+    { command: "missing-clipboard", args: [] },
+    {
+      spawn: () => {
+        throw "spawn refused";
+      },
+      ownProcessGroup: () => false,
+    },
+  );
+  expect(result).toMatchObject({
+    exitCode: null,
+    stderr: "",
+    timedOut: false,
+    cancelled: false,
+    outputExceeded: false,
+    error: new Error("spawn refused"),
+  });
+  expect(result.stdout).toHaveLength(0);
+});
+
+test("stderr is bounded and a child error settles the helper", async () => {
+  const child = fakeChild();
+  const pending = runClipboardProcess(
+    { command: "clipboard", args: [] },
+    { spawn: () => child, ownProcessGroup: () => false },
+  );
+  child.stderr.emit("data", "failure detail");
+  child.emit("error", new Error("helper failed"));
+  const result = await pending;
+  expect(result.stderr).toBe("failure detail");
+  expect(result.error?.message).toBe("helper failed");
+  expect(result.exitCode).toBeNull();
+});

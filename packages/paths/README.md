@@ -64,10 +64,16 @@ platform helper lives here rather than in the capability contract because its ca
 the host operating system.
 
 ```ts
-import { globalPaths, workspacePaths, workspaceStatePaths } from "@clarvis/paths";
+import {
+  agentsWorkspaceDir,
+  globalPaths,
+  workspacePaths,
+  workspaceStatePaths,
+} from "@clarvis/paths";
 
 const ws = workspacePaths("/work/repo");
 ws.plansRoot; //                /work/repo/.clarvis/plans
+agentsWorkspaceDir("/work/repo"); // /work/repo/.agents
 
 const st = workspaceStatePaths("/work/repo");
 st.monitorSidecar("mon_ab"); // ~/.clarvis/state/workspaces/ws_<sha256>/local/monitor-mon_ab.json
@@ -81,8 +87,11 @@ g.subscriptionsFile; //         …/subscriptions.json (renewable subscription c
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
 g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
+g.runtimeRecipesDir; //               …/runtime-recipes (operator-authored Docker scripts)
 g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
 g.updateCheckCacheFile; //             …/cache/update-check.json (discardable version-check result)
+g.runtimeRecipeStateDir; //            …/state/runtime-recipes (host build coordination)
+g.runtimeRecipeLeaseFile("sha256:…"); // …/state/runtime-recipes/<segment>.lock
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -93,36 +102,57 @@ removed rather than deprecated.
 
 ## The four trees
 
+`configurationRoots({ workspaceRoot, globalDir?, home? })` resolves the four authored configuration
+scopes for self configuration: `global_clarvis`, `workspace_clarvis`, `global_agents` and
+`workspace_agents`. It neither creates directories nor authorizes access. `configurationPathClass` shares the closed
+authoring/operational/private vocabulary between file tools and the restricted writer. Classification
+does not resolve links or authorize a mutation; callers retain confinement checks and effect review.
+The kernel owns the review policy described in
+[self-configuration.md](../../specs/hosts/self-configuration.md).
+
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `extension-profiles/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
+`plugins/`, `extension-profiles/`, `workflows/`, `shared-agent.md` and `guard-judge.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
 
 `<global>/state/workspaces/<segment>/` holds that workspace's **machinery** — `local/` (prompt
 history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roots, monitor sidecars and logs, shell and tool-result spills), the memory
-wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segment is
+wiki's `.history`/`.journal`/`.state`/`.lock`, plan lockfiles and workspace-scoped trace locks. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
+The sibling `runtimes/` tree owns only host-accepted per-run checkpoints beneath each encoded
+isolated-runtime generation. Runtime and run IDs pass through `ownerSegment`; no workspace copy,
+baseline, apply journal, transaction staging, registry or lifecycle record is stored there. The
+container mounts the already-selected workspace directly, so that checkout remains outside runtime
+state and outside runtime cleanup.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
-user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
-`cache/` (including the models.dev snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
+`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust
+records, Docker runtime recipes, `shared-agent.md`, `guard-judge.md`, `auth.json` — and nests only what a user never
+edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, content-addressed
+runtime-recipe build leases, the per-workspace machinery above), `cache/` (including the models.dev
+snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed:
+it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.
 
-`.agents` is not one uniformly read-only tree. Standalone skills and marketplace documents remain
-foreign/user-authored inputs, while `.agents/plugins/<name>/` is a first-class plugin inventory
+`.agents` is not one uniformly read-only tree in native composition. Standalone skills and
+marketplace documents remain foreign/user-authored inputs, while `.agents/plugins/<name>/` is a
+first-class plugin inventory
 beside `.clarvis/plugins/<name>/`. `agentsPluginsDirs()` returns its global and workspace roots;
 managed global installs may target either global convention, and both workspace plugin roots remain
 repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
 installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
+Container uses `agentsWorkspaceDir()` as a complete control-root mask target and covers
+`workspacePaths().clarvisDir` with its private content volume. Kernel then overlays only the exact
+Plans and Memory descendants selected through the path vocabulary; the mask builder itself does not
+enumerate descendants.
 
 Definition and selection ownership is specified in
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
@@ -268,6 +298,11 @@ Every acquired asynchronous lease must be released, including after `renew()`, `
 remove the canonical entry as its own, but it still stops heartbeat work and closes the held file
 handle. Leaving a lost lease unreleased delegates descriptor cleanup to runtime garbage collection.
 
+Asynchronous acquisition accepts an optional `signal`. Cancellation interrupts contention waits,
+checks admission before returning ownership, and abandons a publication that raced cancellation.
+It rejects instead of returning the contention sentinel; cancelling acquisition does not release
+a lease already handed to its caller.
+
 `acquireLocalLeaseSync` publishes and releases the same record synchronously, with no contention
 wait or heartbeat. It exists only for APIs whose whole filesystem transaction is synchronous; an
 asynchronous caller uses `acquireLocalLease` so it never blocks the event loop while waiting.
@@ -350,7 +385,34 @@ Three of these exist because the code path they describe resolves to a boolean n
 returns `void`, so a workspace past that threshold would otherwise stop being swept silently and
 permanently.
 
+## Container namespaces
+
+`containerLaunchPaths(namespace, globalDir?)` resolves the host-only launch lease and registry under
+`state/container-hosts/<namespace>`. It exposes no local-host endpoint or credential path.
+`containerDataVolumeNames(namespace)` separates the persistent `content` and `state` roles;
+`containerArtifactVolumeName(archiveSha256)` addresses the independent immutable artifact volume.
+These helpers require full bare lowercase SHA-256 identities and perform no filesystem or engine
+mutation. `containerGuestPaths` is the fixed Linux virtual path vocabulary, even when the launcher
+runs on a different platform. It includes the private Git metadata/common roots used when a Windows
+or POSIX host's linked-worktree indirection must be rewritten for the Linux guest. Namespace
+derivation, volume admission and lifecycle belong to Kernel.
+Kernel uses these builders to bind only canonical native domain stores into a Container: Plans and
+Memory content/machinery, owner-scoped sessions/workflow records/trace records, and trace locks.
+Configuration, credentials, extensions, local UI state and other owners are not part of that map.
+
 ## Owner segments
+
+`localHostPaths` builds the private state and short IPC endpoint namespace for an operator account,
+data owner, canonical workspace and effective global root. Its lease, discovery credentials and
+handoff index live under global `state/hosts/`, apart from agent scratch. Unix endpoints use a short
+temporary directory so HOME length does not consume the socket path budget. The host may supply
+ordered `endpointRootCandidates`; otherwise the builder considers the effective process temp and
+`/tmp`, normalizes and deduplicates them, and selects the first whose complete endpoint fits the
+conservative 100-byte UTF-8 limit. Selection checks bytes rather than characters and never creates,
+stats or probes a candidate. Windows endpoints use named pipes and ignore filesystem candidates.
+The builder neither opens a listener nor grants access. Hosts must verify directory ownership,
+protect credentials and authenticate their connections. See
+[hosted runs](../../specs/hosts/hosted-runs.md) for the observation/storage coupling.
 
 Owner-derived builders take the **raw owner id** and encode it themselves:
 `exportsDirForOwner`, `plansRootForOwner`, `memoryRootForOwner`,
@@ -374,3 +436,5 @@ The two encoders used to live in `@clarvis/loop`, while the loop was their only 
 each came to need one — a value two packages need belongs in the leaf both can reach, and these need
 nothing beyond the Node path and crypto primitives. `@clarvis/loop` re-exports them from `host.ts`, so `kernel` and `code`
 never saw the move.
+
+`configurationTarget` locates an already resolved path within the shared roots and returns the same authoring/operational/private classification. Both file-tool guards and the host batch writer consume it. It does not canonicalize disk links or authorize writes; callers retain their filesystem confinement checks.

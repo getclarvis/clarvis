@@ -23,6 +23,12 @@ import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
 import { sandboxCommand } from "../sandbox.ts";
 import { sandboxWithReadableStateArtifacts } from "../lib/state-artifacts.ts";
+import { denySensitiveShellCommand } from "../lib/sensitive-commands.ts";
+import {
+  resolveSandboxEscalation,
+  SANDBOX_PERMISSION_CONDITION,
+  SANDBOX_PERMISSION_PROPERTIES,
+} from "../lib/sandbox-permissions.ts";
 import { exitCaptureWrapper, resolveShell, type ShellSpec } from "../shell.ts";
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -111,7 +117,7 @@ async function waitForReady(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<ReadyResult> {
-  const lp = logPath(config.workspaceRoot, id);
+  const lp = logPath(config.statePaths, id);
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const slice = await readLogSlice(lp, 0, config.maxOutputBytes);
@@ -178,13 +184,9 @@ export function createMonitorStart(
   return {
     name: "monitor_start",
     description:
-      "Start a long-lived command in the BACKGROUND and return a monitor id immediately — unlike " +
-      "shell, which blocks until the command exits. Use it for a dev server, file watcher, `tail -f`, " +
-      "or anything that keeps producing output over time. Read incremental output with monitor_poll " +
-      "and stop it with monitor_stop. If `ready_when` (a regex) is given, blocks until the output " +
-      "matches it (or `ready_timeout_ms` elapses) before returning. Do NOT background inside the " +
-      "command (no trailing `&`) — the monitor backgrounds it for you, and a trailing `&` makes the " +
-      "id track the wrong process.",
+      "Start a server, watcher or other long-lived command in the background. Returns a monitor id; " +
+      "with ready_when, waits for readiness or its timeout first. Use monitor_poll for incremental " +
+      "output and monitor_stop to stop it. Do not background the command yourself (no trailing `&`).",
     bounded: true,
     inputSchema: {
       type: "object",
@@ -192,29 +194,32 @@ export function createMonitorStart(
         command: {
           type: "string",
           description:
-            "Shell command run via `sh -c`, in the background. stdin is closed. Its stdout and " +
-            "stderr are combined into one log you read with monitor_poll.",
+            "Command in the host shell (sh on POSIX, PowerShell on Windows), with closed stdin. " +
+            "stdout and stderr share one monitor_poll log.",
         },
         cwd: { type: "string", description: "Working directory. Default: workspace root." },
         ready_when: {
           type: "string",
           description:
-            "Optional regex. When set, monitor_start blocks until the combined output matches it " +
-            '(e.g. "listening on"), then returns with ready:true. Times out per ready_timeout_ms. ' +
-            "Matched against the first MAX_OUTPUT_BYTES of output.",
+            'Readiness regex, e.g. "listening on", tested against a bounded prefix of the combined log. ' +
+            "Inspect ready in the result; starting a process alone does not establish readiness.",
         },
         ready_timeout_ms: {
           type: "integer",
           minimum: 0,
           description:
-            "Max time to wait for ready_when, in ms. Default: MONITOR_READY_TIMEOUT_MS (30000). " +
+            "Readiness wait in ms. Configuration default: 30000. " +
             "Ignored unless ready_when is set.",
         },
+        ...SANDBOX_PERMISSION_PROPERTIES,
       },
       required: ["command"],
+      ...SANDBOX_PERMISSION_CONDITION,
     },
     async handler(args, config, signal) {
       const command = args.command as string;
+      denySensitiveShellCommand(command);
+      const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
       const cwd = cwdArg
         ? resolvePath(
@@ -235,8 +240,8 @@ export function createMonitorStart(
       );
 
       const liveness = await Promise.all(
-        (await listSidecars(config.workspaceRoot)).map((m) =>
-          monitorRunning(config.workspaceRoot, m, config.logger),
+        (await listSidecars(config.statePaths)).map((m) =>
+          monitorRunning(config.statePaths, m, config.logger),
         ),
       );
       const aliveCount = liveness.filter(Boolean).length;
@@ -249,9 +254,9 @@ export function createMonitorStart(
       }
 
       const id = mintId();
-      await ensureClarvisDir(config.workspaceRoot);
-      const lp = logPath(config.workspaceRoot, id);
-      const ep = exitPath(config.workspaceRoot, id);
+      await ensureClarvisDir(config.statePaths);
+      const lp = logPath(config.statePaths, id);
+      const ep = exitPath(config.statePaths, id);
       const host = shell();
       const wrapped = exitCaptureWrapper(command, host.flavor);
 
@@ -268,6 +273,7 @@ export function createMonitorStart(
           secretEnvNames: config.secretEnvNames,
           shell: () => host,
           logger: config.logger,
+          forceBare,
         });
         const detached = ownProcessGroup();
         config.logger.debug(
@@ -309,7 +315,7 @@ export function createMonitorStart(
         startedAt: Date.now(),
         readyWhen: readyWhen ?? null,
       };
-      await writeSidecar(config.workspaceRoot, meta);
+      await writeSidecar(config.statePaths, meta);
 
       if (readyRe) {
         const r = await waitForReady(config, id, child.pid, readyRe, readyTimeoutMs, signal);
@@ -373,14 +379,10 @@ export const monitorPoll: ToolDef = {
     const offset = (args.offset as number | undefined) ?? 0;
     const matchStr = args.match as string | undefined;
 
-    const meta = await readSidecar(config.workspaceRoot, id);
-    const exitState = await readExitState(config.workspaceRoot, id, config.logger);
+    const meta = await readSidecar(config.statePaths, id);
+    const exitState = await readExitState(config.statePaths, id, config.logger);
     const running = !exitState.exited && isAlive(meta.pid);
-    const slice = await readLogSlice(
-      logPath(config.workspaceRoot, id),
-      offset,
-      config.maxOutputBytes,
-    );
+    const slice = await readLogSlice(logPath(config.statePaths, id), offset, config.maxOutputBytes);
     config.logger.debug(
       {
         event: "tools.monitor_poll",
@@ -463,8 +465,8 @@ export function createMonitorStop(dependencies: MonitorStopDependencies = {}): T
     },
     async handler(args, config) {
       const id = args.id as string;
-      const meta = await readSidecar(config.workspaceRoot, id);
-      const { exited } = await readExitState(config.workspaceRoot, id, config.logger);
+      const meta = await readSidecar(config.statePaths, id);
+      const { exited } = await readExitState(config.statePaths, id, config.logger);
       if (!exited && isProcessAlive(meta.pid)) {
         killProcessTree(meta.pid, "SIGTERM", { logger: config.logger });
         await wait(STOP_GRACE_MS);
@@ -472,7 +474,7 @@ export function createMonitorStop(dependencies: MonitorStopDependencies = {}): T
           killProcessTree(meta.pid, "SIGKILL", { logger: config.logger });
         }
       }
-      await removeMonitorFiles(config.workspaceRoot, id);
+      await removeMonitorFiles(config.statePaths, id);
       return JSON.stringify({ stopped: true, id });
     },
   };
@@ -501,12 +503,12 @@ export const monitorList: ToolDef = {
     properties: {},
   },
   async handler(args, config) {
-    const metas = await listSidecars(config.workspaceRoot);
+    const metas = await listSidecars(config.statePaths);
     const monitors = await Promise.all(
       metas.map(async (m) => ({
         id: m.id,
         command: m.command,
-        running: await monitorRunning(config.workspaceRoot, m, config.logger),
+        running: await monitorRunning(config.statePaths, m, config.logger),
         started_at: m.startedAt,
         cwd: m.cwd,
       })),

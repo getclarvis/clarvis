@@ -1,19 +1,9 @@
-import {
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  onCleanup,
-  untrack,
-  type Accessor,
-  type JSX,
-} from "solid-js";
+import { Show, createMemo, onCleanup, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { ElicitRequestParams, ElicitResult } from "../../adapters/elicit-types.ts";
 import type { ActivityStore } from "../../adapters/activity-store.ts";
-import type { TranscriptNode, TranscriptStore } from "../../adapters/store.ts";
+import type { TranscriptStore } from "../../adapters/store.ts";
 import type { WorkflowActivity } from "../../adapters/workflow-projection.ts";
-import type { MemoryPressureSnapshot } from "../../adapters/memory-pressure.ts";
 import type { LayoutMode, SecondarySurfaceMode } from "../../app/layout.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import { tokens } from "../../theme/tokens.ts";
@@ -26,12 +16,10 @@ import type { HintTone } from "../hint.ts";
 import type { ActivityDetail } from "../activity-detail.ts";
 import { SurfaceBoundary, SurfaceOverlay } from "../../ui/patterns/surface-lifecycle.tsx";
 import {
-  CommittedHistory,
-  type CommittedHistoryHandle,
-  type CommittedHistoryState,
-  type TranscriptMeasurementRecoveryPolicy,
-} from "../history/CommittedHistory.tsx";
-import { LiveTranscriptTail } from "../live/LiveTranscriptTail.tsx";
+  TranscriptViewport,
+  type TranscriptViewportHandle,
+} from "../transcript/TranscriptViewport.tsx";
+import { ElicitBlock } from "../ElicitBlock.tsx";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;
@@ -65,6 +53,7 @@ export interface TranscriptRegionLayout {
   contentInset: Accessor<number>;
   width: Accessor<number>;
   height: Accessor<number>;
+  sidebarHint?: Accessor<string>;
 }
 
 /** Props for the transcript, sidebar, splash, and elicitation shell region. */
@@ -84,112 +73,8 @@ export interface TranscriptRegionProps {
   sidebarReveal?: Accessor<SidebarRevealIntent | null>;
   onOpenDetail?: (detail: ActivityDetail) => void;
   onScrollbox: (scrollbox: ScrollBoxRenderable) => void;
-  onHistoryHandle?: (handle: CommittedHistoryHandle | undefined) => void;
-  onLeadHistoryHandle?: (handle: CommittedHistoryHandle | undefined) => void;
-  historyMeasurementRecovery?: TranscriptMeasurementRecoveryPolicy;
+  onHistoryHandle?: (handle: TranscriptViewportHandle | undefined) => void;
   draftNonEmpty?: Accessor<boolean>;
-  memoryPressure?: {
-    state: Accessor<MemoryPressureSnapshot>;
-    onRecover: () => void;
-  };
-}
-
-interface TranscriptProjectionProps {
-  region: TranscriptRegionProps;
-  projectionId: string | null;
-  semanticNodes: Accessor<readonly TranscriptNode[]>;
-  active: Accessor<boolean>;
-  splitOpen: Accessor<boolean>;
-  title?: Accessor<string | undefined>;
-  onScrollbox: (scrollbox: ScrollBoxRenderable | undefined) => void;
-  onHistoryHandle: (handle: CommittedHistoryHandle | undefined) => void;
-}
-
-/** Keeps one bounded transcript projection physically mounted while another surface is active. */
-function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
-  const [handoffKeys, setHandoffKeys] = createSignal<ReadonlySet<string>>(new Set());
-  const [tailEntries, setTailEntries] = createSignal(0);
-  const transcript: CommittedHistoryState = {
-    semanticNodes: props.semanticNodes,
-    expandAll: props.region.transcript.expandAll,
-    selectedSubagent: () => props.projectionId,
-    focusedKey: props.region.transcript.focusedKey,
-    overrideOf: (key) => props.region.transcript.overrideOf(key),
-    toggleAt: (key) => props.region.transcript.toggleAt(key),
-  };
-  onCleanup(() => props.onScrollbox(undefined));
-
-  return (
-    <box
-      position="absolute"
-      left={0}
-      right={0}
-      top={0}
-      bottom={0}
-      flexDirection="column"
-      overflow="hidden"
-      opacity={props.active() ? 1 : 0}
-      zIndex={props.active() ? 1 : -1}
-      onMouse={(event) => {
-        if (props.active()) return;
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-    >
-      <Show when={props.title?.()}>
-        {(title: Accessor<string>) => (
-          <box
-            height={1}
-            flexShrink={0}
-            paddingLeft={1}
-            paddingRight={1}
-            backgroundColor={tokens.bgElev}
-          >
-            <text wrapMode="none" truncate selectable={false}>
-              <span style={{ fg: tokens.accent }}>
-                <b>{title()}</b>
-              </span>
-            </text>
-          </box>
-        )}
-      </Show>
-      <CommittedHistory
-        store={props.region.store}
-        transcript={transcript}
-        active={props.active}
-        splitOpen={props.splitOpen}
-        notify={props.region.notify}
-        onOpenDetail={props.region.onOpenDetail}
-        onScrollbox={(value) => props.onScrollbox(value)}
-        onHandle={props.onHistoryHandle}
-        measurementRecovery={props.region.historyMeasurementRecovery}
-        handoffKeys={handoffKeys}
-        tailEntries={tailEntries}
-        tail={(visibleCommittedKeys, followingTail, isOwnerVisible) => (
-          <LiveTranscriptTail
-            store={props.region.store}
-            activity={props.region.activity}
-            interaction={props.region.interaction}
-            active={props.active}
-            elicit={() => (props.active() ? props.region.run.elicit() : null)}
-            resolveElicit={props.region.run.resolveElicit}
-            selectedSubagent={() => props.projectionId}
-            visibleCommittedKeys={visibleCommittedKeys}
-            followingTail={followingTail}
-            isOwnerVisible={isOwnerVisible}
-            onHandoffKeysChange={setHandoffKeys}
-            onFrontierCountChange={setTailEntries}
-            splitOpen={props.splitOpen}
-            notify={props.region.notify}
-            openPlan={props.region.openPlan}
-            onOpenDetail={props.region.onOpenDetail}
-            memoryPressure={props.region.memoryPressure}
-            readingRunwayRows={() => transcriptReadingRunwayRows(props.region.layout.height())}
-          />
-        )}
-      />
-    </box>
-  );
 }
 
 /**
@@ -226,101 +111,84 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
       .split("\n")
       .find((line) => line.trim().length > 0)
       ?.trim() ?? "sub-agent";
-  const leadNodes = createMemo(() => {
-    const nodes = props.store.committedNodes();
-    return nodes.some((node) => node.subagentId !== undefined || node.subagentOrder !== undefined)
-      ? nodes.filter((node) => node.subagentId === undefined && node.subagentOrder === undefined)
-      : nodes;
+  const projectionId = (): string | null => ts.selectedSubagent();
+  const childTitle = createMemo((): string | undefined => {
+    const selected = projectionId();
+    if (selected === null) return undefined;
+    const agent = props.activity.subagents.find(
+      (candidate: ActivityStore["subagents"][number]) => candidate.id === selected,
+    );
+    if (agent !== undefined)
+      return secondaryMode() === "closed"
+        ? `Viewing A${agent.order + 1} ${agentTitle(agent)} · Back to Lead`
+        : undefined;
+    const marker = props.store.nodes.find((node) => node.delegationTarget === selected);
+    const title =
+      marker?.kind === "annotation" ? marker.text.replace(/^Spawned sub-agent /, "") : selected;
+    return `Viewing ${title} · Back to Lead`;
   });
-  const [retainedChildId, setRetainedChildId] = createSignal<string | null>(
-    untrack(ts.selectedSubagent),
-  );
-  const [leadScrollbox, setLeadScrollbox] = createSignal<ScrollBoxRenderable>();
-  const [childScrollbox, setChildScrollbox] = createSignal<ScrollBoxRenderable>();
-  const [leadHandle, setLeadHandle] = createSignal<CommittedHistoryHandle>();
-  const [childHandle, setChildHandle] = createSignal<CommittedHistoryHandle>();
-  const revealedChildHandles = new WeakSet<CommittedHistoryHandle>();
-
-  createEffect(() => {
-    const selected = ts.selectedSubagent();
-    if (selected !== null) {
-      if (retainedChildId() !== selected) setRetainedChildId(selected);
-      return;
-    }
-    const retained = retainedChildId();
-    if (
-      retained !== null &&
-      !props.activity.subagents.some(
-        (agent: ActivityStore["subagents"][number]) => agent.id === retained,
-      )
-    )
-      setRetainedChildId(null);
-  });
-
-  createEffect(() => {
-    const selected = ts.selectedSubagent();
-    const childSelected = selected !== null && retainedChildId() === selected;
-    const handle = childSelected ? childHandle() : leadHandle();
-    const scrollbox = childSelected ? childScrollbox() : leadScrollbox();
+  const publishHandle = (handle: TranscriptViewportHandle | undefined): void => {
     props.onHistoryHandle?.(handle);
-    if (scrollbox !== undefined) props.onScrollbox(scrollbox);
-    if (!childSelected || handle === undefined || scrollbox === undefined) return;
-    if (revealedChildHandles.has(handle)) return;
-    const first = ts.grouped().ordered[0];
-    if (first === undefined) return;
-    if (!handle.revealKey(first.key)) {
-      if (scrollbox.content.findDescendantById(first.key) === undefined) return;
-      scrollbox.scrollChildIntoView(first.key);
-    }
-    revealedChildHandles.add(handle);
-  });
+  };
 
-  onCleanup(() => props.onHistoryHandle?.(undefined));
+  onCleanup(() => {
+    props.onHistoryHandle?.(undefined);
+  });
 
   return (
     <box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
       <box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} minHeight={0}>
-        <TranscriptProjection
-          region={props}
-          projectionId={null}
-          semanticNodes={leadNodes}
-          active={() => regionActive() && ts.selectedSubagent() === null}
-          splitOpen={splitOpen}
-          onScrollbox={(value) => setLeadScrollbox(value)}
-          onHistoryHandle={(value) => {
-            setLeadHandle(value);
-            props.onLeadHistoryHandle?.(value);
-          }}
-        />
-        <Show when={retainedChildId()} keyed>
-          {(childId: string) => {
-            const childNodes = createMemo(() =>
-              props.store.committedNodes().filter((node) => node.subagentId === childId),
-            );
-            const child = () =>
-              props.activity.subagents.find(
-                (agent: ActivityStore["subagents"][number]) => agent.id === childId,
-              );
-            return (
-              <TranscriptProjection
-                region={props}
-                projectionId={childId}
-                semanticNodes={childNodes}
-                active={() => regionActive() && ts.selectedSubagent() === childId}
-                splitOpen={splitOpen}
-                title={() => {
-                  if (secondaryMode() !== "closed") return undefined;
-                  const agent = child();
-                  return agent === undefined
-                    ? undefined
-                    : `Viewing A${agent.order + 1} ${agentTitle(agent)}`;
-                }}
-                onScrollbox={(value) => setChildScrollbox(value)}
-                onHistoryHandle={(value) => setChildHandle(value)}
-              />
-            );
-          }}
+        <Show when={childTitle()}>
+          {(title: Accessor<string>) => (
+            <box
+              id="transcript-child-navigation"
+              height={1}
+              flexShrink={0}
+              paddingLeft={1}
+              paddingRight={1}
+              backgroundColor={tokens.bgElev}
+              onMouseDown={() => {
+                const selected = projectionId();
+                if (selected !== null && regionActive()) ts.toggleSubagent(selected);
+              }}
+            >
+              <text wrapMode="none" truncate selectable={false}>
+                <span style={{ fg: tokens.accent }}>
+                  <b>{title()}</b>
+                </span>
+              </text>
+            </box>
+          )}
         </Show>
+        <TranscriptViewport
+          store={props.store}
+          transcript={ts}
+          active={regionActive}
+          width={() => props.layout.width() - (splitOpen() ? props.layout.sidebarWidth() : 0)}
+          notify={props.notify}
+          onOpenDetail={props.onOpenDetail}
+          onScrollbox={props.onScrollbox}
+          onHandle={publishHandle}
+        >
+          <Show when={regionActive() ? props.run.elicit() : null} keyed>
+            {(request: ElicitRequestParams) => (
+              <ElicitBlock
+                interaction={props.interaction}
+                request={request}
+                onResolve={props.run.resolveElicit}
+                onNotify={props.notify}
+                plan={() => props.activity.plan}
+                onOpenPlan={props.openPlan}
+                fillAvailableWidth={splitOpen}
+              />
+            )}
+          </Show>
+          <box
+            id="transcript-reading-runway"
+            height={transcriptReadingRunwayRows(props.layout.height())}
+            flexShrink={0}
+          />
+        </TranscriptViewport>
       </box>
       <Show when={splitOpen()}>
         <Sidebar
@@ -337,6 +205,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
           workflow={props.run.workflowActivity}
           reveal={props.sidebarReveal}
           onOpenDetail={props.onOpenDetail}
+          footerHint={props.layout.sidebarHint}
+          onClose={props.layout.closeDrawer}
         />
       </Show>
       <Show
@@ -386,6 +256,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
                 workflow={props.run.workflowActivity}
                 reveal={props.sidebarReveal}
                 onOpenDetail={props.onOpenDetail}
+                footerHint={props.layout.sidebarHint}
+                onClose={props.layout.closeDrawer}
               />
             </box>
           </SurfaceOverlay>

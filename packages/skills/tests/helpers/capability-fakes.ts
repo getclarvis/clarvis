@@ -125,12 +125,16 @@ export function fakeAgentBuildContext(
 interface PropertyRule {
   type?: unknown;
   minLength?: unknown;
+  maxLength?: unknown;
+  minimum?: unknown;
+  maximum?: unknown;
+  pattern?: unknown;
 }
 
 /**
  * A {@link ToolArgValidate} over the JSON Schema subset `load_skill` declares:
- * `type: "object"`, `required`, `additionalProperties: false`, and per-property
- * `type: "string"` + `minLength`.
+ * `type: "object"`, `required`, `additionalProperties: false`, and the scalar
+ * string/integer constraints used by the two skill tools.
  *
  * @remarks Deliberately a real validator rather than a `() => null` stub. The
  * engine injects an Ajv-backed one, which this package cannot depend on; a stub
@@ -167,10 +171,29 @@ export const fakeValidateArgs: ToolArgValidate = (schema, args) => {
     if (rule.type === "string" && typeof held !== "string") {
       return failAt(key, "must be string");
     }
+    if (rule.type === "integer" && !Number.isInteger(held)) {
+      return failAt(key, "must be integer");
+    }
     if (typeof held === "string" && typeof rule.minLength === "number") {
       if (held.length < rule.minLength) {
         return failAt(key, `must NOT have fewer than ${rule.minLength} characters`);
       }
+    }
+    if (typeof held === "string" && typeof rule.maxLength === "number") {
+      if (held.length > rule.maxLength) {
+        return failAt(key, `must NOT have more than ${rule.maxLength} characters`);
+      }
+    }
+    if (typeof held === "string" && typeof rule.pattern === "string") {
+      if (!new RegExp(rule.pattern, "u").test(held)) {
+        return failAt(key, `must match pattern "${rule.pattern}"`);
+      }
+    }
+    if (typeof held === "number" && typeof rule.minimum === "number" && held < rule.minimum) {
+      return failAt(key, `must be >= ${rule.minimum}`);
+    }
+    if (typeof held === "number" && typeof rule.maximum === "number" && held > rule.maximum) {
+      return failAt(key, `must be <= ${rule.maximum}`);
     }
   }
   return null;

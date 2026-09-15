@@ -81,9 +81,9 @@ export interface Logger {
 export interface ContextPort {
   /** Append a runtime note to the transcript as a distinct entry. */
   appendNote(content: string): void;
-  /** Install or replace a pinned, non-evictable block identified by `kind`. */
+  /** Keep an unchanged block in place; append changed content and retain its prior publication. */
   setStableBlock(kind: string, content: string): void;
-  /** Replace the run's canonical-state block, re-rendered each iteration. */
+  /** Append a current-state reminder, retaining prior publications even when text is unchanged. */
   setCanonicalState(content: string): void;
 }
 
@@ -136,3 +136,4 @@ export type {
 } from "./elicit.ts";
 export type { AgentRegistryPort } from "./agents-port.ts";
 export type { LLMProvider, ToolChoice } from "./llm-port.ts";
+export type { ModelExecutionInfo, ModelExecutionResolver } from "./model-execution.ts";

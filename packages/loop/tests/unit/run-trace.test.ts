@@ -17,6 +17,33 @@ const err = (code: string): RunResponse =>
   ({ status: "error", error: { code: code as never, message: "m" }, usage }) as RunResponse;
 
 describe("deriveRunEndedDetail", () => {
+  it("records accepted checkpoint disposition without relabeling an unsuccessful run", () => {
+    const checkpoint = { summary: "Stage saved", next_step: "Continue" };
+    expect(
+      deriveRunEndedDetail({
+        status: "completed",
+        result: undefined,
+        disposition: "checkpoint",
+        checkpoint,
+        usage,
+      }),
+    ).toEqual({ reason: "completed", disposition: "checkpoint" });
+    expect(
+      deriveRunEndedDetail({ status: "completed", result: "Done", usage, disposition: "final" }),
+    ).toEqual({
+      reason: "completed",
+      disposition: "final",
+    });
+    for (const status of ["cancelled", "budget_exhausted", "soft_limit_declined"] as const) {
+      expect(
+        deriveRunEndedDetail({ ...clean(status), disposition: "checkpoint", checkpoint }),
+      ).toEqual({ reason: status });
+    }
+    expect(
+      deriveRunEndedDetail({ ...err("provider_error"), disposition: "checkpoint", checkpoint }),
+    ).toEqual({ reason: "error", code: "provider_error" });
+  });
+
   it("maps the clean terminal statuses 1:1 with no code", () => {
     for (const status of [
       "completed",

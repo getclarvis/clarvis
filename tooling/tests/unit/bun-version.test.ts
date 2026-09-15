@@ -58,8 +58,21 @@ jobs:
         with:
           bun-version: ${VERSION}
       - run: bun --version && bun --revision
+  runtime:
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${VERSION}
+      - run: bun --version && bun --revision
+  runtime-manifest:
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${VERSION}
+      - run: bun --version && bun --revision
 `,
   docker: `FROM oven/bun:${VERSION}-slim AS deps\nFROM oven/bun:${VERSION}-slim AS runtime\n`,
+  runtimeDevelopmentContainerfile: `ARG BUILD_IMAGE=docker.io/oven/bun:${VERSION}-debian@sha256:${"a".repeat(64)}\n`,
   rootManifest: JSON.stringify({
     engines: { bun: `>=${VERSION}` },
     workspaces: ["packages/example"],
@@ -78,6 +91,39 @@ jobs:
 });
 
 describe("bunVersionFailures", () => {
+  test("accepts an additional independently configured Bun job without a fixed setup count", () => {
+    const snapshot = validSnapshot();
+    snapshot.ci += `  extra:\n    steps:\n      - uses: oven-sh/setup-bun@v2\n        with:\n          bun-version: ${VERSION}\n      - run: bun --version && bun --revision\n      - run: bun run test:tooling\n`;
+    expect(bunVersionFailures(snapshot)).toEqual([]);
+  });
+
+  test("rejects Bun execution without its own setup and evidence, including zero setups", () => {
+    const snapshot = validSnapshot();
+    snapshot.ci += "  forgotten:\n    steps:\n      - run: bun run typecheck\n";
+    expect(bunVersionFailures(snapshot).join("\n")).toContain(
+      "job forgotten: expected one setup-bun",
+    );
+    expect(bunVersionFailures(snapshot).join("\n")).toContain(
+      "job forgotten: expected one Bun version/revision",
+    );
+    snapshot.ci = "jobs:\n  empty:\n    steps:\n      - run: echo empty\n";
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("expected at least one setup-bun");
+  });
+
+  test("rejects duplicate evidence, missing pins and evidence after execution", () => {
+    const original = validSnapshot();
+    for (const ci of [
+      original.ci.replace(`          bun-version: ${VERSION}`, ""),
+      original.ci.replace(
+        "      - run: bun --version",
+        "      - run: bun run typecheck\n      - run: bun --version",
+      ),
+      original.ci.replace("  windows:", "      - run: bun --version && bun --revision\n  windows:"),
+      "jobs: [",
+    ])
+      expect(bunVersionFailures({ ...original, ci }).length).toBeGreaterThan(0);
+  });
+
   test("accepts one exact version across every surface", () => {
     expect(bunVersionFailures(validSnapshot())).toEqual([]);
   });
@@ -103,8 +149,10 @@ describe("bunVersionFailures", () => {
     );
     snapshot.canary = snapshot.canary.replace("      - run: bun --version && bun --revision\n", "");
     const failures = bunVersionFailures(snapshot).join("\n");
-    expect(failures).toContain("expected three Bun version/revision evidence steps, found 2");
-    expect(failures).toContain("expected two Bun version/revision evidence steps, found 1");
+    expect(failures).toContain(
+      "job linux: expected one Bun version/revision evidence step, found 0",
+    );
+    expect(failures).toContain("expected four Bun version/revision evidence steps, found 3");
     expect(failures).toContain("expected one Bun version/revision evidence step, found 0");
   });
 
@@ -118,6 +166,18 @@ describe("bunVersionFailures", () => {
     const snapshot = validSnapshot();
     snapshot.docker = snapshot.docker.replace(VERSION, "1.3.14");
     expect(bunVersionFailures(snapshot).join("\n")).toContain("packages/server/Dockerfile");
+  });
+
+  test("requires the source-built runtime carrier to pin the same Bun version by digest", () => {
+    const snapshot = validSnapshot();
+    snapshot.runtimeDevelopmentContainerfile = snapshot.runtimeDevelopmentContainerfile.replace(
+      VERSION,
+      "1.3.14",
+    );
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("Containerfile.runtime-development");
+
+    snapshot.runtimeDevelopmentContainerfile = `ARG BUILD_IMAGE=docker.io/oven/bun:${VERSION}-debian\n`;
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("expected one digest-pinned");
   });
 
   test("names root and workspace engine drift", () => {

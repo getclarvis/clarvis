@@ -17,11 +17,32 @@ describe("server image build context", () => {
     }
   });
 
-  it("keeps Docker exclusions at the repository-root build context", () => {
+  it("allowlists the repository-root build context and re-excludes credentials", () => {
     const ignore = readFileSync(`${root}/.dockerignore`, "utf8");
-    expect(ignore).toContain("**/node_modules");
-    expect(ignore).toContain("**/.clarvis");
-    expect(ignore).toContain("**/keys.json");
+    expect(ignore.split(/\r?\n/u)[0]).toBe("**");
+    for (const included of [
+      "!package.json",
+      "!bun.lock",
+      "!packages/**",
+      "!tooling/runtime/kernel-entry.ts",
+      "!tooling/runtime/prepare-artifact.sh",
+      "!third-party/bun/LICENSE.md",
+    ]) {
+      expect(ignore).toContain(included);
+    }
+    for (const excluded of [
+      "**/node_modules",
+      "**/.clarvis",
+      "**/keys.json",
+      "**/subscriptions.json",
+      "**/.env",
+      "**/.npmrc",
+      "**/.ssh",
+      "**/*.pem",
+      "**/*.key",
+    ]) {
+      expect(ignore).toContain(excluded);
+    }
   });
 
   it("builds the library graph without bundling the unrelated terminal client", () => {
@@ -29,8 +50,8 @@ describe("server image build context", () => {
     expect(dockerfile).not.toContain("RUN bun run build\n");
   });
 
-  it("scales the image run budget with the 200-iteration soft limit", () => {
+  it("keeps the image ceiling aligned with the power-of-two iteration limit", () => {
     expect(dockerfile).toContain("CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000");
-    expect(dockerfile).toContain("CLARVIS_ITERATION_CEILING=200");
+    expect(dockerfile).toContain("CLARVIS_ITERATION_CEILING=256");
   });
 });

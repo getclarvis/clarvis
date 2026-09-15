@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/capability",
-
   "private": true,
   "description": "The capability contract: the vocabulary and composition machinery a cross-cutting loop feature is written against. A dependency-free leaf, so a capability can live outside the engine.",
   "license": "MIT",

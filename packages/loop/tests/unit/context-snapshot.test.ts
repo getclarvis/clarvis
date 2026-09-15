@@ -56,7 +56,7 @@ describe("LiveContext.snapshot — replaceable-entry identity", () => {
    * the next iteration appended a SECOND copy that then accumulated for the rest
    * of the run.
    */
-  it("restores a note so the next write replaces it instead of duplicating it", () => {
+  it("restores a note in place and appends the next observation", () => {
     const first = createLiveContext(seedWithSystem(), ROOMY, SCOPE);
     first.appendRuntimeNote("tokens_remaining", "[runtime: t=1]");
 
@@ -66,7 +66,7 @@ describe("LiveContext.snapshot — replaceable-entry identity", () => {
     const notes = resumed.messages
       .map((m) => contentToText(m.content))
       .filter((c) => c.startsWith("[runtime:"));
-    expect(notes).toEqual(["[runtime: t=2]"]);
+    expect(notes).toEqual(["[runtime: t=1]", "[runtime: t=2]"]);
   });
 
   it("restores a stable block so the next write supersedes it by appending", () => {
@@ -144,14 +144,14 @@ describe("LiveContext.snapshot", () => {
     const snap = ctx.snapshot();
     expect(snap.map((e) => e.message.role)).toEqual([
       "user",
+      "user",
       "assistant",
       "tool",
       "assistant",
-      "user",
     ]);
     expect(snap.some((e) => e.message.role === "system")).toBe(false);
 
-    const [task, calls, tool, final, canonical] = snap;
+    const [task, canonical, calls, tool, final] = snap;
     expect(contentToText(task!.message.content)).toBe("the task");
     expect(task!.evictable).toBe(false);
     expect(canonical!.canonical).toBe(true);
@@ -195,7 +195,7 @@ describe("LiveContext.snapshot", () => {
     expect(ctx.messages.some((m) => contentToText(m.content) === big)).toBe(true);
   });
 
-  it("restored canonical entry is replaced by setCanonicalState, not duplicated", () => {
+  it("restored canonical entry remains historical when a new state is appended", () => {
     const ctx1 = createLiveContext(seedWithSystem(), ROOMY, SCOPE);
     ctx1.setCanonicalState("state v1");
     const snap = ctx1.snapshot();
@@ -209,7 +209,7 @@ describe("LiveContext.snapshot", () => {
 
     const texts = ctx2.messages.map((m) => contentToText(m.content));
     expect(texts.filter((t) => t === "state v2")).toHaveLength(1);
-    expect(texts.some((t) => t === "state v1")).toBe(false);
+    expect(texts.indexOf("state v1")).toBeLessThan(texts.indexOf("state v2"));
   });
 
   it("summary entries keep their flag across the round-trip", () => {

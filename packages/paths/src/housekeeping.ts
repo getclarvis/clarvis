@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { pathsLogger, type PathsLogger } from "./diag.ts";
 import { FILE_MODE } from "./constants.ts";
 import { globalPaths } from "./global.ts";
-import { isSpillFile, workspaceStatePaths } from "./workspace-state.ts";
+import { isSpillFile, workspaceStatePaths, type WorkspaceStatePaths } from "./workspace-state.ts";
 
 const SPILL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const ignoreFsFailure = (): undefined => undefined;
@@ -123,10 +123,12 @@ async function removeStaleEmptyRunDirs(runsDir: string, maxEntries: number): Pro
  *   `truncated` field of `paths.spill_sweep` exists to say.
  */
 export async function sweepSpillDir(
-  workspaceRoot: string,
+  workspaceRoot: string | WorkspaceStatePaths,
   options: { maxEntries?: number; concurrency?: number; logger?: PathsLogger } = {},
 ): Promise<void> {
-  const dir = workspaceStatePaths(workspaceRoot).localDir;
+  const dir = (
+    typeof workspaceRoot === "string" ? workspaceStatePaths(workspaceRoot) : workspaceRoot
+  ).localDir;
   const maxEntries = Math.max(0, options.maxEntries ?? 10_000);
   const logger = options.logger ?? pathsLogger();
   const report = await sweepLocalSpills(dir, {

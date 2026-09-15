@@ -8,6 +8,7 @@
  * submit handler and the MCP catch-all after the fold.
  */
 import type { ToolChoice } from "./llm-port.ts";
+import { CapabilityUnavailableError } from "./errors.ts";
 import type { NamespacedTool } from "./run.ts";
 import type { CompactionAnchor } from "./compaction-anchor.ts";
 import type { OutputTokenBudget } from "./output-budget.ts";
@@ -45,7 +46,28 @@ export function capabilitiesForScope(
   scope: AgentScope,
 ): AgentCapability[] {
   return (runCapabilities ?? [])
-    .map((c) => c.forAgent(scope))
+    .map((c) => {
+      const activation = c.forAgent(scope);
+      if (
+        activation === null &&
+        c.required === true &&
+        scope.entry &&
+        scope.signal?.aborted !== true
+      )
+        throw new CapabilityUnavailableError(c.name, "entry");
+      if (activation !== null && c.required === true && scope.entry)
+        return {
+          attach(bc) {
+            try {
+              return activation.attach(bc);
+            } catch (error) {
+              if (scope.signal?.aborted === true) throw error;
+              throw new CapabilityUnavailableError(c.name, "entry");
+            }
+          },
+        } satisfies AgentCapability;
+      return activation;
+    })
     .filter((c): c is AgentCapability => c !== null);
 }
 
@@ -154,8 +176,13 @@ function foldHooks(all: readonly OrchestrationHooks[]): OrchestrationHooks {
   return {
     ...(beforeIteration.length > 0
       ? {
-          beforeIteration: (): void => {
-            for (const f of beforeIteration) f!();
+          beforeIteration: async (signal) => {
+            for (const f of beforeIteration) {
+              signal?.throwIfAborted();
+              const result = await f!(signal);
+              signal?.throwIfAborted();
+              if (result !== undefined) return result;
+            }
           },
         }
       : {}),
@@ -171,8 +198,8 @@ function foldHooks(all: readonly OrchestrationHooks[]): OrchestrationHooks {
       : {}),
     ...(onFinalizeAccepted.length > 0
       ? {
-          onFinalizeAccepted: (): void => {
-            for (const f of onFinalizeAccepted) f!();
+          onFinalizeAccepted: (attempt): void => {
+            for (const f of onFinalizeAccepted) f!(attempt);
           },
         }
       : {}),

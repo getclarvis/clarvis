@@ -101,30 +101,24 @@ describe("tools.config_resolved", () => {
 });
 
 describe("tools.sandbox_unavailable", () => {
-  it("publishes the probe reason the optional fallback used to discard", () => {
+  it("fails closed instead of logging a silent optional fallback", () => {
     const { logger, records } = recorder();
-    const spec = sandboxCommand({
-      command: "true",
-      cwd: "/ws",
-      workspaceRoot: "/ws",
-      sandbox: { type: "native", availability: "optional" },
-      probe: () => ({
-        backend: "unsupported",
-        mode: "unavailable",
-        reason: "bwrap executable was not found",
+    expect(() =>
+      sandboxCommand({
+        command: "true",
+        cwd: "/ws",
+        workspaceRoot: "/ws",
+        sandbox: { type: "native", availability: "optional" },
+        probe: () => ({
+          backend: "unsupported",
+          mode: "unavailable",
+          reason: "bwrap executable was not found",
+        }),
+        shell: () => ({ flavor: "posix", file: "sh" }),
+        logger,
       }),
-      shell: () => ({ flavor: "posix", file: "sh" }),
-      logger,
-    });
-    expect(spec.sandboxed).toBe(false);
-    expect(eventsOf(records, "tools.sandbox_unavailable")[0]).toMatchObject({
-      level: "warn",
-      fields: {
-        event: "tools.sandbox_unavailable",
-        requested: "native",
-        reason: "bwrap executable was not found",
-      },
-    });
+    ).toThrow("Native sandbox is required: bwrap executable was not found");
+    expect(eventsOf(records, "tools.sandbox_unavailable")).toEqual([]);
   });
 
   it("says nothing when no sandbox was asked for", () => {

@@ -1,5 +1,7 @@
-import { sanitizeErrorMessage } from "@clarvis/capability";
-import type { EnvConfig } from "@clarvis/capability";
+import { composePromptCacheKey, sanitizeErrorMessage, contentToText } from "@clarvis/capability";
+import { randomUUID } from "node:crypto";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
+import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
 import type { ConnectionManager } from "@clarvis/mcp-client";
@@ -8,6 +10,7 @@ import type { TraceStore } from "@clarvis/trace";
 import type { RunJournal } from "@clarvis/trace";
 import type { RunResponse } from "@clarvis/capability";
 import type { CompactionSource, SteerSource } from "@clarvis/capability";
+import { createToolInterruptRegistry, type ToolInterruptSource } from "./tools/tool-interrupt.ts";
 import type { TraceEvent } from "@clarvis/capability";
 import { bind, unref } from "@clarvis/capability";
 import { deriveRunShape, validateBody } from "../validation/request-schema.ts";
@@ -39,6 +42,13 @@ import { composeCapabilityRegistry, createCapabilityRequestView } from "@clarvis
 import { createRunTraceProjectors } from "./run-trace.ts";
 import { boundPromise } from "./support/bounded.ts";
 import type { ExtensionAdmissionController } from "@clarvis/capability";
+import type {
+  OperatorAuthorityReader,
+  OperatorElicitationContext,
+  OperatorAuthoritySeed,
+  OperatorAuthorityState,
+  UserSteerContext,
+} from "@clarvis/capability";
 import { extensionAdmissionFor } from "./extension-admission.ts";
 
 /**
@@ -51,6 +61,27 @@ import { extensionAdmissionFor } from "./extension-admission.ts";
  *   through {@link ExecuteRunArgs} instead.
  */
 export interface ExecuteRunDeps {
+  /** Trusted host-resolved machinery paths; never derived from request fields. */
+  statePaths?: WorkspaceStatePaths;
+  /** Host-owned exact execution catalog; never accepted from run JSON. */
+  modelExecutionResolver?: ModelExecutionResolver;
+  /** Host substrate factory; callbacks are private to the engine, never capability ports. */
+  operatorAuthority?: (input: {
+    seed?: OperatorAuthoritySeed;
+    prior?: OperatorAuthorityState;
+    parent?: OperatorAuthorityReader;
+    owner: string;
+    executionId: string;
+    signal?: AbortSignal;
+  }) => {
+    reader: OperatorAuthorityReader;
+    onSteer(context: UserSteerContext): void;
+    onElicitation(context: OperatorElicitationContext): void;
+    finalize(outcome: {
+      status: string;
+      disposition?: "final" | "checkpoint";
+    }): OperatorAuthorityState;
+  };
   env: EnvConfig;
   llm: LLMProvider;
   connections: ConnectionManager;
@@ -83,6 +114,12 @@ export interface ExecuteRunDeps {
  * capabilities).
  */
 export interface ExecuteRunArgs {
+  /** Authenticated host input; intentionally absent from rawBody and RunRequest. */
+  operatorAuthoritySeed?: OperatorAuthoritySeed;
+  /** Same-process inherited authority is fenced against the parent's live revision. */
+  operatorAuthorityParent?: OperatorAuthorityReader;
+  /** Host controller retirement revokes intention without cancelling background execution. */
+  operatorAuthoritySignal?: AbortSignal;
   rawBody: unknown;
   owner: string;
   deps: ExecuteRunDeps;
@@ -92,6 +129,12 @@ export interface ExecuteRunArgs {
   steer?: SteerSource;
   /** Explicit entry-agent compaction requests, drained before iterations. */
   compaction?: CompactionSource;
+  /**
+   * Operator requests to interrupt one live tool invocation.
+   *
+   * @remarks Push delivery; never model content and never transcribed.
+   */
+  toolInterrupts?: ToolInterruptSource;
   /** Per-run capabilities from session-bound hosts (e.g. lifecycle hooks);
    * activated after the deps-level ones. */
   capabilities?: Capability[];
@@ -180,7 +223,7 @@ async function raceWithBudget(
  * Collect every capability's durable state for the run's record.
  *
  * @param capabilities - the run's activated capabilities, in registration order.
- * @param status - the run's terminal status, handed to each `finalizeRun`.
+ * @param outcome - the run's terminal status and accepted finalization disposition.
  * @param prior - the continued run's state, carried forward for any capability
  *   that did not run this time.
  * @param logger - warns on a `finalizeRun` that throws.
@@ -195,19 +238,30 @@ async function raceWithBudget(
  */
 export async function collectCapabilityState(
   capabilities: readonly RunCapability[],
-  status: ExecutionStatus,
+  outcome: { status: ExecutionStatus; disposition?: "final" | "checkpoint" },
   prior: Record<string, unknown> | undefined,
   logger?: Logger,
   timeoutMs = 2000,
 ): Promise<Record<string, unknown> | undefined> {
   const state: Record<string, unknown> = { ...(prior ?? {}) };
+  const preserveState =
+    outcome.disposition === "checkpoint" ||
+    (outcome.status !== "completed" &&
+      capabilities.some((capability) => capability.preserveStateOnInterruption === true));
   const finalized = await Promise.all(
     capabilities.map(async (capability) => {
       if (capability.finalizeRun === undefined) return { capability, value: undefined };
       let timedOut = false;
       try {
         const value = await boundPromise(
-          () => Promise.resolve(capability.finalizeRun?.({ status })),
+          () =>
+            Promise.resolve(
+              capability.finalizeRun?.({
+                status: outcome.status,
+                ...(outcome.disposition === undefined ? {} : { disposition: outcome.disposition }),
+                preserveState,
+              }),
+            ),
           {
             timeoutMs,
             onTimeout: () => {
@@ -274,6 +328,9 @@ export async function collectCapabilityState(
  *   {@link CapabilityEvent}s on {@link ExecuteRunArgs.onCapabilityEvent}.
  */
 export async function executeRun({
+  operatorAuthoritySeed,
+  operatorAuthorityParent,
+  operatorAuthoritySignal,
   rawBody,
   owner,
   deps,
@@ -282,6 +339,7 @@ export async function executeRun({
   elicit,
   steer,
   compaction,
+  toolInterrupts,
   capabilities,
   onCapabilityEvent,
 }: ExecuteRunArgs): Promise<ExecuteRunOutcome> {
@@ -295,7 +353,7 @@ export async function executeRun({
     deps.capabilityRegistry,
     allCapabilities.flatMap((capability) => capability.grants ?? []),
   );
-  const { request: parsed } = validateBody(rawBody, deps.env, requestRegistry);
+  const { request: parsed } = validateBody(rawBody, deps.env, requestRegistry, deps);
   const requestView: CapabilityRequestView = createCapabilityRequestView(parsed);
   const hostMetadata = deps.hostMetadata?.();
   const capabilityNeedsHuman = allCapabilities.some(
@@ -343,10 +401,10 @@ export async function executeRun({
 
   const releaseExecutionId = reserveExecutionId(deps.traceStore, owner, executionId);
   try {
-    const promptCacheKey = parsed.prompt_cache_key ?? executionId;
     const promptCacheTtl = parsed.prompt_cache_ttl ?? (shape.humanParkLikely ? "1h" : "5m");
 
     let continuation: RunContinuation | undefined;
+    let priorAuthority: OperatorAuthorityState | undefined;
     if (parsed.continue_from !== undefined) {
       const prior = deps.traceStore.getById(owner, parsed.continue_from);
       if (prior === null || prior.final_context === undefined || prior.final_context.length === 0) {
@@ -358,6 +416,20 @@ export async function executeRun({
           ? {}
           : { capability_state: prior.capability_state }),
       };
+      priorAuthority = prior.operator_authority_state;
+      parsed.session_id ??= prior.request.session_id ?? prior.id;
+      parsed.agent_instance_id ??= prior.request.agent_instance_id;
+    }
+    parsed.session_id ??= executionId;
+    parsed.agent_instance_id ??= randomUUID();
+    const identity = { sessionId: parsed.session_id, agentInstanceId: parsed.agent_instance_id };
+    try {
+      composePromptCacheKey(identity);
+    } catch {
+      throw new ValidationError(
+        "invalid_prompt_cache_key",
+        "Invalid session/agent prompt-cache identity or composed key exceeds 512 characters",
+      );
     }
 
     const emit: CapabilityEventListener = (event: CapabilityEvent): void => {
@@ -377,10 +449,92 @@ export async function executeRun({
       else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
     }
 
+    const toolInterruptRegistry = createToolInterruptRegistry();
+    const unsubscribeToolInterrupts = toolInterrupts?.subscribe((delivery) => {
+      toolInterruptRegistry.deliver(delivery);
+    });
+
     let journal: RunJournal | undefined;
+    const authority = deps.operatorAuthority?.({
+      seed: operatorAuthoritySeed,
+      parent: operatorAuthorityParent,
+      prior: priorAuthority,
+      owner,
+      executionId,
+      signal:
+        operatorAuthoritySignal === undefined
+          ? controller.signal
+          : AbortSignal.any([controller.signal, operatorAuthoritySignal]),
+    });
+    const admittedSteers = new Map<string, string>();
+    const steerIds = new WeakMap<object, string>();
+    const identifySteer = (message: object & { id?: string }): string => {
+      const id = message.id ?? steerIds.get(message) ?? randomUUID();
+      steerIds.set(message, id);
+      return id;
+    };
+    const stopPendingSteers =
+      authority !== undefined &&
+      operatorAuthoritySeed !== undefined &&
+      operatorAuthoritySeed.parent_run_id === undefined
+        ? steer?.onPending?.((message) => {
+            authority.onSteer({
+              id: identifySteer(message),
+              agent: "lead",
+              iteration: 0,
+              message: contentToText(message.content),
+            });
+          })
+        : undefined;
+    const authoritySteer: SteerSource | undefined =
+      steer === undefined
+        ? undefined
+        : {
+            drain() {
+              return steer.drain().map((message) => {
+                const id = identifySteer(message);
+                if (
+                  operatorAuthoritySeed !== undefined &&
+                  operatorAuthoritySeed.parent_run_id === undefined
+                ) {
+                  admittedSteers.set(id, contentToText(message.content));
+                }
+                return { ...message, id };
+              });
+            },
+            close: () => steer.close?.(),
+          };
+    const authorityElicit: Elicit | undefined =
+      elicit === undefined
+        ? undefined
+        : async (params, options) => {
+            const result = await elicit(params, options);
+            const answer = result.content?.response;
+            if (
+              authority !== undefined &&
+              params.kind === "ask_user" &&
+              result.action === "accept" &&
+              typeof answer === "string"
+            )
+              authority.onElicitation({ question: params.message, answer });
+            return result;
+          };
     try {
       const { response, trace, wallStartedAt, finalContext, runCapabilities } =
         await runOrchestrator(parsed, {
+          operatorAuthority: authority?.reader,
+          onOperatorSteer:
+            authority === undefined
+              ? undefined
+              : (context) => {
+                  if (
+                    context.id === undefined ||
+                    admittedSteers.get(context.id) !== context.message
+                  )
+                    return;
+                  admittedSteers.delete(context.id);
+                  authority.onSteer(context);
+                },
           openJournal: (startedAt: number): RunJournal | undefined => {
             journal = deps.traceStore.openJournal?.({
               header: {
@@ -395,17 +549,33 @@ export async function executeRun({
             return journal;
           },
           env: deps.env,
-          llm: withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl }),
+          ...(deps.modelExecutionResolver === undefined
+            ? {}
+            : { modelExecutionResolver: deps.modelExecutionResolver }),
+          llm: withPromptCacheDefaults(
+            {
+              call: (params) =>
+                deps.llm.call({
+                  ...params,
+                  executionId,
+                  sessionId: params.sessionId ?? identity.sessionId,
+                  agentInstanceId: params.agentInstanceId ?? identity.agentInstanceId,
+                }),
+            },
+            { identity, promptCacheTtl },
+          ),
           connections: deps.connections,
           logger: runLogger,
           onEvent,
           resultContract,
           signal: controller.signal,
-          elicit,
-          ...(steer !== undefined ? { steer } : {}),
+          elicit: authorityElicit,
+          ...(authoritySteer !== undefined ? { steer: authoritySteer } : {}),
           ...(compaction !== undefined ? { compaction } : {}),
+          toolInterruptRegistry,
           ...(continuation !== undefined ? { continuation } : {}),
           workspaceRoot: deps.workspaceRoot,
+          ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
           executionId,
           owner,
           capabilities: allCapabilities,
@@ -418,7 +588,7 @@ export async function executeRun({
 
       const capabilityState = await collectCapabilityState(
         runCapabilities,
-        response.status,
+        response,
         continuation?.capability_state,
         runLogger,
         deps.env.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS,
@@ -433,6 +603,9 @@ export async function executeRun({
         ...(finalContext !== undefined ? { finalContext } : {}),
         ...(capabilityState !== undefined ? { capabilityState } : {}),
         ...(hostMetadata === undefined ? {} : { hostMetadata }),
+        ...(authority === undefined
+          ? {}
+          : { operatorAuthorityState: authority.finalize(response) }),
       });
 
       try {
@@ -499,7 +672,11 @@ export async function executeRun({
 
       return { executionId, response };
     } finally {
+      stopPendingSteers?.();
+      authority?.finalize({ status: "cancelled" });
       externalSignal?.removeEventListener("abort", onExternalAbort);
+      unsubscribeToolInterrupts?.();
+      toolInterruptRegistry.close();
       journal?.close();
     }
   } finally {

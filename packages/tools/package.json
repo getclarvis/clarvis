@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/tools",
-
   "private": true,
   "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 read/write/edit/patch/move, batch read, grep/glob/diff, project-wide regex replace, shell + background monitors \u2014 usable as a plain library.",
   "license": "MIT",

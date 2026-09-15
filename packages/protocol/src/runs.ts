@@ -47,14 +47,18 @@ export type GuardMode = "off" | "on" | "auto";
 
 /** Caller-owned judge configuration for guard confirmations. */
 export interface GuardJudge {
-  /** Caller-owned judge system prompt; the kernel relays it verbatim. */
-  prompt: string;
+  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
+  prompt?: string;
+  /** Data below the host's immutable safety policy. */
+  guidance?: string;
   /** Model id the judge runs on; omitted defers to the kernel's default. */
   model?: string;
   /** Fallback verdict when the judge is not confident: prompt the user or deny. */
   on_unsure?: "ask" | "deny";
   /** Milliseconds to wait for the judge before falling back. */
   timeout_ms?: number;
+  /** Independent reviewer retry budget. */
+  max_retries?: number;
 }
 
 /** Whether memory is engaged for a run. */
@@ -80,8 +84,10 @@ export interface StartRunParams {
   agent?: string;
   /** Continue a prior run (resume / steer-after-end). */
   continue_from?: string;
-  /** Provider prompt-cache hint. */
-  prompt_cache_key?: string;
+  /** Persisted conversation identity used for provider affinity. */
+  session_id?: string;
+  /** Persisted entry-agent instance; hosted turns obtain it from the session. */
+  agent_instance_id?: string;
   /**
    * How long a written prompt-cache prefix survives.
    *
@@ -158,8 +164,17 @@ export interface RunUsage {
   warnings?: string[];
 }
 
+/** A stage handoff is independent of execution status and final output. */
+export type RunFinalization =
+  | { disposition?: "final"; checkpoint?: never }
+  | {
+      disposition: "checkpoint";
+      /** Bounded stage handoff; separate from a validated final result and continuation authority. */
+      checkpoint: { summary: string; next_step: string };
+    };
+
 /** Final outcome of a finished run. */
-export interface RunResult {
+export type RunResult = RunFinalization & {
   execution_id: string;
   status: RunStatus;
   /** Final text or structured value. */
@@ -169,7 +184,7 @@ export interface RunResult {
   usage?: RunUsage;
   /** Present only on a `failed` run: a stable code plus a message. */
   error?: { code: string; message: string };
-}
+};
 
 /** Result of requesting compaction through the runs service. */
 export type RunCompactionResult =
@@ -311,9 +326,53 @@ interface Attributed {
 
 /** Durable final decision made by the command guard for one tool call. */
 export interface CommandGuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";
+}
+
+/**
+ * Opaque live control for one physical tool invocation.
+ *
+ * @remarks `tool_execution_id` is minted by the runtime for this invocation and
+ * is never a PID, process group, command text, or `call_id`. `actions` is an
+ * allowlist; the first delivery only advertises `"interrupt"`.
+ */
+export interface ToolExecutionControl {
+  readonly tool_execution_id: string;
+  readonly actions: readonly ["interrupt"];
+}
+
+/** Cause of a selective tool interruption. The model never authors this field. */
+export interface ToolInterruption {
+  readonly source: "operator";
+}
+
+/** Settlement of {@link RunHandle.interruptTool}. */
+export type ToolInterruptStatus = "accepted" | "already_requested" | "not_running";
+
+/**
+ * Receipt for a selective tool-interrupt request.
+ *
+ * @remarks `accepted` means the abort was requested, not that the process has
+ * already exited. `already_requested` is idempotent. `not_running` covers an
+ * unknown, expired, or already-removed token on this live handle.
+ */
+export interface ToolInterruptReceipt {
+  readonly tool_execution_id: string;
+  readonly status: ToolInterruptStatus;
 }
 
 /**
@@ -332,6 +391,8 @@ export type RunEvent =
       at: Timestamp;
       status: RunStatus;
       reason?: string;
+      /** Successful stage disposition, preserved by live and restored transcripts. */
+      disposition?: "final" | "checkpoint";
       /**
        * The failure's code, when the run ended on one.
        *
@@ -370,11 +431,28 @@ export type RunEvent =
       cached_tokens?: number;
     })
   | (Attributed & {
+      /** Durable named admission; never includes partial arguments. */
+      type: "tool_call_announced";
+      call_id: string;
+      tool: string;
+      iteration: number;
+      /** One-based physical model attempt within the iteration. */
+      attempt: number;
+    })
+  | (Attributed & {
       type: "tool_call_started";
       call_id: string;
       tool: string;
       server: string;
       arguments?: Record<string, unknown>;
+      /**
+       * Live operator control for this physical invocation.
+       *
+       * @remarks Present only while the invocation is interruptible. The token is
+       * opaque, distinct from `call_id`, and valid only on the live handle that
+       * emitted it. Absence keeps the previous start-event semantics.
+       */
+      control?: ToolExecutionControl;
     })
   | (Attributed & {
       type: "tool_call";
@@ -388,6 +466,14 @@ export type RunEvent =
       diff?: string;
       /** Final command-review fact, persisted with the shell call for replay. */
       guard?: CommandGuardReview;
+      /**
+       * Why this call ended without success when the operator interrupted it.
+       *
+       * @remarks Implies `ok: false`. Absence keeps the previous terminal
+       * semantics (`ok ? completed : failed`). The terminal does not repeat
+       * `control`; arrival of this event removes live interrupt capacity.
+       */
+      interruption?: ToolInterruption;
     })
   /**
    * Live, incremental slice of a running tool's output (streamed only — never
@@ -669,7 +755,7 @@ export type RunEvent =
   | { type: "mcp_degraded"; at: Timestamp; servers: { name: string; reason: string }[] };
 
 /** Structured command context on a `guard_confirm` elicitation. */
-export interface ElicitationCommandDetail {
+export interface ElicitationCommandDetail extends EffectReviewDetail {
   /** The literal command awaiting approval, exactly as the agent wants to run it. */
   command: string;
   /** Absolute directory the command would run in. */
@@ -687,7 +773,7 @@ export interface ElicitationRequest {
   /**
    * Why the run is asking: `ask_user` (a free question), `guard_confirm` (a
    * command awaiting approval), `plan_review` (a proposed plan awaiting
-   * approval) or `workflow_review` (an installed workflow preflight).
+   * approval), or `workflow_review` (an installed workflow preflight).
    * Open-ended (`string & {}`) so a kernel may add kinds without a
    * protocol bump.
    */
@@ -745,6 +831,15 @@ export interface RunHandle {
   cancel(): Promise<void>;
 
   /**
+   * Request interruption of one live tool invocation without cancelling the run.
+   *
+   * @param toolExecutionId - Opaque token from {@link ToolExecutionControl}.
+   * @returns a receipt. A well-formed token with no live entry is
+   *   `not_running`, not an exception. A malformed token is `invalid_request`.
+   */
+  interruptTool(toolExecutionId: string): Promise<ToolInterruptReceipt>;
+
+  /**
    * Answer a pending elicitation.
    *
    * @param response - Accept / decline / cancel payload.
@@ -756,7 +851,10 @@ export interface RunHandle {
    *
    * @param handler - Called when the kernel asks the user a question.
    */
-  onElicit(handler: (req: ElicitationRequest) => void): void;
+  onElicit(handler: (req: ElicitationRequest) => void): void | (() => void);
+
+  /** Observe a question's response or expiry without retaining stale prompts on reconnect. */
+  onElicitSettled?(handler: (id: string) => void): () => void;
 
   /** Resolves when execution ends; it does not imply that `events` has closed. */
   readonly done: Promise<RunResult>;
@@ -825,3 +923,4 @@ export interface RunService {
    */
   delete(execution_id: string): Promise<void>;
 }
+import type { EffectReviewDetail } from "./effect-review.ts";

@@ -47,6 +47,8 @@ export interface WorkspaceStatePaths {
   memoryMachineryRoot: string;
   /** Where `@clarvis/plan` keeps its compare-and-swap lockfiles. */
   plansLockDir: string;
+  /** Cross-process trace locks for this workspace across runtime placements. */
+  traceLocksDir: string;
   /** Persistent writable state supplied to workspace plugin processes. */
   pluginDataRoot: string;
   /** Persisted prompt history for the terminal UI. */
@@ -192,6 +194,7 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     diagnosticsDir: join(localDir, "diagnostics"),
     memoryMachineryRoot: join(base, "memory"),
     plansLockDir: join(base, "plans"),
+    traceLocksDir: join(base, "trace-locks"),
     pluginDataRoot: join(base, "plugin-data"),
     promptHistoryFile: join(localDir, "prompt-history"),
     codeConfigFile: join(localDir, "code.json"),
@@ -229,8 +232,8 @@ export function ensureWorkspaceStateDir(root?: string, opts?: RootOptions): stri
 /**
  * Ensure a workspace's machine-local scratch directory exists, owner-only.
  *
- * @param root - the working tree root; when omitted, resolved with
- *   {@link workspaceRoot}.
+ * @param root - the working tree root or trusted pre-resolved state paths. Explicit
+ *   state paths bypass ambient root discovery; when omitted, uses {@link workspaceRoot}.
  * @param opts - ambient overrides; see {@link RootOptions}.
  * @returns the absolute local directory.
  *
@@ -238,8 +241,11 @@ export function ensureWorkspaceStateDir(root?: string, opts?: RootOptions): stri
  *   created `<ws>/.clarvis/local` and had to seed a blanket `.gitignore` beside
  *   it. Nothing needs ignoring here, because nothing here is in a repository.
  */
-export function ensureWorkspaceLocalDir(root?: string, opts?: RootOptions): string {
-  const dir = workspaceStatePaths(root, opts).localDir;
+export function ensureWorkspaceLocalDir(
+  root?: string | WorkspaceStatePaths,
+  opts?: RootOptions,
+): string {
+  const dir = (typeof root === "object" ? root : workspaceStatePaths(root, opts)).localDir;
   mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   return dir;
 }

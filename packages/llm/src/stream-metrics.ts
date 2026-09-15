@@ -40,8 +40,8 @@ const NOOP: StreamMetrics = { count: () => {} };
  *   reach this factory was a cache-busting dynamic import — and whether Bun's
  *   coverage attributes a query-suffixed specifier back to this file turned out
  *   to differ between a developer machine and CI. It did locally and did not on
- *   `ubuntu-latest`, which reported lines 39-84 as dead and failed the package's
- *   line floor on three consecutive runs while every one of its 229 tests
+ *   `ubuntu-latest`, which reported this factory's body as dead and failed the
+ *   package's line floor on three consecutive runs while every one of its 229 tests
  *   passed. The sink is the unit under test; reaching it directly is what makes
  *   that measurement the same everywhere.
  */

@@ -47,6 +47,57 @@ const canaryDefault = (source) => {
 const runtimeEvidenceCount = (source) =>
   [...source.matchAll(/^\s*(?:-\s*)?run:\s*bun --version && bun --revision\s*$/gm)].length;
 
+/** Check each host Bun job independently, so new jobs cannot borrow another job's runtime evidence. */
+function ciRuntimeFailures(source: string, version: string): string[] {
+  const failures: string[] = [];
+  try {
+    const workflow = Bun.YAML.parse(source) as {
+      jobs?: Record<
+        string,
+        { steps?: { uses?: string; run?: string; with?: Record<string, unknown> }[] }
+      >;
+    };
+    if (!workflow?.jobs || typeof workflow.jobs !== "object")
+      return [".github/workflows/ci.yml: missing jobs"];
+    let setups = 0;
+    for (const [name, job] of Object.entries(workflow.jobs)) {
+      const steps = job.steps ?? [];
+      const pins = steps.flatMap((step, index) =>
+        step.uses?.startsWith("oven-sh/setup-bun@") ? [{ step, index }] : [],
+      );
+      setups += pins.length;
+      const runsBun = (run?: string) =>
+        /\bbun(?:x)?\b|tooling\/ci\/retry-code-coverage\.sh/.test(run ?? "");
+      if (pins.length === 0 && !steps.some((step) => runsBun(step.run))) continue;
+      const prefix = `.github/workflows/ci.yml: job ${name}`;
+      if (pins.length !== 1)
+        failures.push(`${prefix}: expected one setup-bun configuration, found ${pins.length}`);
+      for (const { step } of pins)
+        if (step.with?.["bun-version"] !== version)
+          failures.push(`${prefix}: bun-version must equal ${version}`);
+      const evidence = steps.flatMap((step, index) =>
+        /^bun --version && bun --revision\s*$/.test(step.run ?? "") ? [index] : [],
+      );
+      if (evidence.length !== 1)
+        failures.push(
+          `${prefix}: expected one Bun version/revision evidence step, found ${evidence.length}`,
+        );
+      if (pins.length === 1 && evidence.length === 1) {
+        const firstExecution = steps.findIndex(
+          (step, index) => index !== evidence[0] && runsBun(step.run),
+        );
+        if (pins[0].index >= evidence[0] || (firstExecution >= 0 && evidence[0] >= firstExecution))
+          failures.push(`${prefix}: setup and runtime evidence must precede Bun execution`);
+      }
+    }
+    if (setups === 0)
+      failures.push(".github/workflows/ci.yml: expected at least one setup-bun configuration");
+  } catch (error) {
+    failures.push(`.github/workflows/ci.yml: invalid job structure (${String(error)})`);
+  }
+  return failures;
+}
+
 /** Validate every executable and declaration surface against the exact version pinned by mise. */
 export function bunVersionFailures(snapshot) {
   const failures = [];
@@ -64,30 +115,12 @@ export function bunVersionFailures(snapshot) {
   }
   if (version === undefined) return failures;
 
-  const ciPins = setupBunPins(snapshot.ci);
-  if (ciPins.length !== 3) {
-    failures.push(
-      `.github/workflows/ci.yml: expected three setup-bun pins, found ${String(ciPins.length)}`,
-    );
-  }
-  for (const pin of ciPins) {
-    if (pin.value !== version) {
-      failures.push(
-        `.github/workflows/ci.yml:${String(pin.line)}: bun-version observed ${observed(pin.value)}, expected ${version}`,
-      );
-    }
-  }
-  const ciEvidence = runtimeEvidenceCount(snapshot.ci);
-  if (ciEvidence !== 3) {
-    failures.push(
-      `.github/workflows/ci.yml: expected three Bun version/revision evidence steps, found ${String(ciEvidence)}`,
-    );
-  }
+  failures.push(...ciRuntimeFailures(snapshot.ci, version));
 
   const releasePins = setupBunPins(snapshot.release);
-  if (releasePins.length !== 2) {
+  if (releasePins.length !== 4) {
     failures.push(
-      `.github/workflows/release.yml: expected two setup-bun pins, found ${String(releasePins.length)}`,
+      `.github/workflows/release.yml: expected four setup-bun pins, found ${String(releasePins.length)}`,
     );
   }
   for (const pin of releasePins) {
@@ -98,9 +131,9 @@ export function bunVersionFailures(snapshot) {
     }
   }
   const releaseEvidence = runtimeEvidenceCount(snapshot.release);
-  if (releaseEvidence !== 2) {
+  if (releaseEvidence !== 4) {
     failures.push(
-      `.github/workflows/release.yml: expected two Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
+      `.github/workflows/release.yml: expected four Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
     );
   }
 
@@ -131,6 +164,21 @@ export function bunVersionFailures(snapshot) {
         `packages/server/Dockerfile: base image observed ${observed(`oven/bun:${pin}`)}, expected oven/bun:${version}-slim`,
       );
     }
+  }
+
+  const runtimeBuildPins = [
+    ...snapshot.runtimeDevelopmentContainerfile.matchAll(
+      /^ARG\s+BUILD_IMAGE=docker\.io\/oven\/bun:([^\s@]+)@(sha256:[a-f0-9]{64})\s*$/gm,
+    ),
+  ];
+  if (runtimeBuildPins.length !== 1) {
+    failures.push(
+      `Containerfile.runtime-development: expected one digest-pinned oven/bun build image, found ${String(runtimeBuildPins.length)}`,
+    );
+  } else if (runtimeBuildPins[0][1] !== `${version}-debian`) {
+    failures.push(
+      `Containerfile.runtime-development: build image observed ${observed(`oven/bun:${runtimeBuildPins[0][1]}`)}, expected oven/bun:${version}-debian`,
+    );
   }
 
   const rootManifest = parseJson("package.json", snapshot.rootManifest, failures);
@@ -183,6 +231,7 @@ export function readBunVersionSnapshot(root) {
     release: read(".github/workflows/release.yml"),
     canary: read(".github/workflows/segfault-canary.yml"),
     docker: read("packages/server/Dockerfile"),
+    runtimeDevelopmentContainerfile: read("Containerfile.runtime-development"),
     rootManifest,
     workspaceManifests: workspaces.map((workspace) => ({
       path: `${workspace}/package.json`,

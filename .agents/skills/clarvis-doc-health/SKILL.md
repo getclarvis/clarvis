@@ -1,121 +1,100 @@
 ---
 name: clarvis-doc-health
-description: "Audit Clarvis documentation against current source, tests, and owning specs when reviewing launch readiness, stale claims, cross-language drift, or a behavior change. Use for repository-wide or scoped documentation truth checks; do not use as a release artifact or native-platform smoke test."
+description: "Audit or synchronize Clarvis documentation against current source, tests, and owning specs. Use for stale claims, documentation reviews, and cross-language consistency within the requested corpus."
 ---
 
 # Clarvis documentation health
 
-Establish what is true now, then make the smallest coherent correction when the task authorizes edits. Report the audited corpus and remaining uncertainty; do not promise absolute completeness without evidence.
+Trace material claims to evidence and make coherent corrections when edits are requested. Follow
+[AGENTS.md](../../../AGENTS.md), including its scope, authorization, documentation, and evidence-reuse
+rules. A documentation audit does not by itself require release qualification or live product E2E.
 
-## Start from the contract
+## Bound the reading
 
-1. Read `AGENTS.md` completely.
-2. Inspect `git status --short`. Preserve every unrelated user change.
-3. Read `specs/README.md`, `specs/known-issues.md`, and the README of every package in scope.
-4. Follow the owning specs to their cited production symbols and tests. Prose alone is not evidence.
-5. For a repository-wide audit, inventory tracked documentation and site copy with:
+Identify the affected claims and document families first. Use
+[the spec index](../../../specs/README.md) to select owning specs, inspect their cited symbols/tests,
+and read the relevant package READMEs. Search matching entries in
+[known issues](../../../specs/known-issues.md) before repeating historical investigations. Read each
+needed contract once and reuse its evidence while the inputs remain unchanged.
 
-   ```bash
-   git ls-files --cached --others --exclude-standard -- '*.md' '*.mdx' 'docs/**/*.vue'
-   ```
-
-Split a large audit into independent public-doc, package-README, and spec families when parallel review is available. Consolidate findings against the same source before editing.
-
-## Classify every material claim
-
-Use four evidence classes:
-
-- **Durable contract:** the behavior the owning spec promises.
-- **Current implementation:** source symbols and actual configuration or workflow files.
-- **Pinned verification:** tests, static checks, artifact smokes, or checked-in evidence.
-- **Temporal external state:** deployments, provider entitlement, account state, remote repository settings, or platform availability.
-
-Never turn temporal external state into a durable documentation claim. Honor deliberate publication sequencing: do not flag intentionally deferred public-repository or site population as a documentation defect, and do not write that transient state into docs unless the owner explicitly changes scope.
-
-When spec and code disagree, do not silently pick one. Determine whether the contract or implementation is wrong from tests, adjacent specs, history when needed, and the owner's stated decision. Report an unresolved product decision instead of inventing one.
-
-## Audit for drift
-
-For each public claim, trace the chain:
-
-```text
-public guide -> package README -> owning spec -> production symbol -> test or explicit gap
-```
-
-Pay special attention to:
-
-- install commands, versions, archive targets, update paths, and release dates;
-- security, sandbox, trust, credentials, billing, and provider-authorization boundaries;
-- beta, support, compatibility, platform, accessibility, and performance wording;
-- defaults, retention, failure behavior, command syntax, configuration scope, and cross-package ownership;
-- workflow permissions, immutable action pins, publication guards, and what a smoke actually proves;
-- numbers such as package, file, event, test, and coverage counts;
-- English and Portuguese pages that describe the same behavior.
-
-Search risky absolutes as leads, not automatic defects:
+For a repository-wide audit, start with tracked and unignored Markdown from the repository root:
 
 ```bash
-rg -n -i 'always|never|all platforms|fully supported|production.ready|guarantee|secure|sandbox|subscription|beta' README.md docs packages specs --glob '*.md' --glob '*.vue'
+git ls-files --cached --others --exclude-standard -- '*.md' '*.mdx'
 ```
 
-Recompute counts from the repository. Do not copy an old count or adjust citations by a blind line-number offset. Prefer production and test symbols in specs; when a range is necessary, verify it against the current file.
+Also inventory shipped agent guidance in TypeScript: the `CLARVIS_CONFIGURE_SKILL` metadata/body in
+[clarvis-configure.ts](../../../packages/kernel/src/skills/clarvis-configure.ts) and its executable
+[configuration examples](../../../packages/kernel/src/skills/configuration-examples.ts). These are
+product documentation even though a Markdown-only search omits them. Their ownership and limits
+live in the [Kernel README](../../../packages/kernel/README.md#builtin-configuration-skill) and
+[self-configuration contract](../../../specs/hosts/self-configuration.md).
 
-## Correct coherently
+Distinguish product documentation, repository skill instructions, proposals, and intentionally
+invalid test fixtures. The public site and its English/Portuguese pages belong to the separate
+`getclarvis/docs` repository. Inspect or edit that corpus only when it is in scope and available;
+otherwise record the external documentation disposition. Do not search for or add a local `docs/`
+site tree in this monorepo.
 
-If edits are authorized:
+## Establish each claim
 
-1. Update every affected public page, translation, package README, and owning spec in the same iteration.
-2. Add or update the narrowest test when a previously unpinned claim caused drift.
-3. Update source comments when they assert the same false contract.
-4. Preserve beta caveats and evidence boundaries; do not market synthetic tests as a real-account or native-platform canary.
-5. Do not reformat unrelated files.
+Trace applicable links through public guide, package README, owning spec, production symbol, and
+test or explicit gap. Record whether the evidence is a durable contract, current implementation,
+an actually completed check, or temporal external state. A test's existence proves a declared
+assertion, not a successful run, live entitlement, or native support.
 
-If the request is review-only, make no edits. Return findings with file, claim, conflicting evidence, severity, and recommended disposition.
+Inspect install/update commands, defaults, retention, failure behavior, configuration scope,
+ownership, security/trust/subscription wording, platform and performance claims, and translated
+counterparts. Use risky absolutes as search leads, not automatic defects. Do not turn intentionally
+deferred publication or a temporary deployment/account state into a durable product claim.
 
-## Keep the TUI product E2E inventory synchronized
+When code and spec disagree, use the owner's decision, current tests, adjacent contracts, and
+history where needed to determine the correction. Report a genuinely unresolved product decision
+with both sides of the evidence; do not invent one.
 
-When this audit is used for `sync-doc`, treat the Clarvis TUI product E2E skill as a derived,
-maintained artifact. If current source, tests, or corrected documentation add, remove, rename, split,
-or materially change a user-visible TUI command, CLI entry, settings panel, key or pointer route,
-journey, integration, state, limit, failure, recovery path, or performance boundary:
+Keep source references stable: link the file and name its symbol or test, without source line
+numbers. Remove unnecessary counts rather than continually recounting them. Specs contain no LOC
+inventories or change dates; chronology belongs in `CHANGELOG.md`, and date-shaped examples use
+semantic placeholders. Preserve contractual limits and coverage ratios.
 
-1. Update `.agents/skills/clarvis-tui-product-e2e/references/coverage-matrix.md` in the same change.
-2. Update `.agents/skills/clarvis-tui-product-e2e/SKILL.md` when execution, isolation, evidence,
-   severity, or completion semantics change.
-3. Update its `references/report-template.md` only when the recorded evidence or verdict schema
-   changes.
-4. Derive the update from the live command registry, settings metadata, CLI argument table, concrete
-   views, implementation and tests; do not copy a documentation list without source verification.
-5. If the skill changed, run its static inventory check and skill-creator format validator:
+## Correct and synchronize
 
-   ```bash
-   bun .agents/skills/clarvis-tui-product-e2e/scripts/check-live-inventory.ts
-   ```
+Update all affected documents within the authorized corpus in the same iteration, including
+translations, package READMEs, specs, and source comments that assert the same incorrect contract.
+For review-only requests, return the findings and proposed dispositions without edits. Add a narrow
+regression check only when an executable rule caused the drift; wording changes need no invented
+behavioral tests.
 
-These steps maintain the test instructions only. `sync-doc` does not build or launch Clarvis, open a
-PTY, execute E2E scenarios, or depend on their pass/fail results. Run the product E2E only through a
-separate request or invocation of `$clarvis-tui-product-e2e`.
+For configuration, command, activation, grant/capability, session/runtime lifecycle or recovery
+claims, review the builtin `clarvis-configure` metadata, body and examples against the owning source
+and specs in the same iteration. Update affected builtin guidance alongside the README/specs so an
+installed agent receives the current instructions, including operator-only actions and consent
+boundaries. Preserve executable examples, on-demand disclosure and the existing body budget. Keep
+the builtin in TypeScript; do not replace it with a `SKILL.md` file or installation scaffolding.
+Record its disposition explicitly: updated, or reviewed with a reason no change was needed.
+Unrelated wording changes do not require rewriting the builtin.
 
-A documentation-only wording change that does not alter a user-visible surface needs no matrix edit,
-but still requires an explicit review of this synchronization rule.
+When a user-visible TUI surface or its proof requirement changes, follow
+[the TUI inventory maintenance section](../clarvis-tui-validation/references/full-audit.md#maintain-the-inventory).
+Update the affected matrix rows once; change workflow instructions or report fields only if their
+semantics changed. This is static maintenance. A task that also requests E2E uses the TUI skill's
+execution mode under the existing authorization; documentation synchronization alone does not
+launch Clarvis, build artifacts, open a PTY, or make provider calls.
 
-## Validate
+## Validate the changed surface
 
-Run checks proportional to the affected surface from the repository root:
+Run `bun run check:specs` for Markdown changes. Run the TUI static inventory checker only when its
+matrix, checker, or registered surface changed. Check formatting for edited files with the existing
+formatter. Run `bun run check:graph` only for dependency/package changes; source or checker changes
+receive their targeted tests and checks. Reuse enclosing checks already completed on the same
+inputs instead of starting full suites for documentation-only work.
 
-```bash
-bun run check:specs
-bun test tooling/tests/architecture/public-docs.test.ts --timeout 60000
-bun run docs:build
-bun run format:check
-```
+When the builtin body or examples change, run the existing Kernel component/integration
+`builtin-skills.test.ts` and integration `configuration-guidance.test.ts` checks. They validate
+distribution, disclosure, example embedding/loaders and the body budget; they do not prove that an
+agent followed new prose or that a TUI journey ran. Do not add tests that merely mirror new wording.
 
-Also run targeted tests for changed source or contracts. Run `bun run check:graph` for package or dependency facts. For a broad correction, finish with the relevant full typecheck, lint, and test gates from `AGENTS.md`. Do not run `bun run check:pre-commit` as a ritual.
-
-Review `git diff --check`, `git diff --cached --check`, and both staged and unstaged final diffs. Report:
-
-- contradictions fixed and any unresolved decision;
-- README/spec files reviewed, including no-change dispositions;
-- exact commands and outcomes;
-- temporal or platform evidence still unverified;
-- that no staging, commit, push, tag, merge, rebase, or release occurred unless separately authorized immediately before it.
+Review `git diff --check` and the final diff, including newly added files. Report the contradictions
+resolved, remaining decisions, reviewed README/spec files, exact validation and limits, external
+documentation and builtin-guidance dispositions, and publication status under the repository
+handoff contract.

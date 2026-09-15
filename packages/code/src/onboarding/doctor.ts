@@ -4,7 +4,7 @@ import { CLARVIS_DIR, globalPaths } from "@clarvis/paths";
 import type { Scope, SettingsAdapter } from "../adapters/settings.ts";
 import { resolvedGuardMode } from "../adapters/guard-mode.ts";
 import {
-  deriveSafetyPreset,
+  deriveIsolation,
   memoryState,
   modelResolves,
   planRetentionLabel,
@@ -365,40 +365,47 @@ export const GATES: Gate[] = [
     fix: { kind: "view", view: "controls" },
     check: (ctx) => {
       const eff = ctx.settings.effective();
-      const sandbox = eff.sandbox !== undefined && eff.sandbox.enabled !== false;
-      const preset = deriveSafetyPreset(eff, resolvedGuardMode(eff.guard));
-      if (sandbox) {
+      const isolation = deriveIsolation(eff);
+      const reviewMode = resolvedGuardMode(eff.guard);
+      const review = reviewMode === "on" ? "approval" : reviewMode;
+      const posture = `${isolation} ${glyph("separator")} review ${review}`;
+      if (isolation !== "host") {
         const a = ctx.sandboxInspection()?.backend;
         if (!a) {
           return {
             status: "pass",
-            detail: `${preset} — checking sandbox host`,
+            detail: `${posture} ${glyph("emDash")} checking Sandbox host`,
           };
         }
-        const required = (eff.sandbox?.availability ?? "required") === "required";
-        if (!a.available && required) {
+        if ((isolation === "docker" || isolation === "podman") && !a.available) {
           return {
             status: "warn",
-            detail: `${preset} — sandbox unavailable here`,
-            hint: `Native sandbox ${a.reason}; runs will fail. Set availability to optional or disable the sandbox.`,
+            detail: `${posture} ${glyph("emDash")} container starts fail closed`,
+            hint: `The Container connection fails closed if ${isolation === "docker" ? "Docker" : "Podman"} cannot start; native Sandbox is ${a.reason}.`,
+          };
+        }
+        if (isolation === "docker" || isolation === "podman") {
+          return {
+            status: "pass",
+            detail: `${posture} ${glyph("emDash")} connects before use and never falls back`,
           };
         }
         if (!a.available) {
           return {
             status: "warn",
-            detail: `${preset} — sandbox unavailable, running directly`,
-            hint: `Native sandbox ${a.reason}; commands fall back to the host.`,
+            detail: `${posture} ${glyph("emDash")} Sandbox unavailable here`,
+            hint: `Native sandbox ${a.reason}; runs will fail. Switch Isolation to Host or install the native sandbox.`,
           };
         }
       }
-      if (preset === "free") {
+      if (isolation === "host" && reviewMode === "off") {
         return {
           status: "warn",
-          detail: preset,
+          detail: posture,
           hint: "commands run directly, unsandboxed and without approval; open Run controls to change",
         };
       }
-      return { status: "pass", detail: preset };
+      return { status: "pass", detail: posture };
     },
   },
   {

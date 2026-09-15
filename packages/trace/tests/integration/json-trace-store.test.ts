@@ -377,6 +377,8 @@ describe("json-trace-store — delete", () => {
       [process.execPath, DELETE_INSERT_WORKER, dir, readyPath, startPath, resultPath],
       { stdout: "pipe", stderr: "pipe" },
     );
+    const stdout = new Response(worker.stdout).text();
+    const stderr = new Response(worker.stderr).text();
 
     try {
       waitForFile(readyPath);
@@ -394,11 +396,9 @@ describe("json-trace-store — delete", () => {
       });
 
       expect(deletingStore.deleteOwner("alice")).toBe(1);
-      const [exitCode, stderr] = await Promise.all([
-        worker.exited,
-        new Response(worker.stderr).text(),
-      ]);
-      expect(exitCode, stderr).toBe(0);
+      const [exitCode, output, errors] = await Promise.all([worker.exited, stdout, stderr]);
+      expect(output).toBe("");
+      expect(exitCode, errors).toBe(0);
       expect(JSON.parse(readFileSync(resultPath, "utf8"))).toMatchObject({
         ok: false,
         code: "persistence_failure",
@@ -411,7 +411,7 @@ describe("json-trace-store — delete", () => {
       expect(store.getById("alice", "after-delete")?.id).toBe("after-delete");
     } finally {
       if (worker.exitCode === null) worker.kill();
-      await worker.exited;
+      await Promise.allSettled([worker.exited, stdout, stderr]);
     }
   });
 

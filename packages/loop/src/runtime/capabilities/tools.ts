@@ -1,3 +1,4 @@
+import type { MutationReview } from "@clarvis/tools";
 /**
  * The built-in coding toolset (@clarvis/tools) packaged as a capability:
  * per-run enablement via env, per-agent capability ceiling from grants, and
@@ -41,7 +42,7 @@ import {
 export { agentToolsActive };
 import { executeAgentToolCall } from "../tools/builtin/execute-agent-tool-call.ts";
 import { mkdirSync, rmSync, rmdirSync } from "node:fs";
-import { DIR_MODE, workspaceStatePaths } from "@clarvis/paths";
+import { DIR_MODE, workspaceStatePaths, type WorkspaceStatePaths } from "@clarvis/paths";
 
 /** Registry name of the built-in coding-tools capability. */
 export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
@@ -49,6 +50,8 @@ export const AGENT_TOOLS_CAPABILITY_NAME = "tools";
 /** What a host's guard resolver yields for one run: the guard itself and,
  * optionally, the raw ask channel that answers its 'ask' verdicts. */
 export interface GuardResolution {
+  /** Host-owned prepared mutation reviewer, admitted only to the entry agent. */
+  reviewMutation?: MutationReview;
   guard?: Guard;
   elicit?: GuardElicit;
 }
@@ -81,10 +84,14 @@ export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonl
  * guard, sandbox and credential names. All optional; omitting one runs
  * unguarded / unsandboxed / without scrubbing. */
 export interface AgentToolsCapabilityOptions {
+  /** Host-resolved paths shared by temporary roots, spills and monitors. */
+  statePaths?: WorkspaceStatePaths;
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
   resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
 }
 
 /**
@@ -132,7 +139,7 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       if (!ctx.env.CLARVIS_AGENT_TOOLS_ENABLED) return null;
       const resolution = await opts?.resolveGuard?.(ctx);
       const sandbox = opts?.resolveSandbox?.(ctx);
-      const statePaths = workspaceStatePaths(ctx.workspaceRoot);
+      const statePaths = opts?.statePaths ?? workspaceStatePaths(ctx.workspaceRoot);
       const temporaryRoot = statePaths.runTempDir(ctx.executionId);
       mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
       const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
@@ -142,7 +149,9 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
         skillExecutionRoots,
+        opts?.allowHostEscalation,
         temporaryRoot,
+        statePaths,
         () => {
           for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
             try {
@@ -169,7 +178,9 @@ function createAgentToolsRunCapability(
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
   skillExecutionRoots: readonly string[],
+  allowHostEscalation: boolean | undefined,
   temporaryRoot: string,
+  statePaths: WorkspaceStatePaths,
   removeEmptyRunDirs: () => void,
 ): RunCapability {
   const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
@@ -180,10 +191,17 @@ function createAgentToolsRunCapability(
     systemSection(id) {
       const caps = agentToolCaps(id.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT);
       if (!caps.canRead) return undefined;
-      return (
+      const temporary =
         "## Temporary work\n\n" +
         "`TMPDIR` names scratch space owned by this run. Shell commands and native coding tools " +
-        "can also reuse paths created by host-native temporary-file APIs."
+        "can also reuse paths created by host-native temporary-file APIs.";
+      if (!caps.canExec) return temporary;
+      return (
+        temporary +
+        "\n\n## Commands and Isolation\n\n" +
+        "Commands follow the run Isolation. When Isolation is Sandbox, `shell` and `monitor_start` run inside the native sandbox.\n\n" +
+        "If a command that is required to finish the user's request fails because the sandbox blocked filesystem, network, or host services, call the same tool again with `sandbox_permissions` set to `require_escalated` and a short `justification` requesting review of that one command on the host. Do not switch tools and do not rewrite the command as argv.\n\n" +
+        "Do not request escalation for routine workspace builds, tests, or git queries that work inside the sandbox. Isolated container runs cannot reach the host this way."
       );
     },
     onRunEnd() {
@@ -211,7 +229,11 @@ function createAgentToolsRunCapability(
           ? withGuardElicitWaitBound(resolution.elicit, elicitWaitMs, scope.signal)
           : undefined;
       const toolset = createAgentToolset({
+        statePaths,
         workspaceRoot: ctx.workspaceRoot,
+        ...(scope.entry && resolution?.reviewMutation !== undefined
+          ? { reviewMutation: resolution.reviewMutation }
+          : {}),
         canMutate: caps.canMutate,
         canExec: caps.canExec,
         confineToWorkspace: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
@@ -222,6 +244,7 @@ function createAgentToolsRunCapability(
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),
         ...(guardElicit !== undefined ? { elicit: guardElicit } : {}),
+        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(sandbox !== undefined
           ? {
               sandbox: {
@@ -279,7 +302,9 @@ export function buildAgentToolsHandler(deps: {
   const { base, toolset } = deps;
   return {
     matches: (call) => toolset.names.has(call.name),
-    async handle(call, iteration): Promise<HandlerVerdict> {
+    canonicalName: (call) => (toolset.names.has(call.name) ? call.name : undefined),
+    interruptible: (call) => call.name === "shell",
+    async handle(call, iteration, context): Promise<HandlerVerdict> {
       const { resultText, errText, productive, images } = await executeAgentToolCall({
         call,
         toolset,
@@ -290,7 +315,9 @@ export function buildAgentToolsHandler(deps: {
           ? { subagentInstanceId: base.subagentInstanceId }
           : {}),
         iteration,
-        ...(base.signal ? { signal: base.signal } : {}),
+        signal: context?.signal ?? base.signal,
+        ...(base.signal !== undefined ? { runSignal: base.signal } : {}),
+        ...(context?.control !== undefined ? { control: context.control } : {}),
       });
       const text =
         errText === null

@@ -1,4 +1,4 @@
-import type { CommandGuardReview } from "@clarvis/protocol";
+import type { CommandGuardReview, ToolExecutionControl } from "@clarvis/protocol";
 
 /** Minimal plan-task activity embedded on semantic plan nodes. */
 export interface TranscriptPlanTask {
@@ -16,9 +16,19 @@ export interface TranscriptPlanTask {
 /** Runtime status shared by semantic transcript variants. */
 export type NodeStatus = "running" | "ok" | "error" | "pending";
 
+/** Tool lifecycle is distinct from a run result and from an approval interaction. */
+export type ToolPhase =
+  "composing" | "pending" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
+
 /** Attribution and identity shared by every semantic node. */
 interface TranscriptNodeBase {
   key: string;
+  /** Execution/actor iteration boundary used by first-admission exploration membership. */
+  transcriptScope?: string;
+  /** Navigation target of a Lead-side delegation marker; not transcript attribution. */
+  delegationTarget?: string;
+  /** Missing host attribution is isolated and cannot authorize cross-record correlation. */
+  attributionIncomplete?: true;
   status: NodeStatus;
   agentLabel?: string;
   subagentOrder?: number;
@@ -55,6 +65,7 @@ export interface TranscriptMessageNode extends TranscriptNodeBase {
 /** Tool invocation and its current semantic result. */
 export interface TranscriptToolNode extends TranscriptNodeBase {
   kind: "tool_call";
+  toolPhase?: ToolPhase;
   text: string;
   mcpName?: string;
   toolName?: string;
@@ -65,6 +76,15 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
   warn?: boolean;
   /** Final command-guard verdict, retained across live display and replay. */
   guard?: CommandGuardReview;
+  /**
+   * Live operator control for this physical invocation. Present only while the
+   * call is interruptible; removed on every terminal.
+   */
+  control?: ToolExecutionControl;
+  /** Operator interrupt requested; waiting for receipt or the tool terminal. */
+  interruptRequest?: "pending";
+  /** Authoritative terminal cause; scope closure and composition cleanup never infer an operator. */
+  interruption?: { source: "operator" };
   liveOutput?: string;
   /**
    * Size, in characters, of the argument payload the model has streamed so far
@@ -94,15 +114,16 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
   /** Why an explicitly requested persisted body could not be made resident. */
   hydrationNotice?: string;
   /**
-   * The call's rendered signature, kept resident so a dehydrated block still
-   * identifies itself.
+   * The call's rendered signature, kept resident so a dehydrated or still-live
+   * grouped header can name the call after `args` leave the node.
    *
-   * @remarks A tool block's *collapsed* header is derived from `args` — the file
-   *   path or command that says which call this is — and so is the Markdown
-   *   export. Dropping `args` without this left a scrolled-back transcript
-   *   showing a column of bare tool names, repaired only by expanding each one.
-   *   This is tens of bytes against the tens of kilobytes the window exists to
-   *   reclaim, so retaining it costs nothing that matters.
+   * @remarks Written from `tool_call_started` arguments and refreshed on the
+   *   terminal `tool_call`. A tool block's collapsed header, group-member list
+   *   and Markdown export all prefer this string over live `args` — the file
+   *   path or command that says which call this is. Dropping `args` without it
+   *   left a live sub-agent transcript showing `read_file x3 ()()()` until
+   *   publication replaced the nodes with frozen snapshots. This is tens of
+   *   bytes against the tens of kilobytes the window exists to reclaim.
    */
   signature?: string;
   /** The mutation chip's counts, kept resident for the same reason as {@link signature}. */
@@ -114,6 +135,7 @@ export interface TranscriptRunNode extends TranscriptNodeBase {
   kind: "run";
   text: string;
   reason?: string;
+  disposition?: "final" | "checkpoint";
   toolCalls?: number;
   inputTokens?: number;
   outputTokens?: number;

@@ -18,7 +18,6 @@ import { mkdir } from "./mkdir.ts";
 import { remove } from "./remove.ts";
 import { fileStat } from "./file-stat.ts";
 import { tree } from "./tree.ts";
-import { hostVcs } from "./host-vcs.ts";
 import type { ToolDef } from "./types.ts";
 
 /**
@@ -53,7 +52,6 @@ export const toolDescriptors: readonly ToolDescriptor[] = [
   { tool: grep, readOnly: true },
   { tool: diffTool, readOnly: true },
   { tool: shell, readOnly: false },
-  { tool: hostVcs, readOnly: false },
   { tool: monitorStart, readOnly: false },
   { tool: monitorPoll, readOnly: false },
   { tool: monitorStop, readOnly: false },

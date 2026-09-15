@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NOOP_LOGGER, sanitizeErrorMessage } from "@clarvis/capability";
 import type {
   AgentRole,
@@ -6,6 +7,8 @@ import type {
   ToolResultImage,
   LifecycleHook,
   HookVerdict,
+  CheckpointAttempt,
+  OrchestrationHooks,
 } from "@clarvis/capability";
 import type { HandlerResult, HandlerVerdict } from "./loop-contract.ts";
 import type { Logger } from "@clarvis/capability";
@@ -33,6 +36,7 @@ import {
   collectCompactionContributions,
   fireObservers,
   runVerdictHooks,
+  runBeforeIteration,
 } from "./lifecycle-hooks.ts";
 import { runIterationPreamble } from "./loop-iteration.ts";
 import { callModelWithRecovery } from "./model-call.ts";
@@ -46,6 +50,8 @@ import {
   type LoopRuntime,
 } from "./loop-shared.ts";
 import { combineSignals } from "../support/signals.ts";
+import { invocationRunSignal } from "../tools/tool-interrupt.ts";
+import type { ToolInvocationContext } from "@clarvis/capability";
 import type { ProgressTracker } from "./progress.ts";
 import type {
   AssistantReasoningPart,
@@ -69,6 +75,8 @@ export type FinalizeStep = { kind: "return"; result: AgentResult } | { kind: "co
  *   itself.
  */
 export interface FinalizePolicy {
+  /** A capability requested a checkpoint; all call results are appended before the gate sweep. */
+  onRequested: (attempt: CheckpointAttempt) => Promise<FinalizeStep>;
   /**
    * Optional fast path: given the iteration's tool calls, return an
    * {@link AgentResult} to accept a submit immediately (bypassing dispatch) or
@@ -176,8 +184,8 @@ export interface LoopDerived {
   results: AgentLoopResults;
   finalize: FinalizePolicy;
 
-  /** Fires at the top of every iteration, before the preamble. */
-  beforeIteration?: () => void;
+  /** Awaited under a finite wall bound before the preamble; a terminal result stops this stage. */
+  beforeIteration?: OrchestrationHooks["beforeIteration"];
   /** Drains queued user steer messages into the context for this iteration. */
   drainSteer?: (iteration: number) => void | Promise<void>;
   /** Fires after a tool-dispatch batch, before guard/progress evaluation. */
@@ -217,7 +225,9 @@ export interface LoopDerived {
  * `produced` progress.
  */
 type DispatchResult =
-  { kind: "terminal"; result: AgentResult } | { kind: "done"; produced: boolean };
+  | { kind: "terminal"; result: AgentResult }
+  | { kind: "finalize"; attempt: CheckpointAttempt; produced: boolean }
+  | { kind: "done"; produced: boolean };
 
 /**
  * How many consecutive empty/reasoning-only completions end the run as an error.
@@ -301,6 +311,7 @@ function buildCompactionThunk(
       llm: target.llm,
       model: target.model,
       provider: target.provider,
+      ...(target.modelExecution === undefined ? {} : { modelExecution: target.modelExecution }),
       ...(target.providerConfig ? { providerConfig: target.providerConfig } : {}),
       ...(runtime.signal ? { signal: runtime.signal } : {}),
       timeoutMs: core.compaction.llmTimeoutMs,
@@ -432,12 +443,16 @@ function buildModelCall(
 ): LLMCallParams {
   const { target, runtime, clock } = core;
   const supportsToolCalling = target.capabilities?.has("tool_calling") ?? true;
-  const reasoningFloor = reasoningOutputFloor(target.providerConfig?.kind, target.reasoningEffort);
+  const reasoningFloor = reasoningOutputFloor(
+    target.modelExecution?.kind ?? target.providerConfig?.kind,
+    target.reasoningEffort,
+  );
   const outputBudgetBase = target.maxOutputTokens ?? reasoningFloor;
   const breakpoints = d.ctx.cacheBreakpoints();
   const cacheBreakpoints = [breakpoints.prior, breakpoints.stable].filter((i) => i >= 0);
   return {
     model: target.model,
+    ...(core.subagentInstanceId === undefined ? {} : { agentInstanceId: core.subagentInstanceId }),
     provider: target.provider,
     ...(target.providerConfig ? { providerConfig: target.providerConfig } : {}),
     ...(target.capabilities !== undefined ? { capabilities: target.capabilities } : {}),
@@ -695,6 +710,34 @@ async function settleOrAbort<T>(
   }
 }
 
+function openToolInvocation(
+  handler: ToolHandler,
+  call: LLMToolCall,
+  core: LoopCore,
+): { context: ToolInvocationContext; release: () => void } {
+  const runSignal = invocationRunSignal(core.runtime.signal);
+  const registry = core.runtime.toolInterrupts;
+  if (handler.interruptible?.(call) !== true || registry === undefined) {
+    return { context: { signal: runSignal }, release() {} };
+  }
+  const toolExecutionId = randomUUID();
+  const controller = new AbortController();
+  registry.register({
+    toolExecutionId,
+    callId: call.id,
+    controller,
+  });
+  return {
+    context: {
+      signal: combineSignals(runSignal, controller.signal) ?? controller.signal,
+      control: { toolExecutionId, actions: ["interrupt"] },
+    },
+    release() {
+      registry.unregister(toolExecutionId);
+    },
+  };
+}
+
 /**
  * Executes one iteration's tool calls in order, honoring hooks, cancellation,
  * and deferred (parallel) handlers, then appends every result to the context.
@@ -727,6 +770,7 @@ async function runDispatch(
   const deferred: Promise<void>[] = [];
   let produced = false;
   let terminal: { result: AgentResult } | null = null;
+  let requested: CheckpointAttempt | undefined;
   let dispatchCompleted = false;
   const batchController = new AbortController();
   let batchCombined: AbortSignal | undefined;
@@ -761,10 +805,16 @@ async function runDispatch(
         rewritten === undefined
           ? original
           : { ...original, arguments: rewritten.arguments, rewrittenFrom: original.arguments };
-      const handled = await settleOrAbort(
-        Promise.resolve().then(() => handler.handle(call, iteration)),
-        core.runtime.signal,
-      );
+      const invocation = openToolInvocation(handler, call, core);
+      let handled: Awaited<ReturnType<typeof settleOrAbort<HandlerVerdict>>>;
+      try {
+        handled = await settleOrAbort(
+          Promise.resolve().then(() => handler.handle(call, iteration, invocation.context)),
+          core.runtime.signal,
+        );
+      } finally {
+        invocation.release();
+      }
       if (handled.kind === "aborted") {
         results[i] = `Tool '${call.name}' was cancelled.`;
         const c = d.maybeCancelled();
@@ -782,9 +832,12 @@ async function runDispatch(
         continue;
       }
       let v: HandlerVerdict = handled.value;
-      if (v.kind === "result" && core.hooks) {
+      if ((v.kind === "result" || v.kind === "finalize") && core.hooks) {
         const final = await applyAfterHooks(core, call, handler, v, adviseMessages);
-        v = { kind: "result", ...final };
+        v =
+          v.kind === "finalize"
+            ? { kind: "finalize", attempt: v.attempt, ...final }
+            : { kind: "result", ...final };
       }
       if (v.kind === "terminal") {
         results[i] = terminalCallText(call.name, v);
@@ -833,6 +886,10 @@ async function runDispatch(
       taskIds[i] = v.taskId;
       images[i] = v.images;
       if (v.progress) produced = true;
+      if (v.kind === "finalize") {
+        requested = v.attempt;
+        break;
+      }
     }
     dispatchCompleted = true;
   } finally {
@@ -864,6 +921,7 @@ async function runDispatch(
   }
 
   if (terminal) return { kind: "terminal", result: terminal.result };
+  if (requested) return { kind: "finalize", attempt: requested, produced };
 
   return { kind: "done", produced };
 }
@@ -906,7 +964,8 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
 
   try {
     for (;;) {
-      d.beforeIteration?.();
+      const prepared = await runBeforeIteration(d.beforeIteration, { signal: runtime.signal });
+      if (prepared !== undefined) return d.maybeCancelled() ?? prepared;
 
       const pre = await runIterationPreamble({
         signal: runtime.signal,
@@ -916,7 +975,11 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
         model: target.model,
         counter: budget.counter,
         allToolsUnavailable: core.allToolsUnavailable,
-        compact: buildCompactionThunk(core, d),
+        compact: async () => {
+          const event = await buildCompactionThunk(core, d)();
+          if (event !== undefined) cacheWatch.resetForCompaction();
+          return event;
+        },
       });
       if (!pre.proceed) {
         if (pre.reason === "cancelled") return d.maybeCancelled()!;
@@ -927,6 +990,7 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
       await d.drainSteer?.(iteration);
 
       const announcedToolCalls = new Set<string>();
+      let toolAttempt = 1;
 
       const withStreaming = (call: LLMCallParams): LLMCallParams =>
         target.stream === false
@@ -963,18 +1027,27 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
                   ...(delta.stream_chars !== undefined ? { stream_chars: delta.stream_chars } : {}),
                   ...(delta.complete === true ? { complete: true as const } : {}),
                 };
-                if (announcedToolCalls.has(delta.call_id)) {
-                  trace.signal("tool_input_delta", detail);
-                } else {
+                if (!announcedToolCalls.has(delta.call_id)) {
                   announcedToolCalls.add(delta.call_id);
-                  trace.record("tool_input_delta", detail);
+                  trace.record("tool_call_announced", {
+                    agent: core.agent,
+                    ...traceIdFields,
+                    call_id: delta.call_id,
+                    tool_name: delta.tool_name,
+                    iteration,
+                    attempt: toolAttempt,
+                  });
                 }
+                trace.signal("tool_input_delta", detail);
               },
             };
       const retryCtx = {
         iteration,
         traceIdFields,
-        onRetry: (): void => announcedToolCalls.clear(),
+        onRetry: (): void => {
+          announcedToolCalls.clear();
+          toolAttempt++;
+        },
       };
       const baseCall = buildModelCall(core, d, retryCtx);
       const streamingCall = withStreaming(baseCall);
@@ -989,7 +1062,10 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
             reachWatch.observeOverflow(ctx.estimateTokens());
             return ctx.forceEvictOldest();
           },
-          rebuild: () => withStreaming(buildModelCall(core, d, retryCtx)),
+          rebuild: () => {
+            retryCtx.onRetry();
+            return withStreaming(buildModelCall(core, d, retryCtx));
+          },
           overflowDiagnostic: (original) =>
             `context does not fit: ${core.agent}'s non-evictable context (~${ctx.estimateTokens()} tokens) ` +
             `exceeds the model context window (${core.compaction.windowTokens} tokens); ` +
@@ -1137,6 +1213,11 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
         }
       }
 
+      if (dispatch.kind === "finalize") {
+        const step = await d.finalize.onRequested(dispatch.attempt);
+        if (step.kind === "return") return step.result;
+      }
+
       const productive = d.computeProgress
         ? d.computeProgress(dispatch.produced)
         : dispatch.produced;
@@ -1148,6 +1229,8 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
       if (stop) return stop;
     }
   } catch (err) {
+    const cancelled = d.maybeCancelled();
+    if (cancelled !== null) return cancelled;
     if (err instanceof OutputBudgetExhaustedError) return d.results.budgetExhausted();
     throw err;
   } finally {

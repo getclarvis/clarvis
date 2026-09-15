@@ -2,9 +2,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+
 import { executableOnPath, resolveCommand, setPathsLogger } from "@clarvis/paths";
 
 import { recorder } from "../helpers/recorder.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const PATHEXT = ".COM;.EXE;.BAT;.CMD";
 
@@ -137,15 +139,16 @@ describe("executableOnPath — POSIX", () => {
 
 describe("resolveCommand", () => {
   let root: string;
-  let previousPath: string | undefined;
+  let ambient: NodeJS.ProcessEnv;
+  let envSpy: ReturnType<typeof spyOnProcessEnv>;
 
   beforeEach(() => {
     root = makeWorkspace();
-    previousPath = process.env.PATH;
+    ambient = environmentFixture();
+    envSpy = spyOnProcessEnv(ambient);
   });
   afterEach(() => {
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
+    envSpy.mockRestore();
     cleanup(root);
   });
 
@@ -153,17 +156,17 @@ describe("resolveCommand", () => {
     const bin = join(root, "clarvis-resolve-hit");
     writeFileSync(bin, "#!/bin/sh\n");
     chmodSync(bin, 0o755);
-    process.env.PATH = root;
+    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
     expect(resolveCommand("clarvis-resolve-hit")).toBe(bin);
   });
 
   it("falls back to the bare name so the OS still gets its own chance", () => {
-    process.env.PATH = root;
+    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
     expect(resolveCommand("clarvis-resolve-absent")).toBe("clarvis-resolve-absent");
   });
 
   it("reuses the first answer, so a probe and its later spawn cannot disagree", () => {
-    process.env.PATH = root;
+    envSpy.mockReturnValue(environmentFixture({ ...ambient, PATH: root }));
     const first = resolveCommand("clarvis-resolve-memo");
     const bin = join(root, "clarvis-resolve-memo");
     writeFileSync(bin, "#!/bin/sh\n");
@@ -180,14 +183,12 @@ describe("command resolution diagnostics", () => {
   it("reports each command once, because the answer is memoized", () => {
     const sink = recorder();
     setPathsLogger(sink.logger);
-    const previous = process.env.PATH;
-    process.env.PATH = "";
+    const envSpy = spyOnProcessEnv(environmentFixture({ ...process.env, PATH: "" }));
     try {
       resolveCommand("clarvis-observed-absent");
       resolveCommand("clarvis-observed-absent");
     } finally {
-      if (previous === undefined) delete process.env.PATH;
-      else process.env.PATH = previous;
+      envSpy.mockRestore();
     }
     expect(sink.events("paths.command_resolved")).toEqual([
       {

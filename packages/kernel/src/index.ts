@@ -3,10 +3,45 @@ export { createInProcessKernel, DEFAULT_KERNEL_CAPABILITIES } from "./kernel.ts"
 export { createAuditLogger, createComponentLoggers } from "./component-loggers.ts";
 export type { ComponentLoggers } from "./component-loggers.ts";
 export type { InProcessKernel, OwnerScopedKernel, CreateKernelOptions } from "./kernel.ts";
+export type { PreparedKernelRun } from "./runs/prepare-run.ts";
+export type { KernelRunService, PreparedRunExecution } from "./runs/run-service.ts";
 export type { ConnectionEvent, ConnectionEventSink } from "./connection-health.ts";
 
+export {
+  RuntimeLaunchError,
+  type RuntimeAvailability,
+  type RuntimeKind,
+  type RuntimeLifecycleState,
+  type RuntimeLimits,
+  type RuntimeNetworkMode,
+  type RuntimeProtectedMount,
+  type RuntimeUnavailableReason,
+  type ContainerKernelBackend,
+  type ContainerKernelLaunchSpec,
+  type ContainerProcessLifecycle,
+} from "./runtime/types.ts";
+export {
+  createPodmanKernelBackend,
+  type PodmanAttachedProcess,
+  type PodmanCommandResult,
+  type PodmanControl,
+} from "./runtime/podman-backend.ts";
+export {
+  createDockerKernelBackend,
+  type DockerAttachedProcess,
+  type DockerCommandResult,
+  type DockerControl,
+  type DockerRunOptions,
+} from "./runtime/docker-backend.ts";
+export {
+  runtimeSettingsSchema,
+  runtimeSettingsSpec,
+  type RuntimeSettingsBlock,
+  type RuntimeSettingsInput,
+} from "./runtime/settings.ts";
+
 export { createRunService } from "./runs/run-service.ts";
-export type { RunServiceConfig, RunRequestAssembler } from "./runs/run-service.ts";
+export type { RunExecutor, RunServiceConfig, RunRequestAssembler } from "./runs/run-service.ts";
 export { createMemoryService } from "./memory/memory-service.ts";
 export type { MemoryServiceConfig } from "./memory/memory-service.ts";
 export { createPlansService } from "./plans/plans-service.ts";
@@ -71,9 +106,16 @@ export type {
   TransportDisconnect,
 } from "./transport/server.ts";
 export { connectKernelClient } from "./transport/client.ts";
+export { readHostedSnapshot } from "./transport/hosted-snapshot.ts";
 export type { RemoteKernel, ConnectKernelClientOptions } from "./transport/client.ts";
 export { createLoopbackTransport } from "./transport/loopback.ts";
 export { createStdioTransport, serveKernelOverStdio } from "./transport/stdio.ts";
+export {
+  connectLocalKernelTransport,
+  listenLocalKernel,
+  type LocalKernelListener,
+  type LocalKernelListenerOptions,
+} from "./transport/local.ts";
 export { M as WIRE_METHODS, N as WIRE_NOTIFICATIONS } from "./transport/wire.ts";
 export {
   OPERATIONS as KERNEL_OPERATIONS,

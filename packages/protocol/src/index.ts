@@ -11,6 +11,8 @@
 
 export type * from "./common.ts";
 export type * from "./runs.ts";
+export type * from "./hosting.ts";
+export type * from "./local-host.ts";
 export type * from "./config.ts";
 export type * from "./plugins.ts";
 export type * from "./extension-profiles.ts";
@@ -23,7 +25,9 @@ export type * from "./plans.ts";
 export type * from "./workflows.ts";
 export type * from "./skills.ts";
 export type * from "./sessions.ts";
+export type * from "./goals.ts";
 export type * from "./tasks.ts";
 export type * from "./storage.ts";
 export type * from "./transport.ts";
 export type * from "./client.ts";
+export type * from "./effect-review.ts";

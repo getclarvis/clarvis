@@ -2,6 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { RUN_EVENT_POLICY } from "../../src/runs/event-policy.ts";
 
 describe("run event policy", () => {
+  it("persists the minimal announcement without persisting or dropping argument deltas as facts", () => {
+    expect(RUN_EVENT_POLICY.tool_call_announced).toMatchObject({
+      durability: "persisted",
+      droppable: false,
+      coalesce: false,
+    });
+    expect(RUN_EVENT_POLICY.tool_input_delta.durability).toBe("live_only");
+  });
   it("allows dropping only coalescible delta events", () => {
     const droppable = Object.entries(RUN_EVENT_POLICY)
       .filter(([, policy]) => policy.droppable)

@@ -390,8 +390,9 @@ function markerSiteOf(m: ModelMessage): MarkerSite {
  * @param requested - the caller's breakpoint indices. `undefined` marks
  *   **nothing**: it means the caller has no reuse in mind, and on a provider
  *   that bills to create an entry a marker there is a pure surcharge for a
- *   prefix no later request can match. The compaction summarizer and the guard
- *   judge are exactly that shape.
+ *   prefix no later request can match. The compaction summarizer has that
+ *   shape. Guard reviewers instead pass an empty list to retain only their
+ *   stable system prefix.
  * @returns the messages, with the selected ones cloned and marked; the original
  *   list is returned unchanged when nothing is markable.
  * @remarks Marks up to {@link MAX_MESSAGE_CACHE_BREAKPOINTS}, the same budget as

@@ -54,10 +54,10 @@ describe("workspaceStatePaths", () => {
     expect(p.workspaceRoot).toBe(resolve(WS));
   });
 
-  test("shares its segment with the traces and sessions of the same workspace", () => {
+  test("keeps trace locks in the canonical workspace state namespace", () => {
     const segment = ownerSegment(ownerFromWorkspace(resolve(WS)));
     expect(p.root.endsWith(segment)).toBe(true);
-    expect(join(globalPaths(undefined, { env }).tracesDir, segment).endsWith(segment)).toBe(true);
+    expect(p.traceLocksDir).toBe(join(p.root, "trace-locks"));
   });
 
   test("no path it builds is inside the working tree — the whole point", () => {
@@ -68,6 +68,7 @@ describe("workspaceStatePaths", () => {
       p.diagnosticsDir,
       p.memoryMachineryRoot,
       p.plansLockDir,
+      p.traceLocksDir,
       p.pluginDataRoot,
       p.promptHistoryFile,
       p.codeConfigFile,

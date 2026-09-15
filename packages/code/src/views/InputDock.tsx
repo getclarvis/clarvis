@@ -449,7 +449,7 @@ export function InputDock(props: {
       const enabled = reactiveMatcherFromSignal(() => visible() && expanded() === isExpanded);
       return props.interaction.keymap.registerLayer({
         enabled,
-        priority: isExpanded ? LAYER.OVERLAY : LAYER.INPUT,
+        priority: isExpanded ? LAYER.OVERLAY : LAYER.INPUT + 1,
         commands: [
           uiCommand({
             id,
@@ -465,7 +465,7 @@ export function InputDock(props: {
             run: () => setEditorExpanded(!isExpanded),
           }),
         ],
-        bindings: [{ key: "ctrl+g", cmd: id }, ...(isExpanded ? [{ key: "escape", cmd: id }] : [])],
+        bindings: [{ key: "ctrl+e", cmd: id }, ...(isExpanded ? [{ key: "escape", cmd: id }] : [])],
       });
     };
     const offCollapsedEditor = registerEditorToggle(false);

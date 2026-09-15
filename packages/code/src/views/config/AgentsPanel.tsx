@@ -2,7 +2,7 @@ import type { JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { detachObserved } from "../../core/tasks.ts";
 import { createSignal, For, onCleanup, Show } from "solid-js";
-import type { Scope } from "@clarvis/protocol";
+import type { Scope, SharedPromptView } from "@clarvis/protocol";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { tone } from "../../theme/tone.ts";
@@ -113,13 +113,27 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
 
   const agents = ctrl.agents;
   detachObserved("agents_reload", () => ctrl.reload());
-  const [sel, setSel] = createSignal(0);
+  const [sel, setSel] = createSignal(1);
   const [row, setRow] = createSignal(0);
   const [picker, setPicker] = createSignal<CatalogPickerSpec | null>(null);
+  const [shared, setShared] = createSignal<SharedPromptView | null>(null);
+  const [sharedOpen, setSharedOpen] = createSignal(false);
+  detachObserved("shared_prompt_load", async () => {
+    try {
+      setShared(await deps.agents.sharedPrompt());
+    } catch (error) {
+      deps.notify(error instanceof Error ? error.message : String(error), "error");
+    }
+  });
 
   host.bindScope({ mode: "retarget" });
 
-  const clampSel = (i: number): number => Math.max(0, Math.min(agents().length - 1, i));
+  const listCount = (): number => agents().length + 1;
+  const clampSel = (i: number): number => Math.max(0, Math.min(listCount() - 1, i));
+  const selectedAgent = (): AgentFile | undefined => {
+    const index = clampSel(sel()) - 1;
+    return index < 0 ? undefined : agents()[index];
+  };
   const clampRow = (i: number): number => Math.max(0, Math.min(EDITOR_FIELDS.length - 1, i));
   let editorScrollEl: ScrollBoxRenderable | undefined;
   followSelection(
@@ -147,6 +161,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   host.onSave(save);
 
   function openEditor(a: AgentFile): void {
+    setSharedOpen(false);
     if (host.scope() !== a.scope) host.toggleScope();
     ctrl.openDraft(a);
     setRow(0);
@@ -190,8 +205,52 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
     });
   }
 
+  async function reloadShared(): Promise<void> {
+    setShared(await deps.agents.sharedPrompt());
+  }
+
+  function openShared(): void {
+    setSharedOpen(true);
+    host.level.push("shared");
+  }
+
+  function editShared(): void {
+    const view = shared();
+    const draft = view?.prompt ?? "";
+    fe.startMultiline("Shared prompt", draft, (text) => {
+      detachObserved("shared_prompt_save", async () => {
+        const next = await deps.agents.writeSharedPrompt(host.scope(), {
+          mode: "replace",
+          body: text,
+        });
+        setShared(next);
+      });
+    });
+  }
+
+  function disableShared(): void {
+    detachObserved("shared_prompt_disable", async () => {
+      const next = await deps.agents.writeSharedPrompt(host.scope(), {
+        mode: "disabled",
+        body: "",
+      });
+      setShared(next);
+    });
+  }
+
+  function resetShared(): void {
+    detachObserved("shared_prompt_reset", async () => {
+      await deps.agents.deleteSharedPrompt(host.scope());
+      await reloadShared();
+    });
+  }
+
   function openSelected(): void {
-    const a = agents()[clampSel(sel())];
+    if (clampSel(sel()) === 0) {
+      openShared();
+      return;
+    }
+    const a = selectedAgent();
     if (!a) return;
     if (a.invalid) {
       deps.notify(
@@ -235,7 +294,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   }
 
   function renameSelected(): void {
-    const a = agents()[clampSel(sel())];
+    const a = selectedAgent();
     if (!a) return;
     const scope = storedScope(a);
     if (scope === null) return refuseRename(a.name);
@@ -330,7 +389,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   }
 
   function deleteSelected(): void {
-    const a = agents()[clampSel(sel())];
+    const a = selectedAgent();
     if (!a) return;
     const scope = storedScope(a);
     if (scope === null) {
@@ -512,7 +571,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
     if (depth === 0)
       return {
         nav: {
-          count: () => agents().length,
+          count: listCount,
           index: sel,
           setIndex: setSel,
           activate: { label: "open", run: openSelected },
@@ -523,6 +582,17 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
           verb("delete", deleteSelected),
         ],
       };
+    if (sharedOpen()) {
+      return {
+        nav: {
+          count: () => 1,
+          index: row,
+          setIndex: setRow,
+          activate: { label: "edit", run: editShared },
+        },
+        verbs: [{ key: "d", label: "disable", run: disableShared }, verb("clear", resetShared)],
+      };
+    }
     return {
       nav: {
         count: () => EDITOR_FIELDS.length,
@@ -543,7 +613,22 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   });
 
   const selBlockers = (): { text: string; fg: string } | null => {
-    const a = agents()[clampSel(sel())];
+    if (clampSel(sel()) === 0) {
+      const view = shared();
+      if (view === null) return null;
+      const layer = host.scope() === "workspace" ? view.layers.workspace : view.layers.global;
+      if (layer?.status === "rejected") {
+        return {
+          text: glyph("error") + " " + (layer.reason ?? "override rejected"),
+          fg: tokens.del,
+        };
+      }
+      return {
+        text: glyph("success") + " " + view.source,
+        fg: tokens.add,
+      };
+    }
+    const a = selectedAgent();
     if (!a) return null;
     if (a.invalid)
       return { text: glyph("error") + " invalid frontmatter: " + a.invalid, fg: tokens.del };
@@ -562,26 +647,46 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   };
 
   function listBody(): JSX.Element {
+    const sharedView = (): SharedPromptView | null => shared();
+    const sharedStatus = (): string => {
+      const view = sharedView();
+      if (view === null) return "loading";
+      const layer = host.scope() === "workspace" ? view.layers.workspace : view.layers.global;
+      if (layer?.status === "rejected") return "rejected";
+      if (view.source === "disabled") return "disabled";
+      return view.source;
+    };
     return (
       <box flexDirection="column">
-        <Show when={agents().length > 0}>
-          <PickerRow
-            selected={false}
-            base={tokens.bg}
-            cells={[
-              { width: 11, text: "role", fg: tokens.muted },
-              { grow: true, text: "name", fg: tokens.muted },
-              { width: 8, text: "grants", fg: tokens.muted },
-              { width: 22, shrink: true, text: "model", fg: tokens.muted },
-              { width: 8, text: "iters", fg: tokens.muted },
-              { width: 4, text: "ok", fg: tokens.muted },
-              { width: 16, text: "scope", fg: tokens.muted },
-            ]}
-          />
-        </Show>
+        <PickerRow
+          selected={sel() === 0}
+          base={tokens.bg}
+          cells={[
+            { width: 11, text: "Shared", fg: tokens.accent2 },
+            { grow: true, text: "Shared prompt", fg: sel() === 0 ? tokens.fg : tokens.muted },
+            { width: 8, text: "", fg: tokens.muted },
+            { width: 22, shrink: true, text: sharedStatus(), fg: tokens.muted },
+            { width: 8, text: "", fg: tokens.muted },
+            { width: 4, text: "", fg: tokens.muted },
+            { width: 16, text: host.scope(), fg: tokens.muted },
+          ]}
+        />
+        <PickerRow
+          selected={false}
+          base={tokens.bg}
+          cells={[
+            { width: 11, text: "role", fg: tokens.muted },
+            { grow: true, text: "name", fg: tokens.muted },
+            { width: 8, text: "grants", fg: tokens.muted },
+            { width: 22, shrink: true, text: "model", fg: tokens.muted },
+            { width: 8, text: "iters", fg: tokens.muted },
+            { width: 4, text: "ok", fg: tokens.muted },
+            { width: 16, text: "scope", fg: tokens.muted },
+          ]}
+        />
         <SelectableList<AgentFile>
           each={agents}
-          sel={sel}
+          sel={() => Math.max(0, sel() - 1)}
           idPrefix="agent-row-"
           empty={() => ({ text: "no agents " + glyph("emDash") + " use Add to create one" })}
           trailing={
@@ -592,7 +697,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
             </Show>
           }
           row={(a, i) => {
-            const on = (): boolean => sel() === i();
+            const on = (): boolean => sel() === i() + 1;
             const fm = a.frontmatter;
             const lead = (fm.can_spawn?.length ?? 0) > 0;
             const tier = grantTier(fm.grants ?? []);
@@ -843,6 +948,57 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
     );
   }
 
+  function sharedEditorBody(): JSX.Element {
+    const view = shared();
+    if (view === null) return <Dash />;
+    const scope = host.scope();
+    const layer = scope === "workspace" ? view.layers.workspace : view.layers.global;
+    const path = scope === "workspace" ? view.paths.workspace : view.paths.global;
+    const status = layer?.status ?? "inherited";
+    const origin = view.source === "disabled" ? "disabled" : view.source;
+    return (
+      <box flexDirection="column">
+        <SectionHeader label="Shared prompt" />
+        <SettingRow
+          id="shared-origin"
+          setting={{
+            label: "Origin",
+            configured: origin,
+            effective: origin,
+            source: path ?? "builtin",
+            applies: "next run",
+            mutation: "immediate",
+          }}
+          selected
+          expanded
+        />
+        <SettingRow
+          id="shared-status"
+          setting={{
+            label: "Status",
+            configured: status,
+            effective: layer?.reason ?? status,
+            source: path ?? "builtin",
+            applies: "next run",
+            mutation: "immediate",
+          }}
+          selected={false}
+          expanded={status === "rejected"}
+        />
+        <Show when={view.prompt}>
+          <text fg={tokens.muted} wrapMode="word" paddingLeft={4}>
+            {view.prompt}
+          </text>
+        </Show>
+        <Show when={status === "rejected" && layer?.reason}>
+          <text fg={tokens.del} wrapMode="word" paddingLeft={4}>
+            {layer?.reason}
+          </text>
+        </Show>
+      </box>
+    );
+  }
+
   return (
     <LevelHost
       host={host}
@@ -850,7 +1006,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       picker={picker}
       levels={[
         { title: "Agents", body: listBody },
-        { title: "Agents", body: editorBody },
+        { title: "Agents", body: () => (sharedOpen() ? sharedEditorBody() : editorBody()) },
       ]}
     />
   );

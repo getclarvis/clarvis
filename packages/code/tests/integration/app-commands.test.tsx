@@ -42,9 +42,8 @@ import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { Help } from "../../src/views/overlays/Help.tsx";
 
 async function waitUntil(predicate: () => boolean, maxIters = 40): Promise<void> {
-  for (let i = 0; i < maxIters && !predicate(); i++) {
-    await new Promise((r) => setTimeout(r, 5));
-  }
+  for (let i = 0; i < maxIters && !predicate(); i++) await Bun.sleep(0);
+  if (!predicate()) throw new Error(`app command condition did not settle after ${maxIters} turns`);
 }
 
 async function waitForFrame(
@@ -57,9 +56,11 @@ async function waitForFrame(
     await rendered.renderOnce();
     frame = rendered.captureCharFrame();
     if (frame.includes(token)) return frame;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await Bun.sleep(0);
   }
-  return frame;
+  throw new Error(
+    `frame ${JSON.stringify(token)} did not render after ${maxIters} turns:\n${frame}`,
+  );
 }
 
 interface FakeCmd {
@@ -173,8 +174,8 @@ function baseDeps(
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openSafetyPresetPicker: () => calls.push("safety-picker"),
-      cycleGuardMode: () => calls.push("guard-cycle"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
+      openReviewPicker: () => calls.push("review-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),
@@ -225,6 +226,21 @@ function baseDeps(
       remove: async () => {},
       rename: async () => {},
       reload: async () => {},
+      sharedPrompt: async () => ({
+        source: "builtin",
+        prompt: "",
+        diagnostics: [],
+        paths: { global: "/fake/shared-agent.md" },
+        layers: { global: { exists: false, status: "inherited" } },
+      }),
+      writeSharedPrompt: async (scope) => ({
+        source: scope,
+        prompt: "",
+        diagnostics: [],
+        paths: { global: "/fake/shared-agent.md" },
+        layers: { global: { exists: scope === "global", status: "active" } },
+      }),
+      deleteSharedPrompt: async () => {},
     } satisfies AgentsStore,
     plugins: fakePluginService(),
     extensionProfiles: {} as never,
@@ -413,7 +429,7 @@ test("plugin lifecycle recomposes only an exact selected Extension Profile contr
     },
     { scope: "global", source: "clarvis", name: "browser" },
   );
-  expect(deferred).toContain("takes effect after /reconnect (run in progress)");
+  expect(deferred).toContain("takes effect after /reconnect reload (run in progress)");
 
   expect(
     await selectedPluginLifecycleBlock({ current: async () => selected }, () => true, {
@@ -584,7 +600,7 @@ function mountView(
   const { host } = createViewHost({
     interaction: {
       keymap,
-      renderer: undefined as never,
+      renderer: { isDestroyed: false, on: () => {}, off: () => {} } as never,
       pushOverlayContext: () => {},
       popOverlayContext: () => {},
       setModalContext: () => {},
@@ -607,7 +623,7 @@ function mountInteractiveView(commands: Commands, name: string) {
   const { host, controls } = createViewHost({
     interaction: {
       keymap,
-      renderer: undefined as never,
+      renderer: { isDestroyed: false, on: () => {}, off: () => {} } as never,
       pushOverlayContext: () => {},
       popOverlayContext: () => {},
     } as unknown as Interaction,
@@ -622,6 +638,74 @@ function mountInteractiveView(commands: Commands, name: string) {
   if (!factory) throw new Error(`no view factory registered for ${name}`);
   return { host, controls, factory, press, keymap, layers, closed: () => closed };
 }
+
+test("/reconnect restores the connection and reload is an explicit separate route", async () => {
+  const modes: string[] = [];
+  const h = harness({
+    reconnectBackend: async (mode) => {
+      modes.push(mode ?? "reload");
+      return { ok: true, message: "connected" };
+    },
+  });
+  try {
+    h.commands.runCommand("backend.reconnect");
+    await waitUntil(() => modes.length === 1);
+    expect(modes).toEqual(["connection"]);
+    expect(h.commands.route("backend.reconnect", "reload")).toBe(true);
+    await waitUntil(() => modes.length === 2);
+    expect(modes).toEqual(["connection", "reload"]);
+    expect(h.commands.route("backend.reconnect", "reload unexpected")).toBe("block");
+    expect(modes).toHaveLength(2);
+  } finally {
+    h.dispose();
+  }
+});
+
+test("Sessions closes its chooser before waiting for a live hosted observation", async () => {
+  const observation = Promise.withResolvers<void>();
+  let entered = false;
+  const h = harness({
+    session: {
+      list: () => [
+        {
+          id: "hosted-session",
+          title: "Still running",
+          owner: "test",
+          projectId: "project",
+          workspace: "workspace",
+          createdAt: 1,
+          updatedAt: 1,
+          turns: [],
+          totals: { input: 0, output: 0 },
+        },
+      ],
+      statusLine: () => "ready",
+      resume: () => {},
+      resumeCatalog: async () => {
+        entered = true;
+        await observation.promise;
+      },
+      delete: async () => {},
+    },
+  });
+  const view = mountInteractiveView(h.commands, "sessions.open");
+  const rendered = await openRender((() => view.factory(view.host)) as never, {
+    width: 110,
+    height: 30,
+  });
+  try {
+    await waitForFrame(rendered, "Still running");
+    view.press("return");
+    await waitUntil(() => entered);
+    expect(entered).toBe(true);
+    expect(view.closed()).toBe(1);
+  } finally {
+    observation.resolve();
+    await Promise.resolve();
+    rendered.renderer.destroy();
+    h.dispose();
+  }
+});
 
 test("/exit is gone — app.quit only answers to /quit", () => {
   const { commands, calls, dispose } = harness();
@@ -871,7 +955,8 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   const expected: Record<string, string[]> = {
     "app.quit": ["/quit"],
     "agent.picker": ["/agent"],
-    "safety.picker": [],
+    "isolation.picker": [],
+    "review.picker": [],
     "transcript.diff": ["/diff"],
     "plan.toggleReview": ["/plan"],
     "catalog.refresh": ["/refresh"],
@@ -900,16 +985,21 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
 test("non-aliased hub children and folded toggles stay off the slash surface", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((e) => [e.name, e]));
-  for (const name of ["controls.open", "capability-providers.open", "sandbox.config"]) {
+  for (const name of [
+    "controls.open",
+    "capability-providers.open",
+    "sandbox.config",
+    "isolation.config",
+  ]) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, []]);
     expect([name, byName.get(name)?.parent]).toEqual([
       name,
       name.includes("plugin") || name === "mcp.browse" ? "extensions" : "settings",
     ]);
   }
-  // Session memory is configured through Run controls; there is no global
-  // quick-toggle command that can silently change execution semantics.
-  expect(byName.get("guard.cycle")!.surface).toBe("internal");
+  // Review opens an explicit picker; the old blind guard-cycle action is gone.
+  expect(byName.get("review.picker")!.surface).toBe("internal");
+  expect(byName.get("guard.cycle")).toBeUndefined();
   expect(byName.get("memory.cycle")).toBeUndefined();
   dispose();
 });
@@ -937,6 +1027,8 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
   const { commands, calls, opened, dispose } = harness();
   expect(commands.route("settings.open", "sandbox")).toBe(true);
   expect(calls).toContain("view:sandbox.config");
+  expect(commands.route("settings.open", "isolation")).toBe(true);
+  expect(calls).toContain("view:isolation.config");
   expect(opened.at(-1)?.parent).toBe("settings.open");
   expect(commands.route("settings.open", "controls")).toBe(true);
   expect(calls).toContain("view:controls.open");
@@ -963,8 +1055,8 @@ test("settings children prefer workspace scope when workspace settings exist", (
 
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
-  ["safety.picker", { surface: "internal", group: "navigate" }],
-  ["guard.cycle", { surface: "internal", group: "actions" }],
+  ["isolation.picker", { surface: "internal", group: "navigate" }],
+  ["review.picker", { surface: "internal", group: "navigate" }],
   ["sessions.open", { surface: "slash", group: "navigate", parent: "sessions" }],
   ["workflows.open", { surface: "slash", group: "navigate" }],
   ["settings.open", { surface: "slash", group: "navigate" }],
@@ -984,9 +1076,11 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["marketplace.open", { surface: "internal", group: "navigate", parent: "extensions" }],
   ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["sandbox.config", { surface: "internal", group: "navigate", parent: "settings" }],
+  ["isolation.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["theme.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["updates.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["backend.reconnect", { surface: "slash", group: "actions", parent: "inspect" }],
+  ["backend.reload", { surface: "internal", group: "actions", parent: "inspect" }],
   ["doctor.open", { surface: "slash", group: "navigate", parent: "inspect" }],
   ["mcp.browse", { surface: "internal", group: "navigate", parent: "extensions" }],
 ];
@@ -1011,8 +1105,8 @@ test("thin action commands dispatch through their injected application effects",
   const { commands, calls, dispose } = harness();
   const contract = [
     ["agent.picker", "agent-picker"],
-    ["safety.picker", "safety-picker"],
-    ["guard.cycle", "guard-cycle"],
+    ["isolation.picker", "isolation-picker"],
+    ["review.picker", "review-picker"],
     ["transcript.diff", "diff"],
     ["plan.open", "plan"],
     ["app.quit", "quit"],
@@ -1264,6 +1358,7 @@ const FACTORY_SMOKES = [
   "marketplace.open",
   "memory.config",
   "sandbox.config",
+  "isolation.config",
   "theme.open",
   "updates.open",
   "settings.open",

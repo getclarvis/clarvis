@@ -13,22 +13,15 @@ export const IMPLEMENT_WORKFLOW = {
       profile: "planner",
       over: { kind: "once" },
       title: "Plan implementation",
-      brief: `Work out how to do this, before anything is written:
+      brief: `Plan this change without modifying the workspace:
 
 {{args.goal}}
 
-Read the code first. Do not modify anything in this round.
-
-- Return \`work_items\` that are genuinely separable pieces of the change. Give each a short \`title\`
-  for the operator and keep its complete instruction in \`goal\`.
-- **\`files\` and \`mutation\` are load-bearing here, not documentation.** The runtime uses them to
-  prove two items are safe to run at the same time: it holds apart any two whose files overlap when
-  either of them writes. Under-declaring \`files\` does not buy parallelism — it lets two writers
-  corrupt the same file.
-- Set \`mutation: true\` for any item that changes the workspace, and list every file it would touch.
-  An item that writes but declares no files is treated as writing everything, and will run alone.
-- Use \`dependencies\` where one item genuinely cannot start until another has landed.
-- Put anything that would change the plan if resolved into \`unknowns\`.`,
+Read the code and applicable workspace instructions. Return separable \`work_items\`, each with a
+short \`title\`, a self-contained \`goal\` and validation criteria. Declare every file read or changed,
+set \`mutation\` for writes, and use \`dependencies\` for prerequisites. These declarations schedule
+conflicts within this batch; an unscoped writer runs alone. Record unresolved scope-changing
+questions in \`unknowns\`.`,
       fanout: 1,
     },
     {
@@ -43,17 +36,11 @@ Read the code first. Do not modify anything in this round.
 
 The overall goal is: {{args.goal}}
 
-The files listed in your scope are yours for the duration of this run — the runtime has already
-made sure no other leader is writing them at the same time. **Stay inside them.** Writing outside
-your declared scope defeats the guarantee that made it safe to run you concurrently.
-
-- Follow the conventions of the code you are editing: its naming, its comment density, its idioms.
-- Run whatever check the package provides for what you touched (its tests, its typecheck, its lint).
-  Report the command and its real outcome.
-- Report what you did in \`findings\`: one entry per change, with the file cited as evidence.
-- If you could not complete the item, say so and say why. Set \`needs_verification: true\` on anything
-  you had to guess at. Do not report a partial change as finished.
-- Do not commit, push, or otherwise touch repository history.`,
+Respect the appended file scope and existing edits; scheduling does not isolate the workspace
+from unrelated work. If completion needs a broader scope, report the blocker instead of expanding it.
+Follow workspace conventions and use available tools for the relevant checks. Report actual commands
+and outcomes, changed files in \`findings\`, and unfinished work in \`coverage_gaps\`.
+Set \`needs_verification\` for unverified claims. Do not commit, push or rewrite repository history.`,
       fanout: 1,
     },
     {
@@ -68,17 +55,11 @@ your declared scope defeats the guarantee that made it safe to run you concurren
 
 What the build leaders reported doing: {{state.build.findings}}
 
-Read the actual diff and the actual files. The report above is a claim, not evidence — your job is
-partly to check that what was reported is what happened.
-
-- Look for correctness defects first: wrong behaviour, unhandled cases, broken invariants.
-- Then look for what is missing: a case with no test, a caller that was not updated, a type that
-  drifted from its fixtures.
-- Run the checks yourself rather than trusting that they were run.
-- Cite every finding as \`path:line\`. Set \`needs_verification: true\` on anything consequential — an
-  independent leader will try to refute it before it is acted on.
-- Put what you did not review into \`coverage_gaps\`.
-- This round is read-only. Report problems; do not fix them.`,
+Check the reports against current files and available diff evidence. Prioritize correctness,
+invariants, affected callers and missing tests. Cite findings as \`path:line\` and mark consequential
+claims \`needs_verification: true\`. This is read-only: use only exposed read tools; do not assume
+command execution is available. Put checks you could not run and areas not reviewed in
+\`coverage_gaps\`. Report problems; do not fix them.`,
       fanout: 1,
     },
     {
@@ -91,36 +72,30 @@ partly to check that what was reported is what happened.
         where: { field: "needs_verification" },
       },
       title: "{{item.title}}",
-      brief: `Try to REFUTE this review finding about the change made for {{args.goal}}:
+      brief: `Independently test this review finding about the change made for {{args.goal}}:
 
+Finding id: {{item.id}}
 {{item.claim}}
 
 Evidence offered: {{item.evidence}}
 Claimed impact: {{item.impact}}
 
-You are attacking this claim, not checking it. A reviewer's finding that nobody tried to break is
-worth about as much as a guess.
-
-- Go to the code yourself. Construct the input or the state that would make the claimed failure
-  happen.
-- Return \`refuted\` when you found that the code already handles it, or that the reviewer misread
-  it — and say exactly what they missed.
-- Return \`confirmed\` only when you actually reproduced the failure.
-- Return \`inconclusive\` when you could not reach the evidence. Do not confirm by default.
-- Do not modify the workspace.`,
+Inspect the code and look for counterevidence using available read-only tools. Copy the finding id
+into \`finding_id\`. Return \`confirmed\` only with independent supporting evidence, \`refuted\` with
+contradictory evidence, or \`inconclusive\` if evidence is insufficient. Distinguish static analysis
+from executed reproduction; unavailable checks are a limitation, not confirmation. Do not modify
+the workspace.`,
       fanout: 2,
       accept: { kind: "threshold", field: "verdict", value: "refuted", count: 2 },
     },
   ],
   synthesis: `# Synthesis
 
-Report what was actually changed, and what state the workspace is in now.
-
-- List the changes that landed, file by file, and the checks that were run against them.
-- A work item that ended \`blocked\`, \`failed\` or \`budget_exhausted\` did **not** land. Say so
-  explicitly — a partially applied change reported as done is the most expensive outcome here.
-- Report the review findings that survived verification as work still to do, not as opinions.
-- If the writers were serialized because their files overlapped, that is normal and not worth
-  reporting. If an item was blocked because a dependency failed, that is worth reporting.`,
+Report verified changes, affected files, actual checks and remaining work. Failed, cancelled or
+budget-exhausted leaders may leave partial edits; inspect the workspace, since failure does not roll
+back writes. Do not label partial work complete.
+\`verify.accepted\` means the refutation threshold matched; exclude those refuted claims.
+\`verify.rejected\` means not refuted, not confirmed. Separate supported defects from inconclusive
+claims and unavailable checks. Include coverage gaps and work blocked by failed dependencies.`,
   dir: "builtin:implement",
 } satisfies WorkflowDefinition;

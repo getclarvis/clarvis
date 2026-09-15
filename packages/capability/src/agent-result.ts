@@ -1,4 +1,5 @@
 import type { BuiltinErrorCode } from "./run.ts";
+import type { RunFinalization } from "./finalization.ts";
 
 /**
  * The {@link import("./run.ts").ErrorCode}s the *engine's own* agent loop can
@@ -46,14 +47,14 @@ void _agentCodesAreErrorCodes;
  * {@link AgentErrorCode} `error` on failure, and — for structured personas — the
  * completed `structuredResult` or the best-effort `partialStructured` value.
  */
-export interface AgentResult {
+export type AgentResult = RunFinalization & {
   status: "completed" | "budget_exhausted" | "error" | "cancelled" | "soft_limit_declined";
   text?: string;
   partialText: string;
   error?: { code: AgentErrorCode; message: string };
   structuredResult?: { value: unknown };
   partialStructured?: { value: unknown };
-}
+};
 
 /**
  * Build the `partialStructured` fragment of an {@link AgentResult} from a

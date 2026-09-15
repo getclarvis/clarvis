@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { spyOn } from "bun:test";
 import type { Logger } from "@clarvis/capability";
 import { globalPaths } from "@clarvis/paths";
 import { createAuthLayer, type AuthLayer } from "../../src/auth/bootstrap.ts";
@@ -31,7 +32,9 @@ export interface AuthFixture {
   dir: string;
   file: string;
   /** Rewrite `auth.json` in place, to exercise the reload path. */
-  write(document: Record<string, unknown>): void;
+  write(document: Record<string, unknown>): number;
+  /** Observe a particular write through the live config source. */
+  reloadObserved(revision: number): Promise<void>;
   cleanup(): void;
 }
 
@@ -74,9 +77,17 @@ function authDocument(opts: AuthFixtureOptions): Record<string, unknown> {
 export async function makeAuthFixture(opts: AuthFixtureOptions): Promise<AuthFixture> {
   const dir = mkdtempSync(join(tmpdir(), "clarvis-auth-"));
   const file = globalPaths(dir).authFile;
-  const write = (document: Record<string, unknown>): void => {
+  let revision = 0;
+  let stampRevision = 0;
+  let logicalNow = Date.now();
+  const write = (document: Record<string, unknown>): number => {
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, JSON.stringify(document, null, 2));
+    revision += 1;
+    stampRevision += 1;
+    const stamp = new Date(Date.UTC(2026, 0, 1) + stampRevision * 2_000);
+    utimesSync(file, stamp, stamp);
+    return revision;
   };
   write(authDocument(opts));
   const auth = await createAuthLayer({
@@ -84,11 +95,25 @@ export async function makeAuthFixture(opts: AuthFixtureOptions): Promise<AuthFix
     mcpPath: "/mcp",
     ...(opts.audit !== undefined ? { audit: opts.audit } : {}),
   });
+  // The eager boot read is revision zero from the source's point of view.
+  revision = 0;
   return {
     auth,
     dir,
     file,
     write,
+    async reloadObserved(expected: number): Promise<void> {
+      if (expected !== revision)
+        throw new Error(`auth config revision ${String(expected)} is not the latest write`);
+      logicalNow = Math.max(logicalNow + 1_001, Date.now() + 1_001);
+      const now = spyOn(Date, "now").mockReturnValue(logicalNow);
+      try {
+        auth.config.current();
+        await Promise.resolve();
+      } finally {
+        now.mockRestore();
+      }
+    },
     cleanup(): void {
       rmSync(dir, { recursive: true, force: true });
     },

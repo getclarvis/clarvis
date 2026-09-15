@@ -1,8 +1,13 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { openConnection, defaultMCPClientFactory } from "@clarvis/mcp-client";
+import {
+  createMCPClientFactory,
+  defaultMCPClientFactory,
+  openConnection,
+} from "@clarvis/mcp-client";
 import type { McpServerConfig } from "@clarvis/capability";
+import { environmentFixture } from "../helpers/process-fixtures.ts";
 
 const SCOPE = { workspace: "/ws", owner: "o" };
 
@@ -34,39 +39,63 @@ function captureServer(): Promise<CaptureServer> {
 const OPTS = { connectTimeoutMs: 1500, callTimeoutMs: 1500, factory: defaultMCPClientFactory };
 
 let srv: CaptureServer | undefined;
+const pendingConnections: Promise<void>[] = [];
+
+function startConnection(options: Parameters<typeof openConnection>[0]): void {
+  pendingConnections.push(
+    openConnection(options).then(
+      async (connection) => connection.conn.close(),
+      () => undefined,
+    ),
+  );
+}
+
 afterEach(async () => {
-  await srv?.close();
-  srv = undefined;
+  const failures: unknown[] = [];
+  const connections = await Promise.allSettled(pendingConnections.splice(0));
+  for (const result of connections) {
+    if (result.status === "rejected") failures.push(result.reason);
+  }
+  try {
+    await srv?.close();
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    srv = undefined;
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "remote transport cleanup failed");
 });
 
 describe("remote transport reaches a server over real HTTP", () => {
   it("connects over http with the SDK's Accept header preserved", async () => {
     srv = await captureServer();
     const tool: McpServerConfig = { name: "remote", transport: "http", url: srv.url };
-    void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
+    startConnection({ scope: SCOPE, server: tool, ...OPTS });
     const headers = await srv.firstHeaders;
     expect(headers.accept).toContain("application/json");
     expect(headers.accept).toContain("text/event-stream");
   });
 
   it("sends a ${VAR} auth header RESOLVED from env — never the literal — alongside Accept", async () => {
-    process.env.CLARVIS_TEST_REMOTE_TOK = "s3cret-value";
     srv = await captureServer();
-    try {
-      const tool: McpServerConfig = {
-        name: "remote",
-        transport: "http",
-        url: srv.url,
-        headers: { Authorization: "Bearer ${CLARVIS_TEST_REMOTE_TOK}" },
-      };
-      void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
-      const headers = await srv.firstHeaders;
-      expect(headers.authorization).toBe("Bearer s3cret-value");
-      expect(headers.authorization).not.toContain("${");
-      expect(headers.accept).toContain("text/event-stream");
-    } finally {
-      delete process.env.CLARVIS_TEST_REMOTE_TOK;
-    }
+    const tool: McpServerConfig = {
+      name: "remote",
+      transport: "http",
+      url: srv.url,
+      headers: { Authorization: "Bearer ${CLARVIS_TEST_REMOTE_TOK}" },
+    };
+    startConnection({
+      scope: SCOPE,
+      server: tool,
+      ...OPTS,
+      factory: createMCPClientFactory(
+        environmentFixture({ ...process.env, CLARVIS_TEST_REMOTE_TOK: "s3cret-value" }),
+      ),
+    });
+    const headers = await srv.firstHeaders;
+    expect(headers.authorization).toBe("Bearer s3cret-value");
+    expect(headers.authorization).not.toContain("${");
+    expect(headers.accept).toContain("text/event-stream");
   });
 
   it("an absent ${VAR} fails the connection before any request (no literal sent)", async () => {
@@ -80,27 +109,31 @@ describe("remote transport reaches a server over real HTTP", () => {
   });
 
   it("always resolves declarative credential env fields when authored expansion is disabled", async () => {
-    process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN = "declared-secret";
-    process.env.CLARVIS_TEST_REMOTE_REGION = "south";
     srv = await captureServer();
-    try {
-      const tool: McpServerConfig = {
-        name: "remote",
-        transport: "http",
-        url: srv.url,
-        expandVariables: false,
-        bearer_token_env_var: "CLARVIS_TEST_REMOTE_DECLARED_TOKEN",
-        env_http_headers: { "X-Region": "CLARVIS_TEST_REMOTE_REGION" },
-        headers: { "X-Literal": "${PORTABLE_VALUE}" },
-      };
-      void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
-      const headers = await srv.firstHeaders;
-      expect(headers.authorization).toBe("Bearer declared-secret");
-      expect(headers["x-region"]).toBe("south");
-      expect(headers["x-literal"]).toBe("${PORTABLE_VALUE}");
-    } finally {
-      delete process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN;
-      delete process.env.CLARVIS_TEST_REMOTE_REGION;
-    }
+    const tool: McpServerConfig = {
+      name: "remote",
+      transport: "http",
+      url: srv.url,
+      expandVariables: false,
+      bearer_token_env_var: "CLARVIS_TEST_REMOTE_DECLARED_TOKEN",
+      env_http_headers: { "X-Region": "CLARVIS_TEST_REMOTE_REGION" },
+      headers: { "X-Literal": "${PORTABLE_VALUE}" },
+    };
+    startConnection({
+      scope: SCOPE,
+      server: tool,
+      ...OPTS,
+      factory: createMCPClientFactory(
+        environmentFixture({
+          ...process.env,
+          CLARVIS_TEST_REMOTE_DECLARED_TOKEN: "declared-secret",
+          CLARVIS_TEST_REMOTE_REGION: "south",
+        }),
+      ),
+    });
+    const headers = await srv.firstHeaders;
+    expect(headers.authorization).toBe("Bearer declared-secret");
+    expect(headers["x-region"]).toBe("south");
+    expect(headers["x-literal"]).toBe("${PORTABLE_VALUE}");
   });
 });

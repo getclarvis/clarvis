@@ -26,6 +26,11 @@ export interface EntryInputs {
 export type EntryChoice =
   { kind: "dist" } | { kind: "source" } | { kind: "error"; message: string };
 
+/** Private process entry selected before ordinary user-facing argument parsing. */
+export function privateEntry(argv: readonly string[]): "remote-kernel" | undefined {
+  return argv[0] === "--remote-kernel" ? "remote-kernel" : undefined;
+}
+
 /**
  * Choose between the built bundle, the sources, and refusing with an explanation.
  *

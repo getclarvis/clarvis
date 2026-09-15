@@ -21,24 +21,23 @@ import {
 } from "@clarvis/paths";
 
 import { recorder } from "../helpers/recorder.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 let root: string;
 let home: string;
-let previousHome: string | undefined;
+let envSpy: ReturnType<typeof spyOnProcessEnv>;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "clarvis-paths-spill-workspace-"));
   home = mkdtempSync(join(tmpdir(), "clarvis-paths-spill-home-"));
-  previousHome = process.env[HOME_ENV];
-  process.env[HOME_ENV] = home;
+  envSpy = spyOnProcessEnv(environmentFixture({ ...process.env, [HOME_ENV]: home }));
 });
 
 afterEach(() => {
   setPathsLogger(null);
+  envSpy.mockRestore();
   vi.restoreAllMocks();
-  if (previousHome === undefined) delete process.env[HOME_ENV];
-  else process.env[HOME_ENV] = previousHome;
   rmSync(root, { recursive: true, force: true });
   rmSync(home, { recursive: true, force: true });
 });

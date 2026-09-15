@@ -147,6 +147,9 @@ export function toModelMessages(
                 toolCallId: tc.id,
                 toolName: tc.name,
                 input: tc.arguments ?? {},
+                ...(tc.providerOptions === undefined
+                  ? {}
+                  : { providerOptions: tc.providerOptions as ProviderMetadata }),
               }))
             : []),
         ];

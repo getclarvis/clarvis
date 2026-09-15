@@ -31,6 +31,8 @@ export interface ModelViewDeps {
   runActive?: () => boolean;
   inspectContext?: RunHost["inspectCurrentContext"];
   fitContext?: RunHost["fitCurrentContext"];
+  /** Replace an immutable Container generation after the host-side save. */
+  reload?: () => Promise<{ ok: boolean; message: string }>;
 }
 
 /**
@@ -128,6 +130,11 @@ export function ModelView(host: ViewHost, deps: ModelViewDeps): JSX.Element {
             );
           } else {
             await deps.settings.write(host.scope(), settingsPatch);
+          }
+          const reloaded = await deps.reload?.();
+          if (reloaded !== undefined && !reloaded.ok) {
+            deps.notify(`default model saved, pending reconnect: ${reloaded.message}`, "warn");
+            return;
           }
           deps.notify(
             `default model: ${model} ${glyph("separator")} effort: ${effort ?? "provider default"} (${host.scope()}) ${glyph("emDash")} applies to the next run`,

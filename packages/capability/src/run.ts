@@ -1,5 +1,6 @@
 import type { LiveMessage, ToolTransport } from "./api.ts";
 import type { TokenCounts } from "./usage.ts";
+import type { RunFinalization } from "./finalization.ts";
 
 /**
  * Why a run ended.
@@ -185,6 +186,7 @@ export const BUILTIN_ERROR_CODES = [
   "background_children_failing",
   "mcp_connection_failed",
   "mcp_unavailable",
+  "required_capability_unavailable",
   "all_tools_unavailable",
   "provider_error",
   "context_overflow",
@@ -283,13 +285,15 @@ export type ResultValue = StructuredResult;
  * rebuilt from a journal after the process died, where the usage is what the
  * journal proved was spent and `result` is necessarily absent.
  */
-export type RunResponse =
-  | { status: "completed"; result: ResultValue; usage: Usage }
-  | { status: "budget_exhausted"; result: ResultValue; usage: Usage }
-  | { status: "cancelled"; result: ResultValue; usage: Usage }
-  | { status: "soft_limit_declined"; result: ResultValue; usage: Usage }
-  | { status: "interrupted"; result: ResultValue; usage: Usage }
-  | { status: "error"; error: ErrorBody; usage: Usage };
+export type RunResponse = RunFinalization &
+  (
+    | { status: "completed"; result: ResultValue; usage: Usage }
+    | { status: "budget_exhausted"; result: ResultValue; usage: Usage }
+    | { status: "cancelled"; result: ResultValue; usage: Usage }
+    | { status: "soft_limit_declined"; result: ResultValue; usage: Usage }
+    | { status: "interrupted"; result: ResultValue; usage: Usage }
+    | { status: "error"; error: ErrorBody; usage: Usage }
+  );
 
 /** A {@link RunResponse} stamped with the run's `execution_id` for transport back to a caller. */
 export type WireRunResponse = RunResponse & { execution_id: string };
@@ -387,16 +391,12 @@ export interface ContextSnapshotEntry {
   summary: boolean;
   canonical: boolean;
   task_id?: string;
-  /**
-   * The replaceable-note identity, when the entry is a runtime note.
-   *
-   * @remarks Without it a continued run restores the note as an anonymous entry
-   *   that `appendRuntimeNote` can no longer find, so the next iteration appends
-   *   a second copy instead of replacing the first.
-   */
+  /** Active runtime-note kind. Older publications remain historical and become superseded. */
   note_kind?: string;
   /** The position-holding block identity, when the entry is a stable block. */
   block_kind?: string;
+  /** Historical publication eligible for deliberate compaction without a recent-tail reservation. */
+  superseded?: boolean;
 }
 
 /**

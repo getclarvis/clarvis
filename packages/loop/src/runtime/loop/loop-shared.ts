@@ -1,4 +1,10 @@
-import type { LLMProvider, ResolvedProviderConfig, TracePort } from "@clarvis/capability";
+import type {
+  LLMProvider,
+  ResolvedProviderConfig,
+  TracePort,
+  ModelExecutionInfo,
+} from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 import type { IterationCounter, TokenLedger } from "../budget/budget.ts";
 import type { TokenAccumulator } from "@clarvis/capability";
 import type { SoftBudget, SoftLimitAsk } from "../budget/soft-budget.ts";
@@ -32,6 +38,7 @@ export interface LlmTarget {
   model: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  modelExecution?: ModelExecutionInfo;
   capabilities?: Set<string>;
   reasoningSummary?: ReasoningSummary;
   reasoningEffort?: ReasoningEffort;
@@ -58,6 +65,7 @@ export function toLlmTarget(llm: LLMProvider, src: Omit<LlmTarget, "llm">): LlmT
     llm,
     model: src.model,
     provider: src.provider,
+    ...(src.modelExecution === undefined ? {} : { modelExecution: src.modelExecution }),
     ...(src.providerConfig ? { providerConfig: src.providerConfig } : {}),
     ...(src.capabilities !== undefined ? { capabilities: src.capabilities } : {}),
     ...(src.reasoningSummary !== undefined ? { reasoningSummary: src.reasoningSummary } : {}),
@@ -87,6 +95,8 @@ export interface LoopBudget {
 export interface LoopRuntime {
   trace: TracePort;
   signal?: AbortSignal;
+  /** Run-local registry of interruptible tool invocations, when the host wired one. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**

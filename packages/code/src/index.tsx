@@ -72,6 +72,7 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
       shellElapsedMs: Math.round(process.uptime() * 1000),
       releaseTerminal,
       handoffRendererLifecycle: (shutdown) => rendererLifecycle.handoff(shutdown),
+      setStartupStatus: (status) => startupInput.setStatus(status),
       takeStartupInput: () => startupInput.take(),
       async mount(nextView): Promise<void> {
         setView(() => nextView);
@@ -83,7 +84,9 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
       mode.kind === "run" &&
       mode.worktree === undefined &&
       !resolveDebugRequest(mode, process.env).enabled
-        ? import("./startup-foundation.ts").then((module) => module.prepareStartupFoundation(mode))
+        ? import("./startup-foundation.ts").then((module) =>
+            module.prepareStartupFoundation(mode, (status) => startupInput.setStatus(status)),
+          )
         : undefined;
     preparedFoundation?.catch(() => undefined);
     runtime ??= await import("./runtime.tsx");

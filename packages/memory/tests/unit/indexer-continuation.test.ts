@@ -8,6 +8,8 @@
  * full-price 100k-token transcript where a 4k digest would have done.
  */
 import { describe, expect, it } from "bun:test";
+import { createCapabilityRegistry } from "@clarvis/capability";
+import { z } from "zod";
 
 import type { StoredExecution } from "@clarvis/loop";
 import {
@@ -60,6 +62,31 @@ function withRequest(over: Record<string, unknown>): StoredExecution {
   const base = subject();
   return { ...base, request: { ...base.request, ...over } } as StoredExecution;
 }
+
+it("carries only registered capability parameters while retaining the indexing attempt's own limits and identity", () => {
+  const capabilityRegistry = createCapabilityRegistry({
+    specs: [
+      {
+        key: "fixture",
+        schema: z.object({}),
+        requestParams: { fixture: z.unknown() },
+        merge: "lastWins",
+        pluginContributable: false,
+      },
+    ],
+  });
+  const source = withRequest({ fixture: { mode: "review" }, unregistered: "do not copy" });
+  const request = buildIndexerContinuationRequest({
+    executionId: "index-attempt",
+    subject: source,
+    providers: LIVE_PROVIDERS,
+    capabilityRegistry,
+  });
+  expect(request).toMatchObject({ fixture: { mode: "review" }, execution_id: "index-attempt" });
+  expect(request).not.toHaveProperty("unregistered");
+  expect(request.budget.total_token_limit).toBe(INDEXER_TOKEN_LIMIT);
+  expect(source.request.budget.total_token_limit).toBe(900_000);
+});
 
 describe("deciding whether a pass may continue the run it indexes", () => {
   it("allows it when the run left a resumable context on the same model", () => {
@@ -151,14 +178,14 @@ describe("assembling the continuation request", () => {
   });
 
   it("derives a stable Memory-only branch from the indexed run's prompt cache key", () => {
-    const keyed = withRequest({ prompt_cache_key: "session_42" });
+    const keyed = withRequest({ session_id: "session_42" });
     expect(
       buildIndexerContinuationRequest({
         executionId: "run_pass",
         subject: keyed,
         providers: LIVE_PROVIDERS,
-      }).prompt_cache_key,
-    ).toBe("session_42_memory");
+      }).session_id,
+    ).toBe("session_42");
   });
 
   it("derives the Memory branch from the indexed run id when no explicit key exists", () => {
@@ -167,19 +194,19 @@ describe("assembling the continuation request", () => {
         executionId: "run_pass",
         subject: subject(),
         providers: LIVE_PROVIDERS,
-      }).prompt_cache_key,
-    ).toBe("run_subject_memory");
+      }).session_id,
+    ).toBe("run_subject");
   });
 
-  it("keeps the _memory suffix within the request key's 512-character ceiling", () => {
-    const keyed = withRequest({ prompt_cache_key: "x".repeat(512) });
-    const key = buildIndexerContinuationRequest({
+  it("preserves both persisted components without silently truncating identifiers", () => {
+    const keyed = withRequest({ session_id: "x".repeat(510) });
+    const request = buildIndexerContinuationRequest({
       executionId: "run_pass",
       subject: keyed,
       providers: LIVE_PROVIDERS,
-    }).prompt_cache_key!;
-    expect(key).toHaveLength(512);
-    expect(key.endsWith("_memory")).toBe(true);
+    });
+    expect(request.session_id).toBe(keyed.request.session_id);
+    expect(request.agent_instance_id).toBe("run_pass");
   });
 });
 

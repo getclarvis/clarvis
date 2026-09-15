@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { promises as fsp, existsSync, mkdtempSync, readFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { createCaptureSink, CAPTURE_INLINE_FLOOR } from "../../src/lib/output.ts";
+import { createCaptureSink, CAPTURE_INLINE_FLOOR, type CaptureSink } from "../../src/lib/output.ts";
 import { modeBitsEnforced } from "../helpers/fixtures.ts";
 
 let root: string;
 let spillCalls: number;
+let sinks: CaptureSink[];
 
 const INLINE = 4096;
 const CAP = 1024 * 1024;
@@ -18,19 +19,36 @@ function target(name = "out.log"): { absPath: string; displayPath: string } {
 }
 
 function sink(overrides: { inlineLimit?: number; captureCap?: number } = {}) {
-  return createCaptureSink({
+  const capture = createCaptureSink({
     inlineLimit: overrides.inlineLimit ?? INLINE,
     captureCap: overrides.captureCap ?? CAP,
     spill: () => target(),
   });
+  sinks.push(capture);
+  return capture;
+}
+
+async function waitForFileSize(absPath: string, expected: number): Promise<void> {
+  let observed: number | "missing" = "missing";
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      observed = (await fsp.stat(absPath)).size;
+      if (observed === expected) return;
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+  }
+  throw new Error(`spill did not reach ${expected} bytes; last observation: ${observed}`);
 }
 
 beforeEach(() => {
   root = mkdtempSync(path.join(tmpdir(), "clarvis-capture-sink-"));
   spillCalls = 0;
+  sinks = [];
 });
 
-afterEach(() => {
+afterEach(async () => {
+  for (const capture of sinks.reverse()) await capture.dispose();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -65,8 +83,9 @@ describe("createCaptureSink — write-through regime", () => {
     let peak = 0;
     for (let i = 0; i < 40; i++) {
       s.push(chunk);
-      await Promise.resolve();
-      await new Promise((r) => setTimeout(r, 0));
+      if (i >= 4) {
+        await waitForFileSize(path.join(root, ".clarvis", "out.log"), (i + 1) * chunk.length);
+      }
       peak = Math.max(peak, s.residentBytes);
     }
 

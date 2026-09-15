@@ -103,9 +103,28 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
 
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   guard_confirm: GUARD_DECISION_LABELS,
+  configuration_review: GUARD_DECISION_LABELS,
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
 };
+
+function isIterationLimitForm(
+  message: string,
+  properties: Record<string, PrimitiveSchema>,
+): boolean {
+  const choices = properties.continue === undefined ? [] : optionsFromSchema(properties.continue);
+  return (
+    /\bsoft iterations limit\b/i.test(message) &&
+    choices.some((choice) => choice.value === "continue") &&
+    choices.some((choice) => choice.value === "stop")
+  );
+}
+
+function iterationLimitCopy(value: string): string {
+  return value
+    .replace(/\bthe soft iterations limit\b/gi, "the iteration limit")
+    .replace(/\bthe soft limit\b/gi, "the iteration limit");
+}
 
 /**
  * Parses raw {@link ElicitRequestParams} into a renderable {@link ElicitForm}.
@@ -125,25 +144,40 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
     mode?: string;
     requestedSchema?: { properties?: Record<string, PrimitiveSchema>; required?: string[] };
   };
-  const message = p.message ?? "";
+  const rawMessage = p.message ?? "";
   if (p.mode === "url" || (typeof p.url === "string" && p.requestedSchema === undefined)) {
-    return { mode: "url", message, fields: [], url: p.url };
+    return { mode: "url", message: rawMessage, fields: [], url: p.url };
   }
   const properties = p.requestedSchema?.properties ?? {};
+  const iterationLimit = isIterationLimitForm(rawMessage, properties);
+  const message = iterationLimit ? iterationLimitCopy(rawMessage) : rawMessage;
   const required = new Set(p.requestedSchema?.required ?? []);
   const fields = Object.keys(properties).map((name) =>
     fieldFromSchema(name, properties[name] ?? {}, required.has(name)),
   );
+  if (iterationLimit) {
+    for (const field of fields) {
+      if (field.description !== undefined)
+        field.description = iterationLimitCopy(field.description);
+    }
+  }
   const labels = params.kind === undefined ? undefined : DECISION_LABELS[params.kind];
   if (labels) {
     for (const field of fields)
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
   const detail =
-    params.detail !== undefined && params.detail.command.trim().length > 0
+    params.detail !== undefined &&
+    "command" in params.detail &&
+    params.detail.command.trim().length > 0
       ? params.detail
       : undefined;
-  return { mode: "form", message, fields, ...(detail !== undefined ? { detail } : {}) };
+  return {
+    mode: "form",
+    message,
+    fields,
+    ...(detail !== undefined ? { detail } : {}),
+  };
 }
 
 /** How an un-defaulted choice field starts. */

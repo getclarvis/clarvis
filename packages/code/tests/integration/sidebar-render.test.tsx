@@ -5,19 +5,27 @@ import type { TestRendererSetup } from "@opentui/core/testing";
 import { createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
 import {
+  AGENT_SIDEBAR_ROW_LIMIT,
   PLAN_SIDEBAR_TASK_LIMIT,
+  WORKFLOW_SIDEBAR_ROW_LIMIT,
   planTaskWindow,
   rosterSummary,
   Sidebar,
   subagentProgress,
+  workflowProgress,
 } from "../../src/views/Sidebar.tsx";
 import { truncateEnd } from "../../src/views/truncate.ts";
 import { createActivityStore, type ActivityStore } from "../../src/adapters/activity-store.ts";
 import { applyEvent } from "../../src/adapters/store.ts";
-import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+import type {
+  WorkflowActivity,
+  WorkflowNodeActivity,
+} from "../../src/adapters/workflow-projection.ts";
 import { runEvent } from "../helpers/run-events.ts";
 import { tokens } from "../../src/theme/tokens.ts";
 import { selectionBg } from "../../src/theme/surfaces.ts";
+import { glyph } from "../../src/theme/glyphs.ts";
+import { taskTone } from "../../src/views/blocks.tsx";
 
 function fgOf(frame: { lines: { spans: { text: string; fg: RGBA }[] }[] }, needle: string): string {
   for (const line of frame.lines) {
@@ -91,19 +99,61 @@ test("the roster turns a Markdown result into one bounded navigation summary", (
   expect(rosterSummary("`0123456789`", 6)).toBe("01234…");
 });
 
-test("agent progress counts settled work and surfaces running/failure states in text", () => {
+test("agent progress counts settled work and only surfaces active work in text", () => {
   expect(
     subagentProgress([{ status: "done" }, { status: "running" }, { status: "error" }]),
   ).toMatchObject({
     total: 3,
     settled: 2,
     running: 1,
-    failed: 1,
     label: "2/3 finished · 1 running",
   });
 });
 
-test("agent rows keep stable ids and let essential titles wrap", async () => {
+test("workflow progress matches the compact settled and running vocabulary", () => {
+  expect(workflowProgress([{ status: "ok" }, { status: "running" }, { status: "error" }])).toEqual({
+    total: 3,
+    settled: 2,
+    running: 1,
+    label: "2/3 finished · 1 running",
+  });
+});
+
+test("agent rows reuse plan glyphs and tones without a failure header", async () => {
+  const a = activity({
+    subagents: [
+      { id: "done", order: 0, status: "done", title: "Done worker", input: 0, output: 0 },
+      { id: "failed", order: 1, status: "error", title: "Failed worker", input: 0, output: 0 },
+    ] as ActivityStore["subagents"],
+  });
+  const t = await mount(a, { width: 40 });
+  const frame = t.captureCharFrame();
+  const spans = t.captureSpans();
+  expect(frame).toContain(`${taskTone("done").glyph} A1`);
+  expect(frame).toContain(`${taskTone("failed").glyph} A2`);
+  expect(frame).toContain("Agents  2/2 finished");
+  expect(frame).not.toContain("2 failed");
+  expect(fgOf(spans, taskTone("done").glyph)).toBe(taskTone("done").fg.toLowerCase());
+  expect(fgOf(spans, taskTone("failed").glyph)).toBe(taskTone("failed").fg.toLowerCase());
+  t.renderer.destroy();
+});
+
+test("agent rows follow Plan status priority without renumbering handles", async () => {
+  const a = activity({
+    subagents: [
+      { id: "failed", order: 0, status: "error", title: "Failed", input: 0, output: 0 },
+      { id: "done", order: 1, status: "done", title: "Done", input: 0, output: 0 },
+      { id: "pending", order: 2, status: "spawned", title: "Pending", input: 0, output: 0 },
+      { id: "running", order: 3, status: "running", title: "Running", input: 0, output: 0 },
+    ] as ActivityStore["subagents"],
+  });
+  const rendered = (await frame(a, 44)).join("\n");
+  expect(rendered.indexOf("A4  Running")).toBeLessThan(rendered.indexOf("A3  Pending"));
+  expect(rendered.indexOf("A3  Pending")).toBeLessThan(rendered.indexOf("A2  Done"));
+  expect(rendered.indexOf("A2  Done")).toBeLessThan(rendered.indexOf("A1  Failed"));
+});
+
+test("agent rows use one compact glyph-and-title line", async () => {
   const a = activity({
     subagents: [
       {
@@ -119,21 +169,22 @@ test("agent rows keep stable ids and let essential titles wrap", async () => {
     ] as ActivityStore["subagents"],
   });
   const rows = await frame(a);
-  expect(rows.join(" ")).toContain("verify typecheck");
-  expect(rows.join(" ")).toContain("and the whole test suite");
-  expect(rows.join(" ")).toContain("A1");
-  expect(rows.join(" ")).toContain("Running");
-  expect(rows.join(" ")).toContain("Lead transcript");
-  expect(rows.join(" ")).not.toContain("Activity: working");
-  expect(rows.join(" ").match(/0\/1 finished/g)?.length).toBe(1);
-  expect(rows.join(" ")).not.toContain("glm-5.2");
-  expect(rows.join(" ")).not.toContain("26k");
+  const joined = rows.join(" ");
+  const agentRows = rows.filter((row) => row.includes("A1"));
+  expect(agentRows).toHaveLength(1);
+  expect(agentRows[0]).toContain("test suite");
+  expect(joined).not.toContain("and the whole test suite");
+  expect(joined).not.toContain("Running");
+  expect(joined).toContain("Lead transcript");
+  expect(joined.match(/0\/1 finished/g)?.length).toBe(1);
+  expect(joined).not.toContain("glm-5.2");
+  expect(joined).not.toContain("26k");
 });
 
-test("parallel-work metadata stays on one line at the minimum inspector width", async () => {
+test("parallel-work metadata stays on one line at the standard inspector width", async () => {
   const workflow: WorkflowActivity = {
     root: "manager-run",
-    nodes: new Map([
+    nodes: new Map<string, WorkflowNodeActivity>([
       [
         "manager-run",
         {
@@ -155,15 +206,58 @@ test("parallel-work metadata stays on one line at the minimum inspector width", 
       ],
     ]),
   };
-  const t = await mount(activity({}), { width: 32, workflow: () => workflow });
+  const t = await mount(activity({}), { width: 44, workflow: () => workflow });
   const rows = t.captureCharFrame().split("\n");
   const header = rows.find((row) => row.includes("Parallel work"));
-  expect(header).toContain("1 leader");
+  expect(header).toContain("0/1 finished");
+  expect(header).toContain("1 running");
+  expect(rows.filter((row) => row.includes("L1")).length).toBe(1);
+  expect(rows.join(" ")).not.toContain("Running");
   expect(rows.some((row) => row.trim() === "s")).toBe(false);
   t.renderer.destroy();
 });
 
-test("an idle round checkpoint remains visible as awaiting the Admiral", async () => {
+test("workflow leaders reuse plan glyphs and an isolated bounded scroll", async () => {
+  const statuses = ["running", "ok", "error", "cancelled"] as const;
+  const leaders = Array.from({ length: WORKFLOW_SIDEBAR_ROW_LIMIT + 8 }, (_, index) => ({
+    runId: `leader-${index}`,
+    parentRunId: "manager-run",
+    kind: "leader" as const,
+    title: `Leader ${index + 1}`,
+    status: statuses[index % statuses.length]!,
+    startedAt: index,
+    endedAt: index + 10,
+    iterations: index + 1,
+  }));
+  const workflow: WorkflowActivity = {
+    root: "manager-run",
+    nodes: new Map<string, WorkflowNodeActivity>([
+      [
+        "manager-run",
+        { runId: "manager-run", kind: "manager", title: "Manager", status: "running" },
+      ],
+      ...leaders.map((leader) => [leader.runId, leader] as const),
+    ]),
+  };
+  const t = await mount(activity({}), { width: 44, workflow: () => workflow });
+  const frame = t.captureCharFrame();
+  const spans = t.captureSpans();
+  const scroll = t.renderer.root.findDescendantById("sidebar-workflow-scroll");
+  expect(scroll).toBeDefined();
+  expect(scroll!.height).toBeLessThanOrEqual(WORKFLOW_SIDEBAR_ROW_LIMIT);
+  expect(frame).toContain(`${taskTone("in_progress").glyph} L1`);
+  expect(frame).toContain(`${taskTone("done").glyph} L2`);
+  expect(frame).toContain(`${taskTone("failed").glyph} L3`);
+  expect(frame).toContain(`${taskTone("abandoned").glyph} L4`);
+  expect(frame).not.toContain("iterations");
+  expect(fgOf(spans, taskTone("failed").glyph)).toBe(taskTone("failed").fg.toLowerCase());
+  expect(frame.indexOf("L1")).toBeLessThan(frame.indexOf("L2"));
+  expect(frame.indexOf("L2")).toBeLessThan(frame.indexOf("L3"));
+  expect(frame.indexOf("L3")).toBeLessThan(frame.indexOf("L4"));
+  t.renderer.destroy();
+});
+
+test("an idle round checkpoint remains visible below compact workflow progress", async () => {
   const workflow: WorkflowActivity = {
     root: "manager-run",
     nodes: new Map([
@@ -186,7 +280,7 @@ test("an idle round checkpoint remains visible as awaiting the Admiral", async (
   };
   const t = await mount(activity({}), { width: 38, workflow: () => workflow });
   const out = t.captureCharFrame();
-  expect(out).toContain("awaiting Admiral");
+  expect(out).toContain("0/0 finished");
   expect(out).toContain("Checkpoint r2: next verify");
   t.renderer.destroy();
 });
@@ -257,7 +351,8 @@ test("the selected sub-agent's textual cursor follows the native id", async () =
   expect(workerRows.length).toBe(2);
   expect(workerRows[0]).toContain("A1");
   expect(workerRows[0]?.includes("> ")).toBe(false);
-  expect(workerRows[1]).toContain("> A2");
+  expect(workerRows[1]).toContain("> ");
+  expect(workerRows[1]).toContain("A2");
   t.renderer.destroy();
 });
 
@@ -311,8 +406,8 @@ test("clicking a settled sub-agent selects its transcript without opening Activi
   const rows = t.captureCharFrame().split("\n");
   const agentRow = rows.findIndex((row) => row.includes("Review auth"));
   expect(agentRow).toBeGreaterThan(-1);
-  expect(rows.join(" ")).toContain("Result: Authenticat");
-  expect(rows.join(" ")).toContain("click to read");
+  expect(rows.join(" ")).not.toContain("Authentication review complete");
+  expect(rows.join(" ")).not.toContain("click to read");
 
   await t.mockMouse.click(2, agentRow);
   await t.renderOnce();
@@ -321,7 +416,7 @@ test("clicking a settled sub-agent selects its transcript without opening Activi
   t.renderer.destroy();
 });
 
-test("the selected title and status remain one click target without a redundant activity line", async () => {
+test("the selected glyph and title remain one click target", async () => {
   const calls: string[] = [];
   const a = activity({
     subagents: [
@@ -342,18 +437,16 @@ test("the selected title and status remain one click target without a redundant 
   });
   const rows = t.captureCharFrame().split("\n");
   const titleRow = rows.findIndex((r) => r.includes("Scout"));
-  const statusRow = rows.findIndex((r) => r.includes("Running"));
-  expect(statusRow).toBeGreaterThan(titleRow);
-  expect(rows.some((r) => r.includes("Activity: working"))).toBe(false);
+  expect(titleRow).toBeGreaterThan(-1);
+  expect(rows.some((r) => r.includes("Running"))).toBe(false);
 
   await t.mockMouse.click(2, titleRow);
-  await t.mockMouse.click(2, statusRow);
   await t.renderOnce();
-  expect(calls).toEqual(["scout-id", "scout-id"]);
+  expect(calls).toEqual(["scout-id"]);
   t.renderer.destroy();
 });
 
-test("the selected sub-agent exposes its profile and bounded terminal failure summary", async () => {
+test("the selected sub-agent keeps profile and terminal failure copy out of the roster", async () => {
   const a = activity({
     subagents: [
       {
@@ -374,9 +467,27 @@ test("the selected sub-agent exposes its profile and bounded terminal failure su
 
   const selected = await mount(a, { width: 44, selected: () => "reviewer-id" });
   const selectedFrame = selected.captureCharFrame();
-  expect(selectedFrame).toContain("Agent Profile security-reviewer");
-  expect(selectedFrame.replace(/[│\s]+/g, " ")).toContain("Failed: Typecheck");
+  expect(selectedFrame).not.toContain("Agent Profile security-reviewer");
+  expect(selectedFrame).not.toContain("Typecheck failed");
+  expect(selectedFrame).not.toContain("failed");
   selected.renderer.destroy();
+});
+
+test("the agent roster owns a bounded scroll and follows the selected worker", async () => {
+  const agents = Array.from({ length: AGENT_SIDEBAR_ROW_LIMIT + 8 }, (_, index) => ({
+    id: `agent-${index}`,
+    order: index,
+    status: index === 0 ? "running" : "done",
+    title: `Worker ${index + 1}`,
+    input: 0,
+    output: 0,
+  })) as ActivityStore["subagents"];
+  const a = activity({ subagents: agents });
+  const t = await mount(a, { width: 44, selected: () => "agent-23" });
+  const rendered = t.captureCharFrame();
+  expect(rendered).toContain("Worker 24");
+  expect(rendered).not.toContain("Worker 1 ");
+  t.renderer.destroy();
 });
 
 test("unscoped run context and token totals are absent from the sidebar", async () => {
@@ -411,7 +522,7 @@ test("plan section shows every task and highlights the current one", async () =>
   expect(joined).toContain("Running");
 });
 
-test("plan hierarchy remains visible without relying on color alone", async () => {
+test("plan tasks render compactly in status priority order", async () => {
   const a = activity({
     plan: {
       path: ".clarvis/plans/hierarchy.md",
@@ -422,8 +533,14 @@ test("plan hierarchy remains visible without relying on color alone", async () =
       spec_revision: 1,
       tasks: [
         { title: "Finished task", status: "done", result: "ready" },
-        { title: "Current task", status: "in_progress", exit_condition: "Checks pass" },
+        { title: "Failed task", status: "failed", error: "not ready" },
         { title: "Future task", status: "pending" },
+        {
+          title: "Current task",
+          status: "in_progress",
+          exit_condition: "Checks pass",
+          assignee: "marshall",
+        },
       ],
     } as ActivityStore["plan"],
   });
@@ -433,11 +550,26 @@ test("plan hierarchy remains visible without relying on color alone", async () =
   const activeTitle = spans.lines
     .flatMap((line) => line.spans)
     .find((span) => span.text.includes("Current task"));
-  expect(frame).toContain("Done  Finished task");
-  expect(frame).toContain("Running  Current task");
-  expect(frame).toContain("Next  Future task");
-  expect(frame).toContain("Last result");
-  expect(frame).toContain("Ctrl+P full plan");
+  const current = frame.indexOf("Current task");
+  const future = frame.indexOf("Future task");
+  const finished = frame.indexOf("Finished task");
+  const failed = frame.indexOf("Failed task");
+  expect(current).toBeGreaterThanOrEqual(0);
+  expect(current).toBeLessThan(future);
+  expect(future).toBeLessThan(finished);
+  expect(finished).toBeLessThan(failed);
+  expect(frame).toContain(`${glyph("chevronRight")} Current task`);
+  expect(frame).toContain(`${taskTone("pending").glyph} Future task`);
+  expect(frame).toContain(`${taskTone("done").glyph} Finished task`);
+  expect(frame).toContain(`${taskTone("failed").glyph} Failed task`);
+  expect(frame).not.toMatch(
+    /(?:Done|Running|Next|Failed) {2}(?:Finished|Current|Future|Failed) task/,
+  );
+  expect(frame).not.toContain("marshall");
+  expect(frame).not.toContain("Exit");
+  expect(frame).not.toContain("Checks pass");
+  expect(frame).not.toContain("Last result");
+  expect(frame).toContain("[^p]");
   expect(fgOf(spans, "Hierarchy plan")).toBe(tokens.accent2.toLowerCase());
   expect(rgbToHex(activeTitle!.bg).toLowerCase()).toBe(selectionBg().toLowerCase());
   t.renderer.destroy();
@@ -460,9 +592,13 @@ test("plan section keeps the full task list visible without review detail", asyn
       ],
     } as ActivityStore["plan"],
   });
-  const rows = await frame(a);
+  const rows = await frame(a, 44);
   const joined = rows.join(" ");
-  expect(rows.some((r) => r.includes("Running") && r.includes("2/3 completed"))).toBe(true);
+  expect(
+    rows.some(
+      (r) => r.includes("Running") && r.includes("2/3 completed") && r.includes("[^p] full plan"),
+    ),
+  ).toBe(true);
   expect(joined).toContain("Init the repo");
   expect(joined).toContain("Implement the");
   expect(joined).not.toContain("review: approved");
@@ -509,8 +645,9 @@ test("a long plan scrolls the current task into view and keeps full-plan navigat
   const rows = await frame(a, 40);
   const joined = rows.join(" ");
   expect(joined).toContain("Plan task 19");
-  expect(joined).toMatch(/Exit\s+The focused task is visible/);
-  expect(joined).toContain("Ctrl+P full plan");
+  expect(joined).not.toContain("The focused task is visible");
+  expect(joined).not.toContain("Exit");
+  expect(joined).toContain("[^p]");
 });
 
 test("a completed plan does not leave its final task looking active", async () => {
@@ -578,8 +715,9 @@ test("a live plan transition updates the already-mounted sidebar task list", asy
   const updated = t.captureCharFrame();
   expect(updated).toContain("1/2 completed");
   expect(updated).toContain("Second task");
-  expect(updated).toContain("Last result");
-  expect(updated).toContain("finished");
+  expect(updated).toContain("[^p]");
+  expect(updated).not.toContain("Last result");
+  expect(updated).not.toContain("finished");
   t.renderer.destroy();
 });
 
@@ -602,7 +740,7 @@ test("a removed active plan becomes an explicit unavailable state, not stale pro
   expect(joined).toContain("Restore the plan file or create a");
   expect(joined).toContain("replacement");
   expect(joined).not.toContain("Running");
-  expect(joined).not.toContain("Ctrl+P full plan");
+  expect(joined).not.toContain("[^p] full plan");
 });
 
 test("retention discard ends as completed history instead of a red unavailable warning", async () => {
@@ -693,7 +831,7 @@ test("an orphan plan removal keeps an unavailable sidebar across continuation", 
   expect(joined).toContain("Restore the plan file");
 });
 
-test("a long plan mounts a bounded task window centered on current work", async () => {
+test("a long plan mounts a bounded status-prioritized task window", async () => {
   const tasks = Array.from({ length: 50 }, (_, index) => ({
     id: `t${index + 1}`,
     title: `Task ${index + 1}`,
@@ -710,15 +848,16 @@ test("a long plan mounts a bounded task window centered on current work", async 
   };
   const window = planTaskWindow(plan);
   expect(window.entries).toHaveLength(PLAN_SIDEBAR_TASK_LIMIT);
-  expect(window.entries.some((entry) => entry.task.id === "t30")).toBe(true);
-  expect(window.hiddenBefore).toBeGreaterThan(0);
+  expect(window.entries[0]?.task.id).toBe("t30");
+  expect(window.entries.slice(1).every((entry) => entry.task.status === "pending")).toBe(true);
+  expect(window.hiddenBefore).toBe(0);
   expect(window.hiddenAfter).toBeGreaterThan(0);
 
   const rows = await frame(activity({ plan }), 44);
   const joined = rows.join(" ");
   expect(joined).toContain("Task 30");
-  expect(joined).toContain("earlier tasks");
   expect(joined).toContain("later tasks");
+  expect(joined).not.toContain("earlier tasks");
   expect(joined).not.toContain("Task 1 ");
 });
 
@@ -741,7 +880,7 @@ test("pathless plan section renders its title once and never an implementation i
   expect(rows.join("\n")).not.toContain("undefined");
 });
 
-test("plan section shows the most recent terminal outcome without hiding the next task", async () => {
+test("plan section omits terminal outcome detail without hiding the next task", async () => {
   const a = activity({
     plan: {
       path: ".clarvis/plans/judge.md",
@@ -758,7 +897,8 @@ test("plan section shows the most recent terminal outcome without hiding the nex
   });
   const rows = await frame(a, 40);
   expect(rows.join("\n")).toContain("Wire it");
-  expect(rows.join("\n")).toContain("Last result");
-  expect(rows.join("\n")).toContain("adapter wired");
   expect(rows.join("\n")).toContain("Verify it");
+  expect(rows.join("\n")).toContain("[^p]");
+  expect(rows.join("\n")).not.toContain("Last result");
+  expect(rows.join("\n")).not.toContain("adapter wired");
 });

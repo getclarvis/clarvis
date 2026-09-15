@@ -80,13 +80,13 @@ describe("foldContributions", () => {
     const contribs: AgentLoopContribution[] = [
       {
         hooks: {
-          beforeIteration: () => seen.push("a"),
+          beforeIteration: () => void seen.push("a"),
           contributesProgress: () => false,
         },
       },
       {
         hooks: {
-          beforeIteration: () => seen.push("b"),
+          beforeIteration: () => void seen.push("b"),
           contributesProgress: () => true,
           onTeardown: (): void => {
             seen.push("teardown-b");
@@ -95,7 +95,7 @@ describe("foldContributions", () => {
       },
     ];
     const folded = foldContributions(contribs);
-    folded.hooks.beforeIteration!();
+    await folded.hooks.beforeIteration!();
     expect(seen).toEqual(["a", "b"]);
     expect(folded.hooks.contributesProgress!()).toBe(true);
     await folded.hooks.onTeardown!();

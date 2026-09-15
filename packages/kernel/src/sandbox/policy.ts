@@ -77,6 +77,10 @@ function discoverySignature(
   });
 }
 
+function effectiveSandboxSettings(snapshot: SettingsSnapshot): SandboxSettings | undefined {
+  return snapshot.merged.sandbox;
+}
+
 /**
  * Resolves the effective sandbox policy for a workspace: the settings a run is
  * launched under, and a richer inspection used by diagnostics/UI.
@@ -142,7 +146,7 @@ export function createSandboxPolicyResolver(
     paths: ReturnType<typeof configuredPaths>;
   } => {
     const snapshot = store.readSettings();
-    const settings = snapshot.merged.sandbox;
+    const settings = effectiveSandboxSettings(snapshot);
     const discovered = selectedToolchains(settings, refresh);
     const runtimePaths = [
       ...new Set(discovered.flatMap((item) => (item.available && item.root ? [item.root] : []))),

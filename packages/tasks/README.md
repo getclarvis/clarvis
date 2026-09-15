@@ -10,12 +10,23 @@ External systems remain authoritative; the only durable Clarvis state is the
 minimal task binding and content-free uncertain-write replay metadata stored
 with a run.
 
+Tasks is composed only for native Host/Sandbox runs and their control plane. Docker/Podman registers
+no Tasks provider, tool or lifecycle callback because the only current provider is MCP; an explicit
+task binding or `tasks.*` profile grant fails before model work. Inherited settings remain on the
+host and do not block an unrelated Container run. This does not add a dependency from Tasks to the
+kernel or loop.
+
 ## Contract
 
 The canonical domain, provider protocol, schemas, errors, MCP adapter, and conformance harness are
 specified in [`tasks-domain.md`](../../specs/capabilities/tasks-domain.md). Run binding, tools,
 settings, gates, and kernel composition are specified in
 [`tasks-capability.md`](../../specs/capabilities/tasks-capability.md).
+
+Tool descriptions distinguish provider task ids from plan task ids and expose the cross-field review
+requirement: evidence, an artifact, or `no_evidence_reason`. `allow_without_artifacts` requests human
+approval after a definitive publication failure; it cannot bypass a conflict or uncertain outcome.
+See [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
 Public entries:
 

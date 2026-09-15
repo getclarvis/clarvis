@@ -9,6 +9,11 @@ It depends on `@clarvis/capability` and nothing else in the workspace. `@clarvis
 
 ## Contract
 
+Usage normalization preserves missing input/output and cache-read telemetry with the optional
+`LLMUsage.usage_unknown` and `cache_unknown` flags. Transport retries retain those flags when
+combining failed attempts, including an attempt with no reported counters. Numeric placeholders
+remain compatible with accumulators; they do not establish complete accounting for host admission.
+
 Provider adaptation, decorators, error classification, and the lazy entry split are specified in
 [`foundations/llm.md`](../../specs/foundations/llm.md). Prefix caching and session affinity are
 specified in [`cross-cutting/prompt-cache.md`](../../specs/cross-cutting/prompt-cache.md).
@@ -136,6 +141,10 @@ Models are not selected by a hard-coded name: models.dev cache pricing can ident
 exists, while provider kind decides whether a marker protocol is safe. Grok's Responses transport gets the run's stable
 `prompt_cache_key`; its subscription authority separately sends the same stable conversation
 identity as `x-grok-conv-id`, matching Grok's implicit append-only cache contract.
+An auxiliary caller may pass an empty `cacheBreakpoints` list to cache only its stable system prefix:
+Anthropic and explicitly cached OpenAI-compatible models mark that system block while leaving every
+variable user payload unmarked. Key-based providers continue to use `promptCacheKey`; Google keeps
+its provider-native behavior.
 
 ## What it tells an operator
 
@@ -180,3 +189,10 @@ Three properties are load-bearing rather than tidy:
 `ModelCallAdmissionOptions.onStateChange`; `@clarvis/loop`'s `createHostModelCallAdmission` does it.
 It dedupes on the state name, because `onStateChange` fires several times per model call and
 `open → open` is not news.
+
+## Prompt-cache continuity
+
+`withPromptCacheDefaults` composes affinity from session and instance identity. Provider-issued function-call item IDs survive the final Responses serializer alongside `call_id`; no optional IDs are invented. Serialized prefix diagnostics compare bounded hashes of the actual request. Incomplete cache usage is marked unknown.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.

@@ -13,6 +13,7 @@ export { CapabilityProvidersPanel } from "./config/CapabilityProvidersPanel.tsx"
 export { MarketplaceBrowser } from "./config/MarketplaceBrowser.tsx";
 export { MemoryConfigPanel } from "./config/MemoryConfigPanel.tsx";
 export { SandboxConfigPanel } from "./config/SandboxConfigPanel.tsx";
+export { IsolationConfigPanel } from "./config/IsolationConfigPanel.tsx";
 export { ThemeView } from "./config/ThemeView.tsx";
 export { KeyboardView } from "./config/KeyboardView.tsx";
 export { UpdatesPanel } from "./config/UpdatesPanel.tsx";

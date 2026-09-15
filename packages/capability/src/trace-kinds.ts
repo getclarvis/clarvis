@@ -1,5 +1,6 @@
 import type { ErrorCode, ExecutionMode, ProviderErrorDetails, RunEndedReason } from "./run.ts";
 import type { AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
+import type { FinalizationDisposition } from "./finalization.ts";
 
 /**
  * Every trace kind the engine itself records, as a runtime list.
@@ -16,6 +17,7 @@ export const BUILTIN_TRACE_KINDS = [
   "subagent_iteration_started",
   "tool_call",
   "tool_call_started",
+  "tool_call_announced",
   "tool_output_delta",
   "tool_input_delta",
   "budget_check",
@@ -136,10 +138,27 @@ export interface ToolCallDetail {
   diff?: string;
   /** Final command-review outcome, present only when the host guard exposes its mode. */
   guard?: CommandGuardReview;
+  /**
+   * Operator interruption of this invocation. Present only when the child
+   * signal aborted while the run remained live. Implies a non-null `error`.
+   */
+  interruption?: { source: "operator" };
 }
 
 /** Persisted final command-review fact attached to its terminal tool call. */
 export interface CommandGuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: "policy" | "human" | "judge" | "session_allowlist" | "unavailable";
@@ -160,6 +179,11 @@ export interface ToolCallStartedDetail {
   started_at: number;
   name: string;
   arguments: unknown;
+  /**
+   * Live operator control for this physical invocation. Present only while the
+   * call is interruptible; omitted from historical events without the field.
+   */
+  control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
 }
 
 /**
@@ -208,6 +232,17 @@ export interface ToolInputDeltaDetail {
   stream_chars?: number;
   /** Present only after the provider closed this argument stream. */
   complete?: true;
+}
+
+/** Durable admission of a named call, without argument content or progress counters. */
+export interface ToolCallAnnouncedDetail {
+  agent: AgentRole;
+  subagent_instance_id?: string;
+  call_id: string;
+  tool_name: string;
+  iteration: number;
+  /** One-based physical model attempt within this iteration. */
+  attempt: number;
 }
 
 /**
@@ -458,6 +493,8 @@ export interface RunStartedDetail {
 export interface RunEndedDetail {
   reason: RunEndedReason;
   code?: ErrorCode;
+  /** Successful stage disposition; absent means an ordinary final result. */
+  disposition?: FinalizationDisposition;
 }
 
 /**
@@ -662,6 +699,7 @@ export interface TraceDetailMap {
   subagent_iteration_started: SubagentIterationStartedDetail;
   tool_call: ToolCallDetail;
   tool_call_started: ToolCallStartedDetail;
+  tool_call_announced: ToolCallAnnouncedDetail;
   tool_output_delta: ToolOutputDeltaDetail;
   tool_input_delta: ToolInputDeltaDetail;
   budget_check: BudgetCheckDetail;

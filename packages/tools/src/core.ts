@@ -1,5 +1,4 @@
-import { createRequire } from "node:module";
-import type { ValidateFunction } from "ajv";
+import { Ajv, type ValidateFunction } from "ajv";
 import { ToolError, serializeError } from "./errors.ts";
 import { bound } from "./lib/output.ts";
 import { tools, getTool, selectSurface } from "./tools/registry.ts";
@@ -9,6 +8,8 @@ import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
 import { assertOutsideRoots } from "./lib/paths.ts";
+import { configurationRoots } from "@clarvis/paths";
+import { isAuthoringSearchScope, isCanonicalAuthoringPath } from "./guard/authoring-path.ts";
 
 const NATIVE_MUTATION_TOOLS = new Set([
   "write_file",
@@ -31,20 +32,38 @@ function protectSkillPackages(
   if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
   const context = buildGuardContext(name, args, config);
   for (const fact of context.paths) {
-    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
+    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, {
+      rejectAncestors: name === "replace",
+    });
   }
 }
 
-interface AjvInstance {
-  compile(schema: unknown): ValidateFunction;
-  errorsText(errors?: unknown, opts?: { separator?: string }): string;
+/** Require the operator-authorized configuration route for authored workspace configuration. */
+function protectWorkspaceConfiguration(
+  name: string,
+  args: Record<string, unknown>,
+  config: RuntimeConfig,
+  authoringReviewed = false,
+): void {
+  if (!NATIVE_MUTATION_TOOLS.has(name)) return;
+  const roots = configurationRoots({ workspaceRoot: config.workspaceRoot });
+  const protectedRoots = [roots.workspace_clarvis, roots.workspace_agents];
+  const context = buildGuardContext(name, args, config);
+  const targets = name === "copy" ? context.paths.slice(1) : context.paths;
+  for (const fact of targets) {
+    if (
+      (name === "replace" &&
+        config.reviewMutation !== undefined &&
+        isAuthoringSearchScope(fact.resolved, config.workspaceRoot)) ||
+      (authoringReviewed && isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot))
+    )
+      continue;
+    assertOutsideRoots(fact.resolved, protectedRoots, fact.raw, {
+      code: "denied",
+      message: `Use the restricted configure_clarvis writer in this conversation for this configuration change: ${fact.raw}.`,
+    });
+  }
 }
-
-interface AjvModule {
-  default: new (opts?: Record<string, unknown>) => AjvInstance;
-}
-
-const Ajv = (createRequire(import.meta.url)("ajv") as AjvModule).default;
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true, coerceTypes: true });
 const validators = new Map<string, ValidateFunction>();
@@ -58,13 +77,9 @@ for (const tool of tools) {
  * `isError: true` with a serialized error text part), not by throwing.
  */
 export interface DispatchResult {
-  /** True when the call failed; `content` then holds the serialized error. */
   isError: boolean;
-  /** The tool's output as text/image content parts. */
   content: ContentPart[];
-  /** Optional structured metadata a tool attaches to a successful result. */
   meta?: Record<string, unknown>;
-  /** Final command-review outcome, when the host guard exposes its mode. */
   guard?: GuardReview;
 }
 
@@ -151,6 +166,7 @@ export function listTools(config: RuntimeConfig): ToolInfo[] {
 interface GuardGate {
   denied?: DispatchResult;
   review?: GuardReview;
+  authoringReviewed?: boolean;
 }
 
 async function applyGuard(
@@ -158,11 +174,7 @@ async function applyGuard(
   args: Record<string, unknown>,
   config: RuntimeConfig,
 ): Promise<GuardGate> {
-  if (!config.guard) {
-    return name === "host_vcs"
-      ? { denied: errorResult(new ToolError("denied", "host_vcs requires command review")) }
-      : {};
-  }
+  if (!config.guard) return {};
   try {
     const ctx = buildGuardContext(name, args, config);
     const decision = await config.guard(ctx);
@@ -188,16 +200,39 @@ async function applyGuard(
       args: ctx.args,
       reason: decision.reason,
       shell: ctx.shell,
+      ...(decision.analysis === undefined ? {} : { analysis: decision.analysis }),
+      ...(decision.effect === undefined ? {} : { effect: decision.effect }),
+      ...(decision.effects === undefined ? {} : { effects: decision.effects }),
+      ...(decision.matched !== undefined ? { matched: decision.matched } : {}),
+      ...(decision.placement !== undefined ? { placement: decision.placement } : {}),
+      ...(decision.network !== undefined ? { network: decision.network } : {}),
+      ...(decision.dangerous !== undefined ? { dangerous: decision.dangerous } : {}),
+      ...(decision.within_workspace !== undefined
+        ? { within_workspace: decision.within_workspace }
+        : {}),
+      ...(decision.touches_outside !== undefined
+        ? { touches_outside: decision.touches_outside }
+        : {}),
       ...(decision.escalate !== undefined ? { escalate: decision.escalate } : {}),
     };
     const answer = await config.elicit(req);
     const allowed = answer === true || (typeof answer === "object" && answer.allowed === true);
     const answerer = typeof answer === "object" ? answer.answerer : "human";
+    const finalReview = review(allowed ? "allowed" : "denied", answerer);
+    if (finalReview !== undefined && typeof answer === "object" && answer.review !== undefined) {
+      Object.assign(finalReview, answer.review);
+    }
     return allowed
-      ? { review: review("allowed", answerer) }
+      ? {
+          review: finalReview,
+          authoringReviewed:
+            decision.effects?.some(
+              (fact) => fact.id === "clarvis.authoring.write" && fact.attestation === "complete",
+            ) === true,
+        }
       : {
           denied: errorResult(new ToolError("denied", `command review did not approve: ${reason}`)),
-          review: review("denied", answerer),
+          review: finalReview,
         };
   } catch (err) {
     return { denied: errorResult(err) };
@@ -243,15 +278,27 @@ export async function dispatch(
   }
 
   try {
+    protectWorkspaceConfiguration(name, filled, config, true);
     protectSkillPackages(name, filled, config);
   } catch (error) {
     return errorResult(error);
   }
 
-  const gate = await applyGuard(name, filled, config);
+  const deferredAuthoring =
+    tool.atomicMutation === true &&
+    config.reviewMutation !== undefined &&
+    buildGuardContext(name, filled, config).paths.some(
+      (fact) =>
+        isCanonicalAuthoringPath(fact.resolved, config.workspaceRoot) ||
+        (name === "replace" && isAuthoringSearchScope(fact.resolved, config.workspaceRoot)),
+    );
+  const gate: GuardGate = deferredAuthoring
+    ? { authoringReviewed: true }
+    : await applyGuard(name, filled, config);
   if (gate.denied) return { ...gate.denied, ...(gate.review ? { guard: gate.review } : {}) };
 
   try {
+    protectWorkspaceConfiguration(name, filled, config, gate.authoringReviewed);
     const { content, meta } = normalizeOutput(await tool.handler(filled, config, signal, hooks));
     const parts = typeof content === "string" ? [textPart(content)] : content;
     return {

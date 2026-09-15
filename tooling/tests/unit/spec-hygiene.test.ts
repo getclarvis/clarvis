@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
-  countLines,
+  extractCalendarDates,
   extractDocumentLinks,
-  extractLineCitations,
+  extractLineQualifiedReferences,
+  extractRepositoryFileReferences,
+  extractSourceSizeReferences,
   findDangerousCharacters,
   headingSlugs,
   resolveLink,
-  resolveLineCitation,
+  resolveRepositoryFileReference,
 } from "../../lib/spec-hygiene.ts";
 
 describe("findDangerousCharacters", () => {
@@ -96,131 +98,99 @@ describe("extractDocumentLinks", () => {
   });
 });
 
-describe("source line citations", () => {
-  const tree = {
-    exists: (path: string) => path === "packages/x/src/y.ts" || path === "empty.ts",
-    lineCountOf: (path: string) =>
-      path === "packages/x/src/y.ts" ? 8 : path === "empty.ts" ? 0 : undefined,
-  };
-
-  test("counts addressable lines without inventing one after the final newline", () => {
-    expect(countLines("")).toBe(0);
-    expect(countLines("one")).toBe(1);
-    expect(countLines("one\n")).toBe(1);
-    expect(countLines("one\n\n")).toBe(2);
-  });
-
-  test("extracts a single line, ranges, and comma-separated references", () => {
-    const citations = extractLineCitations(
-      "intro\n`packages/x/src/y.ts:1-3, 5,8` and `empty.ts:0`\n",
+describe("stable repository references", () => {
+  test("finds line-qualified files, ranges, lists, ambient shorthand, and prose", () => {
+    const references = extractLineQualifiedReferences(
+      "intro\n`packages/example/src/file.ts: 1-3, 5,8`, `packages/example/src/other.ts#L9-L12`, `.githooks/pre-commit:7`, `packages/server/Dockerfile:39-60`, `.gitattributes:8`, `: 13-21`, (:405), at line 48, lines 50-52, imports at 54-57, and (referenced `58-60`)\n",
     );
 
-    expect(citations).toHaveLength(2);
-    expect(citations[0]).toEqual({
-      path: "packages/x/src/y.ts",
-      line: 2,
-      ranges: [
-        { raw: "1-3", start: 1n, end: 3n },
-        { raw: "5", start: 5n, end: 5n },
-        { raw: "8", start: 8n, end: 8n },
-      ],
-    });
-  });
-
-  test("joins backtick-separated en-dash and ASCII endpoints into comma-listed ranges", () => {
-    const [citation] = extractLineCitations(
-      "`packages/x/src/y.ts:356`\u2013`355`, `:11`\u2013`:47`, `:368`-`357`; comment at `:25`\u2013`24`, assertions at `:29`\u2013`26`",
-    );
-    const longTree = {
-      exists: (path: string) => path === "packages/x/src/y.ts",
-      lineCountOf: () => 400,
-    };
-
-    expect(citation.ranges).toEqual([
-      { raw: "356-355", start: 356n, end: 355n },
-      { raw: "11-47", start: 11n, end: 47n },
-      { raw: "368-357", start: 368n, end: 357n },
-      { raw: "25-24", start: 25n, end: 24n },
-      { raw: "29-26", start: 29n, end: 26n },
-    ]);
-    expect(resolveLineCitation(citation, "specs/x.md", longTree)).toEqual([
-      "specs/x.md:1 → packages/x/src/y.ts:356-355 (inverted line range)",
-      "specs/x.md:1 → packages/x/src/y.ts:368-357 (inverted line range)",
-      "specs/x.md:1 → packages/x/src/y.ts:25-24 (inverted line range)",
-      "specs/x.md:1 → packages/x/src/y.ts:29-26 (inverted line range)",
+    expect(references).toEqual([
+      {
+        raw: "packages/example/src/file.ts: 1-3, 5,8",
+        path: "packages/example/src/file.ts",
+        line: 2,
+      },
+      {
+        raw: "packages/example/src/other.ts#L9-L12",
+        path: "packages/example/src/other.ts",
+        line: 2,
+      },
+      { raw: ".githooks/pre-commit:7", path: ".githooks/pre-commit", line: 2 },
+      {
+        raw: "packages/server/Dockerfile:39-60",
+        path: "packages/server/Dockerfile",
+        line: 2,
+      },
+      { raw: ".gitattributes:8", path: ".gitattributes", line: 2 },
+      { raw: "`: 13-21`", path: undefined, line: 2 },
+      { raw: "(:405)", path: undefined, line: 2 },
+      { raw: "line 48", path: undefined, line: 2 },
+      { raw: "lines 50-52", path: undefined, line: 2 },
+      { raw: "imports at 54-57", path: undefined, line: 2 },
+      { raw: "(referenced `58-60`)", path: undefined, line: 2 },
     ]);
   });
 
-  test("accepts optional-backtick endpoint forms and rejects their out-of-bounds end", () => {
-    const [validSeparated] = extractLineCitations("`packages/x/src/y.ts:1`\u2013`:8`");
-    const [validPlain] = extractLineCitations("packages/x/src/y.ts:2\u20134, :5-6");
-    const [outside] = extractLineCitations("`packages/x/src/y.ts:7`\u2013`:9`");
-
-    expect(resolveLineCitation(validSeparated, "specs/x.md", tree)).toEqual([]);
-    expect(resolveLineCitation(validPlain, "specs/x.md", tree)).toEqual([]);
-    expect(resolveLineCitation(outside, "specs/x.md", tree)).toEqual([
-      "specs/x.md:1 → packages/x/src/y.ts:7-9 (outside target's 1-8 line bounds)",
-    ]);
-  });
-
-  test("does not inherit a shorthand range from another Markdown table cell", () => {
-    const [citation] = extractLineCitations("| source `packages/x/src/y.ts:2` | line `:8`-`:9` |");
-
-    expect(citation.ranges).toEqual([{ raw: "2", start: 2n, end: 2n }]);
-    expect(resolveLineCitation(citation, "specs/x.md", tree)).toEqual([]);
-  });
-
-  test("ignores URLs, absolute paths, nonnumeric labels, and citation-like suffixes", () => {
+  test("ignores URLs, ports, percentages, nonnumeric labels, and numeric suffixes that are not lines", () => {
     expect(
-      extractLineCitations(
-        "https://example.test/(packages/x/src/y.ts:99)?next=packages/x/src/y.ts:100 http://127.0.0.1:11434/v1 /packages/x/src/y.ts:4 packages/x/src/y.ts:LINE packages/x/src/y.ts:4ms",
+      extractLineQualifiedReferences(
+        "https://example.test/packages/example/src/file.ts:99 http://127.0.0.1:11434/v1 packages/example/src/file.ts:LINE packages/example/src/file.ts:4ms lines 98.98%",
       ),
     ).toEqual([]);
   });
 
-  test("ignores an illustrative citation when its repository target does not exist", () => {
-    const [citation] = extractLineCitations("`packages/x/src/y.ts:123`");
-    const missingTree = {
-      exists: () => false,
-      lineCountOf: () => {
-        throw new Error("a nonexistent citation target must not be read");
-      },
-    };
-
-    expect(resolveLineCitation(citation, "specs/README.md", missingTree)).toEqual([]);
+  test("extracts owned repository roots but not URLs, basenames, or placeholder examples", () => {
+    expect(
+      extractRepositoryFileReferences(
+        "`packages/code/src/runtime.tsx` `tooling/checks/spec-hygiene.ts` `.githooks/pre-commit` `packages/server/Dockerfile` `.gitattributes` runtime.tsx packages/<name>/src/file.ts https://example.test/specs/a.md",
+      ),
+    ).toEqual([
+      { path: "packages/code/src/runtime.tsx", line: 1 },
+      { path: "tooling/checks/spec-hygiene.ts", line: 1 },
+      { path: ".githooks/pre-commit", line: 1 },
+      { path: "packages/server/Dockerfile", line: 1 },
+    ]);
   });
 
-  test("accepts repository-root ./ spelling and the first and last real target lines", () => {
-    const [citation] = extractLineCitations("`./packages/x/src/y.ts:1,8`");
-
-    expect(resolveLineCitation(citation, "specs/x.md", tree)).toEqual([]);
-  });
-
-  test("reports zero, oversized bounds, and an inverted range independently", () => {
-    const [citation] = extractLineCitations(
-      "intro\n`packages/x/src/y.ts:0,9,999999999999999999999999,7-4`",
+  test("reports a missing explicit file and accepts one that exists", () => {
+    const tree = { exists: (path: string) => path === "packages/code/src/runtime.tsx" };
+    const references = extractRepositoryFileReferences(
+      "`packages/code/src/runtime.tsx` and `packages/example/src/missing.ts`",
     );
 
-    expect(resolveLineCitation(citation, "specs/x.md", tree)).toEqual([
-      "specs/x.md:2 → packages/x/src/y.ts:0 (outside target's 1-8 line bounds)",
-      "specs/x.md:2 → packages/x/src/y.ts:9 (outside target's 1-8 line bounds)",
-      "specs/x.md:2 → packages/x/src/y.ts:999999999999999999999999 (outside target's 1-8 line bounds)",
-      "specs/x.md:2 → packages/x/src/y.ts:7-4 (inverted line range)",
+    expect(resolveRepositoryFileReference(references[0], "specs/x.md", tree)).toBeUndefined();
+    expect(resolveRepositoryFileReference(references[1], "specs/x.md", tree)).toBe(
+      "specs/x.md:1 → packages/example/src/missing.ts (no such file)",
+    );
+  });
+});
+
+describe("timeless specifications", () => {
+  test("finds common literal calendar dates but not a date-shaped schema placeholder", () => {
+    expect(
+      extractCalendarDates(
+        "2026-09-06\n2026/9/7\n8/9/2026\nSep. 9, 2026\n10 September 2026\nSeptember 2026\nformat YYYY-MM-DD\n",
+      ),
+    ).toEqual([
+      { raw: "2026-09-06", line: 1 },
+      { raw: "2026/9/7", line: 2 },
+      { raw: "8/9/2026", line: 3 },
+      { raw: "Sep. 9, 2026", line: 4 },
+      { raw: "10 September 2026", line: 5 },
+      { raw: "September 2026", line: 6 },
     ]);
   });
 
-  test("reports any citation into an existing empty file", () => {
-    const [citation] = extractLineCitations("`empty.ts:1`");
-
-    expect(resolveLineCitation(citation, "specs/x.md", tree)).toEqual([
-      "specs/x.md:1 → empty.ts:1 (target file is empty)",
+  test("rejects source-size inventories but keeps behavior and coverage line counts", () => {
+    expect(
+      extractSourceSizeReferences(
+        "12,000 lines of code\nsource has 900 lines\n42 source lines\n1,000 output lines\ncoverage is 98% lines\n",
+      ),
+    ).toEqual([
+      { raw: "12,000 lines of code", line: 1 },
+      { raw: "source has 900 lines", line: 2 },
+      { raw: "42 source lines", line: 3 },
     ]);
-  });
-
-  test("does not resolve a path that traverses above the repository", () => {
-    const [citation] = extractLineCitations("`../packages/x/src/y.ts:1`");
-
-    expect(resolveLineCitation(citation, "specs/x.md", tree)).toEqual([]);
   });
 });
 

@@ -1,6 +1,13 @@
 import { PLANS_DEFAULTS } from "@clarvis/plan/settings";
 import {
+  parseModelRef,
+  resolveProvider,
+  type ProviderConfig,
+  type ModelExecutionResolver,
+} from "@clarvis/capability";
+import {
   agentPromptOf,
+  agentFrontmatterSchema,
   mcpServerSettingsSchema,
   normalizeTools,
   settingsServerToEngine,
@@ -8,6 +15,8 @@ import {
 import { type AgentProfile, type McpServerConfig, type SkillsProvider } from "@clarvis/loop";
 import { kernelError } from "../core/errors.ts";
 import type { AgentRecord, ConfigStore, ContextRecord } from "../config/config-store.ts";
+import { resolveStoreSharedPrompt, stampedSharedPrompt } from "../config/shared-prompt.ts";
+import { dollarSkillSeeds, userMessagesText } from "../skills/dollar-mentions.ts";
 import { renderSkillPrompt, skillEntryAgent } from "../skills/render-skill-prompt.ts";
 import { protoMessagesToEngine } from "./map-message.ts";
 import { guardParksOnHuman } from "../guard/resolver.ts";
@@ -17,6 +26,7 @@ import type { PlansMode } from "@clarvis/protocol";
 /** The subset of merged config settings this assembler reads when building a run
  * request; deliberately loose, since the config store owns the full schema. */
 interface EngineSettings {
+  effect_review?: { model?: string; on_unsure?: "ask" | "deny" };
   default_model?: string;
   default_vision_model?: string;
   default_reasoning_effort?: string;
@@ -31,6 +41,8 @@ interface EngineSettings {
 
 /** Defaults applied when agent frontmatter or merged settings omit model/limits/entry agent. */
 export interface SettingsAssemblerOptions {
+  /** Closed host execution catalog. Provider transport declarations stay out of the request. */
+  modelExecutionResolver?: ModelExecutionResolver;
   /** Model used when neither `default_model` nor agent frontmatter names one. */
   defaultModel?: string;
   /** Iteration cap applied when an agent's frontmatter omits `iteration_limit`
@@ -262,7 +274,10 @@ function buildProfile(
   entry: boolean,
   contexts: readonly ContextRecord[] = [],
 ): AgentProfile {
-  const fm = record.frontmatter;
+  const parsed = agentFrontmatterSchema.safeParse(record.frontmatter);
+  if (record.malformed !== undefined || !parsed.success)
+    throw kernelError("invalid_request", `agent '${record.name}' has invalid frontmatter`);
+  const fm = parsed.data;
   const agentModel = typeof fm.model === "string" ? fm.model : undefined;
   const model = entry
     ? (merged.default_model ?? agentModel ?? options.defaultModel)
@@ -273,6 +288,7 @@ function buildProfile(
       `agent '${record.name}' declares no model and no default_model is set`,
     );
   }
+  requireCatalogModel(model, options.modelExecutionResolver);
   const agentPrompt = agentPromptOf(
     typeof fm.base_prompt === "string" ? fm.base_prompt : undefined,
     record.body,
@@ -286,7 +302,7 @@ function buildProfile(
     }),
   ].filter((part): part is string => part !== undefined && part.length > 0);
   const basePrompt = promptParts.length === 0 ? undefined : promptParts.join("\n\n");
-  const tools = normalizeTools(fm.tools as string[] | string | undefined);
+  const tools = normalizeTools(fm.tools);
   const iterationLimit =
     typeof fm.iteration_limit === "number"
       ? fm.iteration_limit
@@ -301,8 +317,8 @@ function buildProfile(
     model,
     tools,
     iteration_limit: iterationLimit,
-    ...(Array.isArray(fm.grants) ? { grants: fm.grants as AgentProfile["grants"] } : {}),
-    ...(Array.isArray(fm.can_spawn) ? { can_spawn: (fm.can_spawn as unknown[]).map(String) } : {}),
+    ...(Array.isArray(fm.grants) ? { grants: fm.grants } : {}),
+    ...(Array.isArray(fm.can_spawn) ? { can_spawn: fm.can_spawn } : {}),
     ...(typeof fm.default_spawn === "string" ? { default_spawn: fm.default_spawn } : {}),
     ...(fm.orchestration && typeof fm.orchestration === "object"
       ? { orchestration: fm.orchestration }
@@ -313,7 +329,7 @@ function buildProfile(
       ? { reasoning_effort: reasoningEffort as AgentProfile["reasoning_effort"] }
       : {}),
     ...(typeof fm.reasoning_summary === "string"
-      ? { reasoning_summary: fm.reasoning_summary as AgentProfile["reasoning_summary"] }
+      ? { reasoning_summary: fm.reasoning_summary }
       : {}),
     ...(fm.retry && typeof fm.retry === "object" ? { retry: fm.retry } : {}),
     ...(fm.compaction && typeof fm.compaction === "object" ? { compaction: fm.compaction } : {}),
@@ -359,9 +375,19 @@ function buildProfile(
  * `skill` key itself is deliberately not forwarded to the engine, which has no
  * concept of one; everything a skill run means is expressed as an ordinary
  * request.
+ *
+ * Independently, `$name` mentions in the current turn's user text inject one
+ * {@link renderSkillPrompt} seed per expandable skill (user-invocable, no
+ * `agent` field) after those messages. This is the harness analog of
+ * `load_skill` on an already-open turn: it does not fork a run, does not
+ * expand `/clarvis-configure`-style agent skills, and skips a name already
+ * seeded by `params.skill`.
  */
 export function createSettingsRunAssembler(
-  store: ConfigStore,
+  store: Pick<
+    ConfigStore,
+    "readSettings" | "readContext" | "readEffectiveAgent" | "readSharedPrompt"
+  >,
   options: SettingsAssemblerOptions = {},
 ): RunRequestAssembler {
   const fallbackBudget = {
@@ -390,13 +416,29 @@ export function createSettingsRunAssembler(
   };
   return (params) => {
     const settings = store.readSettings();
+    if (
+      params.skill?.name === "clarvis-configure" &&
+      (settings.merged.runtime?.backend === "docker" ||
+        settings.merged.runtime?.backend === "podman")
+    )
+      throw kernelError(
+        "unsupported",
+        "Direct self-configuration requires Isolation Sandbox or Host; containers cannot configure the host.",
+      );
     const merged = settings.merged as unknown as EngineSettings;
+    requireCatalogModel(merged.default_vision_model, options.modelExecutionResolver);
+    requireCatalogModel(params.guard_judge?.model, options.modelExecutionResolver);
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
     });
 
     const skillRun = resolveSkillRun(params.skill, options.skills);
+    const mentionSeeds = dollarSkillSeeds(
+      userMessagesText(params.messages),
+      options.skills,
+      params.skill?.name,
+    );
     const skillPlansMode =
       params.skill === undefined || skillRun === undefined
         ? undefined
@@ -446,6 +488,7 @@ export function createSettingsRunAssembler(
       return entry === undefined ? [] : [toEngineServer(name, entry, pluginServerRefs.has(name))];
     });
 
+    const sharedPrompt = stampedSharedPrompt(resolveStoreSharedPrompt(store));
     const entryBudget = entryRecord.frontmatter.budget;
     const agentBudget =
       typeof entryBudget === "object" && entryBudget !== null ? entryBudget : undefined;
@@ -453,12 +496,14 @@ export function createSettingsRunAssembler(
     return {
       messages: [
         ...protoMessagesToEngine(params.messages),
+        ...mentionSeeds.map((content) => ({ role: "user" as const, content })),
         ...(skillRun !== undefined ? [{ role: "user" as const, content: skillRun.seed }] : []),
       ],
-      providers: merged.providers ?? [],
+      providers: options.modelExecutionResolver === undefined ? (merged.providers ?? []) : [],
       servers,
       profiles,
       entry: agentName,
+      shared_prompt: sharedPrompt,
       budget: completeBudget(
         (agentBudget ?? merged.budget) as Record<string, unknown> | undefined,
         fallbackBudget,
@@ -468,12 +513,25 @@ export function createSettingsRunAssembler(
         : {}),
       ...(params.execution_id !== undefined ? { execution_id: params.execution_id } : {}),
       ...(params.continue_from !== undefined ? { continue_from: params.continue_from } : {}),
-      ...(params.prompt_cache_key !== undefined
-        ? { prompt_cache_key: params.prompt_cache_key }
+      ...(params.session_id !== undefined ? { session_id: params.session_id } : {}),
+      ...(params.agent_instance_id !== undefined
+        ? { agent_instance_id: params.agent_instance_id }
         : {}),
       ...(params.prompt_cache_ttl !== undefined
         ? { prompt_cache_ttl: params.prompt_cache_ttl }
-        : guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)
+        : guardParksOnHuman(
+              params.guard_mode,
+              merged.guard,
+              reviewerResolves(
+                params.guard_judge?.model ??
+                  merged.effect_review?.model ??
+                  merged.default_model ??
+                  options.defaultModel,
+                merged.providers,
+                options.modelExecutionResolver,
+              ),
+              params.guard_judge?.on_unsure ?? merged.effect_review?.on_unsure,
+            )
           ? { prompt_cache_ttl: "1h" as const }
           : {}),
       ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
@@ -509,4 +567,30 @@ export function createSettingsRunAssembler(
         : {}),
     };
   };
+}
+
+/** Prompt presence is independent of whether the configured reviewer provider can run. */
+function reviewerResolves(
+  model: string | undefined,
+  providers: unknown[] | undefined,
+  resolver?: ModelExecutionResolver,
+): boolean {
+  if (model === undefined) return false;
+  const ref = parseModelRef(model);
+  if (resolver !== undefined) {
+    const info = resolver.resolve(ref.provider, ref.modelId);
+    return info?.provider === ref.provider && info.model === ref.modelId;
+  }
+  return resolveProvider(ref.provider, (providers ?? []) as ProviderConfig[], ref.modelId).ok;
+}
+
+/** Admit only exact catalog pairs before publishing a settings-derived request. */
+function requireCatalogModel(
+  model: string | undefined,
+  resolver: ModelExecutionResolver | undefined,
+): void {
+  if (model === undefined || resolver === undefined) return;
+  if (!reviewerResolves(model, undefined, resolver)) {
+    throw kernelError("invalid_request", `model '${model}' is not in the execution catalog`);
+  }
 }

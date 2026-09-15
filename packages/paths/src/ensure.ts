@@ -11,7 +11,7 @@ import { workspacePaths } from "./workspace.ts";
  *
  * @remarks
  * Selective rather than a blanket `*`: `settings.json`, `agents/`, `skills/`,
- * `workflows/`, `plugins/`, `guard-judge.md` and `memory-policy.md` are a workspace's own
+ * `workflows/`, `plugins/`, `shared-agent.md`, `guard-judge.md` and `memory-policy.md` are a workspace's own
  * configuration and belong in its history. What is listed here is generated
  * Markdown a repository should opt into versioning deliberately, plus Git-owned
  * worktree checkouts that must never be staged accidentally. `owners/` holds the

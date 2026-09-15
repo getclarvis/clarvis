@@ -79,12 +79,53 @@ describe("foldContributions", () => {
     expect(folded.hooks).toEqual({});
   });
 
+  it("awaits iteration preparation and stops the sweep on a terminal result or retired signal", async () => {
+    for (const abort of [false, true]) {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const controller = new AbortController();
+      const seen: string[] = [];
+      const folded = foldContributions([
+        {
+          hooks: {
+            async beforeIteration() {
+              seen.push("first");
+              entered.resolve();
+              await release.promise;
+              if (!abort)
+                return {
+                  status: "error",
+                  partialText: "",
+                  error: { code: "state_unavailable", message: "Unavailable" },
+                };
+            },
+          },
+        },
+        {
+          hooks: {
+            beforeIteration: () => {
+              seen.push("second");
+            },
+          },
+        },
+      ]);
+      const pending = folded.hooks.beforeIteration!(controller.signal);
+      await entered.promise;
+      expect(seen).toEqual(["first"]);
+      if (abort) controller.abort(new Error("retired"));
+      release.resolve();
+      if (abort) await expect(Promise.resolve(pending)).rejects.toThrow("retired");
+      else expect(await pending).toMatchObject({ status: "error" });
+      expect(seen).toEqual(["first"]);
+    }
+  });
+
   it("every hook fans out in contribution order; contributesProgress is an OR", async () => {
     const seen: string[] = [];
     const contribs: AgentLoopContribution[] = [
       {
         hooks: {
-          beforeIteration: () => seen.push("before-a"),
+          beforeIteration: () => void seen.push("before-a"),
           afterDispatch: () => seen.push("after-a"),
           contributesProgress: () => false,
           onFinalizeAccepted: () => seen.push("finalize-a"),
@@ -93,7 +134,7 @@ describe("foldContributions", () => {
       },
       {
         hooks: {
-          beforeIteration: () => seen.push("before-b"),
+          beforeIteration: () => void seen.push("before-b"),
           afterDispatch: () => seen.push("after-b"),
           contributesProgress: () => true,
           onFinalizeAccepted: () => seen.push("finalize-b"),
@@ -102,9 +143,9 @@ describe("foldContributions", () => {
       },
     ];
     const folded = foldContributions(contribs);
-    folded.hooks.beforeIteration!();
+    await folded.hooks.beforeIteration!();
     folded.hooks.afterDispatch!();
-    folded.hooks.onFinalizeAccepted!();
+    folded.hooks.onFinalizeAccepted!({ mode: "text", text: "finished" });
     await folded.hooks.onTeardown!();
     expect(seen).toEqual([
       "before-a",
@@ -146,5 +187,27 @@ describe("capabilitiesForScope", () => {
     ];
     capabilitiesForScope(caps, scope);
     expect(scopes).toEqual([scope]);
+  });
+
+  it("maps a required entry attachment failure unless cancellation already retired it", () => {
+    const failure = new Error("fixture attachment failed");
+    const required: RunCapability = {
+      name: "required",
+      required: true,
+      forAgent: () => ({
+        attach: () => {
+          throw failure;
+        },
+      }),
+    };
+    const entry = { ...scope, entry: true };
+    const active = capabilitiesForScope([required], entry)[0]!;
+    expect(() => active.attach({} as never)).toThrow("Required capability 'required'");
+
+    const retired = capabilitiesForScope([required], {
+      ...entry,
+      signal: AbortSignal.abort(new Error("retired")),
+    })[0]!;
+    expect(() => retired.attach({} as never)).toThrow(failure);
   });
 });

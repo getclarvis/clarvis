@@ -4,7 +4,7 @@
  * this table instead of carrying four hand-maintained name matrices.
  *
  * @remarks It is also the one place the surface *size* is written down.
- * `tests/component/tool-surface.test.ts` pins it at 24 full / 9 read-only, so
+ * `tests/component/tool-surface.test.ts` pins it at 23 full / 9 read-only, so
  * growing or shrinking the surface is a deliberate edit here rather than silent
  * drift. Each row once carried a third field gating it on an optional runtime
  * that could fail to load; nothing conditions the surface any more, and no
@@ -26,7 +26,6 @@ export const EXPECTED_TOOL_DESCRIPTORS = [
   { name: "grep", readOnly: true },
   { name: "diff", readOnly: true },
   { name: "shell", readOnly: false },
-  { name: "host_vcs", readOnly: false },
   { name: "monitor_start", readOnly: false },
   { name: "monitor_poll", readOnly: false },
   { name: "monitor_stop", readOnly: false },

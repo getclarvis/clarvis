@@ -387,7 +387,7 @@ describe("onTeardown fires exactly once on every exit path", () => {
     const contribution: AgentLoopContribution = {
       hooks: {
         onTeardown: async (): Promise<void> => {
-          await new Promise((r) => setTimeout(r, 10));
+          await Promise.resolve();
           settled = true;
         },
       },

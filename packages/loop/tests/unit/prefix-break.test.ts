@@ -22,7 +22,7 @@ describe("context.prefix_break — the store's mutating primitives", () => {
     const logger = recordingLogger();
     const store = createLiveEntryStore([], logger);
     store.appendDurable(durable("AAAA"));
-    store.appendVolatile(note("NN"));
+    store.appendDurable(note("NN"));
     store.appendDurable(durable("BBBBBB"));
 
     store.removeAt(0);
@@ -38,26 +38,26 @@ describe("context.prefix_break — the store's mutating primitives", () => {
     });
   });
 
-  it("says nothing when the removed entry is in the trailing volatile run", () => {
+  it("reports removal of a historical runtime note", () => {
     const logger = recordingLogger();
     const store = createLiveEntryStore([], logger);
     store.appendDurable(durable("AAAA"));
-    store.appendVolatile(note("NN"));
+    store.appendDurable(note("NN"));
 
-    expect(store.durablePrefixEnd()).toBe(1);
+    expect(store.durablePrefixEnd()).toBe(2);
     store.removeAt(1);
-    expect(logger.of("context.prefix_break")).toHaveLength(0);
+    expect(logger.of("context.prefix_break")).toHaveLength(1);
   });
 
-  it("says nothing when a durable append shifts only the volatile tail", () => {
+  it("appends without shifting any historical entry", () => {
     const logger = recordingLogger();
     const store = createLiveEntryStore([], logger);
     store.appendDurable(durable("AAAA"));
-    store.appendVolatile(note("NN"));
+    store.appendDurable(note("NN"));
 
     store.push({ role: "assistant", content: "work" }, false);
 
-    expect(store.messages.map((m) => m.content)).toEqual(["AAAA", "work", "NN"]);
+    expect(store.messages.map((m) => m.content)).toEqual(["AAAA", "NN", "work"]);
     expect(logger.of("context.prefix_break")).toHaveLength(0);
   });
 
@@ -155,7 +155,7 @@ const image = (chars: number): { data: string; mediaType: string } => ({
 });
 
 describe("context.prefix_break — the live context's in-place rewriters", () => {
-  it("reports the image budget releasing an image the previous request already carried", () => {
+  it("bounds a new image without modifying the previous request", () => {
     const logger = recordingLogger();
     const ctx = createLiveContext([], ROOMY, { agent: "lead", logger });
     ctx.appendAssistantToolCalls("", [
@@ -167,9 +167,10 @@ describe("context.prefix_break — the live context's in-place rewriters", () =>
 
     ctx.appendToolMessage("b", "second", { images: [image(7_000_000)] });
 
-    const [record] = logger.of("context.prefix_break");
-    expect(record?.level).toBe("warn");
-    expect(record?.fields).toMatchObject({ cause: "image_budget", index: 1 });
+    expect(logger.of("context.prefix_break")).toHaveLength(0);
+    const results = ctx.messages.filter((message) => message.role === "tool");
+    expect(results[0]?.images).toHaveLength(1);
+    expect(results[1]?.images).toBeUndefined();
   });
 
   it("records the rolling summary anchor's rewrite at debug, never as a defect", () => {

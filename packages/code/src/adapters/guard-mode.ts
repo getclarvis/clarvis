@@ -19,14 +19,15 @@ export function resolvedGuardMode(guard: GuardConfig | undefined): GuardMode {
  * @remarks
  * Without a usable judge model, "auto" behaves as "on" at runtime (every ask
  * verdict just prompts the user) — this is the single check every surface
- * that offers "auto" (Run Controls, the Alt+G cycle) must agree on, so a
+ * that offers "auto" (Run Controls and the Review picker) must agree on, so a
  * future change to the resolvability rule only needs to land once.
  */
 export function guardAutoResolves(
   settings: Pick<SettingsAdapter, "effective" | "validateProviders">,
 ): boolean {
   const eff = settings.effective();
-  return !!eff.default_model && settings.validateProviders(eff).ok;
+  const model = eff.effect_review?.model ?? eff.default_model;
+  return !!model && settings.validateProviders({ ...eff, default_model: model }).ok;
 }
 
 /** The session's current {@link GuardMode}, settable directly or by cycling. */

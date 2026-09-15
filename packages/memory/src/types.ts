@@ -49,19 +49,16 @@ export interface IndexerRuntime {
    * The deps a pass uses when it continues the run it indexes, when the host
    * built them.
    *
-   * @remarks Distinct from {@link IndexerRuntime.deps} in exactly two ways, both
-   * assembled by the host because the host is what owns capability composition:
+   * @remarks The host owns capability composition:
    * the workspace hooks capability is **absent**, and the memory capability
-   * carries `enqueueOnRunEnd: false`.
+   * carries `enqueueOnRunEnd: false`. Stateful source capabilities must retain
+   * their advertised catalog without taking ownership of the source work's
+   * lifecycle or gates. The kernel projects planning this way; dispatch denial
+   * alone cannot suppress capability finalization or recovery mutations.
    *
-   * Absent — not merely inactive — is the load-bearing word. A registered
-   * capability that declines to emit its seed block leaves its marker out of the
-   * live set, and `buildEntrySeed` then drops the block the continuation
-   * carried, deleting an entry from the middle of the transcript and re-billing
-   * everything behind it. A capability the run never registers is not
-   * recognised at all, so its carried block reads as ordinary history and
-   * survives in place. Removing hooks therefore keeps the prefix intact *and*
-   * keeps a user's `PreToolUse` hooks from firing on the pass's own writes.
+   * Workspace hooks are absent so an unattended index pass cannot execute a
+   * user's hooks against its memory writes. Historical capability blocks remain
+   * in the restored sequence even when a capability is inactive in this pass.
    *
    * When undefined the pass has no continuation path available and runs
    * isolated, which is always correct and merely more expensive.

@@ -51,15 +51,24 @@ function environmentPreamble(workspaceRoot: string, platform: NodeJS.Platform): 
 
 /**
  * Assembles the ordered system-prompt sections for an agent: an optional
- * environment preamble, the profile's base prompt, then any
+ * environment preamble, the fleet shared prompt, the profile prompt, then any
  * capability-contributed sections.
  *
  * @param p - the pieces to include; a missing/empty field is skipped.
- * @returns the sections in order (environment, base prompt, capability
- *   sections), ready to join with blank lines; empty when nothing was supplied.
+ * @returns the sections in order (environment, shared prompt, profile prompt,
+ *   capability sections), ready to join with blank lines; empty when nothing
+ *   was supplied.
  */
 export function buildSystemSections(p: {
   workspaceRoot?: string;
+  /** Fleet-wide shared prompt; omitted when the layer is disabled. */
+  sharedPrompt?: string;
+  /** Identity and harness of this agent after overlay resolution. */
+  profilePrompt?: string;
+  /**
+   * Temporary alias of {@link profilePrompt}. Prefer `profilePrompt` in new
+   * composition; both must not be treated as the shared layer.
+   */
   basePrompt?: string;
   /** Capability-contributed sections (e.g. the skills catalog), appended last. */
   capabilitySections?: readonly string[];
@@ -69,7 +78,9 @@ export function buildSystemSections(p: {
   const sections: string[] = [];
   if (p.workspaceRoot !== undefined)
     sections.push(environmentPreamble(p.workspaceRoot, p.platform ?? process.platform));
-  if (p.basePrompt && p.basePrompt.length > 0) sections.push(p.basePrompt);
+  if (p.sharedPrompt && p.sharedPrompt.length > 0) sections.push(p.sharedPrompt);
+  const profilePrompt = p.profilePrompt ?? p.basePrompt;
+  if (profilePrompt && profilePrompt.length > 0) sections.push(profilePrompt);
   for (const s of p.capabilitySections ?? []) sections.push(s);
   return sections;
 }

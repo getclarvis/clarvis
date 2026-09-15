@@ -14,7 +14,6 @@ interface BrowseCandidate {
 /** Dependencies for the slash-command completion provider owned by the composer. */
 export interface CommandCompletionDeps {
   commands: Commands;
-  recoverMemory(): void;
 }
 
 /**
@@ -42,15 +41,6 @@ export function createCommandCompletionProvider(deps: CommandCompletionDeps): Co
           ...(entry.canAct === undefined ? {} : { canAct: entry.canAct }),
         })),
       );
-    browseCandidates.push({
-      item: {
-        label: "recover-memory",
-        insert: "",
-        detail: "Rebuild the backend after the RSS fuse aborts work",
-        value: "memory.recover",
-        group: GROUP_LABEL.actions,
-      },
-    });
     browseCandidates.sort(
       (left, right) =>
         rank(left.item.group) - rank(right.item.group) ||
@@ -119,13 +109,6 @@ export function createCommandCompletionProvider(deps: CommandCompletionDeps): Co
           entry.slashes.map((slash) => commandItem(entry, slash, exactToken, false)),
         );
       items.push(...nestedItems);
-      if ("recover-memory".includes(normalized.toLowerCase()))
-        items.push({
-          label: "recover-memory",
-          insert: "",
-          detail: "Rebuild the backend after the RSS fuse aborts work",
-          value: "memory.recover",
-        });
       const tier = (item: CommandItem): number =>
         item.exact ? 0 : item.match?.field === "label" ? 1 : 2;
       return items
@@ -134,10 +117,6 @@ export function createCommandCompletionProvider(deps: CommandCompletionDeps): Co
         .map(({ item }) => item);
     },
     onAccept: (item) => {
-      if (item.value === "memory.recover") {
-        deps.recoverMemory();
-        return;
-      }
       if (item.value.startsWith("route:")) {
         const [, command, child] = item.value.split(":");
         if (command && child) deps.commands.route(command, child);

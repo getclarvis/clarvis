@@ -1,9 +1,11 @@
 import { createMemo, For, Match, onCleanup, Show, Switch, untrack } from "solid-js";
-import type { Accessor, JSX } from "solid-js";
+import type { JSX } from "solid-js";
 import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import { tone, type ToneStyle } from "../theme/tone.ts";
 import { focusBg, userBandBg } from "../theme/surfaces.ts";
+import { terminalPlainText } from "../core/terminal-text.ts";
+import { parseBash, toolErrorSummaryText } from "../adapters/tool-parsers.ts";
 import type {
   NodeStatus,
   TranscriptAnnotationNode,
@@ -19,11 +21,12 @@ import {
   planMetaText,
   projectTranscriptToolDisplay,
   TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE,
+  thinkingDisplayText,
   transcriptDisplayText,
   type TranscriptToolDisplayProjection,
 } from "../core/transcript/index.ts";
 import { streamMetrics } from "../adapters/stream-metrics.ts";
-import { toolDisplayLabel } from "../adapters/tool-identity.ts";
+import { toolDisplayLabel, toolIdentity } from "../adapters/tool-identity.ts";
 import {
   hiddenBodyLines,
   resolveErrorRenderer,
@@ -31,9 +34,7 @@ import {
   type ToolCallView,
 } from "./tools/registry.tsx";
 import { isLeadMutation, mutationStats, type DiffStats } from "./tools/mutation-gate.ts";
-import { formatToolCall } from "./tools/signature.ts";
-import { aggregateStatus, failureCount, type ToolGroupInfo } from "./tool-groups.ts";
-import type { SectionHeader } from "./subagent-sections.ts";
+import { resolveToolCallSignature } from "./tools/signature.ts";
 import type { BlockOverride } from "./block-focus.ts";
 import { formatElapsed, spinnerChar, thinkingDots, tickNow } from "./spinner.ts";
 import { fmtCount, moreChip } from "./truncate.ts";
@@ -115,7 +116,6 @@ const AGENT_KINDS = new Set<TranscriptNode["kind"]>([
  * Six fits one line at {@link MEASURE_MAX_COLS} for typical signatures, which is
  * the real constraint — a header that wraps defeats the collapse.
  */
-const MAX_GROUP_SIGNATURES = 6;
 
 /**
  * How long a tool call must run before the transcript shows its elapsed time.
@@ -154,14 +154,14 @@ const LIVE_TAIL_LINES = 5;
 export function composingLabel(chars: number, complete = false, streamChars?: number): string {
   const stream =
     streamChars === undefined ? "" : ` ${glyph("separator")} stream ${fmtCount(streamChars)} chars`;
-  if (complete) return `arguments ready ${glyph("separator")} ${fmtCount(chars)} chars${stream}`;
+  if (complete) return `awaiting execution ${glyph("separator")} ${fmtCount(chars)} chars${stream}`;
   if (chars === 0) return `waiting for arguments${glyph("ellipsis")}${stream}`;
   return `receiving arguments${glyph("ellipsis")} ${fmtCount(chars)} chars${stream}`;
 }
 
 function liveTailLines(node: TranscriptToolNode): string[] {
   if (node.status !== "running" || !node.liveOutput) return [];
-  const lines = node.liveOutput.split("\n");
+  const lines = terminalPlainText(node.liveOutput).split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines.slice(-LIVE_TAIL_LINES);
 }
@@ -260,8 +260,9 @@ function nodeTone(node: TranscriptNode): ToneStyle {
  * One tool call's header line, plus its live tail and/or body when shown.
  *
  * @remarks
- * The header truncates instead of wrapping so a collapsed call is always
- * exactly one row, whatever the terminal width.
+ * The header truncates instead of wrapping so identity remains exactly one row.
+ * A collapsed failure adds one bounded diagnostic row below it rather than
+ * squeezing the signature and error into the same horizontal measure.
  */
 function ToolLine(props: {
   node: TranscriptToolNode;
@@ -270,11 +271,40 @@ function ToolLine(props: {
   full?: boolean;
   ungatedMutationBody?: boolean;
   onHeaderClick?: () => void;
+  onInterruptShell?: () => void;
+  showStopShell?: boolean;
 }): JSX.Element {
   const display = createMemo(() =>
     projectTranscriptToolDisplay(props.node, rawToolArguments(props.node)),
   );
   const isCollapsed = (): boolean => !props.showBody && props.node.status !== "running";
+  const hasDiagnostic = (): boolean =>
+    isCollapsed() &&
+    (props.node.status === "error" ||
+      (props.node.warn === true &&
+        toolIdentity(props.node.mcpName, props.node.toolName) === "shell"));
+  const firstErrorLine = (error: string): string =>
+    terminalPlainText(toolErrorSummaryText(error)).split("\n")[0]!.slice(0, 160);
+  const failureSummary = (): string => {
+    if (props.node.interruption?.source === "operator") return "Interrupted by operator";
+    const error = display().error ?? "No authoritative result";
+    if (toolIdentity(props.node.mcpName, props.node.toolName) === "shell") {
+      const shell = parseBash(display().result, error);
+      if (shell.exitCode !== null) return `exit ${shell.exitCode}`;
+      return firstErrorLine(shell.stderr || error);
+    }
+    return firstErrorLine(error);
+  };
+  const inlineExitSummary = (): string => {
+    if (
+      !isCollapsed() ||
+      toolIdentity(props.node.mcpName, props.node.toolName) !== "shell" ||
+      (props.node.status !== "error" && props.node.warn !== true)
+    )
+      return "";
+    const shell = parseBash(display().result, display().error ?? "No authoritative result");
+    return shell.exitCode === null ? "" : `exit ${shell.exitCode}`;
+  };
   const diffChip = createMemo<DiffStats | null>(() =>
     isCollapsed() && props.node.status !== "error" ? (trueMutationStats(props.node) ?? null) : null,
   );
@@ -314,71 +344,96 @@ function ToolLine(props: {
       overflow="hidden"
       backgroundColor={tokens.bg}
     >
-      <box paddingLeft={props.indent ? 3 : 1}>
-        <text
-          onMouseDown={props.indent ? undefined : props.onHeaderClick}
-          wrapMode="none"
-          truncate
-          selectable={false}
-        >
-          <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
-          <Show when={!props.indent}>
-            <span style={{ fg: tokens.accent }}>
-              {toolDisplayLabel(props.node.mcpName, props.node.toolName)}
-            </span>
-          </Show>
-          <Show
-            when={props.node.inputChars !== undefined}
-            fallback={
-              <span style={{ fg: tokens.muted }}>
-                {props.node.signature ??
-                  formatToolCall(
-                    props.node.mcpName ?? "",
-                    props.node.toolName ?? "",
-                    display().arguments,
-                  )}
+      <box paddingLeft={props.indent ? 3 : 1} flexDirection="row" width="100%" flexShrink={0}>
+        <box flexShrink={1} minWidth={0}>
+          <text
+            onMouseDown={props.indent ? undefined : props.onHeaderClick}
+            wrapMode="none"
+            truncate
+            selectable={false}
+          >
+            <span style={{ fg: nodeTone(props.node).fg }}>{nodeTone(props.node).glyph + " "}</span>
+            <Show when={!props.indent}>
+              <span style={{ fg: tokens.accent }}>
+                {toolDisplayLabel(props.node.mcpName, props.node.toolName, display().arguments)}
               </span>
-            }
-          >
-            <span style={{ fg: tokens.muted }}>{(props.indent ? "" : " ") + composing()}</span>
-          </Show>
-          <Show when={props.node.status === "running" && props.node.startedAt !== undefined}>
-            <span style={{ fg: tokens.muted }}>
-              {"  " + formatElapsed(tickNow() - props.node.startedAt!)}
-            </span>
-          </Show>
-          <Show
-            when={props.node.status !== "running" && (props.node.elapsedMs ?? 0) >= SLOW_TOOL_MS}
-          >
-            <span style={{ fg: tokens.muted }}>{"  " + formatElapsed(props.node.elapsedMs!)}</span>
-          </Show>
-          <Show when={diffChip()}>
-            <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
-            <span style={{ fg: tokens.add }}>{`+${diffChip()!.added}`}</span>
-            <Show when={diffChip()!.removed > 0}>
-              <span style={{ fg: tokens.del }}>{` ${glyph("minus")}${diffChip()!.removed}`}</span>
             </Show>
-            <span style={{ fg: tokens.muted }}>
-              {` ${glyph("separator")} ${moreChip(diffChip()!.lines)}`}
-            </span>
-          </Show>
-          <Show when={hiddenLines() > 0}>
-            <span style={{ fg: tokens.muted }}>{`  ${moreChip(hiddenLines())}`}</span>
-          </Show>
-          <Show when={guardLabel().length > 0}>
-            <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
-            <span
-              style={{
-                fg: props.node.guard?.outcome === "allowed" ? tokens.add : tokens.del,
-              }}
+            <Show
+              when={props.node.inputChars !== undefined}
+              fallback={
+                <span style={{ fg: tokens.muted }}>
+                  {resolveToolCallSignature(props.node, display().arguments)}
+                </span>
+              }
             >
-              {guardLabel()}
-            </span>
-          </Show>
-        </text>
+              <span style={{ fg: tokens.muted }}>{(props.indent ? "" : " ") + composing()}</span>
+            </Show>
+            <Show when={props.node.status === "running" && props.node.startedAt !== undefined}>
+              <span style={{ fg: tokens.muted }}>
+                {"  " + formatElapsed(tickNow() - props.node.startedAt!)}
+              </span>
+            </Show>
+            <Show
+              when={props.node.status !== "running" && (props.node.elapsedMs ?? 0) >= SLOW_TOOL_MS}
+            >
+              <span style={{ fg: tokens.muted }}>
+                {"  " + formatElapsed(props.node.elapsedMs!)}
+              </span>
+            </Show>
+            <Show when={diffChip()}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span style={{ fg: tokens.add }}>{`+${diffChip()!.added}`}</span>
+              <Show when={diffChip()!.removed > 0}>
+                <span style={{ fg: tokens.del }}>{` ${glyph("minus")}${diffChip()!.removed}`}</span>
+              </Show>
+              <span style={{ fg: tokens.muted }}>
+                {` ${glyph("separator")} ${moreChip(diffChip()!.lines)}`}
+              </span>
+            </Show>
+            <Show when={hiddenLines() > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${moreChip(hiddenLines())}`}</span>
+            </Show>
+            <Show when={inlineExitSummary().length > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span style={{ fg: tokens.del }}>{inlineExitSummary()}</span>
+            </Show>
+            <Show when={guardLabel().length > 0}>
+              <span style={{ fg: tokens.muted }}>{`  ${glyph("separator")} `}</span>
+              <span
+                style={{
+                  fg: props.node.guard?.outcome === "allowed" ? tokens.add : tokens.del,
+                }}
+              >
+                {guardLabel()}
+              </span>
+            </Show>
+          </text>
+        </box>
+        <Show when={props.showStopShell === true}>
+          <text
+            width={4}
+            flexShrink={0}
+            wrapMode="none"
+            selectable={false}
+            fg={props.node.interruptRequest === "pending" ? tokens.muted : tokens.del}
+            onMouseDown={() => {
+              if (props.node.interruptRequest === "pending") return;
+              props.onInterruptShell?.();
+            }}
+          >
+            {" [X]"}
+          </text>
+        </Show>
       </box>
+      <Show when={hasDiagnostic() && inlineExitSummary().length === 0}>
+        <box paddingLeft={props.indent ? 6 : 4} paddingRight={1}>
+          <text fg={tokens.del} wrapMode="none" truncate selectable={false}>
+            {failureSummary()}
+          </text>
+        </box>
+      </Show>
       <Show when={tail().length > 0}>
-        <box flexDirection="column" paddingLeft={props.indent ? 5 : 3} overflow="hidden">
+        <box flexDirection="column" paddingLeft={props.indent ? 6 : 4} overflow="hidden">
           <For each={tail()}>
             {(line) => (
               <text fg={tokens.muted} wrapMode="none" truncate>
@@ -505,84 +560,7 @@ function AssistantMarkdown(props: { node: TranscriptNode }): JSX.Element {
   );
 }
 
-function SectionHead(props: {
-  header: SectionHeader;
-  folded: Accessor<boolean>;
-  onClick?: () => void;
-}): JSX.Element {
-  const h = (): SectionHeader => props.header;
-  /**
-   * The folded-section count and its label.
-   *
-   * @remarks The two branches count different things and must not share a word.
-   *   A lead's number is how many tools it called; a sub-agent section's is how
-   *   many transcript entries the fold is hiding. Both used to render as
-   *   "N steps", which read like the engine's loop *iteration* — the run's own
-   *   vocabulary everywhere else — and was neither.
-   */
-  const foldedCount = (): number => (h().lead ? (h().toolCalls ?? 0) : (h().hiddenEntries ?? 0));
-  const foldedLabel = (): string =>
-    h().lead
-      ? `${foldedCount()} tool call${foldedCount() === 1 ? "" : "s"}`
-      : props.folded()
-        ? `${foldedCount()} hidden`
-        : `${foldedCount()} entr${foldedCount() === 1 ? "y" : "ies"}`;
-  const stateLabel = (): string => {
-    if (h().status === "ok") return "Completed";
-    if (h().status === "error") return "Failed";
-    if (h().status === "pending") return "Pending";
-    return "Running";
-  };
-  return (
-    <box>
-      <text onMouseDown={props.onClick} wrapMode="none" truncate selectable={false}>
-        <span style={{ fg: h().lead ? tokens.accent2 : statusTone(h().status).fg }}>
-          {(h().lead ? glyph("diamond") : agentGlyph(h().status)) + " "}
-        </span>
-        <Show when={h().lead}>
-          <span style={{ fg: tokens.accent2 }}>{h().model?.split("/").pop() ?? "lead"}</span>
-        </Show>
-        <Show when={!h().lead}>
-          <span style={{ fg: tokens.subagent(h().order) }}>{capitalize(h().title)}</span>
-          <Show when={h().model}>
-            <span style={{ fg: tokens.muted }}>{" " + glyph("separator") + " " + h().model}</span>
-          </Show>
-          <span style={{ fg: statusTone(h().status).fg }}>
-            {` ${glyph("separator")} ${stateLabel()}`}
-          </span>
-        </Show>
-        <Show when={foldedCount() > 0}>
-          <span style={{ fg: tokens.muted }}>
-            {h().lead
-              ? ` ${glyph("separator")} ${foldedLabel()}`
-              : ` ${glyph("separator")} ${glyph(props.folded() ? "chevronRight" : "caretDown")} ${foldedLabel()}`}
-          </span>
-        </Show>
-      </text>
-    </box>
-  );
-}
-
-/**
- * Renders one transcript node — user turn, assistant text, reasoning,
- * tool call (solo, group head or group member), sub-agent delegation, plan,
- * annotation, error or run boundary — honoring its fold/focus/group state.
- *
- * @remarks
- * A `subagent` node's text is the delegation card: the brief the lead handed
- * the sub-agent, which is the "what was it told to do" that the section's
- * tool rows never show. A `plan` node collapses to just its header — the
- * approval gate already told the user the plan is "shown above", and the
- * sidebar is not always on screen — so collapsing hides the task list but
- * keeps the header, and a long plan costs only one line.
- *
- * `collapsed()`'s fallback reads a `collapsed` field that is not part of
- * `TranscriptNode` and that no production node ever sets — `showcase.test.ts`
- * guards that a real store-derived node never carries it. It exists solely so
- * render-test fixtures (`tests/helpers/transcript-fixtures.ts`'s `LegacyCollapsibleNode`)
- * can force default-fold state without wiring a full `defaultFolded` prop
- * through every test.
- */
+/** Individual content presenter. Row/group identity and pagination belong to the viewport. */
 export function BlockView(props: {
   node: TranscriptNode;
   /** Whether this physical owner may react to pointer input. */
@@ -591,13 +569,12 @@ export function BlockView(props: {
   maxWidth?: number | `${number}%`;
   forceExpand?: () => boolean;
   folded?: () => boolean;
-  sectionFolded?: () => boolean;
-  group?: () => ToolGroupInfo | undefined;
-  sectionHeader?: () => SectionHeader | undefined;
   overrideOf?: (key: string) => BlockOverride | undefined;
   focused?: () => boolean;
   onToggle?: () => void;
   onOpenDetail?: (detail: ActivityDetail) => void;
+  onInterruptShell?: (node: TranscriptToolNode) => void;
+  canInterruptShell?: (node: TranscriptToolNode) => boolean;
   defaultFolded?: () => boolean;
   /** Lets a containing split pane use its full content width; the physical
    * parent remains the hard boundary, so this cannot overlap an adjacent
@@ -617,97 +594,27 @@ export function BlockView(props: {
     const o = own();
     if (o === "expanded") return false;
     if (o === "collapsed") return true;
-    const fixtureCollapsedFallback = (props.node as TranscriptNode & { collapsed?: boolean })
-      .collapsed;
-    return (
-      !leadMutation() &&
-      !props.forceExpand?.() &&
-      (props.defaultFolded?.() ?? fixtureCollapsedFallback ?? false)
-    );
+    return !props.forceExpand?.() && (props.defaultFolded?.() ?? false);
   };
   const bodyFolded = (): boolean => !props.forceExpand?.() && !!props.folded?.();
-  const group = createMemo<ToolGroupInfo | undefined>(() => props.group?.());
-  const role = (): ToolGroupInfo["role"] => group()?.role ?? "solo";
-  const headOverride = (): BlockOverride | undefined => {
-    const hk = group()?.headKey;
-    return hk ? props.overrideOf?.(hk) : undefined;
-  };
-  const groupExpanded = (): boolean => !!props.forceExpand?.() || headOverride() === "expanded";
-  /**
-   * Whether the body renders unclamped.
-   *
-   * @remarks Deliberately **not** keyed on `forceExpand`. "Expand all" unfolds
-   * every block; lifting a body's ten-line cap is the per-block expand, and the
-   * two are separate on purpose — otherwise one keystroke pours every `grep` and
-   * `shell` result into the transcript at full length. `tool-clamp.test.tsx`
-   * holds the distinction, mounting with `forceExpand` and still expecting the
-   * cap.
-   */
-  const fullBody = (): boolean => own() === "expanded" || headOverride() === "expanded";
+  const fullBody = (): boolean => own() === "expanded";
+
   const toolNode = (): TranscriptToolNode => props.node as TranscriptToolNode;
   const planNode = (): TranscriptPlanNode => props.node as TranscriptPlanNode;
   const annotationNode = (): TranscriptAnnotationNode => props.node as TranscriptAnnotationNode;
   const runNode = (): TranscriptRunNode => props.node as TranscriptRunNode;
   const subagentNode = (): Extract<TranscriptNode, { kind: "subagent" }> =>
     props.node as Extract<TranscriptNode, { kind: "subagent" }>;
-  /**
-   * The run's verdict, and what the user can actually do next.
-   *
-   * @remarks The hint names only affordances that exist. It used to read
-   * "inspect the error or retry", recommending a retry no key performs and an
-   * inspection the product had nothing to show — so the one line offering help
-   * after a failure pointed at two things the user could not do.
-   */
   const runOutcome = (): { label: string; next?: string } => {
-    if (props.node.status === "ok") return { label: "Completed" };
-    const restart = "send a follow-up to try again, or /clear to start fresh";
-    if (/cancel/i.test(runNode().reason ?? ""))
-      return { label: "Canceled", next: `Next: ${restart}` };
-    return { label: "Failed", next: `Next: ${restart}` };
+    if (props.node.status === "ok")
+      return { label: runNode().disposition === "checkpoint" ? "Checkpoint saved" : "Completed" };
+    const next = "Next: send a follow-up to try again, or /clear to start fresh";
+    return { label: /cancel/i.test(runNode().reason ?? "") ? "Canceled" : "Failed", next };
   };
-  const hidden = (): boolean =>
-    role() === "member" &&
-    !groupExpanded() &&
-    !(props.node.kind === "tool_call" && props.node.warn);
-  const members = createMemo<readonly TranscriptToolNode[]>(() => group()?.members ?? [toolNode()]);
-  const agg = createMemo<NodeStatus>(() => aggregateStatus(members()));
-  const failures = createMemo<number>(() => failureCount(members()));
-  const quietMembers = createMemo<TranscriptToolNode[]>(() =>
-    members().filter((m) => m.status !== "error" && !m.warn),
-  );
-  const signatureMembers = createMemo<TranscriptToolNode[]>(() =>
-    members().filter(
-      (member) =>
-        member.inputChars === undefined &&
-        ((member.status !== "error" && !member.warn) || guardReviewLabel(member).length > 0),
-    ),
-  );
-  const visibleSignatureMembers = createMemo<TranscriptToolNode[]>(() => {
-    const denied = signatureMembers().filter((member) => member.guard?.outcome === "denied");
-    const remaining = signatureMembers().filter((member) => member.guard?.outcome !== "denied");
-    return [...denied, ...remaining].slice(0, MAX_GROUP_SIGNATURES);
-  });
-  const composingMembers = createMemo<number>(
-    () => quietMembers().filter((member) => member.inputChars !== undefined).length,
-  );
-  const composingChars = createMemo<number>(() =>
-    quietMembers().reduce((total, member) => total + (member.inputChars ?? 0), 0),
-  );
-  const composingStreamChars = createMemo<number | undefined>(() => {
-    const values = quietMembers().flatMap((member) =>
-      member.inputStreamChars === undefined ? [] : [member.inputStreamChars],
-    );
-    return values.length === 0 ? undefined : Math.max(...values);
-  });
-  const composingComplete = createMemo<boolean>(() =>
-    quietMembers()
-      .filter((member) => member.inputChars !== undefined)
-      .every((member) => member.inputComplete === true),
-  );
   const isSubagent = (): boolean => props.node.subagentOrder !== undefined;
   return (
-    <Show when={!hidden()}>
-      <Show when={!bodyFolded() || props.sectionHeader?.()}>
+    <Show when={true}>
+      <Show when={!bodyFolded()}>
         <box
           id={props.node.key}
           flexDirection="column"
@@ -718,20 +625,11 @@ export function BlockView(props: {
           customBorderChars={borderChars()}
           borderColor={isSubagent() ? tokens.subagent(props.node.subagentOrder!) : undefined}
           paddingLeft={isSubagent() ? 1 : 0}
-          marginTop={props.sectionHeader?.() ? 1 : 0}
+
           backgroundColor={
             props.focused?.() ? focusBg() : props.node.kind === "run" ? undefined : tokens.bg
           }
         >
-          <Show when={props.sectionHeader?.()}>
-            {(h: Accessor<SectionHeader>) => (
-              <SectionHead
-                header={h()}
-                folded={props.sectionFolded ?? bodyFolded}
-                onClick={onToggle}
-              />
-            )}
-          </Show>
           <Show when={!bodyFolded()}>
             <box flexDirection="row">
               <box flexDirection="column" flexGrow={1}>
@@ -765,7 +663,7 @@ export function BlockView(props: {
                           </span>
                           <span style={{ fg: tokens.muted }}>thinking</span>
                         </text>
-                        <text fg={tokens.muted}>{transcriptDisplayText(props.node)}</text>
+                        <text fg={tokens.muted}>{thinkingDisplayText(props.node)}</text>
                       </box>
                     </Show>
                   </Match>
@@ -789,101 +687,21 @@ export function BlockView(props: {
                   </Match>
 
                   <Match when={props.node.kind === "tool_call"}>
-                    <Switch>
-                      <Match when={role() === "solo" || groupExpanded()}>
-                        <ToolLine
-                          node={toolNode()}
-                          showBody={groupExpanded() || !collapsed()}
-                          full={fullBody()}
-                          ungatedMutationBody={leadMutation()}
-                          onHeaderClick={onToggle}
-                        />
-                      </Match>
-
-                      <Match when={role() === "head"}>
-                        <box flexDirection="column" paddingTop={1} overflow="hidden">
-                          <box paddingLeft={1}>
-                            <text
-                              onMouseDown={onToggle}
-                              wrapMode="none"
-                              truncate
-                              selectable={false}
-                            >
-                              <span style={{ fg: statusTone(agg()).fg }}>
-                                {statusTone(agg()).glyph + " "}
-                              </span>
-                              <span style={{ fg: tokens.accent }}>
-                                {toolDisplayLabel(toolNode().mcpName, toolNode().toolName)}
-                              </span>
-                              <span style={{ fg: tokens.muted }}>
-                                {` ${glyph("multiply")}${members().length}`}
-                              </span>
-                              <Show when={composingMembers() > 0}>
-                                <span style={{ fg: tokens.muted }}>
-                                  {` ${glyph("separator")} ${composingLabel(
-                                    composingChars(),
-                                    composingComplete(),
-                                    composingStreamChars(),
-                                  )}`}
-                                </span>
-                              </Show>
-                              <Show when={failures() > 0}>
-                                <span style={{ fg: tokens.del }}>
-                                  {` ${glyph("separator")} ${failures()} failed`}
-                                </span>
-                              </Show>
-                            </text>
-                          </box>
-                          <For each={visibleSignatureMembers()}>
-                            {(m) => {
-                              const review = (): string => guardReviewLabel(m);
-                              return (
-                                <box paddingLeft={3}>
-                                  <text wrapMode="none" truncate>
-                                    <span style={{ fg: tokens.muted }}>
-                                      {formatToolCall(
-                                        m.mcpName ?? "",
-                                        m.toolName ?? "",
-                                        m.args ?? {},
-                                      )}
-                                    </span>
-                                    <Show when={review().length > 0}>
-                                      <span style={{ fg: tokens.muted }}>
-                                        {`  ${glyph("separator")} `}
-                                      </span>
-                                      <span
-                                        style={{
-                                          fg:
-                                            m.guard?.outcome === "allowed"
-                                              ? tokens.add
-                                              : tokens.del,
-                                        }}
-                                      >
-                                        {review()}
-                                      </span>
-                                    </Show>
-                                  </text>
-                                </box>
-                              );
-                            }}
-                          </For>
-                          <Show when={signatureMembers().length > MAX_GROUP_SIGNATURES}>
-                            <box paddingLeft={3}>
-                              <text fg={tokens.muted}>
-                                {moreChip(signatureMembers().length - MAX_GROUP_SIGNATURES)}
-                              </text>
-                            </box>
-                          </Show>
-                          <Show when={toolNode().warn}>
-                            <ToolLine node={toolNode()} showBody={false} indent />
-                          </Show>
-                        </box>
-                      </Match>
-
-                      <Match when={role() === "member"}>
-                        <ToolLine node={toolNode()} showBody={false} indent />
-                      </Match>
-                    </Switch>
+                    <ToolLine
+                      node={toolNode()}
+                      showBody={!collapsed()}
+                      full={fullBody()}
+                      ungatedMutationBody={leadMutation()}
+                      onHeaderClick={onToggle}
+                      showStopShell={
+                        interactive() &&
+                        toolNode().toolPhase === "running" &&
+                        toolIdentity(toolNode().mcpName, toolNode().toolName) === "shell" &&
+                        (props.canInterruptShell?.(toolNode()) === true ||
+                          toolNode().interruptRequest === "pending")
+                      }
+                      onInterruptShell={() => props.onInterruptShell?.(toolNode())}
+                    />
                   </Match>
 
                   <Match when={props.node.kind === "subagent"}>

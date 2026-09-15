@@ -2,6 +2,7 @@ import type { EnvConfig } from "@clarvis/capability";
 import type { RunRequest } from "@clarvis/capability";
 import type { ResolvedConfig } from "@clarvis/capability";
 import { deriveRunShape as deriveRequestShape } from "../validation/request-schema.ts";
+import { sharedPromptForRun } from "./prompts/shared-agent-prompt.ts";
 import type {
   ResolvedSubagentProfile,
   SubagentProfileRegistry,
@@ -47,6 +48,14 @@ export interface RunShape {
   spawnableRegistry: SubagentProfileRegistry;
   fullRegistry: SubagentProfileRegistry;
   primarySubagentModel: string;
+  /**
+   * Fleet-wide shared prompt snapshotted for this run.
+   *
+   * @remarks Resolved once from {@link RunRequest.shared_prompt}. `undefined`
+   * means the shared layer is disabled for this run. Entry and every child
+   * reuse this value rather than re-reading files.
+   */
+  sharedPrompt?: string;
 }
 
 /**
@@ -85,6 +94,7 @@ export function deriveRunShape(
     ? (spawnableProfiles.find((p) => p.name === entryProfile.default_spawn) ??
       spawnableProfiles[0]!)
     : entryProfile;
+  const sharedPrompt = sharedPromptForRun(request.shared_prompt);
   return {
     entryProfile,
     entryResolved: registry.get(entryProfile.name)!,
@@ -95,5 +105,6 @@ export function deriveRunShape(
     spawnableRegistry,
     fullRegistry: registry,
     primarySubagentModel: primarySubagentProfile.model,
+    ...(sharedPrompt !== undefined ? { sharedPrompt } : {}),
   };
 }

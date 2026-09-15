@@ -59,6 +59,7 @@ function fakeSessions(seed: Session[] = []): SessionService & { store: Map<strin
 function meta(over: Partial<SessionMeta> = {}): SessionMeta {
   return {
     id: over.id ?? uuidv7(),
+    ...(over.revision === undefined ? {} : { revision: over.revision }),
     title: over.title ?? "t",
     projectId: over.projectId ?? "prj_test",
     workspace: over.workspace ?? "/ws",
@@ -77,6 +78,110 @@ function meta(over: Partial<SessionMeta> = {}): SessionMeta {
 test("uuidv7 has version 7 and variant bits", () => {
   const id = uuidv7();
   expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("hosted session revisions survive the DTO round trip", () => {
+  const original = meta({ revision: 17 });
+  const wire = metaToSession(original);
+  expect(wire.revision).toBe(17);
+  expect(sessionToMeta(wire, original.owner).revision).toBe(17);
+});
+
+test("operator recovery audits survive session projection and metadata saves", () => {
+  const wire = metaToSession(meta());
+  wire.turns = [
+    {
+      kind: "conversation",
+      execution_id: "old-run",
+      user_preview: "Unconfirmed outcome",
+      status: "interrupted",
+      recovery_resolution: {
+        kind: "operator_verified_physical_closure",
+        previous_host_generation: "old",
+        resolving_host_generation: "new",
+        operator_connection_id: "operator",
+        resolved_at: 20,
+      },
+    },
+  ];
+  const restored = sessionToMeta(wire, "owner");
+  expect(metaToSession(restored).turns).toEqual(wire.turns);
+});
+
+test("versioned writes advance queued local revisions only after their own confirmed save", async () => {
+  const service = fakeSessions();
+  const gate = Promise.withResolvers<void>();
+  const written: number[] = [];
+  service.save = async (input) => {
+    const expected = service.store.get(input.id)?.revision ?? 0;
+    expect(input.revision ?? 0).toBe(expected);
+    written.push(expected);
+    if (written.length === 1) await gate.promise;
+    service.store.set(input.id, { ...structuredClone(input), revision: expected + 1 });
+  };
+  const store = createSessionStore(service, "clarvis", [], { versioned: true });
+  store.save(meta({ id: "hosted", revision: 0, title: "first" }));
+  store.save(meta({ id: "hosted", revision: 0, title: "second" }));
+  gate.resolve();
+  await store.flushPending?.();
+  expect(written).toEqual([0, 1]);
+  expect(store.get("hosted")).toMatchObject({ title: "second", revision: 2 });
+  expect(service.store.get("hosted")).toMatchObject({ title: "second", revision: 2 });
+});
+
+test("versioned uncertainty stops queued and future writes instead of replaying a possible commit", async () => {
+  const service = fakeSessions();
+  const gate = Promise.withResolvers<void>();
+  let saves = 0;
+  service.save = async (input) => {
+    saves += 1;
+    await gate.promise;
+    service.store.set(input.id, { ...input, revision: 1 });
+    throw new Error("reply lost after commit");
+  };
+  const errors: string[] = [];
+  const store = createSessionStore(service, "clarvis", [], {
+    versioned: true,
+    onError: (message) => errors.push(message),
+  });
+  store.save(meta({ id: "hosted", revision: 0, title: "committed" }));
+  store.save(meta({ id: "hosted", revision: 0, title: "must not replay" }));
+  gate.resolve();
+  await expect(store.flushPending!()).rejects.toThrow("reply lost after commit");
+  store.save(meta({ id: "hosted", revision: 1, title: "also blocked" }));
+  await expect(store.flushPending!()).rejects.toThrow("reply lost after commit");
+  expect(saves).toBe(1);
+  expect(await store.load("hosted", { refresh: true })).toMatchObject({
+    title: "committed",
+    revision: 1,
+  });
+  expect(errors).toHaveLength(2);
+});
+
+test("explicit refresh replaces stale cached history with the host's terminal revision without a write", async () => {
+  const initial = meta({ id: "hosted", revision: 3 });
+  const service = fakeSessions([metaToSession(initial)]);
+  const store = createSessionStore(service, "clarvis", [initial], { versioned: true });
+  const settled = metaToSession(
+    meta({
+      id: "hosted",
+      revision: 5,
+      totals: { input: 10, output: 4 },
+      turns: [
+        { kind: "conversation", executionId: "same-run", userPreview: "run", status: "done" },
+      ],
+    }),
+  );
+  service.store.set("hosted", settled);
+  service.save = async () => {
+    throw new Error("refresh must not save");
+  };
+  expect((await store.load("hosted"))?.revision).toBe(3);
+  const fresh = await store.load("hosted", { refresh: true });
+  expect(fresh?.revision).toBe(5);
+  expect(fresh?.totals).toEqual({ input: 10, output: 4 });
+  expect(fresh?.turns[0]?.executionId).toBe("same-run");
+  expect(store.get("hosted")).toBe(fresh);
 });
 
 test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", () => {

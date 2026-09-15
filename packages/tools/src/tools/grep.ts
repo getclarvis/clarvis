@@ -54,13 +54,10 @@ interface Formatted {
 export const grep: ToolDef = {
   name: "grep",
   description:
-    "Search file CONTENTS by regular expression, recursively. Confined directory searches use a " +
-    "bounded JavaScript scanner so each file stays tied to the workspace; single-file searches " +
-    "may use ripgrep over an already-open snapshot. Use this to find where text or a symbol " +
-    "appears — do NOT read whole files with read_file to look for a string. .gitignore and binary " +
-    "files are skipped. No matches returns `(no matches)` — a success, not an error. Output is " +
-    "byte-bounded from the head, so an oversized result loses its tail, not its middle — narrow the " +
-    "pattern or set head_limit rather than paging through a broad match.",
+    "Search file contents by regex, respecting ignore rules and skipping binary files. Returns " +
+    "matching paths by default; choose content for evidence with line numbers. Prefer narrow " +
+    "path/glob and head_limit. Output is byte-bounded and loses its tail. Follow pagination or " +
+    "incomplete-search warnings; no matches alone is not an error.",
   bounded: true,
   inputSchema: {
     type: "object",
@@ -68,17 +65,11 @@ export const grep: ToolDef = {
       pattern: {
         type: "string",
         description:
-          "Regular expression. Two engines read these and the pattern does not choose between " +
-          "them: a confined directory search uses JavaScript RegExp, a single-file or explicitly " +
-          "unconfined search uses ripgrep/Rust. Rejected by ripgrep: lookaround, backreferences, " +
-          "`[[]`, and octal, `\\cX` or otherwise unrecognised `\\<letter>` escapes. Rejected by " +
-          "JavaScript: `(?P<name>)`, an unscoped `(?i)`, possessive quantifiers. Read DIFFERENTLY " +
-          "by the two, with no error either way: `\\A`, `\\z`, `\\p{...}`, `\\x{...}`, " +
-          "`\\u{...}`, `[[:alpha:]]`, `[]]`, `\\<`/`\\>`, and `&&`/`--` inside a class; also " +
-          "`\\d`/`\\w`/`\\b` and case folding, which are ASCII to JavaScript and Unicode to " +
-          "ripgrep. Spellings both accept: `^`/`$` for `\\A`/`\\z`, `(?<name>)` for " +
-          "`(?P<name>)`, `(?i:...)` for `(?i)`, `[\\]]` for `[]]`, `\\[` for `[[]`. Escape " +
-          "regex metacharacters to match them literally.",
+          "Regex: confined directory scans use JavaScript; file/unconfined searches may use " +
+          "ripgrep/Rust. Prefer escaped literals, explicit character ranges and simple groups. " +
+          "Avoid lookaround, backreferences, inline flags and engine-specific escapes/classes. " +
+          "Unicode, shorthand classes and case folding can differ. Use ignore_case and multiline " +
+          "arguments for flags; do not assume complex patterns have identical semantics.",
       },
       path: {
         type: "string",

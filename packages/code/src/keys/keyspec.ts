@@ -153,7 +153,7 @@ export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
     desc: "attach an image from the clipboard",
   },
   { keys: ["@"], desc: "mention a workspace file (images attach)" },
-  { keys: ["ctrl+a", "ctrl+e"], desc: "start / end of line" },
+  { keys: ["ctrl+a"], desc: "start of line" },
   { keys: ["ctrl+w"], desc: "delete the previous word" },
   { keys: ["ctrl+k", "ctrl+u"], desc: "delete to end / start of line" },
   { keys: ["ctrl+-", "ctrl+."], desc: "undo / redo" },

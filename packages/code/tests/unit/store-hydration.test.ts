@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { createRoot } from "solid-js";
 import type { RunDetail, RunEvent } from "@clarvis/protocol";
-import { createTranscriptStore, type TranscriptToolNode } from "../../src/adapters/store.ts";
+import {
+  createTranscriptStore,
+  type LocalBashDisplay,
+  type TranscriptToolNode,
+} from "../../src/adapters/store.ts";
 import { formatToolCall } from "../../src/views/tools/signature.ts";
 import { mutationStats } from "../../src/views/tools/mutation-gate.ts";
 import { applyRunEvent, runEvent } from "../helpers/run-events.ts";
@@ -150,7 +154,7 @@ test("an explicitly rehydrated oversized body stays persisted and shows a recove
       applyRunEvent(sink, oversized, "live");
       expect(toolNodes(store)[0]!.dehydrated).toBe(true);
 
-      await store.rehydrate("exec_1::c0");
+      await store.rehydrate('exec_1::tool:["lead","c0"]');
       expect(toolNodes(store)[0]!.result).toBeUndefined();
       expect(toolNodes(store)[0]!.dehydrated).toBe(true);
       expect(toolNodes(store)[0]!.hydrationNotice).toContain("/export");
@@ -185,10 +189,10 @@ test("re-noting a key moves it to newest instead of leaving a stale duplicate be
     applyRunEvent(sink, toolCall("c2"), "live");
 
     const byKey = new Map(toolNodes(store).map((n) => [n.key, n]));
-    expect(byKey.get("exec_1::c0")!.dehydrated).toBeUndefined();
-    expect(byKey.get("exec_1::c0")!.result).toBe("result-c0");
-    expect(byKey.get("exec_1::c1")!.dehydrated).toBeUndefined();
-    expect(byKey.get("exec_1::c2")!.dehydrated).toBeUndefined();
+    expect(byKey.get('exec_1::tool:["lead","c0"]')!.dehydrated).toBeUndefined();
+    expect(byKey.get('exec_1::tool:["lead","c0"]')!.result).toBe("result-c0");
+    expect(byKey.get('exec_1::tool:["lead","c1"]')!.dehydrated).toBeUndefined();
+    expect(byKey.get('exec_1::tool:["lead","c2"]')!.dehydrated).toBeUndefined();
   });
 });
 
@@ -207,6 +211,31 @@ test("a dehydrated node still renders its collapsed header and export signature"
   });
 });
 
+test("tool_call_started writes the resident signature from the live arguments", () => {
+  withStore({}, (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(
+      sink,
+      runEvent({
+        type: "tool_call_started",
+        agent: "subagent",
+        subagent_id: "w1",
+        call_id: "c0",
+        at: 1,
+        server: "fs",
+        tool: "read_file",
+        arguments: { path: "src/live.ts" },
+      }),
+      "live",
+    );
+
+    const node = toolNodes(store)[0]!;
+    expect(node.status).toBe("running");
+    expect(node.signature).toContain("src/live.ts");
+    expect(node.mutation).toBeUndefined();
+  });
+});
+
 test("a dehydrated node keeps its identity, key, status and tool name", () => {
   withStore({ hydratedToolLimit: 1 }, (store) => {
     const sink = store.openRun("exec_1");
@@ -214,7 +243,7 @@ test("a dehydrated node keeps its identity, key, status and tool name", () => {
     applyRunEvent(sink, toolCall("c1"), "live");
 
     const first = toolNodes(store)[0]!;
-    expect(first.key).toBe("exec_1::c0");
+    expect(first.key).toBe('exec_1::tool:["lead","c0"]');
     expect(first.status).toBe("ok");
     expect(first.toolName).toBe("grep");
     expect(first.mcpName).toBe("fs");
@@ -238,7 +267,7 @@ test("rehydrate refills a dropped body from the persisted run and clears the fla
       applyRunEvent(sink, toolCall("c1"), "live");
       expect(toolNodes(store)[0]!.dehydrated).toBe(true);
 
-      await store.rehydrate("exec_1::c0");
+      await store.rehydrate('exec_1::tool:["lead","c0"]');
 
       const refilled = toolNodes(store)[0]!;
       expect(refilled.dehydrated).toBeUndefined();
@@ -263,8 +292,8 @@ test("rehydrate is a no-op for a node that still has its body", async () => {
       const sink = store.openRun("exec_1");
       applyRunEvent(sink, toolCall("c0"), "live");
 
-      await store.rehydrate("exec_1::c0");
-      await store.rehydrate("exec_1::missing");
+      await store.rehydrate('exec_1::tool:["lead","c0"]');
+      await store.rehydrate('exec_1::tool:["lead","missing"]');
 
       expect(calls).toBe(0);
     },
@@ -288,8 +317,8 @@ test("concurrent rehydrates of one key share a single fetch", async () => {
       applyRunEvent(sink, toolCall("c0"), "live");
       applyRunEvent(sink, toolCall("c1"), "live");
 
-      const first = store.rehydrate("exec_1::c0");
-      const second = store.rehydrate("exec_1::c0");
+      const first = store.rehydrate('exec_1::tool:["lead","c0"]');
+      const second = store.rehydrate('exec_1::tool:["lead","c0"]');
       expect(calls).toBe(1);
       fetch.resolve(persisted);
       await Promise.all([first, second]);
@@ -325,7 +354,9 @@ test("distinct rehydrates use a bounded physical concurrency and queue", async (
         applyRunEvent(sink, toolCall("c0"), "live");
         applyRunEvent(sink, toolCall("c1"), "live");
       }
-      const loads = Array.from({ length: 5 }, (_, index) => store.rehydrate(`exec_${index}::c0`));
+      const loads = Array.from({ length: 5 }, (_, index) =>
+        store.rehydrate(`exec_${index}::tool:["lead","c0"]`),
+      );
       expect(peak).toBe(2);
       expect(gates.size).toBe(2);
 
@@ -359,12 +390,12 @@ test("rehydrate refuses excess queued keys visibly without starting another fetc
         applyRunEvent(sink, toolCall("c0"), "live");
         applyRunEvent(sink, toolCall("c1"), "live");
       }
-      const first = store.rehydrate("exec_0::c0");
-      await store.rehydrate("exec_1::c0");
+      const first = store.rehydrate('exec_0::tool:["lead","c0"]');
+      await store.rehydrate('exec_1::tool:["lead","c0"]');
       expect(calls).toBe(1);
-      expect(toolNodes(store).find((node) => node.key === "exec_1::c0")?.hydrationNotice).toContain(
-        "queue is full",
-      );
+      expect(
+        toolNodes(store).find((node) => node.key === 'exec_1::tool:["lead","c0"]')?.hydrationNotice,
+      ).toContain("queue is full");
       gate.resolve(detailFor("exec_0", [toolCall("c0")]));
       await first;
     },
@@ -384,7 +415,7 @@ test("a failed fetch leaves the node dehydrated instead of throwing, and says so
         applyRunEvent(sink, toolCall("c0"), "live");
         applyRunEvent(sink, toolCall("c1"), "live");
 
-        await store.rehydrate("exec_1::c0");
+        await store.rehydrate('exec_1::tool:["lead","c0"]');
 
         expect(toolNodes(store)[0]!.dehydrated).toBe(true);
         expect(toolNodes(store)[0]!.hydrationNotice).toContain("could not be reloaded");
@@ -407,7 +438,7 @@ test("a persisted run missing the requested tool leaves an explicit reload failu
       applyRunEvent(sink, toolCall("c0"), "live");
       applyRunEvent(sink, toolCall("c1"), "live");
 
-      await store.rehydrate("exec_1::c0");
+      await store.rehydrate('exec_1::tool:["lead","c0"]');
 
       expect(toolNodes(store)[0]).toMatchObject({
         dehydrated: true,
@@ -445,7 +476,7 @@ test("without a run fetcher a dropped body simply stays empty", async () => {
     applyRunEvent(sink, toolCall("c0"), "live");
     applyRunEvent(sink, toolCall("c1"), "live");
 
-    await store.rehydrate("exec_1::c0");
+    await store.rehydrate('exec_1::tool:["lead","c0"]');
 
     expect(toolNodes(store)[0]!.dehydrated).toBe(true);
     expect(toolNodes(store)[0]!.hydrationNotice).toContain("could not be reloaded");
@@ -506,8 +537,8 @@ test("clear() cancels queued reloads and discards an in-flight reload result", a
         applyRunEvent(sink, toolCall("c1"), "live");
       }
 
-      const active = store.rehydrate("exec_0::c0");
-      const queued = store.rehydrate("exec_1::c0");
+      const active = store.rehydrate('exec_0::tool:["lead","c0"]');
+      const queued = store.rehydrate('exec_1::tool:["lead","c0"]');
       expect(fetches).toBe(1);
 
       store.clear();
@@ -519,4 +550,53 @@ test("clear() cancels queued reloads and discards an in-flight reload result", a
       expect(store.nodes).toEqual([]);
     },
   );
+});
+
+test("pressure release dehydrates persisted tool bodies that rehydrate can refill", async () => {
+  const call = toolCall("c0");
+  await withStore({ fetchRun: async () => detail([call]) }, async (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(sink, call, "live");
+    expect(toolNodes(store)[0]!.result).toBe("result-c0");
+
+    const release = store.releaseReconstructible?.();
+    expect(release).toMatchObject({
+      attempted: ["transcript.reconstructible_tools"],
+      completed: true,
+      pending: false,
+    });
+    expect(release?.before.hydrated_tool_nodes).toBe(1);
+    expect(release?.after.hydrated_tool_nodes).toBe(0);
+    expect(toolNodes(store)[0]!.dehydrated).toBe(true);
+    expect(toolNodes(store)[0]!.result).toBeUndefined();
+
+    await store.rehydrate('exec_1::tool:["lead","c0"]');
+    expect(toolNodes(store)[0]!.result).toBe("result-c0");
+  });
+});
+
+test("pressure release keeps the only copy of local and unpersisted tool bodies", () => {
+  withStore({}, (store) => {
+    const sink = store.openRun("exec_1");
+    applyRunEvent(sink, toolCall("c0"), "live");
+    const settle = store.beginLocalBash("echo keep");
+    const local: LocalBashDisplay = {
+      exitCode: 0,
+      stdout: "keep",
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      cancelled: false,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    };
+    settle(local);
+
+    const release = store.releaseReconstructible?.();
+    expect(release).toMatchObject({ attempted: [], completed: true, pending: false });
+    expect(toolNodes(store).map((node) => node.result)).toEqual([
+      "result-c0",
+      expect.stringContaining('"stdout":"keep"'),
+    ]);
+  });
 });

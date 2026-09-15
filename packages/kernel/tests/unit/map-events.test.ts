@@ -7,6 +7,29 @@ import {
 } from "../../src/runs/map-events.ts";
 
 describe("engineEventToProto (TraceEvent → engine-independent RunEvent projection)", () => {
+  it("preserves durable announcement actor, call and physical attempt without arguments", () => {
+    expect(
+      engineEventToProto({
+        type: "tool_call_announced",
+        agent: "subagent",
+        subagent_instance_id: "child",
+        call_id: "same",
+        tool_name: "read_file",
+        iteration: 2,
+        attempt: 3,
+        occurred_at: 10,
+      }),
+    ).toEqual({
+      type: "tool_call_announced",
+      agent: "subagent",
+      subagent_id: "child",
+      call_id: "same",
+      tool: "read_file",
+      iteration: 2,
+      attempt: 3,
+      at: 10,
+    });
+  });
   it("maps tool_call, keying ok on error === null and renaming mcp_name → server", () => {
     const ev: TraceEvent = {
       type: "tool_call",

@@ -8,7 +8,7 @@ describe("request parsing", () => {
   test.each([
     ["execution id", { execution_id: "contains spaces" }, "invalid_execution_id"],
     ["continuation id", { continue_from: "contains spaces" }, "invalid_execution_id"],
-    ["prompt cache key", { prompt_cache_key: "" }, "invalid_prompt_cache_key"],
+    ["prompt cache key", { session_id: "" }, "invalid_prompt_cache_key"],
     ["prompt cache ttl", { prompt_cache_ttl: "day" }, "invalid_prompt_cache_ttl"],
     ["empty messages", { messages: [] }, "messages_empty"],
     [

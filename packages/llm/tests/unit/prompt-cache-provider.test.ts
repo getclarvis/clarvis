@@ -25,41 +25,44 @@ function params(over: Partial<LLMCallParams> = {}): LLMCallParams {
   };
 }
 
-const RUN_DEFAULTS = { promptCacheKey: "sess-1", promptCacheTtl: "1h" } as const;
+const RUN_DEFAULTS = {
+  identity: { sessionId: "sess-1", agentInstanceId: "lead-1" },
+  promptCacheTtl: "1h",
+} as const;
 
 describe("withPromptCacheDefaults", () => {
   it("injects both run defaults when the call carries neither", async () => {
     const { provider, seen } = captureProvider();
     await withPromptCacheDefaults(provider, RUN_DEFAULTS).call(params());
-    expect(seen[0]!.promptCacheKey).toBe("sess-1");
+    expect(seen[0]!.promptCacheKey).toBe("sess-1_lead-1");
     expect(seen[0]!.promptCacheTtl).toBe("1h");
   });
 
   // The two default independently. Sub-agent and compaction calls pin their own
   // key and flow through this same decorator; defaulting as a unit would drop
   // the run's TTL for every one of them.
-  it("keeps a per-call key while still applying the run TTL", async () => {
+  it("uses the child instance while retaining the session and run TTL", async () => {
     const { provider, seen } = captureProvider();
     await withPromptCacheDefaults(provider, RUN_DEFAULTS).call(
-      params({ promptCacheKey: "explicit" }),
+      params({ agentInstanceId: "child-1" }),
     );
-    expect(seen[0]!.promptCacheKey).toBe("explicit");
+    expect(seen[0]!.promptCacheKey).toBe("sess-1_child-1");
     expect(seen[0]!.promptCacheTtl).toBe("1h");
   });
 
   it("keeps a per-call TTL while still applying the run key", async () => {
     const { provider, seen } = captureProvider();
     await withPromptCacheDefaults(provider, RUN_DEFAULTS).call(params({ promptCacheTtl: "5m" }));
-    expect(seen[0]!.promptCacheKey).toBe("sess-1");
+    expect(seen[0]!.promptCacheKey).toBe("sess-1_lead-1");
     expect(seen[0]!.promptCacheTtl).toBe("5m");
   });
 
-  it("leaves both alone when the call pins them itself", async () => {
+  it("uses a distinct child key and the explicitly selected TTL", async () => {
     const { provider, seen } = captureProvider();
     await withPromptCacheDefaults(provider, RUN_DEFAULTS).call(
-      params({ promptCacheKey: "explicit", promptCacheTtl: "5m" }),
+      params({ agentInstanceId: "child-1", promptCacheTtl: "5m" }),
     );
-    expect(seen[0]!.promptCacheKey).toBe("explicit");
+    expect(seen[0]!.promptCacheKey).toBe("sess-1_child-1");
     expect(seen[0]!.promptCacheTtl).toBe("5m");
   });
 });

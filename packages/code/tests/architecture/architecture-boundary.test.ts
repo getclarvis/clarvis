@@ -69,12 +69,27 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 }
 
 describe("code's internal architecture", () => {
-  it("releases durable memory recovery only after the usable application paint", () => {
+  it("keeps runtime construction in the independent application host and discovery in its adapter", () => {
+    const runtime = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
+    const host = readFileSync(join(SRC, "local-host.ts"), "utf8");
+    const container = readFileSync(join(SRC, "adapters", "container-client.ts"), "utf8");
+    expect(runtime).not.toContain("loadFileKernelFactory");
+    expect(runtime).not.toContain("createFileKernel(");
+    expect(manager).not.toContain("createFileKernel(");
+    expect(manager).toContain("connectOrLaunchLocalKernel");
+    expect(host).toContain("serveLocalFileKernel(");
+    expect(host).toContain("serveLocalFileKernel(");
+    expect(manager).toContain("connectLocalContainerKernel");
+    expect(container).toContain("composeContainerClient");
+    expect(container).not.toContain("createFileKernel(");
+  });
+
+  it("does not tie process-owned memory recovery to TUI paint or connection recovery", () => {
     const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
-    const painted = source.indexOf('"app.boot.painted"');
-    const recovery = source.indexOf("workspaceManager.startMemoryRecovery()");
-    expect(painted).toBeGreaterThanOrEqual(0);
-    expect(recovery).toBeGreaterThan(painted);
+    const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
+    expect(source).not.toContain("startMemoryRecovery");
+    expect(manager).not.toContain("startMemoryRecovery");
   });
 
   it("keeps the automatic update check behind the post-paint task gate", () => {
@@ -151,6 +166,8 @@ describe("code's internal architecture", () => {
       if (
         relativeFile === "index.tsx" ||
         relativeFile === "runtime.tsx" ||
+        relativeFile === "local-host.ts" ||
+        relativeFile === "remote-host.ts" ||
         relativeFile === "startup-foundation.ts" ||
         relativeFile.startsWith("bootstrap/") ||
         relativeFile.startsWith("adapters/")
@@ -190,17 +207,23 @@ describe("code's internal architecture", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps committed history independent from mutable run projections", () => {
-    const root = join(SRC, "views", "history");
+  it("keeps transcript content and projection independent from activity surfaces", () => {
+    const files = [
+      ...sourceFiles(join(SRC, "core", "transcript")),
+      join(SRC, "adapters", "transcript-content.ts"),
+      join(SRC, "adapters", "transcript-projection.ts"),
+    ];
     const forbiddenImports = [
       "activity-store",
       "workflow-projection",
       "spinner",
       "run-host",
-      "views/live",
-      "adapters/store",
+      "views/",
+      "ui/",
+      "@opentui/",
     ];
-    const offenders = sourceFiles(root).flatMap((file) =>
+    expect(files.length).toBeGreaterThan(2);
+    const offenders = files.flatMap((file) =>
       specifiersIn(file)
         .filter((specifier) => forbiddenImports.some((token) => specifier.includes(token)))
         .map((specifier) => ({ file: relative(SRC, file).split(sep).join("/"), specifier })),
@@ -210,12 +233,17 @@ describe("code's internal architecture", () => {
 
   it("keeps estimated semantic paging out of the production transcript path", () => {
     const state = readFileSync(join(SRC, "views", "transcript-state.ts"), "utf8");
-    const history = readFileSync(join(SRC, "views", "history", "CommittedHistory.tsx"), "utf8");
+    const history = readFileSync(
+      join(SRC, "views", "transcript", "TranscriptViewport.tsx"),
+      "utf8",
+    );
     expect(state).not.toContain("windowTranscript");
     expect(state).not.toContain("WINDOW_RENDER_BUDGET");
     expect(history).not.toContain("history-page");
+    expect(history).not.toContain("queuePhysicalScrollDelta");
+    expect(history).not.toContain("layoutEpoch");
     expect(history).toContain("viewportCulling");
-    expect(history).toContain("controller.rowOf(batch.id)");
+    expect(history).toContain('stickyStart="bottom"');
   });
 
   it("uses top-level Markdown blocks only for the mutable streaming tail", () => {

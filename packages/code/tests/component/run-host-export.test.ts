@@ -340,11 +340,11 @@ describe("exportNodeBatches", () => {
     });
     expect(store.nodes.filter((node) => node.kind === "user")).toHaveLength(1);
     expect(
-      store.publicationBatches.filter((publication) =>
-        publication.id.startsWith("publication:folded-prefix:"),
-      ),
+      store
+        .committedNodes()
+        .filter((publication) => publication.key === "transcript:folded-prefix"),
     ).toHaveLength(1);
-    expect(store.memory?.().publication_known_keys).toBeLessThanOrEqual(store.nodes.length);
+    expect(store.memory?.().sealed_records).toBeLessThanOrEqual(store.nodes.length);
     dispose();
   });
 

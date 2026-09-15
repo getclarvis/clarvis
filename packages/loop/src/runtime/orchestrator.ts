@@ -1,6 +1,12 @@
-import type { EnvConfig } from "@clarvis/capability";
+import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
-import { bind, HOOKS_CAPABILITY_NAME, levelEnabled, parseModelRef } from "@clarvis/capability";
+import {
+  bind,
+  CapabilityUnavailableError,
+  HOOKS_CAPABILITY_NAME,
+  levelEnabled,
+  parseModelRef,
+} from "@clarvis/capability";
 import type { CompactionSource, RunRequest, SteerSource, LifecycleHook } from "@clarvis/capability";
 import type {
   ContextSnapshotEntry,
@@ -22,6 +28,7 @@ import { createTokenLedger } from "./budget/budget.ts";
 import { createTrace } from "@clarvis/trace";
 import type { TraceHandle } from "@clarvis/trace";
 import { runAgent } from "./loop/run-agent.ts";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 import { fireObservers } from "./loop/lifecycle-hooks.ts";
 import { buildEntrySeed } from "./entry-seed.ts";
 import { createUsageAccounting } from "./usage-accounting.ts";
@@ -46,12 +53,13 @@ import {
   createCapabilityRequestView,
   createCapabilityServices,
   MCP_HOOK_TOOL_PORT,
+  RUN_TRACE_PORT,
 } from "@clarvis/capability";
 import { TOOL_EFFECT_PORT } from "@clarvis/capability";
 import { orderCapabilities } from "./capability-order.ts";
 import { collectCapabilityToolMetadata } from "./capability-tool-metadata.ts";
 import { createToolEffectPort } from "./tools/tool-effect.ts";
-import { createEntryInput } from "./entry-inputs.ts";
+import { createEntryInput, type EntryInputDeps } from "./entry-inputs.ts";
 import { buildElicitRelay } from "./elicit-relay.ts";
 import { openToolPool } from "./open-tool-pool.ts";
 import { createMcpInstructionsRunCapability } from "./mcp-instructions.ts";
@@ -85,6 +93,13 @@ import {
  *   `executeRun` builds this and hands the orchestrator the promptcache-keyed LLM.
  */
 export interface OrchestratorDeps {
+  /** Preserve the resolved namespace through entry and child orchestration. */
+  statePaths?: EntryInputDeps["statePaths"];
+  modelExecutionResolver?: ModelExecutionResolver;
+  /** Read projection published before activation. */
+  operatorAuthority?: OperatorAuthorityReader;
+  /** Private loop-owned steer observer; not passed to capability contexts. */
+  onOperatorSteer?: (context: UserSteerContext) => void;
   env: EnvConfig;
   llm: LLMProvider;
   connections: ConnectionManager;
@@ -95,6 +110,8 @@ export interface OrchestratorDeps {
   elicit?: Elicit;
   steer?: SteerSource;
   compaction?: CompactionSource;
+  /** Run-local registry of interruptible tool invocations. */
+  toolInterruptRegistry?: ToolInterruptRegistry;
   continuation?: RunContinuation;
   workspaceRoot: string;
   executionId?: string;
@@ -192,7 +209,12 @@ export async function runOrchestrator(
   const startedAt = performance.now();
   const wallStartedAt = Date.now();
   const config = resolveConfig(request, deps.env);
-  const profileRegistry = resolveSubagentProfiles(request.profiles, request.providers, deps.env);
+  const profileRegistry = resolveSubagentProfiles(
+    request.profiles,
+    request.providers,
+    deps.env,
+    deps.modelExecutionResolver,
+  );
   const allCapabilities = deps.capabilities ?? [];
   const capabilityToolMetadata = collectCapabilityToolMetadata(allCapabilities);
   const persistedTraceProjectors =
@@ -217,7 +239,35 @@ export async function runOrchestrator(
       })
     : undefined;
 
+  const journalHolder: { current: RunJournal | undefined } = { current: undefined };
+  let journalInitialized = false;
+  const pendingJournalEvents: TraceEvent[] = [];
+  const traceHandle = createTrace(
+    startedAt,
+    traceBridge({
+      clockHolder,
+      wallStartedAt,
+      projectors: persistedTraceProjectors,
+      ...(deps.onEvent !== undefined ? { emitEvent: deps.onEvent } : {}),
+      ...(agents !== undefined
+        ? {
+            ingest: (entry: TraceEntry): void => {
+              agents.ingestTraceEntry(entry);
+            },
+          }
+        : {}),
+      journal: (event: TraceEvent): void => {
+        if (!journalInitialized) pendingJournalEvents.push(event);
+        else journalHolder.current?.append(event);
+      },
+      ...(deps.logger !== undefined ? { logger: deps.logger } : {}),
+    }),
+  );
+
   const services = createCapabilityServices();
+  services.provide(RUN_TRACE_PORT, traceHandle);
+  if (deps.operatorAuthority !== undefined)
+    services.provide(OPERATOR_AUTHORITY_PORT, deps.operatorAuthority);
   if (agents !== undefined) services.provide(AGENT_REGISTRY_PORT, agents);
   const capabilityCtx: RunCapabilityContext = {
     owner: deps.owner,
@@ -278,6 +328,8 @@ export async function runOrchestrator(
               },
               "the host's extension gate is saturated; forRun is skipped before invocation",
             );
+            if (capability.required === true && deps.signal?.aborted !== true)
+              throw new CapabilityUnavailableError(capability.name, "activation");
             return null;
           }
           if (timedOut) {
@@ -291,7 +343,11 @@ export async function runOrchestrator(
               "forRun exceeded its wall budget; the capability contributes nothing this run",
             );
           }
-          if (activated === null) return null;
+          if (activated === null) {
+            if (capability.required === true && deps.signal?.aborted !== true)
+              throw new CapabilityUnavailableError(capability.name, "activation");
+            return null;
+          }
           if (deps.logger !== undefined && levelEnabled(deps.logger, "debug")) {
             deps.logger.debug(
               {
@@ -304,12 +360,27 @@ export async function runOrchestrator(
               "a capability activated for this run and contributed its share of the agent's surface",
             );
           }
-          return admittedRunCapability(capability.name, activated, extensionAdmission, deps.logger);
+          return {
+            ...admittedRunCapability(capability.name, activated, extensionAdmission, deps.logger),
+            ...(capability.required === true ? { required: true } : {}),
+          };
         }),
       )
     ).filter((capability): capability is RunCapability => capability !== null),
   );
-  const hooks: LifecycleHook[] = runCapabilities.flatMap((c) => c.lifecycle ?? []);
+  const hooks: LifecycleHook[] = [
+    ...(deps.onOperatorSteer === undefined
+      ? []
+      : [
+          {
+            onUserSteer: (context: UserSteerContext) => {
+              deps.onOperatorSteer!(context);
+              return Promise.resolve();
+            },
+          },
+        ]),
+    ...runCapabilities.flatMap((c) => c.lifecycle ?? []),
+  ];
   const seedBlocks = (
     await Promise.all(
       runCapabilities.map(async (capability) => {
@@ -335,6 +406,12 @@ export async function runOrchestrator(
             "seedBlock exceeded its wall budget; the block is omitted from the seed",
           );
         }
+        if (
+          capability.required === true &&
+          deps.signal?.aborted !== true &&
+          (block === undefined || block.trim().length === 0)
+        )
+          throw new CapabilityUnavailableError(capability.name, "seed");
         return block;
       }),
     )
@@ -346,30 +423,12 @@ export async function runOrchestrator(
 
   const { provider } = parseModelRef(shape.entryProfile.model);
   const journal = deps.openJournal?.(wallStartedAt);
-  const traceHandle = createTrace(
-    startedAt,
-    traceBridge({
-      clockHolder,
-      wallStartedAt,
-      projectors: persistedTraceProjectors,
-      ...(deps.onEvent !== undefined ? { emitEvent: deps.onEvent } : {}),
-      ...(agents !== undefined
-        ? {
-            ingest: (entry: TraceEntry): void => {
-              agents.ingestTraceEntry(entry);
-            },
-          }
-        : {}),
-      ...(journal !== undefined
-        ? {
-            journal: (event: TraceEvent): void => {
-              journal.append(event);
-            },
-          }
-        : {}),
-      ...(deps.logger !== undefined ? { logger: deps.logger } : {}),
-    }),
-  );
+  journalHolder.current = journal;
+  journalInitialized = true;
+  if (journal !== undefined) {
+    for (const event of pendingJournalEvents) journal.append(event);
+  }
+  pendingJournalEvents.length = 0;
   const mode = shape.isLead ? "lead-subagent" : "subagent-only";
   reportRunComposition(deps.logger, {
     request,
@@ -573,7 +632,7 @@ interface RunEntryParams {
 /**
  * Build and run the entry agent's loop, wiring its tool registry, token ledger,
  * iteration cap, usage accounting, seed and input builder, then executing it under
- * a clock and timeout (after a vision prepass).
+ * a clock and timeout, with auxiliary vision admitted after entry attachment.
  *
  * @param p - the prepared run context; see {@link RunEntryParams}.
  * @returns the entry agent's {@link EntryAgentOutcome} — response plus captured
@@ -643,16 +702,22 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     clockHolder: p.clockHolder,
     finalize: accounting.finalize,
     buildLoop: async ({ clock, signal }) => {
-      await runVisionPrepass({
-        signal,
-        deps,
-        request,
-        trace: traceHandle,
-        ledger,
-        seed,
-        accounting,
+      const entryInput = buildEntryInput(clock, signal);
+      return runAgent({
+        ...entryInput,
+        prepareContext: async (ctx) => {
+          const reading = await runVisionPrepass({
+            signal,
+            deps,
+            request,
+            trace: traceHandle,
+            ledger,
+            seed,
+            accounting,
+          });
+          if (reading !== undefined) ctx.appendNote(reading);
+        },
       });
-      return runAgent(buildEntryInput(clock, signal));
     },
     toResponse: (loopResult, usage) =>
       loopResultToResponse(loopResult, usage, (code) =>
@@ -670,3 +735,8 @@ async function runEntryAgent(p: RunEntryParams): Promise<EntryAgentOutcome> {
     ...(finalContext !== undefined && finalContext.length > 0 ? { finalContext } : {}),
   };
 }
+import {
+  OPERATOR_AUTHORITY_PORT,
+  type OperatorAuthorityReader,
+  type UserSteerContext,
+} from "@clarvis/capability";

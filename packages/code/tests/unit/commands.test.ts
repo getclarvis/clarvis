@@ -123,10 +123,14 @@ test("bare slash completion reuses rows while still rechecking dynamic eligibili
       calls.push("dynamic");
     },
   });
-  const provider = createCommandCompletionProvider({ commands, recoverMemory: () => {} });
+  const provider = createCommandCompletionProvider({ commands });
   const first = provider.query("");
   expect(provider.query("")).toBe(first);
   expect(first.some((item) => item.label === "/dynamic")).toBe(true);
+  expect(first.some((item) => item.label.includes("recover-memory"))).toBe(false);
+  expect(provider.query("recover").some((item) => item.label.includes("recover-memory"))).toBe(
+    false,
+  );
 
   enabled = false;
   const hidden = provider.query("");
@@ -452,7 +456,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const off = commands.registerAction({
     name: "controls.open",
     title: "Run controls",
-    desc: "Safety presets",
+    desc: "Isolation controls",
     surface: "internal",
     group: "navigate",
     run: () => {},
@@ -466,7 +470,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const helpRow = commands
     .keyCommandGroups()
     .flatMap((g) => g.rows)
-    .find((r) => r.desc === "Safety presets");
+    .find((r) => r.desc === "Isolation controls");
   const footer = commandKeyLabel(keymap, "controls.open");
 
   expect(popup).toBe("alt+r");

@@ -33,13 +33,15 @@ describe("the workflows settings block", () => {
       max_total_leaders: WORKFLOWS_DEFAULTS.max_total_leaders,
       budget_tokens: WORKFLOWS_DEFAULTS.budget_tokens,
     });
-    expect(WORKFLOWS_DEFAULTS.budget_tokens).toBe(640_000_000);
+    expect(WORKFLOWS_DEFAULTS.budget_tokens).toBe(8_589_934_592);
+    expect(WORKFLOWS_DEFAULTS.max_total_leaders).toBe(512);
   });
 });
 
 describe("the live-children floor a manager's concurrency implies", () => {
-  test("the default concurrency needs exactly the supervision default", () => {
-    expect(managerLiveChildrenFloor(WORKFLOWS_DEFAULTS.max_concurrency)).toBe(
+  test("the default concurrency reserves its leader slots plus manager headroom", () => {
+    expect(managerLiveChildrenFloor(WORKFLOWS_DEFAULTS.max_concurrency)).toBe(14);
+    expect(managerLiveChildrenFloor(WORKFLOWS_DEFAULTS.max_concurrency)).toBeGreaterThan(
       AGENTS_DEFAULTS.max_live_children,
     );
   });

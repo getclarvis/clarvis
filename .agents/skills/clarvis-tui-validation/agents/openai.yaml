@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarvis TUI Validation"
+  short_description: "Validate focused, full-product, and performance journeys"
+  default_prompt: "Use $clarvis-tui-validation to validate the requested Clarvis TUI behavior, choosing the appropriate scope and reusing valid evidence."

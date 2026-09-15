@@ -1,9 +1,14 @@
-import type { EnvConfig } from "@clarvis/capability";
+import type { EnvConfig, ModelExecutionResolver } from "@clarvis/capability";
+import { requireModelExecution } from "../../model-execution.ts";
 import { parseModelRef, ValidationError } from "@clarvis/capability";
 import type { ParsedRunRequest } from "./request-schema.ts";
 import { INPUT_LIMITS } from "../input-limits.ts";
 
-export function enforcePerProfileRules(data: ParsedRunRequest, env: EnvConfig): void {
+export function enforcePerProfileRules(
+  data: ParsedRunRequest,
+  env: EnvConfig,
+  resolver?: ModelExecutionResolver,
+): void {
   const registry = data.providers;
   const aggregateChars = data.profiles.reduce(
     (total, profile) =>
@@ -32,8 +37,11 @@ export function enforcePerProfileRules(data: ParsedRunRequest, env: EnvConfig): 
       );
     }
     if (p.reasoning_summary !== undefined && p.reasoning_summary !== "off") {
-      const token = parseModelRef(p.model).provider;
-      const providerEntry = registry.find((e) => e.name === token);
+      const ref = parseModelRef(p.model);
+      const providerEntry =
+        resolver === undefined
+          ? registry.find((e) => e.name === ref.provider)
+          : requireModelExecution(resolver, ref.provider, ref.modelId);
       if (providerEntry && providerEntry.kind !== "openai") {
         throw new ValidationError(
           "invalid_profile",

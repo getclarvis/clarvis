@@ -564,7 +564,8 @@ describe("llm-compaction · the rolling anchor", () => {
     await runCompaction(args(ctx, llm));
 
     const system = contentToText(calls[0]!.messages[0]!.content);
-    expect(system).toContain("You are UPDATING an existing summary");
+    expect(system).toContain('Update "Summary so far" using the new transcript');
+    expect(system).toContain("Return the complete merged summary, not a delta");
     expect(system).toContain("Summary so far:\nSUMMARY ONE");
   });
 
@@ -572,7 +573,7 @@ describe("llm-compaction · the rolling anchor", () => {
     const ctx = overBudgetCtx();
     const { llm, calls } = fakeLLM("SUMMARY ONE");
     await runCompaction(args(ctx, llm));
-    expect(contentToText(calls[0]!.messages[0]!.content)).not.toContain("UPDATING");
+    expect(contentToText(calls[0]!.messages[0]!.content)).not.toContain('Update "Summary so far"');
   });
 
   /**

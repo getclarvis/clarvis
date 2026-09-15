@@ -18,7 +18,6 @@ import type {
   AgentScope,
   Capability,
   ExecutionRecord,
-  ExecutionStatus,
   RunCapability,
   RunCapabilityContext,
   ToolEffect,
@@ -48,6 +47,7 @@ import {
   READ_PLAN_TOOL_NAME,
 } from "./runtime-tools.ts";
 import { PLAN_PORT, type PlanDelegationPort } from "./task-port.ts";
+import { createPlanCatalogRun } from "./catalog.ts";
 
 export { PLAN_PORT } from "./task-port.ts";
 export type { PlanDelegationPort, DelegateTaskAugmentation, SpawnGate } from "./task-port.ts";
@@ -72,6 +72,16 @@ const PLAN_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.fromEntri
       [tool.wireName, PLAN_READ_TOOL_WIRE_NAMES.has(tool.wireName) ? "read" : "mutate"] as const,
   ),
 );
+
+const PLAN_CAPABILITY_METADATA: Pick<
+  Capability,
+  "name" | "reservedWireNames" | "toolEffects" | "requiresUserInput"
+> = {
+  name: PLANS_CAPABILITY_NAME,
+  reservedWireNames: PLAN_TOOL_WIRE_NAMES,
+  toolEffects: PLAN_TOOL_EFFECTS,
+  requiresUserInput: (view) => readPlansSettings(view.requestParam("plans")).mode === "review",
+};
 
 /**
  * How the host supplies planning's data plane and defaults.
@@ -144,10 +154,7 @@ function readPlansSettings(raw: unknown): PlansSettings {
 export function createPlansCapability(options: PlansCapabilityOptions): Capability {
   const rootLogger = options.logger ?? NOOP_LOGGER;
   return {
-    name: PLANS_CAPABILITY_NAME,
-    reservedWireNames: PLAN_TOOL_WIRE_NAMES,
-    toolEffects: PLAN_TOOL_EFFECTS,
-    requiresUserInput: (view) => readPlansSettings(view.requestParam("plans")).mode === "review",
+    ...PLAN_CAPABILITY_METADATA,
     async forRun(ctx: RunCapabilityContext): Promise<RunCapability | null> {
       const settings = readPlansSettings(ctx.requestParam("plans"));
       if (settings.mode === "off") return null;
@@ -274,8 +281,12 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
             },
           };
         },
-        async finalizeRun({ status }: { status: ExecutionStatus }): Promise<PlanRef | undefined> {
+        async finalizeRun({ status, disposition, preserveState }): Promise<PlanRef | undefined> {
           if (liveSession === undefined) return undefined;
+          if (disposition === "checkpoint" || preserveState === true) {
+            await liveSession.reconcile();
+            return liveSession.ref();
+          }
           const planStatus =
             status === "completed" ? "completed" : status === "cancelled" ? "cancelled" : "failed";
           const ref = await liveSession.finalize(planStatus);
@@ -293,7 +304,12 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
         },
         async onRunEnd(record: ExecutionRecord): Promise<void> {
           const ref = record.capability_state?.[PLANS_CAPABILITY_NAME] as PlanRef | undefined;
-          if (record.status !== "completed" || ref?.retention !== "discard") return;
+          if (
+            record.status !== "completed" ||
+            record.response.disposition === "checkpoint" ||
+            ref?.retention !== "discard"
+          )
+            return;
           let deleted = false;
           await bestEffort(
             async () => {
@@ -327,6 +343,25 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
           );
         },
       };
+    },
+  };
+}
+
+/**
+ * Preserve planning's advertised surface in an auxiliary continuation without
+ * taking ownership of the source plan. The host selects this projection; it is
+ * not a model-controlled request mode. It opens no provider, runs no review or
+ * task gates, publishes no context, and never reconciles, finalizes or deletes
+ * a plan. Plan calls and tracked delegation are refused even without an outer
+ * dispatch restriction. The source request's planning mode still controls the
+ * catalog, including its review descriptions and explicit opt-out.
+ */
+export function createPlansCatalogCapability(): Capability {
+  return {
+    ...PLAN_CAPABILITY_METADATA,
+    forRun(ctx) {
+      const settings = readPlansSettings(ctx.requestParam("plans"));
+      return settings.mode === "off" ? null : createPlanCatalogRun(ctx, settings.mode === "review");
     },
   };
 }

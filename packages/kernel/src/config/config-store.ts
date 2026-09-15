@@ -32,6 +32,14 @@ export class SettingsRevisionConflictError extends Error {
   }
 }
 
+/** Exact file result an operator-authorized workspace mutation intended to persist. */
+export interface OperatorWriteTarget {
+  /** Absolute path confined and owned by the caller. */
+  path: string;
+  /** SHA-256 revision of the intended final bytes, or `null` for deletion. */
+  expectedRevision: string | null;
+}
+
 /**
  * Persistence abstraction for settings, agent markdown, and workspace context
  * files that a {@link createConfigService | ConfigService} is layered over.
@@ -95,6 +103,23 @@ export interface ConfigStore {
   ): SettingsSnapshot;
 
   /**
+   * Execute an operator-authorized configuration write and carry an existing
+   * workspace approval only across the verified target mutation.
+   *
+   * @remarks File-backed stores implement the trust transition. Stores without
+   * workspace trust may omit this method. The caller remains responsible for
+   * confining and validating the write itself; this method grants no file access.
+   * `target` derives the exact expected post-write file revision from the completed
+   * operation. Any concurrent change to another executable input, or a different
+   * final revision at the target, leaves the resulting surface withheld.
+   */
+  withOperatorWrite?<T>(
+    scope: Scope,
+    write: () => T,
+    target: (result: Awaited<T>) => OperatorWriteTarget | readonly OperatorWriteTarget[],
+  ): T;
+
+  /**
    * Every agent a host can see: shipped, file-backed and plugin-shipped.
    *
    * @remarks A name Clarvis ships appears **once**, already resolved through
@@ -134,6 +159,18 @@ export interface ConfigStore {
   deleteAgent(scope: Scope, name: string): void;
 
   /**
+   * Read one scope's shared-agent prompt document.
+   *
+   * @returns the path and contents, or `null` when the scope is not configured.
+   *   A missing file is `{ path }` with no `raw`.
+   */
+  readSharedPrompt(scope: Scope): SharedPromptFile | null;
+  /** Create or overwrite the shared-agent prompt document. */
+  writeSharedPrompt(scope: Scope, content: string): SharedPromptFile;
+  /** Remove the shared-agent prompt document; a no-op when it does not exist. */
+  deleteSharedPrompt(scope: Scope): void;
+
+  /**
    * Read the context preamble for a scope.
    *
    * @returns the {@link ContextRecord}, or `null` when the scope has none.
@@ -169,6 +206,12 @@ export interface ConfigStore {
 export interface SettingsSnapshot {
   /** Effective settings after the plugin ← global ← workspace merge. */
   merged: SettingsData;
+  /**
+   * Effective trust-filtered operator settings before Plugin fragments are applied.
+   * Container admission uses this provenance-preserving view so inactive guest extensions cannot
+   * influence models, prompts, budgets, hooks, servers, or another request field.
+   */
+  operator_merged?: SettingsData;
   /** Raw per-scope contents, unmerged, as they sit on disk. */
   scopes: Partial<Record<Scope, SettingsData>>;
   /** Provenance (path/exists/parse-error) of each scope layer. */
@@ -268,6 +311,19 @@ export interface AgentRecord {
    *   See {@link AgentOverlay}.
    */
   overlay?: AgentOverlay;
+}
+
+/**
+ * One scope's shared-agent prompt file as the store found it.
+ *
+ * @remarks `raw` is omitted when the file is absent. `unreadable` / `oversized`
+ * are how a present file that cannot be applied is reported without throwing.
+ */
+export interface SharedPromptFile {
+  path: string;
+  raw?: string;
+  unreadable?: boolean;
+  oversized?: boolean;
 }
 
 /** Payload for creating or updating an agent document. */

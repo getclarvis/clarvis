@@ -31,17 +31,13 @@ export function createCompactionSelector(args: {
 }): CompactionSelector {
   const entries = args.entries;
   const config = args.config;
-  const isVolatile = (entry: SelectableEntry): boolean =>
-    entry.canonical || entry.noteKind !== undefined;
-  const isStable = (entry: SelectableEntry): boolean =>
-    !isVolatile(entry) && entry.message.role !== "system";
+  const isStable = (entry: SelectableEntry): boolean => entry.message.role !== "system";
   const lastStableIndex = (from: number): number => {
     const list = entries();
     const end = Math.min(from, list.length - 1);
     let last = -1;
     for (let index = 0; index <= end; index += 1) {
       const entry = list[index]!;
-      if (isVolatile(entry)) break;
       if (isStable(entry)) last = index;
     }
     return last;

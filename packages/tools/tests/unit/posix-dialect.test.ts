@@ -126,6 +126,12 @@ describe("analyzeBash — path extraction", () => {
     expect(analyzeBash("(cd src && cat a.ts)").paths).toContain("a.ts");
   });
 
+  it("does not treat test-builtin brackets as a glob of the working directory", () => {
+    const facts = analyzeBash("if [ -r file ]; then echo ok; fi");
+    expect(facts.undecidable).toBe(false);
+    expect(facts.paths).not.toContain(".");
+  });
+
   it("keeps ~/ as a decidable path token", () => {
     const a = analyzeBash("cat ~/.ssh/id_rsa");
     expect(a.undecidable).toBe(false);
@@ -157,6 +163,26 @@ describe("analyzeBash — empty input", () => {
     expect(a.segments).toHaveLength(0);
     expect(a.paths).toHaveLength(0);
     expect(a.undecidable).toBe(false);
+  });
+});
+
+describe("analyzeBash — sequential literal assignments", () => {
+  it("inlines $NAME and ${NAME} after a NAME=value segment", () => {
+    const a = analyzeBash('QA=/tmp/foo; sha256sum "$QA/provider.ts"');
+    expect(a.undecidable).toBe(false);
+    expect(a.segments.map((s) => s.normalized)).toEqual(["", "sha256sum /tmp/foo/provider.ts"]);
+    expect(a.paths).toContain("/tmp/foo/provider.ts");
+
+    const b = analyzeBash("A=/tmp; B=$A; echo $B");
+    expect(b.undecidable).toBe(false);
+    expect(b.segments.at(-1)!.normalized).toBe("echo /tmp");
+  });
+
+  it("does not inline across a pipeline and does not expand single-quoted dollars", () => {
+    expect(analyzeBash('QA=/tmp/foo | sha256sum "$QA/x"').undecidable).toBe(true);
+    expect(analyzeBash("QA=/tmp/foo; echo '$QA'").undecidable).toBe(false);
+    expect(analyzeBash("QA=/tmp/foo; echo '$QA'").segments.at(-1)!.normalized).toBe("echo $QA");
+    expect(analyzeBash('git commit -m "$MSG"').undecidable).toBe(true);
   });
 });
 
@@ -259,6 +285,13 @@ describe("analyzeBash — command names are matched in command position only", (
       "cat my/env.json",
       "cat base64.py",
       "rm xargs.tmp",
+      "cat source",
+      "ls env",
+      "echo eval",
+      "git add source",
+      "rm exec",
+      "cat foo/env",
+      "npm run env",
     ]) {
       expect({ command, undecidable: analyzeBash(command).undecidable }).toEqual({
         command,
@@ -284,6 +317,8 @@ describe("analyzeBash — command names are matched in command position only", (
       "(eval foo)",
       "true && (env X=1 sh)",
       "{ eval foo; }",
+      "command env FOO=1 ls",
+      "command -p env FOO=1 ls",
     ]) {
       expect({ command, undecidable: analyzeBash(command).undecidable }).toEqual({
         command,

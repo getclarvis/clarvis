@@ -9,7 +9,6 @@ import {
   chmodSync,
   statSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { dispatch } from "../../src/core.ts";
@@ -81,7 +80,8 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     skillExecutionRoots: [],
     readOnly: false,
     confineToWorkspace: true,
-    stateRoot: workspaceStatePaths(root).root,
+    stateRoot: (overrides.statePaths ?? workspaceStatePaths(root)).root,
+    statePaths: workspaceStatePaths(root),
     temporaryRoots: [],
     gitMetadataPaths: [],
     registerTemporaryRoot() {},
@@ -148,7 +148,7 @@ export function writeBinary(root: string, rel: string): string {
 }
 
 const MINIMAL_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQAY3Y2wAAAAAElFTkSuQmCC",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
   "base64",
 );
 
@@ -208,39 +208,6 @@ export const modeBitsEnforced = process.platform !== "win32" && !isRoot;
  * `ci.yml` deliberately runs only selected package surfaces there.
  */
 export const posixShell = process.platform !== "win32";
-
-/**
- * A shell fragment that runs `sleep 1` in a *new session*, or `undefined` when
- * this host offers no way to ask for one.
- *
- * Escaping the session is what leaves the spawned process group empty by the
- * time the tool kills it, which is the only way to exercise `killTree`'s
- * fallback from `kill(-pgid)` to `child.kill()`. `setsid(1)` is util-linux and
- * simply absent on macOS and the BSDs, where the command merely fails and the
- * shell exits promptly — so the fixture stopped constructing the scenario at all
- * and the test passed vacuously on Linux while failing everywhere else. Perl
- * ships with macOS and every mainstream Linux and exposes the same `setsid(2)`,
- * so it stands in where the binary is missing.
- *
- * Windows is handed the original fragment unprobed. The scenario it builds there
- * is a different one — PowerShell's `&` is a background *job* — but the fixture
- * has always passed on that platform, and `commandExists` cannot speak to it
- * (`command -v` is not a thing in PowerShell), so probing would silently turn a
- * passing Windows test into a skipped one.
- */
-export const detachedSleepCommand = ((): string | undefined => {
-  const viaSetsid = "setsid sleep 1";
-  if (process.platform === "win32") return viaSetsid;
-  if (commandExists("setsid")) return viaSetsid;
-  if (commandExists("perl")) return `perl -e 'use POSIX; setsid; exec @ARGV' sleep 1`;
-  return undefined;
-})();
-
-/** Whether `name` resolves on the host PATH. */
-function commandExists(name: string): boolean {
-  const probe = spawnSync("command", ["-v", name], { shell: true, stdio: "ignore" });
-  return probe.status === 0;
-}
 
 /**
  * Whether this filesystem can hold a filename that is not valid UTF-8.

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { globalPaths } from "@clarvis/paths";
+import { tempRoot } from "../helpers/temp-root.ts";
 
 const WORKER_ENTRY = fileURLToPath(new URL("../helpers/settings-lock-worker.ts", import.meta.url));
 
@@ -17,11 +17,12 @@ interface WorkerOutcome {
   stderr: string;
 }
 
-async function runWorker(
-  globalDir: string,
-  coordinationDir: string,
-  index: number,
-): Promise<WorkerOutcome> {
+interface Worker {
+  outcome: Promise<WorkerOutcome>;
+  close: () => Promise<void>;
+}
+
+function startWorker(globalDir: string, coordinationDir: string, index: number): Worker {
   const proc = Bun.spawn(
     [
       process.execPath,
@@ -33,12 +34,18 @@ async function runWorker(
     ],
     { stdout: "pipe", stderr: "pipe" },
   );
-  const [exitCode, stdout, stderr] = await Promise.all([
+  const outcome = Promise.all([
     proc.exited,
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
-  ]);
-  return { exitCode, stdout, stderr };
+  ]).then(([exitCode, stdout, stderr]) => ({ exitCode, stdout, stderr }));
+  return {
+    outcome,
+    close: async () => {
+      if (proc.exitCode === null) proc.kill();
+      await outcome;
+    },
+  };
 }
 
 async function waitForWorkers(coordinationDir: string, marker: string): Promise<void> {
@@ -65,21 +72,25 @@ async function waitForWorkers(coordinationDir: string, marker: string): Promise<
  */
 describe("ConfigStore.mutateSettings — real cross-process concurrent writers", () => {
   it("keeps every writer's top-level settings block, with no block ever going missing", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-settings-lock-"));
-    const globalDir = join(root, "global");
-    const coordinationDir = join(root, "coordination");
+    const temp = await tempRoot("clarvis-settings-lock-");
+    const globalDir = temp.path("global");
+    const coordinationDir = temp.path("coordination");
     mkdirSync(coordinationDir);
 
     try {
-      const pending = Array.from({ length: WORKER_COUNT }, (_, index) =>
-        runWorker(globalDir, coordinationDir, index),
+      const workers = Array.from({ length: WORKER_COUNT }, (_, index) =>
+        startWorker(globalDir, coordinationDir, index),
+      );
+      const unregisterWorkers = workers.map((worker, index) =>
+        temp.register(`worker-${index}`, worker.close),
       );
       await waitForWorkers(coordinationDir, "ready");
       writeFileSync(join(coordinationDir, "start"), "");
       await waitForWorkers(coordinationDir, "loaded");
       writeFileSync(join(coordinationDir, "commit"), "");
 
-      const outcomes = await Promise.all(pending);
+      const outcomes = await Promise.all(workers.map((worker) => worker.outcome));
+      unregisterWorkers.forEach((unregister) => unregister());
       outcomes.forEach((outcome, index) => {
         expect(outcome.exitCode, `worker ${index} failed:\n${outcome.stderr}`).toBe(0);
       });
@@ -101,7 +112,8 @@ describe("ConfigStore.mutateSettings — real cross-process concurrent writers",
       ]);
       expect(onDisk.default_reasoning_effort).toBeDefined();
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      await temp.cleanup();
+      expect(temp.pending()).toEqual([]);
     }
   });
 });

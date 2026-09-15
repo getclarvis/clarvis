@@ -537,7 +537,7 @@ test("run_safety: a not-yet-inspected sandbox passes with detail; a genuinely br
   createRoot((dispose) => {
     const pending = runGates({ ...buildCtx(dirs, settings), sandboxInspection: () => null });
     expect(pending.results.run_safety.status).toBe("pass");
-    expect(pending.results.run_safety.detail).toContain("checking sandbox host");
+    expect(pending.results.run_safety.detail).toContain("checking Sandbox host");
 
     const broken = runGates({
       ...buildCtx(dirs, settings),
@@ -555,7 +555,7 @@ test("run_safety: a not-yet-inspected sandbox passes with detail; a genuinely br
       }),
     });
     expect(broken.results.run_safety.status).toBe("warn");
-    expect(broken.results.run_safety.detail).toContain("sandbox unavailable");
+    expect(broken.results.run_safety.detail).toContain("Sandbox unavailable");
     dispose();
   });
 });
@@ -778,7 +778,7 @@ test("plans: unconfigured reports the defaults; an explicit block reports its po
   });
 });
 
-test("run_safety: a sandboxed, LLM-reviewed guard resolves to the 'reviewed' preset", async () => {
+test("run_safety reports isolation and review as independent axes", async () => {
   const dirs = tmpDirs();
   seedSettings(dirs.global, {
     providers: [KEYLESS_PROVIDER as never],
@@ -796,7 +796,8 @@ test("run_safety: a sandboxed, LLM-reviewed guard resolves to the 'reviewed' pre
   const settings = await settingsFrom(dirs);
   createRoot((dispose) => {
     const report = runGates(buildCtx(dirs, settings));
-    expect(report.results.run_safety.detail).toContain("reviewed");
+    expect(report.results.run_safety.detail).toContain("sandbox");
+    expect(report.results.run_safety.detail).toContain("review auto");
     dispose();
   });
 });

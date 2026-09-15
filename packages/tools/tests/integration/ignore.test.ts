@@ -6,6 +6,7 @@ import { executableOnPath } from "@clarvis/paths";
 import { makeWorkspace, cleanup, write } from "../helpers/fixtures.ts";
 import { loadIgnore, MAX_IGNORE_FILE_BYTES } from "../../src/lib/ignore.ts";
 import { setWarnSink } from "../../src/lib/log.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 const mkfifo = process.platform === "win32" ? undefined : executableOnPath("mkfifo");
 const ignoreModule = new URL("../../src/lib/ignore.ts", import.meta.url).href;
@@ -33,8 +34,6 @@ function probeIgnore(
 describe("loadIgnore", () => {
   let root: string;
   let warnings: string[];
-  const origXdg = process.env.XDG_CONFIG_HOME;
-  const origHome = process.env.HOME;
 
   beforeEach(() => {
     root = makeWorkspace();
@@ -44,12 +43,17 @@ describe("loadIgnore", () => {
 
   afterEach(() => {
     setWarnSink(null);
-    if (origXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-    else process.env.XDG_CONFIG_HOME = origXdg;
-    if (origHome === undefined) delete process.env.HOME;
-    else process.env.HOME = origHome;
     cleanup(root);
   });
+
+  const withEnv = <T>(values: Record<string, string | undefined>, callback: () => T): T => {
+    const env = spyOnProcessEnv(environmentFixture({ ...process.env, ...values }));
+    try {
+      return callback();
+    } finally {
+      env.mockRestore();
+    }
+  };
 
   describe("built-in ignore rules", () => {
     it("ignores built-in base patterns (.clarvis, .clarvis-tmp-*)", () => {
@@ -127,10 +131,11 @@ describe("loadIgnore", () => {
       const xdg = makeWorkspace();
       try {
         write(xdg, "git/ignore", "globally-ignored.txt\n");
-        process.env.XDG_CONFIG_HOME = xdg;
-        const m = loadIgnore(root);
-        expect(m.ignores("globally-ignored.txt")).toBe(true);
-        expect(m.ignores("visible.txt")).toBe(false);
+        withEnv({ XDG_CONFIG_HOME: xdg }, () => {
+          const m = loadIgnore(root);
+          expect(m.ignores("globally-ignored.txt")).toBe(true);
+          expect(m.ignores("visible.txt")).toBe(false);
+        });
       } finally {
         cleanup(xdg);
       }
@@ -139,10 +144,10 @@ describe("loadIgnore", () => {
     it("falls back to HOME/.config/git/ignore when XDG_CONFIG_HOME is unset", () => {
       const home = makeWorkspace();
       try {
-        delete process.env.XDG_CONFIG_HOME;
-        process.env.HOME = home;
-        const m = loadIgnore(root);
-        expect(m.ignores("anything.txt")).toBe(false);
+        withEnv({ XDG_CONFIG_HOME: undefined, HOME: home }, () => {
+          const m = loadIgnore(root);
+          expect(m.ignores("anything.txt")).toBe(false);
+        });
       } finally {
         cleanup(home);
       }
@@ -192,9 +197,10 @@ describe("loadIgnore", () => {
       const xdg = makeWorkspace();
       try {
         mkdirSync(path.join(xdg, "git", "ignore"), { recursive: true });
-        process.env.XDG_CONFIG_HOME = xdg;
-        const m = loadIgnore(root);
-        expect(m.ignores("anything.txt")).toBe(false);
+        withEnv({ XDG_CONFIG_HOME: xdg }, () => {
+          const m = loadIgnore(root);
+          expect(m.ignores("anything.txt")).toBe(false);
+        });
       } finally {
         cleanup(xdg);
       }

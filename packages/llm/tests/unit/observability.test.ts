@@ -381,6 +381,61 @@ describe("the request diagnostics buildRequestOptions returns", () => {
     });
   });
 
+  it("projects one auxiliary cache identity through every provider family", () => {
+    const cases = [
+      {
+        providerConfig: { kind: "openai" as const },
+        expected: { marked: "none", system_marked: false, cache_key_sent: true },
+      },
+      {
+        providerConfig: { kind: "openai-codex" as const },
+        expected: { marked: "none", system_marked: false, cache_key_sent: true },
+      },
+      {
+        providerConfig: { kind: "xai-grok" as const },
+        expected: { marked: "none", system_marked: false, cache_key_sent: true },
+      },
+      {
+        providerConfig: {
+          kind: "openai-compatible" as const,
+          promptCache: "explicit" as const,
+        },
+        expected: {
+          marked: "compatible",
+          system_marked: true,
+          cache_key_sent: true,
+          session_pinned: true,
+        },
+      },
+      {
+        providerConfig: { kind: "anthropic" as const, apiKeyEnv: "K" },
+        expected: { marked: "anthropic", system_marked: true, cache_key_sent: false },
+      },
+      {
+        providerConfig: { kind: "google" as const },
+        expected: { marked: "none", system_marked: false, cache_key_sent: false },
+      },
+    ];
+    for (const { providerConfig, expected } of cases) {
+      const { diagnostics } = buildRequestOptions(
+        params({
+          providerConfig,
+          promptCacheKey: "session_judge",
+          promptCacheTtl: "1h",
+          cacheBreakpoints: [],
+        }),
+        conversation,
+      );
+
+      expect(diagnostics.cache).toMatchObject({
+        requested_breakpoints: 0,
+        applied_breakpoints: 0,
+        session_pinned: false,
+        ...expected,
+      });
+    }
+  });
+
   it("reports a breakpoint that walked back to an earlier message", () => {
     const withToolTurn: ModelMessage[] = [
       { role: "user", content: "one" },

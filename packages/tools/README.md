@@ -19,17 +19,33 @@ host sandbox boundary are specified in
 [`execution/command-guard.md`](../../specs/execution/command-guard.md) and
 [`execution/sandbox.md`](../../specs/execution/sandbox.md).
 
+The compact model-facing surface follows
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md): local argument rules and
+recovery details live beside each tool. Shell commands block; persistent work uses `monitor_start`.
+Descriptions retain truncation direction and continuation guidance, distinguish grep's regex engines,
+and provide an executable multiline `apply_patch` example. The complete 23-tool descriptor JSON has
+a 21,000-character regression ceiling; that is not a provider token count.
+
 ## What it provides
 
 - File operations: read, batch read, image read, write, edit, multi-edit, patch,
   copy, move, mkdir, remove and stat.
 - Discovery: directory listing, tree, glob, grep and diff.
 - Project-wide regular-expression replacement.
-- Shell execution and background-process monitors.
-- Guard-reviewed, argv-only host execution when the sandbox lacks required host capabilities.
+- Shell execution and background-process monitors, including a per-call host escalation field when Isolation is Sandbox. An abort of the process tree is a generic `Command aborted` error; the engine, not this package, distinguishes run cancellation from a selective operator interrupt of one live `shell`. `monitor_*` is not interruptible through that path.
 - Read-only and workspace-confined surfaces.
 - A guard contract and shell analysis helpers for approval policies.
 - Bounded output with spill files for large results.
+
+`read_image` recognizes PNG, JPEG, GIF and WebP from their bytes. PNG input also requires a complete
+chunk stream with valid CRCs, so a signature-only or corrupt file is refused before it can enter
+model history and make later provider calls fail.
+
+`ToolCallHooks.onExecutionStarted` is shell's successful-spawn notification, after review and
+abort-listener installation. Failed spawn and pre-aborted dispatch do not announce execution.
+An abort after process exit does not turn its completed output into an aborted result. The engine
+waits for cooperative selective settlement to preserve stdout/stderr; the tools layer reports only
+its structured generic `aborted` code, never the operator's intent.
 
 Spill names and their 24-hour collector are owned by `@clarvis/paths`; this
 package writes those paths at owner-only `0600` permissions but does not export the collector. Monitor cleanup
@@ -52,12 +68,20 @@ regular, non-link spill directly under this workspace's machine-local state dire
 history, monitor controls, other state files and another workspace's spills remain outside
 confinement. POSIX `/dev/null` is treated as the null device,
 not as an escaping host file, so ordinary output-discard redirections do not create false denials.
+The POSIX command analyzer matches `eval`/`env`/`source` and friends at the effective command head
+so arguments such as `cat source` stay decidable, does not treat `NAME=value` assignment-only
+segments as tokenizer failures, and inlines sequential literal `$NAME` bindings for analysis.
 
 Text reads open one descriptor non-blocking, reject non-regular files from that descriptor, and
 read at most `MAX_FILE_BYTES + 1`. The extra byte detects a file that grows after its initial stat;
 the same bound feeds `read_file`, batch reads and the in-process grep path. FIFOs/devices therefore
 cannot park the event loop and a concurrent path replacement cannot turn a validated small file into
 an unbounded allocation.
+
+The root library exports `readRawFile`, `ReadFileOptions` and `ReadConfinement` for trusted host
+consumers that need the same bounded descriptor read. Callers supply their byte ceiling and explicit
+confinement policy. The kernel uses it to hash declared goal artifacts inside the selected workspace;
+this library operation does not add a model tool or grant access to host state roots.
 
 The same descriptor-first rule covers ignore sources, `file_stat`, monitor logs and monitor control
 records. Ignore files cap at 1 MiB, monitor metadata at 256 KiB and exit sentinels at 64 bytes;
@@ -100,8 +124,8 @@ default. Use `readOnly: true` to expose only non-mutating tools.
 `sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends apply
 the configured workspace read/write posture, read-only runtime roots, minimal environment, writable
 run scratch, and host/denied networking; their kernel primitives are not identical. Required
-isolation fails closed when the selected backend cannot apply its policy. Only
-`availability: "optional"` permits a logged, secret-scrubbed direct-host fallback. Other platforms
+isolation fails closed when the selected backend cannot apply its policy.
+`availability: "optional"` is accepted on stored settings and treated as required. Other platforms
 currently have no native backend. Toolchain inventory is passive: it resolves executable paths and
 install roots but never launches discovered entrypoints for version probes, so merely opening host
 diagnostics cannot trigger an operating-system installer or tool initialization.
@@ -125,16 +149,20 @@ separate canary packs a local fixture outside Seatbelt, then requires npm to ins
 offline inside a denied-network profile; this isolates package execution from public-registry
 latency while preserving the real npm/Homebrew/runtime path.
 
-`host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
-host environment variable, credential channel, runtime, or service. The historical name remains for
-compatibility, but `program` may name any host executable. This is not a host shell: arguments are an
-argv array, cwd remains inside the workspace, output and time are bounded, prompts are disabled, and
-Clarvis-managed secret variables are withheld. It fails closed without guard review. In guard mode
-`on`, a human answers; in `auto`, the configured judge answers and may fall back to the human under
-its normal unsure policy. Git additionally loses inherited repository-routing state, hooks, external
-protocol helpers, known direct executable options, and custom transport-helper URLs. Direct
-Git/GitHub token output remains unavailable. The ordinary sandbox remains the default; the model
-should use this fallback only after the sandboxed command cannot complete the operation.
+`shell` and `monitor_start` accept optional `sandbox_permissions`. Omitted or `use_default` follows
+the run Isolation. `require_escalated` plus a short `justification` asks to run that one command on
+the host after review when Isolation is Sandbox. Isolation Host already runs unsandboxed, so the
+field is a no-op. The complete Container Kernel runs all ordinary commands without Command Review and rejects
+`require_escalated`: the guest has no channel to the machine host and no placement fallback. In
+native Host/Sandbox, mode `on` sends that unsandbox ask to a human. Mode `auto` sends it to the judge: `allow` executes,
+`deny` refuses, and unsure, failed or malformed review follows `on_unsure` (`deny` by default;
+explicit `ask` may use a human). An unavailable judge follows the same fallback. Host-command review bypasses
+session coverage and never offers `allow_session`, including human fallback; clean judge decisions
+retain their exact-call memo. Mode `off` proceeds without a reviewer. Git credential output,
+`gh auth token`, Git `--exec` helpers, and
+`scheme::` transport URLs are denied on every command tool. Direct Git/GitHub token output remains
+unavailable. The ordinary sandbox remains the default; the model should request escalation only after
+the sandboxed command cannot complete the user's request.
 
 For a linked worktree, Clarvis validates the `.git` pointer, its `<common>/worktrees/<name>` target,
 and the reciprocal backlink once while creating the toolset. The resulting canonical common Git
@@ -154,6 +182,15 @@ are mounted read-only. Without one, commands are ordinary secret-scrubbed host p
 still reviews them, but this option is not a filesystem-immutability boundary and a command can
 modify files its operating-system identity may write. Nothing here executes a helper merely because
 its skill was selected.
+
+Native file-mutation tools also protect the workspace-authored Clarvis roots resolved by
+`configurationRoots`. Reads remain available, including copying a configuration file to an
+ordinary workspace destination. Canonical authoring targets use the shared `configurationPathClass` vocabulary and require a
+complete reviewed authoring effect. Operational targets direct the agent to the restricted
+`configure_clarvis` writer in the same conversation. Loading guidance never grants access.
+Project-wide `replace` excludes both roots while continuing over ordinary workspace files. Command
+tools retain the separate shell and sandbox posture above; the builtin configuration guide forbids
+using them as an alternate writer.
 
 A host may additionally pass existing `temporaryRoots`. Every native tool,
 guarded path analysis, and native sandbox admits every listed root; `shell` and
@@ -232,6 +269,17 @@ compatibility while keeping tool definitions and dispatch code outside kernel bo
 
 ## Guards
 
+`ShellFacts.analysisIssues` aggregates each segment's structured syntax causes with zero-based
+segment indices and affected positions. `undecidable` remains the conservative nonempty-issues
+fold. A dynamic value is not proof of a safe effect: `GuardReviewability` reserves `judgeable`
+for host attestation. POSIX and PowerShell provide their own issue analysis. Environment assignment
+values participate in path extraction; the assignment name is not part of a filesystem path.
+An ordinary allow-list miss can still be judged from the complete call in Auto mode. That call-local
+answer does not claim a registered effect or persist authority. The reviewer receives the exact
+segment source plus separate executable, parameter and environment-binding fields, so `TMPDIR=/tmp`,
+ordinary flags, wrappers and dynamic values do not become human-only merely because they are
+parameters. Deterministic denial, credential and destructive rules retain precedence in the host.
+
 ```ts
 import { analyzeShell, buildGuardContext, touchesOutside, type Guard } from "@clarvis/tools/guard";
 ```
@@ -253,6 +301,27 @@ runners, so those calls still require review. Every seeded entry is asserted to
 be decidable and canonical in its host dialect. These lists express approval
 policy, not containment: builds and tests may run repository-controlled code, so
 hosts that require isolation must also enable the native sandbox.
+
+`GuardPlacement` (`"host" | "contained"`) and `GuardCallFacts` describe optional trusted per-call
+review facts: `matched`, `placement`, `network`, `dangerous`, `within_workspace`, and
+`touches_outside`. `GuardDecision` and `ElicitRequest` share those fields; dispatch copies only
+decision-supplied facts, never same-named model arguments. `ElicitRequest.operator_message` is an
+optional host-reviewer message separate from the policy reason. These facts do not themselves
+authorize execution.
+
+`isDangerousCommand(shell: ShellFacts)` inspects the normalized command identity and argv options
+for `sudo` or forceful `rm` (`-f`, `--force`, or a short option cluster containing `f` before `--`).
+It is deliberately not a general danger classifier. POSIX normalization removes consecutive Git
+`--no-pager`/`--no-color` global prefixes after environment assignments and wrappers; it preserves
+subcommand flags and `-C` for host policy analysis. PowerShell normalization is unchanged.
+`resolveCandidate(raw, workspaceRoot, opts?)` exposes the same symlink-aware path facts used by
+the context builder, with optional shell tilde expansion and explicitly admitted roots. These
+helpers and types are exported from both the root and `@clarvis/tools/guard`.
+
+`sandboxWouldApply(sandbox, forceBare?)`, exported by `@clarvis/tools/sandbox`, is the probe-free
+predicate shared with command construction. It reports the commitment to native containment or
+failure for required and legacy optional policies, not backend readiness. Absent policies,
+`enabled: false` settings, and explicitly bare calls return false; there is no optional host fallback.
 
 ## Process groups
 
@@ -415,3 +484,14 @@ bun --filter @clarvis/tools format:check
 commands exist for targeted development and do not replace the full suite.
 
 The package requires Bun 1.4.0 or newer.
+
+### Effect facts and authoring
+
+The standalone guard DTO can carry host-attested effect facts and review receipts without importing
+capability. Canonical agent, skill and workflow Markdown may pass native mutation protection only
+after an explicit host effect review; operational configuration retains its restricted writer.
+An absent/off guard does not authorize authoring writes. See [effect review](../../specs/execution/effect-review.md).
+
+Host-bound file tools prepare complete atomic mutation batches before effect review. The entry agent receives the host `reviewMutation` callback; profiles cannot install it. Authoring batches reuse the configuration reviewer, validate all resulting documents and check captured revisions before staging. Copy uses captured UTF-8 bytes for authored destinations; rename/delete include their source effects. Mixed patches and recursive replacement review all prepared targets together. The callback carries exact workspace trust and notifies catalogs after success. Ordinary binary file operations retain their existing behavior.
+
+An explicitly scoped recursive replacement inside configuration directories discovers bounded authoring leaves despite default configuration ignore rules. Operational/private files are filtered before content reads; generic workspace replacement retains its normal ignore behavior.

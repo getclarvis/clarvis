@@ -217,6 +217,7 @@ export function createJobRepository(options: {
       if (existing !== null) return existing;
       const job: MemoryIndexJob = {
         run_id: input.run_id,
+        agent_instance_id: randomUUID(),
         state: "pending",
         enqueued_at: input.at,
         updated_at: input.at,
@@ -240,6 +241,18 @@ export function createJobRepository(options: {
       if (next === undefined) return null;
       const claimed: MemoryIndexJob = {
         ...next,
+        agent_instance_id: next.agent_instance_id ?? randomUUID(),
+        indexer_execution_id: `exec_${randomUUID()}`,
+        ...(next.indexer_execution_id === undefined
+          ? {}
+          : {
+              indexer_continue_from: next.indexer_execution_id,
+              indexer_prior_executions: [
+                next.indexer_execution_id,
+                ...(next.indexer_prior_executions ??
+                  (next.indexer_continue_from ? [next.indexer_continue_from] : [])),
+              ],
+            }),
         state: "running",
         attempts: next.attempts + 1,
         updated_at: now,

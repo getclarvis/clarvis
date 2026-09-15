@@ -42,12 +42,9 @@ import type { WorkflowCtx } from "./types.ts";
 export const RUN_WORK_ITEMS_TOOL_NAME = "run_work_items";
 
 const RUN_WORK_ITEMS_DESCRIPTION =
-  "Run a whole batch of work items as leaders, scheduled for you. Hand it the work_items[] a " +
-  "discovery round returned: the runtime orders them by their dependencies and runs everything " +
-  "that can safely run at once, keeping apart any two items whose files would collide while one " +
-  "of them writes. Prefer this to issuing the run_leader calls yourself — you do not have to " +
-  "work out the order, the batching, or the write conflicts. Returns immediately with the wave " +
-  "plan; collect the leaders with await_agents or agent_poll.";
+  "Schedule a batch of leaders by dependencies and declared file conflicts. Returns the wave " +
+  "plan immediately; collect outcomes with await_agents or agent_poll. Scheduling separates " +
+  "conflicting readers/writers within this batch only, not your own or unrelated agents' work.";
 
 /** A parsed `run_work_items` call. */
 interface WorkItemsCall {
@@ -71,10 +68,8 @@ export function buildRunWorkItemsTool(profiles?: readonly LeaderProfileInfo[]): 
       minItems: 1,
       maxItems: WORKFLOW_LIMITS.workItems,
       description:
-        "The work items to run, exactly as a discovery round returned them. Declare 'files' and " +
-        "'mutation' honestly: they are what lets the runtime prove two items are safe to run at " +
-        "the same time. An item that writes but declares no files is treated as writing " +
-        "everything, and will be run alone.",
+        "Self-contained work items (for example, discovery work_items). Declare all read/write " +
+        "files and mutation accurately. A writer with no files is scheduled alone within this batch.",
       items: {
         type: "object",
         additionalProperties: false,
@@ -126,7 +121,7 @@ export function buildRunWorkItemsTool(profiles?: readonly LeaderProfileInfo[]): 
       maxLength: WORKFLOW_LIMITS.identifierChars,
       enum: profiles.map((p) => p.name),
       description:
-        "OPTIONAL — the agent profile every leader in this batch runs as. Available profiles — " +
+        "Profile for every leader; omit for the default. Available profiles: " +
         profiles.map((p) => `${p.name}: ${p.description ?? "(no description)"}`).join("; "),
     };
   }
@@ -134,14 +129,12 @@ export function buildRunWorkItemsTool(profiles?: readonly LeaderProfileInfo[]): 
     type: "string",
     maxLength: WORKFLOW_LIMITS.textChars,
     description:
-      "OPTIONAL — shared context prepended to every item's brief: the overall goal, the " +
-      "constraints, and what a successful result looks like.",
+      "Shared context prepended to every brief; include constraints absent from individual goals.",
   };
   properties.expect_schema = {
     type: "object",
     description:
-      "OPTIONAL — a JSON Schema; when set, every leader in the batch must return a structured " +
-      "result matching it instead of free text.",
+      "JSON Schema for each leader's result; omit for free text. Failure may yield no matching result.",
   };
   return {
     fullName: RUN_WORK_ITEMS_TOOL_NAME,
@@ -284,7 +277,9 @@ export function workItemBrief(item: WorkItem, prefix?: string): string {
       ? "No files were declared in scope for this item."
       : `Files in scope for this item: ${item.files.join(", ")}.`;
   const posture = item.mutation
-    ? "This item may modify the workspace; stay within the files above."
+    ? item.files.length === 0
+      ? "This item may modify the workspace within its task scope. It is scheduled alone within this batch, not isolated from unrelated work."
+      : "This item may modify the workspace; stay within the files above."
     : "This item is read-only: do not modify the workspace.";
   const parts = [prefix, item.goal, `${scope} ${posture}`];
   return parts.filter((part): part is string => part !== undefined).join("\n\n");

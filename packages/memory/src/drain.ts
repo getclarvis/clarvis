@@ -493,6 +493,10 @@ export async function drainIndexJobs(args: DrainArgs): Promise<MemoryDrainReport
     try {
       const result = await indexRun({
         run: snapshot,
+        agentInstanceId: job.agent_instance_id,
+        executionId: job.indexer_execution_id,
+        continueFrom: job.indexer_continue_from,
+        priorExecutions: job.indexer_prior_executions,
         store: args.store,
         indexer,
         budgets: args.budgets,

@@ -5,6 +5,7 @@ import type {
   RunEvent,
   RunHandle,
   RunResult,
+  RunFinalization,
   StartRunParams,
 } from "@clarvis/protocol";
 import type { RunHost } from "../../src/host/run-host.ts";
@@ -14,7 +15,7 @@ export interface ScriptedRun {
   events?: RunEvent[];
   /** Questions raised once the handle is live, in order. */
   elicits?: Omit<ElicitationRequest, "execution_id">[];
-  result?: Partial<RunResult>;
+  result?: Partial<Omit<RunResult, keyof RunFinalization>> & RunFinalization;
   /** Keeps `done` pending so control tools can land mid-run. */
   holdUntil?: Promise<void>;
 }
@@ -170,6 +171,9 @@ export function createFakeRunHost(script: (params: StartRunParams) => ScriptedRu
             cancels.push(executionId);
             abort.abort();
             return Promise.resolve();
+          },
+          interruptTool(toolExecutionId) {
+            return Promise.resolve({ tool_execution_id: toolExecutionId, status: "not_running" });
           },
           respond(response: ElicitationResponse): Promise<void> {
             responses.push(response);

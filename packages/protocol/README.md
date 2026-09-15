@@ -19,6 +19,14 @@ the kernel and are specified separately in
 
 ## The client contract
 
+`RunResult` distinguishes a stage checkpoint with `disposition: "checkpoint"` and a bounded
+`checkpoint: { summary, next_step }`. It is separate from both run status and a validated final
+`result`. Missing disposition retains the ordinary final path; this DTO grants no continuation
+authority. Live transport and restored run details carry the same handoff.
+The successful `run_ended` event also carries optional `disposition: "final" | "checkpoint"`.
+Clients use it to distinguish stage closure from final completion in live and restored transcripts;
+its absence means ordinary final completion. Failure and cancellation remain separate statuses.
+
 A UI programs against one `KernelClient`, obtained from a concrete client implementation.
 
 ```ts
@@ -32,11 +40,22 @@ async function listAgents(client: KernelClient): Promise<void> {
 ```
 
 Concrete clients and transports live outside this package. `@clarvis/kernel`
-implements an in-process client, a loopback client and stdio transport.
+implements an in-process client, a loopback client, stdio transport and a reconnectable local IPC
+adapter using the same RPC framing.
 
 ## Services
 
-`KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
+Direct configuration uses ordinary runs and concrete `guard_confirm` elicitation when required.
+Host-owned authority is separate from model-provided parameters and saved transcript content.
+`LocalHostStatus.skills_revision` notifies attached clients when the host publishes a skill catalog
+generation, allowing command listings to refresh without reconnecting. See
+[self-configuration.md](../../specs/hosts/self-configuration.md).
+
+Managed `RunHandle` implementations can return an unsubscribe function from `onElicit` and expose
+`onElicitSettled` to retire answered or expired questions. Hosted observations carry sequenced event
+frames and reuse run control methods; they are separate from the single source event consumer.
+
+`KernelClient` carries the connected `project`/`workspace` identity and groups asynchronous
 services:
 
 | Service             | Responsibility                                                                         |
@@ -54,11 +73,62 @@ services:
 | `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
 | `skills`            | Skill listing and prompt rendering.                                                    |
 | `sessions`          | Workspace-scoped conversation/session records.                                         |
+| `goals`             | Availability, durable goal state, authenticated controls and operation receipts.       |
 | `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
 | `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
+`ModelCatalog.source` can be `cache`, `bundle`, or `projection`. The last denotes immutable logical
+execution metadata without provider endpoints or credential names; it does not grant refresh or
+subscription authority. See [the catalog contract](../../specs/hosts/protocol.md).
+
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+
+`goals` is always present on the client facade. `KernelCapabilities.goals` is optional; absence or
+false means unsupported, and the facade exposes that through `goals.availability()` without sending
+an unknown operation to an older host. User mutations carry session identity, CAS revision and an
+operation ID. A start receipt retains its reserved execution ID across replay. Authenticated native
+conversation hosts expose these controls; headless hosts remain unavailable. The concrete transport
+and host validate authority separately from the DTO. See [goals](../../specs/capabilities/goals.md).
+
+`goals.subscribe(sessionId, listener)` returns a promise for a disposer. Await it before reading
+the initial state. Notifications contain only the session ID and request another canonical read;
+they do not grant execution authority or announce a completion commit independently of the state.
+The host bounds subscriptions and releases them when the connection closes.
+
+`hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable
+snapshot pages, execution metadata, control epochs, handoff receipts and `HostingService`.
+`HostingService.resolveRecovery` is an operator-only confirmation of physical closure for old unknown
+work, fenced by generation and revision. Its `HostedRecoveryResolution` is retained on both the
+discovery reference and canonical session turn. The affected conversation is archived; no result or
+execution replay is implied. The durable audit precedes release of physical uncertainty and survives
+discovery acknowledgement.
+Handoff errors may carry `HostedHandoffFailureDetails`, binding an operation ID to `refused`
+or `uncertain` admission. Only an explicit refusal permits a new handoff identity; an absent
+classification or missing receipt preserves uncertainty.
+`HostingService.controlObservation` acquires or takes over control for an observation already
+owned by the connection, preserving its snapshot and stream. It returns the confirmed control
+epoch; unrelated observations retain their previous authority.
+`KernelClient.hosting` is optional and appears on a remote client only when `hello` advertises
+`capabilities.hosting.host_generation`. It uses the kernel RPC catalog and sequenced observation
+notifications. Ordinary in-process/stdio composition does not enable a persistent host.
+Observation storage and its current implementation scope are specified in
+[hosted runs](../../specs/hosts/hosted-runs.md).
+
+`local-host.ts` defines the optional `KernelClient.localHost` operator service, advertised by
+`capabilities.local_host`. It carries process state, browser-request claims and explicit runtime
+retry/restart operations through the kernel RPC. The service contains no provider credentials;
+opening an authorization URL does not approve authorization. Its availability requires hosting
+and the local operator role.
+
+Hosted conversation reads include `Session.revision`; the hosted coordinator requires that
+observed revision for saves and turn admission. The ordinary file-store contract does not itself
+enforce turn/totals ownership. Its optional `Session.goal_state` is host-owned even on ordinary
+file-store saves: clients cannot insert, remove or revert it. `goals.ts` defines the independent
+goal DTOs, user controls and service contract; defining those types alone does not advertise the
+service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
+from checkpoint disposition and a completion candidate. Lifecycle and mutation rules are specified in
+[sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
@@ -91,11 +161,20 @@ configuration, plans, memory and credentials outside the deletion vocabulary.
 phase (`commentary` or `final_answer`). The response text remains authoritative; clients must not
 invent prose when the field is absent.
 
+`tool_call_announced` supplies durable actor/call/tool identity with iteration and physical attempt,
+without argument contents. The kernel's exact-version transport includes this discriminator;
+announcement is neither execution nor approval. UI state never enters this DTO.
+
 `tool_input_delta` is cumulative, not one event per provider fragment. `chars` is call-scoped
 argument progress; optional `stream_chars` is the distinct physical provider-stream character
 total and may advance while arguments remain unavailable. Its optional `complete: true` closes only
 the argument-composition phase; `tool_call_started` still owns actual
-execution start and terminal `tool_call` still owns the tool outcome. A client must not infer that a
+execution start and terminal `tool_call` still owns the tool outcome.
+A live builtin `shell` may carry `control: { tool_execution_id, actions: ["interrupt"] }`
+on start. The operator interrupts that invocation through `RunHandle.interruptTool`
+and receives `accepted`, `already_requested`, or `not_running`. The terminal may then
+carry `interruption: { source: "operator" }` with `ok: false`. Absence of these
+fields keeps the previous contract. A client must not infer that a
 prior call ended merely because another tool input starts, because providers may compose calls in
 parallel.
 
@@ -159,12 +238,14 @@ Stdio, HTTP and WebSocket transports can implement the same interface without ch
 the concrete transport decides how to interrupt the request without serializing the signal into the
 wire parameters.
 
-Wire contract 3 is negotiated exactly in the opening hello. Unknown versions and malformed or
-extra envelope fields fail closed. Stdio uses strict newline-delimited frames capped at 8 MiB and a
+The opening hello requires the exact `CLARVIS_WIRE_VERSION` declared by the kernel's
+[`wire.ts`](../kernel/src/transport/wire.ts), independently of the private Container channel revision.
+Unknown versions and malformed or extra envelope fields fail closed. Stdio uses strict
+newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
 the connection instead of being skipped.
 
-Run completion has two independent notifications: `run.result` settles `RunHandle.done`, while
+Ordinary connection-owned runs have two independent notifications: `run.result` settles `RunHandle.done`, while
 `run.stream_end` closes the ordered event iterable after its bounded tail drains and settles
 `RunHandle.closed`. A result never silently discards a final event. Hosts use `closed` to release
 run and owner leases without attaching a second consumer to the single-consumer `events` stream.
@@ -172,7 +253,10 @@ Remote client buffers cap at 1,024 events, coalesce compatible deltas, discard o
 classified as droppable by kernel policy, and cancel/fail the run if structural events alone
 saturate the buffer. A handle may also expose `buffered()`: optional O(1) counters for buffered
 items, estimated bytes and dropped events. The counters are diagnostic metadata, not another event
-consumer and not a transport compatibility requirement.
+consumer and not a transport compatibility requirement. Hosted runs use `hosting.observation`
+with distinct event-end, result and physical-closure notes. Losing that observation rejects its
+unfinished promises without recording an execution failure; the host retains physical ownership
+until teardown and reconciliation complete. See [hosted runs](../../specs/hosts/hosted-runs.md#hosted-kernel-rpc).
 
 Capability-owned event names do not reopen the public `RunEvent` discriminator. The kernel maps
 them to the closed `capability_event` variant with bounded, sanitized detail, so an exhaustive
@@ -199,6 +283,24 @@ It is absent for older and unguarded calls and is part of replay when present.
   actor, execution identity and the provider idempotency key.
 - Optional features are announced through `KernelCapabilities`.
 
+## Runtime projection
+
+The optional handshake runtime projection reports effective native or Container placement. Native
+status identifies Host versus Sandbox. Container status reports the selected Docker/Podman engine,
+Linux guest, effective network and lifecycle. A ready projection also requires generation, base
+image digest, artifact digest, base ABI, broker/channel versions and state namespace. It has no
+fallback origin/status. This projection is informational only; launch authority remains in Kernel.
+
+`SettingsData.runtime` accepts a simple Docker `{ "backend": "docker" }` or Podman
+`{ "backend": "podman" }` input plus advanced overrides. Omitted fields receive host-owned defaults;
+an omitted network selects ordinary routable `outbound` access. Neither engine has a fallback field;
+Podman has no recipe. The optional Docker `recipe` DTO carries only a safe name, an absolute script
+path under the global operator recipe directory and optional `none`/`outbound` build networking; it
+is operator configuration, not a guest grant or image-build protocol operation.
+`RuntimeStatus.network` is never omitted for a Container because it reports the effective policy;
+`outbound` may reach host/LAN peers and must not be presented as public-only internet access. Private
+broker and channel revisions remain outside this type-only package except for their status fields.
+
 ## Development
 
 The package has no runtime behavior to execute. Its contract suite is compile-time only:
@@ -217,3 +319,18 @@ bun --filter @clarvis/protocol format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Prompt-cache continuity
+
+Run start carries `session_id` and `agent_instance_id`; the hosted session persists `agent_instance_id`. These identify a conversation and one agent instance rather than a profile or physical request. Clients preserve them across turns and resume; a separately created instance gets another ID.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Effect review presentation
+
+`effect_review` configures the shared reviewer. `GuardJudge.prompt` is deprecated additional
+guidance; `guidance` is its replacement. `ElicitationCommandDetail` optionally carries closed
+analysis, effect, authority and reviewer receipts; old details remain accepted. Shell review rows
+may retain effect, relation and failure kind. No evidence seed, controller epoch or authority ledger
+is part of public run input. See [effect review](../../specs/execution/effect-review.md).

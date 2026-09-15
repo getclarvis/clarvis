@@ -69,7 +69,6 @@ export interface OverlayHost {
   dismissTopUnlessDirty(opts: { reason: string }): boolean;
   /** Suspend/resume the mounted view's key layers without unmounting its draft. */
   setInteractionBlocked(blocked: boolean): void;
-  setRecheck(fn: () => void): void;
   /** Dispose mounted view frames and release the overlay keymap context. */
   dispose(): void;
   ui: CommandUi;
@@ -83,7 +82,6 @@ export interface OverlayHost {
 export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
   const [overlay, setOverlay] = createSignal<OverlayKind>("none");
   const [viewFrames, setViewFrames] = createSignal<ActiveMountedView[]>([]);
-  let recheck: () => void = () => {};
   let pickerReturn: (() => void) | undefined;
   let disposed = false;
   let interactionBlocked = false;
@@ -111,6 +109,13 @@ export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
     for (const frame of [...mounted].reverse()) disposeFrame(frame);
   }
 
+  /**
+   * Pop one configuration frame and reactivate its parent.
+   *
+   * @remarks Escape must return immediately. Host probes such as sandbox
+   *   rediscovery and subscription entitlement belong to Doctor's explicit
+   *   recheck and the Sandbox settings surface, not to this navigation path.
+   */
   function popView(frame: ActiveMountedView): void {
     const mounted = viewFrames();
     if (mounted.at(-1) !== frame) return;
@@ -119,7 +124,6 @@ export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
     setViewFrames(rest);
     const parent = rest.at(-1);
     if (parent) {
-      recheck();
       parent.setActive(!interactionBlocked);
       return;
     }
@@ -305,7 +309,6 @@ export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
     disposed = true;
     if (overlay() === "view") closeViewStack();
     finishOverlayClose(false);
-    recheck = () => {};
   }
 
   return {
@@ -330,9 +333,6 @@ export function createOverlayHost(deps: OverlayHostDeps): OverlayHost {
       if (disposed || interactionBlocked === blocked) return;
       interactionBlocked = blocked;
       viewFrames().at(-1)?.setActive(!blocked);
-    },
-    setRecheck: (fn) => {
-      if (!disposed) recheck = fn;
     },
     dispose,
     ui,

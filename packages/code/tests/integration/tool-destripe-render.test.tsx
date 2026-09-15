@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { BlockView } from "../../src/views/blocks.tsx";
-import type { LegacyCollapsibleNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
-const collapsed: LegacyCollapsibleNode = {
+const collapsed: FoldFixtureNode = {
   key: "t1",
   kind: "tool_call",
   status: "ok",
@@ -24,7 +24,9 @@ async function frame(ui: () => unknown, width = 70, height = 20): Promise<string
 }
 
 test("a collapsed tool call is one header line with a breathing row above", async () => {
-  const rows = await frame(() => <BlockView node={collapsed} />);
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => collapsed.collapsed ?? false} node={collapsed} />
+  ));
   expect((rows[0] ?? "").trim()).toBe("");
   expect(rows[1]).toContain("tree");
   expect(rows[1]).toContain("… +5 lines");
@@ -32,11 +34,11 @@ test("a collapsed tool call is one header line with a breathing row above", asyn
 });
 
 test("consecutive collapsed calls each keep their own breathing row", async () => {
-  const second: LegacyCollapsibleNode = { ...collapsed, key: "t2", mcpName: "glob" };
+  const second: FoldFixtureNode = { ...collapsed, key: "t2", mcpName: "glob" };
   const rows = await frame(() => (
     <box flexDirection="column">
-      <BlockView node={collapsed} />
-      <BlockView node={second} />
+      <BlockView defaultFolded={() => collapsed.collapsed ?? false} node={collapsed} />
+      <BlockView defaultFolded={() => second.collapsed ?? false} node={second} />
     </box>
   ));
   expect(rows[1]).toContain("tree");
@@ -45,7 +47,7 @@ test("consecutive collapsed calls each keep their own breathing row", async () =
 });
 
 test("a collapsed mutation shows real diff stats, not its one-line result", async () => {
-  const edit: LegacyCollapsibleNode = {
+  const edit: FoldFixtureNode = {
     key: "t4",
     kind: "tool_call",
     status: "ok",
@@ -58,14 +60,16 @@ test("a collapsed mutation shows real diff stats, not its one-line result", asyn
     result: "edited f.txt",
     collapsed: true,
   };
-  const rows = await frame(() => <BlockView node={edit} />);
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => edit.collapsed ?? false} node={edit} />
+  ));
   expect(rows[1]).toContain("edit_file");
   expect(rows[1]).toContain("+2");
   expect(rows[1]).toContain("… +6 lines");
 });
 
 test("a collapsed shell counts hidden output lines, not the JSON envelope", async () => {
-  const sh: LegacyCollapsibleNode = {
+  const sh: FoldFixtureNode = {
     key: "t5",
     kind: "tool_call",
     status: "ok",
@@ -76,13 +80,83 @@ test("a collapsed shell counts hidden output lines, not the JSON envelope", asyn
     result: '{"exit_code":0,"stdout":"a\\nb\\nc","stderr":""}',
     collapsed: true,
   };
-  const rows = await frame(() => <BlockView node={sh} />);
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => sh.collapsed ?? false} node={sh} />
+  ));
   expect(rows[1]).toContain("shell");
   expect(rows[1]).toContain("… +3 lines");
 });
 
-test("shell headers state whether the auto-guard judge approved or denied", async () => {
-  const approved: LegacyCollapsibleNode = {
+test("collapsed tool failures keep identity and diagnosis on separate lines", async () => {
+  const shell: FoldFixtureNode = {
+    ...collapsed,
+    key: "shell-denied",
+    status: "error",
+    mcpName: "shell",
+    args: { command: "cd packages/kernel && bun test tests/integration/preparation.test.ts" },
+    error: "denied: command touches paths outside the workspace",
+  };
+  const patch: FoldFixtureNode = {
+    ...collapsed,
+    key: "patch-failed",
+    status: "error",
+    mcpName: "apply_patch",
+    args: { patch: "*** Begin Patch\n*** End Patch" },
+    error: JSON.stringify({
+      error: "patch_failed",
+      message: "Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+      file: "packages/code/tests/unit/isolation.test.ts",
+    }),
+  };
+  const rows = await frame(
+    () => (
+      <box flexDirection="column">
+        <BlockView defaultFolded={() => true} node={shell} />
+        <BlockView defaultFolded={() => true} node={patch} />
+      </box>
+    ),
+    110,
+    20,
+  );
+  expect(rows[1]).toContain("shell");
+  expect(rows[1]).not.toContain("Denied:");
+  expect(rows[2]).toContain("Denied: command touches paths outside the workspace");
+  expect(rows[4]).toContain("apply_patch");
+  expect(rows[4]).not.toContain("patch_failed");
+  expect(rows[5]).toContain(
+    "Patch failed: Hunk did not apply cleanly in packages/code/tests/unit/isolation.test.ts",
+  );
+  expect(rows.join("\n")).not.toContain('{"error"');
+});
+
+test("a warning shell keeps its exit diagnosis inline before the guard verdict", async () => {
+  const warning: FoldFixtureNode = {
+    ...collapsed,
+    key: "shell-warning",
+    status: "ok",
+    warn: true,
+    mcpName: "shell",
+    args: { command: "bun test" },
+    result: JSON.stringify({
+      exit_code: 2,
+      stdout: "protocol build passed\nkernel build passed",
+      stderr: "typecheck failed",
+    }),
+    guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
+  };
+  const rows = await frame(() => <BlockView defaultFolded={() => true} node={warning} />, 110);
+  expect(rows[1]).toContain("shell(bun test)");
+  expect(rows[1]).toContain("… +3 lines");
+  expect(rows[1]).toContain("exit 2");
+  expect(rows[1]).toContain("approved by judge");
+  expect(rows[1]!.indexOf("exit 2")).toBeLessThan(rows[1]!.indexOf("approved by judge"));
+  expect(rows[2]).not.toContain("exit 2");
+  expect(rows.join("\n")).not.toContain("protocol build passed");
+  expect(rows.join("\n")).not.toContain("typecheck failed");
+});
+
+test("shell headers state the guard verdict and answerer without its mode", async () => {
+  const approved: FoldFixtureNode = {
     ...collapsed,
     key: "guard-approved",
     mcpName: "shell",
@@ -90,34 +164,44 @@ test("shell headers state whether the auto-guard judge approved or denied", asyn
     result: '{"exit_code":0,"stdout":"","stderr":""}',
     guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
   };
-  const denied: LegacyCollapsibleNode = {
+  const denied: FoldFixtureNode = {
     ...approved,
     key: "guard-denied",
     status: "error",
     error: "denied",
     guard: { mode: "auto", outcome: "denied", answerer: "judge" },
   };
-  const allowedRows = await frame(() => <BlockView node={approved} />, 110);
-  const deniedRows = await frame(() => <BlockView node={denied} />, 110);
-  expect(allowedRows.join("\n")).toContain("auto-guard approved · judge");
-  expect(deniedRows.join("\n")).toContain("auto-guard denied · judge");
+  const allowedRows = await frame(
+    () => <BlockView defaultFolded={() => approved.collapsed ?? false} node={approved} />,
+    110,
+  );
+  const deniedRows = await frame(
+    () => <BlockView defaultFolded={() => denied.collapsed ?? false} node={denied} />,
+    110,
+  );
+  expect(allowedRows.join("\n")).toContain("approved by judge");
+  expect(deniedRows.join("\n")).toContain("denied by judge");
 });
 
 test("a finished call that ran >= 2s keeps its duration in the header", async () => {
-  const slow: LegacyCollapsibleNode = { ...collapsed, key: "t6", elapsedMs: 65_000 };
-  const rows = await frame(() => <BlockView node={slow} />);
+  const slow: FoldFixtureNode = { ...collapsed, key: "t6", elapsedMs: 65_000 };
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => slow.collapsed ?? false} node={slow} />
+  ));
   expect(rows[1]).toContain("1m05s");
 });
 
 test("a fast call (< 2s) earns no duration chip", async () => {
-  const fast: LegacyCollapsibleNode = { ...collapsed, key: "t7", elapsedMs: 1_500 };
-  const rows = await frame(() => <BlockView node={fast} />);
+  const fast: FoldFixtureNode = { ...collapsed, key: "t7", elapsedMs: 1_500 };
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => fast.collapsed ?? false} node={fast} />
+  ));
   expect(rows[1]).toContain("tree");
   expect(rows[1]).not.toContain("1s");
 });
 
 test("a composing call keeps its progress label separate from the tool name", async () => {
-  const composing: LegacyCollapsibleNode = {
+  const composing: FoldFixtureNode = {
     key: "t8",
     kind: "tool_call",
     status: "running",
@@ -127,13 +211,15 @@ test("a composing call keeps its progress label separate from the tool name", as
     args: {},
     inputChars: 0,
   };
-  const rows = await frame(() => <BlockView node={composing} />);
+  const rows = await frame(() => (
+    <BlockView defaultFolded={() => composing.collapsed ?? false} node={composing} />
+  ));
   expect(rows[1]).toContain("transition_plan_task waiting for arguments…");
   expect(rows[1]).not.toContain("taskreceiving");
 });
 
 test("an expanded body renders only its curated result under the header", async () => {
-  const expanded: LegacyCollapsibleNode = {
+  const expanded: FoldFixtureNode = {
     ...collapsed,
     key: "t3",
     mcpName: "shell",
@@ -143,14 +229,15 @@ test("an expanded body renders only its curated result under the header", async 
   };
   const rows = await frame(() => (
     <box flexDirection="column">
-      <BlockView node={collapsed} />
-      <BlockView node={expanded} />
+      <BlockView defaultFolded={() => collapsed.collapsed ?? false} node={collapsed} />
+      <BlockView defaultFolded={() => expanded.collapsed ?? false} node={expanded} />
     </box>
   ));
   expect(rows[1]).toContain("tree");
   expect((rows[2] ?? "").trim()).toBe("");
   expect(rows[3]).toContain("shell");
-  expect(rows[3]).toContain("(ls, cwd=packages/code)");
+  expect(rows[3]).toContain("(ls)");
+  expect(rows[3]).not.toContain("cwd=");
   expect(rows.join("\n")).not.toContain("Arguments");
   expect(rows.join("\n")).not.toContain('"command": "ls"');
   expect(rows.join("\n")).not.toContain('"cwd": "packages/code"');
@@ -161,7 +248,7 @@ test("an expanded body renders only its curated result under the header", async 
 });
 
 test("a generic tool keeps its compact signature without mounting raw argument JSON", async () => {
-  const generic: LegacyCollapsibleNode = {
+  const generic: FoldFixtureNode = {
     ...collapsed,
     key: "generic-tool",
     mcpName: "custom_server",
@@ -172,7 +259,17 @@ test("a generic tool keeps its compact signature without mounting raw argument J
   };
 
   const out = (
-    await frame(() => <BlockView node={generic} forceExpand={() => true} />, 80, 12)
+    await frame(
+      () => (
+        <BlockView
+          defaultFolded={() => generic.collapsed ?? false}
+          node={generic}
+          forceExpand={() => true}
+        />
+      ),
+      80,
+      12,
+    )
   ).join("\n");
   expect(out).toContain("mode=fast");
   expect(out).toContain("useful result");
@@ -182,7 +279,7 @@ test("a generic tool keeps its compact signature without mounting raw argument J
 });
 
 test("a shortened tool payload renders its recovery route as wrapping prose, not code", async () => {
-  const oversized: LegacyCollapsibleNode = {
+  const oversized: FoldFixtureNode = {
     key: "large-tool",
     kind: "tool_call",
     status: "ok",
@@ -198,7 +295,17 @@ test("a shortened tool payload renders its recovery route as wrapping prose, not
     collapsed: false,
   };
 
-  const rows = await frame(() => <BlockView node={oversized} forceExpand={() => true} />, 48, 30);
+  const rows = await frame(
+    () => (
+      <BlockView
+        defaultFolded={() => oversized.collapsed ?? false}
+        node={oversized}
+        forceExpand={() => true}
+      />
+    ),
+    48,
+    30,
+  );
   const out = rows.join("\n");
   expect(out).toContain("Tool display shortened to keep the terminal");
   expect(out).toContain("Use /export to inspect the");

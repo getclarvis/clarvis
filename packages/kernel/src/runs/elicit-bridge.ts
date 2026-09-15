@@ -1,6 +1,7 @@
 import type { Elicit, ElicitRawResult } from "@clarvis/loop";
 import type { ElicitationRequest, ElicitationResponse } from "@clarvis/protocol";
 import type { GuardElicitParams } from "../guard/guard-elicit.ts";
+import { kernelError } from "../core/errors.ts";
 
 /**
  * Bridges engine `Elicit` callbacks to protocol elicitation requests/responses for a single run.
@@ -11,9 +12,13 @@ export interface ElicitBridge {
    * request is cancelled. */
   readonly elicit: Elicit;
   /** Registers a handler invoked when the engine requests user input. */
-  onElicit(handler: (req: ElicitationRequest) => void): void;
+  onElicit(handler: (req: ElicitationRequest) => void): () => void;
+  /** Notify once when a previously published question is answered or cancelled. */
+  onSettled(handler: (id: string) => void): () => void;
   /** Completes a pending elicit with the client's response. */
   respond(res: ElicitationResponse): void;
+  /** Retire the bridge and cancel every outstanding question. */
+  close(): void;
 }
 
 /**
@@ -32,10 +37,18 @@ export interface ElicitBridge {
  */
 export function createElicitBridge(executionId: string): ElicitBridge {
   let seq = 0;
-  const handlers: ((req: ElicitationRequest) => void)[] = [];
+  const handlers = new Set<(req: ElicitationRequest) => void>();
+  const settled = new Set<(id: string) => void>();
+  let pendingBytes = 0;
+  let closed = false;
   const pending = new Map<
     string,
-    { request: ElicitationRequest; resolve: (result: ElicitRawResult) => void }
+    {
+      request: ElicitationRequest;
+      resolve: (result: ElicitRawResult) => void;
+      bytes: number;
+      cleanup(): void;
+    }
   >();
 
   const deliver = (handler: (req: ElicitationRequest) => void, req: ElicitationRequest): void => {
@@ -46,43 +59,98 @@ export function createElicitBridge(executionId: string): ElicitBridge {
     }
   };
 
-  const elicit: Elicit = (params, opts) =>
+  const finish = (id: string, result: ElicitRawResult): void => {
+    const item = pending.get(id);
+    if (item === undefined) return;
+    pending.delete(id);
+    pendingBytes -= item.bytes;
+    item.cleanup();
+    for (const handler of settled) {
+      try {
+        handler(id);
+      } catch {
+        /* An observer cannot prevent question settlement. */
+      }
+    }
+    item.resolve(result);
+  };
+
+  const subscribe = <T>(listeners: Set<T>, handler: T): (() => void) => {
+    if (closed) return () => {};
+    if (listeners.size >= 16)
+      throw kernelError("resource_exhausted", "too many elicitation observers");
+    listeners.add(handler);
+    return () => {
+      listeners.delete(handler);
+    };
+  };
+
+  const enqueue = (
+    request: Omit<ElicitationRequest, "id" | "execution_id">,
+    signal?: AbortSignal,
+  ): Promise<ElicitRawResult> =>
     new Promise<ElicitRawResult>((resolve) => {
+      if (closed || signal?.aborted) {
+        resolve({ action: "cancel" });
+        return;
+      }
       const id = `${executionId}:elicit:${seq++}`;
-      const { detail } = params as GuardElicitParams;
       const req: ElicitationRequest = {
         id,
         execution_id: executionId,
+        ...request,
+      };
+      const bytes = Buffer.byteLength(JSON.stringify(req));
+      if (pending.size >= 64 || pendingBytes + bytes > 8 * 1024 * 1024) {
+        throw kernelError("resource_exhausted", "pending elicitation budget exhausted");
+      }
+      const abort = (): void => finish(id, { action: "cancel" });
+      pending.set(id, {
+        request: req,
+        resolve,
+        bytes,
+        cleanup: () => signal?.removeEventListener("abort", abort),
+      });
+      pendingBytes += bytes;
+      signal?.addEventListener("abort", abort, { once: true });
+      for (const h of handlers) {
+        if (!pending.has(id)) break;
+        deliver(h, req);
+      }
+    });
+
+  const elicit: Elicit = (params, opts) => {
+    const { detail } = params as GuardElicitParams;
+    return enqueue(
+      {
         kind: params.kind ?? "ask_user",
         prompt: params.message,
         schema: params.requestedSchema as unknown as Record<string, unknown>,
         ...(detail !== undefined ? { detail } : {}),
-      };
-      pending.set(id, { request: req, resolve });
-      for (const h of handlers) deliver(h, req);
-      opts.signal?.addEventListener("abort", () => {
-        const item = pending.get(id);
-        if (item !== undefined) {
-          pending.delete(id);
-          item.resolve({ action: "cancel" });
-        }
-      });
-    });
+      },
+      opts.signal,
+    );
+  };
 
   return {
     elicit,
-    onElicit(handler): void {
-      handlers.push(handler);
+    onElicit(handler) {
+      const unsubscribe = subscribe(handlers, handler);
       for (const item of pending.values()) deliver(handler, item.request);
+      return unsubscribe;
     },
+    onSettled: (handler) => subscribe(settled, handler),
     respond(res): void {
-      const item = pending.get(res.id);
-      if (item === undefined) return;
-      pending.delete(res.id);
-      item.resolve({
+      finish(res.id, {
         action: res.action,
         ...(res.content !== undefined ? { content: res.content as Record<string, unknown> } : {}),
       });
+    },
+    close() {
+      closed = true;
+      for (const id of pending.keys()) finish(id, { action: "cancel" });
+      handlers.clear();
+      settled.clear();
     },
   };
 }

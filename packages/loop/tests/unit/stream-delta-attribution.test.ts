@@ -158,8 +158,9 @@ describe("streaming delta attribution", () => {
 
     const toolInput = observed.filter(({ entry }) => entry.kind === "tool_input_delta");
     expect(toolInput).toHaveLength(2);
-    expect(toolInput.map(({ durable }) => durable)).toEqual([true, false]);
-    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(1);
+    expect(toolInput.map(({ durable }) => durable)).toEqual([false, false]);
+    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(0);
+    expect(trace.entries().filter((entry) => entry.kind === "tool_call_announced")).toHaveLength(1);
   });
 
   it("records a fresh announcement after retry even when the provider reuses the call id", async () => {
@@ -168,8 +169,13 @@ describe("streaming delta attribution", () => {
     await runAgent(makeInput(new RetryingToolInputLLM(), trace));
 
     const toolInput = observed.filter(({ entry }) => entry.kind === "tool_input_delta");
-    expect(toolInput.map(({ durable }) => durable)).toEqual([true, false, true, false]);
-    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(2);
+    expect(toolInput.map(({ durable }) => durable)).toEqual([false, false, false, false]);
+    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(0);
+    const announcements = trace.entries().filter((entry) => entry.kind === "tool_call_announced");
+    expect(announcements.map((entry) => entry.detail)).toEqual([
+      { agent: "lead", call_id: "reused", tool_name: "write_file", iteration: 1, attempt: 1 },
+      { agent: "lead", call_id: "reused", tool_name: "write_file", iteration: 1, attempt: 2 },
+    ]);
     expect(
       trace.entries().find((entry) => entry.kind === "model_call_retry")?.detail,
     ).toMatchObject({

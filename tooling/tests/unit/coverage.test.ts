@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  checkCoverage,
+  coverageWorkspaceFailures,
   findUnmeasuredSources,
   readOwnSourceCoverage,
   staleReport,
@@ -25,7 +27,78 @@ async function fixture(source: string): Promise<string> {
   return root;
 }
 
+describe("coverage workspace policy", () => {
+  async function census() {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-coverage-inventory-"));
+    fixtureRoots.push(root);
+    const { workspaces } = JSON.parse(await Bun.file("package.json").text()) as {
+      workspaces: string[];
+    };
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces }));
+    for (const workspace of workspaces) {
+      await mkdir(join(root, workspace), { recursive: true });
+      await writeFile(
+        join(root, workspace, "package.json"),
+        await Bun.file(join(workspace, "package.json")).text(),
+      );
+    }
+    return { root, workspaces };
+  }
+
+  test("matches every current workspace to the existing coverage policy", async () => {
+    expect(await coverageWorkspaceFailures()).toEqual([]);
+  });
+
+  test("rejects a new workspace without a floor before accepting any reports", async () => {
+    const { root, workspaces } = await census();
+    workspaces.push("packages/new-package");
+    await mkdir(join(root, "packages/new-package"));
+    await writeFile(
+      join(root, "packages/new-package/package.json"),
+      JSON.stringify({ name: "@clarvis/new-package", scripts: { "test:coverage": "bun test" } }),
+    );
+    await writeFile(join(root, "package.json"), JSON.stringify({ workspaces }));
+    expect(await coverageWorkspaceFailures(root)).toEqual([
+      "new-package: workspace has no coverage floor",
+    ]);
+    await expect(checkCoverage(root)).rejects.toThrow("Coverage workspace policy");
+  });
+
+  test("rejects a floor whose workspace was removed", async () => {
+    const { root, workspaces } = await census();
+    await writeFile(
+      join(root, "package.json"),
+      JSON.stringify({
+        workspaces: workspaces.filter((workspace) => workspace !== "packages/code"),
+      }),
+    );
+    expect(await coverageWorkspaceFailures(root)).toEqual([
+      "code: coverage floor has no workspace",
+    ]);
+    await expect(checkCoverage(root)).rejects.toThrow("Coverage workspace policy");
+  });
+
+  test("protocol's LCOV exception does not excuse a missing contract script", async () => {
+    const { root } = await census();
+    await writeFile(
+      join(root, "packages/protocol/package.json"),
+      JSON.stringify({ name: "@clarvis/protocol", scripts: {} }),
+    );
+    await expect(coverageWorkspaceFailures(root)).rejects.toThrow("missing test:coverage script");
+  });
+});
+
 describe("type-only coverage", () => {
+  test("rejects an empty runtime report rather than accepting a partial denominator", async () => {
+    const root = await fixture("export interface Contract { id: string }\n");
+    await mkdir(join(root, "packages", "kernel", "coverage"), { recursive: true });
+    await writeFile(
+      join(root, "packages", "kernel", "coverage", "lcov.info"),
+      "TN:\nend_of_record\n",
+    );
+    await expect(readOwnSourceCoverage("kernel", root)).rejects.toThrow("no own-source line data");
+  });
+
   test("accepts an absent LCOV report only for a declared type-only package", async () => {
     const root = await fixture("export interface Contract { id: string }\n");
 
@@ -85,15 +158,18 @@ describe("staleReport", () => {
     await mkdir(join(pkg, "src"), { recursive: true });
     await mkdir(join(pkg, "coverage"), { recursive: true });
 
-    if (sourceMtime === "before") {
-      await writeFile(join(pkg, "src", "a.ts"), "export const a = 1;\n");
-      await new Promise((r) => setTimeout(r, 12));
-      await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\nend_of_record\n");
-    } else {
-      await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\nend_of_record\n");
-      await new Promise((r) => setTimeout(r, 12));
-      await writeFile(join(pkg, "src", "a.ts"), "export const a = 1;\n");
-    }
+    const source = join(pkg, "src", "a.ts");
+    const report = join(pkg, "coverage", "lcov.info");
+    await writeFile(source, "export const a = 1;\n");
+    await writeFile(report, "TN:\nend_of_record\n");
+    const sourceInstant = new Date(
+      sourceMtime === "before" ? "2026-01-01T00:00:00Z" : "2026-01-02T00:00:00Z",
+    );
+    const reportInstant = new Date(
+      sourceMtime === "before" ? "2026-01-02T00:00:00Z" : "2026-01-01T00:00:00Z",
+    );
+    await utimes(source, sourceInstant, sourceInstant);
+    await utimes(report, reportInstant, reportInstant);
     return root;
   }
 
@@ -118,9 +194,15 @@ describe("staleReport", () => {
     const pkg = join(root, "packages", "protocol");
     await mkdir(join(pkg, "coverage"), { recursive: true });
     await writeFile(join(pkg, "coverage", "lcov.info"), "TN:\n");
-    await new Promise((r) => setTimeout(r, 12));
     await mkdir(join(pkg, "src"), { recursive: true });
-    await writeFile(join(pkg, "src", "index.ts"), "export type A = string;\n");
+    const source = join(pkg, "src", "index.ts");
+    await writeFile(source, "export type A = string;\n");
+    await utimes(
+      join(pkg, "coverage", "lcov.info"),
+      new Date("2026-01-01T00:00:00Z"),
+      new Date("2026-01-01T00:00:00Z"),
+    );
+    await utimes(source, new Date("2026-01-02T00:00:00Z"), new Date("2026-01-02T00:00:00Z"));
 
     expect(await staleReport("protocol", root)).toBeNull();
   });

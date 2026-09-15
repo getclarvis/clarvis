@@ -14,7 +14,13 @@
  * run derives the solo shape and `delegate_task` is never contributed. The only
  * tools it is offered are the ones the indexer's own memory capability supplies.
  */
-import type { AgentProfile, ProviderConfig, RunRequest } from "@clarvis/capability";
+import {
+  requestParamKeys,
+  type AgentProfile,
+  type CapabilityRegistry,
+  type ProviderConfig,
+  type RunRequest,
+} from "@clarvis/capability";
 import type { StoredExecution } from "@clarvis/loop";
 
 /** Profile name and `entry` of every indexer run. */
@@ -332,6 +338,8 @@ function withPolicy(instruction: string, policy: string | undefined): string {
 
 /** What {@link buildIndexerContinuationRequest} needs. */
 export interface ContinuationRequestArgs {
+  /** Host-declared parameters that determine the inherited capability catalog. */
+  capabilityRegistry?: CapabilityRegistry;
   /** The run id of the indexer pass itself. */
   executionId: string;
   /** The indexed run, as persisted. */
@@ -376,20 +384,26 @@ export interface ContinuationRequestArgs {
  *   (`max(0, input - cached) + output`), so a large continued transcript does
  *   not consume the pass's allowance merely by being re-sent each iteration.
  *
- *   `prompt_cache_key` derives a stable Memory-only branch from the indexed
- *   run's key. A continuation pass deliberately diverges from the interactive
- *   conversation at its trailing instruction; sharing the exact affinity key
- *   let that background branch displace the conversation's hot prefix on
- *   providers that retain one active prefix per session. The suffix is kept
- *   when a maximum-length caller key must be truncated.
+ *   The source session is retained, while the indexing instance has its own
+ *   persisted agent identity. Queue recovery supplies the same instance again.
+ *   Cache-key composition is centralized in the provider decorator and never
+ *   truncates identifiers.
  */
 export function buildIndexerContinuationRequest(args: ContinuationRequestArgs): RunRequest {
   const { executionId, subject } = args;
   const request = subject.request;
+  const source = request as unknown as Record<string, unknown>;
+  const capabilityParams = Object.fromEntries(
+    requestParamKeys(args.capabilityRegistry?.specs() ?? [])
+      .filter((key) => Object.hasOwn(source, key))
+      .map((key) => [key, source[key]]),
+  );
   return {
+    ...capabilityParams,
     execution_id: executionId,
     continue_from: subject.id,
-    prompt_cache_key: `${(request.prompt_cache_key ?? subject.id).slice(0, 505)}_memory`,
+    session_id: request.session_id ?? subject.id,
+    agent_instance_id: executionId,
     messages: [
       { role: "user", content: withPolicy(INDEXER_CONTINUATION_INSTRUCTION, args.policy) },
     ],

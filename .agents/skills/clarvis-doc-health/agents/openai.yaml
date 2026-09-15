@@ -1,4 +1,4 @@
 interface:
   display_name: "Clarvis Doc Health"
   short_description: "Audit Clarvis docs and derived test coverage"
-  default_prompt: "Use $clarvis-doc-health to audit Clarvis documentation for contradictions and stale claims, and keep derived TUI test coverage synchronized."
+  default_prompt: "Use $clarvis-doc-health to review the requested documentation against current source and synchronize affected claims and TUI inventory."

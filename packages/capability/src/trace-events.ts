@@ -1,3 +1,4 @@
+import type { OperatorAuthorityState } from "./operator-authority.ts";
 import type { RunRequest, AgentRole, AssistantMessagePhase, ToolTransport } from "./api.ts";
 import type {
   ContextSnapshotEntry,
@@ -8,6 +9,7 @@ import type {
   RunResponse,
 } from "./run.ts";
 import type { ExecutionStatus } from "./execution-status.ts";
+import type { FinalizationDisposition } from "./finalization.ts";
 import type { CommandGuardReview } from "./trace-kinds.ts";
 
 /**
@@ -19,10 +21,10 @@ import type { CommandGuardReview } from "./trace-kinds.ts";
  *   run-relative offsets and a nested `{ at, kind, detail }` envelope);
  *   `mapEntry` in `persistence/trace-mapper.ts` flattens and rebases entries into
  *   these events, splitting the tool `name` into `mcp_name`/`tool_name` and
- *   truncating free-text fields. The two `*_started` and `*_delta` variants are
- *   live-only progress signals and are not persisted — the corresponding
- *   completed variant (`lead_iteration`, `subagent_iteration`, `tool_call`,
- *   `model_reasoning`) is the authoritative record. `iteration_ref` on tool and
+ *   truncating free-text fields. Iteration-start and delta variants are live-only
+ *   progress signals. Tool announcement/start and terminal events are durable
+ *   lifecycle records; the terminal carries the authoritative execution result.
+ *   `iteration_ref` on tool and
  *   user events points back at the iteration that produced them; a defined
  *   `subagent_instance_id` scopes the event to a sub-agent, otherwise it belongs
  *   to the lead.
@@ -93,6 +95,7 @@ export type BuiltinTraceEvent =
       error: string | null;
       diff?: string;
       guard?: CommandGuardReview;
+      interruption?: { source: "operator" };
     }
   | {
       type: "tool_call_started";
@@ -104,6 +107,7 @@ export type BuiltinTraceEvent =
       mcp_name: string;
       tool_name: string;
       arguments: object;
+      control?: { tool_execution_id: string; actions: readonly ["interrupt"] };
     }
   | {
       type: "tool_output_delta";
@@ -112,6 +116,16 @@ export type BuiltinTraceEvent =
       call_id: string;
       occurred_at: number;
       chunk: string;
+    }
+  | {
+      type: "tool_call_announced";
+      agent: AgentRole;
+      subagent_instance_id?: string;
+      call_id: string;
+      occurred_at: number;
+      tool_name: string;
+      iteration: number;
+      attempt: number;
     }
   | {
       type: "tool_input_delta";
@@ -255,6 +269,7 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       reason: RunEndedReason;
       code?: ErrorCode;
+      disposition?: FinalizationDisposition;
     }
   | {
       type: "delegation_started";
@@ -398,6 +413,7 @@ export const BUILTIN_TRACE_EVENT_TYPES = [
   "subagent_iteration",
   "tool_call",
   "tool_call_started",
+  "tool_call_announced",
   "tool_output_delta",
   "tool_input_delta",
   "subagent_iteration_started",
@@ -516,6 +532,8 @@ export interface ExecutionRecovery {
 }
 
 export interface ExecutionRecord {
+  /** Host-owned intent state, never reconstructed from final_context. */
+  operator_authority_state?: OperatorAuthorityState;
   id: string;
   owner_key_name: string;
   status: ExecutionStatus;

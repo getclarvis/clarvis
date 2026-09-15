@@ -40,6 +40,7 @@ const ALLOWED_TOP_LEVEL = new Set([
   "workflows",
   "plugins",
   "extension-profiles",
+  "shared-agent.md",
   "guard-judge.md",
   "plans",
   "memory",
@@ -82,15 +83,20 @@ async function filesUnder(dir: string): Promise<string[]> {
  *
  * @returns the workspace root and the relative paths found under its `.clarvis`.
  */
-async function exerciseWriters(): Promise<{ workspaceRoot: string; inClarvis: string[] }> {
+async function exerciseWriters(): Promise<{
+  workspaceRoot: string;
+  inClarvis: string[];
+  stateRoot: string;
+}> {
   const home = tempDir("clarvis-surface-home-");
   const workspaceRoot = tempDir("clarvis-surface-ws-");
-  process.env.CLARVIS_HOME = home;
-
   const ws = workspacePaths(workspaceRoot);
-  const state = workspaceStatePaths(workspaceRoot);
+  const state = workspaceStatePaths(workspaceRoot, {
+    env: { CLARVIS_HOME: home },
+    home,
+  });
 
-  const plans = createFilePlanRepository({ workspaceRoot });
+  const plans = createFilePlanRepository({ workspaceRoot, lockDir: state.plansLockDir });
   await plans.list();
 
   const memory = createFileMemoryStore({
@@ -109,7 +115,7 @@ async function exerciseWriters(): Promise<{ workspaceRoot: string; inClarvis: st
     await tx.markIndexed("run-1");
   });
 
-  return { workspaceRoot, inClarvis: await filesUnder(ws.clarvisDir) };
+  return { workspaceRoot, inClarvis: await filesUnder(ws.clarvisDir), stateRoot: state.root };
 }
 
 describe("what a run may leave in a user's working tree", () => {
@@ -160,8 +166,8 @@ describe("what a run may leave in a user's working tree", () => {
   });
 
   test("the machinery is all present in the state tree instead", async () => {
-    const { workspaceRoot } = await exerciseWriters();
-    const inState = await filesUnder(workspaceStatePaths(workspaceRoot).root);
+    const { stateRoot } = await exerciseWriters();
+    const inState = await filesUnder(stateRoot);
     expect(inState.some((rel) => rel.startsWith("memory/.state/"))).toBe(true);
     expect(inState.some((rel) => rel.startsWith("memory/.history/"))).toBe(true);
   });

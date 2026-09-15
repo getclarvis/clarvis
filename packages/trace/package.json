@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/trace",
-
   "private": true,
   "description": "Records and persists a Clarvis run's trace \u2014 the trace handle, the JSON store, the crash journal and its recovery, event mapping and retention.",
   "license": "MIT",

@@ -5,7 +5,7 @@ that composes a list of them. A dependency-free leaf of the graph — its only e
 `zod` — so a capability can live in its own package instead of inside `@clarvis/loop`.
 
 ```text
-capability ──> llm | supervision | trace | mcp-client | hooks | skills | memory | plan
+capability ──> llm | supervision | trace | mcp-client | hooks | skills | memory | plan | goal
            ──> tasks | loop | workflows | kernel | server
 ```
 
@@ -26,11 +26,11 @@ author needs: the request and settings vocabulary, the ports, the trace kinds, a
 
 ## Exports
 
-| Entry                       | Contents                                                                                                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`), persisted trace projector registry, `compose`, and settings/run vocabulary |
-| `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                   |
-| `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                       |
+| Entry                       | Contents                                                                                                                                                                                      |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/capability`       | the contract (`Capability`, `RunCapability`, `AgentCapability`, `AgentLoopContribution`, `ToolInvocationContext`), persisted trace projector registry, `compose`, and settings/run vocabulary |
+| `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                                            |
+| `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                                                |
 
 `McpServerConfig` carries the complete normalized MCP seam shared by settings, plugin manifests and
 direct run requests. In addition to transport fields, that includes stdio `cwd`/`env_vars`, remote
@@ -45,7 +45,16 @@ after a server connects, every tool it advertised joins every agent's effective 
 that run without changing the persisted profile. `MCPConnection.instructions`
 carries bounded initialization guidance back across the same leaf contract.
 
+`SteerSource.onPending` optionally reports host-admitted arrivals without draining or acknowledging
+them. The engine can invalidate an open effect decision immediately while preserving one normal
+model delivery. This is a host input port, not evidence accepted from run JSON or capability text.
+
 ## Test ownership
+
+`LLMUsage` keeps numeric tallies and separate `usage_unknown` / `cache_unknown` flags. Missing
+provider counters are not measured zero; retry totals preserve any unreported attempt alongside
+the known counters. The provider adapter owns their interpretation in the
+[LLM contract](../../specs/foundations/llm.md).
 
 This package owns the complete unit matrices for its contracts and vocabulary: capability
 composition and registries, open trace/error vocabularies, secret redaction, tool-argument
@@ -84,13 +93,28 @@ kinds and are composed into one immutable per-run projector registry.
 any `forRun`; capabilities may publish their own ports while activating, and consumers resolve peers
 at `attach` time so capability registration order does not decide visibility. The optional task
 tracking contract and its owner-neutral `TASK_TRACKING_PORT` have one canonical declaration here.
+The loop-owned `RUN_TRACE_PORT` exposes the current run's narrow `TracePort` during `forRun` without
+publishing the concrete recording handle or any context mutation surface.
 Without a provider, child spawning remains available through `spawn_subagent`; with a provider,
 the tracker contributes the required `task_id` property for `delegate_task`.
 
 Activation and persistence hooks are host extension boundaries, so they have finite wall budgets.
 All `forRun` activations and `seedBlock` contributions run concurrently under
-`CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by default, hard-capped at 60 s); a timeout skips that
-capability or block without retaining the run. `finalizeRun` and `onRunEnd` use
+`CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by default, hard-capped at 60 s); a timeout skips an
+optional capability or block without retaining the run. A host registration marked `required: true`
+must activate, supply non-empty content for any declared seed, and attach to the entry agent.
+Failure, refusal or unavailable extension capacity stops before inference with
+`required_capability_unavailable`. The flag propagates to `RunCapability`; it does not grant controls
+to children, which retain ordinary per-scope filtering. Required entry attachment errors use the
+same bounded failure code without exposing private exception details. The engine attaches and folds
+the entry's contributions before auxiliary inference as well as its own first call.
+Pre-start cancellation remains cancellation.
+`OrchestrationHooks.beforeIteration` can asynchronously refresh host state before compaction or
+inference. Contributions run in order; an interruption result stops the sweep and the stage. Successful
+completion or checkpoint cannot bypass the finalization gates through this hook. The engine
+bounds the complete sweep to five seconds and retires the supplied signal when it ends, so delayed
+reads must check that signal before publishing. Synchronous iteration observers remain supported.
+`finalizeRun` and `onRunEnd` use
 `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` (2 s by default). A timed-out finalizer forfeits only its new
 state value, while a timed-out post-persist observer continues detached. The host's physical
 extension admission does **not** release that detached call until its real promise settles: ordinary
@@ -111,6 +135,12 @@ The open run vocabulary also carries `AgentsParam`, including the supervision re
 `max_total_buffer_bytes`. It is an aggregate retained-activity ceiling rather than another
 per-child hint: `@clarvis/supervision` divides it across the configured live and retained child
 slots, and its settings schema applies the absolute 32-MiB maximum.
+
+`ModelExecutionInfo` and `ModelExecutionResolver` (exported from the root and `./ports`) describe a
+host-owned closed catalog of exact provider/model pairs. Metadata includes kind, context/output
+limits, capabilities, reasoning efforts and prompt-cache support, never endpoints or credentials.
+An unknown pair returns `undefined`; consumers must not fall back to native provider resolution.
+See the [generic execution contract](../../specs/engine/capability-composition.md).
 
 The provider vocabulary includes the strict `openai-codex` and `xai-grok` kinds, but this leaf owns
 no OAuth service or credential type. `ResolvedProviderConfig` and `LLMCallParams` remain token-free;
@@ -149,6 +179,13 @@ concurrent agents; a budget implementation may grant less than requested but nev
 current headroom.
 
 ## The two ports
+
+Tool handlers receive a per-call `ToolInvocationContext` with the effective `signal` and optional
+`ToolInvocationControl` (`toolExecutionId`, `actions: ["interrupt"]`). `interruptible(call)` is an
+explicit opt-in used only by the builtin shell handler. The loop owns the child controller and
+run-scoped registry; this package owns neither process management nor a dependency on protocol.
+Selective interruption returns a local tool error, not `HandlerVerdict.cancelled`; global run
+cancellation remains distinct. See [tool dispatch](../../specs/engine/tool-dispatch.md).
 
 `AgentBuildContext` would otherwise reference the engine's `LiveContext` (~50 members) and
 `TraceHandle`, dragging the loop into this package. Instead it is declared over two ports that the
@@ -198,6 +235,11 @@ only over the kinds the engine actually owns.
 `BUILTIN_TRACE_KINDS` is the single source of truth: the type is derived from the array and the
 runtime guard tests against it, so the two cannot drift. A compile-time lock additionally pins
 `TraceDetailMap`'s keys to that same set.
+
+`ToolCallAnnouncedDetail` and the flat `tool_call_announced` event carry minimal durable call,
+actor and tool identity, iteration and physical attempt, without partial arguments. The engine
+records this fact once per attempt and signals all input progress. The persistence contract is
+[`foundations/trace.md`](../../specs/foundations/trace.md).
 
 A capability that wants its contributed entry to persist as a typed flat event declares static
 `Capability.persistedTraceProjectors`. The engine composes one immutable registry per run and the
@@ -341,3 +383,34 @@ exact and the `SettingsFile` / `ParsedRunRequest` drift locks keep working. `Cap
 the open half: a capability shipped in its own package registers its block, and the host validates
 it against `CapabilitySettingsSpec.schema` rather than the engine declaring it. Registration must
 happen before settings are parsed.
+
+## Prompt-cache continuity
+
+`HandlerVerdict.finalize` requests a checkpoint through the loop's finalize gates. The bounded
+`checkpointMetadataSchema` carries `summary` and `next_step` separately from the final output schema.
+`AgentResult` and `RunResponse` retain the accepted `disposition: "checkpoint"`; omission means the
+ordinary final path. `onFinalizeAccepted` receives the accepted attempt. A run capability can set
+`preserveStateOnInterruption`; all finalizers then receive `preserveState` on an interrupted run,
+and every accepted checkpoint sets it. These contracts do not authorize another execution.
+
+`RunEndedDetail` and the persisted `run_ended` event also carry the successful run's disposition.
+Trace consumers can distinguish a saved checkpoint from final completion without interpreting tool
+arguments or prose. Failed or cancelled runs do not advertise an accepted checkpoint.
+
+The typed `PromptCacheIdentity` and `composePromptCacheKey` compose a persisted session and agent instance, escaping embedded underscores and rejecting keys over 512 characters. `RunRequest` carries `session_id` and `agent_instance_id`; tool-call provider metadata, assistant phase and reasoning remain persisted replay data.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Operator authority vocabulary
+
+`operator-authority.ts` exports host evidence, binding, effect classes, compiled envelope and
+versioned state, plus `OPERATOR_AUTHORITY_PORT` and its read-only reader. `inheritOperatorAuthority`
+projects a compiled parent intersection without promoting leader briefs. Kernel owns the writer and
+semantic policy; the loop transports this substrate. See [effect review](../../specs/execution/effect-review.md).
+
+`OperatorElicitationContext` carries an accepted entry-agent `ask_user` question and answer to that
+private writer. The answer is authenticated operator text; the model-authored question remains
+separate, untrusted context. It is not a capability service and does not itself grant an effect.
+
+`OperatorAuthorityState.denied_effects` carries bounded identities of concrete refused batches at the current evidence revision. It grants no authority; the kernel owns recording and validation, and fresh host-admitted evidence invalidates these exact-review identities. See [self-configuration](../../specs/hosts/self-configuration.md).

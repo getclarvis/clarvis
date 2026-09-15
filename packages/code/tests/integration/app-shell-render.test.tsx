@@ -2,8 +2,9 @@ import { expect, test } from "bun:test";
 import type { Accessor, JSX } from "solid-js";
 import { createSignal } from "solid-js";
 import { useRenderer } from "@opentui/solid";
-import { openRender } from "../helpers/tracked-render.ts";
-import { KeyEvent } from "@opentui/core";
+import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
+import { KeyEvent, TextareaRenderable, type Renderable } from "@opentui/core";
+import { TestRecorder } from "@opentui/core/testing";
 import type {
   MemoryService,
   ModelCatalog,
@@ -29,15 +30,28 @@ import type { BackendProbe } from "../../src/onboarding/doctor.ts";
 import type { ElicitRequestParams } from "../../src/adapters/elicit-types.ts";
 import { TOKEN_ORDER } from "../../src/theme/model.ts";
 import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
+import { glyph } from "../../src/theme/glyphs.ts";
 import type { RunEvent } from "@clarvis/protocol";
 import { applyRunEvents, runEvent } from "../helpers/run-events.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
+import { SETTINGS_ITEMS } from "../../src/views/config/hub-items.ts";
 import { productVersion } from "../../src/cli-args.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+import { createLoopController, type LoopController } from "../../src/features/loop/controller.ts";
+import { TestLoopClock } from "../helpers/loop-clock.ts";
+import type { LoopTurnCompletion, ScheduledTurnRequest } from "../../src/core/loop-schedule.ts";
+import { createGoalController } from "../../src/features/goal/controller.ts";
+import { goalView } from "../helpers/goals.ts";
 
 const ev = runEvent;
+
+function settingsHubIndex(id: (typeof SETTINGS_ITEMS)[number]["id"]): number {
+  const index = SETTINGS_ITEMS.findIndex((item) => item.id === id);
+  if (index < 0) throw new Error(`missing settings item ${id}`);
+  return index;
+}
 
 function press(
   t: Awaited<ReturnType<typeof openRender>>,
@@ -123,11 +137,13 @@ interface SettingsKnobs {
    * mounting fire the one-time seed notification. */
   memoryUnconfigured?: boolean;
   providers?: unknown[];
+  runtime?: Record<string, unknown>;
   sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
   workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
   withheldWorkspaceFields?: readonly string[];
   setWorkspaceTrust?: (approve: boolean) => Promise<void>;
+  inspectSandbox?: SettingsAdapter["inspectSandbox"];
 }
 
 const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
@@ -149,6 +165,7 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
             enabled: k.memoryEnabled ?? true,
             ...(k.memoryModel !== undefined ? { model: k.memoryModel } : {}),
           },
+      runtime: k.runtime,
       sandbox: k.sandbox,
       plans: k.plans ?? { mode: "on", retention: "keep" },
     };
@@ -175,7 +192,8 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     envStatus: () => "unset",
     declaredMcpServers: () => [],
     reload: async () => {},
-    inspectSandbox: () => Promise.resolve(null as never),
+    inspectSandbox: (options?: { refresh?: boolean }) =>
+      knobs().inspectSandbox?.(options) ?? Promise.resolve(null as never),
   } as unknown as SettingsAdapter;
 }
 
@@ -311,8 +329,10 @@ function defaultProps(overrides: {
   backend?: AppBackend;
   quitCalls?: number[];
   active?: Accessor<boolean>;
+  continuesOnExit?: Accessor<boolean>;
   cancel?: () => boolean;
   status?: Accessor<string>;
+  goals?: AppProps["run"]["goals"];
   elicit?: Accessor<ElicitRequestParams | null>;
   switching?: Accessor<boolean>;
   seedStream?: RunEvent[];
@@ -365,6 +385,7 @@ function defaultProps(overrides: {
         },
       },
       run: {
+        ...(overrides.goals === undefined ? {} : { goals: overrides.goals }),
         status: overrides.status ?? (() => ""),
         submit: overrides.submit ?? (() => {}),
         submitPrompt: overrides.submitPrompt ?? (() => {}),
@@ -372,6 +393,7 @@ function defaultProps(overrides: {
         compact: () => {},
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
+        continuesOnExit: overrides.continuesOnExit,
         startedAt: () => (overrides.active?.() ? Date.now() - 5000 : null),
         sessionUsageBaseline: overrides.sessionUsageBaseline ?? (() => null),
         workflowActivity: overrides.workflowActivity ?? (() => null),
@@ -427,8 +449,8 @@ async function moveReaderAwayFromTail(t: Awaited<ReturnType<typeof openRender>>)
   for (let pass = 0; pass < 600; pass += 1) {
     press(t, "pageup");
     await t.renderOnce();
-    if (t.renderer.root.findDescendantById("history-newer-indicator") !== undefined) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    if (t.renderer.root.findDescendantById("transcript-reader-indicator") !== undefined) return;
+    await Bun.sleep(0);
   }
   throw new Error(`reader never left the tail:\n${t.captureCharFrame()}`);
 }
@@ -437,6 +459,40 @@ test("the complete composer adopts the draft typed during startup", async () => 
   const t = await mountApp(defaultProps({ initialDraft: "draft from startup" }));
   expect(await captureUntil(t, "draft from startup")).toContain("draft from startup");
   t.renderer.destroy();
+});
+
+test("goal state stays visible when idle and does not replace the physical run outcome", async () => {
+  const goals = createGoalController({
+    binding: () => ({ sessionId: "session-hosted", generation: 1 }),
+    prepare: async () => {
+      throw new Error("No goal creation expected");
+    },
+    service: () => ({
+      availability: async () => ({ available: true }),
+      get: async () => goalView({ status: "paused" }),
+      subscribe: async () => () => {},
+      receipt: async () => null,
+      control: async () => {
+        throw new Error("No control expected");
+      },
+    }),
+  });
+  try {
+    await goals.refresh();
+    const [active, setActive] = createSignal(false);
+    const t = await mountApp(defaultProps({ goals, active, status: () => "checkpoint saved" }));
+    let frame = await captureUntil(t, "Goal paused");
+    expect(frame).toContain("ready");
+    expect(frame).toContain("Checkpoint saved");
+    expect(frame).not.toContain("Completed");
+    setActive(true);
+    frame = await captureUntil(t, "working");
+    expect(frame).toContain("Goal paused");
+    expect(frame).not.toContain("Checkpoint saved");
+    t.renderer.destroy();
+  } finally {
+    goals.dispose();
+  }
 });
 
 const CHANGED_WORKSPACE_EXTENSION_PROFILE: ResolvedExtensionProfile = {
@@ -515,6 +571,30 @@ test("a live MCP startup failure appears once as a transient warning outside the
   const frame = await captureUntil(t, "MCP unavailable for this run");
   expect(frame).toContain("docs: missing DOCS_TOKEN");
   expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
+  t.renderer.destroy();
+});
+
+test("Container suppresses MCP degraded presentation defensively", async () => {
+  const store = createTranscriptStore();
+  const [notice, setNotice] =
+    createSignal<ReturnType<NonNullable<AppProps["run"]["mcpStartupNotice"]>>>(null);
+  const t = await mountApp(
+    defaultProps({
+      store,
+      mcpStartupNotice: notice,
+      settingsKnobs: () => ({ runtime: { backend: "docker" } }),
+    }),
+  );
+
+  setNotice({
+    sequence: 1,
+    servers: [{ name: "forged", reason: "must stay hidden" }],
+  });
+  const frame = await captureUntil(t, "Docker");
+  expect(frame).not.toContain("MCP unavailable for this run");
+  expect(frame).not.toContain("must stay hidden");
+  expect(store.nodes.some((node) => node.text.includes("must stay hidden"))).toBe(false);
 
   t.renderer.destroy();
 });
@@ -629,7 +709,7 @@ test("a completed Plan never contributes a task counter to the compact footer", 
   t.renderer.destroy();
 });
 
-test("the full task editor keeps the action footer on a stable row", async () => {
+test("Ctrl+E expands the full task editor and keeps the action footer on a stable row", async () => {
   const t = await mountApp(defaultProps({}), { width: 140, height: 45 });
   const collapsed = t.captureCharFrame();
   expect(collapsed).toContain("expand editor");
@@ -637,7 +717,7 @@ test("the full task editor keeps the action footer on a stable row", async () =>
     .split("\n")
     .findIndex((line) => line.includes("[↵] send / steer"));
 
-  t.mockInput.pressKey("g", { ctrl: true });
+  t.mockInput.pressKey("e", { ctrl: true });
   const expanded = await captureUntil(t, "collapse editor");
   const expandedFooter = expanded
     .split("\n")
@@ -658,6 +738,175 @@ test("/clear clears the current session", async () => {
   await captureUntil(t, "started a new session");
   expect(clears).toEqual([1]);
   t.renderer.destroy();
+});
+
+function composerIn(node: Renderable): TextareaRenderable | undefined {
+  if (node instanceof TextareaRenderable) return node;
+  for (const child of node.getChildren()) {
+    const composer = composerIn(child);
+    if (composer) return composer;
+  }
+  return undefined;
+}
+
+async function loopApp(size?: { width: number; height: number }) {
+  const clock = new TestLoopClock();
+  let loops!: LoopController;
+  const requests: ScheduledTurnRequest[] = [];
+  const finishes: ((result: LoopTurnCompletion) => void)[] = [];
+  let setElicit!: (value: ElicitRequestParams | null) => void;
+  const human: unknown[] = [];
+  const t = await mountApp((renderer) => {
+    const [elicit, updateElicit] = createSignal<ElicitRequestParams | null>(null);
+    setElicit = updateElicit;
+    loops = createLoopController({
+      clock,
+      binding: () => ({
+        sessionId: "session_loop",
+        generation: 1,
+        owner: "user",
+        workspaceId: "ws",
+        agentId: "coder",
+        configFingerprint: "config",
+        configLabel: "model test",
+      }),
+      blockedReason: () => null,
+      submit: (request) => {
+        requests.push(request);
+        return {
+          status: "admitted",
+          executionId: `exec_${requests.length}`,
+          completion: new Promise((resolve) => {
+            finishes.push(resolve);
+          }),
+          cancel: async () => {},
+        };
+      },
+    });
+    const props = defaultProps({
+      elicit,
+      submit: (content) => {
+        human.push(content);
+      },
+    })(renderer);
+    return { ...props, run: { ...props.run, loops } };
+  }, size);
+  const submit = async (line: string): Promise<void> => {
+    composerIn(t.renderer.root)!.setText(line);
+    await t.renderOnce();
+    t.mockInput.pressEnter();
+    await t.renderOnce();
+  };
+  const closeView = async (): Promise<void> => {
+    press(t, "escape");
+    await t.renderOnce();
+    press(t, "escape");
+    await t.renderOnce();
+  };
+  return { t, loops, clock, requests, finishes, human, setElicit, submit, closeView };
+}
+
+test("/loop keeps invalid input for correction and presents the exact prompt without submitting a turn", async () => {
+  const f = await loopApp();
+  try {
+    await f.submit("/loop 1m");
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("/loop 1m");
+    expect(f.loops.list()).toEqual([]);
+    expect(f.human).toEqual([]);
+    await f.submit("/loop 90m --max-runs 8 -- /quit !echo literal  ");
+    const frame = await captureUntil(f.t, "90 minutes after each execution");
+    expect(frame).toContain("loop_1");
+    expect(frame).toContain("Agent: coder");
+    expect(frame).toContain("session_loop");
+    expect(frame).toContain("attempts 0/8");
+    expect(f.loops.list()[0]!.prompt).toBe("/quit !echo literal  ");
+    expect(f.requests).toEqual([]);
+    expect(f.human).toEqual([]);
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("");
+  } finally {
+    f.t.renderer.destroy();
+  }
+});
+
+test("an empty loop list keeps its help legible in an 80 by 24 terminal", async () => {
+  const f = await loopApp({ width: 80, height: 24 });
+  try {
+    await f.submit("/loop");
+    const frame = await captureUntil(f.t, "Closing the TUI forgets");
+    expect(frame).toContain("No loops in this conversation");
+    expect(frame).toContain("/loop 5m <prompt>  |  /loop 90m --max-runs 8 -- <prompt>");
+    expect(frame).toContain("Closing the TUI forgets registrations. Normal run history remains.");
+  } finally {
+    f.t.renderer.destroy();
+  }
+});
+
+test("loop controls update in place and automatic turns wait for drafts, attachments, dialogs and elicitations", async () => {
+  const f = await loopApp();
+  try {
+    await f.submit("/loop 1m first");
+    expect(await captureUntil(f.t, "State: scheduled")).toContain("State: scheduled");
+    await f.clock.advance(60_000);
+    expect(f.requests).toHaveLength(0);
+    expect(f.loops.list()[0]!.pending).toBeDefined();
+    expect(await captureUntil(f.t, "Pending:")).toContain("Pending:");
+    press(f.t, "p");
+    expect(await captureUntil(f.t, "State: paused")).toContain("Paused by you");
+    expect(f.loops.list()[0]!.pending).toBeUndefined();
+    press(f.t, "r");
+    expect(await captureUntil(f.t, "State: scheduled")).toContain("State: scheduled");
+    await f.closeView();
+    await f.submit("/loop 1m second");
+    const secondDetail = await captureUntil(f.t, "loop_2");
+    expect(secondDetail).toContain("loop_2");
+    expect(secondDetail).toContain("second");
+    expect(secondDetail).not.toContain("loop_1");
+    await f.closeView();
+    composerIn(f.t.renderer.root)!.setText("human draft");
+    await f.t.renderOnce();
+    await f.clock.advance(60_000);
+    expect(f.requests).toHaveLength(0);
+    composerIn(f.t.renderer.root)!.setText("");
+    f.t.renderer.keyInput.processPaste(new Uint8Array([137, 80, 78, 71]), {
+      kind: "binary",
+      mimeType: "image/png",
+    });
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.loops.blockedReason()).toContain("attachment");
+    expect(f.requests).toHaveLength(0);
+    const rows = f.t.captureCharFrame().split("\n");
+    const closeRow = rows.findIndex((row) => row.includes(`4B ${glyph("close")}`));
+    expect(closeRow).toBeGreaterThanOrEqual(0);
+    await f.t.mockMouse.click(rows[closeRow]!.lastIndexOf(glyph("close")), closeRow);
+    await f.t.renderOnce();
+    expect(f.t.captureCharFrame()).not.toContain("4B");
+    expect(composerIn(f.t.renderer.root)!.plainText).toBe("");
+    expect(f.loops.blockedReason()).toBeNull();
+    f.setElicit({
+      message: "approve this run",
+      requestedSchema: { type: "object", properties: {} },
+    });
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.requests).toHaveLength(0);
+    f.setElicit(null);
+    await f.t.renderOnce();
+    await f.clock.advance(0);
+    expect(f.loops.blockedReason()).toBeNull();
+    expect(f.requests).toHaveLength(1);
+    expect(f.requests[0]!.prompt).toBe("first");
+    await f.submit("/loop pause loop_2");
+    f.finishes[0]!({ status: "completed", usage: { input: 1, output: 1 } });
+    await f.clock.advance(0);
+    expect(f.requests).toHaveLength(1);
+    await f.submit("/loop cancel loop_1");
+    expect(f.loops.get("loop_1").state).toBe("cancelled");
+    expect(f.loops.get("loop_2").state).toBe("paused");
+    expect(f.human).toEqual([]);
+  } finally {
+    f.t.renderer.destroy();
+  }
 });
 
 test("a documented slash token wins over a loose fuzzy match on another command", async () => {
@@ -773,7 +1022,17 @@ test("Enter runs an exact hierarchical hub while Tab still owns child completion
 });
 
 test("Tab opens a child and rapid Escape steps back through its hub to the transcript", async () => {
-  const t = await mountApp(defaultProps({}));
+  let inspections = 0;
+  const t = await mountApp(
+    defaultProps({
+      settingsKnobs: () => ({
+        inspectSandbox: async () => {
+          inspections += 1;
+          return null as never;
+        },
+      }),
+    }),
+  );
   await captureUntil(t, "New task");
   await t.mockInput.typeText("/settings");
   await t.renderOnce();
@@ -793,8 +1052,11 @@ test("Tab opens a child and rapid Escape steps back through its hub to the trans
   press(t, "escape");
   await t.renderOnce();
   await t.renderOnce();
+  await Promise.resolve();
+  await Promise.resolve();
   const transcript = t.captureCharFrame();
   expect(transcript).not.toContain("Settings");
+  expect(inspections).toBe(0);
   t.renderer.destroy();
 });
 
@@ -874,7 +1136,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   await t.renderOnce();
   t.mockInput.pressEnter();
   await captureUntil(t, "Run controls");
-  for (let index = 0; index < 7; index++) press(t, "down");
+  for (let index = 0; index < settingsHubIndex("keyboard"); index++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
   const keyboardView = await captureUntil(t, "Terminal: test-kitty");
@@ -1128,7 +1390,7 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   const thinking = await captureUntil(t, "thinking");
   const line = t.renderer.root.findDescendantById("lead-activity-line");
   const input = t.renderer.root.findDescendantById("input-dock");
-  const history = t.renderer.root.findDescendantById("committed-history");
+  const history = t.renderer.root.findDescendantById("transcript-viewport");
   expect(line).toBeDefined();
   expect(input).toBeDefined();
   expect(line!.y + line!.height).toBe(input!.y);
@@ -1151,7 +1413,8 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
     ],
     "live",
   );
-  const working = await captureUntil(t, "working");
+  const working = await captureUntil(t, "VISIBLE LEAD ANSWER");
+  expect(working).toContain("working");
   expect(working).toContain("VISIBLE LEAD ANSWER");
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
   expect(line!.y).toBe(fixedY);
@@ -1410,29 +1673,45 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+S opens the safety-preset picker and Escape returns to the composer", async () => {
+test("Ctrl+S opens the isolation picker and Escape returns to the composer", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   press(t, "s", { ctrl: true });
-  const picker = await captureUntil(t, "Select safety preset");
+  const picker = await captureUntil(t, "Select isolation");
 
-  expect(picker).toContain("judged");
-  expect(picker).toContain("LLM judge reviews risk");
+  expect(picker).toContain("Sandbox");
+  expect(picker).toContain("Docker");
   press(t, "escape");
   const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select safety preset");
+  expect(back).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 
-test("a literal sharp s remains composer text instead of opening the safety picker", async () => {
+test("Ctrl+G opens command review without expanding the editor", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+
+  press(t, "g", { ctrl: true });
+  const picker = await captureUntil(t, "Select command review");
+
+  expect(picker).toContain("Approval");
+  expect(picker).toContain("Auto");
+  expect(picker).not.toContain("Task editor");
+  press(t, "escape");
+  const back = await captureUntil(t, "New task");
+  expect(back).not.toContain("Select command review");
+  t.renderer.destroy();
+});
+
+test("a literal sharp s remains composer text instead of opening the isolation picker", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   await t.mockInput.typeText("ß");
   const out = await captureUntil(t, "ß");
 
-  expect(out).not.toContain("Select safety preset");
+  expect(out).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 
@@ -1556,6 +1835,18 @@ test("the removed /planning command is rejected", async () => {
   t.renderer.destroy();
 });
 
+test("the removed /activity command is rejected", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/activity");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await captureUntil(t, "unknown command: /activity");
+  t.renderer.destroy();
+});
+
 test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing it", async () => {
   const doc = {
     id: "plan-active",
@@ -1645,6 +1936,40 @@ test("/quit calls shell.quit() directly when there is nothing to lose", async ()
   expect(quitCalls).toEqual([1]);
   t.renderer.destroy();
 });
+
+test.each([true, false])(
+  "/quit respects the observed run's continue policy (%s) without sending cancellation",
+  async (continues) => {
+    const quitCalls: number[] = [];
+    const cancellations: number[] = [];
+    const t = await mountApp(
+      defaultProps({
+        quitCalls,
+        active: () => true,
+        continuesOnExit: () => continues,
+        cancel: () => {
+          cancellations.push(1);
+          return true;
+        },
+      }),
+    );
+    try {
+      const frame = await captureUntil(t, "working");
+      expect(frame.includes("continues after exit")).toBe(continues);
+      await t.mockInput.typeText("/quit");
+      await t.renderOnce();
+      press(t, "escape");
+      await t.renderOnce();
+      t.mockInput.pressEnter();
+      await t.renderOnce();
+      expect(quitCalls).toEqual(continues ? [1] : []);
+      expect(cancellations).toEqual([]);
+      if (!continues) expect(t.captureCharFrame()).toContain("press again to quit (run active)");
+    } finally {
+      t.renderer.destroy();
+    }
+  },
+);
 
 test("a clean managed worktree asks whether to remove its checkout before exit", async () => {
   const quitCalls: number[] = [];
@@ -1821,7 +2146,7 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   applyRunEvents(activitySink, initial, "live");
   const t = await mountApp(defaultProps({ store, activity }));
   await captureUntil(t, "WIDTH ANCHOR");
-  const historyBefore = t.renderer.root.findDescendantById("committed-history");
+  const historyBefore = t.renderer.root.findDescendantById("transcript-viewport");
   const historyWidthBefore = historyBefore?.width;
 
   const delegation: RunEvent[] = [
@@ -1838,21 +2163,34 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   applyRunEvents(sink, delegation, "live");
   applyRunEvents(activitySink, delegation, "live");
   const out = await captureUntil(t, "Lead transcript");
-  const historyOpen = t.renderer.root.findDescendantById("committed-history");
+  const historyOpen = t.renderer.root.findDescendantById("transcript-viewport");
   expect(out).toContain("explorer");
-  expect(out).toContain("Running");
+  expect(out).toContain("0/1 finished · 1 running");
   expect(out).not.toContain("tokens");
   expect(out).toContain("│ Agents");
   expect(out.replace(/\s+/g, " ")).toContain("> Lead transcript");
   expect(out).not.toContain("look around");
   expect(out).not.toContain("Activity detail");
+  expect(out).toContain("[^l] open / close sidebar");
+  expect(out).toContain("send / steer");
+  expect(out).toContain("isolation");
+  expect(out).toContain("review");
+  expect(out).not.toContain("close activity");
+  expect(out).not.toContain("Agents 1 · 1 running");
   expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
 
   press(t, "escape");
   await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("│ Agents");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
-  const historyExplicitlyClosed = t.renderer.root.findDescendantById("committed-history");
+  await t.renderOnce();
+  const historyExplicitlyClosed = t.renderer.root.findDescendantById("transcript-viewport");
   expect(historyExplicitlyClosed?.width).toBe(historyWidthBefore);
+  const closedFrame = t.captureCharFrame();
+  expect(closedFrame).not.toContain("open / close sidebar");
+  expect(closedFrame).toContain("send / steer");
+  expect(closedFrame).not.toContain("Agents 1 · 1 running");
 
   const laterDelegation: RunEvent[] = [
     ev({
@@ -1867,9 +2205,11 @@ test("the first visible sub-agent opens Agents once per run and an explicit clos
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
-  expect(t.renderer.root.findDescendantById("committed-history")?.width).toBe(historyWidthBefore);
+  expect(t.renderer.root.findDescendantById("transcript-viewport")?.width).toBe(historyWidthBefore);
 
   const nextSink = store.openRun("exec_2");
   const nextActivitySink = activity.openRun();
@@ -1933,7 +2273,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const planOpen = await captureUntil(t, "Intent plan");
   expect(planOpen).toContain("│ Plan");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   const planUpdate: RunEvent[] = [
     ev({
@@ -1962,11 +2302,10 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("│ Plan");
 
-  await t.mockInput.typeText("/activity plan");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedPlan = await captureUntil(t, "Intent plan");
   expect(manuallyReopenedPlan).toContain("│ Plan");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   setWorkflow({
@@ -1996,7 +2335,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const workflowOpen = await captureUntil(t, "Workflow intent leader");
   expect(workflowOpen).toContain("Parallel work");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   setWorkflow((current) => {
     const nodes = new Map(current!.nodes);
@@ -2013,11 +2352,10 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("Parallel work");
 
-  await t.mockInput.typeText("/activity workflow");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedWorkflow = await captureUntil(t, "Later workflow leader");
   expect(manuallyReopenedWorkflow).toContain("Parallel work");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   const firstDelegation: RunEvent[] = [
@@ -2036,7 +2374,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsOpen).toContain("│ Agents");
   expect(agentsOpen).toContain("Lead transcript");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   const laterDelegation: RunEvent[] = [
     ev({
@@ -2056,12 +2394,11 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   expect(agentsStillClosed).not.toContain("│ Agents");
   expect(agentsStillClosed).not.toContain("Lead transcript");
 
-  await t.mockInput.typeText("/activity agents");
-  t.mockInput.pressEnter();
+  press(t, "l", { ctrl: true });
   const manuallyReopenedAgents = await captureUntil(t, "│ Agents");
   expect(manuallyReopenedAgents).toContain("│ Agents");
   expect(manuallyReopenedAgents).toContain("Lead transcript");
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   setWorkflow({
@@ -2091,7 +2428,7 @@ test("Plan, Parallel work, and Agents own independent once-per-run sidebar revea
   const nextWorkflow = await captureUntil(t, "Next workflow leader");
   expect(nextWorkflow).toContain("Parallel work");
 
-  press(t, "escape");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   setWorkflow(null);
   const nextSink = store.openRun("exec_intents_next");
@@ -2159,13 +2496,15 @@ test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", as
   ];
   applyRunEvents(sink, laterDelegation, "live");
   applyRunEvents(activitySink, laterDelegation, "live");
-  const stillClosed = await captureUntil(t, "Agents 2");
+  await t.renderOnce();
+  await t.renderOnce();
+  const stillClosed = t.captureCharFrame();
   expect(stillClosed).not.toContain("│ Agents");
   expect(stillClosed).not.toContain("Lead transcript");
   t.renderer.destroy();
 });
 
-test("Escape closes a narrow-layout inspector drawer without canceling the active run", async () => {
+test("Ctrl+L toggles a narrow inspector while Escape leaves it open", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2192,6 +2531,8 @@ test("Escape closes a narrow-layout inspector drawer without canceling the activ
 
   press(t, "escape");
   await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("│ Agents");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
 
   // Closing the drawer preserves transcript orientation but removes the
@@ -2229,14 +2570,14 @@ test("normal submit and steer return an old reader to the Lead tail while backgr
   applyRunEvents(sink, background, "live");
   applyRunEvents(activitySink, background, "live");
   for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeDefined();
   expect(t.captureCharFrame()).not.toContain("BACKGROUND APPEND MUST NOT JUMP");
 
   await t.mockInput.typeText("normal explicit submit");
   t.mockInput.pressEnter();
   const afterSubmit = await captureUntil(t, "BACKGROUND APPEND MUST NOT JUMP");
   expect(afterSubmit).toContain("BACKGROUND APPEND MUST NOT JUMP");
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeUndefined();
   expect(submissions).toEqual(["normal explicit submit"]);
 
   setActive(true);
@@ -2273,17 +2614,65 @@ test("an elicitation returns an old reader to the live tail before hiding the co
 
   await captureUntil(t, "ELICIT HISTORY 40");
   await moveReaderAwayFromTail(t);
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeDefined();
+  const readerFrame = t.captureCharFrame();
+  const readerRows = readerFrame.split("\n");
+  const readerAnchorRow = readerRows.findIndex((row) => row.includes("ELICIT HISTORY"));
+  const readerAnchor = readerRows[readerAnchorRow]?.trim();
+  expect(readerAnchorRow).toBeGreaterThan(0);
+  expect(readerAnchor).toBeDefined();
 
-  setElicit({ message: "allow the pending write?", kind: "guard_confirm" });
-  const question = await captureUntil(t, "allow the pending write?");
+  const recorder = new TestRecorder(t.renderer);
+  recorder.rec();
+  setElicit({
+    message: "allow the pending write?",
+    kind: "guard_confirm",
+    detail: {
+      command: `bun run ${"long-command-segment ".repeat(8)}`,
+      cwd: "/home/user/project",
+      reason: "The command changes generated client files after a long running response.",
+      warning: "Review the complete command before allowing it.",
+    },
+  });
+  let question = await captureUntil(t, "The command changes generated client files");
+  for (let pass = 0; pass < 20 && question.includes("Steer this run"); pass += 1) {
+    await t.renderOnce();
+    question = t.captureCharFrame();
+  }
+  recorder.stop();
   expect(question).toContain("Command approval");
   expect(question).not.toContain("Steer this run");
-  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(t.renderer.root.findDescendantById("transcript-reader-indicator")).toBeUndefined();
+  expect(recorder.recordedFrames.length).toBeGreaterThan(0);
+  for (const recorded of recorder.recordedFrames) {
+    const frame = recorded.frame;
+    const retainedSurface =
+      frame.includes("Steer this run") ||
+      frame.includes("Command approval") ||
+      frame.includes("The command changes generated client files");
+    if (!retainedSurface)
+      throw new Error(
+        `elicitation transition lost both surfaces at frame ${recorded.frameNumber}:\n${frame}`,
+      );
+  }
 
+  recorder.rec();
   setElicit(null);
   await captureUntil(t, "Steer this run");
-  expect(await captureUntil(t, "ELICIT HISTORY 40")).toContain("Steer this run");
+  const restored = await captureUntil(t, "ELICIT HISTORY 40");
+  recorder.stop();
+  expect(restored).toContain("Steer this run");
+  for (const recorded of recorder.recordedFrames) {
+    const frame = recorded.frame;
+    const retainedSurface =
+      frame.includes("Command approval") ||
+      frame.includes("The command changes generated client files") ||
+      frame.includes("Steer this run");
+    if (!retainedSurface)
+      throw new Error(
+        `elicitation resolution lost both surfaces at frame ${recorded.frameNumber}:\n${frame}`,
+      );
+  }
   t.renderer.destroy();
 });
 
@@ -2577,11 +2966,11 @@ test("the split sidebar owns one compact textual agent roster, including after e
   expect(before).toContain("Lead transcript");
   expect(before.match(/2\/3 finished/g)?.length).toBe(1);
   expect(before).toContain("1 running");
-  expect(before).toContain("1 failed");
+  expect(before.split("\n").find((row) => row.includes("2/3 finished"))).not.toContain("failed");
   expect(normalizedBefore).toContain("A1 Scout");
   expect(normalizedBefore).toContain("A2 Reviewer");
   expect(normalizedBefore).toContain("A3 Fixer");
-  expect(before).toContain("Failed: Typechec");
+  expect(before).not.toContain("Typecheck failed");
   expect(before).not.toContain("All agents");
   expect(before).not.toContain("Aggregated transcript");
   expect(before).not.toContain("Activity: working");
@@ -2671,16 +3060,12 @@ test("the main transcript omits workers and sidebar selection opens one isolated
   expect(isolated).toContain("SCOUT BODY OPENS READABLE");
   expect(isolated).not.toContain("REVIEWER BODY OPENS READABLE");
 
-  await clickText(t, isolated, "Scout");
-  const collapsed = await captureUntil(t, "hidden");
-  expect(collapsed).not.toContain("SCOUT BODY OPENS READABLE");
-  await clickText(t, collapsed, "Lead transcript");
+  await clickText(t, isolated, "Lead transcript");
   const leadAgain = await captureUntil(t, "Reviewer");
   await clickLastText(t, leadAgain, "Scout");
   press(t, "pageup");
-  const reselected = await captureUntil(t, "hidden");
-  expect(reselected).toContain("hidden");
-  expect(reselected).not.toContain("SCOUT BODY OPENS READABLE");
+  const reselected = await captureUntil(t, "SCOUT BODY OPENS READABLE");
+  expect(reselected).not.toContain("REVIEWER BODY OPENS READABLE");
   t.renderer.destroy();
 });
 
@@ -2772,7 +3157,8 @@ test("clicking a completed agent opens its isolated transcript without a detail 
     }),
   ];
   const t = await mountApp(defaultProps({ seedStream: stream }), { width: 140, height: 34 });
-  const frame = await captureUntil(t, "click to read");
+  const frame = await captureUntil(t, "Researcher");
+  expect(frame).not.toContain("click to read");
   const rows = frame.split("\n");
   const researcher = rows
     .map((row, y) => ({ row, y, x: row.lastIndexOf("Researcher") }))
@@ -2782,11 +3168,12 @@ test("clicking a completed agent opens its isolated transcript without a detail 
   const selected = await captureUntil(t, "ISOLATED WORKER RESULT");
   expect(selected).not.toContain("Completed sub-agent response");
   expect(selected).not.toContain("Activity detail");
-  expect(selected).toContain("> A1");
+  expect(selected).toContain("> ");
+  expect(selected).toContain("A1  Researcher");
   t.renderer.destroy();
 });
 
-test("a compact activity strip keeps sub-agents visible when the split sidebar cannot fit", async () => {
+test("the sidebar is the only compact sub-agent roster", async () => {
   const subStream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2805,14 +3192,15 @@ test("a compact activity strip keeps sub-agents visible when the split sidebar c
   });
   const frame = await captureUntil(t, "Lead transcript");
   expect(frame).toContain("responsive explorer");
-  expect(frame).toContain("Agents 1");
-  expect(frame).toContain("1 running");
-  press(t, "escape");
+  expect(frame).toContain("│ Agents");
+  expect(frame.replace(/[│\s]+/gu, " ")).toContain("0/1 finished · 1 running");
+  expect(frame).not.toContain("Agents 1 · 1 running");
+  press(t, "l", { ctrl: true });
   await t.renderOnce();
   await t.renderOnce();
   const closed = t.captureCharFrame();
   expect(closed).not.toContain("Lead transcript");
-  expect(closed).toContain("Agents 1");
+  expect(closed).not.toContain("Agents 1 · 1 running");
   t.renderer.destroy();
 });
 
@@ -2844,7 +3232,8 @@ test("the first workflow leader opens and reveals Parallel work", async () => {
   const t = await mountApp(defaultProps({ workflowActivity: workflow }));
   const split = await captureUntil(t, "Visual continuity audit");
   expect(split).toContain("Parallel work");
-  expect(split).toContain("1 leader");
+  expect(split).toContain("0/1 finished · 1 running");
+  expect(split).not.toContain("iterations");
   t.renderer.destroy();
 });
 
@@ -2894,7 +3283,7 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   await t.renderOnce();
   t.mockInput.pressEnter();
   await captureUntil(t, "Run controls");
-  for (let i = 0; i < 6; i++) press(t, "down");
+  for (let i = 0; i < settingsHubIndex("theme"); i++) press(t, "down");
   await t.renderOnce();
   press(t, "return");
   await captureUntil(t, "contrast checker");
@@ -2908,6 +3297,14 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   expect(kept).toContain("Unsaved");
   expect(kept).toContain("contrast checker");
   expect(kept).not.toContain("allow this command?");
+
+  await settleSyntaxSurfaces(t);
+  const coveredFrame = t.captureCharFrame();
+  const coveredRecorder = new TestRecorder(t.renderer);
+  coveredRecorder.rec();
+  await Bun.sleep(0);
+  coveredRecorder.stop();
+  for (const recorded of coveredRecorder.recordedFrames) expect(recorded.frame).toBe(coveredFrame);
 
   press(t, "escape");
   await captureUntil(t, "Discard unsaved changes?");

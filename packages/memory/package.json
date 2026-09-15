@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/memory",
-
   "private": true,
   "description": "Workspace-local execution memory for Clarvis agents \u2014 a navigable markdown wiki (PROFILE \u2192 TOPIC \u2192 MEMORY) the model reads and edits directly, with a deterministic reindex and an autonomous per-run indexer that runs as a real agent run over those same tools.",
   "license": "MIT",

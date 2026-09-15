@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { loadEnv, type ContextSnapshotEntry, type ExecutionRecord } from "@clarvis/capability";
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
+import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { createRunService } from "../../src/runs/run-service.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -23,6 +24,10 @@ function managerHandle(executionId: string, closed: Promise<void>): RunHandle {
     steer: async () => {},
     compact: async () => {},
     cancel: async () => {},
+    interruptTool: async (toolExecutionId) => ({
+      tool_execution_id: toolExecutionId,
+      status: "not_running",
+    }),
     respond: async () => {},
     onElicit: () => {},
   };
@@ -69,6 +74,395 @@ function settledRecord(id: string, context: ContextSnapshotEntry[]): ExecutionRe
 }
 
 describe("run-service lifecycle reservation", () => {
+  it.each(["synthetic", "unadmitted"] as const)(
+    "does not capture %s continuation text as authority",
+    async (admission) => {
+      let captured: ExecuteRunArgs | undefined;
+      const service = createRunService({
+        deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+        owner: "owner",
+        ingestGraceMs: 0,
+        operatorAuthorityFor: () =>
+          admission === "unadmitted"
+            ? undefined
+            : {
+                binding: {
+                  owner_key_name: "owner",
+                  session_id: "session",
+                  controller_epoch: "epoch",
+                },
+                captureInput: false,
+                signal: new AbortController().signal,
+              },
+        assembleRunRequest: (params) => params,
+        executeRun: async (args) => {
+          captured = args;
+          return {
+            executionId: "synthetic-authority",
+            response: {
+              status: "completed",
+              result: "done",
+              usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+            },
+          };
+        },
+      });
+      const handle = await service.start({
+        execution_id: "synthetic-authority",
+        messages: [{ role: "user", content: "Continue working on the goal" }],
+      });
+      await handle.done;
+      if (admission === "unadmitted") expect(captured?.operatorAuthoritySeed).toBeUndefined();
+      else expect(captured?.operatorAuthoritySeed?.evidence).toEqual([]);
+      await handle.closed;
+    },
+  );
+  it("captures admitted operator text before skill seeds and keeps controller retirement separate", async () => {
+    const controller = new AbortController();
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: controller.signal,
+      }),
+      assembleRunRequest: (params) => ({
+        ...params,
+        messages: [...params.messages, { role: "user", content: "synthetic skill seed" }],
+      }),
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "authority-test",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "authority-test",
+      messages: [
+        { role: "assistant", content: "assistant permission" },
+        { role: "user", content: [{ type: "text", text: "Commit the changes" }] },
+      ],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Commit the changes",
+    ]);
+    expect(captured?.operatorAuthoritySeed?.binding.outcome_id).toBeString();
+    expect(captured?.operatorAuthoritySignal).toBe(controller.signal);
+    expect(captured?.externalSignal).not.toBe(controller.signal);
+    expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");
+    expect(JSON.stringify(captured?.rawBody)).toContain("synthetic skill seed");
+    await handle.closed;
+  });
+  it("keeps an admitted prompt larger than the former evidence ceiling active", async () => {
+    const prompt = "Implement the approved plan. ".repeat(800);
+    let authorityStatus: string | undefined;
+    let evidenceText: string | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        const authority = createOperatorAuthorityRuntime({
+          seed: args.operatorAuthoritySeed,
+          owner: "owner",
+          executionId: "long-authority",
+        }).reader.snapshot();
+        authorityStatus = authority.status;
+        evidenceText = authority.evidence[0]?.text;
+        return {
+          executionId: "long-authority",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "long-authority",
+      messages: [{ role: "user", content: prompt }],
+    });
+    await handle.done;
+    expect(prompt.length).toBeGreaterThan(4_096);
+    expect(authorityStatus).toBe("active");
+    expect(evidenceText).toBe(prompt);
+    await handle.closed;
+  });
+  it("carries settled conversation evidence into a fresh authenticated outcome", async () => {
+    const traceStore = createMemoryTraceStore();
+    const previous = settledRecord("implementation", []);
+    previous.operator_authority_state = {
+      version: 1,
+      binding: {
+        owner_key_name: "owner",
+        session_id: "session",
+        controller_epoch: "epoch",
+        outcome_id: "implementation-outcome",
+      },
+      revision: 2,
+      status: "settled",
+      evidence: [
+        {
+          id: "original-request",
+          source: "start",
+          text: "Fix the command reviewer for the scoped files",
+          execution_id: "implementation",
+        },
+      ],
+      consumed_effects: [],
+    };
+    await traceStore.insert(previous);
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "publication",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "publication",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Open a pull request" }],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.binding.outcome_id).not.toBe("implementation-outcome");
+    expect(captured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Fix the command reviewer for the scoped files",
+      "Open a pull request",
+    ]);
+    expect(
+      createOperatorAuthorityRuntime({
+        seed: captured?.operatorAuthoritySeed,
+        owner: "owner",
+        executionId: "publication",
+      }).reader.snapshot().status,
+    ).toBe("active");
+    await handle.closed;
+  });
+  it("does not reactivate settled evidence without fresh input or under another controller", async () => {
+    const traceStore = createMemoryTraceStore();
+    const previous = settledRecord("implementation", []);
+    previous.operator_authority_state = {
+      version: 1,
+      binding: {
+        owner_key_name: "owner",
+        session_id: "session",
+        controller_epoch: "epoch",
+      },
+      revision: 2,
+      status: "settled",
+      evidence: [
+        {
+          id: "original-request",
+          source: "start",
+          text: "Commit the prior change",
+          execution_id: "implementation",
+        },
+      ],
+      consumed_effects: [],
+    };
+    await traceStore.insert(previous);
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        captureInput: false,
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "automatic",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const handle = await service.start({
+      execution_id: "automatic",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Synthetic continuation" }],
+    });
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.evidence).toEqual([]);
+    await handle.closed;
+
+    let foreignCaptured: ExecuteRunArgs | undefined;
+    const foreignService = createRunService({
+      deps: { traceStore } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: {
+          owner_key_name: "owner",
+          session_id: "session",
+          controller_epoch: "other-epoch",
+        },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        foreignCaptured = args;
+        return {
+          executionId: "foreign-controller",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const foreignHandle = await foreignService.start({
+      execution_id: "foreign-controller",
+      continue_from: "implementation",
+      messages: [{ role: "user", content: "Open a pull request" }],
+    });
+    await foreignHandle.done;
+    expect(foreignCaptured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Open a pull request",
+    ]);
+    await foreignHandle.closed;
+  });
+  it.each([
+    { text: "Preserve the user's confirmed database choice.", expected: "compacted" },
+    { text: "An ineffective summary. ".repeat(500), expected: "skipped" },
+  ])(
+    "settled guided compaction accounts for model usage when $expected",
+    async ({ text, expected }) => {
+      const traceStore = createMemoryTraceStore();
+      const context: ContextSnapshotEntry[] = Array.from({ length: 8 }, (_, index) => ({
+        message: {
+          role: index % 2 === 0 ? "user" : "assistant",
+          content: `turn ${index}: ${"x".repeat(700)}`,
+        },
+        evictable: true,
+        summary: false,
+        canonical: false,
+      }));
+      await traceStore.insert(settledRecord("background-result", context));
+      const llm = new MockLLM({
+        script: [
+          {
+            text,
+            usage: { input_tokens: 30, output_tokens: 12, cached_tokens: 4, cache_write_tokens: 2 },
+          },
+        ],
+      });
+      const service = createRunService({
+        deps: { env: loadEnv({}), llm, traceStore } as unknown as ExecuteRunDeps,
+        owner: "owner",
+        assembleRunRequest: () => {
+          throw new Error("compaction must not prepare another turn");
+        },
+      });
+      const result = await service.compact("background-result", "  preserve confirmed choices  ");
+      expect(result.status).toBe(expected);
+      expect(llm.calls).toHaveLength(1);
+      expect(JSON.stringify(llm.calls[0]!.messages)).toContain("preserve confirmed choices");
+      const stored = traceStore.getById("owner", "background-result")!;
+      expect(stored.total_input_tokens).toBe(30);
+      expect(stored.total_output_tokens).toBe(12);
+      expect(stored.total_cached_tokens).toBe(4);
+      expect(stored.total_cache_write_tokens).toBe(2);
+      if (expected === "compacted") {
+        expect(JSON.stringify(stored.final_context)).toContain(
+          "Preserve the user's confirmed database choice",
+        );
+        expect(result).toMatchObject({
+          usage: { input_tokens: 30, output_tokens: 12, cached_tokens: 4, cache_write_tokens: 2 },
+        });
+      } else expect(stored.final_context).toEqual(context);
+    },
+  );
+
+  it("a stored execution removed during guided compaction cannot be recreated by its late summary", async () => {
+    const traceStore = createMemoryTraceStore();
+    const context: ContextSnapshotEntry[] = Array.from({ length: 8 }, (_, index) => ({
+      message: { role: index % 2 === 0 ? "user" : "assistant", content: "x".repeat(700) },
+      evictable: true,
+      summary: false,
+      canonical: false,
+    }));
+    await traceStore.insert(settledRecord("removed-result", context));
+    const llm = new MockLLM({ script: [{ text: "Retain the decision." }] });
+    const service = createRunService({
+      deps: {
+        env: loadEnv({}),
+        traceStore,
+        llm: {
+          async call(params: Parameters<MockLLM["call"]>[0]) {
+            await traceStore.deleteById("owner", "removed-result");
+            return llm.call(params);
+          },
+        },
+      } as unknown as ExecuteRunDeps,
+      owner: "owner",
+      assembleRunRequest: () => ({}),
+    });
+    await expect(service.compact("removed-result", "retain decisions")).rejects.toMatchObject({
+      code: "not_found",
+    });
+    expect(traceStore.getById("owner", "removed-result")).toBeNull();
+  });
+
+  it("empty and unavailable stored runs do not launch compaction or accept invalid targets", async () => {
+    const traceStore = createMemoryTraceStore();
+    await traceStore.insert(settledRecord("empty", []));
+    const llm = new MockLLM({ script: [] });
+    const service = createRunService({
+      deps: { env: loadEnv({}), llm, traceStore } as unknown as ExecuteRunDeps,
+      owner: "owner",
+      assembleRunRequest: () => ({}),
+    });
+    await expect(service.compact("empty")).resolves.toMatchObject({
+      status: "skipped",
+      reason: "no_context",
+    });
+    await expect(service.compact("missing")).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      service.compact("empty", undefined, { mechanical_target_tokens: 0.5 }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(llm.calls).toEqual([]);
+  });
+
   it("keeps an execution id reserved until bounded post-run event delivery closes", async () => {
     const firstClosed = deferred();
     let generation = 0;

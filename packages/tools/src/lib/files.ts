@@ -1,17 +1,10 @@
 import { constants, promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
+import picomatch from "picomatch";
 import { ToolError, fsError } from "../errors.ts";
 import { loadIgnore } from "./ignore.ts";
 import { assertWithinWorkspace } from "./paths.ts";
-
-interface PicoMatch {
-  (pattern: string, options: { dot: boolean; windows: boolean }): (input: string) => boolean;
-}
-
-const require = createRequire(import.meta.url);
-const picomatch = require("picomatch") as PicoMatch;
 
 /** Default parallelism for batched `stat` calls (see {@link mapLimit}). */
 export const STAT_CONCURRENCY = 32;

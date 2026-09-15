@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import type { TranscriptNode } from "../../src/adapters/store.ts";
+import type { TranscriptNode, TranscriptStore } from "../../src/adapters/store.ts";
+import { createTranscriptProjection } from "../../src/adapters/transcript-projection.ts";
 import { createTranscriptState, type TranscriptState } from "../../src/views/transcript-state.ts";
 
 function node(partial: Partial<TranscriptNode> & { key: string }): TranscriptNode {
@@ -32,6 +33,20 @@ function harness(
       nodes: currentNodes,
       subagents: () => subs(),
       notify: (m) => toasts.push(m),
+    });
+    const projection = createTranscriptProjection(
+      {
+        get nodes() {
+          return currentNodes();
+        },
+        committedNodes: () => [],
+      } as unknown as TranscriptStore,
+      ts.selectedSubagent,
+    );
+    ts.bindRows({
+      ids: projection.ids,
+      destination: projection.destination,
+      defaultFolded: () => false,
     });
     return d;
   });
@@ -84,10 +99,10 @@ test("a selected subagent isolates its blocks and cycling back restores only Lea
     { id: "fixer-id", order: 1, title: "Fixer" },
   ]);
   h.ts.cycleSubagent();
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w0"]);
+  expect(h.ts.semanticNodes().map((n) => n.key)).toEqual(["r::w0"]);
   h.ts.cycleSubagent();
   h.ts.cycleSubagent();
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::u", "r::lead"]);
+  expect(h.ts.semanticNodes().map((n) => n.key)).toEqual(["r::u", "r::lead"]);
   h.dispose();
 });
 
@@ -110,7 +125,7 @@ test("two different runs' subagents at the same order never collide", () => {
   ];
   const h = harness(nodes, [{ id: "id-a", order: 0, title: "Scout" }]);
   h.ts.toggleSubagent("id-a");
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["run1::w0"]);
+  expect(h.ts.semanticNodes().map((n) => n.key)).toEqual(["run1::w0"]);
   h.dispose();
 });
 
@@ -131,13 +146,13 @@ test("toggleSubagent: selects, re-toggling the same clears, toggling another swi
   ]);
   h.ts.toggleSubagent("scout-id");
   expect(h.ts.selectedSubagent()).toBe("scout-id");
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w0"]);
+  expect(h.ts.semanticNodes().map((n) => n.key)).toEqual(["r::w0"]);
   h.ts.toggleSubagent("scout-id");
   expect(h.ts.selectedSubagent()).toBeNull();
   expect(h.toasts.at(-1)).toBe("showing Lead transcript");
   h.ts.toggleSubagent("fixer-id");
   expect(h.ts.selectedSubagent()).toBe("fixer-id");
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w1"]);
+  expect(h.ts.semanticNodes().map((n) => n.key)).toEqual(["r::w1"]);
   h.dispose();
 });
 
@@ -180,144 +195,6 @@ test("selecting a subagent clears a focused key that's no longer visible", () =>
   expect(h.ts.focusedKey()).toBe("r::t1");
   h.ts.toggleSubagent("scout-id");
   expect(h.ts.focusedKey()).toBeNull();
-  h.dispose();
-});
-
-test("a first child selection expands its section without changing Lead fold state", () => {
-  const lead = node({ key: "run::lead-tool", mcpName: "fs", toolName: "grep" });
-  const card = node({
-    key: "run::child-card",
-    kind: "subagent",
-    title: "Scout",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const body = node({
-    key: "run::child-body",
-    kind: "assistant",
-    text: "child result",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const h = harness([lead, card, body], [{ id: "scout-id", order: 0, title: "Scout" }]);
-  h.ts.toggleAt(lead.key);
-  expect(h.ts.overrideOf(lead.key)).toBe("collapsed");
-
-  h.ts.toggleSubagent("scout-id");
-
-  expect(h.ts.overrideOf(card.key)).toBe("expanded");
-  expect(h.ts.folded(body.key)).toBe(false);
-  expect(h.ts.overrideOf(lead.key)).toBe("collapsed");
-  expect(h.ts.expandAll()).toBe(false);
-  h.dispose();
-});
-
-test("a child selected before its body arrives expands when the section becomes foldable", () => {
-  const card = node({
-    key: "run::child-card",
-    kind: "subagent",
-    title: "Scout",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const body = node({
-    key: "run::child-body",
-    kind: "assistant",
-    text: "late child result",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const h = harness([card], [{ id: "scout-id", order: 0, title: "Scout" }]);
-  h.ts.toggleSubagent("scout-id");
-  expect(h.ts.overrideOf(card.key)).toBeUndefined();
-
-  h.setNodes([card, body]);
-
-  expect(h.ts.overrideOf(card.key)).toBe("expanded");
-  expect(h.ts.folded(body.key)).toBe(false);
-  h.dispose();
-});
-
-test("manual child collapse survives Lead and child reselection while siblings expand independently", () => {
-  const scoutCard = node({
-    key: "run::scout-card",
-    kind: "subagent",
-    title: "Scout",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const scoutBody = node({
-    key: "run::scout-body",
-    kind: "assistant",
-    text: "scout result",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const fixerCard = node({
-    key: "run::fixer-card",
-    kind: "subagent",
-    title: "Fixer",
-    subagentId: "fixer-id",
-    subagentOrder: 1,
-  });
-  const fixerBody = node({
-    key: "run::fixer-body",
-    kind: "assistant",
-    text: "fixer result",
-    subagentId: "fixer-id",
-    subagentOrder: 1,
-  });
-  const h = harness(
-    [scoutCard, scoutBody, fixerCard, fixerBody],
-    [
-      { id: "scout-id", order: 0, title: "Scout" },
-      { id: "fixer-id", order: 1, title: "Fixer" },
-    ],
-  );
-
-  h.ts.toggleSubagent("scout-id");
-  expect(h.ts.overrideOf(scoutCard.key)).toBe("expanded");
-  h.ts.toggleAt(scoutCard.key);
-  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
-  expect(h.ts.folded(scoutBody.key)).toBe(true);
-
-  h.ts.toggleSubagent("scout-id");
-  h.ts.toggleSubagent("scout-id");
-  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
-  expect(h.ts.folded(scoutBody.key)).toBe(true);
-
-  h.ts.toggleSubagent("fixer-id");
-  expect(h.ts.overrideOf(fixerCard.key)).toBe("expanded");
-  expect(h.ts.folded(fixerBody.key)).toBe(false);
-  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
-  h.dispose();
-});
-
-test("first-selection anchors are pruned with semantic retention", () => {
-  const card = node({
-    key: "run::child-card",
-    kind: "subagent",
-    title: "Scout",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const body = node({
-    key: "run::child-body",
-    kind: "assistant",
-    text: "child result",
-    subagentId: "scout-id",
-    subagentOrder: 0,
-  });
-  const h = harness([card, body], [{ id: "scout-id", order: 0, title: "Scout" }]);
-  h.ts.toggleSubagent("scout-id");
-  h.ts.toggleAt(card.key);
-  expect(h.ts.overrideOf(card.key)).toBeUndefined();
-
-  h.setNodes([]);
-  h.setNodes([card, body]);
-
-  expect(h.ts.overrideOf(card.key)).toBe("expanded");
-  expect(h.ts.folded(body.key)).toBe(false);
   h.dispose();
 });
 
@@ -364,7 +241,7 @@ test("focusBlock clamps at the ends; clearFocus reports whether there was one", 
 });
 
 test("focusBlock with nothing focusable notifies and returns null", () => {
-  const h = harness([node({ key: "r::u", kind: "user" })]);
+  const h = harness([]);
   expect(h.ts.focusBlock(1)).toBeNull();
   expect(h.toasts).toEqual(["nothing to focus"]);
   h.dispose();
@@ -495,4 +372,27 @@ test("pickDiffNode asks for nothing when the selected diff block still has its b
   } finally {
     h.dispose();
   }
+});
+
+test("explicit child expansion and focus survive projection navigation, then release on retention", () => {
+  const a = node({ key: "run::a", subagentId: "A", subagentOrder: 0, toolName: "shell" });
+  const b = node({ key: "run::b", subagentId: "B", subagentOrder: 1, toolName: "shell" });
+  const h = harness(
+    [a, b],
+    [
+      { id: "A", order: 0, title: "A" },
+      { id: "B", order: 1, title: "B" },
+    ],
+  );
+  h.ts.toggleSubagent("A");
+  h.ts.toggleAt(a.key);
+  expect(h.ts.overrideOf(a.key)).toBe("collapsed");
+  h.ts.toggleSubagent("B");
+  h.ts.toggleAt(b.key);
+  h.ts.toggleSubagent("A");
+  expect(h.ts.focusedKey()).toBe(a.key);
+  expect(h.ts.overrideOf(a.key)).toBe("collapsed");
+  h.setNodes([]);
+  expect(h.ts.overrideOf(a.key)).toBeUndefined();
+  h.dispose();
 });

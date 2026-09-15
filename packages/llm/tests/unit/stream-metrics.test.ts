@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStreamMetrics, streamMetrics } from "../../src/stream-metrics.ts";
+import { environmentFixture, spyOnProcessEnv } from "../helpers/process-fixtures.ts";
 
 /**
  * Every module under test here is reached through the **static** import above,
@@ -146,15 +147,15 @@ describe("streamMetrics", () => {
   });
 
   it("is a no-op sink when CLARVIS_STREAM_DEBUG is unset, memoized and never throwing", () => {
-    const previous = process.env.CLARVIS_STREAM_DEBUG;
-    delete process.env.CLARVIS_STREAM_DEBUG;
+    const env = spyOnProcessEnv(
+      environmentFixture({ ...process.env, CLARVIS_STREAM_DEBUG: undefined }),
+    );
     try {
       const metrics = streamMetrics();
       expect(() => metrics.count("delta", 3)).not.toThrow();
       expect(streamMetrics("ignored-source")).toBe(metrics);
     } finally {
-      if (previous === undefined) delete process.env.CLARVIS_STREAM_DEBUG;
-      else process.env.CLARVIS_STREAM_DEBUG = previous;
+      env.mockRestore();
     }
   });
 });

@@ -41,6 +41,23 @@ describe("systemSectionsFor", () => {
 });
 
 describe("activationForScope", () => {
+  it("requires entry attachment without granting the capability to children", () => {
+    const caps = [runCapability("required", { required: true })];
+    expect(() => activationForScope(caps, scope)).toThrow("unavailable during entry");
+    expect(() => activationForScope(caps, { ...scope, agent: "subagent" })).toThrow(
+      "unavailable during entry",
+    );
+    expect(activationForScope(caps, { ...scope, entry: false }).capabilities).toEqual([]);
+    expect(
+      activationForScope(caps, { ...scope, signal: AbortSignal.abort() }).capabilities,
+    ).toEqual([]);
+    expect(
+      activationForScope(
+        [runCapability("ready", { required: true, forAgent: () => ({ attach: () => ({}) }) })],
+        scope,
+      ).capabilities,
+    ).toHaveLength(1);
+  });
   it("bundles the per-agent capabilities and the system sections together", () => {
     const attached = { tools: [] };
     const caps = [

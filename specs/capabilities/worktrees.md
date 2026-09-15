@@ -94,7 +94,7 @@ Test: `packages/code/tests/component/workspace-client-manager.test.ts`;
 `packages/code/tests/unit/workspace-runtime.test.ts`;
 `packages/kernel/tests/integration/file-kernel.test.ts`.
 
-## 5. Sandbox and guarded host fallback
+## 5. Sandbox and host fallback
 
 A linked checkout's `.git` is a pointer into the primary repository. The command sandbox therefore
 validates its worktree target and reciprocal backlink once while configuring the toolset, then pins
@@ -103,24 +103,26 @@ workspace-write mode and read-only for workspace-read-only mode without re-readi
 It does not mount the operator's home directory, credential files, or keyring.
 
 When the sandbox lacks a required host environment variable, credential channel, runtime, or
-service, the model may request `host_vcs`. The historical name remains compatible while `program`
-may name any executable. It is a direct argv tool, not a host shell; it is absent from read-only runs
-and fails closed without guard review. The kernel emits an ordinary `ask`, so guard mode `on` routes
-to the human and a configured mode `auto` routes to the judge under its normal unsure/fallback
-policy. Its cwd stays within the selected workspace, time and output are bounded, prompts are
-disabled, and Clarvis-managed secret environment variables remain withheld. Git additionally loses
-inherited repository-local variables, hooks, and external protocol helpers. Executable Git options
-(`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs, `git credential`, and
-`gh auth token` remain denied independently of reviewer approval.
+service, the model retries the same `shell` or `monitor_start` command with
+`sandbox_permissions: "require_escalated"` and a short `justification`. Isolation Sandbox then
+spawns that one command on the host after approval: `on` asks a human; Auto uses the judge, with
+`allow` executing and `deny` refusing. Unsure, failed or malformed review follows `on_unsure`
+(default `deny`; explicit `ask` may use a human); an unavailable model follows the same fallback. Host-command asks never
+use session coverage or offer `allow_session`, including fallback; clean exact-call judge memoization
+remains separate. Isolation Host already runs unsandboxed and the field leaves normal review intact.
+Isolated container runs reject the field. Mode `off` proceeds without a reviewer. Executable Git
+options (`--upload-pack`, `--receive-pack`, and `--exec`), custom transport-helper URLs,
+`git credential`, and `gh auth token` remain denied independently of command review.
 
 Production: `packages/tools/src/config.ts` (`resolveConfig`);
 `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`, `sandboxCommand`);
-`packages/tools/src/tools/host-vcs.ts` (`hostVcs`);
+`packages/tools/src/lib/sandbox-permissions.ts` (`resolveSandboxEscalation`);
+`packages/tools/src/lib/sensitive-commands.ts`;
 `packages/tools/src/core.ts` (`applyGuard`);
 `packages/kernel/src/guard/shell-guard.ts` (`createShellGuard`).
 
 Test: `packages/tools/tests/integration/sandbox.test.ts`;
-`packages/tools/tests/integration/host-vcs.test.ts`;
+`packages/tools/tests/integration/shell-escalation.test.ts`;
 `packages/tools/tests/unit/guard-context.test.ts`;
 `packages/kernel/tests/unit/guard.test.ts`.
 
@@ -147,10 +149,16 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    `packages/tools/src/sandbox.ts` (`discoverLinkedGitMetadataPaths`).
    Test: `packages/tools/tests/integration/sandbox.test.ts`.
 
-5. **Host fallback is exact-argv, guard-reviewed, and never silently unguarded.**
-   Production: `packages/tools/src/tools/host-vcs.ts`; `packages/kernel/src/guard/shell-guard.ts`.
-   Test: `packages/tools/tests/integration/host-vcs.test.ts`;
-   `packages/kernel/tests/unit/guard-audit.test.ts`.
+5. **Host fallback is the same command text with `sandbox_permissions: "require_escalated"` and
+   follows the operator-selected command-review mode.** Mode `off` proceeds without review; Isolation
+   Sandbox with mode `on` asks a human, while Auto may judge the host effect with ordinary
+   `on_unsure` fallback and no session approval. Isolated containers refuse the field.
+   Production: `packages/tools/src/lib/sandbox-permissions.ts`;
+   `packages/kernel/src/guard/shell-guard.ts`.
+   Test: `packages/tools/tests/integration/shell-escalation.test.ts`;
+   `packages/kernel/tests/unit/guard-audit.test.ts`;
+   `packages/kernel/tests/integration/guard-auto-review.test.ts`;
+   `packages/kernel/tests/integration/container-kernel.e2e.test.ts`.
 
 6. **Every newly created checkout is nested under the primary worktree's ignored
    `.clarvis/worktrees/` root.**
@@ -172,13 +180,13 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 | `origin` fetch fails | bootstrap still uses an existing readable `origin/HEAD`; otherwise it bases the new branch on local `HEAD` |
 | Sandbox cannot validate linked Git metadata | no extra metadata mount is added |
 | Linked Git metadata changes after toolset configuration | commands retain the originally validated pinned mount |
-| `host_vcs` has no guard/approval | call fails closed |
-| `host_vcs` requests direct token output or hidden Git helper execution | call is denied without execution |
+| `require_escalated` has no guard because command review is `off` | that one command proceeds on the host |
+| `shell` requests direct token output or hidden Git helper execution | call is denied without execution |
 | Exit cleanup observes pending changes or Git refuses removal | checkout and branch remain; a diagnostic records failure |
 
 ## 8. Dependency seams
 
 There is no `@clarvis/worktrees` package. Launch and confirmed-exit cleanup orchestration belong to
 Code, durable identity to Kernel, paths and ignore protection to `@clarvis/paths`, and process
-confinement/guarded host execution to `@clarvis/tools`. Protocol carries only project/workspace
+confinement and per-call host escalation to `@clarvis/tools`. Protocol carries only project/workspace
 identity already needed by sessions and runs; it exposes no worktree lifecycle API.

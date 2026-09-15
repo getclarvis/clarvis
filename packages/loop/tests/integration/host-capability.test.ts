@@ -238,8 +238,12 @@ describe("executeRun — capability run-end", () => {
 });
 
 describe("executeRun — capability setup", () => {
-  async function runWith(capabilities: Capability[], externalSignal?: AbortSignal) {
-    const llm = new MockLLM({ script: [{ text: "done" }] });
+  async function runWith(
+    capabilities: Capability[],
+    externalSignal?: AbortSignal,
+    llm = new MockLLM({ script: [{ text: "done" }] }),
+    extensionAdmission?: ExecuteRunDeps["extensionAdmission"],
+  ) {
     const base = makeDeps(llm);
     const warnings: unknown[][] = [];
     const outcome = await executeRun({
@@ -254,6 +258,7 @@ describe("executeRun — capability setup", () => {
       owner: "host",
       deps: {
         ...base,
+        ...(extensionAdmission === undefined ? {} : { extensionAdmission }),
         env: loadEnv({
           CLARVIS_LOG_LEVEL: "silent",
           CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS: "5",
@@ -292,6 +297,69 @@ describe("executeRun — capability setup", () => {
     expect(JSON.stringify(warnings)).toContain("capability.setup_timeout");
   });
 
+  it.each(["declined", "timeout", "missing-seed", "empty-seed", "seed-timeout", "missing-entry"])(
+    "refuses mandatory capability %s before any inference",
+    async (mode) => {
+      const llm = new MockLLM({ script: [{ text: "must not infer" }] });
+      const capability: Capability = {
+        name: "mandatory",
+        required: true,
+        forRun: () => {
+          if (mode === "declined") return null;
+          if (mode === "timeout") return new Promise<never>(() => undefined);
+          return {
+            name: "mandatory",
+            seedBlock: () =>
+              mode === "missing-seed"
+                ? undefined
+                : mode === "empty-seed"
+                  ? "  "
+                  : mode === "seed-timeout"
+                    ? new Promise<never>(() => undefined)
+                    : "required context",
+            forAgent: () => (mode === "missing-entry" ? null : { attach: () => ({}) }),
+          };
+        },
+      };
+      if (mode === "missing-entry") {
+        const { outcome } = await runWith([capability], undefined, llm);
+        expect(outcome.response).toMatchObject({
+          status: "error",
+          error: { code: "required_capability_unavailable" },
+        });
+      } else
+        await expect(runWith([capability], undefined, llm)).rejects.toMatchObject({
+          code: "required_capability_unavailable",
+        });
+      expect(llm.calls).toEqual([]);
+    },
+  );
+
+  it("activates mandatory controls and keeps pre-start cancellation distinct from missing controls", async () => {
+    const llm = new MockLLM({ script: [{ text: "done" }] });
+    const { outcome } = await runWith(
+      [
+        {
+          name: "ready",
+          required: true,
+          forRun: () => ({ name: "ready", forAgent: () => ({ attach: () => ({}) }) }),
+        },
+      ],
+      undefined,
+      llm,
+    );
+    expect(outcome.response.status).toBe("completed");
+    expect(llm.calls).toHaveLength(1);
+    const cancelled = new MockLLM({ script: [] });
+    const result = await runWith(
+      [{ name: "cancelled", required: true, forRun: () => null }],
+      AbortSignal.abort(),
+      cancelled,
+    );
+    expect(result.outcome.response.status).toBe("cancelled");
+    expect(cancelled.calls).toEqual([]);
+  });
+
   it("omits a seed contribution that never settles and completes the run", async () => {
     const { outcome, warnings } = await runWith([
       {
@@ -307,6 +375,96 @@ describe("executeRun — capability setup", () => {
     expect(outcome.response.status).toBe("completed");
     expect(JSON.stringify(warnings)).toContain("capability.setup_timeout");
   });
+
+  it("refuses mandatory activation when physical extension capacity is unavailable", async () => {
+    const admission = createExtensionAdmissionController({
+      maxActiveNormal: 1,
+      maxActiveRunEnd: 1,
+      maxActivePerOperation: 1,
+    });
+    const release = Promise.withResolvers<void>();
+    const held = admission.call("held", "normal", () => release.promise);
+    const llm = new MockLLM({ script: [] });
+    let invoked = false;
+    try {
+      await expect(
+        runWith(
+          [
+            {
+              name: "mandatory",
+              required: true,
+              forRun: () => {
+                invoked = true;
+                return null;
+              },
+            },
+          ],
+          undefined,
+          llm,
+          admission,
+        ),
+      ).rejects.toMatchObject({ code: "required_capability_unavailable" });
+      expect(invoked).toBe(false);
+      expect(llm.calls).toEqual([]);
+    } finally {
+      release.resolve();
+      await held;
+    }
+  });
+
+  it.each(["scope", "attach"] as const)(
+    "validates required entry %s before auxiliary vision inference",
+    async (phase) => {
+      const llm = new MockLLM({ script: [{ text: "must not read the image" }] });
+      const outcome = await executeRun({
+        owner: "host",
+        deps: makeDeps(llm),
+        rawBody: {
+          messages: [
+            { role: "user", content: [{ type: "image", image: "data:image/png;base64,YQ==" }] },
+          ],
+          servers: [],
+          providers: [
+            {
+              name: "anthropic",
+              kind: "anthropic",
+              models: {
+                text: { context_window_tokens: 10000, capabilities: [] },
+                vision: { context_window_tokens: 10000, capabilities: ["vision"] },
+              },
+            },
+          ],
+          profiles: [{ name: "solo", model: "anthropic/text", tools: [], iteration_limit: 2 }],
+          entry: "solo",
+          vision_model: "anthropic/vision",
+          budget: { on_exceed: "stop", total_token_limit: 10000 },
+        },
+        capabilities: [
+          {
+            name: "required",
+            required: true,
+            forRun: () => ({
+              name: "required",
+              forAgent: () =>
+                phase === "scope"
+                  ? null
+                  : {
+                      attach: () => {
+                        throw new Error("private attachment failure");
+                      },
+                    },
+            }),
+          },
+        ],
+      });
+      expect(llm.calls).toEqual([]);
+      expect(outcome.response).toMatchObject({
+        status: "error",
+        error: { code: "required_capability_unavailable" },
+      });
+      expect(JSON.stringify(outcome.response)).not.toContain("private attachment failure");
+    },
+  );
 
   it("still activates and finalizes capabilities when the run is already cancelled", async () => {
     const ended: string[] = [];

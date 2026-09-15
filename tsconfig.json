@@ -14,6 +14,7 @@
     { "path": "packages/skills/tsconfig.build.json" },
     { "path": "packages/memory/tsconfig.build.json" },
     { "path": "packages/plan/tsconfig.build.json" },
+    { "path": "packages/goal/tsconfig.build.json" },
     { "path": "packages/tasks/tsconfig.build.json" },
     { "path": "packages/protocol/tsconfig.build.json" },
     { "path": "packages/loop/tsconfig.build.json" },

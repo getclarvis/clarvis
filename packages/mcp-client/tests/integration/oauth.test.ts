@@ -33,8 +33,22 @@ async function coordinator(
 }
 
 afterEach(async () => {
-  await Promise.allSettled(coordinators.splice(0).map((value) => value.close()));
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  const failures: unknown[] = [];
+  for (const value of coordinators.splice(0).reverse()) {
+    try {
+      await value.close();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  for (const root of roots.splice(0).reverse()) {
+    try {
+      await rm(root, { recursive: true, force: true });
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "OAuth coordinator cleanup failed");
 });
 
 describe("MCP OAuth authorization coordinator", () => {

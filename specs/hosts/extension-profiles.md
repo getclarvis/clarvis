@@ -14,7 +14,7 @@ does not install plugins, copy `settings.json`, select a model or Agent Profile,
 change grants/sandbox/memory, pin plugin versions, or inherit from another Extension Profile. A custom
 Extension Profile is a complete allow-list of exact plugin installations and standalone skills; plugin
 contributions remain atomic. (`ExtensionProfileDefinition` in
-`packages/protocol/src/extension-profiles.ts:36`; `resolved` and `skillRoots` in
+`packages/protocol/src/extension-profiles.ts`; `resolved` and `skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.)
 
 The immutable virtual `builtin:default` activates the exact `{ scope, source, name }` references in
@@ -28,7 +28,20 @@ The kernel owns discovery, resolution, trust, and snapshot identity. `@clarvis/s
 resolved roots and exact `include` lists, while the loop sees roots plus opaque host metadata rather
 than an Extension Profile domain object. (`skillRoots` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `HostRunDeps.hostMetadata` in
-`packages/loop/src/runtime/execute-run.ts:76`.)
+`packages/loop/src/runtime/execute-run.ts`.)
+
+Extension Profile selection remains persisted and effective for Host/Sandbox, but all of its Plugin
+and standalone-Skill contributions are inactive in Container. The guest exposes one immutable
+`builtin:container` profile with no extensions, while the host operator services retain the original
+selection for Host/Sandbox. Container projects builtin/global/workspace agent data without plugin
+origins and marks profiles with external grants nonselectable.
+
+Production: `ConfigSnapshot.operator_merged` in `packages/kernel/src/config/config-store.ts`,
+`runtimeSelection` in `packages/kernel/src/file-kernel.ts`, and
+`createContainerExtensionProfileService` in
+`packages/kernel/src/config/container-extension-profile.ts`. Test:
+`packages/kernel/tests/unit/container-extension-profile.test.ts` and
+`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 ## 2. Surface
 
@@ -38,8 +51,8 @@ than an Extension Profile domain object. (`skillRoots` in
 | Type or method | Contract |
 | --- | --- |
 | `ExtensionProfileRef` | Definition identity: `builtin`, `global`, or `workspace` plus name. |
-| `ExtensionProfilePluginRef` | Exact installed plugin: `global|workspace`, `agents|clarvis`, plus name. |
-| `ExtensionProfileSkillRef` | Exact standalone source: `user|workspace`, `agents|clarvis`, plus name. |
+| `ExtensionProfilePluginRef` | Exact installed plugin: `global | workspace`, `agents | clarvis`, plus name. |
+| `ExtensionProfileSkillRef` | Exact standalone source: `user | workspace`, `agents | clarvis`, plus name. |
 | `ExtensionProfileDefinition` | Version-one description and complete `plugins` / `skills` allow-lists. |
 | `ResolvedExtensionProfile` | Immutable resolution snapshot, status, fingerprint, resolved contributions, issues, and counts. |
 | `ExtensionProfileInventory` | Every exact installed plugin and discovered standalone skill, projected inactive for composition. |
@@ -48,12 +61,25 @@ than an Extension Profile domain object. (`skillRoots` in
 | `ExtensionProfileService` | `list`, `current`, `get`, `inventory`, `preview`, `previewClear`, `previewComposition`, `select`, preview-bound `clearSelection`, `applyComposition`, `create`, revision-bound `update`/`delete`, and `clone`. |
 
 `KernelClient.extensionProfiles` exposes that service beside the other kernel services
-(`KernelClient.extensionProfiles`, `packages/protocol/src/client.ts:68`). The in-process kernel accepts an injected service and gives
+(`KernelClient.extensionProfiles`, `packages/protocol/src/client.ts`). The in-process kernel accepts an injected service and gives
 embedders an immutable builtin-only fallback (`createBuiltinExtensionProfileService` in
-`packages/kernel/src/kernel.ts:267`); the file kernel supplies the file-backed manager
-(`packages/kernel/src/file-kernel.ts:362`, `:878`). The same fourteen operations are generated for local
+`packages/kernel/src/kernel.ts`); the file kernel supplies the file-backed manager
+(`packages/kernel/src/file-kernel.ts`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`OPERATIONS.extensionProfiles` entries in
 `packages/kernel/src/transport/operations.ts`).
+
+The injectable `createContainerExtensionProfileService` provides only `builtin:container`, with a
+stable fingerprint of the no-external-extension policy. `current`, `get` of that exact reference,
+and `list` return defensive in-memory snapshots; `inventory` is empty. All previews, selections
+and mutations fail with `unsupported`, while an unknown `get` is `not_found`. It constructs no
+file-backed manager or discovery service. It is a composition primitive, not evidence that the
+Container launcher or guest composition has been integrated.
+
+Production: `createContainerExtensionProfileService` in
+[container-extension-profile.ts](../../packages/kernel/src/config/container-extension-profile.ts).
+Test: [container-extension-profile.test.ts](../../packages/kernel/tests/unit/container-extension-profile.test.ts)
+checks native preparation reads, snapshot isolation, stable identity and exhaustive service-method
+refusal.
 
 Code exposes the surface under Extensions as **Extension Profile**, explicitly distinct from the
 **Agent Profile** that selects an agent definition for a run. The
@@ -77,8 +103,8 @@ registration in `packages/code/src/app/commands.tsx`).
 | Workspace selection | `<global>/state/workspaces/<segment>/local/extension-profile.json` | machine-local per-workspace state |
 
 The path vocabulary is constructed only by `globalPaths`, `workspacePaths`, and
-`workspaceStatePaths` (`packages/paths/src/global.ts:41`, `:79`, `:124`, `:136`;
-`packages/paths/src/workspace.ts:51`, `:115`; `packages/paths/src/workspace-state.ts:55`, `:195`).
+`workspaceStatePaths` (`packages/paths/src/global.ts`;
+`packages/paths/src/workspace.ts`; `packages/paths/src/workspace-state.ts`).
 Definitions may therefore be committed, while merely cloning a repository does not select one.
 Listing definitions materializes an absent global catalog with `DIR_MODE`, but an absent workspace
 catalog contributes no definitions and is not created as a read side effect. Both an initial
@@ -134,13 +160,13 @@ cooperating Clarvis processes cannot both win a stale write (`underLease`, `unde
 
 Every run carries only `{ id, fingerprint }` under opaque `host_metadata.extension_profile`; trace
 journals, recovered records, JSON records, protocol run results, session turns, and bounded session
-summaries preserve that pair. (`ExtensionProfileRunRef` in `packages/protocol/src/extension-profiles.ts:136`;
-`hostMetadata` composition in `packages/kernel/src/file-kernel.ts:834`; record persistence in
+summaries preserve that pair. (`ExtensionProfileRunRef` in `packages/protocol/src/extension-profiles.ts`;
+`hostMetadata` composition in `packages/kernel/src/file-kernel.ts`; record persistence in
 `packages/trace/src/{record-builder,journal,json-trace-store}.ts`; result projection in
-`storedToDetail` in `packages/kernel/src/runs/map-result.ts:164`; session summary projection in
+`storedToDetail` in `packages/kernel/src/runs/map-result.ts`; session summary projection in
 `toSummary` in `packages/kernel/src/sessions/session-service.ts`.) Host metadata is sanitized before durable
 storage and does not carry the Extension Profile definition or secrets
-(`packages/trace/src/json-trace-store.ts:805`).
+(`packages/trace/src/json-trace-store.ts`).
 
 ## 4. Behavior
 
@@ -174,8 +200,8 @@ Extension Profiles emit only active, atomically captured winners with exact `inc
 inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
 (`skillRoots` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`normalizeInclude`, `packages/skills/src/config.ts:143-151`; `scanRoot`,
-`packages/skills/src/registry.ts:355-369`). Plugin skill roots are admitted only through active plugins,
+`normalizeInclude`, `packages/skills/src/config.ts`; `scanRoot`,
+`packages/skills/src/registry.ts`). Plugin skill roots are admitted only through active plugins,
 and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
 unit (`pluginInventory` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
@@ -195,9 +221,26 @@ its root approves helper execution" in `packages/skills/tests/integration/api.te
 
 An exact empty root set is intentional: the loop exposes an empty skills provider without appending
 standard roots and without reporting a discovery failure. This keeps a custom Extension Profile with no
-standalone or plugin skills truly empty (`emptySkillsProvider` and `dynamicSkills` in
+standalone or plugin skills empty of scanned extensions (`emptySkillsProvider` and `dynamicSkills` in
 `packages/loop/src/runtime/build-run-deps.ts`; test
-`packages/loop/tests/integration/execute-run-entrypoints.test.ts:283`).
+`packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
+
+The file kernel subsequently composes product-owned builtin guidance, including `clarvis-configure`,
+through `withBuiltinSkills`. It is independent of Extension Profile selection and remains available
+with an empty custom profile while skills are enabled. Production:
+[builtin-skills.ts](../../packages/kernel/src/skills/builtin-skills.ts). Test:
+[builtin-skills.test.ts](../../packages/kernel/tests/integration/builtin-skills.test.ts).
+[Direct configuration](self-configuration.md) uses the ordinary run lease. Authoring changes queue
+an idle catalog refresh; the active run retains its bounded execution snapshot.
+The shipped guide demonstrates exact plugin versus standalone skill scopes with a nonempty
+definition. File authoring does not select that definition: activation still uses the
+preview-bound service and a new kernel snapshot. Workflow definitions themselves are independent
+of this selection; a standalone workflow launcher follows the normal skill allow-list.
+Production: `CONFIGURATION_EXAMPLES` in
+[configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
+Test: `authors a nonempty Extension Profile, previews selection, and activates the launcher on
+reconnect` in
+[configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
 
 ### 4.2 Status and snapshot
 
@@ -253,8 +296,8 @@ manifest; `standaloneCatalog` hashes each resource through the same raw streamin
 `hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
 standalone skill. Plugin skill digests include the same dependency projection. Those digests define
 the version recorded by the process fingerprint; later sidecar changes do not alter the in-memory
-catalog, and later identity-file changes cause withdrawal when the asynchronous monitor observes
-them. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
+catalog of an active run. Standalone changes queue a coalesced idle recapture, while plugin changes
+retain the existing withdrawal boundary. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
 `verifySkillCatalog`, `skillAvailable`, and `onSkillRootsChanged` in
 `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `skillSurface`,
 `verifyPinnedSkillCatalog`, and `pinnedSkillRoots` in
@@ -289,7 +332,7 @@ Before an interactive selection or local-selection clear, Code asks the kernel f
 of plugins, standalone and plugin skills, MCP servers, and hook counts, then requires explicit
 confirmation
 (`deltaOf` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
-`ExtensionProfileBrowser.apply`, `packages/code/src/views/config/ExtensionProfileBrowser.tsx:165`). A preview
+`ExtensionProfileBrowser.apply`, `packages/code/src/views/config/ExtensionProfileBrowser.tsx`). A preview
 token is single-use, expires after five minutes, and binds the mutation kind, selected reference,
 persisted selection scope, both exact selection-document revisions, and resolved target fingerprint.
 Both `preview` and `previewClear` resolve normal precedence without changing state: a global write
@@ -351,7 +394,7 @@ trust operation resolves to the caller (`mutateTrust` in
 When a saved session resumes under a different `{ id, fingerprint }`, Code preserves the session,
 adds a visible warning, and marks the status instead of pretending continuity under the same
 extension snapshot (Extension Profile comparison in `resumeSession`,
-`packages/code/src/run-host.ts:1387-1407`). Newly started turns are
+`packages/code/src/run-host.ts`). Newly started turns are
 stamped with the current process snapshot (`createSession.beginTurn` in
 `packages/code/src/adapters/session.ts`).
 
@@ -390,25 +433,34 @@ falls back to builtin.
   definition fall through a bare CLI selector` in
   `packages/kernel/tests/integration/extension-profile-manager.test.ts` pin both invalid cases.
 
-### INV-317 — A kernel uses one immutable resolved snapshot
+### INV-317 — Each execution retains one immutable resolved snapshot
 
-Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, and an already running kernel retains its original fingerprint except for the explicit idle
-trust recomposition. Run admission is deliberately
+General definition/selection changes use explicit recomposition; a stale preview cannot authorize
+different bytes. Standalone authorship and its host-prepared new-skill membership use automatic idle
+generations. Existing runs keep their captured revision. Run admission is deliberately
 independent of extension filesystem size: it does not discover, stat, or hash skills. Only atomically
 captured plugin skill surfaces and exact builtin/custom standalone includes enter the one registry
 owned by the dependencies; catalog bodies are materialized there, and resource names are constrained
 to that captured allow-list. The host arms monitoring for manifest, selected sidecar, and resources
-before verifying the capture against the pin. A capture-window mismatch or later asynchronous change
-withdraws one skill by flipping a memory latch. Withdrawal never makes the Extension Profile or run
-admission unavailable; Code informs the user outside transcript history, unaffected skills continue,
-and reconnect captures the changed version. Skill resources enter initial identity through raw
+before verifying the capture against the pin. Plugin mismatch withdraws the affected skill without
+blocking unrelated runs. Standalone changes recapture automatically after resource users settle;
+failed replacements preserve the last valid catalog and monitors. Writer notifications do not depend
+on filesystem watcher availability. Root watchers observe initially absent directories. Skill resources enter initial identity through raw
 streaming hashes capped at 8 MiB per file and 32 MiB aggregate (per plugin for packaged skills, per
 skill for standalone inventory), and an approved plugin root exposes only each discovered skill
 directory for helper execution. Read-only/control-plane projections use the pinned parse. Trust transitions may recompose
 only at an idle boundary and synchronously replace the exact skill catalog; explicit approval
 refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
 settings reads reuse its cached process snapshot.
+
+New-skill creation through the writer prepares `prepareSkillInclusion` with the exact definition
+and selection revisions. A workspace custom profile gains only that skill; a global profile is
+copied to a workspace definition and selected locally. Its plugin references and existing skill
+exclusions are preserved. The file and membership share one review; a conflict prevents the skill
+write. The saved selection is effective in the next idle generation and survives reopening.
+Production: `prepareSkillInclusion` and `flushSkillRefresh` in
+[extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts).
+Test: [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
@@ -457,24 +509,24 @@ outside this gate.
 Runs, persisted traces, session turns, and session summaries retain Extension Profile id plus fingerprint;
 durable host metadata is sanitized.
 
-- **Production:** `executeRun` host metadata in `packages/loop/src/runtime/execute-run.ts:300`;
-  `buildRecord` in `packages/trace/src/record-builder.ts:38`; `storedToDetail` in
-  `packages/kernel/src/runs/map-result.ts:164`; session projection in `metaToSession` in
+- **Production:** `executeRun` host metadata in `packages/loop/src/runtime/execute-run.ts`;
+  `buildRecord` in `packages/trace/src/record-builder.ts`; `storedToDetail` in
+  `packages/kernel/src/runs/map-result.ts`; session projection in `metaToSession` in
   `packages/code/src/adapters/session-store.ts`.
-- **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
-  `packages/trace/tests/integration/json-trace-store.test.ts:193`,
+- **Test:** `packages/loop/tests/component/execute-run.test.ts`,
+  `packages/trace/tests/integration/json-trace-store.test.ts`,
   `packages/kernel/tests/unit/map-result.test.ts`, and
-  `packages/code/tests/component/session-store.test.ts:139` cover the four seams and redaction.
+  `packages/code/tests/component/session-store.test.ts` cover the four seams and redaction.
 
 ### INV-320 — The loop and skills package do not own Extension Profile policy
 
 The loop accepts opaque host metadata and resolved roots; the skills package only applies exact
 root filters. Neither imports the kernel Extension Profile manager or protocol service.
 
-- **Production:** `HostRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts:76` and
-  `SkillRootInput.include` in `packages/skills/src/types.ts:29`.
-- **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
-  `packages/skills/tests/integration/discovery.test.ts:86`, and the existing optional-package
+- **Production:** `HostRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts` and
+  `SkillRootInput.include` in `packages/skills/src/types.ts`.
+- **Test:** `packages/loop/tests/component/execute-run.test.ts`,
+  `packages/skills/tests/integration/discovery.test.ts`, and the existing optional-package
   architecture suites under `packages/loop/tests/architecture/`.
 
 ### INV-321 — Definition creation is bounded, serialized, and non-overwriting
@@ -559,7 +611,8 @@ and cannot remove bytes other than the revision the caller inspected.
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
 | Workspace approval storage fails during composition | the exact prior definition and selection are restored and the approval error is returned. |
-| A selected skill manifest or captured resource changes after snapshot resolution | the asynchronous monitor withdraws that skill when observed, Code shows an informational transient warning, unaffected skills remain available, and runs are never rejected or delayed; reconnect captures the new version. |
+| A standalone skill changes after snapshot resolution | queue a validated idle generation; captured executions keep their resource bytes and an invalid replacement retains the prior catalog. |
+| A selected plugin skill changes after snapshot resolution | withdraw the affected plugin skill; existing plugin trust/recomposition policy applies. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
 | A selected plugin update/uninstall completed but the kernel was not reconnected | the old parsed process snapshot remains active; changed monitored skills are withdrawn when observed, and reconnect activates the new selection bytes. |
 | Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |
@@ -589,7 +642,7 @@ degraded Extension Profile to an empty list (`fullDetail` and `normalBody` in
 The package dependency graph is unchanged: the feature uses existing `kernel -> protocol|paths|skills|loop|trace`
 and `code -> kernel|protocol|paths` edges. The loop's optional `skills` dependency remains behind its
 existing lazy capability boundary; Extension Profile resolution happens in the file-backed host before run
-construction (`packages/kernel/src/file-kernel.ts:362-379`, `:610-613`).
+construction (`packages/kernel/src/file-kernel.ts`).
 
 ## 8. Open questions
 
@@ -598,3 +651,7 @@ partial plugin contribution masks, model/provider selection, Agent Profiles, gra
 memory, secrets, and automatic repository activation are deliberately out of scope. A user who
 needs a variation clones an Extension Profile and edits the complete allow-list; any expansion of that
 scope requires a new schema version and an explicit product decision.
+
+Standalone refresh arms directory monitors through the skills package’s bounded discovery walk, including newly created empty directories. A manifest written later therefore schedules another generation without requiring an unrelated filesystem event. This scan runs on catalog observation/invalidated idle refresh, never on every submission.
+Production: `observeSkillRoots` in [extension-profile-manager.ts](../../packages/kernel/src/extension-profiles/extension-profile-manager.ts) and `listSkillDirs` in [scan.ts](../../packages/skills/src/scan.ts).
+Test: delayed-manifest directory observation in [extension-profile-manager.test.ts](../../packages/kernel/tests/integration/extension-profile-manager.test.ts).

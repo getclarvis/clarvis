@@ -23,7 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Projects the AI SDK's usage onto our provider-neutral {@link LLMUsage}.
  *
  * @param usage - the SDK's usage object, possibly partial.
- * @returns the four token counts, each defaulting to `0`.
+ * @returns the four numeric tallies with explicit uncertainty for unreported counters.
  * @remarks `inputTokenDetails` is optional at runtime even though the SDK types
  * declare it required: a provider that answers with a bare
  * `{inputTokens, outputTokens}` — or a test double — would otherwise throw on
@@ -38,6 +38,16 @@ export function normalizeUsage(usage: Partial<LanguageModelUsage> | undefined): 
     output_tokens: usage?.outputTokens ?? 0,
     cached_tokens: details?.cacheReadTokens ?? 0,
     cache_write_tokens: details?.cacheWriteTokens ?? 0,
+    ...([usage?.inputTokens, usage?.outputTokens].every(
+      (value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0,
+    )
+      ? {}
+      : { usage_unknown: true as const }),
+    ...(typeof details?.cacheReadTokens === "number" &&
+    Number.isSafeInteger(details.cacheReadTokens) &&
+    details.cacheReadTokens >= 0
+      ? {}
+      : { cache_unknown: true as const }),
   };
 }
 
@@ -62,7 +72,12 @@ export function normalizeUsage(usage: Partial<LanguageModelUsage> | undefined): 
  */
 export function buildCallResult(raw: {
   text: string;
-  toolCalls: ReadonlyArray<{ toolCallId: string; toolName: string; input: unknown }>;
+  toolCalls: ReadonlyArray<{
+    toolCallId: string;
+    toolName: string;
+    input: unknown;
+    providerMetadata?: Record<string, Record<string, unknown>>;
+  }>;
   usage: LanguageModelUsage;
   reasoningText: string | undefined;
   content?: readonly unknown[];
@@ -78,6 +93,7 @@ export function buildCallResult(raw: {
           id: tc.toolCallId,
           name: tc.toolName,
           arguments: norm.ok ? norm.args : {},
+          ...(tc.providerMetadata === undefined ? {} : { providerOptions: tc.providerMetadata }),
           ...(norm.ok ? {} : { malformedArguments: norm.preview }),
         };
       })
@@ -153,6 +169,11 @@ export function buildCallResult(raw: {
     ...(text !== undefined ? { text } : {}),
     ...(toolCalls !== undefined ? { toolCalls } : {}),
     usage: normalizeUsage(raw.usage),
+    cacheUsageKnown: [
+      raw.usage.inputTokens,
+      raw.usage.outputTokens,
+      raw.usage.inputTokenDetails?.cacheReadTokens,
+    ].every((value) => typeof value === "number" && Number.isFinite(value)),
     ...(reasoning !== undefined ? { reasoning } : {}),
     ...(reasoningParts !== undefined && reasoningParts.length > 0 ? { reasoningParts } : {}),
     ...(textParts !== undefined && textParts.length > 0 ? { textParts } : {}),

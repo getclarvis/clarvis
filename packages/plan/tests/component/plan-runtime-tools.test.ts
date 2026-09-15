@@ -47,6 +47,48 @@ function expected(session: PlanSession): {
 }
 
 describe("plan runtime tools", () => {
+  test("accepts explicit absent read/list options and still rejects empty locators", async () => {
+    const { session } = await fixture();
+    await handlePlanRuntimeCall(
+      CREATE_PLAN_TOOL_NAME,
+      {
+        title: "Read defaults",
+        objective: "Inspect",
+        tasks: [{ title: "One" }],
+        validation: [],
+      },
+      session,
+    );
+    const before = expected(session);
+    const read = await handlePlanRuntimeCall(READ_PLAN_TOOL_NAME, { id: null }, session);
+    expect(read.error).toBeUndefined();
+    expect(read.result).toContain('"title":"Read defaults"');
+    const listed = await handlePlanRuntimeCall(
+      LIST_PLANS_TOOL_NAME,
+      {
+        cursor: null,
+        limit: null,
+        status: null,
+        retention: null,
+      },
+      session,
+    );
+    expect(listed.error).toBeUndefined();
+    expect(listed.result).toEqual(
+      (await handlePlanRuntimeCall(LIST_PLANS_TOOL_NAME, {}, session)).result,
+    );
+    expect(expected(session)).toEqual(before);
+    expect(
+      (await handlePlanRuntimeCall(READ_PLAN_TOOL_NAME, { id: "" }, session)).error,
+    ).toBeDefined();
+    expect(
+      (await handlePlanRuntimeCall(LIST_PLANS_TOOL_NAME, { cursor: "" }, session)).error,
+    ).toBeDefined();
+    expect(
+      (await handlePlanRuntimeCall(LIST_PLANS_TOOL_NAME, { limit: 0 }, session)).error,
+    ).toBeDefined();
+  });
+
   test("advertises only the new plan vocabulary", () => {
     expect(planRuntimeTools.map((tool) => tool.wireName)).toEqual([
       CREATE_PLAN_TOOL_NAME,
@@ -56,9 +98,16 @@ describe("plan runtime tools", () => {
       TRANSITION_PLAN_TASK_TOOL_NAME,
     ]);
     const read = planRuntimeTools.find((tool) => tool.wireName === READ_PLAN_TOOL_NAME)!;
-    expect(read.inputSchema).toEqual({
+    expect(read.inputSchema).toMatchObject({
       type: "object",
-      properties: { id: { type: "string", maxLength: MAX_PLAN_LOCATOR_CHARS } },
+      properties: {
+        id: {
+          anyOf: [
+            { type: "string", minLength: 1, maxLength: MAX_PLAN_LOCATOR_CHARS },
+            { type: "null" },
+          ],
+        },
+      },
     });
   });
 

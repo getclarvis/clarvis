@@ -18,6 +18,24 @@ const commandGuardReview = z
     mode: z.enum(["on", "auto"]),
     outcome: z.enum(["allowed", "denied"]),
     answerer: z.enum(["policy", "human", "judge", "session_allowlist", "unavailable"]),
+    effect_id: z
+      .string()
+      .regex(/^[a-z][a-z0-9_.]{0,127}$/)
+      .optional(),
+    relation: z.enum(["direct", "bounded_prerequisite", "none"]).optional(),
+    failure_kind: z
+      .enum([
+        "timeout",
+        "auth",
+        "quota",
+        "rate_limit",
+        "transport",
+        "admission",
+        "cancelled",
+        "invalid_response",
+        "unknown",
+      ])
+      .optional(),
   })
   .strict();
 
@@ -98,8 +116,10 @@ const RUN_EVENT_SCHEMAS = {
       status: runStatus,
       reason: text.optional(),
       code: text.optional(),
+      disposition: z.enum(["final", "checkpoint"]).optional(),
     })
-    .strict(),
+    .strict()
+    .refine((event) => event.disposition === undefined || event.status === "completed"),
   iteration_started: z
     .object({
       type: z.literal("iteration_started"),
@@ -121,6 +141,16 @@ const RUN_EVENT_SCHEMAS = {
       cached_tokens: finite.optional(),
     })
     .strict(),
+  tool_call_announced: z
+    .object({
+      type: z.literal("tool_call_announced"),
+      ...attributed,
+      call_id: text,
+      tool: text,
+      iteration: nonnegativeInteger,
+      attempt: positiveInteger,
+    })
+    .strict(),
   tool_call_started: z
     .object({
       type: z.literal("tool_call_started"),
@@ -129,6 +159,13 @@ const RUN_EVENT_SCHEMAS = {
       tool: text,
       server: text,
       arguments: argumentsRecord.optional(),
+      control: z
+        .object({
+          tool_execution_id: text,
+          actions: z.tuple([z.literal("interrupt")]),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
   tool_call: z
@@ -144,8 +181,13 @@ const RUN_EVENT_SCHEMAS = {
       error: text.optional(),
       diff: text.optional(),
       guard: commandGuardReview.optional(),
+      interruption: z
+        .object({ source: z.literal("operator") })
+        .strict()
+        .optional(),
     })
-    .strict(),
+    .strict()
+    .refine((event) => event.interruption === undefined || event.ok === false),
   tool_output_delta: z
     .object({
       type: z.literal("tool_output_delta"),
@@ -473,7 +515,7 @@ export function decodeRunEvent(value: unknown): RunEvent | null {
  *
  * @remarks
  * Not `Extract<RunEvent, { type: K }>`. One member declares a *union* discriminator —
- * `delegation_completed | delegation_failed` (`packages/protocol/src/runs.ts:433`) — and a union is
+ * `delegation_completed | delegation_failed` (`RunEvent` in `packages/protocol/src/runs.ts`) — and a union is
  * not assignable to one of its own literals, so `Extract` answers `never` for it and `keyof never`
  * widens to `string | number | symbol`, reporting drift on a variant that has none. Asking whether
  * `K` is one of the member's own types is the question that survives a shared member, and it stays

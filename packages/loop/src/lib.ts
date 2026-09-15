@@ -7,6 +7,11 @@
  */
 export { executeRun } from "./runtime/execute-run.ts";
 export type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "./runtime/execute-run.ts";
+export type {
+  ToolInterruptDelivery,
+  ToolInterruptSettleStatus,
+  ToolInterruptSource,
+} from "./runtime/tools/tool-interrupt.ts";
 export {
   compactStoredContext,
   estimateStoredContextTokens,

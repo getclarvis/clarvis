@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { constants as osConstants } from "node:os";
-import { ensureWorkspaceLocalDir, workspaceStatePaths } from "@clarvis/paths";
+import { ensureWorkspaceLocalDir } from "@clarvis/paths";
 import { ToolError } from "../errors.ts";
 import { resolvePath, displayPath } from "../lib/paths.ts";
 import { statDirectory } from "../lib/files.ts";
@@ -17,6 +17,12 @@ import type { RuntimeConfig } from "../config.ts";
 import type { ToolDef } from "./types.ts";
 import { sandboxCommand } from "../sandbox.ts";
 import { currentShellFlavor } from "../shell.ts";
+import { denySensitiveShellCommand } from "../lib/sensitive-commands.ts";
+import {
+  resolveSandboxEscalation,
+  SANDBOX_PERMISSION_CONDITION,
+  SANDBOX_PERMISSION_PROPERTIES,
+} from "../lib/sandbox-permissions.ts";
 import {
   createdTemporaryDirectories,
   snapshotExplicitTemporaryDirectories,
@@ -43,7 +49,7 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
  * `shell-<token>.<stream>.log` in the workspace's state tree, returned as both
  * an absolute path (to write) and a display path (to report).
  *
- * @param config - server configuration; `workspaceRoot` anchors the spill dir.
+ * @param config - server configuration; trusted `statePaths` anchor the spill dir.
  * @param stream - which stream the file backs.
  * @returns the absolute and display paths for the spill file.
  * @remarks The spill lives outside the working tree, so {@link displayPath}
@@ -55,8 +61,8 @@ function spillTarget(
   config: RuntimeConfig,
   stream: "stdout" | "stderr",
 ): { absPath: string; displayPath: string } {
-  ensureWorkspaceLocalDir(config.workspaceRoot);
-  const absPath = workspaceStatePaths(config.workspaceRoot).spillFile(uniqueToken(), stream);
+  ensureWorkspaceLocalDir(config.statePaths);
+  const absPath = config.statePaths.spillFile(uniqueToken(), stream);
   return { absPath, displayPath: displayPath(absPath, config.workspaceRoot) };
 }
 
@@ -109,8 +115,10 @@ async function finalizeOutput(
   return { stdout, stderr };
 }
 
-/** Injectable seams for {@link createShell}, for tests to stub output handling. */
+/** Injectable process and output seams for {@link createShell}. */
 interface ShellDependencies {
+  /** Override process creation for lifecycle tests; defaults to Node's spawn. */
+  spawn?: typeof spawn;
   /** Override for {@link finalizeOutput}; defaults to the real bounding/spill. */
   finalizeOutput?: typeof finalizeOutput;
 }
@@ -119,8 +127,8 @@ interface ShellDependencies {
  * Build the `shell` tool: run a command through the host shell to completion and
  * return a JSON string of `{ exit_code, stdout, stderr, signal, timed_out }`.
  *
- * @param dependencies - optional overrides (a test double for
- *   {@link finalizeOutput}); the real bounding/spill logic is used by default.
+ * @param dependencies - optional process/output overrides for tests; native spawn
+ *   and the real bounding/spill logic are used by default.
  * @returns a {@link ToolDef} whose handler blocks until the command exits.
  * @remarks The command runs with stdin closed - and, on POSIX, in its own
  *   process group (see {@link ownProcessGroup}) - so a
@@ -140,17 +148,11 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
       (powershell
         ? "Run a PowerShell command and return stdout, stderr, and exit code. "
         : "Run a shell command (sh -c) and return stdout, stderr, and exit code. ") +
-      "The command runs to completion and BLOCKS until it exits, so a long-lived process (a dev " +
-      "server, file watcher, `bun run dev`, `bun start`) MUST be started with monitor_start " +
-      "instead, and then verified separately (sleep + curl the port, or read the log). A server " +
-      "left in the foreground will block until the timeout and waste the call. " +
-      "Output is byte-bounded from the tail, so an oversized result loses its head, not its " +
-      "middle, and the full text is spilled to a file the truncation marker names — pipe through " +
-      "grep/head/tail when you only need part of a large output rather than dumping it whole." +
+      "Blocks until exit; use monitor_start for servers and watchers. Output is byte-bounded: " +
+      "each oversized stream loses its head and spills full output to the named file. Prefer focused output." +
       (powershell
-        ? " This host runs PowerShell, not sh: use `Remove-Item -Recurse -Force`, `$null`, " +
-          "`Get-ChildItem` and `-and`/`-or`, not `rm -rf`, `/dev/null`, `ls` or `&&`. A pure " +
-          "cmdlet reports only exit code 0 or 1; native executables report their real code."
+        ? " Use PowerShell syntax, not sh or cmd.exe; Windows PowerShell 5.1 has no `&&`. " +
+          "Cmdlets report exit code 0 or 1; native executables retain their own code."
         : ""),
     bounded: true,
     inputSchema: {
@@ -159,27 +161,26 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         command: {
           type: "string",
           description: powershell
-            ? "PowerShell command. stdin is closed (no interactive prompts). Background a " +
-              "long-lived process with monitor_start rather than a trailing `&`, which " +
-              "PowerShell 5.1 does not accept."
-            : "Shell command, run via the system shell (sh -c). stdin is closed (no interactive " +
-              "prompts). A long-lived process MUST be backgrounded with output redirected (e.g. " +
-              "cmd > /tmp/out.log 2>&1 &) or it blocks until timeout.",
+            ? "PowerShell command with closed stdin; no interactive prompts. Use monitor_start, not `&`, for background work."
+            : "Command run via sh -c with closed stdin; no interactive prompts. Use monitor_start, not `&`, for background work.",
         },
         cwd: { type: "string", description: "Working directory. Default: workspace root." },
         timeout_ms: {
           type: "integer",
           minimum: 0,
           description:
-            "Max run time in ms. Defaults to 120000 and may be raised up to the configured " +
-            "600000 ceiling for a long build/test/install. On timeout the process " +
-            "group is killed and a timeout error is returned.",
+            "Run-time limit in ms, clamped to the configured ceiling. Configuration defaults: " +
+            "120000, ceiling 600000. Timeout kills the process tree and returns an error.",
         },
+        ...SANDBOX_PERMISSION_PROPERTIES,
       },
       required: ["command"],
+      ...SANDBOX_PERMISSION_CONDITION,
     },
     async handler(args, config, signal, hooks) {
       const command = args.command as string;
+      denySensitiveShellCommand(command);
+      const { forceBare } = resolveSandboxEscalation(args, config);
       const cwdArg = args.cwd as string | undefined;
       const cwd = cwdArg
         ? resolvePath(
@@ -195,7 +196,18 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
 
       await statDirectory(cwd, cwdArg ?? cwd);
 
-      return runCommand(command, cwd, timeoutMs, config, signal, finalize, hooks?.onOutput);
+      return runCommand(
+        command,
+        cwd,
+        timeoutMs,
+        config,
+        signal,
+        finalize,
+        hooks?.onOutput,
+        forceBare,
+        hooks?.onExecutionStarted,
+        dependencies.spawn,
+      );
     },
   };
 }
@@ -232,7 +244,13 @@ function runCommand(
   signal?: AbortSignal,
   finalize: typeof finalizeOutput = finalizeOutput,
   onOutput?: (chunk: string) => void,
+  forceBare = false,
+  onExecutionStarted?: () => void,
+  spawnChild: typeof spawn = spawn,
 ): Promise<string> {
+  if (signal?.aborted) {
+    return Promise.reject(new ToolError("aborted", "Command aborted", { stdout: "", stderr: "" }));
+  }
   const startedAt = Date.now();
   const temporarySnapshots = snapshotExplicitTemporaryDirectories(command);
   return new Promise((resolve, reject) => {
@@ -247,6 +265,7 @@ function runCommand(
         sandbox: sandboxWithReadableStateArtifacts(command, config),
         secretEnvNames: config.secretEnvNames,
         logger: config.logger,
+        forceBare,
       });
       const detached = ownProcessGroup();
       config.logger.debug(
@@ -261,7 +280,7 @@ function runCommand(
         },
         "a shell command is being spawned; everything it does from here is attributed to this process group",
       );
-      child = spawn(spec.file, spec.args, {
+      child = spawnChild(spec.file, spec.args, {
         ...spec.options,
         stdio: ["ignore", "pipe", "pipe"],
         detached,
@@ -298,6 +317,7 @@ function runCommand(
     };
 
     const onAbort = (): void => {
+      if (settled || child.exitCode !== null || child.signalCode !== null) return;
       aborted = true;
       killAll();
     };
@@ -381,7 +401,7 @@ function runCommand(
             "a shell command settled; the trace keeps its output as opaque text and indexes none of these",
           );
           if (aborted) {
-            reject(new ToolError("aborted", "Command aborted (run cancelled)", { stdout, stderr }));
+            reject(new ToolError("aborted", "Command aborted", { stdout, stderr }));
             return;
           }
 
@@ -436,5 +456,8 @@ function runCommand(
     });
 
     child.on("close", (code, signal) => finish(code, signal));
+    child.once("spawn", () => {
+      if (!settled && !signal?.aborted) onExecutionStarted?.();
+    });
   });
 }

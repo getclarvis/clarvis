@@ -47,7 +47,6 @@ function fakeHost(initial: OverlayKind = "none"): {
       viewDirty: () => false,
       openPicker: () => true,
       dismissTop: () => true,
-      setRecheck: () => {},
       ui: {} as OverlayHost["ui"],
     } as unknown as OverlayHost,
     setOverlay,

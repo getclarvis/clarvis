@@ -10,11 +10,17 @@
 export type {
   Verdict,
   GuardDecision,
+  GuardPlacement,
+  GuardCallFacts,
   GuardAnswerer,
   GuardElicitAnswer,
   GuardReview,
   Segment,
   ShellFacts,
+  ShellAnalysisIssue,
+  ShellAnalysisIssueKind,
+  ShellAnalysisImpact,
+  GuardReviewability,
   PathFact,
   GuardContext,
   Guard,
@@ -27,4 +33,7 @@ export { posixDialect, powershellDialect, dialectFor, currentDialect } from "./d
 export { POSIX_DEFAULT_ALLOWED_COMMANDS } from "./dialects/posix.ts";
 export { WINDOWS_DEFAULT_ALLOWED_COMMANDS } from "./dialects/powershell.ts";
 export { buildGuardContext } from "./context.ts";
-export { withinWorkspace, touchesOutside } from "./helpers.ts";
+export { resolveCandidate } from "./paths.ts";
+export { withinWorkspace, touchesOutside, isDangerousCommand } from "./helpers.ts";
+export type { GuardEffectCallFact, EffectReviewDetail } from "./effect-review.ts";
+export { isCanonicalAuthoringPath } from "./authoring-path.ts";

@@ -188,7 +188,7 @@ test("inline composition is height-bounded and the expanded Task editor preserve
   expect(inlineRows.length).toBeLessThanOrEqual(5);
   expect(h.t.captureCharFrame()).not.toContain("New task");
 
-  h.pressKey("g", { ctrl: true });
+  h.pressKey("e", { ctrl: true });
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);
   expect(h.t.captureCharFrame()).toContain("Task editor");
@@ -269,6 +269,35 @@ test("the empty prompt renders each contextual label only once", async () => {
   adjustment.t.renderer.destroy();
 });
 
+test("$ opens the skill popup and Enter inserts $name without submitting", async () => {
+  const provider: CompleteProvider = {
+    id: "skill",
+    trigger: "$",
+    label: "skills",
+    query: () => [
+      {
+        label: "opentui",
+        detail: "Build terminal UIs",
+        value: "opentui",
+        insert: "opentui",
+      },
+    ],
+  };
+  const h = await mount("handled", [provider]);
+  h.el().setText("$");
+  await h.t.renderOnce();
+  expect(h.dock().popupOpen()).toBe(true);
+  expect(h.t.captureCharFrame()).toContain("opentui");
+
+  h.t.mockInput.pressEnter();
+  await h.t.renderOnce();
+  expect(h.el().plainText).toBe("$opentui ");
+  expect(h.dock().popupOpen()).toBe(false);
+  expect(h.log.submitted).toEqual([]);
+  expect(h.log.slash).toEqual([]);
+  h.t.renderer.destroy();
+});
+
 test("Escape closes autocomplete before collapsing the expanded Task editor", async () => {
   const provider: CompleteProvider = {
     id: "agents",
@@ -278,7 +307,7 @@ test("Escape closes autocomplete before collapsing the expanded Task editor", as
     query: () => [{ value: "coder", label: "coder", insert: "coder" }],
   };
   const h = await mount("handled", [provider]);
-  h.pressKey("g", { ctrl: true });
+  h.pressKey("e", { ctrl: true });
   h.el().setText("@");
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(true);

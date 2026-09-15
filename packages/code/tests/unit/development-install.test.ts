@@ -18,10 +18,15 @@ import {
   cleanDevelopmentState,
   clearDevelopmentTempWorkspaces,
   createEmptyDevelopmentWorkspace,
+  detectContainerEngines,
   DEVELOPMENT_LAUNCHER_MARKER,
+  DEVELOPMENT_RUNTIME_IMAGE,
   developmentInstallHelp,
+  developmentRuntimeArtifactArgv,
+  developmentRuntimeBuildArgv,
   installDevelopmentLauncher,
   parseDevelopmentInstallArgs,
+  prepareDevelopmentRuntimeImages,
   uninstallDevelopmentLauncher,
 } from "../../tooling/development-install.ts";
 
@@ -56,6 +61,8 @@ test("development install arguments keep cleaning and removal explicit", () => {
   );
   expect(developmentInstallHelp()).toContain("clarvis-develop --clear");
   expect(developmentInstallHelp()).toContain("clarvis-develop --empty-workspace");
+  expect(developmentInstallHelp()).toContain("clarvis-base:local");
+  expect(developmentInstallHelp()).toContain("Docker and Podman");
 });
 
 test("managed launcher runs the checkout source while preserving the caller workspace", async () => {
@@ -212,4 +219,103 @@ test("the POSIX entry delegates to the typed installer", async () => {
   expect(source.startsWith("#!/bin/sh\nset -eu\n")).toBe(true);
   expect(source).toContain('packages/code/tooling/development-install.ts" "$@"');
   expect(source).not.toContain("rm -rf");
+});
+
+test("container engine detection treats Docker and Podman independently", () => {
+  expect(detectContainerEngines(() => null)).toEqual([]);
+  expect(
+    detectContainerEngines((command) => (command === "docker" ? "/usr/bin/docker" : null)),
+  ).toEqual(["docker"]);
+  expect(
+    detectContainerEngines((command) => (command === "podman" ? "/usr/bin/podman" : null)),
+  ).toEqual(["podman"]);
+  expect(
+    detectContainerEngines((command) =>
+      command === "docker" || command === "podman" ? `/usr/bin/${command}` : null,
+    ),
+  ).toEqual(["docker", "podman"]);
+});
+
+test("development install builds the local runtime base and Kernel artifact for each engine", () => {
+  const bun = "/opt/bun";
+  const repository = "/repo";
+  const calls: string[][] = [];
+  const logs: string[] = [];
+  const run = (argv: readonly string[]) => {
+    calls.push([...argv]);
+  };
+  const log = (message: string) => logs.push(message);
+
+  expect(prepareDevelopmentRuntimeImages({ repository, bun, engines: [], run, log })).toEqual({
+    prepared: [],
+    skipped: ["docker", "podman"],
+    failed: [],
+  });
+  expect(calls).toEqual([]);
+  expect(logs).toEqual([
+    `docker is not installed; skipping ${DEVELOPMENT_RUNTIME_IMAGE}.`,
+    `podman is not installed; skipping ${DEVELOPMENT_RUNTIME_IMAGE}.`,
+  ]);
+
+  calls.length = 0;
+  logs.length = 0;
+  expect(
+    prepareDevelopmentRuntimeImages({ repository, bun, engines: ["podman"], run, log }),
+  ).toEqual({
+    prepared: ["podman"],
+    skipped: ["docker"],
+    failed: [],
+  });
+  expect(calls).toEqual([
+    developmentRuntimeBuildArgv(bun, "podman"),
+    developmentRuntimeArtifactArgv(bun, "podman"),
+  ]);
+  expect(calls[0]).toEqual([
+    bun,
+    "run",
+    "runtime:base:build",
+    "--engine",
+    "podman",
+    "--target",
+    process.arch === "arm64" ? "linux-arm64" : "linux-x64",
+    "--tag",
+    DEVELOPMENT_RUNTIME_IMAGE,
+  ]);
+
+  calls.length = 0;
+  logs.length = 0;
+  const failing = (argv: readonly string[]) => {
+    calls.push([...argv]);
+    if (argv.includes("docker")) throw new Error("docker daemon down");
+  };
+  expect(
+    prepareDevelopmentRuntimeImages({
+      repository,
+      bun,
+      engines: ["docker", "podman"],
+      run: failing,
+      log,
+    }),
+  ).toEqual({
+    prepared: ["podman"],
+    skipped: [],
+    failed: [{ engine: "docker", error: "docker daemon down" }],
+  });
+  expect(calls).toEqual([
+    developmentRuntimeBuildArgv(bun, "docker"),
+    developmentRuntimeBuildArgv(bun, "podman"),
+    developmentRuntimeArtifactArgv(bun, "podman"),
+  ]);
+
+  expect(() =>
+    prepareDevelopmentRuntimeImages({
+      repository,
+      bun,
+      engines: ["docker"],
+      run: () => {
+        throw new Error("cannot connect");
+      },
+      log,
+    }),
+  ).toThrow("development runtime base build failed through docker");
 });

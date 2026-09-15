@@ -6,7 +6,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import { createFileMemoryStore } from "../../src/file-store.ts";
 import { createTreeLock, DEFAULT_LOCK_WARN_MS } from "../../src/file-store/lock.ts";
@@ -30,12 +30,16 @@ describe("memory.lock.held_long", () => {
 
   test("reports a hold that outlasted a batch of writes, and the threshold it passed", async () => {
     const log = recordingLogger();
-    const store = createFileMemoryStore({ root, logger: log.logger, lock: { warnMs: 0 } });
-
-    await store.exclusive(async (tx) => {
-      await tx.write("PROFILE.md", doc("profile"));
-      await new Promise((resolve) => setTimeout(resolve, 2));
-    });
+    const now = spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const store = createFileMemoryStore({ root, logger: log.logger, lock: { warnMs: 0 } });
+      await store.exclusive(async (tx) => {
+        await tx.write("PROFILE.md", doc("profile"));
+        now.mockReturnValue(1_001);
+      });
+    } finally {
+      now.mockRestore();
+    }
 
     const held = log.one("memory.lock.held_long");
     expect(held.level).toBe("warn");
@@ -57,6 +61,7 @@ describe("memory.lock.held_long", () => {
 
   test("names a nested hold as nested, so a re-entrant caller is not read as a slow one", async () => {
     const log = recordingLogger();
+    const now = spyOn(Date, "now").mockReturnValue(1_000);
     const lock = createTreeLock({
       lockDir: path.join(root, ".lock-nested"),
       staleMs: 60_000,
@@ -67,12 +72,16 @@ describe("memory.lock.held_long", () => {
       logger: log.logger,
     });
 
-    await lock.run(async () => {
+    try {
       await lock.run(async () => {
-        expect(lock.nested()).toBe(true);
-        await new Promise((resolve) => setTimeout(resolve, 2));
+        await lock.run(async () => {
+          expect(lock.nested()).toBe(true);
+          now.mockReturnValue(1_001);
+        });
       });
-    });
+    } finally {
+      now.mockRestore();
+    }
 
     const nested = log.of("memory.lock.held_long").map((r) => r.fields.nested);
     expect(nested).toEqual([true, false]);
@@ -102,7 +111,8 @@ describe("memory.lock.wait", () => {
     const lock = createTreeLock(lockOptions(log));
     await fs.mkdir(path.join(root, ".lock-contended"), { recursive: true, mode: 0o700 });
     await fs.writeFile(path.join(root, ".lock-contended", "holder"), "999999999.dead");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const stale = new Date(Date.now() - 20);
+    await fs.utimes(path.join(root, ".lock-contended"), stale, stale);
 
     await lock.run(() => Promise.resolve());
 
@@ -117,7 +127,8 @@ describe("memory.lock.wait", () => {
     const lock = createTreeLock(lockOptions(log));
     await fs.mkdir(path.join(root, ".lock-contended"), { recursive: true, mode: 0o700 });
     await fs.writeFile(path.join(root, ".lock-contended", "holder"), "999999999.dead");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    const stale = new Date(Date.now() - 20);
+    await fs.utimes(path.join(root, ".lock-contended"), stale, stale);
 
     await lock.run(() => Promise.resolve());
 

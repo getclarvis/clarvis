@@ -6,8 +6,11 @@ import {
   type GuardDecision,
   withinWorkspace,
   touchesOutside,
+  isDangerousCommand,
+  type GuardPlacement,
 } from "@clarvis/tools/guard";
 import { globToRegExp } from "./glob.ts";
+import { commandComparison } from "./command-comparison.ts";
 
 /**
  * Which of the guard's fixed rules produced a verdict.
@@ -23,6 +26,7 @@ export type ShellGuardMatch =
   | "outside_workspace"
   | "credential_file"
   | "host_command"
+  | "dangerous"
   | "non_bash"
   | "default";
 
@@ -54,6 +58,14 @@ export interface ShellGuardDecision {
  * Command entries may include `*` globs matched against normalized bash segments.
  */
 export interface ShellGuardOptions {
+  /** Complete host proof may refine syntactic uncertainty, never a deterministic denial. */
+  attestedReviewable?: (ctx: GuardContext) => boolean;
+  /** Auto review lets the judge answer non-sensitive Host asks after deterministic rules. */
+  allowHostJudge?: boolean;
+  /** Host-attested run placement; omitted means ordinary host execution. */
+  placement?: GuardPlacement;
+  /** Native networking policy; container outbound modes are deliberately omitted. */
+  network?: "none" | "host";
   /**
    * Segments that pass without asking when the whole command's segments are all
    * covered; a plain entry matches a segment exactly or as a `<entry> …` prefix,
@@ -174,10 +186,15 @@ function compileCommandEntry(entry: string): EntryMatcher {
  *   and every segment matches at least one matcher — an undecidable or empty
  *   command is never allowed.
  */
-function commandsAllowed(bash: ShellFacts, matchers: EntryMatcher[]): boolean {
+function commandsAllowed(
+  bash: ShellFacts,
+  commands: Array<string | undefined>,
+  matchers: EntryMatcher[],
+): boolean {
   if (bash.undecidable) return false;
   if (bash.segments.length === 0) return false;
-  return bash.segments.every((s) => matchers.some((m) => m(s.normalized)));
+  if (bash.segments.some((segment) => segment.envAssignments.length > 0)) return false;
+  return commands.every((command) => command === undefined || matchers.some((m) => m(command)));
 }
 
 /**
@@ -223,11 +240,12 @@ function digestOf(ctx: GuardContext): { commandDigest?: string } {
  * @param opts - optional allow/deny command lists; see {@link ShellGuardOptions}.
  * @returns a {@link Guard} evaluated in fixed precedence for each call: a denied
  *   segment → `deny`; an undecidable command → `deny` when a deny list is
- *   configured, else `ask` escalated to a human; a host command → `ask` through
+ *   configured, else `ask` (human-only on Host unless Auto is enabled); a host command → `ask` through
  *   the configured reviewer; any path outside the workspace → `deny`; a
- *   credential file → `ask`; a non-bash call → `allow`; a fully
- *   allow-listed command → `allow`; a command that may leave the workspace →
- *   `ask`; otherwise `ask` (noting whether an allow list was configured at all).
+ *   credential file → `ask`; a non-bash call → `allow`; an environment-prefixed
+ *   dangerous command → `ask`; other environment changes → review; a fully allow-listed command →
+ *   `allow`; forced removal or sudo → `ask`; a command that may leave the workspace → `ask`;
+ *   otherwise `ask` (noting whether an allow list was configured at all).
  * @remarks
  * The guard only ever narrows toward asking or denying — it allows solely for
  * non-bash calls and commands matched in full by the allow list.
@@ -247,36 +265,52 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
   const allowed = opts?.allowedCommands?.map(compileCommandEntry);
   const denied = opts?.deniedCommands?.map(compileCommandEntry);
   const onDecision = opts?.onDecision;
-  const rule = (ctx: GuardContext): Ruling => {
-    if (ctx.shell !== undefined && denied !== undefined && commandDenied(ctx.shell, denied)) {
+  const rule = (
+    ctx: GuardContext,
+    commands: Array<string | undefined>,
+    placement: GuardPlacement,
+  ): Ruling => {
+    if (
+      ctx.shell !== undefined &&
+      denied !== undefined &&
+      (commandDenied(ctx.shell, denied) ||
+        commands.some((command) => command !== undefined && denied.some((match) => match(command))))
+    ) {
       return {
         matched: "deny_list",
         verdict: "deny",
         reason: "command matches the denied commands list",
       };
     }
-    if (ctx.shell?.undecidable) {
-      if (denied !== undefined && denied.length > 0) {
-        return {
-          matched: "undecidable",
-          verdict: "deny",
-          reason:
-            "command contains dynamic expansions that cannot be analyzed, so it cannot be " +
-            "checked against the denied commands list",
-        };
-      }
+    const attested = opts?.attestedReviewable?.(ctx) === true;
+    if (ctx.shell?.undecidable && !attested && denied !== undefined && denied.length > 0) {
       return {
         matched: "undecidable",
-        verdict: "ask",
-        escalate: "human",
-        reason: "command contains dynamic expansions that cannot be analyzed",
+        verdict: "deny",
+        reason:
+          "command contains dynamic expansions that cannot be analyzed, so it cannot be " +
+          "checked against the denied commands list",
       };
     }
-    if (ctx.tool === "host_vcs") {
+    if (ctx.sandboxPermissions === "require_escalated" && ctx.config.sandbox !== undefined) {
       return {
         matched: "host_command",
         verdict: "ask",
-        reason: "this command will run outside the sandbox using the host executable environment",
+        ...(opts?.allowHostJudge === true ? {} : { escalate: "human" as const }),
+        reason:
+          ctx.justification !== undefined && ctx.justification.length > 0
+            ? ctx.justification
+            : "this command will run outside the sandbox on the host",
+      };
+    }
+    if (ctx.shell?.undecidable && !attested) {
+      return {
+        matched: "undecidable",
+        verdict: "ask",
+        ...(placement === "host" && opts?.allowHostJudge !== true
+          ? { escalate: "human" as const }
+          : {}),
+        reason: "command contains dynamic expansions that cannot be analyzed",
       };
     }
     if (touchesOutside(ctx)) {
@@ -286,6 +320,8 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
         reason: "command touches paths outside the workspace",
       };
     }
+    const changesEnvironment =
+      ctx.shell?.segments.some((segment) => segment.envAssignments.length > 0) === true;
     const sensitive = sensitivePath(ctx);
     if (sensitive !== undefined) {
       return {
@@ -297,8 +333,32 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     if (ctx.shell === undefined) {
       return { matched: "non_bash", verdict: "allow" };
     }
-    if (allowed !== undefined && commandsAllowed(ctx.shell, allowed)) {
+    if (changesEnvironment && isDangerousCommand(ctx.shell)) {
+      return {
+        matched: "dangerous",
+        verdict: "ask",
+        reason: "command uses forced removal or elevated privileges",
+      };
+    }
+    if (changesEnvironment) {
+      return {
+        matched: "default",
+        verdict: "ask",
+        ...(placement === "host" && opts?.allowHostJudge !== true
+          ? { escalate: "human" as const }
+          : {}),
+        reason: "command changes an environment binding that requires review",
+      };
+    }
+    if (allowed !== undefined && commandsAllowed(ctx.shell, commands, allowed)) {
       return { matched: "allow_list", verdict: "allow" };
+    }
+    if (isDangerousCommand(ctx.shell)) {
+      return {
+        matched: "dangerous",
+        verdict: "ask",
+        reason: "command uses forced removal or elevated privileges",
+      };
     }
     if (!withinWorkspace(ctx)) {
       /**
@@ -327,7 +387,12 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
     };
   };
   return (ctx: GuardContext): GuardDecision => {
-    const { matched, ...decision } = rule(ctx);
+    const comparison = commandComparison(ctx);
+    const facts = { ...ctx, paths: comparison.paths };
+    const unsandbox =
+      ctx.sandboxPermissions === "require_escalated" && ctx.config.sandbox !== undefined;
+    const placement = unsandbox ? "host" : (opts?.placement ?? "host");
+    const { matched, ...decision } = rule(facts, comparison.commands, placement);
     onDecision?.({
       tool: ctx.tool,
       matched,
@@ -336,6 +401,14 @@ export function createShellGuard(opts?: ShellGuardOptions): Guard {
       ...(decision.escalate !== undefined ? { escalate: decision.escalate } : {}),
       ...digestOf(ctx),
     });
-    return decision;
+    return {
+      ...decision,
+      matched,
+      placement,
+      ...(!unsandbox && opts?.network !== undefined ? { network: opts.network } : {}),
+      dangerous: ctx.shell !== undefined && isDangerousCommand(ctx.shell),
+      within_workspace: withinWorkspace(facts),
+      touches_outside: touchesOutside(facts),
+    };
   };
 }

@@ -7,9 +7,9 @@ afterEach(() => {
   setServerTaskObserver(NOOP_LOGGER);
 });
 
-/** Wait until `read` reports something, or give up. */
+/** Drain detached-task promise continuations without using wall-clock timing. */
 async function settle(read: () => number): Promise<void> {
-  for (let attempt = 0; attempt < 50 && read() === 0; attempt += 1) await Bun.sleep(1);
+  for (let attempt = 0; attempt < 8 && read() === 0; attempt += 1) await Promise.resolve();
 }
 
 describe("observeServerTask", () => {
@@ -33,7 +33,8 @@ describe("observeServerTask", () => {
     observeServerTask(`server_task_${Math.random().toString(36).slice(2)}`, () => {
       throw new Error("nobody is listening");
     });
-    await Bun.sleep(5);
+    await Promise.resolve();
+    await Promise.resolve();
     expect(logs.records).toHaveLength(0);
   });
 
@@ -41,7 +42,8 @@ describe("observeServerTask", () => {
     const logs = recordingLoggers();
     setServerTaskObserver(logs.loggers.log);
     observeServerTask("server_task_ok", () => Promise.resolve(1));
-    await Bun.sleep(5);
+    await Promise.resolve();
+    await Promise.resolve();
     expect(logs.find("task.failed")).toHaveLength(0);
   });
 });

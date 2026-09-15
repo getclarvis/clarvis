@@ -6,6 +6,7 @@ import { FINAL_MARKDOWN_CAP, TAIL_PLAIN_CAP } from "../../src/core/transcript/se
 import { BlockView } from "../../src/views/blocks.tsx";
 import type { NodeStatus, TranscriptNode } from "../../src/adapters/store.ts";
 import { glyph } from "../../src/theme/glyphs.ts";
+import { StableMarkdown } from "../../src/ui/patterns/stable-syntax.tsx";
 import { SPINNER_FRAMES } from "../../src/views/spinner.ts";
 
 type Harness = Awaited<ReturnType<typeof openRender>>;
@@ -24,7 +25,7 @@ async function settle(t: Harness, ready: (frame: string) => boolean): Promise<st
   let previous = "";
   let stable = 0;
   for (let frame = 0; frame < 80; frame += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 8));
+    await Bun.sleep(0);
     await t.renderOnce();
     const current = t.captureCharFrame();
     if (current === previous && ready(current)) {
@@ -206,6 +207,93 @@ test("settlement keeps the painted streaming markdown visible until its final tr
     const finalTrees = markdownRenderables(t.renderer.root);
     expect(finalTrees).toHaveLength(1);
     expect(finalTrees[0]!.opacity).toBe(1);
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("settlement releases a streaming height floor after the final tree is ready", async () => {
+  const unfinished = "aaaaaaaaaaaaaa **bol";
+  const [streaming, setStreaming] = createSignal(true);
+  const [content, setContent] = createSignal(unfinished);
+  const t = await openRender(
+    () => <StableMarkdown content={content()} streaming={streaming()} conceal />,
+    {
+      width: 19,
+      height: 10,
+    },
+  );
+  try {
+    await settle(t, (frame) => frame.includes("bol"));
+    const initialMarkdown = markdownRenderables(t.renderer.root)[0];
+    const owner = initialMarkdown?.parent?.parent;
+    if (owner === undefined || owner === null)
+      throw new Error("stable Markdown owner did not mount");
+    const streamingRows = owner.height;
+    expect(streamingRows).toBe(2);
+
+    setContent("aaaaaaaaaaaaaa **bold");
+    await t.renderOnce();
+    const unfinishedRows = owner.height;
+    setContent("aaaaaaaaaaaaaa **bold**");
+    await t.renderOnce();
+    const concealedRows = owner.height;
+    expect([streamingRows, unfinishedRows, concealedRows]).toEqual([2, 2, 2]);
+    setStreaming(false);
+    for (let pass = 0; pass < 80 && owner.height > 2; pass += 1) {
+      await Bun.sleep(0);
+      await t.renderOnce();
+    }
+
+    expect(owner.height).toBeLessThanOrEqual(2);
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("a tall streaming reply does not leave blank rows above the run outcome", async () => {
+  const unfinished = Array.from(
+    { length: 16 },
+    (_, index) => `Streaming paragraph ${index} with **unclosed`,
+  ).join("\n\n");
+  const [status, setStatus] = createSignal<NodeStatus>("running");
+  const [text, setText] = createSignal(unfinished);
+  const assistant = (): TranscriptNode => ({
+    key: "final-answer",
+    kind: "assistant",
+    status: status(),
+    text: text(),
+  });
+  const outcome: TranscriptNode = {
+    key: "run",
+    kind: "run",
+    status: "ok",
+    text: "",
+  };
+  const t = await openRender(
+    () => (
+      <box flexDirection="column">
+        <BlockView node={assistant()} forceExpand={() => true} />
+        <BlockView node={outcome} forceExpand={() => true} />
+      </box>
+    ),
+    { width: 48, height: 36 },
+  );
+  try {
+    await settle(t, (frame) => frame.includes("Streaming paragraph 15"));
+    setText("Short final answer.");
+    setStatus("ok");
+    const settled = await settle(
+      t,
+      (frame) => frame.includes("Short final answer.") && frame.includes("Completed"),
+    );
+    const lines = settled.split("\n");
+    const bullet = lines.findIndex((line) => line.includes(glyph("bullet")));
+    const completed = lines.findIndex((line) => line.includes("Completed"));
+    expect(settled).toContain("Short final answer.");
+    expect(bullet).toBeGreaterThanOrEqual(0);
+    expect(completed).toBeGreaterThan(bullet);
+    expect(completed - bullet).toBeLessThanOrEqual(4);
   } finally {
     t.renderer.destroy();
   }

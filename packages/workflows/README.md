@@ -23,6 +23,14 @@ Manager-to-leader execution, waves, rounds, limits, and the shared ledger are sp
 result schemas, persistence, tree projection, and routing are specified in
 [`workflows-service.md`](../../specs/capabilities/workflows-service.md).
 
+The compact prompt contract is in
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Built-in verification
+briefs carry the exact finding id, respect read-only tools and allow `inconclusive`. Their acceptance
+predicate counts **refutations**: a rejected refutation threshold means not refuted, not confirmed.
+Synthesis retains uncertainty and inspects partial writes after failed or stopped implementation.
+Scheduling protects declared file conflicts within a batch, not against unrelated concurrent work.
+The three built-in definitions have an 11,000-character serialized regression ceiling.
+
 ## Entry points
 
 | Entry                         | Contents                                                                                                                                                                                                                                             |
@@ -32,6 +40,13 @@ result schemas, persistence, tree projection, and routing are specified in
 | `@clarvis/workflows/artifact` | `loadWorkflows` and the `WORKFLOW.md` loader                                                                                                                                                                                                         |
 
 ## The workflow tools
+
+Workflow scheduling is native in Host, Sandbox and Container. Container keeps the manager scheduler,
+workflow registry, leaders and shared budget inside the same Kernel and persists their state in its
+canonical owner-scoped host state shared with Host/Sandbox. Projected builtin/global/workspace definitions are frozen for that generation;
+plugin definitions remain absent. The root entry exposes `workflowContextOf`,
+`workflowOutputBudgetOf` and `createLeaderOutputBudgetCapability` for every native composition. The
+[isolated runtime spec](../../specs/hosts/isolated-agent-runtime.md) owns the Container boundary.
 
 In ascending order of how much structure they assume:
 
@@ -133,7 +148,7 @@ and the programmatic parsers, so a caller cannot bypass a schema by invoking the
 
 These are safety ceilings, not fan-out tuning. `max_concurrency` controls how many admitted leaders
 run at once; `max_total_leaders` controls how many leaders the manager may register cumulatively
-across every tool call and round (default 32, configurable to 255). An ad-hoc leader reserves one
+across every tool call and round (default 512, configurable to 512). An ad-hoc leader reserves one
 slot; a work-item batch and a round reserve their complete leader count atomically. If the complete
 unit does not fit, it registers zero children and leaves an awaiting checkpoint unchanged. Once the
 supervision registry accepts a leader, that registration is counted before its trace is published;
@@ -157,6 +172,12 @@ frontmatter validated by zod, plus a Markdown body that is the synthesis brief. 
 global root first and the workspace root second, so precedence is `workspace > global > built-in`.
 An override replaces the complete definition; it is not merged round by round. A malformed document
 is diagnosed and contributes no override, leaving a same-named built-in available.
+
+The kernel's builtin `/clarvis-configure` guide includes a complete authored workflow, its brief
+and a separate skill launcher targeting Admiral. The ordinary restricted writer can create those files;
+an ordinary manager turn loads and executes them under the workflow's own preflight. Workflows are
+independent of Extension Profile selection, while a standalone launcher must be selected by a custom
+profile. See [self-configuration.md](../../specs/hosts/self-configuration.md) for coverage and limits.
 
 Every round declares both `title` and `brief`. The title is an interpolated, single-line label for the
 leader roster; the brief is the complete task prompt. A title is required, cannot exceed 60 Unicode
@@ -254,12 +275,12 @@ the workflow detail vocabulary.
 
 ## Settings
 
-The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `4`, maximum `20`, the
-leader-wide cap on concurrently running leaders), `max_total_leaders` (default `32`, maximum `255`,
-the cumulative registration cap for one manager), and `budget_tokens` (default `640000000`, with explicit
+The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `10`, maximum `20`, the
+leader-wide cap on concurrently running leaders), `max_total_leaders` (default `512`, maximum `512`,
+the cumulative registration cap for one manager), and `budget_tokens` (default `8589934592`, with explicit
 `null` as the opt-out, an output-token ceiling summed across all auxiliary workflow agents). Its
-640-million-token default is four times the manager's independent 160-million-token primary run
-budget. That ceiling
+8,589,934,592-token default is a power-of-two ceiling, about 54 times the manager's independent
+160-million-token primary run budget. That ceiling
 covers the manager's in-process child agents plus every leader and leader sub-agent, including their
 compaction, vision and billable retry attempts. Only the manager/Admiral uses the independent
 primary run budget. `runManagerWorkflow` constructs both budgets anew for every execution; neither
@@ -279,8 +300,8 @@ holds a live-child slot in `@clarvis/supervision`'s registry for as long as it r
 concurrency above `agents.max_live_children` admits leaders the registry then refuses to register.
 `managerLiveChildrenFloor(max_concurrency)` is that coupling — the kernel raises the manager run's
 `agents.max_live_children` to it, keeping an operator's own higher value. At the default concurrency
-it returns exactly the supervision default, so an unconfigured workspace is unaffected; the headroom
-above the leaders covers each dispatch session's baton and an ad-hoc `run_leader` waiting for a
+it reserves 14 live-child slots (10 leaders plus four slots of manager headroom); the headroom above
+the leaders covers each dispatch session's baton and an ad-hoc `run_leader` waiting for a
 permit. Raising `max_concurrency` without it buys a longer queue and no extra parallelism.
 
 **Manager designation is not a field here**: a run is a workflow when its entry agent profile carries
@@ -318,7 +339,7 @@ descriptor and bypass a TUI host's silencing.
 | debug        | `workflow.round_folded`                                   | the folded result's shape, and how many replicas missed it                    |
 | debug/warn   | `workflow.schedule_derived` / `workflow.schedule_refused` | the waves, the unscoped writers, or the graph that cannot run                 |
 | debug/warn   | `workflow.elicit_queued` / `workflow.elicit_skipped`      | the tree-wide prompt queue, and a prompt abandoned with its agent             |
-| info         | `workflow.review_resolved`                               | the workflow preflight outcome and human wait duration                        |
+| info         | `workflow.review_resolved`                                | the workflow preflight outcome and human wait duration                        |
 
 A workflow preflight uses the manager run's effective `elicit_wait_ms` and a timeout also emits the
 shared `capability.elicit_no_response` event. Its tool result distinguishes an explicit decline, a
@@ -362,6 +383,13 @@ execution port — is built by the kernel in
 `packages/kernel/src/workflows/workflows-service.ts`. The kernel binds that port to the loop's real
 `executeRun` and `generateExecutionId`; tests bind a per-context fake instead of replacing the
 process-wide loop module.
+
+The manager and its leaders share the conversation session, while each leader uses the scheduler's
+reserved run ID as both execution ID and persisted agent-instance ID. Leaders therefore keep stable
+cache affinity across their own continuation and remain distinct from the manager and from another
+leader using the same Agent Profile. Missing reserved IDs are refused before assembly. The owning
+cross-package assertions live in the
+[workflow service contract](../../specs/capabilities/workflows-service.md).
 
 The only engine adapter this package consumes from `@clarvis/loop/workflows` is
 `createElicitSerializer`. Agent, run, tool, compute-clock, trace and elicitation contracts come
@@ -413,3 +441,10 @@ bun --filter @clarvis/workflows format:check
 ```
 
 The package requires Bun 1.4.0 or newer.
+
+## Operator evidence across leaders
+
+The capability resolves `OPERATOR_AUTHORITY_PORT` at attach time. `runLeader` passes a bounded
+compiled intersection and parent reader separately from its model-visible brief. Parent revision
+changes invalidate inherited authority. Independent leaders do not inherit single-attempt CI retry
+grants. See [effect review](../../specs/execution/effect-review.md).

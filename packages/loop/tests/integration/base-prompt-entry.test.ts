@@ -3,7 +3,7 @@ import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.t
 import { loadEnv } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "./_fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
-import { ENV_SECTION } from "../env-section.ts";
+import { ENV_SECTION, SYSTEM_HEAD } from "../env-section.ts";
 
 const BASE = {
   messages: [{ role: "user", content: "What is the capital of France?" }],
@@ -46,11 +46,11 @@ describe("entry profile base_prompt", () => {
     const messages = llm.calls[0]!.messages;
     expect(messages[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}\n\nPERSONA_SENTINEL`,
+      content: SYSTEM_HEAD(process.cwd(), "PERSONA_SENTINEL"),
     });
   });
 
-  it("injects no system message when the entry profile declares no base_prompt", async () => {
+  it("still injects the shared prompt when the entry profile declares no base_prompt", async () => {
     const llm = new MockLLM({ script: [{ text: "done" }] });
     await executeRun({
       rawBody: {
@@ -65,7 +65,7 @@ describe("entry profile base_prompt", () => {
     const messages = llm.calls[0]!.messages;
     expect(messages[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}`,
+      content: SYSTEM_HEAD(process.cwd()),
     });
   });
 
@@ -95,7 +95,61 @@ describe("entry profile base_prompt", () => {
     const messages = llm.calls[0]!.messages;
     expect(messages[0]).toEqual({
       role: "system",
-      content: `${ENV_SECTION(process.cwd())}\n\nLEAD_PERSONA`,
+      content: SYSTEM_HEAD(process.cwd(), "LEAD_PERSONA"),
+    });
+  });
+
+  it("uses a stamped shared_prompt instead of the built-in default", async () => {
+    const llm = new MockLLM({ script: [{ text: "done" }] });
+    await executeRun({
+      rawBody: {
+        ...BASE,
+        entry: "solo",
+        shared_prompt: "CUSTOM_SHARED",
+        profiles: [
+          {
+            name: "solo",
+            model: "anthropic/x",
+            tools: [],
+            iteration_limit: 3,
+            base_prompt: "PERSONA",
+          },
+        ],
+      },
+      owner: "o",
+      deps: deps(llm),
+    });
+
+    expect(llm.calls[0]!.messages[0]).toEqual({
+      role: "system",
+      content: `${ENV_SECTION(process.cwd())}\n\nCUSTOM_SHARED\n\nPERSONA`,
+    });
+  });
+
+  it("omits the shared layer when shared_prompt is the empty string", async () => {
+    const llm = new MockLLM({ script: [{ text: "done" }] });
+    await executeRun({
+      rawBody: {
+        ...BASE,
+        entry: "solo",
+        shared_prompt: "",
+        profiles: [
+          {
+            name: "solo",
+            model: "anthropic/x",
+            tools: [],
+            iteration_limit: 3,
+            base_prompt: "PERSONA",
+          },
+        ],
+      },
+      owner: "o",
+      deps: deps(llm),
+    });
+
+    expect(llm.calls[0]!.messages[0]).toEqual({
+      role: "system",
+      content: `${ENV_SECTION(process.cwd())}\n\nPERSONA`,
     });
   });
 });

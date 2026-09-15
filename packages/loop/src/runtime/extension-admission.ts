@@ -146,6 +146,10 @@ export function admittedRunCapability(
   );
   return {
     name: activated.name,
+    ...(activated.required === undefined ? {} : { required: activated.required }),
+    ...(activated.preserveStateOnInterruption === undefined
+      ? {}
+      : { preserveStateOnInterruption: activated.preserveStateOnInterruption }),
     ...(activated.order === undefined ? {} : { order: activated.order }),
     ...(activated.seedBlock === undefined
       ? {}

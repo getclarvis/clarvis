@@ -23,6 +23,8 @@ import { failedResult } from "./map-result.ts";
 import { protoSteerToEngineContent } from "./map-message.ts";
 import { createSteerQueue } from "./steer-queue.ts";
 import { createCompactionQueue } from "./compaction-queue.ts";
+import { createToolInterruptChannel } from "./tool-interrupt-channel.ts";
+import type { ToolInterruptSource } from "@clarvis/loop";
 
 /** Collaborators exposed to one managed execution function. */
 export interface ManagedRunContext {
@@ -36,6 +38,8 @@ export interface ManagedRunContext {
   readonly steer: SteerSource;
   /** Engine-facing source of explicit entry-agent compaction requests. */
   readonly compaction: CompactionSource;
+  /** Engine-facing source of operator tool-interrupt requests. */
+  readonly toolInterrupts: ToolInterruptSource;
   /** Emits one protocol event through buffering, observation, and ingest tracking. */
   emit(this: void, event: RunEvent): void;
 }
@@ -186,6 +190,7 @@ export function createManagedRunWithRuntime(
   });
   const steer = createSteerQueue();
   const compaction = createCompactionQueue();
+  const toolInterrupts = createToolInterruptChannel();
   const bridge = createElicitBridge(spec.executionId);
   const boundedIngestWait = (value: number, fallback: number): number =>
     Number.isFinite(value)
@@ -282,6 +287,7 @@ export function createManagedRunWithRuntime(
     elicit: bridge.elicit,
     steer,
     compaction,
+    toolInterrupts,
     emit: emitRelay.emit,
   };
 
@@ -317,6 +323,8 @@ export function createManagedRunWithRuntime(
     } finally {
       steer.close();
       compaction.close();
+      toolInterrupts.close();
+      bridge.close();
       closeStream();
     }
   })();
@@ -337,12 +345,16 @@ export function createManagedRunWithRuntime(
     async cancel() {
       abort.abort();
     },
+    async interruptTool(toolExecutionId) {
+      return toolInterrupts.interruptTool(toolExecutionId);
+    },
     async respond(response) {
       bridge.respond(response);
     },
     onElicit(handler) {
-      bridge.onElicit(handler);
+      return bridge.onElicit(handler);
     },
+    onElicitSettled: (handler) => bridge.onSettled(handler),
     buffered: () => {
       const stats = stream.stats();
       return {

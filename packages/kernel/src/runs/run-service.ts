@@ -1,4 +1,4 @@
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import { generateExecutionId } from "@clarvis/trace";
 import type {
   Page,
@@ -20,14 +20,65 @@ import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import type { SteerQueue } from "./steer-queue.ts";
+import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import { randomUUID } from "node:crypto";
+import type {
+  OperatorAuthoritySeed,
+  OperatorAuthorityBinding,
+  OperatorAuthorityState,
+} from "@clarvis/capability";
+
+/** Match the durable controller identity without carrying an earlier outcome binding. */
+function sameAuthorityController(
+  owner: string,
+  binding: OperatorAuthorityBinding | undefined,
+  prior: OperatorAuthorityState | undefined,
+): boolean {
+  return (
+    binding !== undefined &&
+    prior !== undefined &&
+    prior.binding.owner_key_name === owner &&
+    prior.binding.session_id === binding.session_id &&
+    prior.binding.controller_epoch === binding.controller_epoch
+  );
+}
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
  */
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
 
+/** Trusted host preparation; never accepted as a protocol start parameter. */
+export type PreparedRunExecution =
+  | { kind: "ordinary"; rawBody: unknown; goal?: GoalExecutionPolicy }
+  | { kind: "workflow"; start(seed?: OperatorAuthoritySeed, signal?: AbortSignal): RunHandle };
+
+/** Run service with a host-only prepared launch sharing ordinary execution-id reservations. */
+export interface KernelRunService extends RunService {
+  start(params: StartRunParams, prepared?: PreparedRunExecution): Promise<RunHandle>;
+}
+
+/** Placement-neutral execution port; native remains the lazy default. */
+export type RunExecutorArgs = Omit<ExecuteRunArgs, "steer"> & {
+  /** Kernel queues transfer acknowledgements across placement without prematurely draining them. */
+  readonly steer?: NonNullable<ExecuteRunArgs["steer"]> & Partial<Pick<SteerQueue, "take">>;
+  /** Host-admitted parent whose same-guest child composition owns this run's controls and budget. */
+  readonly runtimeParentRunId?: string;
+};
+export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
+
 /** Configuration for {@link createRunService}. */
 export interface RunServiceConfig {
+  /** Live host admission; public session ids alone are never binding evidence. */
+  operatorAuthorityFor?: (run: { owner: string; executionId: string }) =>
+    | {
+        binding: OperatorAuthorityBinding;
+        signal: AbortSignal;
+        /** False for a host-generated continuation body; its prior authority may still be restored. */
+        captureInput?: boolean;
+      }
+    | undefined;
   /** Engine dependencies passed to `executeRun`; its `traceStore` also backs
    * this service's list/get/delete. */
   deps: ExecuteRunDeps;
@@ -42,7 +93,11 @@ export interface RunServiceConfig {
   isManagerRun?: (params: StartRunParams) => boolean;
   /** Runs a manager turn as a workflow, returning the same {@link RunHandle}. Called
    * by `start` only when {@link RunServiceConfig.isManagerRun} returns true. */
-  runManagerWorkflow?: (params: StartRunParams & { execution_id: string }) => RunHandle;
+  runManagerWorkflow?: (
+    params: StartRunParams & { execution_id: string },
+    seed?: OperatorAuthoritySeed,
+    signal?: AbortSignal,
+  ) => RunHandle;
   /** How long the event stream lingers, after each `memory_ingest` notice, for
    * the next one to arrive before giving up. Test override; defaults to
    * {@link DEFAULT_INGEST_CLOSE_GRACE_MS}. */
@@ -64,6 +119,8 @@ export interface RunServiceConfig {
   lifecycle?: KernelLifecycle;
   /** Where an event with no protocol projection is reported. */
   logger?: Logger;
+  /** Executes the loop natively or through an explicitly configured isolated runtime. */
+  executeRun?: RunExecutor;
 }
 
 /**
@@ -92,7 +149,7 @@ export interface RunServiceConfig {
  *   reserves an execution id before constructing a handle, preventing a
  *   duplicate launch from sharing trace or remote-mutation identity.
  */
-export function createRunService(cfg: RunServiceConfig): RunService {
+export function createRunService(cfg: RunServiceConfig): KernelRunService {
   const { deps, owner, assembleRunRequest } = cfg;
   const logger = cfg.logger ?? NOOP_LOGGER;
   const ingestGraceMs = cfg.ingestGraceMs ?? DEFAULT_INGEST_CLOSE_GRACE_MS;
@@ -100,9 +157,66 @@ export function createRunService(cfg: RunServiceConfig): RunService {
   const activeIds = new Set<string>();
   const activeHandles = new Map<string, RunHandle>();
 
-  function startReserved(params: StartRunParams, executionId: string): RunHandle {
-    if (cfg.runManagerWorkflow !== undefined && cfg.isManagerRun?.(params) === true) {
-      return cfg.runManagerWorkflow({ ...params, execution_id: executionId });
+  function startReserved(
+    params: StartRunParams,
+    executionId: string,
+    prepared?: PreparedRunExecution,
+  ): RunHandle {
+    const authorityAdmission = cfg.operatorAuthorityFor?.({ owner, executionId });
+    const admittedBinding = authorityAdmission?.binding;
+    const previousAuthority =
+      params.continue_from === undefined
+        ? undefined
+        : store.getById(owner, params.continue_from)?.operator_authority_state;
+    const sameController = sameAuthorityController(owner, admittedBinding, previousAuthority);
+    const continuedOutcome =
+      sameController && previousAuthority?.status === "active"
+        ? previousAuthority.binding.outcome_id
+        : undefined;
+    const currentEvidence = (authorityAdmission?.captureInput === false ? [] : params.messages)
+      .filter((message) => message.role === "user")
+      .map((message) => ({
+        id: randomUUID(),
+        source: params.continue_from === undefined ? ("start" as const) : ("continue" as const),
+        text:
+          typeof message.content === "string"
+            ? message.content
+            : message.content
+                .filter((part) => part.type === "text")
+                .map((part) => part.text)
+                .join("\n"),
+        execution_id: executionId,
+      }));
+    const settledEvidence =
+      currentEvidence.length > 0 && sameController && previousAuthority?.status === "settled"
+        ? previousAuthority.evidence
+        : [];
+    const operatorAuthoritySeed: OperatorAuthoritySeed | undefined =
+      cfg.operatorAuthorityFor !== undefined && authorityAdmission === undefined
+        ? undefined
+        : {
+            binding: {
+              ...(admittedBinding ?? {
+                owner_key_name: owner,
+                session_id: executionId,
+                controller_epoch: randomUUID(),
+              }),
+              outcome_id: continuedOutcome ?? randomUUID(),
+            },
+            evidence: [...settledEvidence, ...currentEvidence],
+          };
+    if (prepared?.kind === "workflow")
+      return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);
+    if (
+      prepared === undefined &&
+      cfg.runManagerWorkflow !== undefined &&
+      cfg.isManagerRun?.(params) === true
+    ) {
+      return cfg.runManagerWorkflow(
+        { ...params, execution_id: executionId },
+        operatorAuthoritySeed,
+        authorityAdmission?.signal,
+      );
     }
     return createManagedRun({
       executionId,
@@ -110,13 +224,24 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       ingestGraceMs,
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
-        const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
-        const { executeRun } = await import("@clarvis/loop");
-        const outcome = await executeRun({
-          rawBody,
+        const goal = prepared?.kind === "ordinary" ? prepared.goal : undefined;
+        const request = { ...params, execution_id: executionId };
+        const executeRun =
+          cfg.executeRun ??
+          (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
+        const args: Omit<RunExecutorArgs, "rawBody"> = {
+          operatorAuthoritySeed,
           owner,
-          deps,
+          deps:
+            goal === undefined
+              ? deps
+              : {
+                  ...deps,
+                  llm: goal.trackModel(deps.llm),
+                  capabilities: [...(deps.capabilities ?? []), goal.capability],
+                },
           onEvent: (ev) => {
+            goal?.observe(ev);
             const mapped = engineEventToProto(ev, logger);
             if (mapped !== null) context.emit(mapped);
           },
@@ -126,8 +251,14 @@ export function createRunService(cfg: RunServiceConfig): RunService {
           },
           steer: context.steer,
           compaction: context.compaction,
+          toolInterrupts: context.toolInterrupts,
           externalSignal: context.signal,
+          operatorAuthoritySignal: authorityAdmission?.signal,
           elicit: context.elicit,
+        };
+        const outcome = await executeRun({
+          ...args,
+          rawBody: prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
         });
         return engineResultToProto(outcome.executionId, outcome.response);
       },
@@ -135,14 +266,14 @@ export function createRunService(cfg: RunServiceConfig): RunService {
   }
 
   return {
-    async start(params: StartRunParams): Promise<RunHandle> {
+    async start(params: StartRunParams, prepared?: PreparedRunExecution): Promise<RunHandle> {
       const executionId = params.execution_id ?? generateExecutionId();
       if (activeIds.has(executionId) || store.existsForOwner(owner, executionId)) {
         throw kernelError("conflict", `run '${executionId}' already exists for this owner`);
       }
       activeIds.add(executionId);
       try {
-        const handle = startReserved(params, executionId);
+        const handle = startReserved(params, executionId, prepared);
         activeHandles.set(executionId, handle);
         const release = (): void => {
           activeIds.delete(executionId);
@@ -215,7 +346,19 @@ export function createRunService(cfg: RunServiceConfig): RunService {
         request: stored.request,
         ...(request?.trim() ? { guidance: request.trim() } : {}),
         env: deps.env,
-        llm: deps.llm,
+        llm: {
+          call: (params) =>
+            deps.llm.call({
+              ...params,
+              executionId,
+              sessionId: params.sessionId ?? stored.request.session_id ?? executionId,
+              agentInstanceId:
+                params.agentInstanceId ?? stored.request.agent_instance_id ?? executionId,
+            }),
+        },
+        ...(deps.modelExecutionResolver === undefined
+          ? {}
+          : { modelExecutionResolver: deps.modelExecutionResolver }),
         logger,
       });
       if (outcome.status === "skipped") {

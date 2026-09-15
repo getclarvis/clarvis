@@ -41,8 +41,10 @@ import { PlanSession, type MissingPlanState } from "./session.ts";
 import {
   CREATE_PLAN_TOOL_NAME,
   REVISE_PLAN_TOOL_NAME,
+  TRANSITION_PLAN_TASK_TOOL_NAME,
   handlePlanRuntimeCall,
   buildPlanRuntimeTools,
+  type PlanRuntimeCallResult,
 } from "./runtime-tools.ts";
 import { createDelegationPlanPort } from "./delegation-port.ts";
 import {
@@ -241,7 +243,10 @@ interface SessionState {
  *
  *   `spawnedTaskIds` is written through {@link PlanDelegationPort.noteSpawned}
  *   rather than shared with delegation as a closure variable, which is the
- *   whole point of the port.
+ *   whole point of the port. It also defers Lead plan mutations until the next
+ *   iteration, whose canonical state contains the runtime-owned claim/return
+ *   transitions, so a sibling call cannot race a delegated result with stale
+ *   compare-and-swap inputs.
  */
 interface IterState {
   planContentChanged: boolean;
@@ -507,7 +512,7 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
         const g = await presentPlanReviewGate();
         if (g.kind === "terminal") return { kind: "terminal", result: g.result };
         if (g.kind === "approved") {
-          if (attempt.mode === "submit") return { kind: "pass" };
+          if (attempt.mode !== "text") return { kind: "pass" };
           return { kind: "nudge", note: PLAN_REVIEW_EXECUTE_NOTE };
         }
         recordRejection(g.feedback);
@@ -537,7 +542,8 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
           ?.tasks.some((task) => task.status !== "done" && task.status !== "abandoned") ??
           false)
       ),
-    async check(): Promise<GateOutcome> {
+    async check(attempt): Promise<GateOutcome> {
+      if (attempt.disposition === "checkpoint") return { kind: "pass" };
       const pg = await pendingTaskGate();
       if (pg.kind === "terminal") return { kind: "terminal", result: pg.result };
       if (pg.kind === "nudge") {
@@ -636,7 +642,18 @@ export function buildPlansOrchestration(deps: PlansOrchestrationDeps): PlansOrch
     matches: (call) => call.name === name,
     async handle(call, iteration): Promise<HandlerVerdict> {
       const startedAt = trace.now();
-      const r = await handlePlanRuntimeCall(name, call.arguments, planSession, logger);
+      const deferredMutation =
+        iter.spawnedTaskIds.size > 0 &&
+        (name === REVISE_PLAN_TOOL_NAME || name === TRANSITION_PLAN_TASK_TOOL_NAME);
+      const r: PlanRuntimeCallResult = deferredMutation
+        ? {
+            result:
+              `Tool '${name}' result (error): A delegated plan task is still settling. ` +
+              "Wait for every delegate_task result; the next iteration will publish the current plan revision and digests before another plan mutation.",
+            changed: false,
+            error: "A delegated plan task is still settling",
+          }
+        : await handlePlanRuntimeCall(name, call.arguments, planSession, logger);
       trace.record("tool_call", {
         agent: "lead",
         iteration_ref: iteration,

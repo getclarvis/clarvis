@@ -79,7 +79,7 @@ function buildTools(awaitTimeoutMs: number): NamespacedTool[] {
       {
         type: "object",
         properties: {
-          id: { type: "string", description: "The agent_id from agent_list." },
+          id: { type: "string", description: "Child handle returned by spawning or agent_list." },
           offset: {
             type: "integer",
             minimum: 0,
@@ -101,7 +101,7 @@ function buildTools(awaitTimeoutMs: number): NamespacedTool[] {
       {
         type: "object",
         properties: {
-          id: { type: "string", description: "The agent_id from agent_list." },
+          id: { type: "string", description: "Child handle returned by spawning or agent_list." },
           reason: { type: "string", description: "Why you are stopping it." },
         },
         required: ["id", "reason"],
@@ -115,7 +115,7 @@ function buildTools(awaitTimeoutMs: number): NamespacedTool[] {
       {
         type: "object",
         properties: {
-          id: { type: "string", description: "The agent_id from agent_list." },
+          id: { type: "string", description: "Child handle returned by spawning or agent_list." },
           message: { type: "string", description: "The instruction for that child." },
         },
         required: ["id", "message"],
@@ -124,9 +124,9 @@ function buildTools(awaitTimeoutMs: number): NamespacedTool[] {
     ),
     tool(
       AWAIT_AGENTS_TOOL,
-      "Wait until the first of your children finishes, you receive a message, or the timeout " +
-        "elapses. This is how you idle while children work — polling in a loop burns iterations " +
-        "and context for nothing.",
+      "Wait for a child to finish, a user message, or timeout. Prefer this to repeated polling. " +
+        "A wake does not mean all children finished: inspect woke_on and still_running. " +
+        "Timeout leaves children running.",
       {
         type: "object",
         properties: {
@@ -138,7 +138,7 @@ function buildTools(awaitTimeoutMs: number): NamespacedTool[] {
           timeout_ms: {
             type: "integer",
             minimum: 1,
-            description: `How long to wait before giving up (default ${String(awaitTimeoutMs)}).`,
+            description: `Maximum wait in ms (default ${String(awaitTimeoutMs)}); does not cancel children.`,
           },
         },
         additionalProperties: false,
@@ -385,8 +385,9 @@ function liveChildrenNote(rows: { id: string; title: string; status: string }[])
   const listed = rows.map((r) => `${r.id} (${r.status}) — ${r.title}`).join("; ");
   return (
     `You still have ${String(rows.length)} child agent(s) running: ${listed}. ` +
-    `Wait for them with await_agents, read one with agent_poll, or end one with agent_stop — ` +
-    `then finish. Finishing now would discard their work.`
+    `Wait with await_agents and inspect outcomes with agent_poll. Use agent_stop only for work ` +
+    `you intend to cancel, not to bypass this gate. Repeated finalization cancels live children; ` +
+    `their existing workspace edits are not rolled back.`
   );
 }
 

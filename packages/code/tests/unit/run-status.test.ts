@@ -100,6 +100,18 @@ test("the canonical run strip owns terminal outcomes, context and wide usage", (
   ).toBe("Failed · Context 0%");
 });
 
+test("a saved checkpoint remains distinct from final completion in the settled strip", () => {
+  expect(
+    runStripText({
+      active: false,
+      status: "checkpoint saved",
+      startedAt: null,
+      now: 0,
+      width: 120,
+    }),
+  ).toBe("Checkpoint saved");
+});
+
 test("the strip's run tokens report what was read, not what was in the window", () => {
   expect(
     runStripText({

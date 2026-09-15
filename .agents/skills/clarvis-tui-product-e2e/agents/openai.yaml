@@ -1,4 +1,0 @@
-interface:
-  display_name: "Clarvis TUI Product E2E"
-  short_description: "Audit every current-source Clarvis TUI journey"
-  default_prompt: "Use $clarvis-tui-product-e2e to run a comprehensive current-source Clarvis TUI audit and find daily-use bugs and instabilities."

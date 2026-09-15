@@ -156,7 +156,10 @@ describe("withTransportRetry", () => {
       await committed;
       await vi.advanceTimersByTimeAsync(25);
 
-      await expect(pending).resolves.toEqual(ok);
+      await expect(pending).resolves.toMatchObject({
+        ...ok,
+        retriedUsage: { usage_unknown: true },
+      });
       expect(inner.calls).toBe(2);
     } finally {
       vi.useRealTimers();
@@ -267,15 +270,14 @@ describe("withTransportRetry — signal trips before the backoff sleep starts", 
     ]);
     const controller = new AbortController();
     const wrapped = withTransportRetry(inner, { maxRetries: 2, baseDelayMs: 1, maxDelayMs: 5 });
-    const originalRandom = Math.random;
-    Math.random = (): number => {
+    const random = vi.spyOn(Math, "random").mockImplementation(() => {
       controller.abort();
       return 0.5;
-    };
+    });
     try {
       await expect(wrapped.call(params(controller.signal))).rejects.toBeInstanceOf(ProviderError);
     } finally {
-      Math.random = originalRandom;
+      random.mockRestore();
     }
     expect(inner.calls).toBe(1);
   });
@@ -286,13 +288,12 @@ describe("backoffDelayMs", () => {
     const maxDelayMs = 1000;
     for (let n = 1; n <= 10; n += 1) {
       for (const r of [0, 0.5, 0.9999]) {
-        const orig = Math.random;
-        Math.random = () => r;
+        const random = vi.spyOn(Math, "random").mockReturnValue(r);
         try {
           const d = backoffDelayMs(n, undefined, 500, maxDelayMs);
           expect(d).toBeLessThanOrEqual(maxDelayMs);
         } finally {
-          Math.random = orig;
+          random.mockRestore();
         }
       }
     }
@@ -420,9 +421,31 @@ describe("withTransportRetry — accounting for failed attempts", () => {
    * A missing number and a known zero must stay distinguishable: treating
    * "could not read" as "cost nothing" under-counts the ledger silently.
    */
-  it("leaves retriedUsage absent when no failed attempt reported usage", async () => {
+  it("retains uncertainty when no failed attempt reported usage", async () => {
     const wrapped = withTransportRetry(scripted([transient(), ok]), fastOpts);
-    expect((await wrapped.call(params())).retriedUsage).toBeUndefined();
+    expect((await wrapped.call(params())).retriedUsage).toEqual({
+      input_tokens: 0,
+      output_tokens: 0,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      usage_unknown: true,
+      cache_unknown: true,
+    });
+  });
+
+  it("preserves known failed-attempt counters while retaining a separate unreported attempt", async () => {
+    const wrapped = withTransportRetry(
+      scripted([withUsage({ input_tokens: 100, output_tokens: 5 }), transient(), ok]),
+      fastOpts,
+    );
+    expect((await wrapped.call(params())).retriedUsage).toEqual({
+      input_tokens: 100,
+      output_tokens: 5,
+      cached_tokens: 0,
+      cache_write_tokens: 0,
+      usage_unknown: true,
+      cache_unknown: true,
+    });
   });
 
   it("attaches accumulatedUsage to the error when the retries never recover", async () => {

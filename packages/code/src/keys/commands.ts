@@ -15,6 +15,9 @@ type OpenTuiCommand = Command<Renderable, KeyEvent>;
 export type Scope = "global" | "workspace";
 type Category = "action" | "view";
 
+/** A router can refuse invalid input while preserving the composer's exact draft. */
+export type CommandRouteResult = boolean | "block";
+
 /** Renders a view command's body for the given {@link ViewHost}. */
 export type ViewFactory = (host: ViewHost) => JSX.Element;
 
@@ -86,8 +89,9 @@ interface CommandDefBase {
    * Optional router for a `/token <args>` submission. Receives the argument tail
    * and returns `true` when it fully handled the line (so the plain command
    * `run`/`view` is skipped). Return `false` to fall through to the normal open.
+   * Return `"block"` after a reported validation error to preserve the composer draft.
    */
-  route?: (args: string) => boolean;
+  route?: (args: string) => CommandRouteResult;
 }
 
 /** One named subcommand of a command, surfaced as an inline choice hint under `/token `. */
@@ -221,7 +225,7 @@ export interface Commands extends CommandScope {
   scope(): CommandScope;
   runCommand(name: string): void;
   /** Route a `/token <args>` submission through the command's {@link CommandDefBase.route}; returns whether it handled the line. */
-  route(name: string, args: string): boolean;
+  route(name: string, args: string): CommandRouteResult;
   entries(term?: string): CommandEntryView[];
   /**
    * A counter bumped whenever a command is registered or unregistered.
@@ -249,7 +253,7 @@ interface Registered {
   namespace?: string;
   args: PromptArgSpec[];
   subcommands: SubcommandSpec[];
-  route?: (args: string) => boolean;
+  route?: (args: string) => CommandRouteResult;
   view?: ViewFactory;
   enabled?: () => boolean;
 }
@@ -512,7 +516,7 @@ export function createCommands(
     });
   }
 
-  function route(name: string, args: string): boolean {
+  function route(name: string, args: string): CommandRouteResult {
     const fn = registry.get(name)?.route;
     return fn ? fn(args) : false;
   }

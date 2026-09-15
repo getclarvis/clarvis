@@ -13,6 +13,22 @@ export {
   type AgentFrontmatter,
 } from "./settings/agent-frontmatter.ts";
 export {
+  DEFAULT_SHARED_AGENT_PROMPT,
+  sharedPromptForRun,
+} from "./runtime/prompts/shared-agent-prompt.ts";
+export {
+  parseSharedPromptDocument,
+  renderSharedPromptDocument,
+  resolveSharedPrompt,
+  type ParsedSharedPrompt,
+  type ResolveSharedPromptInput,
+  type ResolvedSharedPrompt,
+  type SharedPromptDiagnostic,
+  type SharedPromptLayer,
+  type SharedPromptParseFailure,
+  type SharedPromptSource,
+} from "./runtime/prompts/resolve-shared-prompt.ts";
+export {
   marketplaceSchema,
   pluginGitSelectorIssue,
   pluginGitUrlIssue,
@@ -58,6 +74,12 @@ export type {
 export { parseModelRef } from "@clarvis/capability";
 export { resolveProvider } from "@clarvis/capability";
 export { providerConfigSchema, grantSchema } from "./validation/request-schema.ts";
+export {
+  CONTENT_PARTS_MAX,
+  MESSAGE_CONTENT_MAX_CHARS,
+  MESSAGES_MAX_ENTRIES,
+  MESSAGES_TOTAL_MAX_CHARS,
+} from "./validation/request/message-schemas.ts";
 export { BUILTIN_GRANT_NAMES } from "./validation/request/grant-registry.ts";
 export {
   profileReadinessIssues,

@@ -13,7 +13,7 @@ import {
   ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS,
   createActivityStore,
 } from "../../src/adapters/activity-store.ts";
-import type { LegacyCollapsibleNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureNode } from "../helpers/transcript-fixtures.ts";
 
 const ev = runEvent;
 
@@ -574,7 +574,7 @@ test("transcript: a subagent that errored stays failed at run end even when the 
   ]);
   const subagent = nodes.find((n) => n.kind === "subagent");
   expect(subagent?.status).toBe("error");
-  expect((subagent as LegacyCollapsibleNode | undefined)?.collapsed).not.toBe(true);
+  expect((subagent as FoldFixtureNode | undefined)?.collapsed).not.toBe(true);
 });
 
 test("transcript: a lead iteration_started shows a live thinking placeholder", () => {

@@ -19,7 +19,7 @@
  * about a key that looks like a credential. It is to stop sourcing *providers*
  * from the trace at all: they are host routing configuration, contribute nothing
  * to the prompt the provider hashes, and the factory already resolves them live.
- * `profiles`, `entry` and `prompt_cache_key` keep coming from the record, and
+ * `profiles`, `entry` and `session_id` keep coming from the record, and
  * must, because those have to match what the indexed run actually used or the
  * prefix cache misses.
  */
@@ -47,7 +47,7 @@ const CONFIGURED: ProviderConfig[] = [
 function storedSubject(): StoredExecution {
   const request = {
     messages: [{ role: "user", content: "fix the build" }],
-    prompt_cache_key: "session_abc123",
+    session_id: "session_abc123",
     servers: [],
     entry: "coder",
     profiles: [{ name: "coder", model: MODEL, tools: ["shell"], iteration_limit: 200 }],
@@ -99,7 +99,7 @@ describe("assembling a continuation over a redacted trace", () => {
   it("derives the Memory cache branch from the unredacted session key", () => {
     // Load-bearing that the fixture *sets* it: with the field absent the builder
     // falls back to the run id and the assertion would hold for the wrong reason,
-    // proving nothing about whether redaction touches it. `prompt_cache_key`
+    // proving nothing about whether redaction touches it. `session_id`
     // contains "key" but matches no rule — the JSON-key rule wants an
     // api/access/private prefix, and the bare-`key` rule only fires inside a
     // query string.
@@ -108,8 +108,9 @@ describe("assembling a continuation over a redacted trace", () => {
       subject: storedSubject(),
       providers: CONFIGURED,
     });
-    expect(storedSubject().request.prompt_cache_key).toBe("session_abc123");
-    expect(request.prompt_cache_key).toBe("session_abc123_memory");
+    expect(storedSubject().request.session_id).toBe("session_abc123");
+    expect(request.session_id).toBe("session_abc123");
+    expect(request.agent_instance_id).toBe("run_pass");
   });
 
   it("still takes the other cache-bearing fields from the run", () => {
@@ -121,6 +122,6 @@ describe("assembling a continuation over a redacted trace", () => {
     expect(request.entry).toBe("coder");
     expect(request.profiles[0]!.model).toBe(MODEL);
     expect(request.profiles[0]!.tools).toEqual(["shell"]);
-    expect(request.prompt_cache_key).toBe("session_abc123_memory");
+    expect(request.session_id).toBe("session_abc123");
   });
 });

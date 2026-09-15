@@ -13,13 +13,16 @@ describe("buildRunWorkflowTool", () => {
     const schema = buildRunWorkflowTool(WORKFLOWS)!.inputSchema as {
       required: string[];
       properties: {
-        name: { enum: string[] };
+        name: { enum: string[]; description: string };
         args: { description: string };
       };
     };
     expect(schema.required).toEqual(["name"]);
     expect(schema.properties.name.enum).toEqual(["audit", "implement", "research"]);
-    expect(schema.properties.args.description).toContain("subject");
+    expect(schema.properties.name.description).toContain("audit (args: subject)");
+    expect(schema.properties.name.description).toContain("implement (args: goal)");
+    expect(schema.properties.name.description).toContain("research (args: question)");
+    expect(schema.properties.args.description).toContain("selected workflow");
 
     const bare = buildRunWorkflowTool([{ ...WORKFLOWS[0]!, args: [] }])!.inputSchema as {
       properties: { args: { description: string } };

@@ -1,4 +1,5 @@
 import type { RuntimeConfig } from "../config.ts";
+import type { EffectReviewDetail, GuardEffectCallFact } from "./effect-review.ts";
 
 /**
  * A guard's ruling on a tool call: run it silently (`allow`), refuse it
@@ -6,11 +7,52 @@ import type { RuntimeConfig } from "../config.ts";
  */
 export type Verdict = "allow" | "deny" | "ask";
 
+/** Execution boundary committed to for this call, not an approval verdict. */
+export type GuardPlacement = "host" | "contained";
+
+/** Syntactic uncertainty reported without making an approval decision. */
+export type ShellAnalysisIssueKind =
+  | "parameter_expansion"
+  | "command_substitution"
+  | "process_substitution"
+  | "dynamic_command"
+  | "dynamic_subcommand"
+  | "dynamic_path"
+  | "opaque_command"
+  | "opaque_path"
+  | "unbalanced_syntax"
+  | "tokenizer_gap";
+
+/** Position affected by uncertainty; value position alone proves no effect safety. */
+export type ShellAnalysisImpact =
+  "value" | "executable" | "subcommand" | "path" | "environment" | "control_flow";
+
+/** Zero-based segment attribution; presentation may add one. */
+export interface ShellAnalysisIssue {
+  segmentIndex: number;
+  kind: ShellAnalysisIssueKind;
+  impact: ShellAnalysisImpact;
+}
+
+/** Host effect attestation, never syntax alone, may select judgeable. */
+export type GuardReviewability = "static" | "judgeable" | "human_only";
+
+/** Trusted host facts for one review; never populated from model-supplied arguments. */
+export interface GuardCallFacts extends EffectReviewDetail {
+  effects?: GuardEffectCallFact[];
+  matched?: string;
+  placement?: GuardPlacement;
+  network?: "none" | "host";
+  dangerous?: boolean;
+  within_workspace?: boolean;
+  touches_outside?: boolean;
+}
+
 /**
  * A {@link Guard}'s answer for one tool call: the {@link Verdict} plus an
  * optional human-facing `reason` shown when the verdict is `ask` or `deny`.
  */
-export interface GuardDecision {
+export interface GuardDecision extends GuardCallFacts {
   verdict: Verdict;
   reason?: string;
   /** Host-resolved command-review mode, when exposed for audit and display. */
@@ -20,12 +62,10 @@ export interface GuardDecision {
    * so the question reaches a person or the call fails closed.
    *
    * @remarks
-   * Set when the guard reached `ask` precisely *because* it could not understand
-   * the command. An LLM judge asked to rule on a command the static analyzer
-   * gave up on is being asked to do the harder version of the job that just
-   * failed, and a session allow list keyed on such a command would extend an
-   * approval to text nobody can bound. Neither is a safe answerer for a question
-   * that exists only because the command is opaque.
+   * Reserved for host commands the analyzer cannot bound and requests to leave
+   * the sandbox when the host policy requires human review. Auto may instead
+   * route an explicit unsandbox request to its judge. An undecidable command committed to containment does
+   * not by itself require this restriction; the host policy owns that decision.
    *
    * The union has one member because the resolver implements one restriction:
    * *bar every automatic answerer*. A second spelling would have to name a
@@ -45,10 +85,23 @@ export type GuardAnswerer = "human" | "judge" | "session_allowlist" | "unavailab
 export interface GuardElicitAnswer {
   allowed: boolean;
   answerer: GuardAnswerer;
+  review?: Pick<GuardReview, "effect_id" | "relation" | "failure_kind">;
 }
 
 /** Final command-review fact attached to a dispatched tool result. */
 export interface GuardReview {
+  effect_id?: string;
+  relation?: "direct" | "bounded_prerequisite" | "none";
+  failure_kind?:
+    | "timeout"
+    | "auth"
+    | "quota"
+    | "rate_limit"
+    | "transport"
+    | "admission"
+    | "cancelled"
+    | "invalid_response"
+    | "unknown";
   mode: "on" | "auto";
   outcome: "allowed" | "denied";
   answerer: GuardAnswerer | "policy";
@@ -74,6 +127,7 @@ export interface Segment {
    * would ride a plain `cmd` grant. */
   envAssignments: string[];
   decidable: boolean;
+  analysisIssues: ShellAnalysisIssue[];
 }
 
 /**
@@ -83,14 +137,16 @@ export interface Segment {
  *
  * @remarks
  * `undecidable` is `true` if any segment is not {@link Segment.decidable},
- * quotes/parens are unbalanced, or a path token resolves through a `~user` /
- * `..` glob the analyzer cannot pin down; a `true` value means the reported
- * `paths` are not a complete picture, so never treat it as workspace-confined.
+ * quotes/parens are unbalanced, a path token resolves through a `~user` /
+ * `..` glob the analyzer cannot pin down, or a segment tokenized to no argv
+ * and no env assignments; a `true` value means the reported `paths` are not a
+ * complete picture, so never treat it as workspace-confined.
  */
 export interface ShellFacts {
   paths: string[];
   segments: Segment[];
   undecidable: boolean;
+  analysisIssues: ShellAnalysisIssue[];
 }
 
 /**
@@ -124,6 +180,10 @@ export interface GuardContext {
   config: RuntimeConfig;
   paths: PathFact[];
   shell?: ShellFacts;
+  /** Per-call sandbox posture for `shell` and `monitor_start`. */
+  sandboxPermissions?: "use_default" | "require_escalated";
+  /** Operator-facing reason supplied with `require_escalated`. */
+  justification?: string;
 }
 
 /**
@@ -137,10 +197,12 @@ export type Guard = (ctx: GuardContext) => GuardDecision | Promise<GuardDecision
  * `tool` and `args` in question, the guard's `reason`, and any {@link ShellFacts}
  * so the prompt can show the analyzed command.
  */
-export interface ElicitRequest {
+export interface ElicitRequest extends GuardCallFacts {
   tool: string;
   args: Record<string, unknown>;
   reason?: string;
+  /** Human-facing context added by the host reviewer, separate from policy reason. */
+  operator_message?: string;
   shell?: ShellFacts;
   /**
    * Carried over from {@link GuardDecision.escalate}: `"human"` means no

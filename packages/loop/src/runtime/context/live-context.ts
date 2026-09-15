@@ -78,21 +78,15 @@ export function createLiveContext(
   /**
    * Keep only the newest bounded set of inline tool images.
    *
-   * @remarks The payload strings are not copied. Older/oversized images are
-   * released immediately and replaced by an explicit transcript marker, which
-   * also keeps `snapshot()` bounded when a run ends before ordinary compaction.
-   *
-   * The prefix-break report deliberately excludes the **last** durable entry.
-   * This runs immediately after each `appendToolMessage`, so trimming the result
-   * that was just pushed rewrites bytes no provider has seen yet and costs
-   * nothing; only a rewrite reaching further back releases an image the previous
-   * request already carried, and that is the one worth a warning.
+   * @remarks Historical admissible payloads reserve capacity first. Excess new
+   * payload is bounded before its first request. Hydration rejects an oversized
+   * snapshot rather than silently altering previously published content.
    */
-  const enforceToolImageBudget = (): void => {
+  const enforceToolImageBudget = (hydrating = false): void => {
     let remaining = MAX_LIVE_TOOL_IMAGE_CHARS;
     let changed = false;
     let lowestRewritten = -1;
-    for (let index = entries.length - 1; index >= 0; index -= 1) {
+    for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index]!;
       const message = entry.message;
       if (message.role !== "tool" || message.images === undefined) continue;
@@ -115,6 +109,10 @@ export function createLiveContext(
         }
       }
       if (dropped === 0) continue;
+      if (hydrating)
+        throw new RangeError(
+          "Persisted context exceeds the inline-image budget; start a new context base",
+        );
 
       const noun = dropped === 1 ? "image was" : "images were";
       const marker =
@@ -128,7 +126,7 @@ export function createLiveContext(
       };
       entry.chars = liveMessageChars(entry.message);
       changed = true;
-      lowestRewritten = index;
+      if (lowestRewritten === -1) lowestRewritten = index;
     }
     if (!changed) return;
     if (lowestRewritten < store.durablePrefixEnd() - 1)
@@ -136,9 +134,7 @@ export function createLiveContext(
     store.replace([...entries], "image_budget");
   };
 
-  // A continuation may hydrate a snapshot written by an older, unbounded
-  // runtime. Bound it before exposing `messages` or accepting another image.
-  enforceToolImageBudget();
+  enforceToolImageBudget(true);
 
   return {
     get messages(): LiveMessage[] {
@@ -201,9 +197,14 @@ export function createLiveContext(
 
     appendRuntimeNote(kind: string, content: string): void {
       const idx = entries.findIndex((e) => e.noteKind === kind);
-      if (idx !== -1) store.removeAt(idx);
+      if (idx !== -1) {
+        const previous = entries[idx]!;
+        delete previous.noteKind;
+        previous.evictable = true;
+        previous.superseded = true;
+      }
       const message: LiveMessage = { role: "user", content };
-      store.appendVolatile({
+      store.appendDurable({
         message,
         chars: liveMessageChars(message),
         evictable: false,
@@ -254,9 +255,14 @@ export function createLiveContext(
 
     setCanonicalState(content: string): void {
       const idx = entries.findIndex((e) => e.canonical);
-      if (idx !== -1) store.removeAt(idx);
+      if (idx !== -1) {
+        const previous = entries[idx]!;
+        previous.canonical = false;
+        previous.evictable = true;
+        previous.superseded = true;
+      }
       const message: LiveMessage = { role: "user", content };
-      store.appendVolatile({
+      store.appendDurable({
         message,
         chars: liveMessageChars(message),
         evictable: false,

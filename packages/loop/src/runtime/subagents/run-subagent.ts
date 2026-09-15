@@ -1,5 +1,6 @@
 import type {
   ImagePart,
+  ModelExecutionInfo,
   LifecycleHook,
   Message,
   MessageContent,
@@ -11,6 +12,7 @@ import type {
 import type { TokenAccumulator, TokenCounts } from "@clarvis/capability";
 import type { LLMProvider, ResolvedProviderConfig } from "@clarvis/capability";
 import type { NamespacedRegistry } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import { createIterationCounter, type TokenLedger } from "../budget/budget.ts";
 import { DISABLED_COMPACTION, type CompactionConfig } from "../context/context-compaction.ts";
 import { createToolSpill } from "../context/tool-spill.ts";
@@ -23,6 +25,7 @@ import {
 } from "./build-subagent-input.ts";
 import type { AgentCapability } from "@clarvis/capability";
 import type { ComputeClock, ComputeRegion } from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "../tools/tool-interrupt.ts";
 
 /**
  * The terminal outcome of a sub-agent run: a `completed` result text, a
@@ -49,12 +52,18 @@ export type SubagentUsageSnapshot = TokenCounts & { iterations: number };
  * `usageSink` that always receives the final counts.
  */
 export interface RunSubagentInput {
+  /** Inherited host machinery namespace, independent of process defaults. */
+  statePaths?: WorkspaceStatePaths;
   task?: string;
   images?: ImagePart[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
+  /** Profile identity/harness; alias kept as `basePrompt` on this input. */
   basePrompt?: string;
   model: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  modelExecution?: ModelExecutionInfo;
   capabilities?: Set<string>;
   reasoningSummary?: ReasoningSummary;
   reasoningEffort?: ReasoningEffort;
@@ -87,6 +96,7 @@ export interface RunSubagentInput {
   clock?: ComputeClock;
   workspaceRoot?: string;
   hooks?: LifecycleHook[];
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /** A finished sub-agent run: its {@link SubagentOutcome} and usage snapshot. */
@@ -99,8 +109,9 @@ export interface RunSubagentResult {
  * Builds the sub-agent's seed message list from its task and prompt sections.
  *
  * @param task - the sub-task text (empty string when none was provided).
- * @param basePrompt - the profile's base prompt/identity, if any.
- * @param workspaceRoot - the workspace root for the `# Workspace` preamble.
+ * @param sharedPrompt - the run's snapshotted shared prompt, if any.
+ * @param profilePrompt - the profile's identity/harness, if any.
+ * @param workspaceRoot - the workspace root for the `# Environment` preamble.
  * @param images - image parts to attach alongside the task text.
  * @param capabilitySections - capability-contributed system sections.
  * @returns a `[system?, user]` message pair — the system message is emitted only
@@ -109,14 +120,16 @@ export interface RunSubagentResult {
  */
 function seedFromTask(
   task: string,
-  basePrompt?: string,
+  sharedPrompt?: string,
+  profilePrompt?: string,
   workspaceRoot?: string,
   images?: ImagePart[],
   capabilitySections?: readonly string[],
 ): Message[] {
   const sections = buildSystemSections({
     ...(workspaceRoot !== undefined ? { workspaceRoot } : {}),
-    ...(basePrompt !== undefined ? { basePrompt } : {}),
+    ...(sharedPrompt !== undefined ? { sharedPrompt } : {}),
+    ...(profilePrompt !== undefined ? { profilePrompt } : {}),
     ...(capabilitySections !== undefined ? { capabilitySections } : {}),
   });
   const systemContent = sections.length > 0 ? sections.join("\n\n") : undefined;
@@ -150,6 +163,7 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
   const usage: TokenAccumulator = { input: 0, output: 0, cached: 0, cache_write: 0 };
   const messages: Message[] = seedFromTask(
     input.task ?? "",
+    input.sharedPrompt,
     input.basePrompt,
     input.workspaceRoot,
     input.images,
@@ -162,13 +176,23 @@ export async function runSubagent(input: RunSubagentInput): Promise<RunSubagentR
       agent: "subagent",
       subagentInstanceId: input.subagentInstanceId,
       messages,
-      target: toLlmTarget(input.llm, input),
+      target: toLlmTarget(
+        {
+          call: (params) =>
+            input.llm.call({ ...params, agentInstanceId: input.subagentInstanceId }),
+        },
+        input,
+      ),
       budget: { ledger: input.ledger, counter, usage },
-      runtime: { trace: input.trace, ...(input.signal ? { signal: input.signal } : {}) },
+      runtime: {
+        trace: input.trace,
+        ...(input.signal ? { signal: input.signal } : {}),
+        ...(input.toolInterrupts !== undefined ? { toolInterrupts: input.toolInterrupts } : {}),
+      },
       compaction: input.compaction ?? DISABLED_COMPACTION,
       ...(input.compactionPrompt !== undefined ? { compactionPrompt: input.compactionPrompt } : {}),
       ...(input.workspaceRoot !== undefined
-        ? { spillToolResult: createToolSpill(input.workspaceRoot) }
+        ? { spillToolResult: createToolSpill(input.statePaths ?? input.workspaceRoot) }
         : {}),
       registry: input.registry,
       ...(input.stagnationThreshold !== undefined

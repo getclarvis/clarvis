@@ -10,8 +10,8 @@ import { open as openFile, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { createLogger } from "@clarvis/kernel/logger";
 import { getTreeSitterClient, RGBA } from "@opentui/core";
-import { batch, createEffect, createRoot, createSignal } from "solid-js";
-import type { RunDetail, RunEvent } from "@clarvis/protocol";
+import { batch, createEffect, createMemo, createRoot, createSignal, untrack } from "solid-js";
+import type { GoalView, RunDetail, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import { formatToolCall } from "./views/tools/signature.ts";
 import { mutationStats, type DiffStats } from "./views/tools/mutation-gate.ts";
 import {
@@ -27,6 +27,7 @@ import {
   type DebugRequest,
   type Mode,
   type PrintFormat,
+  type RemoteWorkspaceRequest,
 } from "./cli-args.ts";
 import { createPrintStream, drainPrintEvents, resolveResumeMeta } from "./cli-mode.ts";
 import {
@@ -36,6 +37,9 @@ import {
   type WorktreeBootstrapResult,
 } from "./bootstrap/worktree.ts";
 import { createRunHost, type RunHost } from "./run-host.ts";
+import { createLoopController, type LoopController } from "./features/loop/controller.ts";
+import { createBackgroundController } from "./features/background/controller.ts";
+import { createGoalController, type GoalBinding } from "./features/goal/controller.ts";
 import { knownPlanProviderKey } from "./adapters/capability-providers.ts";
 import {
   automaticAgentFallback,
@@ -50,11 +54,7 @@ import {
 } from "./adapters/agents-store.ts";
 import { agentReadiness, readEnvView, type AgentFile } from "./adapters/agent-files.ts";
 import type { ClarvisDirs } from "./adapters/agents.ts";
-import {
-  createKeysAdapter,
-  type KeysAdapter,
-  type KeySource,
-} from "./adapters/provider-secrets.ts";
+import { createKeysAdapter, type KeysAdapter } from "./adapters/provider-secrets.ts";
 import { errorText } from "./adapters/errors.ts";
 import {
   createModelsCatalog,
@@ -77,9 +77,10 @@ import { applyAsciiMode, glyph } from "./theme/glyphs.ts";
 import { presentStatusLine, progressStatusText } from "./features/run/status-presenter.ts";
 import { createAttention } from "./core/attention.ts";
 import { createSettingsAdapter, type SettingsAdapter } from "./adapters/settings.ts";
-import { plansState } from "./adapters/execution-safety.ts";
+import { plansState, type IsolationMode } from "./adapters/execution-safety.ts";
 import { createPlatform, openPublicUrl } from "./adapters/platform.ts";
 import { createFilePromptHistory } from "./adapters/file-prompt-history.ts";
+import { startHeadlessRun } from "./adapters/headless-run.ts";
 import { detachObserved } from "./core/tasks.ts";
 import {
   diagnosticAsync,
@@ -97,7 +98,8 @@ import {
   type KernelRunClientCallbacks,
 } from "./adapters/kernel-run-client.ts";
 import {
-  loadFileKernelFactory,
+  isContainerKernelOwnershipConflict,
+  isContainerWorkspaceDestination,
   WorkspaceClientManager,
 } from "./adapters/workspace-client-manager.ts";
 import { createTasksController } from "./features/tasks/controller.ts";
@@ -110,8 +112,13 @@ import { createKernelCapabilitiesClient } from "./adapters/kernel-capabilities-c
 import { applyEvent, createTranscriptStore, type TranscriptStore } from "./adapters/store.ts";
 import { createActivityStore, type UsageActivity } from "./adapters/activity-store.ts";
 import type { BackendProbe } from "./onboarding/doctor.ts";
-import { createConnectionState, connectionProbe } from "./adapters/connection-state.ts";
+import {
+  createConnectionState,
+  connectionProbe,
+  type ReconnectMode,
+} from "./adapters/connection-state.ts";
 import { runFatalBoot } from "./views/FatalBoot.tsx";
+import { containerConnectionStatus } from "./startup-foundation.ts";
 import { createElicitSlot } from "./adapters/elicit-slot.ts";
 import {
   createSessionStore,
@@ -138,6 +145,36 @@ import { resolveStartupComposerHandoff } from "./views/StartupComposer.tsx";
 
 let workspace = workspaceRoot();
 let extensionProfileSelector: string | undefined;
+let remoteWorkspace: RemoteWorkspaceRequest | undefined;
+
+function workspaceClientTarget(): {
+  workspaceRoot: string;
+  destination?: { kind: "ssh"; destination: string; workspace: string; executable?: string };
+} {
+  return remoteWorkspace === undefined
+    ? { workspaceRoot: workspace }
+    : {
+        workspaceRoot: remoteWorkspace.workspace,
+        destination: { kind: "ssh", ...remoteWorkspace },
+      };
+}
+
+async function saveOperatorIsolation(isolation: IsolationMode): Promise<void> {
+  const { createOperatorServices } = await import("@clarvis/kernel/bootstrap");
+  const { applyIsolation } = await import("./features/run/isolation.ts");
+  const operator = createOperatorServices({
+    workspaceRoot: workspaceClientTarget().workspaceRoot,
+    globalDir: globalRoot(),
+    logger: createLogger("silent"),
+    subscriptions: false,
+  });
+  try {
+    const settings = await createSettingsAdapter(operator.config);
+    await applyIsolation(isolation, settings);
+  } finally {
+    await operator.close();
+  }
+}
 
 const ownerOverride = process.env.CLARVIS_OWNER;
 
@@ -168,9 +205,10 @@ const describeToolCall = (input: {
  * @returns the booted kernel (the caller must call `.close()` on it) and its
  *   session store, already loaded for the process-wide `owner`.
  *
- * @remarks `runPrintMode` boots its own kernel instead of this one: it needs
- * `keySources` and `memory: true`, neither of which a silent listing/delete
- * command has any use for.
+ * @remarks `runPrintMode` creates its own manager instead of using this helper:
+ *   it needs `keySources` and `memory: true`, neither of which a silent
+ *   listing/delete command has any use for. Every path still goes through the
+ *   manager so a selected Container destination connects before application composition.
  */
 async function bootSilentSessionStore(): Promise<{
   manager: WorkspaceClientManager;
@@ -179,7 +217,7 @@ async function bootSilentSessionStore(): Promise<{
   owner: string;
 }> {
   const manager = await WorkspaceClientManager.create({
-    workspaceRoot: workspace,
+    ...workspaceClientTarget(),
     globalDir: globalRoot(),
     ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
     ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
@@ -191,6 +229,7 @@ async function bootSilentSessionStore(): Promise<{
     client.client.sessions,
     owner,
     await loadSessions(client.client.sessions, owner),
+    { versioned: client.client.hosting !== undefined },
   );
   return { manager, client, store, owner };
 }
@@ -230,7 +269,6 @@ async function runPrintMode(opts: {
   agent?: string;
   format: PrintFormat;
 }): Promise<never> {
-  const createFileKernel = await loadFileKernelFactory();
   const printDirs: ClarvisDirs = {
     global: globalPaths(),
     workspace: workspacePaths(workspace),
@@ -240,19 +278,27 @@ async function runPrintMode(opts: {
   createRoot(() => {
     code = createCodeConfigStore(printDirs);
   });
-  const kernel = await createFileKernel({
-    workspaceRoot: workspace,
+  const manager = await WorkspaceClientManager.create({
+    ...workspaceClientTarget(),
     globalDir: printDirs.global.root,
-    keySources: code.keySources(),
-    memory: true,
     ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
   });
+  let opened: Awaited<ReturnType<WorkspaceClientManager["open"]>> | undefined;
+  const close = async (): Promise<void> => {
+    try {
+      await opened?.release();
+    } finally {
+      await manager.close();
+    }
+  };
   try {
+    opened = await manager.open();
+    const kernel = opened.client;
     let agent = opts.agent;
     if (agent === undefined) {
-      const available = await kernel.listAgents();
+      const available = await kernel.config.listAgents();
       const files = await loadAgentFiles(kernel.config);
       const settingsView = await kernel.config.getSettings();
       const env = readEnvView();
@@ -287,16 +333,20 @@ async function runPrintMode(opts: {
         process.stderr.write(
           `no interactive entry agent configured ${glyph("emDash")} pass --agent or set a default\n`,
         );
-        await kernel.close();
+        await close();
         process.exit(1);
       }
     }
     const executionId = "exec_" + crypto.randomUUID();
-    const handle = await kernel.runs.start({
-      execution_id: executionId,
-      messages: [{ role: "user", content: opts.prompt }],
-      agent,
-    });
+    const handle = await startHeadlessRun(
+      kernel,
+      {
+        execution_id: executionId,
+        messages: [{ role: "user", content: opts.prompt }],
+        agent,
+      },
+      opts.prompt,
+    );
     handle.onElicit((req) => {
       process.stderr.write(
         `${req.kind} auto-denied (headless): ${(req.prompt.split("\n", 1)[0] ?? "").trim()}\n`,
@@ -342,7 +392,8 @@ async function runPrintMode(opts: {
     finish();
     disposeStore?.();
     await drained;
-    await kernel.close();
+    await handle.closed;
+    await close();
     if (result.status !== "completed") {
       const reason = result.error?.message ?? result.ended_reason ?? result.status;
       process.stderr.write(`run ${result.status}: ${reason}\n`);
@@ -351,7 +402,7 @@ async function runPrintMode(opts: {
     process.exit(0);
   } catch (e) {
     process.stderr.write(`print failed: ${errorText(e)}\n`);
-    await kernel.close().catch(() => undefined);
+    await close().catch(() => undefined);
     process.exit(1);
   }
 }
@@ -384,16 +435,19 @@ async function runDeleteMode(id: SessionId): Promise<never> {
 }
 
 async function runRefreshMode(): Promise<never> {
+  let manager: WorkspaceClientManager | undefined;
+  let opened: Awaited<ReturnType<WorkspaceClientManager["open"]>> | undefined;
   try {
-    const createFileKernel = await loadFileKernelFactory();
-    const kernel = await createFileKernel({
-      workspaceRoot: workspace,
+    manager = await WorkspaceClientManager.create({
+      ...workspaceClientTarget(),
       globalDir: globalRoot(),
       ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
       logger: activeDiagnosticLogger() ?? createLogger("silent"),
     });
-    const cat = await kernel.models.refresh();
-    await kernel.close();
+    opened = await manager.open();
+    const cat = await opened.client.models.refresh();
+    await opened.release();
+    await manager.close();
     const models = cat.providers.reduce((n, p) => n + p.models.length, 0);
     process.stdout.write(
       `models.dev refreshed ${glyph("emDash")} ${cat.providers.length} providers / ${models} models\n`,
@@ -401,6 +455,8 @@ async function runRefreshMode(): Promise<never> {
     process.exit(0);
   } catch (e) {
     process.stderr.write(`refresh failed: ${errorText(e)}\n`);
+    await opened?.release().catch(() => undefined);
+    await manager?.close().catch(() => undefined);
     process.exit(1);
   }
 }
@@ -502,50 +558,121 @@ async function runApp(
   };
   const attention = createAttention(renderer);
   let extensionProfileDriftSequence = 0;
+  let runtimePlacementSequence = 0;
   const [extensionProfileDriftNotice, setExtensionProfileDriftNotice] = createSignal<{
     sequence: number;
     kind: "skill" | "plugin_runtime";
     name: string;
     source?: string;
   } | null>(null);
-  const workspaceManager = await diagnosticAsync(
-    "boot.workspace-manager",
-    () =>
-      preparedWorkspaceManager ??
+  const [runtimeStatus, setRuntimeStatus] = createSignal<RuntimeStatus | undefined>(undefined);
+  const [runtimePlacementNotice, setRuntimePlacementNotice] = createSignal<{
+    sequence: number;
+    message: string;
+    pendingReconnect?: boolean;
+  } | null>(null);
+  const connectWorkspaceManager = (
+    containerOwnershipConflict: "refuse" | "terminate" = "refuse",
+  ): Promise<WorkspaceClientManager> =>
+    diagnosticAsync("boot.workspace-manager", () =>
       WorkspaceClientManager.create({
-        workspaceRoot: workspace,
+        ...workspaceClientTarget(),
         globalDir: globalRoot(),
         ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
-        memory: true,
         ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
         logger: diagnostics?.logger ?? createLogger("silent"),
         openMcpAuthorizationUrl: openPublicUrl,
-        keySources: (() => {
-          const targetDirs: ClarvisDirs = {
-            global: globalPaths(),
-            workspace: workspacePaths(workspace),
-            state: workspaceStatePaths(workspace),
-          };
-          let sources: Record<string, KeySource> = {};
-          createRoot((dispose) => {
-            sources = createCodeConfigStore(targetDirs).keySources();
-            dispose();
-          });
-          return sources;
-        })(),
+        onContainerProgress: (phase) =>
+          bootShell.setStartupStatus(containerConnectionStatus(phase)),
+        containerOwnershipConflict,
       }),
-  );
+    );
+  const useHostForBoot = async (): Promise<void> => {
+    await saveOperatorIsolation("host");
+  };
+  let connectedWorkspaceManager: WorkspaceClientManager | undefined;
+  try {
+    connectedWorkspaceManager = await (preparedWorkspaceManager ?? connectWorkspaceManager());
+  } catch (error) {
+    diagnosticEvent("boot.failed", { phase: "workspace-manager", error, attempt: 1 }, "error");
+    let attempt = 1;
+    const connect = async (ownership: "refuse" | "terminate"): Promise<void> => {
+      attempt += 1;
+      try {
+        connectedWorkspaceManager = await connectWorkspaceManager(ownership);
+      } catch (retryError) {
+        diagnosticEvent(
+          "boot.failed",
+          { phase: "workspace-manager", error: retryError, attempt },
+          "error",
+        );
+        throw retryError;
+      }
+    };
+    const containerSelected = await isContainerWorkspaceDestination({
+      ...workspaceClientTarget(),
+      globalDir: globalRoot(),
+      ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
+      ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
+      logger: diagnostics?.logger ?? createLogger("silent"),
+    }).catch(() => false);
+    const recovered = await runFatalBoot({
+      renderer,
+      error,
+      retry: () => connect("refuse"),
+      ...(isContainerKernelOwnershipConflict(error)
+        ? {
+            resolution: {
+              key: "t",
+              label: "terminate previous Container",
+              run: () => connect("terminate"),
+            },
+          }
+        : containerSelected
+          ? {
+              resolution: {
+                key: "h",
+                label: "use Host",
+                run: async () => {
+                  await useHostForBoot();
+                  await connect("refuse");
+                },
+              },
+            }
+          : {}),
+      quit: () => {
+        releaseBootRendererLifecycle();
+        platform.shutdown("boot-failed").catch(() => undefined);
+      },
+    });
+    if (!recovered) return;
+  }
+  if (connectedWorkspaceManager === undefined) return;
+  const workspaceManager = connectedWorkspaceManager;
+  const [skillsRevision, setSkillsRevision] = createSignal(0);
+  platform.onShutdown(workspaceManager.subscribeSkillsChanged(setSkillsRevision));
   const unsubscribeExtensionProfileDrift = workspaceManager.subscribeExtensionProfileDrift(
     (notice) => {
       setExtensionProfileDriftNotice({
         sequence: ++extensionProfileDriftSequence,
         kind: notice.kind,
-        name: notice.kind === "skill" ? notice.name : notice.plugin,
+        name: notice.name,
         ...(notice.kind === "skill" ? { source: notice.source } : {}),
       });
     },
   );
   platform.onShutdown(unsubscribeExtensionProfileDrift);
+  const unsubscribeRuntimePlacement = workspaceManager.subscribeRuntimePlacement((notice) => {
+    setRuntimeStatus(notice.status);
+    if (notice.message !== undefined) {
+      setRuntimePlacementNotice({
+        sequence: ++runtimePlacementSequence,
+        message: notice.message,
+        ...(notice.pendingReconnect === true ? { pendingReconnect: true } : {}),
+      });
+    } else setRuntimePlacementNotice(null);
+  });
+  platform.onShutdown(unsubscribeRuntimePlacement);
   const owner = workspaceManager.defaultOwner;
   const activeWorkspace = workspaceManager.current;
   const activeWorkspacePath = activeWorkspace.path ?? workspace;
@@ -571,6 +698,9 @@ async function runApp(
   let historyFailure: string | undefined;
 
   const conn = createConnectionState();
+  platform.onShutdown(
+    workspaceManager.subscribeConnectionFailure((detail) => conn.set({ phase: "failed", detail })),
+  );
   interface ProfileState {
     value: () => ProfileInfo[];
     set(value: ProfileInfo[]): void;
@@ -587,10 +717,11 @@ async function runApp(
 
   const elicit = createElicitSlot();
 
+  const clientStateRoot = remoteWorkspace === undefined ? activeWorkspacePath : workspace;
   const dirs: ClarvisDirs = {
     global: globalPaths(),
-    workspace: workspacePaths(activeWorkspacePath),
-    state: workspaceStatePaths(activeWorkspacePath),
+    workspace: workspacePaths(clientStateRoot),
+    state: workspaceStatePaths(clientStateRoot),
   };
   const createOwnedCode = (
     targetDirs: ClarvisDirs,
@@ -653,9 +784,10 @@ async function runApp(
   function judgePayloadFor(
     runtimeDirs: ClarvisDirs,
     mode: GuardMode,
-  ): { guardJudge?: { prompt: string } } {
+  ): { guardJudge?: { guidance: string } } {
     if (mode !== "auto") return {};
-    return { guardJudge: { prompt: loadGuardJudgePrompt(runtimeDirs).prompt } };
+    const guidance = loadGuardJudgePrompt(runtimeDirs).prompt;
+    return guidance.length === 0 ? {} : { guardJudge: { guidance } };
   }
 
   const createRunClientCallbacks = (
@@ -689,7 +821,10 @@ async function runApp(
   ): KernelRunClient =>
     createKernelRunClient({
       createKernel: async () => (await workspaceManager.open(workspaceId)).client,
-      prepareReconnect: () => workspaceManager.invalidate(workspaceId),
+      prepareReconnect: (mode) =>
+        mode === "connection"
+          ? workspaceManager.recover(workspaceId)
+          : workspaceManager.invalidate(workspaceId),
       callbacks: createRunClientCallbacks(callbackTarget),
     });
   const runClient = createWorkspaceRunClient(workspaceRef().id, runCallbackTarget);
@@ -799,7 +934,10 @@ async function runApp(
       client.sessions,
       owner,
       await loadSessions(client.sessions, owner),
-      { onError: (message) => callbackTarget.current()?.setRunStatus(message) },
+      {
+        onError: (message) => callbackTarget.current()?.setRunStatus(message),
+        versioned: client.hosting !== undefined,
+      },
     );
     return {
       keys: nextKeys,
@@ -860,13 +998,14 @@ async function runApp(
     throw error;
   });
   if (bootShutdownRequested) return;
-  void runBootstrapGit(activeWorkspacePath, ["branch", "--show-current"])
-    .then((result) => {
-      setActiveBranch(result.stdout.trim() || undefined);
-    })
-    .catch((error: unknown) => {
-      diagnosticEvent("worktree.branch.unavailable", { reason: errorText(error) }, "warn");
-    });
+  if (remoteWorkspace === undefined)
+    void runBootstrapGit(activeWorkspacePath, ["branch", "--show-current"])
+      .then((result) => {
+        setActiveBranch(result.stdout.trim() || undefined);
+      })
+      .catch((error: unknown) => {
+        diagnosticEvent("worktree.branch.unavailable", { reason: errorText(error) }, "warn");
+      });
   setProfiles(bootProfiles);
   conn.set(
     bootProfiles.length === 0
@@ -991,6 +1130,12 @@ async function runApp(
   });
   publishWorkspaceAdapters(workspaceAdapters);
 
+  const loopReadiness = (): string | null =>
+    conn.state().phase !== "ready"
+      ? "Backend is not connected"
+      : !agents.active() || !agents.isRunnable(agents.active())
+        ? "Choose a runnable agent"
+        : null;
   const buildRunHost = (input: {
     client: KernelRunClient;
     sessionStore: SessionStore;
@@ -1001,8 +1146,20 @@ async function runApp(
     catalog: () => ModelsCatalog | null;
     adapters: WorkspaceAdaptersSnapshot;
     profiles: () => ProfileInfo[];
-  }): RunHost =>
-    createRunHost({
+  }): RunHost => {
+    const executionConfiguration = createMemo(() => {
+      const profile = input.adapters.agents.active();
+      const effective = input.settings.effective();
+      const records = input.profiles();
+      const fingerprint = new Bun.CryptoHasher("sha256")
+        .update(JSON.stringify([effective, input.adapters.agentFiles.list(), records]))
+        .digest("hex");
+      return {
+        fingerprint,
+        label: `model ${effective.default_model ?? records.find((record) => record.name === profile)?.model ?? "configured default"}`,
+      };
+    });
+    return createRunHost({
       store,
       activity,
       sessionStore: input.sessionStore,
@@ -1013,6 +1170,7 @@ async function runApp(
       project: input.client.project.id,
       workspaceId: input.client.workspace.id,
       workspace: input.workspacePath,
+      runtimeKind: () => input.client.capabilities.runtime?.kind,
       priceFor: (model) => priceForRuntime(input.catalog(), input.settings, model),
       activeProfile: () => input.adapters.agents.active(),
       setActiveProfile: (name) => input.adapters.agents.setActive(name),
@@ -1030,7 +1188,11 @@ async function runApp(
       attention,
       presentStatus: presentStatusLine,
       describeToolCall,
+      executionConfiguration,
+      scheduledBlockedReason: () => loops?.executionBlockedReason() ?? loopReadiness(),
+      onSessionInvalidated: (id, reason) => loops?.invalidateSession(id, reason),
     });
+  };
 
   const runHost = buildRunHost({
     client: runClient,
@@ -1043,7 +1205,64 @@ async function runApp(
     adapters: workspaceAdapters,
     profiles,
   });
+  const loops: LoopController = createLoopController({
+    binding: (materialize) => runHost.scheduledBinding(materialize),
+    blockedReason: loopReadiness,
+    submit: (request) => runHost.submitScheduledTurn(request),
+    notice: (message, job) => {
+      const binding = runHost.scheduledBinding();
+      if (
+        binding?.sessionId === job.binding.sessionId &&
+        binding.generation === job.binding.generation
+      )
+        store.appendNotice(message);
+    },
+  });
   runCallbackTarget.bind(runHost);
+  let pendingGoalView: { binding: GoalBinding; view: GoalView } | undefined;
+  let followingGoal = false;
+  const followGoal = (): void => {
+    if (followingGoal) return;
+    followingGoal = true;
+    detachObserved(
+      "goal.observe",
+      async () => {
+        try {
+          while (pendingGoalView !== undefined) {
+            const pending = pendingGoalView;
+            pendingGoalView = undefined;
+            await runHost.synchronizeGoal(pending.binding, pending.view);
+          }
+        } finally {
+          followingGoal = false;
+        }
+      },
+      (error) => store.appendNotice(`Goal observation interrupted: ${errorText(error)}`, "warn"),
+    );
+  };
+  const goals = createGoalController({
+    binding: () => runHost.goalBinding(),
+    prepare: () => runHost.prepareGoalConversation(),
+    service: () => runClient.goals,
+    updated: (binding, view) => {
+      if (view.state.current === undefined && view.state.archive.length === 0) return;
+      pendingGoalView = { binding, view };
+      followGoal();
+    },
+  });
+  let goalBindingKey = "";
+  createEffect(() => {
+    const binding = runHost.goalBinding();
+    const phase = conn.state().phase;
+    const key = JSON.stringify([binding?.sessionId, binding?.generation, phase]);
+    if (key === goalBindingKey) return;
+    goalBindingKey = key;
+    untrack(() => {
+      pendingGoalView = undefined;
+      goals.reset();
+      if (phase === "ready") detachObserved("goal.refresh", () => goals.refresh());
+    });
+  });
   if (historyFailure !== undefined) runHost.setRunStatus(historyFailure);
   const runStatus = (): string => runHost.runStatus();
   const setRunStatus = (value: string): void => {
@@ -1052,6 +1271,10 @@ async function runApp(
   let workspaceCloseFlight: Promise<void> | undefined;
   const closeWorkspace = (): Promise<void> => {
     workspaceCloseFlight ??= (async () => {
+      loops?.dispose();
+      goals.dispose();
+      pendingGoalView = undefined;
+      await runHost.stopLocalWork();
       runHost.flushSession();
       await history.flush();
       await sessionStore.flushPending?.();
@@ -1071,6 +1294,11 @@ async function runApp(
   const removeSelectedWorktree = async (): Promise<void> => {
     if (!selectedWorktree) return;
     try {
+      await runHost.stopLocalWork();
+      const current = await workspaceManager.open();
+      if (current.client.localHost === undefined)
+        throw new Error("workspace host cannot confirm that worktree removal is safe");
+      await current.client.localHost.requestRestart();
       await closeWorkspace();
       await removeWorktreeCheckout(selectedWorktree);
       diagnosticEvent(
@@ -1088,15 +1316,17 @@ async function runApp(
     }
   };
 
-  async function reconnectBackend(): Promise<{ ok: boolean; message: string }> {
-    if (runHost.runActive())
+  async function reconnectBackend(
+    mode: ReconnectMode = "reload",
+  ): Promise<{ ok: boolean; message: string }> {
+    if (runHost.scheduledBusy() || goals.busy())
       return {
         ok: false,
-        message: "run in progress " + glyph("emDash") + " cancel it before reconnecting",
+        message: "this conversation is busy; wait for its work to settle before reconnecting",
       };
     conn.set({ phase: "connecting", detail: "reconnecting" });
-    try {
-      await runClient.reconnect();
+    loops?.refresh();
+    const refreshAdapters = async (): Promise<void> => {
       await keys.reload();
       await settings.reload();
       await agentFiles.reload();
@@ -1105,12 +1335,28 @@ async function runApp(
       conn.set(
         profs.length === 0 ? { phase: "ready", detail: "no Agent Profiles" } : { phase: "ready" },
       );
-      return { ok: true, message: "backend reconnected " + glyph("emDash") + " keys applied" };
+    };
+    try {
+      await runClient.reconnect(mode);
+      await refreshAdapters();
+      return {
+        ok: true,
+        message:
+          mode === "connection"
+            ? "Connection restored. Use /background list to return to a run; /reconnect reload applies saved configuration."
+            : "Host reloaded with saved configuration.",
+      };
     } catch (e) {
-      conn.set({ phase: "failed", detail: errorText(e) });
+      const reachable = await runClient.listProfiles().then(
+        () => true,
+        () => false,
+      );
+      conn.set(reachable ? { phase: "ready" } : { phase: "failed", detail: errorText(e) });
       return {
         ok: false,
-        message: `reconnect failed ${glyph("emDash")} restart clarvis (${errorText(e)})`,
+        message: reachable
+          ? `Connection remains available; ${mode === "reload" ? "reload" : "recovery"} failed: ${errorText(e)}`
+          : `Connection unavailable: ${errorText(e)}. Use /reconnect to try connecting again.`,
       };
     }
   }
@@ -1288,6 +1534,33 @@ async function runApp(
     );
   });
   const runControls: AppRunControls = {
+    loops,
+    goals,
+    ...(runClient.hosting === undefined
+      ? {}
+      : {
+          backgrounds: createBackgroundController({
+            hosting: () => {
+              const hosting = runClient.hosting;
+              if (hosting === undefined)
+                throw new Error("The backend does not support hosted runs.");
+              return hosting;
+            },
+            workspaceId: workspaceRef().id,
+            offerOnStartup: mode.kind === "run",
+            handoff: () => runHost.backgroundCurrentRun(),
+            attach: (ref, control) => runHost.attachHostedRun(ref, control),
+            newConversation: () => runHost.clearSession(),
+            exit: async (receipt) => {
+              await platform.shutdown(
+                "user-quit",
+                undefined,
+                `Run ${receipt.run.execution_id} ${receipt.run.execution_state === "closed" ? "has finished; its result is saved" : "continues in background"}.\nReopen Clarvis in this workspace to return to it.`,
+              );
+            },
+          }),
+        }),
+    scheduledBusy: runHost.scheduledBusy,
     status: runStatus,
     submit: (c) => detachObserved("submit_turn", () => runHost.submitTurn(c)),
     submitPrompt: (messages, display, skill) => runHost.submitPromptTurn(messages, display, skill),
@@ -1298,8 +1571,11 @@ async function runApp(
     inspectContext: (targetWindowTokens) => runHost.inspectCurrentContext(targetWindowTokens),
     fitContext: (targetWindowTokens) => runHost.fitCurrentContext(targetWindowTokens),
     cancel: () => runHost.cancelCurrentRun(),
+    canControl: () => runHost.canControlCurrentRun(),
+    interruptTool: (toolExecutionId) => runHost.interruptTool(toolExecutionId),
     forceStop: () => runHost.teardownRuns(),
     active: () => runHost.runActive(),
+    continuesOnExit: () => runHost.continuesOnExit(),
     physicalActive: () => runHost.physicalWorkActive(),
     memory: () => runHost.memory(),
     startedAt: () => runHost.runStartedAt(),
@@ -1307,6 +1583,7 @@ async function runApp(
     workflowActivity: () => runHost.workflowActivity(),
     mcpStartupNotice: () => runHost.mcpStartupNotice(),
     extensionProfileDriftNotice,
+    runtimePlacementNotice,
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),
@@ -1332,6 +1609,7 @@ async function runApp(
     delete: async (item) => {
       const meta = await sessionStore.load(item.meta.id);
       if (!meta) return;
+      loops?.invalidateSession(meta.id, "clear");
       if (runHost.sessionMeta()?.id === meta.id) runHost.clearSession({ flush: false });
       await deleteSession(meta, sessionStore, (execId) => runClient.deleteRun(execId));
     },
@@ -1382,6 +1660,7 @@ async function runApp(
   };
   const backendConn: AppBackend = {
     connection: conn.state,
+    skillsRevision,
     probe: backend,
     get client() {
       return capabilities;
@@ -1414,7 +1693,16 @@ async function runApp(
     get storage() {
       return runClient.storage;
     },
+    runtime: runtimeStatus,
     reconnect: reconnectBackend,
+    restoreIsolation: async (isolation) => {
+      try {
+        await saveOperatorIsolation(isolation);
+      } catch (error) {
+        return { ok: false, message: `could not restore isolation: ${errorText(error)}` };
+      }
+      return reconnectBackend("connection");
+    },
   };
 
   const startupInput = bootShell.takeStartupInput();
@@ -1457,7 +1745,6 @@ async function runApp(
   );
   appPainted = true;
   for (const task of afterPaintTasks.splice(0)) queueMicrotask(task);
-  workspaceManager.startMemoryRecovery();
   const markdownPreload = preloadMarkdown();
 
   if (mode.kind === "resume" || mode.kind === "continue") {
@@ -1468,9 +1755,7 @@ async function runApp(
         "resume_session",
         async () => {
           await markdownPreload;
-          const meta = await sessionStore.load(summary.id);
-          if (meta === null) throw new Error("session not found");
-          await runHost.loadSessionMeta(meta);
+          await runHost.resumeSessionById(summary.id);
         },
         (e) => setRunStatus(`resume failed: ${errorText(e)}`),
       );
@@ -1485,6 +1770,7 @@ export async function runInteractiveMode(
   preparedMode?: PreparedInteractiveMode,
 ): Promise<void> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = mode.remote;
   let selectedWorktree = preparedMode?.selectedWorktree;
   if (preparedMode === undefined && mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
@@ -1515,6 +1801,7 @@ export async function prepareInteractiveMode(
   mode: Extract<InteractiveMode, { kind: "resume" | "continue" }>,
 ): Promise<PreparedInteractiveMode> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = mode.remote;
   let selectedWorktree: WorktreeBootstrapResult | undefined;
   if (mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
@@ -1529,6 +1816,7 @@ export async function prepareInteractiveMode(
 /** Continue a non-interactive invocation after the lightweight CLI argument fast path. */
 export async function runHeadlessMode(mode: HeadlessMode): Promise<void> {
   extensionProfileSelector = mode.extensionProfileSelector;
+  remoteWorkspace = "remote" in mode ? mode.remote : undefined;
   if ("worktree" in mode && mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
     const selected = await bootstrapWorktree(workspace, mode.worktree);

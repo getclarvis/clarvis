@@ -15,15 +15,18 @@ const within = (ctx: ReturnType<typeof buildGuardContext>, raw: string): boolean
   ctx.paths.find((p) => p.raw === raw)?.withinWorkspace;
 
 describe("buildGuardContext — command tools", () => {
-  it("renders arbitrary host argv for review without treating it as shell input", () => {
+  it("exposes sandbox_permissions and justification on command tools", () => {
     const ctx = buildGuardContext(
-      "host_vcs",
-      { program: "bun", args: ["test", "title with spaces"], cwd: "sub" },
+      "shell",
+      {
+        command: "echo hi",
+        sandbox_permissions: "require_escalated",
+        justification: "need host docker.sock",
+      },
       config,
     );
-    expect(ctx.args.command).toBe("bun test 'title with spaces'");
-    expect(ctx.shell?.segments[0]?.argv).toEqual(["bun", "test", "title with spaces"]);
-    expect(within(ctx, "sub")).toBe(true);
+    expect(ctx.sandboxPermissions).toBe("require_escalated");
+    expect(ctx.justification).toBe("need host docker.sock");
   });
 
   it("analyzes bash and resolves in-workspace vs escaping paths", () => {

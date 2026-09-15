@@ -1,5 +1,10 @@
 import { sanitizeErrorMessage } from "@clarvis/capability";
-import type { SkillContent, SkillInfo, SkillRootInput } from "@clarvis/skills";
+import type {
+  SkillContent,
+  SkillInfo,
+  SkillRootInput,
+  captureSkillExecution,
+} from "@clarvis/skills";
 
 export type { SkillRootInput };
 import type { EnvConfig, ExtensionAdmissionController, HookConfig } from "@clarvis/capability";
@@ -12,7 +17,7 @@ import {
   type MCPAuthorizationOptions,
   type RuntimeEnvironment,
 } from "@clarvis/mcp-client";
-import { setPathsLogger } from "@clarvis/paths";
+import { setPathsLogger, type WorkspaceStatePaths } from "@clarvis/paths";
 import { resolveTraceStore, type ResolvedTraceStore } from "@clarvis/trace";
 import {
   admissionStateLogger,
@@ -30,7 +35,7 @@ import {
   NOOP_LOGGER,
   parseLogScopes,
 } from "@clarvis/capability";
-import type { Logger } from "@clarvis/capability";
+import type { Logger, LLMProvider, ModelExecutionResolver } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "./execute-run.ts";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { Capability, RunCapabilityContext } from "@clarvis/capability";
@@ -118,7 +123,7 @@ export interface SkillRootSnapshotProvider {
   observe(skills: readonly SkillContent[]): void;
   verify(skills: readonly SkillContent[]): void;
   available(skill: SkillInfo): boolean;
-  onRootsChanged?(listener: () => void): () => void;
+  onRootsChanged?(listener: (retainOnFailure?: boolean) => void): () => void;
 }
 
 /**
@@ -129,15 +134,27 @@ export interface SkillRootSnapshotProvider {
  */
 export interface BuildRunDepsOptions {
   env: EnvConfig;
+  /** Host-injected inference. Used unchanged: no local SDK or retry decorator is constructed. */
+  llm?: LLMProvider;
+  /** Exact host-owned model metadata; requests cannot supply provider transports. */
+  modelExecutionResolver?: ModelExecutionResolver;
+  /** Host-injected connections. No MCP factory or authorization coordinator is constructed. */
+  connections?: ExecuteRunDeps["connections"];
   /** Raw values used for provider credentials, MCP interpolation, and child processes. */
   environment?: RuntimeEnvironment;
   logger: Logger;
   workspaceRoot: string;
+  /** Explicit machinery namespace shared by tools and spill writers. */
+  statePaths?: WorkspaceStatePaths;
   traceDir?: string;
+  traceLocksDir?: string;
   /** Exact host-resolved roots. When supplied, the four standard roots are not appended. */
   skillRoots?: SkillRootInput[] | (() => SkillRootInput[]) | SkillRootSnapshotProvider;
   /** Additional roots appended ahead of the four standard Clarvis roots. */
   extraSkillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
+  /** Compose host-owned in-memory skills with the discovered provider, once at construction.
+   * Not called when skills are disabled. The returned provider backs both runs and host listings. */
+  composeSkills?: (discovered: SkillsProvider | undefined) => SkillsProvider;
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
    * (unlike `extraSkillRoots`, which also accepts an array) because the set must
    * be re-read per run: an array form would pin the answer at deps-construction
@@ -162,6 +179,8 @@ export interface BuildRunDepsOptions {
   /** Host port naming the environment variables that hold credentials, so the
    * tools capability can withhold them from every command it spawns. */
   resolveSecretNames?: SecretNamesResolver;
+  /** Isolated container guests set this to false so `require_escalated` fails closed. */
+  allowHostEscalation?: boolean;
   /** Opt out of built-in capabilities to run leaner (and to allow the
    * corresponding optional package to be absent). Omitted = all on. */
   builtins?: BuiltinCapabilityToggles;
@@ -220,8 +239,10 @@ function snapshotSkills(
   build: (roots: SkillRootInput[]) => SkillsSeam,
   provider: SkillRootSnapshotProvider,
   logger: Logger,
+  materialize: typeof captureSkillExecution,
 ): SnapshotSkillsSeam {
-  const capture = (): SkillsSeam => {
+  let closeExecution = (): void => undefined;
+  const capture = (retainOnFailure = false): SkillsSeam => {
     const inner = build(provider.roots());
     const discovered = inner.listSkills();
     const catalog: SkillInfo[] = [];
@@ -229,10 +250,14 @@ function snapshotSkills(
     for (const info of discovered) {
       try {
         const loaded = inner.loadSkill(info.name);
-        if (loaded === undefined) continue;
+        if (loaded === undefined) {
+          if (retainOnFailure) throw new Error(`Skill ${info.name} could not be captured`);
+          continue;
+        }
         catalog.push(info);
         content.set(info.name, loaded);
       } catch (err) {
+        if (retainOnFailure) throw err;
         logger.warn(
           {
             event: "skills.snapshot_body_unavailable",
@@ -246,6 +271,18 @@ function snapshotSkills(
     const captured = [...content.values()];
     provider.observe(captured);
     provider.verify(captured);
+    const execution = materialize(captured.filter((skill) => provider.available(skill)));
+    try {
+      provider.verify(captured);
+      if (retainOnFailure && captured.some((skill) => !provider.available(skill)))
+        throw new Error("Skill catalog changed during capture");
+    } catch (error) {
+      execution.close();
+      throw error;
+    }
+    const previousClose = closeExecution;
+    closeExecution = execution.close;
+    previousClose();
     const infoByName = new Map(catalog.map((info) => [info.name, info] as const));
     const resourcesByName = new Map(
       [...content].map(([name, loaded]) => [
@@ -257,31 +294,34 @@ function snapshotSkills(
       const info = infoByName.get(name);
       if (info === undefined || !provider.available(info)) {
         throw new Error(
-          `skill '${name}' is unavailable because its process snapshot changed; reconnect to load the new version`,
+          `skill '${name}' is unavailable because its process snapshot changed; the host will refresh an authored revision automatically`,
         );
       }
       return info;
     };
     return {
-      listSkills: () => catalog.filter((info) => provider.available(info)),
+      listSkills: () =>
+        catalog
+          .filter((info) => provider.available(info))
+          .flatMap((info) => execution.contents.get(info.name) ?? []),
       loadSkill: (name) => {
         const info = infoByName.get(name);
         if (info === undefined || !provider.available(info)) return undefined;
-        return content.get(name);
+        return execution.contents.get(name);
       },
       readResource: (name, rel) => {
         requireAvailable(name);
         if (resourcesByName.get(name)?.has(rel) !== true) {
           throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
         }
-        return inner.readResource(name, rel);
+        return execution.readResource(name, rel);
       },
       readResourceChunk: (name, rel, offset, maxChars) => {
         requireAvailable(name);
         if (resourcesByName.get(name)?.has(rel) !== true) {
           throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
         }
-        return inner.readResourceChunk(name, rel, offset, maxChars);
+        return execution.readResourceChunk(name, rel, offset, maxChars);
       },
     };
   };
@@ -289,11 +329,12 @@ function snapshotSkills(
   let current = capture();
   let closed = false;
   const unsubscribe =
-    provider.onRootsChanged?.(() => {
+    provider.onRootsChanged?.((retainOnFailure) => {
       if (closed) return;
       try {
-        current = capture();
+        current = capture(retainOnFailure);
       } catch (err) {
+        if (retainOnFailure) throw err;
         current = emptySkillsProvider();
         logger.warn(
           {
@@ -314,6 +355,7 @@ function snapshotSkills(
       if (closed) return;
       closed = true;
       unsubscribe();
+      closeExecution();
     },
   };
 }
@@ -496,19 +538,26 @@ export async function buildExecuteRunDeps({
   env,
   logger,
   workspaceRoot,
+  statePaths,
   traceDir,
+  traceLocksDir,
   skillRoots,
   extraSkillRoots,
+  composeSkills,
   skillBootstraps,
   resolveGuard,
   resolveSandbox,
   resolveSecretNames,
+  allowHostEscalation,
   resolveHooks,
   hookCredentialNames,
   builtins,
   capabilities: extraCapabilities,
   onConnectionEvent,
   mcpAuthorization,
+  llm: suppliedLlm,
+  modelExecutionResolver,
+  connections: suppliedConnections,
   modelCallAdmission: suppliedModelCallAdmission,
   extensionAdmission: suppliedExtensionAdmission,
   resolveSubscription,
@@ -537,74 +586,81 @@ export async function buildExecuteRunDeps({
 
   const resolved = resolveTraceStore({
     ...(traceDir !== undefined ? { dir: traceDir } : {}),
+    ...(traceLocksDir !== undefined ? { locksDir: traceLocksDir } : {}),
     ...(forComponent("trace") === undefined ? {} : { logger: forComponent("trace")! }),
   });
 
   const mcpLogger = forComponent("mcp");
   const authorization =
-    mcpAuthorization === undefined
+    suppliedConnections !== undefined || mcpAuthorization === undefined
       ? undefined
       : createMCPAuthorizationCoordinator(mcpAuthorization);
-  const connections = createConnectionManager({
-    workspace: workspaceRoot,
-    factory: createMCPClientFactory(environment, {
-      defaultCwd: workspaceRoot,
+  const connections =
+    suppliedConnections ??
+    createConnectionManager({
+      workspace: workspaceRoot,
+      factory: createMCPClientFactory(environment, {
+        defaultCwd: workspaceRoot,
+        ...(mcpLogger === undefined ? {} : { logger: mcpLogger }),
+        ...(authorization === undefined ? {} : { authorization }),
+        maxStdioFrameBytes: env.CLARVIS_MCP_STDIO_MAX_FRAME_BYTES,
+        maxHttpResponseBytes: env.CLARVIS_MCP_HTTP_MAX_RESPONSE_BYTES,
+        maxHttpSseEventBytes: env.CLARVIS_MCP_HTTP_MAX_SSE_EVENT_BYTES,
+        ...(env.CLARVIS_MCP_SERVER_STDERR === "inherit"
+          ? {}
+          : {
+              maxServerStderrBytes: env.CLARVIS_MCP_SERVER_STDERR_MAX_BYTES,
+              onServerStderr:
+                env.CLARVIS_MCP_SERVER_STDERR === "off"
+                  ? () => {}
+                  : (mcp: string, line: string) => {
+                      mcpLogger?.debug(
+                        { event: "mcp.server.stderr", mcp, server_output: line },
+                        "MCP server wrote to its own stderr",
+                      );
+                    },
+            }),
+      }),
+      connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
+      callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
+      idleTtlMs: env.CLARVIS_MCP_POOL_IDLE_TTL_MS,
+      maxConnections: env.CLARVIS_MCP_MAX_CONNECTIONS,
+      maxParallelConnects: env.CLARVIS_MCP_MAX_PARALLEL_CONNECTS,
+      maxIdleConnections: env.CLARVIS_MCP_MAX_IDLE_CONNECTIONS,
+      poolSharing: env.CLARVIS_MCP_POOL_SHARING,
+      resourcesEnabled: env.CLARVIS_MCP_RESOURCES,
+      timeoutStreakThreshold: env.CLARVIS_MCP_TIMEOUT_STREAK_THRESHOLD,
+      healthPingIntervalMs: env.CLARVIS_MCP_HEALTH_PING_INTERVAL_MS,
+      ...(onConnectionEvent !== undefined ? { onConnectionEvent } : {}),
       ...(mcpLogger === undefined ? {} : { logger: mcpLogger }),
-      ...(authorization === undefined ? {} : { authorization }),
-      maxStdioFrameBytes: env.CLARVIS_MCP_STDIO_MAX_FRAME_BYTES,
-      maxHttpResponseBytes: env.CLARVIS_MCP_HTTP_MAX_RESPONSE_BYTES,
-      maxHttpSseEventBytes: env.CLARVIS_MCP_HTTP_MAX_SSE_EVENT_BYTES,
-      ...(env.CLARVIS_MCP_SERVER_STDERR === "inherit"
-        ? {}
-        : {
-            maxServerStderrBytes: env.CLARVIS_MCP_SERVER_STDERR_MAX_BYTES,
-            onServerStderr:
-              env.CLARVIS_MCP_SERVER_STDERR === "off"
-                ? () => {}
-                : (mcp: string, line: string) => {
-                    mcpLogger?.debug(
-                      { event: "mcp.server.stderr", mcp, server_output: line },
-                      "MCP server wrote to its own stderr",
-                    );
-                  },
-          }),
-    }),
-    connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
-    callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
-    idleTtlMs: env.CLARVIS_MCP_POOL_IDLE_TTL_MS,
-    maxConnections: env.CLARVIS_MCP_MAX_CONNECTIONS,
-    maxParallelConnects: env.CLARVIS_MCP_MAX_PARALLEL_CONNECTS,
-    maxIdleConnections: env.CLARVIS_MCP_MAX_IDLE_CONNECTIONS,
-    poolSharing: env.CLARVIS_MCP_POOL_SHARING,
-    resourcesEnabled: env.CLARVIS_MCP_RESOURCES,
-    timeoutStreakThreshold: env.CLARVIS_MCP_TIMEOUT_STREAK_THRESHOLD,
-    healthPingIntervalMs: env.CLARVIS_MCP_HEALTH_PING_INTERVAL_MS,
-    ...(onConnectionEvent !== undefined ? { onConnectionEvent } : {}),
-    ...(mcpLogger === undefined ? {} : { logger: mcpLogger }),
-  });
+    });
 
-  const provider = createAiSdkProvider({
-    resolveRegistryKey: (name: string): string | undefined => environment[name],
-    timeoutMs: env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
-    maxResponseBytes: env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
-    maxSseEventBytes: env.CLARVIS_PROVIDER_MAX_SSE_EVENT_BYTES,
-    logger,
-    ...(resolveSubscription === undefined ? {} : { resolveSubscription }),
-  });
+  const provider =
+    suppliedLlm ??
+    createAiSdkProvider({
+      resolveRegistryKey: (name: string): string | undefined => environment[name],
+      timeoutMs: env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
+      maxResponseBytes: env.CLARVIS_PROVIDER_MAX_RESPONSE_BYTES,
+      maxSseEventBytes: env.CLARVIS_PROVIDER_MAX_SSE_EVENT_BYTES,
+      logger,
+      ...(resolveSubscription === undefined ? {} : { resolveSubscription }),
+    });
   const modelCallAdmission =
     suppliedModelCallAdmission ?? createHostModelCallAdmission(env, logger);
   const extensionAdmission =
     suppliedExtensionAdmission ?? createHostExtensionAdmission(env, logger);
-  const llm = withTransportRetry(
-    withCallLogging(withModelCallAdmission(provider, modelCallAdmission), logger),
-    {
-      maxRetries: env.CLARVIS_DEFAULT_MAX_RETRIES,
-      baseDelayMs: env.CLARVIS_PROVIDER_RETRY_BASE_MS,
-      maxDelayMs: env.CLARVIS_PROVIDER_RETRY_MAX_MS,
-      maxRetryAfterMs: env.CLARVIS_DEFAULT_MAX_RETRY_AFTER_MS,
-      logger,
-    },
-  );
+  const llm =
+    suppliedLlm ??
+    withTransportRetry(
+      withCallLogging(withModelCallAdmission(provider, modelCallAdmission), logger),
+      {
+        maxRetries: env.CLARVIS_DEFAULT_MAX_RETRIES,
+        baseDelayMs: env.CLARVIS_PROVIDER_RETRY_BASE_MS,
+        maxDelayMs: env.CLARVIS_PROVIDER_RETRY_MAX_MS,
+        maxRetryAfterMs: env.CLARVIS_DEFAULT_MAX_RETRY_AFTER_MS,
+        logger,
+      },
+    );
 
   let skills: SkillsProvider | undefined;
   let closeSkillSnapshot = (): void => undefined;
@@ -612,7 +668,7 @@ export async function buildExecuteRunDeps({
     reportBuiltinDisabled(logger, "@clarvis/skills", "skills");
   }
   if (useSkills && env.CLARVIS_SKILLS_ENABLED) {
-    const { createAgentSkills, clarvisSkillRoots } = await importOptional(
+    const { createAgentSkills, clarvisSkillRoots, captureSkillExecution } = await importOptional(
       "@clarvis/skills",
       "skills",
       logger,
@@ -637,7 +693,7 @@ export async function buildExecuteRunDeps({
     const configuredRoots = skillRoots ?? extraSkillRoots;
     if (isSkillRootSnapshotProvider(configuredRoots)) {
       try {
-        const snapshot = snapshotSkills(build, configuredRoots, logger);
+        const snapshot = snapshotSkills(build, configuredRoots, logger, captureSkillExecution);
         skills = snapshot;
         closeSkillSnapshot = () => snapshot.close();
       } catch (err) {
@@ -666,6 +722,10 @@ export async function buildExecuteRunDeps({
         );
       }
     }
+  }
+
+  if (useSkills && env.CLARVIS_SKILLS_ENABLED && composeSkills !== undefined) {
+    skills = composeSkills(skills);
   }
 
   const capabilities: Capability[] = [];
@@ -719,9 +779,11 @@ export async function buildExecuteRunDeps({
     );
     capabilities.push(
       createAgentToolsCapability({
+        ...(statePaths === undefined ? {} : { statePaths }),
         ...(resolveGuard !== undefined ? { resolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
+        ...(allowHostEscalation !== undefined ? { allowHostEscalation } : {}),
         ...(selectedSkills === undefined
           ? {}
           : {
@@ -756,7 +818,9 @@ export async function buildExecuteRunDeps({
   capabilities.push(...(extraCapabilities ?? []));
 
   const deps: ExecuteRunDeps = {
+    ...(statePaths === undefined ? {} : { statePaths }),
     env,
+    ...(modelExecutionResolver === undefined ? {} : { modelExecutionResolver }),
     llm,
     connections,
     traceStore: resolved.store,
@@ -776,7 +840,7 @@ export async function buildExecuteRunDeps({
     dispose: async () => {
       closeSkillSnapshot();
       const closed = await Promise.allSettled([
-        connections.closeAll(),
+        suppliedConnections === undefined ? connections.closeAll() : Promise.resolve(),
         authorization?.close() ?? Promise.resolve(),
       ]);
       if (suppliedModelCallAdmission === undefined) modelCallAdmission.close();

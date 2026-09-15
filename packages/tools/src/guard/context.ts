@@ -26,11 +26,6 @@ const PATH_ARG_TOOLS = new Set([
 const SRC_DEST_TOOLS = new Set(["move", "copy"]);
 const READ_ONLY_PATH_TOOLS = new Set(["read_file"]);
 
-function quoteArg(arg: string): string {
-  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(arg)) return arg;
-  return `'${arg.replaceAll("'", `'\\''`)}'`;
-}
-
 function resolveReadOnlyPath(
   raw: string,
   root: string,
@@ -165,21 +160,7 @@ export function buildGuardContext(
   const root = config.workspaceRoot;
   const pathOptions = { alsoAllow: config.temporaryRoots };
 
-  if (tool === "host_vcs") {
-    const program = args.program;
-    const argv = args.args;
-    if (typeof program === "string" && program.length > 0 && Array.isArray(argv)) {
-      const command = [
-        program,
-        ...argv.filter((value): value is string => typeof value === "string"),
-      ]
-        .map(quoteArg)
-        .join(" ");
-      args = { ...args, command };
-      shell = analyzeShell(command, dialect);
-    }
-    if (typeof args.cwd === "string") paths.push(resolveCandidate(args.cwd, root, pathOptions));
-  } else if (COMMAND_TOOLS.has(tool)) {
+  if (COMMAND_TOOLS.has(tool)) {
     const commandRoots = [...config.temporaryRoots, ...config.skillExecutionRoots];
     if (typeof args.command === "string") {
       shell = analyzeShell(args.command, dialect);
@@ -233,5 +214,19 @@ export function buildGuardContext(
     }
   }
 
-  return { tool, args, config, paths, shell };
+  const sandboxPermissions =
+    args.sandbox_permissions === "require_escalated" || args.sandbox_permissions === "use_default"
+      ? args.sandbox_permissions
+      : undefined;
+  const justification = typeof args.justification === "string" ? args.justification : undefined;
+
+  return {
+    tool,
+    args,
+    config,
+    paths,
+    shell,
+    ...(sandboxPermissions !== undefined ? { sandboxPermissions } : {}),
+    ...(justification !== undefined ? { justification } : {}),
+  };
 }

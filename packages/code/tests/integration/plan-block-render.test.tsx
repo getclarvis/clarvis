@@ -91,7 +91,7 @@ test("the transcript no longer filters plan nodes out of view", () => {
     subagents: () => [],
     notify: () => {},
   });
-  expect(state.grouped().ordered.map((n) => n.kind)).toContain("plan");
+  expect(state.semanticNodes().map((n) => n.kind)).toContain("plan");
 });
 
 test("a pathless transcript plan shows its title once without duplicating its id", async () => {

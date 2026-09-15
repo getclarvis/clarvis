@@ -30,7 +30,7 @@ import {
 import { seedMemoryBlock } from "../onboarding/seed-memory.ts";
 import { seedPlansBlock } from "../onboarding/seed-plans.ts";
 import { seedDefaultAllowlist } from "../onboarding/seed-default-allowlist.ts";
-import type { ConnectionState } from "../adapters/connection-state.ts";
+import type { ConnectionState, ReconnectMode } from "../adapters/connection-state.ts";
 import type { DebugSessionController } from "../adapters/debug-session.ts";
 import type { RunHost } from "../run-host.ts";
 import { isDiagnosticLevel } from "../core/diagnostic-events.ts";
@@ -57,6 +57,7 @@ import type {
   WorkflowsService,
   SubscriptionScheme,
   SubscriptionState,
+  RuntimeStatus,
 } from "@clarvis/protocol";
 import type { Commands, CommandUi, ViewHost, ViewRoute } from "../keys/commands.ts";
 import type { InteractionEffects } from "../keys/interaction.ts";
@@ -81,13 +82,15 @@ import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
 
 /** Dependencies for {@link registerAppCommands}: every adapter and effect the app-level commands close over. */
 export interface AppCommandDeps {
+  /** Host catalog generation, independent of connection lifetime. */
+  skillsRevision?: () => number;
   commands: Commands;
   ui: CommandUi;
   effects: Pick<
     InteractionEffects,
     | "openAgentPicker"
-    | "openSafetyPresetPicker"
-    | "cycleGuardMode"
+    | "openIsolationPicker"
+    | "openReviewPicker"
     | "openDiff"
     | "openPlan"
     | "quit"
@@ -110,7 +113,9 @@ export interface AppCommandDeps {
   refreshModels: () => Promise<{ providers: number; models: number }>;
   refreshAgentProfiles: () => Promise<void>;
   keys: KeysAdapter;
-  reconnectBackend: () => Promise<{ ok: boolean; message: string }>;
+  reconnectBackend: (mode?: ReconnectMode) => Promise<{ ok: boolean; message: string }>;
+  /** Current admitted placement, used when a host-side save requires a new generation. */
+  runtime?: () => RuntimeStatus | undefined;
   env: EnvView;
   preview: ThemePreview;
   platform: Platform;
@@ -205,7 +210,7 @@ export async function recomposeSelectedPlugin(
   if (!extensionProfileSelectsPlugin(before, ref)) return undefined;
   const reconnect = await reconnectBackend();
   if (!reconnect.ok) {
-    return `selected by ${before.id}; takes effect after /reconnect (${reconnect.message})`;
+    return `selected by ${before.id}; takes effect after /reconnect reload (${reconnect.message})`;
   }
   await reloadPlugins();
   const after = await extensionProfiles.current();
@@ -352,16 +357,29 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
 
   commands.registerAction({
-    name: "safety.picker",
-    title: "Safety preset",
-    desc: "Choose the sandbox and command-review posture for the next run",
+    name: "isolation.picker",
+    title: "Isolation",
+    desc: "Choose Host, Sandbox, Docker or Podman isolation for the next run",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
-    footerLabel: "safety",
+    footerLabel: "isolation",
     hintPriority: 42,
     hintGroup: "navigation",
-    run: () => effects.openSafetyPresetPicker(),
+    run: () => effects.openIsolationPicker(),
+  });
+
+  commands.registerAction({
+    name: "review.picker",
+    title: "Command review",
+    desc: "Choose Off, Approval or Auto without changing isolation",
+    surface: "internal",
+    group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "review",
+    hintPriority: 41,
+    hintGroup: "navigation",
+    run: () => effects.openReviewPicker(),
   });
 
   commands.registerAction({
@@ -478,14 +496,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     },
   });
 
-  commands.registerAction({
-    name: "guard.cycle",
-    title: "Cycle guard mode",
-    desc: `Cycle the guard mode: off ${glyph("arrowRight")} on ${glyph("arrowRight")} auto`,
-    surface: "internal",
-    group: "actions",
-    run: () => effects.cycleGuardMode(),
-  });
   commands.registerView({
     name: "storage.open",
     title: "Storage",
@@ -522,8 +532,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             ? {}
             : {
                 resumeCatalog: async (item: SessionCatalogItem) => {
-                  await deps.session.resumeCatalog!(item);
                   host.close();
+                  await deps.session.resumeCatalog!(item);
                 },
               }),
           delete: deps.session.delete,
@@ -635,7 +645,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Safety presets, sandbox, guard, memory and plan retention for the next run",
+    desc: "Isolation, command review, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -648,6 +658,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           memory: deps.memoryMode,
           notify,
           runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
           openSandbox: () => openWithReturn("sandbox.config", "controls.open", host.scope()),
         });
     }),
@@ -669,6 +680,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           catalog: deps.catalog,
           notify,
           runActive: deps.runActive,
+          ...(deps.runtime?.()?.kind === "container"
+            ? { reload: () => deps.reconnectBackend("reload") }
+            : {}),
           ...(deps.inspectRunContext === undefined
             ? {}
             : { inspectContext: deps.inspectRunContext }),
@@ -830,7 +844,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
         await pluginsStore.reload();
-        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect reload (${reconnect.message})`;
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
@@ -860,7 +874,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
         await pluginsStore.reload();
-        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect reload (${reconnect.message})`;
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
@@ -1114,6 +1128,26 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   commands.registerView({
+    name: "isolation.config",
+    title: "Isolation",
+    desc: "Choose Host, Sandbox, Docker or Podman for the next run",
+    surface: "internal",
+    group: "navigate",
+    parent: "settings",
+    view: lazyView(async () => {
+      const { IsolationConfigPanel } = await import("../views/cold-surfaces.ts");
+      return (host) =>
+        IsolationConfigPanel(host, {
+          settings: deps.settings,
+          notify,
+          runActive: deps.runActive,
+          reload: () => deps.reconnectBackend("reload"),
+          openSandbox: () => openWithReturn("sandbox.config", "isolation.config", "global"),
+        });
+    }),
+  });
+
+  commands.registerView({
     name: "theme.open",
     title: "Theme",
     desc: "Colors, presets, contrast " + glyph("emDash") + " live preview",
@@ -1265,14 +1299,40 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerAction({
     name: "backend.reconnect",
     title: "Reconnect backend",
-    desc: "Rebuild the kernel with fresh env and saved keys",
+    desc: "Restore the host connection; use reload to apply saved configuration",
     slash: "/reconnect",
     surface: "slash",
     group: "actions",
     parent: "inspect",
+    subcommands: [{ name: "reload", desc: "Reload saved configuration when the host is idle" }],
+    route: (args) => {
+      if (!args.trim()) return false;
+      if (args.trim() !== "reload") {
+        notify("Usage: /reconnect [reload]", "warn");
+        return "block";
+      }
+      commands.runCommand("backend.reload");
+      return true;
+    },
     run: async () => {
       notify("reconnecting backend" + glyph("ellipsis"));
-      const r = await deps.reconnectBackend();
+      const r = await deps.reconnectBackend("connection");
+      notify(r.message, r.ok ? "success" : "error");
+      recheck();
+    },
+  });
+
+  commands.registerAction({
+    name: "backend.reload",
+    title: "Reload backend configuration",
+    desc: "Apply saved configuration when the host is idle",
+    slash: false,
+    surface: "internal",
+    group: "actions",
+    parent: "inspect",
+    run: async () => {
+      notify("reloading backend configuration" + glyph("ellipsis"));
+      const r = await deps.reconnectBackend("reload");
       notify(r.message, r.ok ? "success" : "error");
       recheck();
     },
@@ -1600,6 +1660,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   let initialMcpRefresh = true;
   createEffect(() => {
     backendConnected();
+    deps.skillsRevision?.();
     const refresh = (): void => {
       void mcpCaps
         .refresh()

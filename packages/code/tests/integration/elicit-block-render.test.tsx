@@ -53,6 +53,32 @@ test("ElicitBlock renders the question, options and footer inline", async () => 
   expect(out).toContain("request_changes");
 });
 
+test("an iteration-limit question omits soft wording in the TUI", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={{
+        message: "Used 200 of the soft iterations limit (200). Continue?",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            continue: {
+              type: "string",
+              enum: ["continue", "stop"],
+              description: "Continue past the soft limit, or stop with the partial result?",
+            },
+          },
+          required: ["continue"],
+        },
+      }}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("Used 200 of the iteration limit (200). Continue?");
+  expect(out).toContain("Continue past the iteration limit");
+  expect(out).not.toContain("soft");
+});
+
 const PLAN_ACTIVITY: PlanActivity = {
   id: ".clarvis/plans/search.md",
   path: ".clarvis/plans/search.md",
@@ -171,6 +197,34 @@ const GUARD_CONFIRM: ElicitRequestParams = {
     required: ["decision"],
   },
 };
+
+test("effect review shows segment value position and a distinct timeout receipt", async () => {
+  const out = await frame(() => (
+    <ElicitBlock
+      interaction={stubInteraction}
+      request={{
+        ...GUARD_CONFIRM,
+        detail: {
+          command: "git commit -m message",
+          cwd: "/workspace",
+          reason: "Review requires an answer",
+          analysis: {
+            reviewability: "judgeable",
+            issues: [{ segmentIndex: 1, kind: "command_substitution", impact: "value" }],
+          },
+          effect: { id: "git.commit", class: "local_mutation", attestation: "complete" },
+          reviewer: { status: "failed", failure_kind: "timeout", attempts: 1 },
+        },
+      }}
+      onResolve={() => {}}
+    />
+  ));
+  expect(out).toContain("git.commit");
+  expect(out).toContain("Segment 2: command substitution");
+  expect(out).toContain("argument value");
+  expect(out).toContain("Reviewer timed out after 1 attempt");
+  expect(out).not.toContain("undecidable expansions");
+});
 
 test("a guard confirmation is framed as a command approval, not a neutral question", async () => {
   const out = await frame(() => (

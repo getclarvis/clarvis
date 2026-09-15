@@ -58,6 +58,10 @@ tier together.
 
 ## The subprocess contract
 
+`pre_finalize` also receives stage handoffs with `mode: "checkpoint"` and a separately bounded
+`checkpoint: { summary, next_step }`. That metadata is not a final `value`; the ordinary deny/pass
+policy still applies before the loop accepts the stage. The external event spelling remains `Stop`.
+
 - **stdin** — one JSON object, then EOF, **flat**:
 
   ```json
@@ -109,10 +113,10 @@ tier together.
   `async` detaches command hooks with an eight-process background ceiling (except `SessionEnd`,
   which always waits), `additionalContextLimit` bounds parsed stdout, and `statusMessage` remains
   available as display metadata. `prompt` and `agent` entries are reported and skipped.
-- **`mcp_tool` hooks call the already-open server directly** with recursively expanded
+- **`mcp_tool` hooks use the run-scoped MCP port directly** with recursively expanded
   `${field.path}` input templates. They use the command-hook output contract, fail open when the
-  server/tool is unavailable, never recursively trigger tool hooks, and are skipped for
-  `SessionEnd`.
+  server/tool is unavailable, and never recursively trigger tool hooks. Portable `SessionEnd`
+  entries are skipped during dialect conversion.
 
 ## What the child inherits
 
@@ -122,6 +126,12 @@ plugin hook additionally receives `PLUGIN_ROOT`/`PLUGIN_DATA` and the
 `CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases, without adding credential material.
 That is credential hygiene, **not a sandbox** — a hook command runs with the operator's own
 privileges, which is the point of it being installed/operator-authored config.
+
+Hooks are composed only for native Host/Sandbox. The complete Docker/Podman Container Kernel does not construct or
+invoke host lifecycle callbacks, command hooks, HTTP/SSE Hook MCP or guest stdio Hook MCP; configured
+Hooks remain persisted but inactive for that placement. No event context, command, environment or
+Hook declaration crosses the private runtime. See the
+[isolated runtime contract](../../specs/hosts/isolated-agent-runtime.md).
 
 ## Usage
 

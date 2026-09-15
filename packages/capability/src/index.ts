@@ -9,6 +9,8 @@
  */
 
 export { projected } from "./contract.ts";
+export { composePromptCacheKey, isPromptCacheIdentityComponent } from "./prompt-cache-identity.ts";
+export type { PromptCacheIdentity } from "./prompt-cache-identity.ts";
 export type {
   CapabilityEvent,
   CapabilityEventListener,
@@ -28,6 +30,7 @@ export type { OutputTokenBudget, OutputTokenReservation } from "./output-budget.
 export { createCapabilityRequestView, portKey, createCapabilityServices } from "./services.ts";
 export type { PortKey, CapabilityServices } from "./services.ts";
 export { TASK_TRACKING_PORT } from "./task-tracking-port.ts";
+export { RUN_TRACE_PORT } from "./run-trace-port.ts";
 export type {
   SpawnGate,
   DelegateTaskAugmentation,
@@ -60,8 +63,11 @@ export type {
   AgentRunState,
   AgentBuildContext,
   HandlerVerdict,
+  ToolInvocationControl,
+  ToolInvocationContext,
   ToolHandler,
   FinalizeAttempt,
+  CheckpointAttempt,
   GateOutcome,
   FinalizeGate,
   OrchestrationHooks,
@@ -98,6 +104,12 @@ export { memoizeByOwner, sharedFallback } from "./per-owner.ts";
 export type { CompactionAnchor } from "./compaction-anchor.ts";
 export type { AgentResult, AgentErrorCode, BuiltinAgentErrorCode } from "./agent-result.ts";
 export { BUILTIN_AGENT_ERROR_CODES, partialStructOf } from "./agent-result.ts";
+export { checkpointMetadataSchema } from "./finalization.ts";
+export type {
+  CheckpointMetadata,
+  FinalizationDisposition,
+  RunFinalization,
+} from "./finalization.ts";
 export type { ConvergenceGuards, GuardTrip, GuardWarning } from "./convergence-guards.ts";
 export type { ContextPort, TracePort, Logger, LogFn } from "./ports.ts";
 export type { LogLevel, Sampler, RateLimiterOptions } from "./log.ts";
@@ -119,6 +131,7 @@ export {
 
 export {
   CodedError,
+  CapabilityUnavailableError,
   ValidationError,
   ConflictError,
   PersistenceError,
@@ -139,6 +152,7 @@ export { DELEGATE_TASK_MAX_CHARS, parseDelegateTaskText } from "./delegate-task.
 export type { DelegateTaskTextParseResult } from "./delegate-task.ts";
 export { parseModelRef } from "./model-ref.ts";
 export type { ModelRef } from "./model-ref.ts";
+export type { ModelExecutionInfo, ModelExecutionResolver } from "./model-execution.ts";
 export { FORBIDDEN_PROVIDER_BODY_KEYS, resolveProvider } from "./provider-resolver.ts";
 export type { ProviderResolution } from "./provider-resolver.ts";
 export { reasoningOutputFloor } from "./reasoning-budget.ts";
@@ -391,3 +405,18 @@ export {
   capabilityRunPoliciesSchema,
 } from "./capability-run-policies.ts";
 export type { CapabilityRunPolicies, CapabilitySkillPlansMode } from "./capability-run-policies.ts";
+export type {
+  EffectReviewConfig,
+  ReviewedEffectClass,
+  ReviewedEffectInference,
+  ReviewedEffectTarget,
+  OperatorEvidence,
+  OperatorElicitationContext,
+  OperatorAuthorityBinding,
+  OperatorAuthoritySeed,
+  AuthorityEnvelopeV1,
+  OperatorAuthorityState,
+  OperatorAuthoritySnapshot,
+  OperatorAuthorityReader,
+} from "./operator-authority.ts";
+export { OPERATOR_AUTHORITY_PORT, inheritOperatorAuthority } from "./operator-authority.ts";

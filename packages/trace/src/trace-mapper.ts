@@ -160,6 +160,7 @@ function mapEntryRaw(
       if (d.call_id !== undefined) event.call_id = d.call_id;
       if (d.diff !== undefined) event.diff = d.diff;
       if (d.guard !== undefined) event.guard = d.guard;
+      if (d.interruption !== undefined) event.interruption = d.interruption;
       return event;
     }
     case "tool_call_started": {
@@ -176,6 +177,7 @@ function mapEntryRaw(
         arguments: asObject(d.arguments),
       };
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
+      if (d.control !== undefined) event.control = d.control;
       return event;
     }
     case "tool_output_delta": {
@@ -189,6 +191,21 @@ function mapEntryRaw(
       };
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
       return event;
+    }
+    case "tool_call_announced": {
+      const d = capDetail(entry.kind, entry.detail);
+      return {
+        type: "tool_call_announced",
+        agent: d.agent,
+        ...(d.subagent_instance_id === undefined
+          ? {}
+          : { subagent_instance_id: d.subagent_instance_id }),
+        call_id: d.call_id,
+        occurred_at: abs(entry.at),
+        tool_name: d.tool_name,
+        iteration: d.iteration,
+        attempt: d.attempt,
+      };
     }
     case "tool_input_delta": {
       const d = capDetail(entry.kind, entry.detail);
@@ -394,6 +411,8 @@ function mapEntryRaw(
         reason: d.reason,
       };
       if (d.code !== undefined) event.code = d.code;
+      if (d.reason === "completed" && d.disposition !== undefined)
+        event.disposition = d.disposition;
       return event;
     }
     case "delegation_started": {

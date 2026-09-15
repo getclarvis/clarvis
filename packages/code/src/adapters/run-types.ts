@@ -4,6 +4,8 @@ import type {
   PlansMode,
   RunCompactionResult,
   RunResult,
+  StartHostedTurnParams,
+  ToolInterruptReceipt,
 } from "@clarvis/protocol";
 import type { GuardMode } from "./guard-mode.ts";
 
@@ -18,29 +20,36 @@ export type { MemoryIngestNotice, RunProgress } from "../core/run-types.ts";
 /** An agent profile as summarized for the UI's profile pickers and info panels. */
 export interface ProfileInfo {
   name: string;
+  scope?: "global" | "workspace" | "plugin" | "builtin";
   description?: string;
   model?: string;
   canSpawn?: string[];
+  defaultSpawn?: string;
   budget?: { on_exceed?: string; total_token_limit?: number };
   /** Tool grants from the agent frontmatter (kernel-projected). Undefined when
    * the frontmatter could not be parsed — rendered as "unknown". */
   grants?: string[];
+  tools?: string[];
 }
 
 interface GuardJudgeInput {
-  prompt: string;
+  prompt?: string;
+  guidance?: string;
   model?: string;
   onUnsure?: "ask" | "deny";
   timeoutMs?: number;
+  maxRetries?: number;
 }
 
 /** Parameters accepted by the adapter's `startRun` entry point. */
 export interface StartRunInput {
+  /** Host-owned turn admission; required when the backend advertises hosted execution. */
+  session?: Omit<StartHostedTurnParams, "params">;
   messages?: Message[];
   profile?: string;
   executionId?: string;
   continueFrom?: string;
-  promptCacheKey?: string;
+  sessionId?: string;
   guardMode?: GuardMode;
   guardJudge?: GuardJudgeInput;
   memory?: "on" | "off";
@@ -54,8 +63,17 @@ export interface StartRunInput {
 export interface RunHandle {
   executionId: string;
   cancel(): Promise<void>;
+  /** Interrupt one live tool invocation without cancelling the run. */
+  interruptTool?(toolExecutionId: string): Promise<ToolInterruptReceipt>;
+  /** Release this hosted observation; the host separately applies the conversation's exit policy. */
+  releaseObservation?(): Promise<void>;
+  /** Explicitly acquire this existing observation's controller without replaying its transcript. */
+  acquireControl?(control: "acquire" | "takeover"): Promise<void>;
   done: Promise<RunResult | undefined>;
-  /** Resolves after the protocol stream and the client's event pump have both released the run. */
+  /**
+   * Resolves after stream delivery and closure. A hosted disconnect rejects: losing its
+   * observation does not prove that the independently owned execution physically ended.
+   */
   closed: Promise<void>;
   /** Current protocol queue counters when the active transport exposes them. */
   buffered?: () => { buffered_items: number; buffered_bytes: number; dropped: number } | undefined;

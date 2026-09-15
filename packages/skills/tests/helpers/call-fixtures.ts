@@ -1,5 +1,9 @@
 import type { LLMToolCall } from "@clarvis/capability";
-import { LOAD_SKILL_TOOL_NAME, type SkillsProvider } from "../../src/capability.ts";
+import {
+  LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
+  type SkillsProvider,
+} from "../../src/capability.ts";
 import { fakeValidateArgs } from "./capability-fakes.ts";
 import { makeContent, makeInfo } from "./skill-fixtures.ts";
 
@@ -24,4 +28,9 @@ export function fakeSkills(over: Partial<SkillsProvider> = {}): SkillsProvider {
 
 export function call(over: Partial<LLMToolCall> = {}): LLMToolCall {
   return { id: "c1", name: LOAD_SKILL_TOOL_NAME, arguments: {}, ...over };
+}
+
+/** Build a `read_skill_resource` call for its exact-operation tests. */
+export function resourceCall(over: Partial<LLMToolCall> = {}): LLMToolCall {
+  return { id: "c1", name: READ_SKILL_RESOURCE_TOOL_NAME, arguments: {}, ...over };
 }

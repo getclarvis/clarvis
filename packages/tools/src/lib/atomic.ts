@@ -61,6 +61,12 @@ export function withFileLocks<T>(paths: string[], fn: () => Promise<T>): Promise
   return sorted.reduceRight<() => Promise<T>>((acc, p) => () => withFileLock(p, acc), fn)();
 }
 
+/** Host review of a fully prepared batch before staging or changing any target. */
+export type MutationReview = (
+  operations: readonly FileOp[],
+  commit: () => Promise<void>,
+) => Promise<void>;
+
 interface Staged {
   tmp: string;
   createdDir: string | undefined;
@@ -129,7 +135,13 @@ export async function assertNotSymlink(target: string): Promise<void> {
  * the host umask for a new file/directory, and removing a parent directory this
  * call created if the write fails.
  */
-export async function writeAtomic(target: string, content: string): Promise<void> {
+export async function writeAtomic(
+  target: string,
+  content: string,
+  review?: MutationReview,
+): Promise<void> {
+  if (review !== undefined)
+    return review([{ type: "modify", path: target, content }], () => writeAtomic(target, content));
   await assertNotSymlink(target);
   const dir = path.dirname(target);
   const createdDir = await fs.mkdir(dir, { recursive: true });
@@ -386,7 +398,8 @@ async function commitWithRollback(
  *   on success every affected directory is `fsync`ed and the backups/temps are
  *   removed. Permission bits of overwritten files are preserved.
  */
-export async function applyOpsAtomic(ops: FileOp[]): Promise<void> {
+export async function applyOpsAtomic(ops: FileOp[], review?: MutationReview): Promise<void> {
+  if (review !== undefined) return review(ops, () => applyOpsAtomic(ops));
   const createdDirs: (string | undefined)[] = [];
   try {
     const staged = await stageAll(ops, createdDirs);

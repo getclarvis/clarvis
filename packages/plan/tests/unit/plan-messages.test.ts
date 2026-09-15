@@ -12,7 +12,7 @@ describe("planReviewUnplannedBlock", () => {
     expect(text).toContain("'write_file'");
     expect(text).toContain("no plan exists yet");
     expect(text).toContain("create_plan");
-    expect(text).toContain("read_file");
+    expect(text).toContain("available read-only tools");
     expect(text).toContain("ask_user");
   });
 
@@ -21,26 +21,25 @@ describe("planReviewUnplannedBlock", () => {
     expect(planReviewUnplannedBlock("shell")).not.toContain("'write_file'");
   });
 
-  // This package cannot derive the coding surface — it does not depend on
-  // @clarvis/tools — so the enumeration above is hand-maintained prose the model
-  // reads. Naming a tool that no longer exists would send an agent looking for
-  // it; a negative assertion is the only form available here.
-  it("names no tool @clarvis/tools stopped shipping", () => {
+  it("does not duplicate a coding-tool catalogue it cannot derive", () => {
     const text = planReviewUnplannedBlock("write_file");
-    for (const removed of ["outline", "check_syntax"]) {
+    for (const removed of ["outline", "check_syntax", "read_file", "read_files", "grep"]) {
       expect(text, removed).not.toContain(removed);
     }
   });
 });
 
 describe("PENDING_TASKS_NOTE", () => {
-  it("lists every open task id and names both closing actions", () => {
+  it("lists open ids without confusing delegation with task closure", () => {
     const text = PENDING_TASKS_NOTE(["t1", "t2"]);
     expect(text).toContain("2 plan task(s)");
     expect(text).toContain("t1, t2");
     expect(text).toContain("transition_plan_task");
     expect(text).toContain("delegate_task");
     expect(text).toContain("Do NOT finalize yet");
+    expect(text).toContain("returned/failed states do not close tasks");
+    expect(text).toContain("done requires an observed result");
+    expect(text).toContain("Do not invent success or abandon needed work");
   });
 
   it("reports the count for a single open task", () => {
@@ -72,6 +71,7 @@ describe("buildDelegateTaskPlanAugmentation", () => {
     expect(augmentation.description).toContain("task_id is required");
     expect(augmentation.description).toContain("Use spawn_subagent instead for independent work");
     expect(augmentation.properties).toHaveProperty("task_id");
+    expect(augmentation.description).toContain("returned, not done");
     expect(augmentation.properties.task_id).toMatchObject({
       description: expect.stringContaining("REQUIRED"),
     });

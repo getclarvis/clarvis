@@ -8,6 +8,7 @@
  * absence simply means nothing is tracking this run.
  */
 import type { EnvConfig } from "@clarvis/capability";
+import type { WorkspaceStatePaths } from "@clarvis/paths";
 import type { ImagePart, LifecycleHook } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import type { LLMProvider } from "@clarvis/capability";
@@ -44,6 +45,7 @@ import type {
   TaskTrackingPort,
 } from "@clarvis/capability";
 import type { ComputeClock } from "@clarvis/capability";
+import type { ToolInterruptRegistry } from "./tools/tool-interrupt.ts";
 
 /**
  * Whether a child-spawn call asked for a background spawn.
@@ -174,6 +176,8 @@ function spawnInBackground(
  *   run also advertises `delegate_task` and applies the tracker's gate to both.
  */
 export interface DelegationDeps {
+  /** Inherited host-resolved machinery namespace. */
+  statePaths?: WorkspaceStatePaths;
   bc: AgentBuildContext;
   env: EnvConfig;
   opened: RegistryEntry[];
@@ -199,6 +203,10 @@ export interface DelegationDeps {
   /** Wire names the run's registered capabilities own, reserved against MCP in
    * every sub-agent registry this contribution's spawns mint. */
   capabilityReserved?: readonly string[];
+  /** Fleet-wide shared prompt snapshotted for this run. */
+  sharedPrompt?: string;
+  /** Shared run-local interrupt registry for child shells. */
+  toolInterrupts?: ToolInterruptRegistry;
 }
 
 /**
@@ -244,11 +252,14 @@ export function buildDelegationContribution(deps: DelegationDeps): AgentLoopCont
     ...(deps.capabilitiesFor ? { capabilitiesFor: deps.capabilitiesFor } : {}),
     ...(deps.clock ? { clock: deps.clock } : {}),
     ...(deps.workspaceRoot ? { workspaceRoot: deps.workspaceRoot } : {}),
+    ...(deps.statePaths === undefined ? {} : { statePaths: deps.statePaths }),
     ...(deps.hooks ? { hooks: deps.hooks } : {}),
     ...(deps.turnImages ? { turnImages: deps.turnImages } : {}),
     ...(deps.logger ? { logger: deps.logger } : {}),
     ...(deps.emitCapabilityEvent ? { emitCapabilityEvent: deps.emitCapabilityEvent } : {}),
     ...(deps.capabilityReserved ? { capabilityReserved: deps.capabilityReserved } : {}),
+    ...(deps.sharedPrompt !== undefined ? { sharedPrompt: deps.sharedPrompt } : {}),
+    ...(deps.toolInterrupts !== undefined ? { toolInterrupts: deps.toolInterrupts } : {}),
   };
 
   const spawnHandler: ToolHandler = {

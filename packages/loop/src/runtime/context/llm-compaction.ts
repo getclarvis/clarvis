@@ -1,4 +1,9 @@
-import type { CompactionContribution, LiveMessage, Logger } from "@clarvis/capability";
+import type {
+  CompactionContribution,
+  LiveMessage,
+  Logger,
+  ModelExecutionInfo,
+} from "@clarvis/capability";
 import { sanitizeErrorMessage } from "@clarvis/capability";
 import type { LLMProvider, LLMUsage, ResolvedProviderConfig } from "@clarvis/capability";
 import type { CompactionEvent, LiveContext } from "./compaction-contracts.ts";
@@ -29,6 +34,7 @@ export interface SummarizeContextArgs {
   model: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  modelExecution?: ModelExecutionInfo;
   signal?: AbortSignal;
   timeoutMs?: number;
   prompt: string;
@@ -239,7 +245,9 @@ export function buildCompactionMessages(args: {
 export async function summarizeContext(
   args: SummarizeContextArgs,
 ): Promise<SummarizeContextResult> {
+  const kind = args.modelExecution?.kind ?? args.providerConfig?.kind;
   const result = await args.llm.call({
+    callPurpose: "compaction",
     model: args.model,
     provider: args.provider,
     ...(args.providerConfig ? { providerConfig: args.providerConfig } : {}),
@@ -251,9 +259,7 @@ export async function summarizeContext(
       span: args.span,
     }),
     tools: [],
-    ...(args.providerConfig?.kind === "openai-codex" || args.providerConfig?.kind === "xai-grok"
-      ? {}
-      : { reasoningEffort: "off" as const }),
+    ...(kind === "openai-codex" || kind === "xai-grok" ? {} : { reasoningEffort: "off" as const }),
     ...(args.signal ? { signal: args.signal } : {}),
     ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
     ...(args.maxOutputTokens !== undefined ? { maxOutputTokens: args.maxOutputTokens } : {}),
@@ -320,6 +326,7 @@ export interface RunCompactionArgs {
   model: string;
   provider: string;
   providerConfig?: ResolvedProviderConfig;
+  modelExecution?: ModelExecutionInfo;
   signal?: AbortSignal;
   timeoutMs?: number;
   ledger: TokenLedger;
@@ -437,6 +444,7 @@ export async function attemptCompaction(
       llm: args.llm,
       model: args.model,
       provider: args.provider,
+      ...(args.modelExecution === undefined ? {} : { modelExecution: args.modelExecution }),
       ...(args.providerConfig ? { providerConfig: args.providerConfig } : {}),
       ...(args.signal ? { signal: args.signal } : {}),
       ...(args.timeoutMs !== undefined ? { timeoutMs: args.timeoutMs } : {}),
@@ -444,7 +452,10 @@ export async function attemptCompaction(
       ...(args.contributions !== undefined ? { contributions: args.contributions } : {}),
       ...(args.anchor ? { anchor: args.anchor } : {}),
       ...(priorSummary !== undefined ? { priorSummary } : {}),
-      maxOutputTokens: compactionOutputTokens(windowTokens),
+      maxOutputTokens: Math.min(
+        compactionOutputTokens(windowTokens),
+        args.modelExecution?.maxOutputTokens ?? Number.POSITIVE_INFINITY,
+      ),
       span: span.messages,
     });
     args.ledger.consume(usage);

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import type { StoredExecution } from "@clarvis/loop";
 import type { PlanRef } from "@clarvis/protocol";
-import { storedToDetail } from "../../src/runs/map-result.ts";
+import { engineResultToProto, storedToDetail } from "../../src/runs/map-result.ts";
 
 const validPlanRef: PlanRef = {
   id: "p1",
@@ -42,6 +42,43 @@ function baseStoredExecution(capabilityState?: Record<string, unknown>): StoredE
     ...(capabilityState !== undefined ? { capability_state: capabilityState } : {}),
   };
 }
+
+describe("checkpoint protocol mapping", () => {
+  it.each(["completed", "error", "cancelled"] as const)(
+    "retains the handoff and %s status on live and restored results",
+    (status) => {
+      const stored = baseStoredExecution();
+      stored.status = status;
+      const checkpoint = { summary: "stage", next_step: "verify" };
+      stored.response =
+        status === "error"
+          ? {
+              status,
+              disposition: "checkpoint",
+              checkpoint,
+              error: { code: "stopped", message: "stopped" },
+              usage: stored.response.usage,
+            }
+          : {
+              status,
+              disposition: "checkpoint",
+              checkpoint,
+              result: undefined,
+              usage: stored.response.usage,
+            };
+      const live = engineResultToProto(stored.id, stored.response);
+      const restored = storedToDetail(stored).result!;
+      expect(live).toMatchObject({
+        disposition: "checkpoint",
+        checkpoint,
+        status: status === "error" ? "failed" : status,
+      });
+      expect(restored).toMatchObject({ disposition: "checkpoint", checkpoint });
+      expect(live.result).toBeUndefined();
+      expect(live.checkpoint).not.toBe(checkpoint);
+    },
+  );
+});
 
 describe("storedToDetail — plan_ref sourced from capability_state.plans", () => {
   it("emits the same plan_ref a well-formed plans slot always produced", () => {

@@ -36,7 +36,7 @@ export interface AgentWorkflowPolicy {
  * @returns an independently testable resolver for manager and leader policy.
  */
 export function createAgentWorkflowPolicy(
-  store: ConfigStore,
+  store: Pick<ConfigStore, "listAgents">,
   skills?: SkillsProvider,
 ): AgentWorkflowPolicy {
   const frontmatterOf = (name: string | undefined): Record<string, unknown> | undefined =>

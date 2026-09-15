@@ -17,8 +17,8 @@ test("shows cumulative argument progress with a compact character count", () => 
 });
 
 test("marks a closed argument stream as ready without claiming the tool ran", () => {
-  expect(composingLabel(48_147, true)).toBe("arguments ready · 48k chars");
+  expect(composingLabel(48_147, true)).toBe("awaiting execution · 48k chars");
   expect(composingLabel(48_147, true, 49_000)).toBe(
-    "arguments ready · 48k chars · stream 49k chars",
+    "awaiting execution · 48k chars · stream 49k chars",
   );
 });

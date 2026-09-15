@@ -61,6 +61,13 @@ describe("workItemBrief", () => {
     expect(text).toContain("read-only: do not modify the workspace");
     expect(text).not.toContain("Audit");
   });
+
+  test("does not give an unscoped writer an empty allowed file set or global isolation", () => {
+    const text = workItemBrief({ ...VALID, files: [], mutation: true });
+    expect(text).toContain("within its task scope");
+    expect(text).toContain("alone within this batch, not isolated from unrelated work");
+    expect(text).not.toContain("stay within the files above");
+  });
 });
 
 describe("buildRunWorkItemsTool", () => {

@@ -21,6 +21,8 @@ export interface WorkspaceTrustVerdict {
  * in this draft — the kernel remains the authority on the real schema.
  */
 export interface SettingsData {
+  /** Operator-owned shared effect reviewer; workspace values may only narrow limits. */
+  effect_review?: EffectReviewConfig;
   default_model?: string;
   /**
    * Provider list (each entry carries its own `name`) — mirrors the engine’s shape.
@@ -29,10 +31,57 @@ export interface SettingsData {
   mcp_servers?: Record<string, McpServerConfig>;
   guard?: GuardConfig;
   sandbox?: SandboxConfig;
+  runtime?: RuntimeConfig;
   memory?: MemoryConfig;
   budget?: unknown;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
+}
+
+/** Host execution placement; absence is native and never probes an OCI engine. */
+export type RuntimeConfig =
+  | { backend: "native" }
+  | {
+      backend: "docker";
+      /** Advanced override. Omission selects the matching managed release image lazily. */
+      image_digest?: string;
+      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
+      network?: "none" | "internet" | "outbound";
+      limits?: Partial<RuntimeLimitsConfig>;
+      executable?: string;
+      connection?: string;
+      /** Optional operator-owned, content-addressed first-use image customization. */
+      recipe?: RuntimeRecipeConfig;
+    }
+  | {
+      backend: "podman";
+      /** Advanced override. Omission selects the matching managed release image lazily. */
+      image_digest?: string;
+      /** Omission selects ordinary routable outbound access, which may also reach host/LAN peers. */
+      network?: "none" | "internet" | "outbound";
+      limits?: Partial<RuntimeLimitsConfig>;
+      executable?: string;
+      /** Omission selects the local Podman connection at launch. */
+      connection?: string;
+    };
+
+/** Advanced container ceilings; omitted fields use product defaults. */
+export interface RuntimeLimitsConfig {
+  cpu_count: number;
+  memory_bytes: number;
+  process_count: number;
+  output_bytes: number;
+  storage_bytes: number;
+}
+
+/** Operator-owned Docker image customization captured and run only by the host. */
+export interface RuntimeRecipeConfig {
+  /** Stable, filesystem-safe label used only for operator diagnostics. */
+  name: string;
+  /** Absolute host path under the operator's global runtime recipe directory. */
+  script: string;
+  /** Network available only while building the derived image. */
+  network?: "none" | "outbound";
 }
 
 /** One configured LLM / completion provider. */
@@ -67,6 +116,15 @@ export interface GuardConfig {
   allowed_commands?: string[];
   denied_commands?: string[];
   [k: string]: unknown;
+}
+
+/** Protocol projection of the operator-owned shared reviewer settings. */
+export interface EffectReviewConfig {
+  model?: string;
+  timeout_ms?: number;
+  max_retries?: number;
+  on_unsure?: "ask" | "deny";
+  rollout?: "shadow" | "local" | "ci_retry";
 }
 
 /**
@@ -302,8 +360,12 @@ export interface AgentSummary {
    * Absent (`undefined`) means the frontmatter could not be parsed.
    */
   grants?: string[];
+  /** MCP tool names declared by this profile; built-in coding tools come from grants instead. */
+  tools?: string[];
   /** Names this agent may spawn as sub-agents (a lead has ≥ 1). */
   can_spawn?: string[];
+  /** Preferred child selected when delegation omits an explicit profile. */
+  default_spawn?: string;
   /** Spend policy (`on_exceed` / `total_token_limit`) from the frontmatter. */
   budget?: AgentBudget;
   /** For an agent Clarvis ships that a config file overlays: see {@link AgentOverlay}. */
@@ -341,6 +403,47 @@ export interface ContextDoc {
   scope: Scope;
   path: string;
   content: string;
+}
+
+/** Which layer supplied the effective shared prompt. */
+export type SharedPromptSource = "builtin" | "global" | "workspace" | "disabled";
+
+/** Why one shared-prompt document was not used. */
+export interface SharedPromptDiagnostic {
+  scope: Scope;
+  path: string;
+  reason: string;
+}
+
+/** How one editable scope relates to the effective shared prompt. */
+export type SharedPromptLayerStatus = "inherited" | "active" | "rejected";
+
+/** One editable shared-prompt scope as the UI renders it. */
+export interface SharedPromptLayerView {
+  exists: boolean;
+  status: SharedPromptLayerStatus;
+  reason?: string;
+}
+
+/** Effective shared prompt plus the two editable layers. */
+export interface SharedPromptView {
+  source: SharedPromptSource;
+  /** Config scope that won, when the winner is a file rather than the builtin. */
+  from?: Scope;
+  /** Winning prompt text; omitted when the layer is disabled. */
+  prompt?: string;
+  diagnostics: SharedPromptDiagnostic[];
+  paths: { global: string; workspace?: string };
+  layers: {
+    global: SharedPromptLayerView;
+    workspace?: SharedPromptLayerView;
+  };
+}
+
+/** Write payload for creating or updating a shared-prompt document. */
+export interface SharedPromptWrite {
+  mode: "replace" | "disabled";
+  body: string;
 }
 
 /** Kind of configuration surface that changed. */
@@ -473,6 +576,24 @@ export interface ConfigService {
    * @param scope - Scope to read.
    */
   getContext(scope: Scope): Promise<ContextDoc | null>;
+
+  /** The effective shared prompt and the two editable layers. */
+  getSharedPrompt(): Promise<SharedPromptView>;
+
+  /**
+   * Create or overwrite the shared-prompt document in one scope.
+   *
+   * @param scope - Target scope.
+   * @param doc - Replace body or an explicit disable.
+   */
+  writeSharedPrompt(scope: Scope, doc: SharedPromptWrite): Promise<SharedPromptView>;
+
+  /**
+   * Delete the shared-prompt document in one scope so that scope inherits again.
+   *
+   * @param scope - Scope that owns the file.
+   */
+  deleteSharedPrompt(scope: Scope): Promise<void>;
 
   /**
    * Subscribe to reactive config refresh.

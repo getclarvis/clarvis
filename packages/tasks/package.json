@@ -1,6 +1,5 @@
 {
   "name": "@clarvis/tasks",
-
   "private": true,
   "description": "Provider-neutral external task management for Clarvis.",
   "license": "MIT",

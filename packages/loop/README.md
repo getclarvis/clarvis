@@ -1,5 +1,11 @@
 # `@clarvis/loop`
 
+Selective shell interruption waits up to two seconds for executor settlement and bounded partial
+stdout/stderr. Global cancellation can preempt that wait. A noncooperative executor instead returns
+an explicit unconfirmed-termination error, never a falsely confirmed operator terminal. Live control
+is published after successful shell spawn, not while command review is pending; late callbacks
+cannot reopen a settled tool. See [tool dispatch](../../specs/engine/tool-dispatch.md).
+
 The embeddable Clarvis agent-loop engine. It runs model-backed agents and
 sub-agents in process, with tool use, budgets, context compaction, persistence,
 steering and structured results.
@@ -36,25 +42,79 @@ MCP itself. What remains of the last two is engine _policy_ — when to record a
 when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
-That trace policy records the first `tool_input_delta` announcement for each provider attempt, then
-emits only live cumulative progress and the explicit argument-stream completion. Each report keeps
-call-scoped argument `chars` separate from the physical attempt's optional `stream_chars` liveness
-total. A retry clears the attempt-local announcement set, so even a provider that reuses a `call_id`
-leaves one new durable breadcrumb. `model_call_retry` also retains the bounded provider failure
-message. This is bounded observability: no argument content and no per-delta journal growth.
+A run-scoped tool-interrupt registry listens for operator requests and aborts only the matching
+child controller for an interruptible builtin `shell`. The loop then records an operator
+interruption, returns that fact to the model, and continues. Run cancellation still wins when both
+signals fire.
+
+The host-facing `ToolInterruptDelivery` carries both `settle(status)` and mandatory `fail(error)`;
+transport adapters use failure rather than inventing `not_running` on an unavailable channel. The
+host owns promise coalescing, deadlines and error sanitization; the native registry retains its
+three receipt statuses and does not depend on the protocol package.
+
+The engine records one minimal `tool_call_announced` per call in each physical provider attempt:
+actor, call identity, tool name, iteration and attempt. Every cumulative `tool_input_delta`, including
+`complete: true`, is a live signal. Argument `chars` and optional provider `stream_chars` remain
+separate counters. Retry advances the attempt and clears the announcement set, preserving identity
+even when a provider reuses its call ID. No partial arguments or per-delta journal growth are needed.
+The durable vocabulary and replay contract are owned by
+[`foundations/trace.md`](../../specs/foundations/trace.md).
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 
 ## Contract
 
-The loop contract is divided across the eight focused specs under the
+The loop contract is divided across the focused specs under the
 [`engine` map](../../specs/README.md#engine--the-loop-itself): lifecycle, request/settings,
-capability composition, tool dispatch, compaction, budgets/guards, delegation, and vision routing.
+capability composition, tool dispatch, compaction, budgets/guards, delegation, vision routing,
+and the [agent system prompt](../../specs/engine/agent-system-prompt.md).
 Changes may also implicate the cross-cutting contracts for
 [`grants`](../../specs/cross-cutting/grants.md),
 [`prompt caching`](../../specs/cross-cutting/prompt-cache.md), and
 [`elicitation`](../../specs/cross-cutting/elicitation.md).
+
+The system head is Environment, then the fleet shared prompt, then the profile prompt, then
+capability sections. `buildSystemSections` owns that order. `RunRequest.shared_prompt` is the
+run-start snapshot: omitted uses the built-in default, an empty string disables the layer, and
+children reuse the stamped value. See
+[`agent-system-prompt.md`](../../specs/engine/agent-system-prompt.md).
+
+Model-facing contracts are collected in
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Spawn guidance requires
+self-contained briefs. The default shared prompt requires an explicit request from the user or an
+explicit instruction from an applicable loaded skill or agent-instruction file (such as `AGENTS.md`
+or `CLARVIS.md`) before spawning children, delegating tasks, or starting workflow leaders. Otherwise
+the agent works directly; available tools and efficiency gains do not authorize delegation. Profile
+and grant limits still apply. Supervision distinguishes handles, first-child wakeups and completed work.
+`submit_result` ends a run only when both validation and runtime gates accept it. Compaction retains
+authorization and unfinished work without treating transcript content as new instructions; bounded
+MCP instruction sections explicitly mark truncation.
+
+A host-bound capability can return `HandlerVerdict.finalize` to request a stage checkpoint. Dispatch
+joins earlier deferred work, pairs every tool call with a result, then runs the same capability and
+workspace-hook gates. Later calls in that batch are recorded as unexecuted. Cancellation or a gate
+failure cannot become a successful checkpoint. Its bounded summary/next-step metadata remains
+separate from `output_schema`, and the accepted disposition reaches the persisted response.
+The successful `run_ended` event retains that disposition for live and restored transcripts;
+unsuccessful termination keeps its existing reason and does not claim a saved checkpoint.
+Capability finalizers receive `preserveState` for checkpoints and for interruptions when a
+registered capability sets `preserveStateOnInterruption`. Scheduling the next run belongs to the host.
+
+Iteration preparation awaits `OrchestrationHooks.beforeIteration` in contribution order before
+compaction or inference, under a five-second wall bound and run cancellation. An interruption result
+ends the stage; successful completion or checkpoint is refused outside the finalization gates; a failed or timed-out sweep cannot proceed to the model. Its signal is retired on
+every exit, and asynchronous publishers must honor it to prevent late context changes.
+
+Agent Profile frontmatter rejects unknown fields, including executor-policy and credential
+overrides. Valid profile customization still resolves under the host-admitted execution and
+delegation ceiling.
+
+Host-selected skill snapshots materialize bounded resource and helper copies through the optional
+`@clarvis/skills` import. Verification runs before and after capture. Idle catalog updates replace
+the captured generation, and disposal releases its files; failed post-capture verification releases
+the candidate. Full resource reads retain their existing bounds rather than returning a truncated
+page. See [skills](../../specs/execution/skills.md).
 
 ## Core flow
 
@@ -93,6 +153,13 @@ try {
   await built.dispose();
 }
 ```
+
+`buildExecuteRunDeps({ composeSkills })` lets a host add embedded skills after ordinary discovery
+without changing the filesystem scanner or the engine's optional dependency boundary. The callback
+runs once only when skills are enabled, and receives the discovered provider or `undefined` after
+a discovery failure. Its result backs both the skills capability and the returned owner-facing
+provider. The kernel uses this seam for its shipped configuration guide; the engine does not own
+the guide or its reserved name. Existing `use_skills` grants still control model access.
 
 `buildExecuteRunDeps({ mcpAuthorization })` optionally creates the shared remote-MCP OAuth
 coordinator. The host owns the private store path and may supply a browser opener; the builder wires
@@ -144,11 +211,16 @@ The public settled-context helpers can estimate a persisted snapshot, run the sa
 compaction without another agent iteration, or mechanically fit it to a smaller model window.
 Mechanical fitting preserves retained entries byte-for-byte, including opaque provider metadata;
 the caller owns the explicit persisted replacement and its cache-breaking consequences.
+The host chooses which capabilities reach a run. Container builds this loop with native tools,
+Plans, Memory, Workflows and Goals, an injected logical model provider and an empty connection
+manager. Skills, MCP, Hooks, plugins and external Tasks remain absent; the loop does not create a
+fallback or host bridge for an omitted capability.
+
 Built-ins cover:
 
-- coding tools and command guards;
-- `host_vcs` as an exec-gated host-boundary command: `edit_workspace` alone never advertises or
-  dispatches it, while `run_commands` still subjects every invocation to command review;
+- coding tools and command guards, including Isolation guidance so an exec-capable agent can retry a
+  blocked `shell` or `monitor_start` with `sandbox_permissions: "require_escalated"` instead of a
+  second tool. Isolated container guests set `allowHostEscalation: false` so that retry is refused;
 - one owner-only temporary root per run, advertised as `TMPDIR`, `TEMP`, and `TMP`, plus the host's
   existing system temporary roots pre-authorized across command and native tools. The system roots
   are compatibility access only and are never removed by Clarvis. A verified directory created
@@ -200,6 +272,10 @@ The engine publishes that registry under `AGENT_REGISTRY_PORT` on the run's gene
 `CapabilityServices` before `forRun` begins. Capabilities consume it through `ctx.services`; the old
 special `RunCapabilityContext.agents` channel is gone. Other capability-to-capability ports are read
 at `attach` time, after providers have activated, so registration order cannot hide a peer.
+The same substrate publishes `RUN_TRACE_PORT` before activation. Its recording handle retains durable
+entries and its bridge buffers their projected journal form until a journal is connected after
+activation succeeds. Activation failures therefore do not create new orphan journals, successful
+runs keep journal/final-trace parity, and `init`/`run_started` keep their existing positions.
 
 The standard kernel additionally registers `@clarvis/plan/capability` over the
 same owner-scoped store factory its plans control-plane service uses.
@@ -243,6 +319,19 @@ cannot terminate an otherwise productive run merely because that verification al
 
 ## Host responsibilities
 
+`buildExecuteRunDeps` accepts an already-owned `llm`, `connections`, and optional
+`modelExecutionResolver`. An injected LLM bypasses SDK construction and local retry/logging/admission
+wrappers; injected connections bypass MCP/OAuth factories and remain caller-owned on disposal.
+`traceDir` and the optional `traceLocksDir` let a host preserve the record location while placing
+cross-process coordination in an independently mounted workspace state directory.
+The resolver admits only exact catalog pairs with empty request `providers`, supplying metadata to
+entry/delegated profiles, vision and compaction without fabricating native transport configuration.
+When catalog metadata omits a maximum output size, delegated profiles use the context window as a
+conservative per-call ceiling so aggregate Workflow budgets cannot exceed host broker admission.
+Without it, native provider resolution remains unchanged. These are generic embedding ports, not a
+claim that the Container runtime uses them. See [composition](../../specs/engine/capability-composition.md)
+and [request validation](../../specs/engine/request-and-settings-schema.md).
+
 A host supplies or builds:
 
 - an `LLMProvider` — the engine no longer talks to a provider itself;
@@ -283,7 +372,14 @@ generation run concurrently under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by 
 tool/observer hooks use a 5 s per-hook wall budget, rare policy gates use 30 s, and
 `finalizeRun`/`onRunEnd` use
 `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` (2 s by default). A timed-out extension loses only its own
-contribution, while the rest of the run can settle and release its resources. The logical timeout
+contribution when it is optional, while the rest of the run can settle and release its resources.
+Registrations marked `required: true` fail before inference if activation, a declared seed or entry
+attachment is unavailable. Physical extension saturation cannot silently remove their controls;
+`required_capability_unavailable` identifies that failure. Child permissions are unchanged and an
+already-cancelled run keeps cancellation semantics. Entry attachment and contribution folding finish
+before auxiliary vision inference. The reading is then appended to the same live context, after
+preserved history and current reminders; the shared budget is checked before and after preparation.
+The logical timeout
 does not release the host's physical extension permit: non-cooperative promises retain one of 32
 ordinary slots (at most four per stable capability/phase) until they really settle, so repeated runs
 stop invoking the offender instead of accumulating detached work. Finalizers and both run-end
@@ -347,8 +443,8 @@ The list below is the whole of `package.json`'s `exports` map:
 - `@clarvis/loop/capabilities/tools` — coding tools and guard integration.
 - `@clarvis/loop/host` — the narrow host-composition surface for config,
   provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
-  construction, logger/version bindings and their host-facing types without importing the full
-  execution entry.
+  construction, logger/version bindings, request message ceilings and their host-facing types
+  without importing the full execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow
   implementation needs; shared contracts come directly from `@clarvis/capability`.
 - `@clarvis/loop/testing` — engine-owned `MockLLM`/`MockMCP` doubles plus fresh MCP/trace
@@ -435,22 +531,14 @@ Plus the degradation warnings the engine already emitted, now named:
 `run.teardown_detached`, `steer.drain_failed`, `tool.spill_failed`, `tool.handler_failed`,
 `tool.deferred_handler_failed`, and the one `error`: `run.persist_failed`.
 
-`context.prefix_break` is the reason this section exists. `specs/cross-cutting/prompt-cache.md` prices a single
-in-place mid-transcript rewrite at **2,929,430 tokens — 35.7% of one session's uncached input**, and
-until now that invariant was enforced only by a build-time test. Every mutation of the live
-transcript funnels through `LiveEntryStore`, which reports one when the mutation lands **before** the
-trailing volatile run; `cause: "compaction"` and `cause: "summary_anchor"` drop to `debug`, because
-eviction and summarization rebuild the transcript knowingly — `replaceSpanWithSummary` is reachable
-only from `attemptCompaction`, so warning on its anchor rewrite reported every rolling
-summarization as a defect and drowned the causes that are one. The character prefix-sum is computed
-only inside the break branch, and `appendDurable` — the path every tool result takes — reports
-nothing at all, by construction.
+`context.prefix_break` identifies an in-place change or removal in retained history. Ordinary
+messages, repeated runtime notes and capability reminders append after all previous entries.
+Compaction and summary-anchor changes are expected breaks recorded at debug level. New oversized
+results are bounded before their first request; earlier images remain untouched.
 
-Two of these warnings are decided from provider-reported evidence rather than from a threshold, and
-the distinction is the whole point. `iteration.cache` escalates when `cached_tokens` falls below
-what the provider served **last** iteration — never on the cache-read _ratio_, which one large
-`read_file` moves by 0.63 with the prefix perfectly intact — and it re-arms as soon as an iteration
-stops losing ground, so no single trip can hide a later break. `compaction.unreachable` fires only
+`iteration.cache` detects both a cached-token drop and stagnation during measured input growth,
+with warmup/compaction context and the first serialized divergence when available. Missing usage
+is unknown. Prefix preservation alone does not prove a backend hit. `compaction.unreachable` fires only
 when the provider **refuses** a prompt that is still below compaction's high-water mark: that
 rejection is the one observation proving a declared `context_window_tokens` is wider than the
 model's real window. The engine holds no independent knowledge of a model's window, so comparing the
@@ -475,3 +563,26 @@ bun --filter @clarvis/loop format:check
 ```
 
 The package requires Bun 1.4.0 or newer, matching `engines.bun`.
+
+## Prompt-cache continuity
+
+Direct runs persist missing session/agent identities before inference; continuation inherits them and each child uses its persisted instance ID. Canonical state and runtime notes append at their existing publication frequency. Historical messages, including capability blocks and images, retain their order across continuation until deliberate compaction.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.
+
+## Host operator authority
+
+`ExecuteRunArgs.operatorAuthoritySeed` is private host input, separate from `rawBody`.
+`ExecuteRunDeps.operatorAuthority` creates one runtime before capability activation. The loop
+prepublishes its reader, admits root steers and accepted entry-agent `ask_user` answers through
+private hooks, and persists
+`operator_authority_state` separately from capability slots. It never reconstructs evidence from
+`final_context`. The host evidence validator reuses this package's exported request message ceilings,
+so accepted user input does not encounter a smaller authority-only text limit. A later host-admitted
+turn may carry settled evidence only through that separately persisted ledger; it never treats model
+context as authority. An `ask_user` question is retained separately as untrusted context for the
+authenticated answer; other elicitation kinds and non-accepted outcomes create no evidence. See
+[effect review](../../specs/execution/effect-review.md).
+
+The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.

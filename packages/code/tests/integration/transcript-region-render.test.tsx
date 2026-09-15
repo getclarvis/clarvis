@@ -17,13 +17,9 @@ import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elici
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { LayoutMode } from "../../src/app/layout.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
-import type { MemoryPressureSnapshot } from "../../src/adapters/memory-pressure.ts";
-import type { LegacyCollapsibleToolNode } from "../helpers/transcript-fixtures.ts";
+import type { FoldFixtureToolNode } from "../helpers/transcript-fixtures.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
-import { computeGroupedNodes } from "../../src/views/subagent-sections.ts";
-import { computeToolGroups } from "../../src/views/tool-groups.ts";
-import type { TranscriptPublicationBatch } from "../../src/adapters/transcript-publication.ts";
-import type { CommittedHistoryHandle } from "../../src/views/history/CommittedHistory.tsx";
+import type { TranscriptViewportHandle } from "../../src/views/transcript/TranscriptViewport.tsx";
 
 function renderableCount(root: Renderable): number {
   return 1 + root.getChildren().reduce((count, child) => count + renderableCount(child), 0);
@@ -65,26 +61,10 @@ function store(
   nodes: TranscriptNode[],
   defaultFolded: (key: string) => boolean = () => false,
 ): TranscriptStore {
-  const grouped = computeGroupedNodes(nodes);
-  const toolGroups = computeToolGroups(grouped.ordered);
-  const publication: TranscriptPublicationBatch = {
-    id: "fixture-publication",
-    kind: "annotation",
-    nodes: grouped.ordered,
-    defaultFolded: Object.fromEntries(nodes.map((node) => [node.key, defaultFolded(node.key)])),
-    toolGroups: Object.fromEntries(toolGroups),
-    sectionHeaders: Object.fromEntries(grouped.headers),
-    sectionAnchors: Object.fromEntries(grouped.anchors),
-    sectionFoldedKeys: [...grouped.folded],
-    phase: "committed",
-    ready: true,
-  };
   return {
     nodes,
-    publicationBatches: nodes.length === 0 ? [] : [publication],
     frontierNodes: () => [],
-    committedNodes: () => grouped.ordered,
-    markPublicationReady: () => {},
+    committedNodes: () => nodes,
     defaultFolded,
   } as unknown as TranscriptStore;
 }
@@ -112,7 +92,7 @@ function run(over: Partial<TranscriptRegionRun> = {}): TranscriptRegionRun {
 }
 
 let seq = 0;
-function toolNode(over: Partial<LegacyCollapsibleToolNode> = {}): LegacyCollapsibleToolNode {
+function toolNode(over: Partial<FoldFixtureToolNode> = {}): FoldFixtureToolNode {
   return {
     key: `n${seq++}`,
     kind: "tool_call",
@@ -162,8 +142,6 @@ function baseProps(overrides: Partial<TranscriptRegionProps> = {}): TranscriptRe
     onOpenDetail: overrides.onOpenDetail,
     onScrollbox: overrides.onScrollbox ?? (() => {}),
     onHistoryHandle: overrides.onHistoryHandle,
-    memoryPressure: overrides.memoryPressure,
-    historyMeasurementRecovery: overrides.historyMeasurementRecovery,
   };
 }
 
@@ -182,32 +160,6 @@ test("with no nodes and no elicitation, the splash screen renders", async () => 
   const out = t.captureCharFrame();
   expect(out).toContain("coder");
   expect(out).toContain("z-ai/glm-5.2");
-  t.renderer.destroy();
-});
-
-test("memory pressure stays after committed history in the mutable tail", async () => {
-  const pressure: MemoryPressureSnapshot = {
-    phase: "tripped",
-    advisory: false,
-    rss: 5 * 1024 ** 3,
-    heapUsed: 1,
-    external: 1,
-    arrayBuffers: 1,
-    limitBytes: 5 * 1024 ** 3,
-    warningBytes: 4 * 1024 ** 3,
-    rearmBytes: 3.5 * 1024 ** 3,
-    sampledAt: 1,
-  };
-  const nodes = [toolNode()];
-  const t = await mount(
-    baseProps({
-      store: store(nodes),
-      memoryPressure: { state: () => pressure, onRecover: () => {} },
-    }),
-  );
-  const out = t.captureCharFrame();
-  expect(out).toContain("Work is blocked");
-  expect(out).toContain("/recover-memory");
   t.renderer.destroy();
 });
 
@@ -265,7 +217,7 @@ test("the physical reading runway uses fixed normal and compact height bands", a
   expect(tallRunway!.height).toBe(3);
   expect(
     tall.renderer.root
-      .findDescendantById("committed-history")
+      .findDescendantById("transcript-viewport")
       ?.findDescendantById("transcript-reading-runway"),
   ).toBe(tallRunway);
   tall.renderer.destroy();
@@ -293,10 +245,8 @@ test("workflow activity never enters or moves the main transcript", async () => 
   };
   const liveStore = {
     nodes: [live],
-    publicationBatches: [],
     frontierNodes: () => [live],
     committedNodes: () => [],
-    markPublicationReady: () => {},
     defaultFolded: () => false,
   } as unknown as TranscriptStore;
   const [workflow, setWorkflow] = createSignal<WorkflowActivity | null>(null);
@@ -347,7 +297,7 @@ test("a full-region cover pauses interaction without destroying the transcript p
   const node = toolNode();
   const [active, setActive] = createSignal(true);
   let scrollbox: ScrollBoxRenderable | undefined;
-  let history: CommittedHistoryHandle | undefined;
+  let history: TranscriptViewportHandle | undefined;
   const props = baseProps({
     store: store([node]),
     active,
@@ -465,12 +415,12 @@ test("clicking a tool block's header toggles its fold override through the trans
   t.renderer.destroy();
 });
 
-test("a failed tool reveals its error only after the user clicks its header", async () => {
+test("a failed tool retains a short reason while folded and opens its detail on click", async () => {
   const message = "Invalid input: expected array, received undefined";
   const nodes = [
     toolNode({
-      mcpName: "read_file",
-      toolName: "",
+      mcpName: "fixture-server",
+      toolName: "read_file",
       status: "error",
       error: message,
       result: message,
@@ -481,7 +431,7 @@ test("a failed tool reveals its error only after the user clicks its header", as
   const t = await mount(props);
   let out = t.captureCharFrame();
   expect(out).toContain("read_file");
-  expect(out).not.toContain(message);
+  expect(out).toContain(message);
   expect(out).not.toContain("lines");
 
   const rows = out.split("\n");
@@ -623,35 +573,25 @@ test("one selected sub-agent transcript excludes every sibling transcript", asyn
   expect(t.captureCharFrame()).not.toContain("Reviewer");
   props.transcript.toggleSubagent("researcher");
   await settleSyntaxSurfaces(t);
-  expect(props.transcript.overrideOf(researcherCard.key)).toBe("expanded");
+  for (let pass = 0; pass < 10; pass += 1) await t.renderOnce();
+  expect(props.transcript.overrideOf(researcherCard.key)).toBeUndefined();
   const frame = t.captureCharFrame();
   expect(frame).toContain("Researcher");
   expect(frame).not.toContain("Reviewer");
-  expect(frame.match(/Completed/g)?.length).toBe(1);
-  expect(frame.match(/1 entry/g)?.length).toBe(1);
+  expect(frame).not.toContain("Completed");
+  expect(frame).not.toContain("1 entry");
   const researcherBodyOwner = t.renderer.root.findDescendantById(researcherBody.key);
   expect(researcherBodyOwner).toBeDefined();
   expect(researcherBodyOwner!.height).toBeGreaterThan(0);
   expect(frame).toContain("RESEARCHER BODY MUST START FOLDED");
   expect(frame).not.toContain("REVIEWER BODY MUST START FOLDED");
-  const foldedRows = frame.split("\n");
-  const researcherRow = foldedRows.findIndex(
-    (row) => row.includes("Researcher") && row.includes("Completed"),
-  );
-  const researcherColumn = foldedRows[researcherRow]?.indexOf("Researcher") ?? -1;
-  expect(researcherRow).toBeGreaterThanOrEqual(0);
-  expect(researcherColumn).toBeGreaterThanOrEqual(0);
-  await t.mockMouse.click(researcherColumn, researcherRow);
+  props.transcript.toggleSubagent("researcher");
   await settleSyntaxSurfaces(t);
-  expect(t.captureCharFrame()).toContain("1 hidden");
   expect(t.captureCharFrame()).not.toContain("RESEARCHER BODY MUST START FOLDED");
+  props.transcript.toggleSubagent("researcher");
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("RESEARCHER BODY MUST START FOLDED");
   expect(t.captureCharFrame()).not.toContain("REVIEWER BODY MUST START FOLDED");
-
-  props.transcript.toggleSubagent("researcher");
-  props.transcript.toggleSubagent("researcher");
-  await settleSyntaxSurfaces(t);
-  expect(t.captureCharFrame()).toContain("1 hidden");
-  expect(t.captureCharFrame()).not.toContain("RESEARCHER BODY MUST START FOLDED");
   t.renderer.destroy();
 });
 
@@ -725,9 +665,8 @@ test("the sidebar renders inline in wide mode when visible and content exists", 
   t.renderer.destroy();
 });
 
-test("the sidebar bounds a plan result and opens its full Markdown detail", async () => {
+test("the sidebar omits plan results and keeps full-plan navigation", async () => {
   const result = `## Conclusion\n\n${"A long finding with evidence. ".repeat(40)}`;
-  let opened = "";
   const t = await mount(
     baseProps({
       activity: activity({
@@ -742,22 +681,13 @@ test("the sidebar bounds a plan result and opens its full Markdown detail", asyn
         },
       }),
       layout: layout({ sidebarVisible: () => true, sidebarWidth: () => 42 }),
-      onOpenDetail: (detail) => (opened = detail.content),
     }),
   );
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Last result");
-  expect(frame).toContain("click to rea");
-  expect(frame).not.toContain(
-    "A long finding with evidence. A long finding with evidence. A long finding",
-  );
-  const rows = frame.split("\n");
-  const row = rows.findIndex((line) => line.includes("Last result"));
-  const x = rows[row]!.indexOf("Last result");
-  expect(x).toBeGreaterThan(-1);
-  await t.mockMouse.click(x + 2, row);
-  await t.renderOnce();
-  expect(opened).toBe(result);
+  expect(frame).toContain("[^p]");
+  expect(frame).not.toContain("Last result");
+  expect(frame).not.toContain("click to rea");
+  expect(frame).not.toContain("A long finding with evidence.");
   t.renderer.destroy();
 });
 
@@ -993,7 +923,7 @@ test("Lead keeps its physical reader state while one bounded child projection is
   }));
   const childNodes: TranscriptNode[] = [
     {
-      key: "child-a-card",
+      key: "execution::child-a-card",
       kind: "subagent",
       status: "ok",
       text: "Inspect child A",
@@ -1002,7 +932,7 @@ test("Lead keeps its physical reader state while one bounded child projection is
       subagentOrder: 0,
     },
     {
-      key: "child-a",
+      key: "execution::child-a",
       kind: "assistant",
       status: "ok",
       text: "CHILD A TRANSCRIPT",
@@ -1010,7 +940,7 @@ test("Lead keeps its physical reader state while one bounded child projection is
       subagentOrder: 0,
     },
     {
-      key: "child-b-card",
+      key: "execution::child-b-card",
       kind: "subagent",
       status: "ok",
       text: "Inspect child B",
@@ -1019,7 +949,7 @@ test("Lead keeps its physical reader state while one bounded child projection is
       subagentOrder: 1,
     },
     {
-      key: "child-b",
+      key: "execution::child-b",
       kind: "assistant",
       status: "ok",
       text: "CHILD B TRANSCRIPT",
@@ -1028,7 +958,7 @@ test("Lead keeps its physical reader state while one bounded child projection is
     },
   ];
   let activeScrollbox: ScrollBoxRenderable | undefined;
-  let activeHandle: CommittedHistoryHandle | undefined;
+  let activeHandle: TranscriptViewportHandle | undefined;
   const props = baseProps({
     store: store([...leadNodes, ...childNodes]),
     activity: activity({
@@ -1045,17 +975,15 @@ test("Lead keeps its physical reader state while one bounded child projection is
   const leadHandle = activeHandle;
   expect(leadScrollbox).toBeDefined();
   expect(leadHandle).toBeDefined();
-  leadScrollbox!.stickyScroll = false;
-  leadScrollbox!.scrollTo({ x: 0, y: 6 });
+  expect(leadHandle!.scrollBy(-6)).toBe("scrolled");
   await t.renderOnce();
-  const retainedTop = leadScrollbox!.scrollTop;
-  expect(retainedTop).toBeGreaterThan(0);
+  expect(leadScrollbox!.scrollTop).toBeGreaterThan(0);
 
   props.transcript.toggleSubagent("a");
   await settleSyntaxSurfaces(t);
   const childA = activeScrollbox;
   expect(childA).toBeDefined();
-  expect(childA).not.toBe(leadScrollbox);
+  expect(childA).toBe(leadScrollbox);
   expect(t.captureCharFrame()).toContain("CHILD A TRANSCRIPT");
   expect(leadScrollbox!.isDestroyed).toBe(false);
 
@@ -1063,8 +991,8 @@ test("Lead keeps its physical reader state while one bounded child projection is
   await settleSyntaxSurfaces(t);
   const childB = activeScrollbox;
   expect(childB).toBeDefined();
-  expect(childB).not.toBe(childA);
-  expect(childA!.isDestroyed).toBe(true);
+  expect(childB).toBe(childA);
+  expect(childA!.isDestroyed).toBe(false);
   expect(t.captureCharFrame()).toContain("CHILD B TRANSCRIPT");
 
   await new Promise<void>((resolve) => process.nextTick(resolve));
@@ -1090,10 +1018,11 @@ test("Lead keeps its physical reader state while one bounded child projection is
   }
 
   props.transcript.toggleSubagent("b");
-  await t.renderOnce();
+  leadHandle!.returnToTail();
+  await settleSyntaxSurfaces(t);
   expect(activeScrollbox).toBe(leadScrollbox);
   expect(activeHandle).toBe(leadHandle);
-  expect(leadScrollbox!.scrollTop).toBe(retainedTop);
+  expect(leadScrollbox!.isDestroyed).toBe(false);
   expect(t.captureCharFrame()).toContain("LEAD ROW");
   expect(t.captureCharFrame()).not.toContain("CHILD B TRANSCRIPT");
   t.renderer.destroy();

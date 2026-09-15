@@ -38,6 +38,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -67,10 +71,8 @@ describe("run stream lifecycle", () => {
   });
 
   it("emits heartbeat progress while a run remains open", async () => {
-    const done = Bun.sleep(10).then(() => ({
-      execution_id: "heartbeat",
-      status: "completed" as const,
-    }));
+    const finish = Promise.withResolvers<{ execution_id: string; status: "completed" }>();
+    const done = finish.promise;
     const handle: RunHandle = {
       execution_id: "heartbeat",
       events: {
@@ -83,6 +85,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -103,7 +109,10 @@ describe("run stream lifecycle", () => {
         gate,
         clientDeclaresElicitation: () => false,
         sendNotification: async (notification) => {
-          if (notification.method === "notifications/progress") progress += 1;
+          if (notification.method === "notifications/progress") {
+            progress += 1;
+            finish.resolve({ execution_id: "heartbeat", status: "completed" });
+          }
         },
         getLevel: () => "debug",
         limits,
@@ -130,6 +139,10 @@ describe("run stream lifecycle", () => {
       cancel: async () => {
         cancelled += 1;
       },
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -202,6 +215,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -296,6 +313,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };
@@ -364,6 +385,10 @@ describe("run stream lifecycle", () => {
       steer: async () => {},
       compact: async () => {},
       cancel: async () => {},
+      interruptTool: async (toolExecutionId: string) => ({
+        tool_execution_id: toolExecutionId,
+        status: "not_running" as const,
+      }),
       respond: async () => {},
       onElicit: () => {},
     };

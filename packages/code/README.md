@@ -1,10 +1,111 @@
 # `@clarvis/code`
 
-The flagship Clarvis terminal UI. It runs the agent stack in process through
+The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 
 The UI programs against the `@clarvis/protocol` service contract, so the same
-shell can run against a remote kernel later without a client change.
+shell uses the same typed kernel RPC over a private local socket or Windows named pipe.
+
+The run adapter accepts a backend advertising `hosting`: starts carry a persisted conversation
+revision, while `attachRun` consumes an existing run's snapshot and live tail without starting it
+again. Hosted completion waits for observation delivery, host reconciliation, terminal index commit and
+released admission. After consuming a controlled result, the adapter acknowledges it and releases
+its observation before reporting readiness, allowing long conversations to reclaim retained entries.
+Observers and abandoned or failed observations do not acknowledge an unseen result. Print and TUI
+consumers share that retention lifecycle through `createHostedObservationLease`. A lost connection
+rejects observation without inventing an execution result. The session cache supports explicit
+canonical refresh and confirmed revision sequencing. Its usage adapter converts presentation fields
+and delegates token/cache/pricing accumulation to Kernel’s `addRunUsage` through `./policy`. The workspace manager launches or discovers
+the companion `local-host` entry and owns its connection, while the host owns execution and history.
+
+`/background` confirms that the current hosted run may continue, then closes the TUI. A failed or
+uncertain handoff leaves the interface open.
+An explicitly classified pre-admission refusal clears that attempt and permits a fresh handoff
+after its cause is resolved. Uncertain or unclassified failures retain their operation identity
+and use receipt lookup without repeating the mutation. Reopening the same workspace offers the
+previous work or a new conversation; `/background list` opens that choice later. `/attach <execution-id>` observes
+the same execution, and `/background cancel <execution-id>` requests cancellation without treating
+its acknowledgement as physical completion. Another TUI's controller is observed by default;
+taking control requires an explicit action in the list. Saved results remain in Sessions. The
+background list controller owns polling, loading/errors and serialized attach/cancel operations;
+the view owns selection, keyboard navigation, confirmation and painting.
+Taking control while already observing preserves the existing session, transcript and event stream.
+After confirmation, that observation gains interactive questions and normal foreground result
+acknowledgement; it does not replay the snapshot or retire the conversation.
+
+For an old run whose physical state is unknown, `/background list` offers `archive recovery`.
+First verify that every process and container from that host has stopped, then explicitly confirm
+the displayed host/run identity. The host records this operator verification in the saved session
+before releasing its physical-work block. The conversation is archived and new work requires a new
+conversation; existing history and any known result remain. Failed confirmation or persistence keeps
+the recovery pending. The application does not infer physical closure from a missing host process.
+After attachment, the activity line says `continues after exit` for a promoted run. `/quit` closes
+that TUI without asking about losing the run or cancelling it; a new turn defaults to ordinary
+exit policy. Unsaved settings still require confirmation, and Ctrl+C still requests run cancellation.
+
+`/reconnect` restores the connection to the existing host without restarting it or replaying work.
+`/reconnect reload` applies saved configuration through an explicit host restart, which is refused
+while physical work is active. Hosted runs in `starting`, `running`, or `finishing` state block that
+restart; a persisted `unknown` outcome records uncertainty but does not claim that the current
+generation still owns physical work. Memory shutdown releases an in-flight claim back to its shared
+durable queue, and the replacement Kernel recovers it without spending an attempt. A refused reload
+leaves a healthy connection available. Provider
+credential saves and extension activation request that same reload path; connection recovery alone
+does not activate a saved Extension Profile.
+For an idle Host/Sandbox/Container selection change, reload resolves the saved placement again,
+retires the previous connection, and publishes the replacement Kernel's effective runtime to the
+header before another run can start. If the replacement cannot be admitted, the picker restores the
+previous isolation through the host administrative config service before the manager recovers that
+connection. Expected EOF while retiring Host/Sandbox is not presented as a connection failure.
+For SSH connections, reconnect first closes and drains the old SSH-owned host so its exclusive
+workspace lease is retired before the replacement starts. That expected closure is not presented as
+a connection failure.
+If interactive Container startup finds another live Clarvis generation for the same namespace, the
+fatal boot screen offers an explicit `t` action to terminate that exact registered Container and
+retry. Ordinary retry remains non-destructive, headless commands never choose termination, and
+unconfirmed ownership stays closed.
+Other interactive Container boot failures offer an explicit `h` action that saves Host and boots
+through the normal native connection, so an unavailable selected engine does not trap startup even
+when the native Sandbox is unavailable.
+
+User-typed `!` commands remain owned by the TUI and cannot be put in background. They reserve the
+conversation in the host before spawning, persist their observation under that reservation, and
+release it after physical completion. Normal exit cancels and drains local shell work before
+closing the host connection. Offline compaction uses the host's separate maintenance admission.
+
+`--resume` and `--continue` check for hosted work before reconstructing historical traces. Print mode
+also uses hosted turn admission and waits for physical closure. The host must remain alive for
+execution to continue; restarting an interrupted host does not replay tools or restore a live run.
+See [hosted runs](../../specs/hosts/hosted-runs.md) for authority and recovery boundaries.
+
+`/goal` shows the conversation's objective, criteria, limits, consumption and physical execution.
+`/goal <objective>` creates and starts it under finite host limits; `/goal -- <objective>` protects
+literal text beginning with a control word. Existing goals open replacement review. `/goal edit`
+opens a deterministic form for objective, criteria and limits; editing a terminal goal requires
+confirmed replacement. Pause, resume, cancel and clear use explicit host controls. Pause alone
+stops future stages; `pause --running` also requests cancellation of the bound run. Editing waits
+for physical closure, including unknown work that requires recovery.
+An edit submits only fields changed from the reviewed snapshot; a no-op closes locally, and a
+limit-only edit does not revise the objective or clear its candidate and human approvals. Once a
+mutation receipt is confirmed, a failed follow-up read leaves the view stale with an error but does
+not report the committed mutation as failed.
+Human criteria show pending or accepted status for the current objective revision. The acceptance
+picker offers only pending criteria; an approval from an earlier revision does not satisfy a new review.
+Completed and cancelled goals retain their approval display without offering new acceptance.
+
+The presentation controller subscribes before reading canonical state, pins each review to its
+conversation and revision, and recovers uncertain mutations by receipt without resubmission.
+The runtime observes host-started stages in the same conversation, retains the painted prefix and
+hydrates stages that finished before observation. It never schedules goal continuation in the TUI.
+The transcript renders accepted stage endings as `Checkpoint saved`, retaining that label during
+reconciliation and session restoration. Ordinary successful runs remain `Completed`; the goal view
+is the authority projection for whether the full objective has completed.
+When stages settle behind a full-region view, returning to the transcript transfers older sealed
+blocks to history navigation even if they are not yet resident. They cannot remain in the live tail
+after a newer completion; scrolling or revealing an earlier checkpoint loads its retained history.
+Hosts without goal authority report explicit unavailability. The
+[goal contract](../../specs/capabilities/goals.md) owns these boundaries; complete local/remote,
+container, real-provider and installed-artifact qualification requires separate journey evidence.
 
 Its three workspace dependencies are `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` — the last only to locate the workspace and global roots before a
@@ -24,7 +125,7 @@ boundaries, and derive Code's exact workspace-package allowlist from the central
 The TUI contract is divided across the focused `code-*` specs in the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
-keyboard policy, theme, and onboarding. The performance contract and dated measurement review live
+keyboard policy, theme, and onboarding. The performance contract and measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
 Transcript snapshot rendering remains in
@@ -57,7 +158,7 @@ For a reusable source command from this checkout, run the root development insta
 clarvis-develop
 ```
 
-`clarvis-develop` always loads the current TypeScript sources, preserves the caller's current
+`clarvis-develop` loads the selected TypeScript sources, preserves the caller's current
 directory as the Clarvis workspace, and remains separate from an installed release's `clarvis`
 command. `--empty-workspace` starts it in a newly allocated directory under
 `/tmp/clarvis-development-temp/`; `--clear` removes global state and those managed workspaces, and
@@ -70,15 +171,41 @@ bun --filter @clarvis/code setup
 clarvis
 ```
 
+To test a published source candidate and its Container artifact, use:
+
+```bash
+./dev-install.sh --candidate                 # newest published RC among the latest 100 releases
+./dev-install.sh --candidate v0.2.0-rc.4      # exact RC, once published with source-v1 support
+clarvis-develop
+```
+
+This requires Git and the candidate's pinned Bun version. The installer
+verifies the source prerelease and its `runtime-candidate.json`, checks out the exact tag commit
+under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies and
+checks the CLI version before replacing the managed launcher. Candidate runtime resolution downloads
+the target-specific tar archive on the host, verifies its release manifest and digest, and transfers
+it to the selected engine only when Container is used. The launcher pins the RC and source revision.
+The ordinary `./dev-install.sh` selects the working checkout, builds `clarvis-base:local` in each
+installed Docker/Podman store, and compiles one matching Linux artifact through an available engine.
+A missing engine is skipped; when every installed engine fails to build, installation fails closed.
+Candidate installation
+does not install a container engine, alter the working checkout, or replace the stable `clarvis`
+command.
+Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
+Previous candidate checkouts and downloaded artifacts are retained; `--uninstall` removes only the
+launcher. Older image-only RCs without the `source-v1` installation marker are refused.
+
 For end users, the public installers in the repository root download portable artifacts from the
 binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
 package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
 or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. The bundled Bun executable is installed as `runtime/clarvis` on POSIX and
-`runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the foreground
-process and its CPU and memory use to Clarvis rather than Bun. Developer source commands still run
-under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
+targets for this beta. Neither stable installer probes or requires Docker or Podman; the installed
+application defaults to the native runtime, and a container engine is needed only if the operator
+later selects container isolation. The bundled Bun executable is installed as `runtime/clarvis` on
+POSIX and `runtime/clarvis.exe` on Windows, so operating-system process viewers attribute the
+foreground process and its CPU and memory use to Clarvis rather than Bun. Developer source commands
+still run under their explicitly invoked Bun executable. Archives retain `runtime/bun` or `runtime/bun.exe`
 only as a compatibility entry for an older launcher; current installers and updates do not select it.
 Runtime dependency discovery accepts only installed bare package specifiers from generated imports
 and calls, including minified `createRequire` bindings; relative, absolute,
@@ -123,6 +250,14 @@ another project, start the binary from that directory or use the installed
 `clarvis` command there.
 
 ## Configuration
+
+Configuration requests use the normal conversation. The optional `/clarvis-configure <task>`
+loads embedded guidance without changing the agent or runtime. The host-admitted `configure_clarvis`
+writer reviews exact mutations through the current policy and excludes credentials/private state.
+Automatic authorization does not require a second activation prompt. Human review concerns the
+concrete operation. Skill catalog notifications refresh command listings without reconnecting;
+active resource users retain their captured revision until safe application.
+See [self-configuration.md](../../specs/hosts/self-configuration.md).
 
 The app uses a file-backed kernel. Workspace configuration lives under
 `.clarvis`, typically:
@@ -234,14 +369,19 @@ which file was refused and why.
 Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
 Solid root. Its header keeps the root-owned `v<version>` visible at the right edge, and its shared
 `BrandBanner` preserves the final screen's visual structure while the
-application chunk and workspace foundation load concurrently. At 60 columns by 16 rows or larger,
+application chunk and workspace foundation load concurrently. At 60 columns by 17 rows or larger,
 the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
 narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
-only the branded header. The connection status remains startup-specific instead of claiming an
-agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
+only the branded header. The banner reserves all eight physical rows, followed by a blank separator
+and a non-shrinking status row, so reactive progress cannot paint over the final banner line. During
+Container startup that status follows the connector's
+engine inspection, runtime resolution, workspace isolation, artifact/state preparation and Kernel
+start phases. It remains startup-specific instead of claiming an agent, model or complete-app
+shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
 exists with a runnable active Agent Profile, that queued task starts before complete-app hydration, and the
-resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the
+resulting store/events survive the root handoff. The state continuously captures the draft and does
+not read renderer-owned input after the startup view is destroyed. If provider/agent setup is not runnable yet, the
 accepted text is restored as the full composer's exact draft instead of disappearing. An unsent draft
 uses the same handoff. Resume/continue keep startup input locked until their saved session is restored.
 If terminal shutdown wins while the foundation or profiles are still loading, a boot latch prevents
@@ -337,31 +477,33 @@ with the user, then applies it through `repairSettings`. A concurrent edit is a
 
 ### Interactive memory fuse
 
-`clarvis code` samples its own RSS every 500 ms. The interactive TUI warns at 80% of a 2 GiB
-default limit and, at the limit, cancels active work and blocks new model/tool submissions while
-leaving the process, transcript navigation, explicit transcript clearing and quit controls alive. Export is blocked
-after the fuse trips because constructing a large document is itself memory-intensive. The
-controller stops waiting after a 10-second abort grace even when a non-cooperative run still reports
-itself active; `/recover-memory` can then rebuild the backend instead of leaving the TUI permanently
-stuck in `aborting`. The sampler covers the TUI process RSS, not arbitrary external MCP/shell process
-trees, so host-level monitoring remains appropriate for untrusted external services. The banner and
-`/recover-memory` rebuild the backend through the normal reconnect path. A non-cooperative rebuild
-returns control to the TUI after 10 seconds and remains one physical attempt; a late success enters
-the ordinary cooling gate instead of starting a second backend beside it. The fuse rearms only after
-three samples below 70%. Recovery never clears the transcript automatically, so `/clear` remains an
-explicit user choice. Every model-start path, including `Work on task`, rechecks the fuse immediately
-before dispatch. Positive custom limits have a 512 MiB floor, preventing a recovery threshold below
-the measured healthy baseline. A separate efficiency advisory observes a 20-sample slope and requires
-both 512 MiB absolute RSS and 256 MiB growth from the process baseline; it records evidence but never
-cancels work or runs GC.
+`clarvis code` samples its own RSS every 500 ms. The interactive TUI treats three consecutive samples
+at 80% of a 2 GiB default as sustained pressure and then silently drops reconstructible completed
+tool bodies that persistence can refill. At the 2 GiB limit it blocks new model/tool submissions,
+export, and other expensive admissions while leaving the process, live observation, transcript
+navigation, explicit `/clear`, and quit controls alive. It does not cancel independent hosted work,
+restart the workspace host, or ask the user to recover memory. A 10-second bound covers one local
+maintenance callback; a 30-second bound covers a blocking critical episode. The sampler covers the
+TUI process RSS, not arbitrary external MCP/shell process trees, so host-level monitoring remains
+appropriate for untrusted external services. The fuse rearms after three samples below 70% with no
+pending local maintenance. A later natural drop can also rearm a measured failure that did not lose
+integrity. `/clear` remains an explicit session action, not part of recovery. Every model-start path,
+including `Work on task` and scheduled `/loop` turns, rechecks the fuse immediately before dispatch.
+Positive custom limits have a 512 MiB floor, preventing a rearm threshold below the measured healthy
+baseline. A separate efficiency advisory observes a 20-sample slope and requires both 512 MiB
+absolute RSS and 256 MiB growth from the process baseline; it records diagnostics but never blocks
+work, maintains, or runs GC.
 
-Recovery uses synchronous `Bun.gc(true)` only after the backend reconnects and every physical run
-handle and local process has settled. Forced visual detachment does not release that physical lease.
-If work is still settling, recovery skips collection and records `memory.gc.skipped`; it never queues
-an asynchronous collection that could overlap the next run. Every ten seconds and at memory state
-changes, debug mode records one aggregate `memory.ledger` containing transcript/session bytes,
-renderer renderable, lifecycle-pass and frame-listener counts,
-renderable ownership, physical handles, and protocol event-queue counters.
+Successful maintenance is silent. While admission is blocked the footer shows `Restoring the
+interface…`. A definitive failure notifies once that new work is paused because the interface is out
+of memory. Diagnostics never claim a ledger capture unless a diagnostic logger is active.
+
+Maintenance uses synchronous `Bun.gc(true)` at most once per episode, and only after reconstructible
+local caches were released and TUI-owned work (local shell, tool rehydration, and physical run
+handles) is idle. If that work is still settling, collection records `memory.gc.skipped` and is not
+queued for later. Every ten seconds and at memory state changes, debug mode records one aggregate
+`memory.ledger` containing transcript/session bytes, renderer renderable, lifecycle-pass and
+frame-listener counts, renderable ownership, physical handles, and protocol event-queue counters.
 
 Set `CLARVIS_TUI_RSS_LIMIT_MB` to another MiB value, or `0` to disable this interactive-only guard.
 It is not installed in the server, print mode or embeddable kernel.
@@ -373,7 +515,7 @@ overlay and its cache together with the existing developer error surface.
 Prompt history is likewise a bounded convenience cache: at most 1,000 entries, 1 million
 characters per entry and 8 million resident characters. Startup reads only the newest 8 MiB of its
 JSONL file and compacts an older oversized file in the background. A custom guard-judge prompt is
-limited to 1 MiB and an oversized override safely falls through to the next scope.
+limited to 32 KiB and oversized guidance safely falls through to the next scope.
 
 ### Navigation and keyboard environments
 
@@ -385,21 +527,23 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-`Ctrl+S` opens the canonical safety-preset picker on every Keyboard Profile; `Alt+S` remains an
-enhanced-path accelerator. Clarvis keeps the terminal's native text path instead of requesting
-all-key escape reports, so macOS dead-key and IME composition remain intact. Every terminal path,
-including direct iTerm sessions, must deliver Option as Meta/Esc+ for the enhanced accelerator; a
-literal `ß` remains ordinary text, while `Ctrl+S` keeps the picker reachable. The picker is loaded
-on first use, retained after that first mount, and reuses the same preset application policy as Run
-controls. There is no global
-physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
+Isolation and command review have separate persisted controls. `Ctrl+S` opens Host/Sandbox/Docker/Podman
+isolation and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; under Container the
+review surface reads `Not applicable` and does not overwrite the stored native value. `Alt+S` and `Alt+G` are their
+enhanced-path accelerators. On macOS those enhanced bindings render as Option when the terminal
+delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` expands or collapses
+the Task editor, so `Ctrl+G` has no editing behavior. Clarvis keeps the terminal's native text path
+instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
+`ß` remains ordinary text. Both pickers are loaded on first use and retained after their first
+mount. `Ctrl+L` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
+the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
 split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
 automatically; the first event for another section may still reveal and orient the Sidebar. Escape
-closes either presentation but does not block `/activity`. The footer activity strip remains an
-explicit pointer route when agents or workflows contribute it; Plan never appears there.
+does not close either presentation. Agent, workflow and Plan rosters remain in the Sidebar; the
+canonical footer contains only run context/session usage and does not repeat their counts.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
 `ListPicker` owns filterable modal lists, `SelectableList` owns scroll-following page lists, and
@@ -420,7 +564,7 @@ the draft. From the instant the bootstrap renderer enters raw/alternate-screen m
 lifecycle owner restores it on exit and every platform-supported catchable OpenTUI signal, then
 the platform retains the same ownership; `SIGKILL` is inherently outside this contract. Raw Ctrl+C
 stays owned through complete-keymap mount. The fatal-boot screen takes priority during that interval,
-so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. While a workspace runtime is being replaced, the
+so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. A live builtin `shell` block shows a compact `[X]` immediately after its elapsed time. Clicking it, or focusing that block and pressing contextual `Ctrl+X`, interrupts only that invocation; the run continues. `Ctrl+X` is not a global cancel: elicitation decline and a manual protected `run.cancel = Ctrl+X` binding still win, and with no interruptible target the key is not consumed. While a workspace runtime is being replaced, the
 mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
 every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
@@ -432,7 +576,10 @@ appears only for a leader whose complete task is available and opens that task o
 page. The manager and legacy records without a persisted task do not advertise or bind `T`. Above
 the tree, the latest persisted sequence state names an `awaiting_manager` checkpoint, its revision
 and proposed next round. The live Parallel work section shows the same checkpoint even when no
-leader remains live, so an Admiral decision cannot disappear with the last child.
+leader remains live, so an Admiral decision cannot disappear with the last child. Its header and
+leader roster mirror the compact Plan/Agents grammar: settled/total plus active running count, then
+one plan-tone status glyph, handle and title per leader in an isolated bounded scroll. Lifecycle
+words, elapsed time, iteration counts and failure totals stay out of this summary surface.
 
 A `workflow_review` prompt begins with the safe `cancel` enum value and no preselected UI answer.
 The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
@@ -472,6 +619,45 @@ shortcut`; the removed command palette is not presented as a fallback route. The
 normalized-event diagnostic is reachable from Doctor; it stores only capability verdicts and never
 raw escape sequences, hostnames, addresses or typed text.
 
+### Repeat prompts in the current conversation
+
+`/loop` schedules an explicit prompt while this TUI stays open:
+
+```text
+/loop 5m check the PR comments
+/loop 90m --max-runs 8 -- review the test results
+/loop cron "0 9 * * 1-5" --tz America/Recife -- prepare the summary
+```
+
+Intervals use positive integer minutes, hours or days (`m`, `h`, `d`), with a one-minute minimum.
+The first run waits a full interval; later runs wait that interval after the preceding execution
+finishes. Cron uses five numeric calendar fields, with lists, ranges, steps and Sunday 0/7. A
+restricted day of month and weekday use OR. The timezone is captured at creation; DST gaps are
+skipped and repeated local times use their first occurrence. Missed cron times become one pending
+run. Options go before `--`; everything after it is literal prompt text, even `/quit`, `/loop` or
+`!command`.
+
+Creation opens details with the prompt, id, conversation, agent/model, schedule, next eligibility
+and attempt limit. `/loop` or `/loop list` opens help and the list; `/loop show <id>` opens details.
+Use `/loop pause <id>`, `/loop resume <id>` or `/loop cancel <id>`. Pause and cancel leave the current
+run to finish; `/loop cancel <id> --running` also requests cancellation of that job's own run.
+The detail/list controls expose the same actions. Invalid commands preserve your draft for correction.
+
+Runs use the current conversation context and ordinary tools, permissions, approvals and budgets.
+They wait while you have a draft, attachments, an open dialog or another execution still settling.
+There are at most ten live jobs per conversation and twenty admitted attempts per job by default;
+`--max-runs` changes the latter. A prompt is limited to 64 KiB, with at most one hundred retained
+registrations across the TUI. Errors, cancellation, unavailable results, connection loss or changed
+execution configuration pause the job. Changing conversations also pauses it; returning requires
+explicit resume, which shows the revalidated configuration and schedules a future occurrence.
+Clearing/deleting a conversation cancels its registrations. Closing the TUI forgets all jobs;
+normal run history remains, and restarting or resuming a conversation never restarts a loop.
+
+The host owns this feature, with no model call needed to create or control a registration. It uses
+the pinned Croner dependency solely for calendar calculations; its bundled MIT license is preserved
+in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md). The behavioral contract and test ownership
+are in [loop-scheduling.md](../../specs/hosts/loop-scheduling.md).
+
 ### The command guard, and answering it automatically
 
 Before a shell command runs, the guard rules on it. Its mode lives in
@@ -497,47 +683,41 @@ and type-check commands across the common JavaScript/TypeScript, Python, Rust,
 Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
 interpreters and task runners plus install, publish, deploy and migration
 commands remain reviewable. Existing lists — including an intentionally empty
-one — are never expanded or replaced. For a low-interruption posture with host
-containment, use the `reviewed` preset; an allowlist is approval policy and does
-not make repository-controlled build or test code safe to run directly on the
-host.
+one — are never expanded or replaced. For a low-interruption integrated posture with host
+containment, choose Isolation `Sandbox` and Review `Auto`; Docker/Podman is a separate complete-Kernel
+placement which executes ordinary commands without Command Review. An allowlist is approval policy
+and does not make repository-controlled build or test code safe to run directly on the host.
 
 After a guarded shell call settles, its transcript header states the durable
-verdict and answerer, for example `auto-guard approved · judge` or
-`auto-guard denied · judge`. The same annotation is included in Markdown export
-and survives reopening the run. When consecutive shell calls collapse into a
-`shell ×N` group, every visible member signature retains its own verdict and
-answerer; a denied member is not hidden by the group's collapsed error body.
-Denied signatures are prioritized ahead of ordinary signatures when the six-row group cap applies.
+verdict and answerer, for example `approved by judge` or `denied by judge`; the
+guard mode and internal review facts do not occupy transcript chrome. The same
+annotation is included in Markdown export and survives reopening the run. Shell
+calls remain individual transcript rows, so each settled call retains its own
+verdict and answerer. A collapsed non-zero shell result keeps `exit <code>` in
+that same header immediately before the guard verdict instead of consuming a
+separate diagnostic row; longer non-exit diagnostics remain below the header.
 
-Changing the guard mode or choosing a named safety preset preserves the effective
-`allowed_commands` and `denied_commands`, including when a workspace preset inherits the global
-policy. A preset changes execution posture; it does not erase the command policy.
+Changing Review preserves the effective `allowed_commands` and `denied_commands`, including when a
+workspace choice inherits the global policy. Changing Isolation leaves Review and its command policy
+stored, but Docker/Podman makes it inactive. Selecting Host requires an explicit danger confirmation
+because it removes the containment boundary; turning Review off does not itself change isolation.
+With Review off, a Sandbox run that requests `sandbox_permissions: "require_escalated"` executes that
+one command on the host without a reviewer. Container always rejects that request and has no host or
+fallback channel. Its safety explanation states native Container capabilities, no Review, writable workspace and outbound
+consequences, plus read-only Git metadata.
 
-The six selectable presets are `free`, `judged`, `approval`, `isolated`, `reviewed`, and
-`protected`. `judged` runs directly on the host without a native sandbox boundary while the LLM judge
-reviews risky commands; if no judge can resolve a decision, execution falls back to asking the user.
-Because `free` and `judged` remove the sandbox boundary, the quick picker requires an explicit danger
-confirmation before applying either posture.
-
-A **deny** is enforced before any of this, in every mode; `denied_commands` wins
+In Review on and auto, a **deny** is enforced before a reviewer; `denied_commands` wins
 over `allowed_commands`. An entry without `*` is a space-boundary prefix over the
 normalized command; an entry with `*` is an anchored glob. Turning the guard off
 is a persisted choice — write `"mode": "off"` rather than deleting the block, or
 it comes back on the next boot.
 
-**`auto` needs a usable model and a complete prompt.** `code` resolves the prompt
-from two optional files and otherwise supplies its built-in policy:
-
-| file                           | scope                |
-| ------------------------------ | -------------------- |
-| `<ws>/.clarvis/guard-judge.md` | this project         |
-| `~/.clarvis/guard-judge.md`    | you, every workspace |
-
-Unlike `memory-policy.md`, these **do not concatenate**: the workspace file wins
-whole, then the global one, then a built-in default. A judging prompt is one
-complete instruction, so two of them would be two rulings for one verdict. A file
-that exists but is blank counts as absent and falls through to the next scope.
+**Auto needs a usable reviewer model.** The kernel resolves `effect_review.model` or the default
+model and always supplies its safety policy first. Optional workspace/global `guard-judge.md`
+files provide guidance below that policy, never authority. When both exist, Code preserves the
+operator-global guidance first and appends workspace guidance within the 32 KiB request bound.
+Code sends guidance only when present. Docker/Podman runs do not run Auto Guard; an explicit
+Review `on` or `auto` request is incompatible with those placements.
 
 It is plain prose — no frontmatter, no schema. Write the standing rules you would
 apply yourself:
@@ -551,15 +731,12 @@ or edits files under `infra/`.
 Never approve a command that pipes a network fetch into a shell.
 ```
 
-The built-in policy does not receive the surrounding conversation. When a command's safety depends
-on whether you authorized a destructive workspace operation — for example `git restore`, `git reset`,
-`git clean`, checkout-over-files or broad deletion — it answers `unsure`, which opens the command
-approval prompt for you. It does not guess at missing authorization. An explicit deny-list match or
-ordinary sandboxed workspace escape is still rejected before the model reviewer and cannot be
-appealed through it. The argv-only `host_vcs` fallback is deliberately different: it exists for an
-operation the sandbox cannot perform and may name any host executable. The built-in judge therefore
-treats it as privileged host execution and evaluates its exact executable, arguments, paths,
-credentials, and host-side effects instead of assuming sandbox containment.
+The effect reviewer uses host-attributed operator evidence and mechanically attested effects.
+The local and CI-retry paths validate effect-model allows against current grants. An ordinary shell
+ask without a registered effect instead uses the exact-call Judge in Auto: its payload separates
+segment source, executable, parameters and environment bindings, while deny-list, path, credential
+and dangerous-command rules retain precedence. The prompt shows segment causes, effect identity and
+operational failure kind. See the [effect-review contract](../../specs/execution/effect-review.md).
 
 `~/.clarvis` is `$CLARVIS_HOME` when that is set.
 
@@ -581,6 +758,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
                     [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
+                    [--remote <user@host>] [--remote-workspace <path>]
                     [--debug[=<error|warn|info|debug>]]
 
   -h, --help                  print this help and exit
@@ -597,6 +775,8 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
   --update                    install the newest eligible Clarvis release and exit
   --ascii                     render glyphs as plain ascii
   --worktree [name]           open a dedicated Git worktree; omit name to generate one
+  --remote <user@host>         connect to a Clarvis installation over SSH
+  --remote-workspace <path>   absolute workspace path on the remote host
   --debug[=<error|warn|info|debug>]  write bounded application diagnostics; --debug=<level>
 ```
 
@@ -606,6 +786,39 @@ The process then stays pinned to that canonical checkout. Git's registered workt
 source of truth; Clarvis keeps no parallel registry. Before creation, Code ensures the primary
 worktree's `.clarvis/.gitignore` excludes `worktrees/` so the nested checkout cannot be staged by
 accident.
+
+`--remote <user@host> --remote-workspace <path>` starts the installed `clarvis` command through
+OpenSSH and carries the ordinary kernel protocol over that process's stdio. Both flags are required
+and cannot be combined with `--worktree`. SSH owns host/user authentication and encryption; Clarvis
+does not copy the client's provider credentials, global configuration or local-host discovery token
+to the remote process. The remote installation resolves its own global state and OAuth session. The
+workspace and optional Extension Profile selector are encoded into one bounded base64url argument;
+the remote host canonicalizes them and returns its server-owned session namespace. It supports
+hosted runs and goals but exposes no browser, inspection, restart or runtime-retry controls belonging
+to the remote machine. `/reconnect` starts a fresh SSH process; configuration reload is unavailable
+for that connection. Client-only diagnostics and prompt history remain under the local invocation's
+state, while workspace files and durable sessions remain remote.
+
+The destination may be a normal `user@host` or an alias from the operator's OpenSSH configuration.
+OpenSSH chooses default identity files, `IdentityFile` entries, certificates and identities already
+loaded in `ssh-agent`; Clarvis has no separate identity-file or password store. A local agent may
+authenticate the connection, but `-a`, `-x` and `ClearAllForwardings=yes` prevent agent, X11 and port
+forwarding to the VPS. Host-key verification, jump hosts and authentication order retain the user's
+SSH configuration. Clarvis leaves `StrictHostKeyChecking` to that configuration and forces
+`BatchMode=yes`: an unknown host key, unavailable identity or locked key fails startup instead of
+asking for input after OpenTUI owns the terminal.
+The SSH child receives only home/path, platform process-discovery, local agent and askpass/display
+variables from the client environment. Provider keys, Clarvis OAuth values and unrelated variables
+are absent, so OpenSSH `SendEnv` cannot forward them. The already-pinned remote process supplies the
+canonical workspace identity during hello; the client does not resend the operator's raw path.
+
+Before opening the TUI, establish the host key and verify noninteractive login with the same alias,
+for example `ssh -o BatchMode=yes user@host true`. Use a key, certificate or hardware-backed identity
+that OpenSSH can use without prompting; unlock protected keys in `ssh-agent` first. The wire receives
+no second Clarvis encryption layer; prompts, events and results are confidential and
+integrity-protected in transit by SSH, while the authenticated remote account can read them after
+decryption. Both local and remote Code hosts apply the product's `exec` tool-grant ceiling by default;
+an explicit `CLARVIS_AGENT_TOOLS_MAX_GRANT` on the machine hosting the kernel still narrows it.
 
 Normal interactive launches use the full Unicode glyph theme. Plain ASCII is
 an explicit compatibility choice through `--ascii` or the saved Theme setting.
@@ -642,35 +855,33 @@ full log still records its final counters.
 
 Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 
-| Level | Event                                                                                                               | Fields                                                         |
-| ----- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`                                    | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
-| info  | `app.boot.painted`                                                                                                  | `elapsed_ms`, `mode`, `deferred_catalog`                       |
-| debug | `markdown.preload.completed`                                                                                        | `markdown`, `markdownInline`, `duration_ms`                    |
-| warn  | `markdown.preload.failed`                                                                                           | `error`, `duration_ms`                                         |
-| error | `boot.failed`                                                                                                       | `phase`, `error`, `attempt`                                    |
-| warn  | `catalog.unavailable`                                                                                               | `reason`, `source` (`kernel` \| `snapshot`)                    |
-| info  | `catalog.load.started`                                                                                              | `trigger`                                                      |
-| debug | `memory.ledger`                                                                                                     | bounded ownership, payload and event-queue counters            |
-| info  | `memory.gc.completed`, `memory.gc.skipped`                                                                          | `mode`, `reason`                                               |
-| warn  | `memory.gc.failed`, `memory.efficiency`                                                                             | collection error or RSS baseline/slope evidence                |
-| info  | `worktree.remove.completed`                                                                                         | `name`, `branch`                                               |
-| error | `worktree.remove.failed`                                                                                            | `name`, `branch`, `error`                                      |
-| info  | `settings.save.applied`                                                                                             | `scope`, `keys`                                                |
-| error | `settings.save.rejected`                                                                                            | `scope`, `issue_count`, `fields`, `reason`                     |
-| debug | `settings.model_ref.unparsed`                                                                                       | `site`, `error` (sampled)                                      |
-| error | `plugin.install.failed`                                                                                             | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
-| warn  | `marketplace.containment.unknown`                                                                                   | `reason`                                                       |
-| error | `doctor.check.failed`                                                                                               | `check_id`, `error`, `duration_ms`                             |
-| debug | `shell.local.exit`                                                                                                  | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
-| warn  | `run.stream.interrupted`                                                                                            | `execution_id`, `error`                                        |
-| debug | `run.close.failed`                                                                                                  | `execution_id`, `error`                                        |
-| warn  | `elicit.handler.failed`                                                                                             | `error`                                                        |
-| warn  | `transcript.rehydrate.failed`                                                                                       | `error`                                                        |
-| debug | `transcript.syntax.pending`, `transcript.syntax.started`, `transcript.syntax.painted`, `transcript.syntax.measured` | `batch_id`, registration counts, dimensions, `duration_ms`     |
-| debug | `transcript.measurement.started`, `transcript.measurement.observed`, `transcript.measurement.lease_expired`         | `batch_id`, fold/dimensions, acceptance, retry/fallback        |
-| warn  | `mcp.list.failed`                                                                                                   | `surface` (`tools` \| `prompts`), `error`                      |
-| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested`                              | sampled counters                                               |
+| Level | Event                                                                                  | Fields                                                         |
+| ----- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`       | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
+| info  | `app.boot.painted`                                                                     | `elapsed_ms`, `mode`, `deferred_catalog`                       |
+| debug | `markdown.preload.completed`                                                           | `markdown`, `markdownInline`, `duration_ms`                    |
+| warn  | `markdown.preload.failed`                                                              | `error`, `duration_ms`                                         |
+| error | `boot.failed`                                                                          | `phase`, `error`, `attempt`                                    |
+| warn  | `catalog.unavailable`                                                                  | `reason`, `source` (`kernel` \| `snapshot`)                    |
+| info  | `catalog.load.started`                                                                 | `trigger`                                                      |
+| debug | `memory.ledger`                                                                        | bounded ownership, payload and event-queue counters            |
+| info  | `memory.gc.completed`, `memory.gc.skipped`                                             | `mode`, `reason`                                               |
+| warn  | `memory.gc.failed`, `memory.efficiency`                                                | collection error or RSS baseline/slope evidence                |
+| info  | `worktree.remove.completed`                                                            | `name`, `branch`                                               |
+| error | `worktree.remove.failed`                                                               | `name`, `branch`, `error`                                      |
+| info  | `settings.save.applied`                                                                | `scope`, `keys`                                                |
+| error | `settings.save.rejected`                                                               | `scope`, `issue_count`, `fields`, `reason`                     |
+| debug | `settings.model_ref.unparsed`                                                          | `site`, `error` (sampled)                                      |
+| error | `plugin.install.failed`                                                                | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
+| warn  | `marketplace.containment.unknown`                                                      | `reason`                                                       |
+| error | `doctor.check.failed`                                                                  | `check_id`, `error`, `duration_ms`                             |
+| debug | `shell.local.exit`                                                                     | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
+| warn  | `run.stream.interrupted`                                                               | `execution_id`, `error`                                        |
+| debug | `run.close.failed`                                                                     | `execution_id`, `error`                                        |
+| warn  | `elicit.handler.failed`                                                                | `error`                                                        |
+| warn  | `transcript.rehydrate.failed`                                                          | `error`                                                        |
+| warn  | `mcp.list.failed`                                                                      | `surface` (`tools` \| `prompts`), `error`                      |
+| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested` | sampled counters                                               |
 
 `shell.local.exit` deliberately carries no command text: a `!` command is
 whatever the user typed, credentials included.
@@ -687,7 +898,10 @@ the lead agent's reply to stdout and exits 0 on success or 1 on failure —
 suitable for scripts and CI. Interactive approvals (guard/ask_user) are
 auto-denied with a note on stderr, so a headless run can never hang. Without
 `--agent`, it uses the same configured-default, runnable-`marshall`, runnable-Lead
-resolution as the TUI and fails clearly when no interactive entry agent exists.
+resolution as the TUI and fails clearly when no interactive entry agent exists. Its kernel, like
+the interactive path, is opened through `WorkspaceClientManager`; a selected Docker or Podman
+destination is connected before submission. Runtime release/artifact acquisition observes the
+initialization cancellation and bounded preparation deadline.
 
 `--resume` with an unknown id and `--continue` in a workspace with no sessions
 fail fast with exit 1 before the terminal is taken; `--continue` only ever
@@ -712,6 +926,7 @@ Normal boot remains in the checkout where `clarvis` started. `--worktree [name]`
 reopens a checkout before the kernel and TUI boot, then the process stays pinned to it. There is no
 in-TUI selector or runtime switching. When an interactive launch selected a managed worktree and
 that checkout is clean, exit asks whether to remove the checkout or keep it. Removal is explicit,
+first asks the host to retire admission, which is refused while hosted work remains occupied. It then
 closes the workspace and completes outside the platform's bounded shutdown path, rechecks
 cleanliness, uses `git worktree remove` without force, and preserves `clarvis/<name>` so a clean tree
 with unmerged commits cannot lose its branch. Clarvis removes an empty parent only for its canonical
@@ -773,8 +988,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   rows, not to already-painted Markdown history.
 - Delegation briefs and terminal sub-agent results are absent from the Lead transcript. Its two
   lifecycle markers contain only bounded, friendly identity/status copy; the settled marker never
-  rewrites the spawned marker. The Sidebar keeps bounded one-line status/result summaries; clicking
-  an agent selects its isolated transcript and does not open result detail automatically. Inside that
+  rewrites the spawned marker. The Sidebar keeps each agent to one glyph-and-title row inside its
+  own bounded scroll; clicking an agent selects its isolated transcript and does not open result
+  detail automatically. Inside that
   isolated transcript, the first explicit selection expands that child's section so its delegation
   card and worker tools/answers are immediately readable. A manual collapse remains sticky across a
   return to Lead and reselection, while a sibling still receives its own one-time expansion; neither
@@ -790,7 +1006,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   `workflow_decide` never mount in the
   Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
   events remain the sole owner of the two lifecycle markers, while workflow state remains
-  Sidebar/footer-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
+  Sidebar-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
   immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
   available only in that child's selected transcript.
 - The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
@@ -800,116 +1016,58 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
   child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
-  Sidebar closed, the aggregate transcript stays unobstructed. `/activity` reopens the first
-  available section, while `/activity plan`, `/activity workflow` and `/activity agents` select one
-  explicitly even after Escape made its automatic reveal sticky. The footer keeps a pointer target
-  only when agent or workflow activity contributes its bounded strip; clicking that strip reopens
-  the responsive surface. Plan never contributes footer text. Plain Tab follows the active
+  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+L` reopens the first available
+  Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
+  duplicates agent, workflow or Plan status; `Ctrl+L` and automatic reveal own access to the
+  responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
   changing Lead/child selection; Return activates or submits the currently focused component.
   Shift+Tab opens the agent picker, and clicking an agent selects only that agent's transcript.
-  Workflow progress never contributes a row
-  to the Lead transcript. Workflow leaders use run-local `L<n>` handles and sub-agents use the
+  Agent progress reports only settled/total and the running count while work is active; failures
+  stay encoded in each row's status glyph instead of adding header or result copy. Workflow progress
+  never contributes a row to the Lead transcript. Agent and workflow rosters use the Plan's status
+  priority—running, pending, done, then failed—without changing their stable handles. Workflow leaders use run-local `L<n>` handles and sub-agents use the
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
+  Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
+  line inside the Sidebar names `Ctrl+L` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
-  projection may reveal the Sidebar once for that execution. The fixed Lead activity line reuses the
+  projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows
+  only each status glyph and title, prioritizes running and next work above completed and failed work,
+  omits the result-preview panel, and appends `[^p] full plan` to the progress line; assignee,
+  exit-condition and result detail remain in the full plan surface. The fixed Lead activity line reuses the
   same physical row for `thinking`, `working` and settled `ready`; during a run that row also owns
   elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash autocomplete replaces the whole activity
   band while it is open. Transient activity therefore never enters history or changes transcript
   height, and run-local timing never competes with Context or cumulative Session usage in the
   footer.
-- Physically windowed transcript history with incremental Markdown; live tails use OpenTUI's
-  streaming mode and preserve an identity-stable committed prefix. Within one response geometry
-  epoch, a streaming Markdown tail retains a row-height high-water mark: syntax concealment may
-  reduce the native tail's intrinsic height, but cannot give rows back and pull the reader's scroll
-  anchor downward. A new epoch clears that reservation. This does not disable Markdown parsing or
-  concealment; formatted output such as bold text remains native OpenTUI Markdown. Terminal nodes
-  commit immediately as frozen semantic batches. A serial hidden owner parked just below the clipped
-  viewport then waits for every Markdown/diff/code descendant and two equal physical observations
-  before the same owner becomes visible at its exact measured row. The parked owner remains outside
-  the hit grid; a handoff prepaint is likewise input-inert until admission. Resident batches are
-  direct ScrollBox children pinned to physical markers. The last vertical-scroll direction receives two prepared viewports
-  ahead while one is retained behind; owners outside that directional runway are disposed while
-  exact spacers preserve scroll geometry. Runway trim/admission uses matching half-open edges, so an
-  unchanged viewport cannot remount and trim the same measured owner in a frame loop. Every vertical
-  wheel or trackpad intent reverses the runway immediately, before the reader reaches its edge. Before the
-  first marker, an append-only session-resume burst coalesces its pending initial target to the
-  newest batch and opens on the reconstructed tail. Viewport culling stays enabled after settlement but is suspended
-  for the sole transparent candidate, because OpenTUI skips the native render hooks that candidate
-  syntax settlement requires. A syntax owner receives one two-second retry lease. If highlighting
-  still does not settle, a never-published candidate keeps the same Markdown/diff/code presentation,
-  disables parser work through the native renderers' public `filetype` setters and bypasses only
-  unfinished syntax work; an already-painted owner keeps its exact tree, waits for public syntax
-  completion and commits only after two equal positive dimensions. If that completion remains
-  pending, the owner stays visible and unchanged. Tool argument bodies
-  are never replaced by a text fallback or syntax warning. Consecutive confirming frames are
-  self-scheduled after OpenTUI releases its one-shot renderer latch; they do not wait for input,
-  animation or the recovery timer to invalidate the screen. Measurement revisions re-arm across an
-  inactive `number -> undefined -> number` candidate cycle. The chosen `rich` or `plain-semantic`
-  policy persists by batch id across physical eviction/remount and is purged when that publication
-  leaves the store. The one-column vertical scrollbar gutter is always reserved and only its opacity
-  changes, so adding a measured runway owner cannot create a width/epoch feedback loop. The
-  controller, resident owners and absolute measurement candidates all use the same inner transcript
-  width after the left padding and table gutter; expanding a tall tool therefore cannot strand a
-  remeasurement on an outer-width marker that its owner can never reproduce. Unknown earlier
-  history uses one passive boundary above the content and is never
-  assigned an estimated height; ordinary upward scroll or trackpad input admits it serially without
-  a click. The exact anchor correction is queued before changed children publish and is consumed by
-  the ScrollBox update plus its public content-size callback, so even a delta larger than the old
-  scroll range is complete before the first new frame. Frozen owners and the content-height mutable
-  tail are one chronological ScrollBox flow for the current projection: Lead-only in the main view,
-  or child-only after explicit selection. The tail remains that final flow child after upward scroll;
-  OpenTUI's sticky-bottom state pauses natively while the reader is away, so removing the tail would
-  shrink `scrollHeight` and clamp the reader backward. A frontier owner that commits while still
-  intersecting the viewport remains painted until its physical batch takes ownership. A committed
-  owner already below the viewport is disposed and contributes only its measured rows to one
-  aggregate handoff spacer at the released suffix's chronological boundary. An earlier live owner
-  therefore keeps its flow offset even when a later tool completes first. Repeated offscreen tool
-  completion cannot accumulate native tool, Markdown or syntax owners.
-  Clarvis keeps the Lead projection mounted plus at most one selected-child projection; each owns a
-  separate ScrollBox, physical-history controller, markers and scroll position. Selecting another
-  child disposes the previously retained child, while returning to Lead reveals its exact reader
-  state. An accepted explicit submit or steer from older history or a child first selects Lead and
-  returns its reader to the current tail; background transcript, Plan, Workflow and delegation
-  events never move that reader.
-  Its final child is a fixed three-row physical reading runway, reduced to one row only in the compact
-  height band, so new content never starts against the composer and streaming cannot grow or shrink
-  that gap. The `thinking`/`working`/`ready` activity row is a sibling immediately above the composer,
-  outside the ScrollBox; there is no second transcript scroll area. While the reader is away from
-  the tail, a non-interactive newer-entry count includes both unmeasured committed batches and the
-  current mutable frontier; repeated deltas for the same frontier artifact do not grow that count.
-  Downward wheel, Page Down and `Alt+Down` admit those entries and return to the real content bottom,
-  including the mounted live tail, before re-enabling tail-following. The event, replay,
-  ordering, physical-anchor and retention rules are in
-  [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
-  still fall back to plain text with an explicit formatting-simplified notice instead of starting
-  unbounded highlighting.
-- The semantic transcript itself retains only the latest 20 complete turns, both while a session is
-  live and after resume. Retention evicts complete sealed publication batches with the matching
-  semantic prefix, replaces the previous folded-prefix publication with one frozen notice, and
-  releases publisher `knownKeys` only after neither the semantic store nor a retained publication
-  references them. Discarded staging is cancelled, so a later timer cannot resurrect an evicted
-  tool; repeated folds plateau instead of accumulating tombstones. Fold overrides are pruned with
-  their evicted semantic keys. `/export` reloads folded turns one trace at a time, so complete
-  persisted history remains available without a second resident copy.
-- Semantic grouping, folding, focus and detail lookup retain the complete resident projection for
-  the current Lead or selected-child view; only
-  native owners are lazy. OpenTUI keeps ordinary vertical wheel and trackpad scrolling native, while
-  its supported component-catalogue extension reports edge intent so adjacent batches can be
-  measured and admitted serially. Page Up/Down and focused navigation use the same ledger. Rapid
-  input coalesces one pending direction and never mounts a guessed or partially prepared target.
-  Recomputing an unchanged publication intersection preserves its projected owner identity.
-  Immutable tool grouping compares the exact `(mcpName, toolName)` pair in live staging, terminal
-  sweep and sub-agent batch metadata; equal leaf names from different MCP servers remain separate.
-- One prose node carries at most 512 Ki semantic text characters into OpenTUI, and each immutable
-  tool snapshot uses the same aggregate mounted-text ceiling after its per-field caps. A single tall
-  batch may exceed the row target, but it cannot bypass those artifact-level display ceilings.
+- End returns to the latest bounded transcript window and resumes follow; the off-tail reading
+  indicator provides the same pointer action.
+- One transcript projection renders stable row IDs for composing, pending, running and terminal
+  records. Results are sealed into bounded immutable content, not moved between live/history owners.
+  Explicit exploration groups exist from their first allowlisted read/search call; shell, mutations
+  and unknown MCP tools stay individual. Each open group mounts one page of 20 members.
+- One native ScrollBox owns sticky follow, culling and semantic row anchors. Short projections mount
+  at most 80 rows; long projections normally mount 40 with 20-row paging and an 80-row transition
+  ceiling. Resident-list changes are coalesced to native frames. The reader can leave the tail while
+  data continues; prepend, folds and width changes preserve the row reference after native layout.
+  End explicitly restores tail follow. Lead and children share this viewport, never hidden trees.
+  Each projection retains independent reading and expansion state. The contract is in
+  [code-transcript-stability.md](../../specs/hosts/code-transcript-stability.md).
+- The transcript retains the latest 20 complete turns, live and after resume. Retention replaces
+  discarded records with one frozen folded-prefix notice and releases associated identity/UI state.
+  `/export` reloads folded turns one trace at a time; the viewport does not invent infinite backfill.
+- Markdown keeps incremental segmentation and bounded native syntax settlement. Oversized bodies
+  use the existing plain-text recovery notice. Terminal controls and ANSI are stripped before native
+  rendering. Per-field tool caps and the 512 Ki-character aggregate mounted-text cap remain in force.
+  The three-row reading runway (one row at compact height) remains inside the ScrollBox; Lead
+  activity, composer and footer remain outside it.
 - Individual user/assistant/reasoning prose nodes retain at most 2 million characters and append an explicit
   truncation notice. This cap is applied before the value enters Solid/OpenTUI state, including the
   authoritative iteration-complete replacement, so one extreme provider response cannot dominate
-  the interactive process.
+  the interactive process. Reasoning shown beneath the `thinking` label removes Markdown presentation
+  delimiters from its plain-text projection; user and assistant presentation paths are unchanged.
 - Mutable user/assistant/reasoning prose also shares a 64 MiB UTF-16 budget. Old settled mutable
   prose is replaced by an explicit `/export` recovery notice; each immutable published copy already
   contains only the at-most-512-Ki-character inline projection and leaves residency only with its
@@ -922,16 +1080,25 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   ceiling stays persisted and gives an explicit `/export` route instead of defeating the bound.
   Expanded live rendering separately caps each arguments/result/diff/error field at 64 KiB before
   any parser or native renderable sees it; immutable publication freezes that bounded projection plus
-  its header signature. Markdown export includes the bounded, renderer-safe argument projection even
+  its header signature. Collapsed live headers and grouped member lists keep that resident signature
+  after the body is dropped, so a still-running sub-agent's finished tools still name their paths.
+  Shell signatures show the command but omit the execution `cwd` from transcript chrome.
+  Markdown export includes the bounded, renderer-safe argument projection even
   though the live transcript intentionally mounts no raw argument panel.
-- File and memory mutations from the run lead open by default and show their bounded mutation body
-  even beyond the ordinary 40-line inline gate. Delegated mutations keep the compact default, and
-  an explicit user fold still wins.
+- Successful mutations start folded. Explicit expansion wins over defaults across settlement,
+  window disposal and child navigation. Their bounded native diff remains available on demand.
 - Failed tool calls are folded by default: their red failure mark and call identity remain visible,
-  while validation payloads and error text appear only after the user expands the call. A collapsed
-  failed group likewise renders one aggregate failure row rather than repeating each member's error.
-  Nonzero local-shell results remain expanded warnings because their partial stdout/stderr is the
-  result the user asked to inspect, not a rejected tool call.
+  with a short sanitized diagnosis on the next row; expansion reveals the bounded full body. A
+  collapsed failed group likewise renders one aggregate failure row rather than repeating each
+  member's error. Nonzero shell results follow the same folded presentation and keep their parsed
+  `exit N` diagnosis visible.
+- A live controllable builtin shell exposes `[X]` immediately after its elapsed time without folding its row or cancelling
+  the run. The focused eligible shell also accepts contextual Ctrl+X; elicitation and a rebound
+  protected cancellation shortcut take precedence. After a click, the muted `[X]` remains stable and
+  ignores repeated clicks while waiting for the authoritative tool terminal, not merely an accepted receipt. Only an explicit operator interruption in that terminal
+  renders `Interrupted by operator`; scope closure or abandoned argument composition retains its
+  actual diagnostic instead. See [transcript interruption](../../specs/hosts/code-transcript.md#47-provenance-and-interruption)
+  and [run hosting](../../specs/hosts/code-run-host.md#selective-shell-interruption).
 - Session persistence keeps one physical write and only the newest queued snapshot per session, so
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload
@@ -979,9 +1146,17 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Session browsing and continuation.
 - Command guards and approval flows.
 - User elicitation during a run.
+  An iteration-budget question is presented as `iteration limit` in the modal and its settled
+  transcript notice; the engine's soft-budget vocabulary and non-iteration dimensions remain unchanged.
   If a confirmation arrives while the reader is browsing older history, Clarvis explicitly returns
-  that physical reader to the live tail before replacing the composer with the question; resolving
-  or cancelling the question re-clamps the changed tail geometry before the composer returns.
+  that physical reader to the live tail before replacing the composer with the question. The
+  composer remains painted but keyboard-inert until the question owns a visible transcript row, so
+  there is no intermediate frame containing neither interaction surface. A dirty configuration
+  page pauses that transition without polling renderer frames; closing the page restarts it from the
+  retained request. Each `returnToTail` mounts the newest slice and scrolls to the native bottom;
+  `App` repeats that after the elicitation layout frame. Native sticky-bottom remains the follow
+  authority. Resolving or cancelling the question requests the changed tail geometry again before the
+  composer returns.
 - `/compact [request]` to compact the context used by the next model call, whether a run is active
   or the latest session turn is already settled.
 - Skill slash commands and prompt injection.
@@ -1027,7 +1202,9 @@ Changing `/model` while a run is active is refused until that run settles. If th
 safe context limit is smaller than the latest persisted continuation, the picker shows the estimated
 current size and new limit and requires explicit confirmation. Acceptance mechanically evicts older
 context first and saves the model only after the replacement fits; cancellation or fitting failure
-leaves both model and context unchanged.
+leaves both model and context unchanged. On a Container connection, a successful save immediately
+requests an idle generation reload so the next run uses the selected model. A refused reload keeps
+the committed save visible as pending reconnect instead of claiming that it is active.
 
 Most features go through `KernelClient`. Local shell commands, marketplace
 catalog cloning and platform diagnostics remain client-side seams because the
@@ -1101,11 +1278,17 @@ bun --filter @clarvis/code dev
 
 For testing this checkout from arbitrary project directories without rebuilding after source
 edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
-`bun install --frozen-lockfile`, installs the repository hook, and atomically writes a managed
+`bun install --frozen-lockfile`, installs the repository hook, builds `clarvis-base:local` for each
+Docker/Podman engine on `PATH`, builds the target Linux Kernel archive once, and atomically writes a managed
 `clarvis-develop` launcher to
-`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. A host with neither engine still
+installs the launcher for native use. Re-running it updates that owned launcher;
 an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh
 --uninstall` removes only the launcher.
+
+When the selected workspace still has a same-wire host from another installation, startup requests
+an authenticated idle restart and continues with the new artifact. Physical work keeps the prior
+host alive and the error directs the operator back to that installation until the work finishes.
 
 `clarvis-develop --empty-workspace` allocates a different empty
 `/tmp/clarvis-development-temp/workspace-*` directory on every invocation and starts Clarvis with
@@ -1120,7 +1303,7 @@ cleanup; combine `--clear --empty-workspace` to clean and immediately start a fr
 
 This package is outside the monorepo's `tsc -b` reference graph — Bun executes the TypeScript and
 TSX source directly and nothing is emitted for consumers — but it **does** have a package build:
-`bun --filter @clarvis/code build` (`tooling/artifact/build.ts`) produces the distributable bundle. From the
+`bun --filter @clarvis/code build` (`packages/code/tooling/artifact/build.ts`) produces the distributable bundle. From the
 repository root, `bun run build` runs the TypeScript library graph and then this bundle; use
 `bun run build:code` when only the TUI changed.
 
@@ -1137,7 +1320,7 @@ the build pays that once. Consequences worth knowing:
 - **After editing `src/`, the global command keeps running the old bundle.** Use
   `bun run start` / `bun run dev` for the inner loop, rebuild with `bun run build` or
   `bun run build:code`, or set `CLARVIS_CODE_SOURCE=1` to force the sources.
-- **The bundle is package-local, not standalone by itself.** `tooling/artifact/build.ts` keeps
+- **The bundle is package-local, not standalone by itself.** `packages/code/tooling/artifact/build.ts` keeps
   `@opentui/core`, its platform-native packages, and `pino` external, so renderer and logging workers
   remain relative to their owning package instead of embedding the build host's `node_modules` path.
   The build rejects generated JavaScript containing the checkout root. Checkout setup provides the
@@ -1177,9 +1360,10 @@ startup composer, complete header and complete input-ready frame, n≥7 with min
 It refuses to report on a busy machine and stamps the power state, because CPU
 frequency scaling moved one unchanged measurement from 2.05 s to 0.60 s and three
 conclusions had to be withdrawn over it.
-The repository's [Clarvis performance validation
-skill](../../.agents/skills/clarvis-performance-validation/SKILL.md) owns the future clean-versus-
-marketplace A/B, real-PTY run, ignored-OAuth, skill/MCP/subagent, hashing-drift and cleanup checklist.
+The repository's [Clarvis TUI validation
+skill](../../.agents/skills/clarvis-tui-validation/SKILL.md) selects focused, full-audit, or performance
+work. Its performance mode scopes startup, extension comparisons, real-run latency, OAuth, drift,
+and retention checks to the investigation and reuses valid artifact evidence across modes.
 
 An MCP that cannot connect while a run opens its tool pool remains represented by the persisted
 `mcp_degraded` diagnostic event, but Code does not publish that event into conversation history. The
@@ -1194,6 +1378,51 @@ the notice is never written into transcript history. A selected plugin whose cap
 files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
 runtime MCP/hook/capability projections are withheld.
 
+The workspace header reports stored Review and effective Isolation as separate chips. A configured
+Docker or Podman choice connects that destination before constructing the workspace client. There is
+no fallback chip or rewrite to Sandbox. `WorkspaceClientManager` supplies the selected engine through
+a dynamic `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
+
+Settings > Isolation is the dedicated global placement screen shared with Run Controls and the quick
+picker. Docker/Podman runs native Plans, Memory, Workflows and Goals inside the Container. Skills,
+MCPs, Hooks, Plugins, external Tasks and host process capabilities are unavailable; commands run
+without Command Review; workspace writes and outbound network remain enabled; Git metadata is
+read-only. Review reads `Not applicable in Container`. When idle, selecting a placement immediately
+reloads the workspace connection and the header reflects the admitted Kernel. The picker remains
+modal and shows its save/reconnect phase until admission completes; a refused transition remains
+open, restores the previous isolation setting and reports the admitted connection that was kept. Its
+bounded detail area wraps the failure while the standard picker navigation retains the available
+actions. Host confirmation projects the established
+`y`/`n` actions and renders its warning once. Settings, Agent, prompt and model-catalog writes remain
+host-side; `/model` immediately attempts the idle reload, while other saves notify that the active
+immutable Container projection is pending and keep a
+`reconnect pending` warning in the header until a new generation is admitted. They take effect only
+in that new generation. Profiles supplied by Plugins, carrying external grants or naming an unavailable delegate
+are marked as requiring Sandbox/Host, and `$` completion lists no Skills. An explicit Task or Skill is
+refused by the adapter before submission; the kernel still revalidates stale/external requests and
+returns the named `unsupported` failure before model work. No elicitation changes placement.
+
+Container mounts the selected workspace read-write at `/workspace`, so changes appear on the host
+immediately and there is no Clarvis-owned copy/apply prompt. A private content volume covers
+`.clarvis`, then exact writable overlays share Plans, Memory, sessions, Goals, workflow records,
+persisted conversation context and traces with Host/Sandbox. Container-only registry and home state
+remain private. `.agents` is masked and Git metadata is overlaid read-only for primary and linked
+worktrees. A nonce preflight proves the engine sees the same workspace before persistent volumes are
+prepared. The safety promise
+covers the host outside the selected workspace, not workspace destruction or outbound remote effects.
+
+The simple selection persists only `{ "backend": "docker" }` or `{ "backend": "podman" }`; advanced
+settings may override executable, Docker context/Podman connection, digest, network and resource
+ceilings. Docker additionally accepts an operator-owned image recipe under global
+`runtime-recipes/`; the TUI has no script editor and the guest cannot mutate it. Recipe content,
+builder policy and exact base form a local cache identity. Failure is visible and remains Container;
+Clarvis does not use an uncustomized image or native fallback. Recipe scripts are not a secret
+channel: their bytes reach the engine and material written into image layers/build output may persist.
+
+Agents with `run_commands` can use `mise` for missing toolchains in the engine-owned namespace
+partitioned `/mise` cache. The guest receives no `expose_port`, engine socket, host shell or host
+credential helper. Engine correction or selecting Sandbox/Host always requires a new connection with no active work.
+
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer
 lifecycle-pass, key-layer and cumulative layer-registration counters. Set
@@ -1206,9 +1435,9 @@ or key-layer counts do not balance; the corresponding limits are configurable th
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
 lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
 configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
-configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker, Safety
-Preset Picker, Catalog Picker, the narrow drawer and a bounded ten-slot autocomplete projection are
-also retained lazily.
+configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker,
+Isolation Picker, Review Picker, Catalog Picker, the narrow drawer and a bounded ten-slot
+autocomplete projection are also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both
 must keep renderable, lifecycle-pass and key-layer ownership constant. Immediate RSS/PSS may rise
 while Bun and OpenTUI retain collectable arenas, so the pass/fail leak rate is the post-GC
@@ -1229,3 +1458,16 @@ rather than cached.
 Because OpenTUI requires a PTY, use `bun run smoke` for the repeatable bundle boot assertion and the
 `tui-driver` skill for interactive reproduction. Do not launch the app through plain redirected
 stdin and treat that as a renderer test.
+
+## Prompt-cache continuity
+
+Session metadata round-trips the persisted leader instance through the kernel. Starting another turn sends the session identity and lets hosted preparation retain its agent identity, keeping provider affinity stable after restart.
+
+Hosted admission bounds and redacts its display preview independently of the full prompt. Long
+messages remain intact in the model request and do not exceed the host's 4096-character preview
+limit.
+
+See the [prompt-cache contract](../../specs/cross-cutting/prompt-cache.md) for replay, identity
+validation and separate deterministic, live-provider and installed-artifact qualification.
+
+Agent Profile frontmatter uses the closed kernel schema. Unknown keys mark a document invalid in the editor and are rejected on write and execution admission; they cannot become executor overrides.

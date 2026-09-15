@@ -1,5 +1,11 @@
 import { describe, it, expect } from "bun:test";
-import { loadSkillTool, LOAD_SKILL_TOOL_NAME, renderSkillsSection } from "../../src/tool.ts";
+import {
+  loadSkillTool,
+  LOAD_SKILL_TOOL_NAME,
+  readSkillResourceTool,
+  READ_SKILL_RESOURCE_TOOL_NAME,
+  renderSkillsSection,
+} from "../../src/tool.ts";
 import { makeInfo } from "../helpers/skill-fixtures.ts";
 
 describe("loadSkillTool definition", () => {
@@ -9,7 +15,7 @@ describe("loadSkillTool definition", () => {
     expect(loadSkillTool.toolName).toBe(LOAD_SKILL_TOOL_NAME);
   });
 
-  it("requires name and offers an optional resource continuation cursor", () => {
+  it("accepts exactly one required name", () => {
     const schema = loadSkillTool.inputSchema as {
       required: string[];
       additionalProperties: boolean;
@@ -17,17 +23,41 @@ describe("loadSkillTool definition", () => {
     };
     expect(schema.required).toEqual(["name"]);
     expect(schema.additionalProperties).toBe(false);
-    expect(Object.keys(schema.properties)).toEqual(["name", "resource", "offset"]);
+    expect(Object.keys(schema.properties)).toEqual(["name"]);
   });
 
-  it("tells the model to omit resource when loading the skill body", () => {
-    expect(loadSkillTool.description).toContain("Omit `resource` to load the skill instructions");
-    const schema = loadSkillTool.inputSchema as {
-      properties: { resource: { description: string } };
+  it("uses a separate strict tool for resource pages", () => {
+    expect(loadSkillTool.description).toContain("accepts only `name`");
+    expect(loadSkillTool.description).toContain("clearly matches");
+    expect(loadSkillTool.description).not.toContain("only when the task calls for that skill");
+    expect(readSkillResourceTool.wireName).toBe(READ_SKILL_RESOURCE_TOOL_NAME);
+    const schema = readSkillResourceTool.inputSchema as {
+      required: string[];
+      additionalProperties: boolean;
+      properties: Record<string, { pattern?: string }>;
     };
-    expect(schema.properties.resource.description).toContain("Omit this field to load SKILL.md");
-    expect(schema.properties.resource.description).toContain("do not send SKILL.md");
-    expect(schema.properties.resource.description).toContain("'./', or '/'");
+    expect(schema.required).toEqual(["name", "resource", "offset"]);
+    expect(schema.additionalProperties).toBe(false);
+    expect(Object.keys(schema.properties)).toEqual(["name", "resource", "offset"]);
+    const pattern = schema.properties.resource?.pattern;
+    expect(pattern).toBeString();
+    expect(pattern).not.toContain("(?");
+    const resourcePath = new RegExp(pattern as string, "u");
+    for (const valid of ["notes.md", "references/api.md", ".hidden", "...", "éxample/a:b"]) {
+      expect(resourcePath.test(valid)).toBe(true);
+    }
+    for (const invalid of [
+      "/absolute",
+      "C:/absolute",
+      "../escape",
+      "a/../escape",
+      "a//b",
+      "a\\b",
+      "a/.",
+      "control\u0000byte",
+    ]) {
+      expect(resourcePath.test(invalid)).toBe(false);
+    }
   });
 });
 
@@ -38,8 +68,15 @@ describe("renderSkillsSection", () => {
     expect(section).toContain("alpha");
     expect(section).toContain("The beta skill");
     expect(section).toContain(`\`${LOAD_SKILL_TOOL_NAME}\``);
-    expect(section).toContain("Omit `resource` for those instructions");
-    expect(section).toContain("only when the task actually calls for it");
+    expect(section).toContain(`\`${READ_SKILL_RESOURCE_TOOL_NAME}\``);
+    expect(section).toContain("That tool accepts only `name`");
+    expect(section).toContain("If the user names a skill");
+    expect(section).toContain("description clearly matches");
+    expect(section).toContain("merely because it is in the list");
+    expect(section).toContain("The user's current instructions take precedence over the skill");
+    expect(section).toContain("identify the relevant SKILL.md rule");
+    expect(section).not.toContain("not because of keywords or mere availability");
+    expect(section).not.toContain("only when the task actually calls for it");
   });
 
   it("is byte-identical with no bootstraps, however the argument is omitted", () => {

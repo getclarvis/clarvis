@@ -1,12 +1,18 @@
 import { describe, it, expect } from "../bun-test.ts";
 import { executeRun, type ExecuteRunDeps } from "../../src/runtime/execute-run.ts";
 import { loadEnv } from "@clarvis/capability";
-import type { Capability, TraceEvent } from "@clarvis/capability";
+import {
+  OPERATOR_AUTHORITY_PORT,
+  RUN_TRACE_PORT,
+  type OperatorAuthorityState,
+} from "@clarvis/capability";
+import type { Capability, TraceEvent, SteerMessage } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import { ConflictError, PersistenceError } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
+import { createAskUserCapability } from "../../src/runtime/capabilities/ask-user.ts";
 
 const BODY = {
   messages: [{ role: "user", content: "hi" }],
@@ -39,6 +45,389 @@ function insertThrows(thrown: unknown): TraceStore {
 }
 
 describe("executeRun (shared engine)", () => {
+  it("publishes the run trace during forRun and journals later contributed records", async () => {
+    const journaled: TraceEvent[] = [];
+    const traceStore: TraceStore = {
+      ...makeTestTraceStore(),
+      openJournal: () => ({
+        append: (entry) => {
+          if (entry !== null) journaled.push(entry);
+        },
+        close: () => {},
+        discard: () => {},
+      }),
+    };
+    const capability: Capability = {
+      name: "activation-trace",
+      persistedTraceProjectors: [
+        {
+          kind: "activation_observed",
+          project(entry, context) {
+            return {
+              type: "activation_observed",
+              occurred_at: context.absoluteTime(entry.at),
+            };
+          },
+        },
+      ],
+      forRun(ctx) {
+        const trace = ctx.services.get(RUN_TRACE_PORT);
+        expect(trace).toBeDefined();
+        trace!.record("activation_observed", {});
+        return {
+          name: "activation-trace",
+          forAgent: () => ({
+            attach(build) {
+              build.trace.record("activation_observed", {});
+              return {};
+            },
+          }),
+        };
+      },
+    };
+    const outcome = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      deps: makeDeps({
+        traceStore,
+        capabilities: [capability],
+      }),
+    });
+    const persisted = traceStore
+      .getById("o", outcome.executionId)!
+      .trace.events.filter((entry) => entry.type === "activation_observed");
+    expect(persisted).toHaveLength(2);
+    expect(journaled.filter((entry) => entry.type === "activation_observed")).toHaveLength(2);
+  });
+
+  it("keeps contributed trace accounting out of provider messages and final_context", async () => {
+    const run = async (withTrace: boolean) => {
+      const calls: unknown[] = [];
+      const traceStore = makeTestTraceStore();
+      const outcome = await executeRun({
+        rawBody: BODY,
+        owner: "o",
+        deps: makeDeps({
+          traceStore,
+          llm: {
+            async call(params) {
+              calls.push(structuredClone(params.messages));
+              return {
+                text: "done",
+                usage: {
+                  input_tokens: 1,
+                  output_tokens: 1,
+                  cached_tokens: 0,
+                  cache_write_tokens: 0,
+                },
+              };
+            },
+          },
+          capabilities: withTrace
+            ? [
+                {
+                  name: "trace-only",
+                  forRun(ctx) {
+                    ctx.services.get(RUN_TRACE_PORT)!.record("guard_reviewer_model_call", {
+                      usage: "private accounting",
+                    });
+                    return { name: "trace-only", forAgent: () => null };
+                  },
+                },
+              ]
+            : [],
+        }),
+      });
+      return {
+        calls,
+        context: traceStore.getById("o", outcome.executionId)!.final_context,
+      };
+    };
+    const baseline = await run(false);
+    const instrumented = await run(true);
+    expect(instrumented.calls).toEqual(baseline.calls);
+    expect(instrumented.context).toEqual(baseline.context);
+    expect(JSON.stringify(instrumented)).not.toContain("guard_reviewer_model_call");
+    expect(JSON.stringify(instrumented)).not.toContain("private accounting");
+  });
+  it("rejects authority-shaped public request fields before host runtime creation", async () => {
+    for (const key of [
+      "operator_evidence",
+      "operatorAuthoritySeed",
+      "controller_epoch",
+      "operator_authority_state",
+    ]) {
+      let created = false;
+      await expect(
+        executeRun({
+          rawBody: { ...BODY, [key]: {} },
+          owner: "o",
+          deps: makeDeps({
+            operatorAuthority: () => {
+              created = true;
+              throw new Error("not admitted");
+            },
+          }),
+        }),
+      ).rejects.toMatchObject({ code: "invalid_message_format" });
+      expect(created).toBe(false);
+    }
+  });
+  it("prepublishes one authority reader and revokes intent without cancelling background execution", async () => {
+    const retirement = new AbortController();
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "operator", source: "start", text: "Inspect", execution_id: "run" }],
+    };
+    const reader = { snapshot: () => structuredClone(state) };
+    const traceStore = makeTestTraceStore();
+    let creations = 0;
+    const observers: Capability[] = ["first", "second"].map((name) => ({
+      name,
+      forRun(ctx) {
+        expect(ctx.services.get(OPERATOR_AUTHORITY_PORT)).toBe(reader);
+        return { name, forAgent: () => null };
+      },
+    }));
+    const result = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      operatorAuthoritySignal: retirement.signal,
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      deps: makeDeps({
+        traceStore,
+        capabilities: observers,
+        operatorAuthority(input) {
+          creations++;
+          expect(input.seed?.evidence).toEqual(state.evidence);
+          input.signal?.addEventListener("abort", () => {
+            state.status = "revoked";
+            state.revision++;
+          });
+          return {
+            reader,
+            onSteer: () => {},
+            onElicitation: () => {},
+            finalize: () => structuredClone(state),
+          };
+        },
+        llm: {
+          async call() {
+            retirement.abort();
+            return {
+              text: "done",
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+      }),
+    });
+    expect(creations).toBe(1);
+    expect(result.response).toMatchObject({ status: "completed" });
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state).toMatchObject({
+      version: 1,
+      status: "revoked",
+      revision: 2,
+    });
+  });
+  it("publishes pending steer intent before capability activation and preserves its delivery identity", async () => {
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "seed", source: "start", text: "Create a skill", execution_id: "run" }],
+    };
+    const pending: SteerMessage[] = [{ content: "Do not write settings" }];
+    const received: string[] = [];
+    const unique = new Set<string>();
+    let unsubscribed = false;
+    let closed = false;
+    const traceStore = makeTestTraceStore();
+    const result = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      steer: {
+        onPending(listener) {
+          for (const message of pending) listener(message);
+          return () => {
+            unsubscribed = true;
+          };
+        },
+        drain: () => pending.splice(0),
+        close: () => {
+          closed = true;
+        },
+      },
+      deps: makeDeps({
+        traceStore,
+        capabilities: [
+          {
+            name: "observer",
+            forRun(ctx) {
+              expect(received).toHaveLength(1);
+              expect(ctx.services.get(OPERATOR_AUTHORITY_PORT)?.snapshot().revision).toBe(2);
+              return { name: "observer", forAgent: () => null };
+            },
+          },
+        ],
+        operatorAuthority() {
+          return {
+            reader: { snapshot: () => structuredClone(state) },
+            onSteer(context) {
+              expect(context.message).toBe("Do not write settings");
+              received.push(context.id!);
+              if (!unique.has(context.id!)) {
+                unique.add(context.id!);
+                state.revision++;
+              }
+            },
+            onElicitation() {},
+            finalize: () => structuredClone(state),
+          };
+        },
+      }),
+    });
+    expect(result.response.status).toBe("completed");
+    expect(received.length).toBeGreaterThanOrEqual(2);
+    expect(unique.size).toBe(1);
+    expect(unsubscribed).toBeTrue();
+    expect(closed).toBeTrue();
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state?.revision).toBe(2);
+  });
+
+  it("admits an accepted ask_user answer with the model question before the next iteration", async () => {
+    const state: OperatorAuthorityState = {
+      version: 1,
+      status: "active",
+      revision: 1,
+      binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+      evidence: [{ id: "seed", source: "start", text: "Inspect", execution_id: "run" }],
+    };
+    const admitted: Array<{ question: string; answer: string }> = [];
+    const traceStore = makeTestTraceStore();
+    const result = await executeRun({
+      rawBody: {
+        ...BODY,
+        profiles: [
+          {
+            name: "solo",
+            model: "anthropic/x",
+            tools: [],
+            iteration_limit: 3,
+            grants: ["ask_user"],
+          },
+        ],
+      },
+      owner: "o",
+      operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+      elicit: async (params) => {
+        expect(params.kind).toBe("ask_user");
+        return { action: "accept", content: { response: "Authorize the three lines" } };
+      },
+      deps: makeDeps({
+        traceStore,
+        capabilities: [createAskUserCapability()],
+        llm: new MockLLM({
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "ask_user",
+                  arguments: { question: "May I update SAFE-09 through SAFE-11?" },
+                },
+              ],
+            },
+            { text: "done" },
+          ],
+        }),
+        operatorAuthority() {
+          return {
+            reader: { snapshot: () => structuredClone(state) },
+            onSteer() {},
+            onElicitation(context) {
+              admitted.push(context);
+              state.revision++;
+              state.evidence.push({
+                id: "elicitation",
+                source: "ask_user",
+                prompt: context.question,
+                text: context.answer,
+                execution_id: "run",
+              });
+            },
+            finalize: () => structuredClone(state),
+          };
+        },
+      }),
+    });
+    expect(result.response.status).toBe("completed");
+    expect(admitted).toEqual([
+      {
+        question: "May I update SAFE-09 through SAFE-11?",
+        answer: "Authorize the three lines",
+      },
+    ]);
+    expect(traceStore.getById("o", result.executionId)?.operator_authority_state?.revision).toBe(2);
+  });
+
+  it.each(["decline", "cancel"] as const)(
+    "does not admit a %s ask_user outcome as operator evidence",
+    async (action) => {
+      const state: OperatorAuthorityState = {
+        version: 1,
+        status: "active",
+        revision: 1,
+        binding: { owner_key_name: "o", session_id: "session", controller_epoch: "epoch" },
+        evidence: [{ id: "seed", source: "start", text: "Inspect", execution_id: "run" }],
+      };
+      let admissions = 0;
+      const result = await executeRun({
+        rawBody: {
+          ...BODY,
+          profiles: [
+            {
+              name: "solo",
+              model: "anthropic/x",
+              tools: [],
+              iteration_limit: 3,
+              grants: ["ask_user"],
+            },
+          ],
+        },
+        owner: "o",
+        operatorAuthoritySeed: { binding: state.binding, evidence: state.evidence },
+        elicit: async () => ({ action }),
+        deps: makeDeps({
+          capabilities: [createAskUserCapability()],
+          llm: new MockLLM({
+            script: [
+              { toolCalls: [{ name: "ask_user", arguments: { question: "Proceed?" } }] },
+              { text: "done" },
+            ],
+          }),
+          operatorAuthority() {
+            return {
+              reader: { snapshot: () => structuredClone(state) },
+              onSteer() {},
+              onElicitation() {
+                admissions++;
+              },
+              finalize: () => structuredClone(state),
+            };
+          },
+        }),
+      });
+      expect(result.response.status).toBe("completed");
+      expect(admissions).toBe(0);
+      expect(state.revision).toBe(1);
+    },
+  );
+
   it("runs a subagent-only request to completion and returns an execution id + response", async () => {
     const { executionId, response } = await executeRun({
       rawBody: BODY,

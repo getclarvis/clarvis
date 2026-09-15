@@ -12,28 +12,28 @@ import {
   type SettingsFile,
 } from "../../adapters/settings.ts";
 import {
-  guardAutoResolves,
   resolvedGuardMode,
   type GuardMode,
   type GuardModeStore,
 } from "../../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../../adapters/memory-mode.ts";
 import {
-  deriveSafetyPreset,
+  deriveIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
   planRetentionDescription,
   safetyDescription,
-  type CanonicalSafetyPreset,
   type PlanRetention,
 } from "../../adapters/execution-safety.ts";
 import {
-  applySafetyPreset,
-  CUSTOM_SAFETY_PRESET_CHOICE,
-  safetyPresetConfirmation,
-  SAFETY_PRESET_CHOICES,
-} from "../../features/run/safety-presets.ts";
+  applyIsolation,
+  isolationConfirmation,
+  isContainerIsolation,
+  ISOLATION_CHOICES,
+  type IsolationChoice,
+} from "../../features/run/isolation.ts";
+import { applyReviewMode, REVIEW_CHOICES } from "../../features/run/review.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
 import {
   bindLevelKeys,
@@ -45,20 +45,8 @@ import {
 import type { PickItem } from "./field-editor.tsx";
 import { errorText } from "../../adapters/errors.ts";
 
-const SAFETY_CHOICES = [
-  ...SAFETY_PRESET_CHOICES,
-  CUSTOM_SAFETY_PRESET_CHOICE,
-] satisfies readonly PickItem[];
-
-const GUARD_CHOICES = [
-  { value: "off", label: "off", detail: "no permission checks" },
-  { value: "on", label: "on", detail: "asks before unlisted or risky commands" },
-  {
-    value: "auto",
-    label: "auto",
-    detail: "an LLM approves or denies, escalating to you when unsure",
-  },
-] as const satisfies readonly PickItem[];
+const ISOLATION_PICKER_CHOICES = ISOLATION_CHOICES satisfies readonly PickItem[];
+const REVIEW_PICKER_CHOICES = REVIEW_CHOICES satisfies readonly PickItem[];
 
 const MEMORY_CHOICES = [
   { value: "on", label: "on", detail: "read before runs and learn afterward" },
@@ -79,10 +67,10 @@ const PLAN_RETENTION_CHOICES = [
 ] as const satisfies readonly PickItem[];
 
 /**
- * Per-run safety controls: a safety preset (sandbox + guard combination),
- * guard mode and completed-plan retention persist immediately to the selected
- * scope; memory changes only the session store. Each row explains what the
- * resulting policy means for the next run.
+ * Per-run controls expose isolation and command review as independent axes.
+ * Isolation persists globally because container placement is host-owned;
+ * review and completed-plan retention use the selected scope, while memory is
+ * session-only.
  */
 export function RunControlsPanel(
   host: ViewHost,
@@ -92,6 +80,7 @@ export function RunControlsPanel(
     memory: MemoryModeStore;
     notify: (message: string) => void;
     runActive: () => boolean;
+    reload: () => Promise<{ ok: boolean; message: string }>;
     openSandbox: () => void;
   },
 ): JSX.Element {
@@ -111,6 +100,16 @@ export function RunControlsPanel(
 
   function sandboxLine(): { text: string; fg: string } {
     const s = state();
+    if (s.isolation === "docker")
+      return {
+        text: "Docker stays cold until the first run and fails closed if it cannot start.",
+        fg: tokens.muted,
+      };
+    if (s.isolation === "podman")
+      return {
+        text: "Podman is configured through advanced settings and starts on the first run.",
+        fg: tokens.muted,
+      };
     if (!s.sandboxEnabled) return { text: "Native sandbox is off.", fg: tokens.warn };
     const avail = availability();
     if (!avail)
@@ -119,24 +118,14 @@ export function RunControlsPanel(
         fg: tokens.muted,
       };
     if (!avail.available) {
-      return s.sandboxRequired
-        ? {
-            text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); required sandbox fails every run.`,
-            fg: tokens.del,
-          }
-        : {
-            text: `Native sandbox unavailable here (${avail.reason}); optional sandbox runs directly on the host.`,
-            fg: tokens.warn,
-          };
+      return {
+        text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); sandbox fails every run.`,
+        fg: tokens.del,
+      };
     }
     if (avail.degraded)
       return {
         text: `${avail.type === "bubblewrap" ? "Bubblewrap" : "Native sandbox"} runs in degraded mode (${avail.reason ?? "reduced isolation"}).`,
-        fg: tokens.warn,
-      };
-    if (!s.sandboxRequired)
-      return {
-        text: "Optional sandbox may execute directly on an incompatible host.",
         fg: tokens.warn,
       };
     return {
@@ -144,17 +133,20 @@ export function RunControlsPanel(
       fg: tokens.muted,
     };
   }
-  async function applyPreset(preset: CanonicalSafetyPreset): Promise<void> {
-    const confirmation = safetyPresetConfirmation(preset, deps.settings.effective().sandbox);
+  async function applyIsolationChoice(isolation: IsolationChoice["value"]): Promise<void> {
+    const confirmation = isolationConfirmation(isolation);
     if (confirmation && !(await host.confirm(confirmation))) return;
     try {
-      await applySafetyPreset(preset, {
-        settings: deps.settings,
-        guard: deps.guard,
-        scope: host.scope(),
-      });
+      const effective = await applyIsolation(isolation, deps.settings);
+      if (!deps.runActive()) {
+        const reloaded = await deps.reload();
+        if (!reloaded.ok) {
+          deps.notify(`isolation saved, pending reconnect: ${reloaded.message}`);
+          return;
+        }
+      }
       deps.notify(
-        `safety: ${preset} (${host.scope()})${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
+        `isolation: ${effective} (global)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );
     } catch (error) {
       deps.notify(errorText(error));
@@ -172,35 +164,21 @@ export function RunControlsPanel(
     return deps.settings.read(host.scope())?.guard;
   }
 
-  /** Allow/deny policy that must survive a mode or named-preset write. */
-  function guardPolicyForWrite(): Partial<NonNullable<SettingsFile["guard"]>> {
-    const local = scopedGuard();
-    const inherited =
-      host.scope() === "workspace" ? deps.settings.read("global")?.guard : undefined;
-    const allowed = local?.allowed_commands ?? inherited?.allowed_commands;
-    const denied = local?.denied_commands ?? inherited?.denied_commands;
-    return {
-      ...(allowed === undefined ? {} : { allowed_commands: [...allowed] }),
-      ...(denied === undefined ? {} : { denied_commands: [...denied] }),
-    };
-  }
-
   async function applyGuard(mode: GuardMode): Promise<void> {
     try {
-      const degraded = mode === "auto" && !guardAutoResolves(deps.settings);
-      const effectiveMode = degraded ? "on" : mode;
-      await deps.settings.write(host.scope(), {
-        guard: { type: "shell", ...guardPolicyForWrite(), mode: effectiveMode },
+      const result = await applyReviewMode(mode, {
+        settings: deps.settings,
+        guard: deps.guard,
+        scope: host.scope(),
       });
-      deps.guard.setMode(effectiveMode);
-      if (degraded) {
+      if (result.degraded) {
         deps.notify(
-          `guard: on (${host.scope()} settings) ${glyph("emDash")} auto needs a usable default_model for the LLM judge; using on until one is configured`,
+          `review: approval (${host.scope()} settings) ${glyph("emDash")} Auto needs a usable default_model for the LLM judge`,
         );
         return;
       }
       deps.notify(
-        `guard: ${mode} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
+        `review: ${mode === "on" ? "approval" : mode} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );
     } catch (error) {
       deps.notify(errorText(error));
@@ -251,19 +229,20 @@ export function RunControlsPanel(
   function activate(): void {
     switch (sel()) {
       case 0:
-        fe.startEnum("Safety preset", SAFETY_CHOICES, state().preset, (value) => {
-          if (value !== "custom")
-            detachObserved("run_controls_preset", () =>
-              applyPreset(value as CanonicalSafetyPreset),
-            );
-        });
+        fe.startEnum("Isolation", ISOLATION_PICKER_CHOICES, state().isolation, (value) =>
+          detachObserved("run_controls_isolation", () =>
+            applyIsolationChoice(value as IsolationChoice["value"]),
+          ),
+        );
         break;
       case 1:
-        fe.startEnum("Command review", GUARD_CHOICES, state().guardMode, (value) =>
+        if (isContainerIsolation(state().isolation)) return;
+        fe.startEnum("Command review", REVIEW_PICKER_CHOICES, state().guardMode, (value) =>
           detachObserved("run_controls_guard", () => applyGuard(value as GuardMode)),
         );
         break;
       case 2:
+        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum(
           "Memory for this session",
           MEMORY_CHOICES,
@@ -272,6 +251,7 @@ export function RunControlsPanel(
         );
         break;
       case 3:
+        if (isContainerIsolation(state().isolation)) return;
         fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
           detachObserved("run_controls_plan_retention", () =>
             applyPlanRetention(value as PlanRetention),
@@ -304,8 +284,6 @@ export function RunControlsPanel(
     verbs:
       sel() === 0 ? [{ key: "b", label: "sandbox details", run: () => deps.openSandbox() }] : [],
   });
-  // Every write here goes to `host.scope()`, so the toggle retargets rather than
-  // reloads. Declaring it is what keeps `[^t] scope` in this panel's footer.
   host.bindScope({ mode: "retarget" });
   bindLevelKeys({
     host,
@@ -318,34 +296,25 @@ export function RunControlsPanel(
   const persistedGuardMode = (): GuardMode => resolvedGuardMode(deps.settings.effective().guard);
   const guardSource = (): string =>
     deps.guard.mode() === persistedGuardMode() ? settingSource("guard") : "session";
-  const configuredSafetyPreset = (): string => {
-    const scoped = deps.settings.read(host.scope());
-    if (scoped?.sandbox === undefined && scoped?.guard === undefined) return "inherit";
-    if (scoped?.sandbox === undefined || scoped.guard === undefined) return "partial override";
-    return deriveSafetyPreset(scoped, resolvedGuardMode(scoped.guard));
-  };
-  const safetySource = (): string => {
-    const sources = new Set<string>();
-    const sandboxSource = settingSource("sandbox");
-    const commandSource = guardSource();
-    if (sandboxSource !== "product default") sources.add(sandboxSource);
-    if (commandSource !== "product default") sources.add(commandSource);
-    return sources.size > 0 ? [...sources].join(" + ") : "product default";
+  const configuredIsolation = (): string => {
+    const global = deps.settings.read("global");
+    if (global?.runtime === undefined && global?.sandbox === undefined) return "product default";
+    return deriveIsolation(global ?? {});
   };
 
   function body(): JSX.Element {
     return (
-      <box flexDirection="column">
+      <box flexDirection="column" width="100%" minWidth={0}>
         <StatusRow
           label="mutation"
-          text={`Persistent rows save to ${host.scope()} ${glyph("separator")} memory stays in this session ${glyph("separator")} next run`}
+          text={`Isolation saves globally ${glyph("separator")} review/plans save to ${host.scope()} ${glyph("separator")} memory stays in this session`}
         />
         <SettingRow
           setting={{
-            label: "Safety preset",
-            configured: configuredSafetyPreset(),
-            effective: state().preset,
-            source: safetySource(),
+            label: "Isolation",
+            configured: configuredIsolation(),
+            effective: state().isolation,
+            source: "global",
             applies: "next run",
             mutation: "immediate",
           }}
@@ -354,15 +323,23 @@ export function RunControlsPanel(
         />
         <Show when={sel() === 0}>
           <For each={safetyDescription(state())}>
-            {(line) => <text fg={tokens.muted}>{glyph("bullet") + " " + line}</text>}
+            {(line) => (
+              <text fg={tokens.muted} wrapMode="word">
+                {glyph("bullet") + " " + line}
+              </text>
+            )}
           </For>
-          <text fg={sandboxLine().fg}>{sandboxLine().text}</text>
+          <text fg={sandboxLine().fg} wrapMode="word">
+            {sandboxLine().text}
+          </text>
         </Show>
         <SettingRow
           setting={{
             label: "Command review",
             configured: scopedGuard()?.mode ?? "inherit",
-            effective: state().guardMode,
+            effective: isContainerIsolation(state().isolation)
+              ? "Not applicable in Container"
+              : state().guardMode,
             source: guardSource(),
             applies: "next run",
             mutation: "immediate",
@@ -374,7 +351,11 @@ export function RunControlsPanel(
           setting={{
             label: "Memory for this session",
             configured: deps.memory.mode(),
-            effective: state().memory === "off" ? "off" : "on",
+            effective: isContainerIsolation(state().isolation)
+              ? "Unavailable in Container"
+              : state().memory === "off"
+                ? "off"
+                : "on",
             source: "session",
             applies: "next run",
             mutation: "immediate",
@@ -394,7 +375,11 @@ export function RunControlsPanel(
                 : scopedPlans()!.retention === "keep"
                   ? "keep plans"
                   : "delete after success",
-            effective: state().plans.retention === "keep" ? "keep plans" : "delete after success",
+            effective: isContainerIsolation(state().isolation)
+              ? "Unavailable in Container"
+              : state().plans.retention === "keep"
+                ? "keep plans"
+                : "delete after success",
             source: settingSource("plans"),
             applies: "next run",
             mutation: "immediate",

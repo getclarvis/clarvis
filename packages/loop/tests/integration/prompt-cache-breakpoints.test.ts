@@ -72,13 +72,13 @@ describe("prompt-cache breakpoints across iterations", () => {
     return llm;
   }
 
-  it("never anchors a breakpoint on the volatile runtime note", async () => {
+  it("can include runtime notes because all previous notes stay in place", async () => {
     const llm = await runLead();
     expect(llm.calls.length).toBeGreaterThanOrEqual(2);
 
     for (const call of llm.calls) {
       for (const index of call.cacheBreakpoints ?? []) {
-        expect(contentToText(call.messages[index]!.content)).not.toContain("tokens_remaining");
+        expect(index).toBeLessThan(call.messages.length);
       }
     }
   });
@@ -109,12 +109,11 @@ describe("prompt-cache breakpoints across iterations", () => {
     }
   });
 
-  it("anchors the newest breakpoint on the last tool result, not the tail", async () => {
+  it("anchors the newest breakpoint at the end of the retained transcript", async () => {
     const llm = await runLead();
     const second = llm.calls[1]!;
     const newest = second.cacheBreakpoints!.at(-1)!;
-    expect(second.messages[newest]!.role).toBe("tool");
-    expect(newest).toBeLessThan(second.messages.length - 1);
+    expect(newest).toBe(second.messages.length - 1);
   });
 });
 

@@ -11,6 +11,12 @@ function addUsage(a: LLMUsage, b: LLMUsage): LLMUsage {
     output_tokens: a.output_tokens + b.output_tokens,
     cached_tokens: a.cached_tokens + b.cached_tokens,
     cache_write_tokens: a.cache_write_tokens + b.cache_write_tokens,
+    ...(a.usage_unknown === true || b.usage_unknown === true
+      ? { usage_unknown: true as const }
+      : {}),
+    ...(a.cache_unknown === true || b.cache_unknown === true
+      ? { cache_unknown: true as const }
+      : {}),
   };
 }
 
@@ -144,8 +150,15 @@ export function withTransportRetry(inner: LLMProvider, opts: TransportRetryOptio
         );
       };
       const chargeLost = (err: ProviderError): void => {
-        if (err.partialUsage === undefined) return;
-        lost = lost === undefined ? { ...err.partialUsage } : addUsage(lost, err.partialUsage);
+        const partial = err.partialUsage ?? {
+          input_tokens: 0,
+          output_tokens: 0,
+          cached_tokens: 0,
+          cache_write_tokens: 0,
+          usage_unknown: true as const,
+          cache_unknown: true as const,
+        };
+        lost = lost === undefined ? { ...partial } : addUsage(lost, partial);
       };
       const withLost = <T extends { retriedUsage?: LLMUsage }>(value: T): T =>
         lost === undefined ? value : { ...value, retriedUsage: lost };

@@ -13,9 +13,8 @@
  * path is covered where it can be: `subprocess.test.ts` asserts the pwsh
  * `-EncodedCommand` argv from any host.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createHookRunner,
@@ -24,23 +23,38 @@ import {
   type HookInvocation,
   type HookRunner,
 } from "@clarvis/hooks";
+import { tempRoot } from "../helpers/temp-root.ts";
 
 const posixShell = process.platform !== "win32";
 
-let workspace = "";
-let runner: HookRunner;
+interface RealHookFixture {
+  workspace: string;
+  runner: HookRunner;
+  temp: Awaited<ReturnType<typeof tempRoot>>;
+}
 
-beforeAll(async () => {
-  workspace = await mkdtemp(join(tmpdir(), "clarvis-hooks-"));
-  runner = createHookRunner({
-    workspaceRoot: workspace,
-    baseEnv: { PATH: process.env.PATH ?? "" },
+function isolatedTest(
+  name: string,
+  body: (fixture: RealHookFixture) => void | Promise<void>,
+): void {
+  test(name, async () => {
+    const temp = await tempRoot("clarvis-hooks-");
+    const fixture = {
+      workspace: temp.root,
+      temp,
+      runner: createHookRunner({
+        workspaceRoot: temp.root,
+        baseEnv: { PATH: process.env.PATH ?? "" },
+      }),
+    };
+    try {
+      await body(fixture);
+    } finally {
+      await temp.cleanup();
+      expect(temp.pending()).toEqual([]);
+    }
   });
-});
-
-afterAll(async () => {
-  if (workspace !== "") await rm(workspace, { recursive: true, force: true });
-});
+}
 
 function gate(over: Partial<HookInvocation> = {}): HookInvocation {
   return {
@@ -68,11 +82,12 @@ async function waitGone(pid: number, budgetMs = 5_000): Promise<boolean> {
 }
 
 /** Waits on an observable child-side milestone instead of a timing guess. */
-async function waitForText(path: string, expected: string, budgetMs = 5_000): Promise<void> {
+async function waitForText(path: string, expected?: string, budgetMs = 5_000): Promise<string> {
   const deadline = Date.now() + budgetMs;
   for (;;) {
     try {
-      if ((await readFile(path, "utf8")) === expected) return;
+      const actual = await readFile(path, "utf8");
+      if (actual.length > 0 && (expected === undefined || actual === expected)) return actual;
     } catch {
       // The child has not created the marker yet.
     }
@@ -82,7 +97,7 @@ async function waitForText(path: string, expected: string, budgetMs = 5_000): Pr
 }
 
 describe.skipIf(!posixShell)("a hook command against a real shell", () => {
-  test("a deny reaches the caller with its message intact", async () => {
+  isolatedTest("a deny reaches the caller with its message intact", async ({ runner }) => {
     const result = await runner.run(
       { event: "pre_tool_use", command: `echo '{"kind":"deny","message":"dist/ is generated"}'` },
       gate(),
@@ -93,12 +108,12 @@ describe.skipIf(!posixShell)("a hook command against a real shell", () => {
     });
   });
 
-  test("a silent hook passes", async () => {
+  isolatedTest("a silent hook passes", async ({ runner }) => {
     const result = await runner.run({ event: "pre_tool_use", command: "true" }, gate());
     expect(result).toMatchObject({ ok: true, outcome: { kind: "pass" } });
   });
 
-  test("the payload really arrives on stdin", async () => {
+  isolatedTest("the payload really arrives on stdin", async ({ runner, workspace }) => {
     const target = join(workspace, "stdin.json");
     const result = await runner.run(
       { event: "pre_tool_use", command: `cat > '${target}'` },
@@ -115,17 +130,22 @@ describe.skipIf(!posixShell)("a hook command against a real shell", () => {
     });
   });
 
-  test("a hook that never reads a large payload neither crashes nor deadlocks", async () => {
-    const big = "x".repeat(200 * 1024);
-    expect(Buffer.byteLength(JSON.stringify({ blob: big }), "utf8")).toBeLessThan(MAX_STDIN_BYTES);
-    const result = await runner.run(
-      { event: "pre_tool_use", command: "exit 0" },
-      gate({ data: { blob: big } }),
-    );
-    expect(result).toMatchObject({ ok: true, outcome: { kind: "pass" } });
-  });
+  isolatedTest(
+    "a hook that never reads a large payload neither crashes nor deadlocks",
+    async ({ runner }) => {
+      const big = "x".repeat(200 * 1024);
+      expect(Buffer.byteLength(JSON.stringify({ blob: big }), "utf8")).toBeLessThan(
+        MAX_STDIN_BYTES,
+      );
+      const result = await runner.run(
+        { event: "pre_tool_use", command: "exit 0" },
+        gate({ data: { blob: big } }),
+      );
+      expect(result).toMatchObject({ ok: true, outcome: { kind: "pass" } });
+    },
+  );
 
-  test("the command runs in the workspace root", async () => {
+  isolatedTest("the command runs in the workspace root", async ({ runner, workspace }) => {
     // `pwd` reports the physical path, and on macOS the temp dir reached via
     // /var is a symlink to /private/var — compare what the child can actually see.
     const physical = await realpath(workspace);
@@ -136,49 +156,55 @@ describe.skipIf(!posixShell)("a hook command against a real shell", () => {
     expect(result.ok).toBe(true);
   });
 
-  test("the environment describes the fire point and withholds credentials", async () => {
-    const target = join(workspace, "env.txt");
-    const scoped = createHookRunner({
-      workspaceRoot: workspace,
-      baseEnv: filterHookEnv(
+  isolatedTest(
+    "the environment describes the fire point and withholds credentials",
+    async ({ workspace }) => {
+      const target = join(workspace, "env.txt");
+      const scoped = createHookRunner({
+        workspaceRoot: workspace,
+        baseEnv: filterHookEnv(
+          {
+            PATH: process.env.PATH,
+            ANTHROPIC_API_KEY: "sk-shape-rule",
+            MY_COMPANY_LLM: "sk-named-by-config",
+          },
+          { denyExact: ["MY_COMPANY_LLM"] },
+        ).env,
+      });
+      await scoped.run(
         {
-          PATH: process.env.PATH,
-          ANTHROPIC_API_KEY: "sk-shape-rule",
-          MY_COMPANY_LLM: "sk-named-by-config",
+          event: "pre_tool_use",
+          command: `printf '%s|%s|%s|%s' "$CLARVIS_HOOK_EVENT" "$CLARVIS_HOOK_TOOL" "$ANTHROPIC_API_KEY" "$MY_COMPANY_LLM" > '${target}'`,
         },
-        { denyExact: ["MY_COMPANY_LLM"] },
-      ).env,
-    });
-    await scoped.run(
-      {
-        event: "pre_tool_use",
-        command: `printf '%s|%s|%s|%s' "$CLARVIS_HOOK_EVENT" "$CLARVIS_HOOK_TOOL" "$ANTHROPIC_API_KEY" "$MY_COMPANY_LLM" > '${target}'`,
-      },
-      gate({ candidate: { tool: "shell", arguments: {} } }),
-    );
-    expect(await readFile(target, "utf8")).toBe("pre_tool_use|shell||");
-  });
+        gate({ candidate: { tool: "shell", arguments: {} } }),
+      );
+      expect(await readFile(target, "utf8")).toBe("pre_tool_use|shell||");
+    },
+  );
 
-  test("a command that does not exist is a non-zero exit, not a spawn failure", async () => {
-    const result = await runner.run(
-      { event: "pre_tool_use", command: "definitely-not-a-binary-xyz" },
-      gate(),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.failure.kind).toBe("exit_nonzero");
-      expect(result.failure.exitCode).toBe(127);
-    }
-  });
+  isolatedTest(
+    "a command that does not exist is a non-zero exit, not a spawn failure",
+    async ({ runner }) => {
+      const result = await runner.run(
+        { event: "pre_tool_use", command: "definitely-not-a-binary-xyz" },
+        gate(),
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.failure.kind).toBe("exit_nonzero");
+        expect(result.failure.exitCode).toBe(127);
+      }
+    },
+  );
 
-  test("stdout that is not a verdict is reported as bad output", async () => {
+  isolatedTest("stdout that is not a verdict is reported as bad output", async ({ runner }) => {
     const hook = { event: "pre_tool_use", command: "printf hello" } as const;
     const result = await runner.run(hook, gate());
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.failure.kind).toBe("bad_output");
   });
 
-  test("oversized stdout is truncated and never parsed", async () => {
+  isolatedTest("oversized stdout is truncated and never parsed", async ({ runner }) => {
     const result = await runner.run(
       { event: "pre_tool_use", command: `head -c 100000 /dev/zero | tr '\\0' a` },
       gate(),
@@ -190,18 +216,21 @@ describe.skipIf(!posixShell)("a hook command against a real shell", () => {
     }
   });
 
-  test("stderr is captured for the log and never confused with the verdict", async () => {
-    const result = await runner.run(
-      {
-        event: "pre_tool_use",
-        command: `echo noise 1>&2; echo '{"kind":"advise","message":"ok"}'`,
-      },
-      gate(),
-    );
-    expect(result).toMatchObject({ ok: true, outcome: { kind: "advise", message: "ok" } });
-  });
+  isolatedTest(
+    "stderr is captured for the log and never confused with the verdict",
+    async ({ runner }) => {
+      const result = await runner.run(
+        {
+          event: "pre_tool_use",
+          command: `echo noise 1>&2; echo '{"kind":"advise","message":"ok"}'`,
+        },
+        gate(),
+      );
+      expect(result).toMatchObject({ ok: true, outcome: { kind: "advise", message: "ok" } });
+    },
+  );
 
-  test("a hook that overruns is killed and reported as a timeout", async () => {
+  isolatedTest("a hook that overruns is killed and reported as a timeout", async ({ runner }) => {
     const hook = {
       event: "pre_tool_use",
       command: "sleep 30",
@@ -212,34 +241,51 @@ describe.skipIf(!posixShell)("a hook command against a real shell", () => {
     if (!result.ok) expect(result.failure.kind).toBe("timeout");
   });
 
-  test("a hook's grandchild dies with it", async () => {
+  isolatedTest("a hook's grandchild dies with it", async ({ runner, workspace, temp }) => {
     const pidFile = join(workspace, "grandchild.pid");
-    const result = await runner.run(
+    const controller = new AbortController();
+    const pending = runner.run(
       {
         event: "pre_tool_use",
         command: `sleep 30 & echo $! > '${pidFile}'; sleep 30`,
-        timeout_ms: 300,
+        timeout_ms: 10_000,
       },
       gate(),
+      controller.signal,
     );
+    const unregister = temp.register("grandchild hook run", async () => {
+      controller.abort();
+      await pending;
+    });
+    const pid = Number.parseInt((await waitForText(pidFile)).trim(), 10);
+    controller.abort();
+    const result = await pending;
+    unregister();
     expect(result.ok).toBe(false);
-    const pid = Number.parseInt((await readFile(pidFile, "utf8")).trim(), 10);
     expect(Number.isInteger(pid)).toBe(true);
     expect(await waitGone(pid)).toBe(true);
   });
 
-  test("an abort mid-flight kills the child and reports cancellation", async () => {
-    const controller = new AbortController();
-    const started = join(workspace, "abort.started");
-    const pending = runner.run(
-      { event: "pre_tool_use", command: `printf ready > '${started}'; sleep 30` },
-      gate(),
-      controller.signal,
-    );
-    await waitForText(started, "ready");
-    controller.abort();
-    const result = await pending;
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.failure.kind).toBe("aborted");
-  });
+  isolatedTest(
+    "an abort mid-flight kills the child and reports cancellation",
+    async ({ runner, workspace, temp }) => {
+      const controller = new AbortController();
+      const started = join(workspace, "abort.started");
+      const pending = runner.run(
+        { event: "pre_tool_use", command: `printf ready > '${started}'; sleep 30` },
+        gate(),
+        controller.signal,
+      );
+      const unregister = temp.register("aborted hook run", async () => {
+        controller.abort();
+        await pending;
+      });
+      await waitForText(started, "ready");
+      controller.abort();
+      const result = await pending;
+      unregister();
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.failure.kind).toBe("aborted");
+    },
+  );
 });

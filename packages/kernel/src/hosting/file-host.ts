@@ -21,6 +21,7 @@ import { createHostedSessionCoordinator } from "./sessions.ts";
 import type { HostingPeer } from "./admission.ts";
 import { createLocalHostOperator } from "./operator.ts";
 import { createGoalRepository } from "../goals/repository.ts";
+import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
 import { createGoalEvidenceSource } from "../goals/evidence.ts";
 import { prepareHostedGoalTurn, type GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { createGoalService } from "../goals/service.ts";
@@ -231,11 +232,31 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             "Goal requires explicit resume by a live conversation controller",
           );
         registry!.assertController(context.conversation);
-        const goalAgent = kernel.goalAgentRuntime(owner);
         return prepareHostedGoalTurn({
           params,
           context,
           repository,
+          steward: {
+            runtime: (limit, ttl) => kernel.goalStewardRuntime(limit, ttl, owner),
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readFile: (path) => kernel.files.readFile(path),
+            async settle(mutate, usage) {
+              await sessions.transact(context.session.id, (session) => {
+                const current = goalStateFromSession(session);
+                if (!current) throw kernelError("conflict", "Goal Steward session disappeared");
+                const result = mutate(current);
+                session.goal_state = goalStateToDto(result.state);
+                if (result.charged && usage.kind === "measured") {
+                  session.totals.input += usage.input;
+                  session.totals.output += usage.output;
+                  if (usage.cached === undefined) delete session.totals.cached;
+                  else if (session.totals.cached !== undefined)
+                    session.totals.cached += usage.cached;
+                }
+                return { session, result: undefined };
+              });
+            },
+          },
           sessions: sessions.sessions,
           evidence: createGoalEvidenceSource({
             executionId: params.execution_id!,
@@ -254,21 +275,13 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             }
             return true;
           },
-          verification: {
-            workspaceRoot: options.kernel.workspaceRoot,
-            workspaceReadAvailable: goalAgent.workspaceReadAvailable,
-            policy: goalAgent.verification,
-            createRuntime: (trackModel) => kernel.goalAgentRuntime(owner, trackModel),
-            readRun: async (executionId) => {
-              try {
-                return await kernel.runs.get(executionId);
-              } catch (error) {
-                if (toKernelError(error).code === "not_found") return null;
-                throw error;
-              }
-            },
-            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
-            readFile: (path) => kernel.files.readFile(path),
+          readRun: async (executionId) => {
+            try {
+              return await kernel.runs.get(executionId);
+            } catch (error) {
+              if (toKernelError(error).code === "not_found") return null;
+              throw error;
+            }
           },
           prepareExecution,
           logger,

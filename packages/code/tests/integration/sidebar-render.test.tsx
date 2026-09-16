@@ -149,9 +149,9 @@ test("Goal uses the same compact sidebar pattern and opens its complete screen f
     const out = t.captureCharFrame();
     const spans = t.captureSpans();
     expect(out).toContain("Goal");
-    expect(out).toContain("Running · 0 stages · [^o] full Goal");
+    expect(out).toContain("Running · 0 stages · [^o] full goal");
     expect(out.replace(/\s+/gu, " ")).toContain("Ship the observable result");
-    expect(out).toContain("[^o] full Goal");
+    expect(out).toContain("[^o] full goal");
     expect(fgOf(spans, "Ship the observable result")).toBe(tokens.accent2.toLowerCase());
     expect(fgOf(spans, "Running")).toBe(tokens.add.toLowerCase());
     const goalRow = out.split("\n").findIndex((row) => row.includes("Goal"));

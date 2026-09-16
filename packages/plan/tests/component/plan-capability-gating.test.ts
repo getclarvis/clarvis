@@ -11,7 +11,7 @@ import {
   createCapabilityServices,
   createCapabilityRequestView,
   createComputeClock,
-  OPERATOR_REVIEW_CONTEXT_PORT,
+  PLANS_REVIEW_CONTEXT_PORT,
   type AgentLoopContribution,
   type AgentScope,
   type CapabilityEvent,
@@ -158,7 +158,10 @@ describe("createPlansCapability — reviewer context", () => {
     const services = createCapabilityServices();
     const { run } = await forRun("on", services);
     const contribution = attachEntry(run!);
-    expect(services.get(OPERATOR_REVIEW_CONTEXT_PORT)?.snapshot()).toEqual([]);
+    expect(services.get(PLANS_REVIEW_CONTEXT_PORT)?.snapshot()).toEqual({
+      revision: "absent",
+      contexts: [],
+    });
     await dispatch(contribution, {
       id: "create",
       name: CREATE_PLAN_TOOL_NAME,
@@ -170,7 +173,9 @@ describe("createPlansCapability — reviewer context", () => {
         validation: ["npm test"],
       },
     });
-    const context = services.get(OPERATOR_REVIEW_CONTEXT_PORT)!.snapshot()[0]!;
+    const snapshot = services.get(PLANS_REVIEW_CONTEXT_PORT)!.snapshot();
+    const context = snapshot.contexts[0]!;
+    expect(snapshot.revision).not.toBe("absent");
     expect(context.kind).toBe("plan");
     expect(JSON.parse(context.content)).toEqual({
       title: "Desktop MVP",

@@ -86,10 +86,9 @@ Loop has no dependency on Goal and no Goal-specific branch. The Goal source impo
 types from Loop; Kernel supplies the runtime implementation and isolated capability dependencies.
 Production: `PACKAGE_EDGE_EXCEPTIONS` in
 [package-architecture.ts](../../tooling/lib/package-architecture.ts), Goal's manifest and build
-reference, `runGoalAgent` in [run.ts](../../packages/goal/src/agent/run.ts), and
-`runGoalVerification` in [verification.ts](../../packages/goal/src/agent/verification.ts). Both
-formulation and completion verification use the same one-way edge; neither adds a Goal branch to
-Loop.
+reference and `runGoalAgent` in [run.ts](../../packages/goal/src/agent/run.ts). Formulation uses the
+one-way edge without adding a Goal branch to Loop. Goal Steward uses the same edge through
+`runGoalSteward`; Kernel owns its coordinator and domain ports carry no engine gate or result types.
 Test: `limits engine execution to the capabilities that own it` in
 [package-architecture.test.ts](../../tooling/tests/unit/package-architecture.test.ts) and the generated
 [package coupling report](../package-coupling-analysis.md).

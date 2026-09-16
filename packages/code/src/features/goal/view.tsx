@@ -1,11 +1,6 @@
 import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type {
-  GoalControlAction,
-  GoalRecord,
-  GoalVerification,
-  GoalVerificationAssessment,
-} from "@clarvis/protocol";
+import type { GoalControlAction, GoalRecord, GoalStewardReview } from "@clarvis/protocol";
 import type { ViewHost } from "../../keys/commands.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
@@ -16,7 +11,12 @@ import { detachObserved } from "../../core/tasks.ts";
 import type { GoalController } from "./controller.ts";
 import { createGoalDraft, type GoalDraft } from "./draft.ts";
 import { GoalForm } from "./form.tsx";
-import { compactGoalCount, compactSourceDigest, goalStatusPresentation } from "./presentation.ts";
+import {
+  compactGoalCount,
+  compactSourceDigest,
+  goalStatusPresentation,
+  stewardStatusLabel,
+} from "./presentation.ts";
 
 /** Only the host's acceptance for this criterion and objective revision satisfies human review. */
 function humanAccepted(goal: GoalRecord, criterionId: string): boolean {
@@ -242,109 +242,110 @@ export function GoalView(
                 minHeight={0}
                 verticalScrollbarOptions={scrollbarOptions()}
               >
-                <text fg={tokens.accent2} wrapMode="word">
-                  <b>{current().objective}</b>
-                </text>
-                <text fg={goalStatusPresentation(current().status).color}>
-                  {`${goalStatusPresentation(current().status).label} ${glyph("separator")} ${current().runs.length} stage${current().runs.length === 1 ? "" : "s"} ${glyph("separator")} ${current().origin.kind}`}
-                </text>
-                <Show when={current().reason}>
-                  <text fg={tokens.warn}>{current().reason}</text>
-                </Show>
-                <Show when={executionState() !== undefined && executionState() !== "closed"}>
-                  <text fg={tokens.fg}>{`Run ${executionState()}`}</text>
-                </Show>
-                <Show
-                  when={
-                    goals.view()?.physical_run?.attention !== undefined &&
-                    goals.view()?.physical_run?.attention !== "none"
-                  }
-                >
-                  <text
-                    fg={tokens.warn}
-                  >{`Execution attention: ${goals.view()?.physical_run?.attention}`}</text>
-                </Show>
-                <Show when={goals.view()?.attention}>
-                  <text fg={tokens.warn}>{goals.view()?.attention}</text>
-                </Show>
-                <text fg={tokens.muted}>
-                  {`Budget ${compactGoalCount(current().consumption.net_tokens)} / ${compactGoalCount(current().limits.max_net_tokens)} tokens ${glyph("separator")} ${current().auto_continuations} / ${current().limits.max_auto_continuations} continuations`}
-                </text>
-                <Show when={visibleCriteria(current()).length > 0}>
-                  <text fg={tokens.accent} marginTop={1}>
-                    Criteria
+                <box flexDirection="column" maxWidth={100}>
+                  <text fg={tokens.accent2} wrapMode="word">
+                    <b>{current().objective}</b>
                   </text>
-                  <For each={visibleCriteria(current())}>
-                    {(criterion) => (
-                      <text fg={tokens.fg} wrapMode="word">
-                        {`${criterion.kind === "human" ? (humanAccepted(current(), criterion.id) ? "✓" : "○") : "•"} ${criterion.description}${criterion.kind === "human" ? ` ${glyph("separator")} approval ${humanAccepted(current(), criterion.id) ? "accepted" : "needed"}` : criterion.kind === "host" ? ` ${glyph("separator")} host check` : ""}`}
-                      </text>
-                    )}
-                  </For>
-                </Show>
-                <Show when={current().constraints.length > 0}>
-                  <text fg={tokens.accent} marginTop={1}>
-                    Constraints
+                  <text marginTop={1} fg={goalStatusPresentation(current().status).color}>
+                    {`${goalStatusPresentation(current().status).label} ${glyph("separator")} ${current().runs.length} stage${current().runs.length === 1 ? "" : "s"} ${glyph("separator")} ${current().origin.kind}`}
                   </text>
-                  <For each={current().constraints}>
-                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
-                  </For>
-                </Show>
-                <Show when={current().exclusions.length > 0}>
-                  <text fg={tokens.accent} marginTop={1}>
-                    Exclusions
+                  <Show when={current().status !== "complete" && current().reason}>
+                    <text fg={tokens.warn}>{current().reason}</text>
+                  </Show>
+                  <Show when={stewardStatusLabel(current())}>
+                    <text
+                      marginTop={1}
+                      fg={tokens.accent}
+                    >{`Steward  ${stewardStatusLabel(current())}`}</text>
+                    <text
+                      fg={tokens.muted}
+                    >{`${current().runs.at(-1)?.steward_review_count ?? 0} reviews ${glyph("separator")} ${current().runs.at(-1)?.steward_intervention_count ?? 0} interventions`}</text>
+                    <Show when={current().runs.at(-1)?.steward_reviews?.at(-1)}>
+                      {(review: Accessor<GoalStewardReview>) => (
+                        <>
+                          <text marginTop={1} fg={tokens.fg} wrapMode="word">
+                            {review().summary}
+                          </text>
+                          <Show when={review().next_step ?? review().guidance}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Next step: ${review().next_step ?? review().guidance}`}
+                            </text>
+                          </Show>
+                        </>
+                      )}
+                    </Show>
+                  </Show>
+                  <Show when={executionState() !== undefined && executionState() !== "closed"}>
+                    <text fg={tokens.fg}>{`Run ${executionState()}`}</text>
+                  </Show>
+                  <Show
+                    when={
+                      goals.view()?.physical_run?.attention !== undefined &&
+                      goals.view()?.physical_run?.attention !== "none"
+                    }
+                  >
+                    <text
+                      fg={tokens.warn}
+                    >{`Execution attention: ${goals.view()?.physical_run?.attention}`}</text>
+                  </Show>
+                  <Show when={goals.view()?.attention}>
+                    <text fg={tokens.warn}>{goals.view()?.attention}</text>
+                  </Show>
+                  <text marginTop={1} fg={tokens.accent}>
+                    Usage
                   </text>
-                  <For each={current().exclusions}>
-                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
-                  </For>
-                </Show>
-                <Show when={current().assumptions.length > 0}>
-                  <text fg={tokens.accent} marginTop={1}>
-                    Assumptions
+                  <text fg={tokens.muted}>
+                    {`Budget ${compactGoalCount(current().consumption.net_tokens)} / ${compactGoalCount(current().limits.max_net_tokens)} tokens ${glyph("separator")} ${current().auto_continuations} / ${current().limits.max_auto_continuations} continuations`}
                   </text>
-                  <For each={current().assumptions}>
-                    {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
-                  </For>
-                </Show>
-                <Show when={current().sources.length > 0}>
-                  <text fg={tokens.accent} marginTop={1}>
-                    Normative sources
-                  </text>
-                  <For each={current().sources}>
-                    {(source) => (
-                      <text fg={tokens.fg} wrapMode="word">
-                        {`${source.path} ${glyph("separator")} ${compactSourceDigest(source.digest)}`}
-                      </text>
-                    )}
-                  </For>
-                </Show>
-                <Show
-                  when={current()
-                    .runs.flatMap((run) => run.verifications)
-                    .at(-1)}
-                >
-                  {(verification: Accessor<GoalVerification>) => (
-                    <>
-                      <text
-                        marginTop={1}
-                        fg={verification().verdict === "achieved" ? tokens.accent : tokens.warn}
-                      >{`Review ${glyph("separator")} ${verification().verdict === "achieved" ? "achieved" : "not achieved"}`}</text>
-                      <For
-                        each={verification().assessments.filter(
-                          (assessment: GoalVerificationAssessment) =>
-                            assessment.verdict !== "satisfied",
-                        )}
-                      >
-                        {(assessment: GoalVerificationAssessment) => (
-                          <text
-                            fg={tokens.warn}
-                            wrapMode="word"
-                          >{`${assessment.scope === "criterion" ? assessment.criterion_id : assessment.scope} ${glyph("separator")} ${assessment.verdict} — ${assessment.rationale}`}</text>
-                        )}
-                      </For>
-                    </>
-                  )}
-                </Show>
+                  <Show when={visibleCriteria(current()).length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Criteria
+                    </text>
+                    <For each={visibleCriteria(current())}>
+                      {(criterion) => (
+                        <text fg={tokens.fg} wrapMode="word">
+                          {`${criterion.kind === "human" ? (humanAccepted(current(), criterion.id) ? "✓" : "○") : "•"} ${criterion.description}${criterion.kind === "human" ? ` ${glyph("separator")} approval ${humanAccepted(current(), criterion.id) ? "accepted" : "needed"}` : criterion.kind === "host" ? ` ${glyph("separator")} host check` : ""}`}
+                        </text>
+                      )}
+                    </For>
+                  </Show>
+                  <Show when={current().constraints.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Constraints
+                    </text>
+                    <For each={current().constraints}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().exclusions.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Exclusions
+                    </text>
+                    <For each={current().exclusions}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().assumptions.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Assumptions
+                    </text>
+                    <For each={current().assumptions}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().sources.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Normative sources
+                    </text>
+                    <For each={current().sources}>
+                      {(source) => (
+                        <text fg={tokens.fg} wrapMode="word">
+                          {`${source.path} ${glyph("separator")} ${compactSourceDigest(source.digest)}`}
+                        </text>
+                      )}
+                    </For>
+                  </Show>
+                </box>
               </scrollbox>
             )}
           </Show>

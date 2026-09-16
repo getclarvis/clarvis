@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { isBuiltinTraceEvent, type TraceEvent } from "@clarvis/capability";
+import {
+  isBuiltinTraceEvent,
+  sanitizeDeep,
+  sanitizeText,
+  type TraceEvent,
+} from "@clarvis/capability";
 import {
   GoalError,
   type GoalCheckpoint,
@@ -42,6 +47,17 @@ export function goalEvidenceDigest(value: unknown): string {
   return createHash("sha256").update(encoded).digest("hex");
 }
 
+/** Bounded host-observed command receipt; content is evidence, never execution authority. */
+export interface GoalCommandEvidence {
+  id: string;
+  tool: string;
+  arguments_excerpt: string;
+  exit_code: 0;
+  stdout_excerpt: string;
+  stderr_excerpt: string;
+  truncated: boolean;
+}
+
 interface Observation {
   id: string;
   executionId: string;
@@ -51,6 +67,7 @@ interface Observation {
   successful: boolean;
   changeDigest?: string;
   description: string;
+  commandEvidence?: Omit<GoalCommandEvidence, "id">;
 }
 
 /** A completed tool envelope is required; native command success additionally requires exit zero. */
@@ -63,9 +80,18 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     Buffer.byteLength(JSON.stringify(event.arguments)) > MAX_PAYLOAD_BYTES
   )
     throw new GoalError("resource_exhausted", "Tool evidence exceeds its payload bound");
+  let commandEvidence: Observation["commandEvidence"];
   let successful = event.error === null && event.guard?.outcome !== "denied";
   if (event.tool_name === "" && (tool === "shell" || tool === "host_exec")) {
-    let command: { exit_code?: unknown; timed_out?: unknown; signal?: unknown } | undefined;
+    let command:
+      | {
+          exit_code?: unknown;
+          timed_out?: unknown;
+          signal?: unknown;
+          stdout?: unknown;
+          stderr?: unknown;
+        }
+      | undefined;
     try {
       command = JSON.parse(event.result) as typeof command;
     } catch {
@@ -73,6 +99,19 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     }
     successful =
       successful && command?.exit_code === 0 && command.timed_out !== true && !command.signal;
+    if (successful) {
+      const args = JSON.stringify(sanitizeDeep(event.arguments, sanitizeText));
+      const stdout = typeof command?.stdout === "string" ? sanitizeText(command.stdout) : "";
+      const stderr = typeof command?.stderr === "string" ? sanitizeText(command.stderr) : "";
+      commandEvidence = {
+        tool,
+        arguments_excerpt: args.slice(0, 2048),
+        exit_code: 0,
+        stdout_excerpt: stdout.slice(0, 3072),
+        stderr_excerpt: stderr.slice(0, 1024),
+        truncated: args.length > 2048 || stdout.length > 3072 || stderr.length > 1024,
+      };
+    }
   }
   return {
     id: `tool-${goalEvidenceDigest([executionId, event.subagent_instance_id ?? "entry", event.call_id])}`,
@@ -83,12 +122,14 @@ function observation(executionId: string, event: TraceEvent): Observation | unde
     successful,
     ...(event.diff?.trim() ? { changeDigest: goalEvidenceDigest(event.diff) } : {}),
     description: `${tool}; call ${event.call_id}`.slice(0, 512),
+    ...(commandEvidence === undefined ? {} : { commandEvidence }),
   };
 }
 
 export interface GoalEvidenceSnapshot extends GoalEvidenceVerifier {
   readonly generation: number;
   readonly catalog: GoalEvidenceOption[];
+  readonly commands: GoalCommandEvidence[];
   resolve(ids: readonly string[]): GoalEvidenceRef[];
   progress(
     ids: readonly string[],
@@ -104,7 +145,7 @@ export interface GoalEvidenceSource {
 
 /**
  * Derive evidence from existing trace results and confined file snapshots. The live index retains
- * only bounded digests/metadata; it is not another authoritative store. Older stage data comes
+ * only bounded digests, metadata and sanitized command excerpts; it is not another authoritative store. Older stage data comes
  * from the caller's owner-scoped trace reader. Missing/evicted proof is never treated as success.
  */
 export function createGoalEvidenceSource(options: {
@@ -241,9 +282,14 @@ export function createGoalEvidenceSource(options: {
           return { ...reference };
         });
       };
+      const catalog = [...references.values()].slice(-32).map((reference) => ({ ...reference }));
       return {
         generation: capturedGeneration,
-        catalog: [...references.values()].slice(-32).map((reference) => ({ ...reference })),
+        catalog,
+        commands: catalog.flatMap(({ id }) => {
+          const command = all.get(id)?.commandEvidence;
+          return command === undefined ? [] : [{ id, ...command }];
+        }),
         resolve: resolveReferences,
         async verify(reference, criterion) {
           const current = references.get(reference.id);

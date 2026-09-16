@@ -68,6 +68,10 @@ describe("goal through the real file host and SDK HTTP", () => {
       expect(query).toMatchObject({ ok: true, result: expect.stringContaining("Query defaults") });
     expect(f.requests).toHaveLength(4);
     expect(goal.auto_continuations).toBe(0);
+    const session = await f.client.sessions.get("conversation");
+    expect(session?.turns[0]?.user_preview).toBe(
+      "Work toward the persistent goal: Inspect plan queries",
+    );
   });
 
   it("reports budget_limited after the real loop stops with exhausted measured usage", async () => {
@@ -154,19 +158,19 @@ describe("goal through the real file host and SDK HTTP", () => {
       status: "complete",
       auto_continuations: 1,
       consumption: {
-        input: 4100,
-        output: 40,
-        net_tokens: 4140,
+        input: 3060,
+        output: 30,
+        net_tokens: 3090,
         usage_unknown: false,
         cache_estimated: true,
       },
     });
     expect(goal.consumption.cached).toBeUndefined();
     expect((await f.client.sessions.get("conversation"))!.totals).toEqual({
-      input: 4100,
-      output: 40,
+      input: 3060 + f.stewardUsages.reduce((sum, usage) => sum + usage.input, 0),
+      output: 30 + f.stewardUsages.reduce((sum, usage) => sum + usage.output, 0),
     });
-    expect(f.requests).toHaveLength(4);
+    expect(f.requests).toHaveLength(3);
   });
 
   it("blocks an otherwise valid checkpoint when the actual SDK response omitted usage", async () => {
@@ -318,8 +322,8 @@ describe("goal through the real file host and SDK HTTP", () => {
     const finished = (await f.client.goals.get("conversation")).state.current!;
     expect(finished.runs.map((run) => run.automatic)).toEqual([false, false]);
     expect(finished.consumption.usage_unknown).toBe(false);
-    expect(f.requests).toHaveLength(4);
-    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
+    expect(f.requests).toHaveLength(3);
+    expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
     expect(f.requests[1]!.messages.slice(0, f.requests[0]!.messages.length)).toEqual(
       f.requests[0]!.messages,
     );

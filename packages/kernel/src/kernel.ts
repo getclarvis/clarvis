@@ -9,7 +9,6 @@ import {
   levelEnabled,
   NOOP_LOGGER,
   type ProviderConfig,
-  type LLMProvider,
   type Logger,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -93,14 +92,13 @@ import { createUnavailableProviderAuthService } from "./subscriptions/unavailabl
 import { createStorageService } from "./storage/storage-service.ts";
 import {
   GOAL_FORMULATION_DEFAULTS,
-  GOAL_VERIFICATION_DEFAULTS,
   type GoalAgentRunInput,
   type GoalAgentRunResult,
-  type GoalVerificationInput,
-  type GoalVerificationPolicy,
-  type GoalVerificationRunResult,
 } from "@clarvis/goal";
 import { createKernelGoalAgentRuntime } from "./goals/agent-runtime.ts";
+import { createStewardExecutionRuntime } from "./goals/steward-runtime.ts";
+import type { StewardExecutionRuntime } from "./goals/steward-coordinator.ts";
+import { stewardDigest } from "./goals/steward-input.ts";
 
 /**
  * The kernel services whose data belongs to one owner.
@@ -197,15 +195,16 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   /** Canonical evidence for host-owned capabilities; raw trace authority is never a protocol service. */
   readRunTrace(executionId: string, owner?: string): readonly TraceEvent[] | undefined;
   /** Build the host-owned isolated Goal formulation runtime for one authenticated owner. */
-  goalAgentRuntime(
-    owner?: string,
-    trackModel?: (provider: LLMProvider) => LLMProvider,
-  ): {
+  goalAgentRuntime(owner?: string): {
     workspaceReadAvailable: boolean;
     run(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
-    verify(input: GoalVerificationInput): Promise<GoalVerificationRunResult>;
-    verification: GoalVerificationPolicy;
   };
+  /** Host-only isolated runtime; token allowance comes from the admitted work request. */
+  goalStewardRuntime(
+    workTokenLimit: number,
+    ttl: "5m" | "1h",
+    owner?: string,
+  ): StewardExecutionRuntime;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
   /** Begin durable memory-queue recovery after the host's critical boot path. */
@@ -1017,7 +1016,60 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       residentOwner(owner, false).prepareRun(params, goal),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
-    goalAgentRuntime(owner = defaultOwner, trackModel) {
+    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {
+      const merged = structuredClone(opts.configStore.readSettings().merged) as Record<
+        string,
+        unknown
+      >;
+      const goals = (merged.goals ?? {}) as {
+        agent?: { model?: string; steward?: { model?: string } };
+      };
+      const model =
+        goals.agent?.steward?.model ??
+        goals.agent?.model ??
+        merged.default_model ??
+        opts.assemblerOptions?.defaultModel;
+      if (typeof model !== "string")
+        throw kernelError("invalid_request", "Goal Steward requires a configured model");
+      return createStewardExecutionRuntime({
+        owner: residentOwner(owner, false).stateOwner,
+        model,
+        providers:
+          runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
+            ? (merged.providers as ProviderConfig[])
+            : [],
+        deps: runDeps,
+        executeRun,
+        settings: goals.agent ?? {},
+        workTokenLimit,
+        promptCacheTtl: ttl,
+        configurationGeneration: stewardDigest({
+          global_revision: opts.configStore.readSettingsDocument("global")?.revision,
+          workspace_revision: opts.configStore.readSettingsDocument("workspace")?.revision,
+          goals,
+          providers: (Array.isArray(merged.providers)
+            ? (merged.providers as ProviderConfig[])
+            : []
+          ).map((provider) => ({
+            name: provider.name,
+            kind: provider.kind,
+            models: Object.fromEntries(
+              Object.entries(provider.models ?? {}).map(([name, value]) => [
+                name,
+                {
+                  context_window_tokens: value.context_window_tokens,
+                  max_output_tokens: value.max_output_tokens,
+                  capabilities: value.capabilities,
+                  reasoning_efforts: value.reasoning_efforts,
+                  prompt_cache: value.prompt_cache,
+                },
+              ]),
+            ),
+          })),
+        }),
+      });
+    },
+    goalAgentRuntime(owner = defaultOwner) {
       const merged = opts.configStore.readSettings().merged as Record<string, unknown>;
       const goalSettings =
         typeof merged.goals === "object" && merged.goals !== null
@@ -1046,42 +1098,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
           ? runBudget.total_token_limit
           : (opts.assemblerOptions?.fallbackTokenLimit ??
             runDeps.env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT);
-      const verificationSettings =
-        typeof agentSettings.verification === "object" && agentSettings.verification !== null
-          ? (agentSettings.verification as Partial<GoalVerificationPolicy>)
-          : {};
-      const verification: GoalVerificationPolicy = {
-        stage_token_limit: Math.min(
-          verificationSettings.stage_token_limit ?? GOAL_VERIFICATION_DEFAULTS.stage_token_limit,
-          runDeps.env.CLARVIS_TOKEN_CEILING,
-        ),
-        attempt_token_limit: Math.min(
-          verificationSettings.attempt_token_limit ??
-            GOAL_VERIFICATION_DEFAULTS.attempt_token_limit,
-          runDeps.env.CLARVIS_TOKEN_CEILING,
-        ),
-        max_attempts: Math.min(
-          verificationSettings.max_attempts ?? GOAL_VERIFICATION_DEFAULTS.max_attempts,
-          GOAL_VERIFICATION_DEFAULTS.max_attempts,
-        ),
-        iteration_limit: Math.min(
-          verificationSettings.iteration_limit ?? GOAL_VERIFICATION_DEFAULTS.iteration_limit,
-          runDeps.env.CLARVIS_ITERATION_CEILING,
-        ),
-        timeout_ms: Math.min(
-          verificationSettings.timeout_ms ?? GOAL_VERIFICATION_DEFAULTS.timeout_ms,
-          runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
-        ),
-        call_timeout_ms: Math.min(
-          verificationSettings.call_timeout_ms ?? GOAL_VERIFICATION_DEFAULTS.call_timeout_ms,
-          runDeps.env.CLARVIS_TIMEOUT_CEILING_MS,
-          runDeps.env.CLARVIS_RETRY_AFTER_CEILING_MS,
-        ),
-        max_retries: Math.min(
-          GOAL_VERIFICATION_DEFAULTS.max_retries,
-          runDeps.env.CLARVIS_RETRY_CEILING,
-        ),
-      };
       return {
         workspaceReadAvailable:
           runDeps.env.CLARVIS_AGENT_TOOLS_ENABLED === true &&
@@ -1130,24 +1146,6 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
               ),
             },
           });
-        },
-        verification,
-        verify: (input) => {
-          if (configuredModel === undefined)
-            throw kernelError(
-              "invalid_request",
-              "Goal agent has no model and no default_model is set",
-            );
-          return createKernelGoalAgentRuntime({
-            owner: residentOwner(owner, false).stateOwner,
-            model: configuredModel,
-            providers:
-              runDeps.modelExecutionResolver === undefined && Array.isArray(merged.providers)
-                ? (merged.providers as ProviderConfig[])
-                : [],
-            deps: trackModel === undefined ? runDeps : { ...runDeps, llm: trackModel(runDeps.llm) },
-            executeRun,
-          }).verify(input);
         },
       };
     },

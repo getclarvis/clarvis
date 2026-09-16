@@ -1,12 +1,5 @@
 import type { ProviderConfig } from "@clarvis/capability";
-import {
-  runGoalAgent,
-  runGoalVerification,
-  type GoalAgentRunInput,
-  type GoalAgentRunResult,
-  type GoalVerificationInput,
-  type GoalVerificationRunResult,
-} from "@clarvis/goal";
+import { runGoalAgent, type GoalAgentRunInput, type GoalAgentRunResult } from "@clarvis/goal";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import type { RunExecutor } from "../runs/run-service.ts";
 
@@ -22,7 +15,6 @@ export interface KernelGoalAgentRuntimeOptions {
 export function createKernelGoalAgentRuntime(options: KernelGoalAgentRuntimeOptions): {
   workspaceReadAvailable: boolean;
   run(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
-  verify(input: GoalVerificationInput): Promise<GoalVerificationRunResult>;
 } {
   const tools = (options.deps.capabilities ?? []).filter(
     (capability) => capability.name === "tools",
@@ -37,17 +29,6 @@ export function createKernelGoalAgentRuntime(options: KernelGoalAgentRuntimeOpti
     workspaceReadAvailable,
     run: (input) =>
       runGoalAgent(
-        {
-          owner: options.owner,
-          model_ref: options.model,
-          providers: options.providers,
-          execute_run: options.executeRun,
-          deps,
-        },
-        input,
-      ),
-    verify: (input) =>
-      runGoalVerification(
         {
           owner: options.owner,
           model_ref: options.model,

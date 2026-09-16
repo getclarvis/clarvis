@@ -1,3 +1,4 @@
+import { stewardResponse } from "../helpers/steward-response.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -55,77 +56,17 @@ async function fixture(
     async fetch(request) {
       const wire = (await request.json()) as {
         prompt_cache_key: string;
-        messages?: Array<{ content?: unknown }>;
+        messages: Array<{ role: string; content?: unknown }>;
       };
-      let verificationIds: string[] | undefined;
-      for (const message of [...(wire.messages ?? [])].reverse()) {
-        if (typeof message.content !== "string") continue;
-        try {
-          const payload = JSON.parse(message.content) as {
-            required_targets?: { qualitative_criterion_ids?: unknown };
-          };
-          if (
-            Array.isArray(payload.required_targets?.qualitative_criterion_ids) &&
-            payload.required_targets.qualitative_criterion_ids.every((id) => typeof id === "string")
-          ) {
-            verificationIds = payload.required_targets.qualitative_criterion_ids;
-            break;
-          }
-        } catch {
-          continue;
-        }
-      }
-      const result =
-        verificationIds === undefined
-          ? await responder.call({
-              model: "test",
-              provider: "fixture",
-              messages: [],
-              tools: [],
-              promptCacheKey: wire.prompt_cache_key,
-            })
-          : {
-              toolCalls: [
-                {
-                  id: "verification-result",
-                  name: "submit_result",
-                  arguments: {
-                    verdict: "achieved",
-                    summary: "Controlled verifier passed",
-                    assessments: [
-                      {
-                        scope: "definition",
-                        verdict: "satisfied",
-                        rationale: "Definition passed",
-                        evidence_ids: [],
-                        inspected_paths: [],
-                      },
-                      {
-                        scope: "objective",
-                        verdict: "satisfied",
-                        rationale: "Objective passed",
-                        evidence_ids: [],
-                        inspected_paths: [],
-                      },
-                      ...verificationIds.map((criterion_id) => ({
-                        scope: "criterion",
-                        criterion_id,
-                        verdict: "satisfied",
-                        rationale: "Criterion passed",
-                        evidence_ids: [],
-                        inspected_paths: [],
-                      })),
-                    ],
-                  },
-                },
-              ],
-              usage: {
-                input_tokens: 1,
-                output_tokens: 1,
-                cached_tokens: 0,
-                cache_write_tokens: 0,
-              },
-            };
+      const result = wire.prompt_cache_key?.endsWith("_goal-steward")
+        ? stewardResponse(wire.messages)
+        : await responder.call({
+            model: "test",
+            provider: "fixture",
+            messages: [],
+            tools: [],
+            promptCacheKey: wire.prompt_cache_key,
+          });
       const calls = result.toolCalls ?? [];
       const chunk = {
         id: "file-host-fixture",

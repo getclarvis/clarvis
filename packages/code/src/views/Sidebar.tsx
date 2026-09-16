@@ -19,7 +19,7 @@ import { taskTone } from "./blocks.tsx";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
 import type { GoalController } from "../features/goal/controller.ts";
 import type { GoalRecord } from "@clarvis/protocol";
-import { goalStatusPresentation } from "../features/goal/presentation.ts";
+import { goalStatusPresentation, stewardStatusLabel } from "../features/goal/presentation.ts";
 
 const CONTEXT_WIDTH = 16;
 export const PLAN_SIDEBAR_TASK_LIMIT = 12;
@@ -453,14 +453,23 @@ export function Sidebar(props: {
               {(goal: Accessor<GoalRecord>) => {
                 const status = () => goalStatusPresentation(goal().status);
                 return (
-                  <text fg={status().color} wrapMode="none" truncate>
-                    <span>{`${status().label} ${glyph("separator")} ${goal().runs.length} stage${goal().runs.length === 1 ? "" : "s"}`}</span>
-                    <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
-                    <span style={{ fg: tokens.accent }}>
-                      <b>{`[${compactKey("ctrl+o")}]`}</b>
-                    </span>
-                    <span style={{ fg: tokens.muted }}> full Goal</span>
-                  </text>
+                  <box flexDirection="column">
+                    <text fg={status().color} wrapMode="none" truncate>
+                      <span>{`${status().label} ${glyph("separator")} ${goal().runs.length} stage${goal().runs.length === 1 ? "" : "s"}`}</span>
+                      <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
+                      <span style={{ fg: tokens.accent }}>
+                        <b>{`[${compactKey("ctrl+o")}]`}</b>
+                      </span>
+                      <span style={{ fg: tokens.muted }}> full goal</span>
+                    </text>
+                    <Show when={stewardStatusLabel(goal())}>
+                      <text
+                        fg={tokens.muted}
+                        wrapMode="none"
+                        truncate
+                      >{`Steward  ${stewardStatusLabel(goal())}`}</text>
+                    </Show>
+                  </box>
                 );
               }}
             </Show>

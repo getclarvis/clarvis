@@ -1,4 +1,9 @@
-import type { FinalizeAttempt, Logger } from "@clarvis/capability";
+import type { Logger, OperatorReviewContextProvider } from "@clarvis/capability";
+import type {
+  GoalStewardCompletionDecision,
+  GoalStewardFinalizeAttempt,
+  GoalStewardIntervention,
+} from "./agent/steward-types.ts";
 import type { GoalCheckpoint, GoalEvidenceRef, GoalRecord, GoalState } from "./schemas.ts";
 import type { GoalCompletionValidation } from "./criteria.ts";
 import type { GoalCandidateInput, GoalCheckpointInput, GoalProgressInput } from "./model-input.ts";
@@ -45,23 +50,24 @@ export interface GoalEvidenceOption extends GoalEvidenceRef {
 export interface GoalRuntimePort {
   readonly binding: GoalRuntimeBinding;
   readonly logger?: Logger;
+  readonly steward?: GoalStewardPort;
   read(signal?: AbortSignal): Promise<GoalRuntimeSnapshot>;
   progress(input: GoalProgressInput, signal?: AbortSignal): Promise<void>;
   checkpoint(input: GoalCheckpointInput, signal?: AbortSignal): Promise<GoalCheckpoint>;
   candidate(input: GoalCandidateInput, signal?: AbortSignal): Promise<GoalCompletionValidation>;
   /** Deterministic candidate and host/human evidence validation; this never invokes a model. */
   validateCompletion(signal?: AbortSignal): Promise<GoalCompletionValidation>;
-  /** Independently verify one exact proposed final result and persist its fenced audit. */
-  verifyCompletion(
-    attempt: Exclude<FinalizeAttempt, { mode: "checkpoint" }>,
-    signal?: AbortSignal,
-  ): Promise<
-    GoalCompletionValidation & {
-      verdict?: "achieved" | "not_achieved" | "inconclusive";
-      verification_execution_id?: string;
-    }
-  >;
-  /** Read an already persisted achieved proof for the exact physically settled result. */
-  readCompletionProof(result: unknown, signal?: AbortSignal): Promise<GoalCompletionValidation>;
   blocked(reason: string, signal?: AbortSignal): Promise<void>;
+}
+
+/** Host attestation only; the Goal capability owns notes and finalization gate policy. */
+export interface GoalStewardPort {
+  bindReviewContext(provider: OperatorReviewContextProvider): void;
+  scheduleObservation(): void;
+  takeReadyIntervention(signal?: AbortSignal): Promise<GoalStewardIntervention | undefined>;
+  reviewCompletion(
+    attempt: GoalStewardFinalizeAttempt,
+    signal?: AbortSignal,
+  ): Promise<GoalStewardCompletionDecision>;
+  closeCoordinator(): Promise<void>;
 }

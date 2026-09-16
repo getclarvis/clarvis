@@ -524,7 +524,7 @@ test("Ctrl+O toggles Goal detail from the partial sidebar and back to the transc
     await goals.refresh();
     const t = await mountApp(defaultProps({ goals }));
     press(t, "l", { ctrl: true });
-    let frame = await captureUntil(t, "[^o] full Goal");
+    let frame = await captureUntil(t, "[^o] full goal");
     expect(frame).toContain("Keep the Goal visible");
     expect(frame).toContain("[^l] close");
     expect(frame).not.toContain("open Goal");
@@ -533,7 +533,7 @@ test("Ctrl+O toggles Goal detail from the partial sidebar and back to the transc
     expect(frame).toContain("Running · 0 stages · literal");
     expect(frame).not.toContain("One objective for this conversation");
     press(t, "o", { ctrl: true });
-    frame = await captureUntil(t, "[^o] full Goal");
+    frame = await captureUntil(t, "[^o] full goal");
     expect(frame).toContain("Keep the Goal visible");
     expect(frame).toContain("[^l] close");
     expect(frame).not.toContain("open Goal");

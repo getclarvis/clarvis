@@ -81,33 +81,6 @@ export interface GoalProgress {
 export type GoalUsage =
   { kind: "unknown" } | { kind: "measured"; input: number; output: number; cached?: number };
 
-export type GoalVerificationVerdict = "achieved" | "not_achieved" | "inconclusive";
-
-export interface GoalVerificationAssessment {
-  scope: "definition" | "objective" | "criterion";
-  criterion_id?: string;
-  verdict: "satisfied" | "unsatisfied" | "inconclusive";
-  rationale: string;
-  evidence_ids: string[];
-  inspected_paths: string[];
-}
-
-export interface GoalVerification {
-  verification_execution_id: string;
-  control_revision: number;
-  objective_revision: number;
-  definition_digest: string;
-  candidate_digest: string;
-  final_attempt_digest: string;
-  evidence_digest: string;
-  verdict: GoalVerificationVerdict;
-  summary: string;
-  assessments: GoalVerificationAssessment[];
-  inspected_artifacts: GoalDefinitionSource[];
-  usage: GoalUsage;
-  verified_at: number;
-}
-
 export interface GoalRun {
   execution_id: string;
   admission_id: string;
@@ -124,7 +97,59 @@ export interface GoalRun {
   checkpoint?: GoalCheckpoint;
   progress?: GoalProgress;
   candidate?: GoalCandidate;
-  verifications: GoalVerification[];
+  steward_reviews?: GoalStewardReview[];
+  steward_review_count?: number;
+  steward_intervention_count?: number;
+}
+
+/** Bounded audit only; prompts, tool exchanges and pending decisions remain host-private. */
+export interface GoalStewardReview {
+  steward_execution_id: string;
+  mode: "observation" | "completion";
+  goal_id: string;
+  work_execution_id: string;
+  control_revision: number;
+  objective_revision: number;
+  definition_digest: string;
+  trajectory_digest: string;
+  plan_context_revision: string;
+  operator_steering_epoch: number;
+  candidate_digest?: string;
+  final_attempt_digest?: string;
+  evidence_digest: string;
+  decision: "aligned" | "steer" | "new_run" | "achieved" | "not_achieved" | "inconclusive";
+  summary: string;
+  guidance?: string;
+  next_step?: string;
+  inspected_artifacts: GoalDefinitionSource[];
+  usage: GoalUsage;
+  reviewed_at: number;
+}
+
+export interface GoalStewardChainState {
+  last_steward_execution_id?: string;
+  pending_execution_id?: string;
+  trajectory_digest?: string;
+  operator_steering_epoch?: number;
+  last_consumed_work_sequence: number;
+  runtime_fingerprint: string;
+  prompt_cache_ttl: "5m" | "1h";
+  status:
+    | "idle"
+    | "observing"
+    | "aligned"
+    | "intervened"
+    | "new_run_recommended"
+    | "verifying"
+    | "verified"
+    | "attention";
+  consumption: {
+    input: number;
+    output: number;
+    cached?: number;
+    net_tokens: number;
+    usage_unknown: boolean;
+  };
 }
 
 /** Bounded host-owned audit record; a completion candidate is not a completion commit. */
@@ -141,6 +166,7 @@ export interface GoalRecord {
   assumptions: string[];
   sources: GoalDefinitionSource[];
   origin: GoalOrigin;
+  steward?: GoalStewardChainState;
   status: GoalStatus;
   reason?: string;
   created_at: number;

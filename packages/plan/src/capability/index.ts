@@ -24,7 +24,7 @@ import type {
 } from "@clarvis/capability";
 import {
   NOOP_LOGGER,
-  OPERATOR_REVIEW_CONTEXT_PORT,
+  PLANS_REVIEW_CONTEXT_PORT,
   TOOL_EFFECT_PORT,
   bestEffort,
   bind,
@@ -235,10 +235,15 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
           return port;
         },
       });
-      ctx.services.provide(OPERATOR_REVIEW_CONTEXT_PORT, {
+      ctx.services.provide(PLANS_REVIEW_CONTEXT_PORT, {
         snapshot: () => {
-          const context = planReviewContext(planSession.cached());
-          return context === undefined ? [] : [context];
+          const document = planSession.cached();
+          const context = planReviewContext(document);
+          return {
+            revision:
+              document === undefined ? "absent" : `${document.id}:${document.spec_revision}`,
+            contexts: context === undefined ? [] : [context],
+          };
         },
       });
 

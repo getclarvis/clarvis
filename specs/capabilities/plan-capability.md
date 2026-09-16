@@ -28,11 +28,12 @@ delegation capability consults — all assembled by `buildPlansOrchestration`
 (`packages/plan/src/capability/session.ts`), the run-lifetime object that mediates every read and
 compare-and-swap write against the plan store.
 
-The capability also publishes `OPERATOR_REVIEW_CONTEXT_PORT`. Its snapshot contains only stable
+The capability also publishes `PLANS_REVIEW_CONTEXT_PORT`. Its atomically revisioned snapshot contains only stable
 Plan substance: title, objective, context, task title/detail/exit fields and validation. It excludes
 status, assignees, progress, outcomes, revisions, timestamps, paths and digests. Auto Guard can
 therefore interpret routine bounded prerequisites against the intended implementation path without
-turning task transitions into changing reviewer context. Production: `planReviewContext` and
+turning task transitions into changing reviewer context. Auto Guard rechecks the snapshot revision
+after inference and refuses stale decisions. Production: `planReviewContext` and
 `createPlansCapability` in `packages/plan/src/capability/`. Test: `createPlansCapability — reviewer
 context` in `packages/plan/tests/component/plan-capability-gating.test.ts`.
 

@@ -16,6 +16,7 @@ import {
   recordGoalCheckpoint,
   recordGoalProgress,
   type GoalRuntimePort,
+  type GoalStewardCompletionDecision,
 } from "../../src/index.ts";
 
 function fixture(overrides: Partial<GoalRuntimePort> = {}) {
@@ -114,22 +115,6 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
         revision: state.current!.revision,
       };
     },
-    verifyCompletion: async () => {
-      calls.push("validate");
-      return {
-        valid: completionValid,
-        reasons: completionValid ? [] : ["Independent verification did not establish completion"],
-        qualitative_criteria: ["objective"],
-        revision: state.current!.revision,
-        verdict: completionValid ? "achieved" : "not_achieved",
-      };
-    },
-    readCompletionProof: async () => ({
-      valid: completionValid,
-      reasons: completionValid ? [] : ["No achieved proof"],
-      qualitative_criteria: ["objective"],
-      revision: state.current!.revision,
-    }),
     blocked: async (reason) => {
       calls.push("blocked");
       state.current!.status = "blocked";
@@ -626,4 +611,79 @@ describe("host-bound goal capability", () => {
       result: { error: { code: "goal_control_failed" } },
     });
   });
+});
+
+it("routes Steward completion decisions and respects pending operator steering", async () => {
+  let decision: GoalStewardCompletionDecision = {
+    kind: "achieved",
+    review_id: "review",
+  };
+  let throws = false;
+  let pending = false;
+  const f = fixture({
+    steward: {
+      bindReviewContext: () => undefined,
+      scheduleObservation: () => undefined,
+      takeReadyIntervention: async () => undefined,
+      closeCoordinator: async () => undefined,
+      reviewCompletion: async () => {
+        if (throws) throw new Error("Unavailable");
+        return decision;
+      },
+    },
+  });
+  f.bc.steerProbe = () => pending;
+  f.allowCompletion();
+  const c = await f.attach();
+  const gate = c.gates![0]!;
+  expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
+  decision = { kind: "not_achieved", review_id: "review", next_step: "Run tests" };
+  expect(await gate.check({ mode: "submit", value: { done: true } })).toMatchObject({
+    kind: "nudge",
+    note: "[goal steward] Run tests",
+  });
+  for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
+    decision = { kind: "inconclusive", review_id: "review", reason };
+    expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: reason } },
+    });
+  }
+  throws = true;
+  expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+    kind: "terminal",
+    result: { error: { code: "goal_steward_failed" } },
+  });
+  expect(await gate.check({ mode: "text", text: "x".repeat(128 * 1024) })).toMatchObject({
+    kind: "terminal",
+    result: { error: { code: "goal_steward_inconclusive" } },
+  });
+  pending = true;
+  expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
+});
+
+it("delivers Steward interventions only at an iteration boundary", async () => {
+  let kind: "steer" | "new_run" = "steer";
+  const notes: string[] = [];
+  const f = fixture({
+    steward: {
+      bindReviewContext: () => undefined,
+      scheduleObservation: () => undefined,
+      closeCoordinator: async () => undefined,
+      reviewCompletion: async () => ({ kind: "achieved", review_id: "review" }),
+      takeReadyIntervention: async () =>
+        kind === "steer"
+          ? { kind, guidance: "Verify output" }
+          : { kind, next_step: "Finish tests" },
+    },
+  });
+  f.bc.ctx.appendNote = (note) => {
+    notes.push(note);
+  };
+  const c = await f.attach();
+  await c.hooks!.beforeIteration!();
+  kind = "new_run";
+  await c.hooks!.beforeIteration!();
+  expect(notes[0]).toBe("[goal steward] Verify output");
+  expect(notes[1]).toContain("checkpoint");
 });

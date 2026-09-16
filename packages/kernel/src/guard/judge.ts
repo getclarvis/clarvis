@@ -18,7 +18,11 @@ import type {
 } from "@clarvis/loop";
 import { GUARD_REVIEW_AGENT_INSTANCE_ID } from "./reviewer-policy.ts";
 import { callReviewerWithTrace, reviewerFailureKind } from "./reviewer-trace.ts";
-import { reviewerContextPayload } from "./review-context.ts";
+import {
+  reviewerContextIsCurrent,
+  reviewerContextSnapshot,
+  type ReviewerContextSnapshot,
+} from "./review-context.ts";
 
 const DEFAULT_JUDGE_TIMEOUT_MS = 20_000;
 const DECIDE_TOOL_NAME = "decide";
@@ -177,9 +181,10 @@ export function createJudgeElicit(
 
   const review = async (
     req: ElicitRequest,
+    state: ReturnType<OperatorAuthorityReader["snapshot"]> | undefined,
+    reviewContext: ReviewerContextSnapshot,
   ): Promise<{ answer: JudgeElicitAnswer; cache: boolean }> => {
     const authority = deps.authority;
-    const state = authority?.snapshot();
     if (authority === undefined || state?.status !== "active" || state.evidence.length === 0)
       return {
         answer: await fallback(req, "Automatic review has no authenticated operator evidence."),
@@ -198,11 +203,7 @@ export function createJudgeElicit(
         : []),
       {
         role: "user",
-        content: callFacts(
-          req,
-          state.evidence,
-          reviewerContextPayload(state.review_context, deps.reviewContext),
-        ),
+        content: callFacts(req, state.evidence, reviewContext.payload),
       },
     ];
     const stableGuidanceIndex = messages.length === 3 ? 1 : undefined;
@@ -254,6 +255,11 @@ export function createJudgeElicit(
         answer: await fallback(req, "Operator authority changed during automatic command review."),
         cache: false,
       };
+    if (!reviewerContextIsCurrent(deps.reviewContext, reviewContext.live_revision))
+      return {
+        answer: await fallback(req, "Plan context changed during automatic command review."),
+        cache: false,
+      };
     if (verdict?.decision === "allow")
       return { answer: { allowed: true, answerer: "judge" }, cache: true };
     if (verdict?.decision === "deny")
@@ -280,17 +286,15 @@ export function createJudgeElicit(
 
   return (req) => {
     const state = deps.authority?.snapshot();
+    const reviewContext = reviewerContextSnapshot(state?.review_context, deps.reviewContext);
     const key = JSON.stringify([
       state?.revision,
-      callFacts(
-        req,
-        state?.evidence ?? [],
-        reviewerContextPayload(state?.review_context, deps.reviewContext),
-      ),
+      reviewContext.live_revision,
+      callFacts(req, state?.evidence ?? [], reviewContext.payload),
     ]);
     const cached = verdicts.get(key);
     if (cached !== undefined) return cached;
-    const result = review(req).then(
+    const result = review(req, state, reviewContext).then(
       ({ answer, cache }) => {
         if (!cache) verdicts.delete(key);
         return answer;

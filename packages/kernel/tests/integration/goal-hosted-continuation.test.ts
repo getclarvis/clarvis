@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCapabilityRegistry, loadEnv, type Capability } from "@clarvis/capability";
@@ -144,62 +144,6 @@ async function fixture(
             await options.beforeEvidence?.(goal);
             return evidence.snapshot(goal);
           },
-        },
-        verification: {
-          workspaceRoot: root,
-          workspaceReadAvailable: false,
-          policy: {
-            stage_token_limit: 32_000,
-            attempt_token_limit: 16_000,
-            max_attempts: 3,
-            iteration_limit: 6,
-            timeout_ms: 90_000,
-            call_timeout_ms: 60_000,
-            max_retries: 1,
-          },
-          createRuntime: () => ({
-            async verify(input) {
-              const payload = JSON.parse(input.projection) as {
-                required_targets: { qualitative_criterion_ids: string[] };
-              };
-              return {
-                execution_id: input.execution_id,
-                result: {
-                  verdict: "achieved",
-                  summary: "Controlled independent verification passed",
-                  assessments: [
-                    {
-                      scope: "definition",
-                      verdict: "satisfied",
-                      rationale: "Definition fidelity passed",
-                      evidence_ids: [],
-                      inspected_paths: [],
-                    },
-                    {
-                      scope: "objective",
-                      verdict: "satisfied",
-                      rationale: "Objective passed",
-                      evidence_ids: [],
-                      inspected_paths: [],
-                    },
-                    ...payload.required_targets.qualitative_criterion_ids.map((criterion_id) => ({
-                      scope: "criterion" as const,
-                      criterion_id,
-                      verdict: "satisfied" as const,
-                      rationale: "Criterion passed",
-                      evidence_ids: [],
-                      inspected_paths: [],
-                    })),
-                  ],
-                },
-                usage: { kind: "measured", input: 0, output: 0, cached: 0 },
-                elapsed_ms: 0,
-              };
-            },
-          }),
-          readRun: async () => null,
-          readTrace: () => [],
-          readFile: async (path) => ({ path, content: await readFile(join(root, path), "utf8") }),
         },
         async prepareExecution(policy) {
           const raw: RunRequest = {
@@ -726,9 +670,9 @@ describe("goals through real hosted continuation, loop and SDK", () => {
     expect(state.current!.runs.map((run) => run.automatic)).toEqual([false, true, true]);
     expect(f.starts).toHaveLength(3);
     expect(f.bounded.map((body) => body.budget)).toEqual([
-      { total_token_limit: 5000, on_exceed: "stop" },
-      { total_token_limit: 4890, on_exceed: "stop" },
-      { total_token_limit: 4780, on_exceed: "stop" },
+      { total_token_limit: 10000, on_exceed: "stop" },
+      { total_token_limit: 9780, on_exceed: "stop" },
+      { total_token_limit: 9560, on_exceed: "stop" },
     ]);
     const saved = (await f.base.get("session"))!;
     expect(saved.totals).toMatchObject({ input: 4000, cached: 3200, output: 80 });

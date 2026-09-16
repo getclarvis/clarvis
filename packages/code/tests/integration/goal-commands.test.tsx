@@ -376,46 +376,6 @@ test("saving an unchanged goal review closes without a host mutation", async () 
 test("goal detail keeps actionable review state compact and accepts a pending human criterion", async () => {
   const run = {
     ...goalRun("stage-1", "closed"),
-    verifications: [
-      {
-        verification_execution_id: "verification-1",
-        control_revision: 1,
-        objective_revision: 1,
-        definition_digest: "a".repeat(64),
-        candidate_digest: "b".repeat(64),
-        final_attempt_digest: "c".repeat(64),
-        evidence_digest: "d".repeat(64),
-        verdict: "not_achieved" as const,
-        summary: "Independent review found one missing result",
-        assessments: [
-          {
-            scope: "definition" as const,
-            verdict: "satisfied" as const,
-            rationale: "Definition is faithful",
-            evidence_ids: [],
-            inspected_paths: [],
-          },
-          {
-            scope: "objective" as const,
-            verdict: "unsatisfied" as const,
-            rationale: "Observable result is incomplete",
-            evidence_ids: [],
-            inspected_paths: [],
-          },
-          {
-            scope: "criterion" as const,
-            criterion_id: "artifact",
-            verdict: "inconclusive" as const,
-            rationale: "Artifact could not be established",
-            evidence_ids: [],
-            inspected_paths: [],
-          },
-        ],
-        inspected_artifacts: [],
-        usage: { kind: "measured" as const, input: 10, output: 2, cached: 0 },
-        verified_at: 2,
-      },
-    ],
     progress: { summary: "Implementation completed", evidence: [] },
     checkpoint: {
       summary: "Stage verified",
@@ -474,12 +434,7 @@ test("goal detail keeps actionable review state compact and accepts a pending hu
   expect(frame).toContain("Budget 225 / 10k tokens · 2 / 8 continuations");
   expect(frame).not.toContain("usage incomplete");
   expect(frame).not.toContain("cache estimated");
-  expect(frame).toContain("Review · not achieved");
-  expect(frame).toContain("objective · unsatisfied — Observable result is incomplete");
-  expect(frame).toContain("artifact · inconclusive — Artifact could not be established");
   expect(frame).not.toContain("All automated checks passed");
-  expect(frame).not.toContain("verification-1");
-  expect(frame).not.toContain("fenced audit evidence");
 
   f.keys.press("a");
   await rendered.renderOnce();
@@ -615,4 +570,52 @@ test("unknown physical work remains visible and prevents review without a hosted
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("Edit goal");
   expect(f.requests).toHaveLength(0);
+});
+
+test("Goal view exposes bounded Steward state without technical identifiers", async () => {
+  const run = goalRun("private-work-id");
+  run.steward_review_count = 2;
+  run.steward_intervention_count = 1;
+  run.steward_reviews = [
+    {
+      steward_execution_id: "private-steward-id",
+      mode: "observation",
+      goal_id: "goal-fixture",
+      work_execution_id: "private-work-id",
+      control_revision: 1,
+      objective_revision: 1,
+      definition_digest: "a".repeat(64),
+      trajectory_digest: "b".repeat(64),
+      plan_context_revision: "private-revision",
+      operator_steering_epoch: 0,
+      evidence_digest: "c".repeat(64),
+      decision: "steer",
+      summary: "Result still needs verification",
+      guidance: "Verify the final artifact",
+      inspected_artifacts: [],
+      usage: { kind: "measured", input: 10, output: 5, cached: 0 },
+      reviewed_at: 1,
+    },
+  ];
+  const f = fixture(
+    goalView({
+      runs: [run],
+      steward: {
+        last_consumed_work_sequence: 1,
+        runtime_fingerprint: "a".repeat(64),
+        prompt_cache_ttl: "5m",
+        status: "intervened",
+        consumption: { input: 10, output: 5, cached: 0, net_tokens: 15, usage_unknown: false },
+      },
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Steward");
+  expect(frame).toContain("Result still needs verification");
+  expect(frame).toContain("Verify the final artifact");
+  expect(frame).not.toContain("private-work-id");
+  expect(frame).not.toContain("private-steward-id");
 });

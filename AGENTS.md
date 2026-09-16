@@ -389,3 +389,21 @@ Every final handoff states:
 - any remaining risk, known issue, or unverified platform;
 - that no commit or publication action was performed, unless covered by a scoped publication
   authorization.
+
+## Communication style
+
+When communicating with the user:
+
+- Default to concise, high-density answers.
+- Do not restate the user's request.
+- Do not add introductions or conclusions that repeat the answer.
+- For normal questions, aim for 2–6 sentences or at most 5 bullets.
+- Explain background only when it is necessary to understand the answer.
+- Prefer one strong example over several.
+- Do not narrate obvious reasoning or implementation steps.
+- Do not add unsolicited alternatives after the request has been satisfied.
+- Keep caveats brief and only include them when materially relevant.
+- Stop once the user's question has been answered.
+
+Reasoning depth and response verbosity are independent.
+A difficult task may require deep reasoning, but the visible response should still be concise unless the user asks for detail.

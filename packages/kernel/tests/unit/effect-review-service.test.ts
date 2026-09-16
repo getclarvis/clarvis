@@ -485,6 +485,42 @@ describe("host-validated effect review", () => {
     expect((await service.review(batch, {}, "command_guard")).decision).toBe("unsure");
     expect(ledger.reader.snapshot().envelope).toBeUndefined();
   });
+  test("a concurrent Plan revision invalidates compilation before authority is installed", async () => {
+    const { envelope, ledger, registry, batch } = fixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let planRevision = "plan:1";
+    const service = createEffectReviewService({
+      authority: ledger.reader,
+      reviewContext: {
+        snapshot: () => ({
+          revision: planRevision,
+          contexts: [
+            {
+              kind: "plan",
+              content: JSON.stringify({ objective: `Objective ${planRevision}` }),
+            },
+          ],
+        }),
+      },
+      registry,
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+      defaultModel: "anthropic/test",
+      llm: {
+        async call() {
+          entered.resolve();
+          await release.promise;
+          return response("compile", envelope);
+        },
+      },
+    });
+    const decision = service.review(batch, {}, "command_guard");
+    await entered.promise;
+    planRevision = "plan:2";
+    release.resolve();
+    await expect(decision).resolves.toMatchObject({ decision: "unsure" });
+    expect(ledger.reader.snapshot().envelope).toBeUndefined();
+  });
   test("times out even when the provider ignores cancellation", async () => {
     const { ledger, registry, batch } = fixture();
     const service = createEffectReviewService({

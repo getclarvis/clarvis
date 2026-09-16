@@ -12,15 +12,9 @@ import {
   createGoalCapability,
   goalAdmission,
   goalDeadlineLimit,
-  goalNetTokens,
-  limitGoalForVerificationBudget,
   stopGoalContinuation,
   type GoalRepository,
   type GoalRecord,
-  type GoalUsage,
-  type GoalVerificationInput,
-  type GoalVerificationPolicy,
-  type GoalVerificationRunResult,
 } from "@clarvis/goal";
 import type { Message, RunRequest } from "@clarvis/loop";
 import type { ModelCost, RunDetail, SessionService, StartRunParams } from "@clarvis/protocol";
@@ -32,8 +26,13 @@ import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
 import { settleGoalSession } from "./settlement.ts";
-import { createGoalUsageTracker } from "./usage.ts";
-import { projectGoalVerificationInput } from "./verification-input.ts";
+import { createGoalUsageTracker, measureGoalRunUsage } from "./usage.ts";
+import { projectStewardOrigin } from "./steward-input.ts";
+import {
+  createGoalStewardCoordinator,
+  type StewardCoordinatorOptions,
+  type StewardExecutionRuntime,
+} from "./steward-coordinator.ts";
 
 /** Mandatory entry capability and finite request policy for one host-admitted stage. */
 export interface GoalExecutionPolicy {
@@ -108,22 +107,18 @@ export async function prepareHostedGoalTurn(options: {
   validateDefinitionSources?(
     sources: readonly { path: string; digest: string }[],
   ): Promise<boolean>;
-  verification?: {
-    workspaceRoot: string;
-    workspaceReadAvailable: boolean;
-    policy: GoalVerificationPolicy;
-    createRuntime(trackModel: (provider: LLMProvider) => LLMProvider): {
-      verify(input: GoalVerificationInput): Promise<GoalVerificationRunResult>;
-    };
-    readRun(executionId: string): Promise<RunDetail | null>;
-    readTrace(executionId: string): readonly TraceEvent[] | undefined;
-    readFile(path: string): Promise<{ path: string; content: string }>;
-  };
+  readRun?(executionId: string): Promise<RunDetail | null>;
   prepareExecution(policy: GoalExecutionPolicy): Promise<HostedExecutionBinding>;
   logger?: Logger;
   now?: () => number;
   priceFor?(model: string): ModelCost | undefined;
   onChange?(sessionId: string): void;
+  steward?: {
+    runtime(workTokenLimit: number, ttl: "5m" | "1h"): StewardExecutionRuntime;
+    readTrace: StewardCoordinatorOptions["readTrace"];
+    readFile: StewardCoordinatorOptions["readFile"];
+    settle: StewardCoordinatorOptions["settle"];
+  };
 }): Promise<HostedExecutionBinding> {
   const params = structuredClone(options.params);
   const initial = goalStateFromSession(options.context.session);
@@ -144,9 +139,9 @@ export async function prepareHostedGoalTurn(options: {
   const previous = goal.runs.at(-1);
   const authorityMessages = await goalAuthorityMessages(
     goal,
-    options.verification === undefined
+    options.readRun === undefined
       ? undefined
-      : (sourceExecutionId) => options.verification!.readRun(sourceExecutionId),
+      : (sourceExecutionId) => options.readRun!(sourceExecutionId),
   );
   if (
     automatic &&
@@ -160,29 +155,6 @@ export async function prepareHostedGoalTurn(options: {
     throw kernelError("conflict", "Goal continuation does not follow its settled checkpoint");
   const admission = goalAdmission(goal, now(), automatic);
   if (admission.allowed === false) throw kernelError("conflict", admission.reason);
-  const verificationReserve =
-    options.verification === undefined
-      ? 0
-      : Math.min(
-          options.verification.policy.stage_token_limit,
-          Math.floor(admission.remaining_tokens / 2),
-        );
-  const primaryTokenLimit = admission.remaining_tokens - verificationReserve;
-  if (options.verification !== undefined && (verificationReserve < 1 || primaryTokenLimit < 1)) {
-    await options.repository.transact(sessionId, (state) => ({
-      state: limitGoalForVerificationBudget(state!, {
-        goal_id: goal.goal_id,
-        control_revision: goal.control_revision,
-        reason: "Goal stage cannot reserve positive primary and verification token budgets",
-        now: now(),
-      }),
-      result: undefined,
-    }));
-    throw kernelError(
-      "resource_exhausted",
-      "Goal stage cannot reserve positive primary and verification token budgets",
-    );
-  }
   const binding = {
     session_id: sessionId,
     agent_instance_id: params.agent_instance_id,
@@ -201,9 +173,6 @@ export async function prepareHostedGoalTurn(options: {
       },
     };
   };
-  const verifier = options.verification?.createRuntime(trackWithDeadline);
-  let verificationAttempts = 0;
-  let verificationTokensRemaining = verificationReserve;
   const runtime = createGoalRuntimePort({
     repository: options.repository,
     binding,
@@ -212,57 +181,48 @@ export async function prepareHostedGoalTurn(options: {
     logger: options.logger,
     now,
     onChange: () => options.onChange?.(sessionId),
-    ...(options.verification === undefined || verifier === undefined
-      ? {}
-      : {
-          verification: {
-            project: async (currentGoal, attempt, evidence, validation) => {
-              const session = await options.sessions.get(sessionId);
-              if (session === null) throw kernelError("not_found", "Goal conversation is absent");
-              return projectGoalVerificationInput({
-                session,
-                goal: currentGoal,
-                candidate: currentGoal.candidate!,
-                attempt,
-                evidence: evidence.catalog,
-                validation,
-                workspaceRoot: options.verification!.workspaceRoot,
-                workspaceReadAvailable: options.verification!.workspaceReadAvailable,
-                readRun: (executionId) => options.verification!.readRun(executionId),
-              });
-            },
-            reserveAttempt() {
-              if (
-                verificationAttempts >= options.verification!.policy.max_attempts ||
-                verificationTokensRemaining < 1
-              )
-                return undefined;
-              verificationAttempts++;
-              return {
-                max_net_tokens: Math.min(
-                  options.verification!.policy.attempt_token_limit,
-                  verificationTokensRemaining,
-                ),
-                timeout_ms: options.verification!.policy.timeout_ms,
-                max_iterations: options.verification!.policy.iteration_limit,
-                call_timeout_ms: options.verification!.policy.call_timeout_ms,
-                max_retries: options.verification!.policy.max_retries,
-              };
-            },
-            finishAttempt(usage: GoalUsage | undefined) {
-              const used = usage === undefined ? undefined : goalNetTokens(usage);
-              verificationTokensRemaining =
-                used === undefined ? 0 : Math.max(0, verificationTokensRemaining - used);
-            },
-            run: (input) => verifier.verify(input),
-            readTrace: (executionId) => options.verification!.readTrace(executionId),
-            readFile: (path) => options.verification!.readFile(path),
-            validateDefinitionSources: async (sources) =>
-              options.validateDefinitionSources === undefined ||
-              (await options.validateDefinitionSources(sources)),
-          },
-        }),
   });
+  let stewardRuntime: StewardExecutionRuntime | undefined;
+  const stewardProvenance =
+    options.steward === undefined
+      ? undefined
+      : await projectStewardOrigin(
+          goal,
+          options.context.session,
+          options.readRun === undefined ? undefined : (id) => options.readRun!(id),
+        );
+  const steward =
+    options.steward === undefined
+      ? undefined
+      : createGoalStewardCoordinator({
+          binding,
+          repository: options.repository,
+          runtimePort: runtime,
+          runtime() {
+            if (!stewardRuntime) throw new Error("Goal Steward work budget is not admitted");
+            return stewardRuntime;
+          },
+          initialMessages: (goal.steward.last_steward_execution_id === undefined
+            ? authorityMessages
+            : automatic
+              ? []
+              : protoMessagesToEngine(params.messages ?? [])
+          ).flatMap((message) =>
+            typeof message.content === "string" && message.role === "user" ? [message.content] : [],
+          ),
+          sequenceBase: goal.steward.last_consumed_work_sequence,
+          digestBase: goal.steward.trajectory_digest,
+          epochBase: goal.steward.operator_steering_epoch,
+          recoverUsage: async (id) =>
+            measureGoalRunUsage((await options.readRun?.(id))?.result?.usage),
+          provenance: stewardProvenance,
+          signal: options.context.signal,
+          readTrace: options.steward.readTrace,
+          readFile: options.steward.readFile,
+          settle: options.steward.settle,
+          changed: () => options.onChange?.(sessionId),
+          readEvidence: (current) => options.evidence.snapshot(current),
+        });
   const stopped = async (reason: "revoked" | "superseded" | "failed"): Promise<void> => {
     if (reason === "superseded") return;
     await options.repository.transact(sessionId, (state) => ({
@@ -278,10 +238,13 @@ export async function prepareHostedGoalTurn(options: {
     }));
   };
   const policy: GoalExecutionPolicy = {
-    capability: createGoalCapability(runtime),
+    capability: createGoalCapability({ ...runtime, steward }),
     authorityMessages,
     reviewContext: goalReviewContext(goal),
-    observe: (event) => options.evidence.observe(event),
+    observe: (event) => {
+      options.evidence.observe(event);
+      steward?.observe(event);
+    },
     trackModel(provider) {
       return trackWithDeadline(provider);
     },
@@ -309,9 +272,16 @@ export async function prepareHostedGoalTurn(options: {
         throw kernelError("invalid_request", "Goal run token limit must be finite and positive");
       bounded.budget = {
         ...bounded.budget,
-        total_token_limit: Math.min(configured ?? primaryTokenLimit, primaryTokenLimit),
+        total_token_limit: Math.min(
+          configured ?? admission.remaining_tokens,
+          admission.remaining_tokens,
+        ),
         on_exceed: "stop",
       };
+      stewardRuntime ??= options.steward?.runtime(
+        bounded.budget.total_token_limit!,
+        bounded.prompt_cache_ttl ?? "5m",
+      );
       return bounded;
     },
   };
@@ -380,8 +350,12 @@ export async function prepareHostedGoalTurn(options: {
               options.validateDefinitionSources === undefined ||
               (await options.validateDefinitionSources(before.current.sources));
             if (sourcesCurrent) {
-              const validation = await runtime.readCompletionProof(result.result);
-              if (validation.valid) validationRevision = validation.revision;
+              const validation = await runtime.validateCompletion();
+              if (
+                validation.valid &&
+                (steward === undefined || (await steward.completionCurrent(result.result)))
+              )
+                validationRevision = validation.revision;
             }
           } catch (error) {
             const latest = (await options.repository.read(sessionId))?.current;

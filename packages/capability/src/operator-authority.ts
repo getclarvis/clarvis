@@ -64,13 +64,19 @@ export interface OperatorReviewContext {
 }
 
 /** Run-scoped semantic definitions that reviewers may consult without treating them as evidence. */
-export interface OperatorReviewContextProvider {
-  snapshot(): readonly OperatorReviewContext[];
+export interface OperatorReviewContextSnapshot {
+  /** Host-owned identity that changes whenever the projected semantic definitions change. */
+  revision: string;
+  contexts: readonly OperatorReviewContext[];
 }
 
-/** Late-bound semantic context published by capabilities such as Plans. */
-export const OPERATOR_REVIEW_CONTEXT_PORT: PortKey<OperatorReviewContextProvider> = {
-  id: "operator.review_context",
+export interface OperatorReviewContextProvider {
+  snapshot(): OperatorReviewContextSnapshot;
+}
+
+/** Late-bound semantic context published by the Plans capability. */
+export const PLANS_REVIEW_CONTEXT_PORT: PortKey<OperatorReviewContextProvider> = {
+  id: "plans.review_context",
 };
 
 /** Bounded host-only input, separate from the model-visible run request. */

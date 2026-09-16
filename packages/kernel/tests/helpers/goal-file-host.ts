@@ -20,25 +20,7 @@ export interface GoalFixtureRequest {
 
 export type GoalFixtureResponse = (
   { text: string } | { name: string; arguments: Record<string, unknown> }
-) & { usage?: "missing" | "no_cache" };
-
-function verificationTargets(request: GoalFixtureRequest): string[] | undefined {
-  for (const message of [...request.messages].reverse()) {
-    const content = message.content;
-    if (typeof content !== "string") continue;
-    try {
-      const payload = JSON.parse(content) as {
-        required_targets?: { qualitative_criterion_ids?: unknown };
-      };
-      const ids = payload.required_targets?.qualitative_criterion_ids;
-      if (!Array.isArray(ids) || !ids.every((id) => typeof id === "string")) continue;
-      return ids;
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
+) & { usage?: "missing" | "no_cache"; commentary?: string };
 
 /** Real file host, IPC, provider HTTP and SDK; only the provider's responses are controlled. */
 export async function createGoalFileHostFixture(
@@ -76,45 +58,14 @@ export async function createGoalFileHostFixture(
       repository: createFilePlanRepository({ workspaceRoot, lockDir: join(root, "plan-locks") }),
     });
     const requests: GoalFixtureRequest[] = [];
+    const stewardRequests: GoalFixtureRequest[] = [];
+    const stewardUsages: Array<{ input: number; output: number; cached: number }> = [];
     const usages: Array<{ input: number; output: number; cached: number }> = [];
     const errors: string[] = [];
     let respond: (request: GoalFixtureRequest) => Promise<GoalFixtureResponse> = async () => {
       throw new Error("Goal fixture responder was not installed");
     };
-    let verifyRespond = async (
-      _request: GoalFixtureRequest,
-      ids: string[],
-    ): Promise<GoalFixtureResponse> => ({
-      name: "submit_result",
-      arguments: {
-        verdict: "achieved",
-        summary: "Independent fixture verification established completion",
-        assessments: [
-          {
-            scope: "definition",
-            verdict: "satisfied",
-            rationale: "The persisted fixture definition retains its requested outcome",
-            evidence_ids: [],
-            inspected_paths: [],
-          },
-          {
-            scope: "objective",
-            verdict: "satisfied",
-            rationale: "The controlled fixture result satisfies the objective",
-            evidence_ids: [],
-            inspected_paths: [],
-          },
-          ...ids.map((criterion_id) => ({
-            scope: "criterion",
-            criterion_id,
-            verdict: "satisfied",
-            rationale: "The controlled fixture satisfies this qualitative criterion",
-            evidence_ids: [],
-            inspected_paths: [],
-          })),
-        ],
-      },
-    });
+    let respondSteward: typeof respond | undefined;
     const started = performance.now();
     const timeoutMs = options.timeoutMs ?? 30000;
     const provider = Bun.serve({
@@ -124,15 +75,65 @@ export async function createGoalFileHostFixture(
       async fetch(request) {
         try {
           const body = (await request.json()) as GoalFixtureRequest;
-          requests.push(body);
-          if (requests.length > 24 || performance.now() - started > timeoutMs)
+          const steward = body.prompt_cache_key?.endsWith("_goal-steward") === true;
+          (steward ? stewardRequests : requests).push(body);
+          if (
+            requests.length + stewardRequests.length > 40 ||
+            performance.now() - started > timeoutMs
+          )
             throw new Error("Goal fixture physical-call or duration limit exceeded");
           const index = requests.length;
-          const targets = verificationTargets(body);
-          const result =
-            targets === undefined ? await respond(body) : await verifyRespond(body, targets);
+          const frame = steward
+            ? (JSON.parse(
+                String(body.messages.findLast((message) => message.role === "user")!.content),
+              ) as {
+                goal_header: { mode: string; criteria: Array<{ id: string; kind: string }> };
+              })
+            : undefined;
+          const result: GoalFixtureResponse =
+            frame === undefined
+              ? await respond(body)
+              : respondSteward !== undefined
+                ? await respondSteward(body)
+                : {
+                    name: "submit_result",
+                    arguments:
+                      frame.goal_header.mode === "observation"
+                        ? { decision: "aligned", summary: "Work is aligned" }
+                        : {
+                            decision: "completion",
+                            verdict: "achieved",
+                            summary: "Synthetic result observed",
+                            assessments: [
+                              {
+                                scope: "definition",
+                                verdict: "satisfied",
+                                rationale: "Definition matches",
+                                evidence_ids: [],
+                                inspected_paths: [],
+                              },
+                              {
+                                scope: "objective",
+                                verdict: "satisfied",
+                                rationale: "Result observed",
+                                evidence_ids: [],
+                                inspected_paths: [],
+                              },
+                              ...frame.goal_header.criteria
+                                .filter((criterion) => criterion.kind === "qualitative")
+                                .map((criterion) => ({
+                                  scope: "criterion",
+                                  criterion_id: criterion.id,
+                                  verdict: "satisfied",
+                                  rationale: "Criterion observed",
+                                  evidence_ids: [],
+                                  inspected_paths: [],
+                                })),
+                            ],
+                          },
+                  };
           const usage = { input: 1000 + index * 10, output: 10, cached: 500 };
-          if (result.usage !== "missing") usages.push(usage);
+          if (result.usage !== "missing") (steward ? stewardUsages : usages).push(usage);
           const chunk = {
             id: `response-${index}`,
             object: "chat.completion.chunk",
@@ -146,6 +147,7 @@ export async function createGoalFileHostFixture(
                   ...("text" in result
                     ? { content: result.text }
                     : {
+                        ...(result.commentary === undefined ? {} : { content: result.commentary }),
                         tool_calls: [
                           {
                             index: 0,
@@ -309,14 +311,16 @@ export async function createGoalFileHostFixture(
       host,
       planStore,
       requests,
+      stewardRequests,
+      stewardUsages,
       usages,
       errors,
       close,
       setResponder(value: typeof respond) {
         respond = value;
       },
-      setVerificationResponder(value: typeof verifyRespond) {
-        verifyRespond = value;
+      setStewardResponder(value: typeof respond) {
+        respondSteward = value;
       },
       async until(predicate: () => boolean | Promise<boolean>) {
         const deadline = performance.now() + timeoutMs;

@@ -179,9 +179,18 @@ export async function runGoalFileHostJourney(
   expect(session.turns.map((turn) => turn.execution_id)).toEqual(
     goal.runs.map((run) => run.execution_id),
   );
-  expect(session.totals).toEqual(totals);
+  expect(session.totals).toEqual(
+    f.stewardUsages.reduce(
+      (sum, usage) => ({
+        input: sum.input + usage.input,
+        output: sum.output + usage.output,
+        cached: sum.cached + usage.cached,
+      }),
+      totals,
+    ),
+  );
   const leaderKey = `conversation_${session.agent_instance_id!}`;
-  expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(3);
+  expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
   const lead = f.requests.filter((request) => request.prompt_cache_key === leaderKey);
   expect(lead).toHaveLength(8);
   for (let index = 1; index < lead.length; index++) {
@@ -192,7 +201,7 @@ export async function runGoalFileHostJourney(
   }
   expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("done");
   expect(await f.client.goals.control(create)).toEqual(receipt);
-  expect(f.requests).toHaveLength(11);
+  expect(f.requests).toHaveLength(10);
 
   return { goal, session, requests: f.requests, stageSnapshots };
 }

@@ -1,6 +1,16 @@
 import type { GoalRecord } from "@clarvis/protocol";
 import { tokens } from "../../theme/tokens.ts";
 
+/** Compact Steward state; technical audit identities stay out of the sidebar. */
+export function stewardStatusLabel(goal: GoalRecord): string | undefined {
+  const status = goal.steward?.status;
+  return status === undefined || status === "idle"
+    ? undefined
+    : status === "new_run_recommended"
+      ? "new run recommended"
+      : status;
+}
+
 /** Product vocabulary and tone for the durable Goal lifecycle. */
 export function goalStatusPresentation(status: GoalRecord["status"]): {
   label: string;

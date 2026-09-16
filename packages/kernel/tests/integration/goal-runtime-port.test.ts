@@ -79,63 +79,15 @@ async function settle(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("durable host goal runtime port", () => {
-  it("refuses completion without a candidate or an independent verifier", async () => {
+  it("refuses completion without a candidate and accepts a valid current candidate", async () => {
     const f = await fixture();
     const { port } = await f.runtime();
     expect(await port.validateCompletion()).toMatchObject({
       valid: false,
       reasons: ["The current stage has no completion candidate"],
     });
-    expect(await port.verifyCompletion({ mode: "text", text: "Unproven result" })).toMatchObject({
-      valid: false,
-      reasons: ["The current stage has no completion candidate"],
-    });
     await port.candidate(candidate());
-    expect(await port.verifyCompletion({ mode: "text", text: "Candidate result" })).toMatchObject({
-      valid: false,
-      reasons: ["Independent Goal verification is unavailable"],
-    });
-  });
-
-  it("fails closed when the independent verification reserve is exhausted", async () => {
-    const f = await fixture();
-    const { port } = await f.runtime("first", {
-      verification: {
-        project: async (goal, attempt) => ({
-          projection: JSON.stringify({ objective: goal.objective, attempt }),
-          fence: {
-            goal_id: goal.goal_id,
-            execution_id: "first",
-            control_revision: goal.control_revision,
-            objective_revision: goal.objective_revision,
-            definition_digest: "a".repeat(64),
-            candidate_digest: "b".repeat(64),
-            final_attempt_digest: "c".repeat(64),
-            evidence_digest: "d".repeat(64),
-          },
-          qualitative_criterion_ids: ["objective"],
-          evidence_ids: [],
-        }),
-        reserveAttempt: () => undefined,
-        finishAttempt: () => {
-          throw new Error("unused");
-        },
-        run: async () => {
-          throw new Error("unused");
-        },
-        readTrace: () => undefined,
-        readFile: async () => {
-          throw new Error("unused");
-        },
-        validateDefinitionSources: async () => true,
-      },
-    });
-    await port.candidate(candidate());
-    expect(await port.verifyCompletion({ mode: "text", text: "Candidate result" })).toMatchObject({
-      valid: false,
-      verdict: "inconclusive",
-      reasons: [expect.stringContaining("exhausted")],
-    });
+    expect(await port.validateCompletion()).toMatchObject({ valid: true, reasons: [] });
   });
 
   it("interprets the real trace mapper's flat tool names without treating goal controls as evidence", async () => {
@@ -546,4 +498,49 @@ describe("durable host goal runtime port", () => {
     expect((await f.repository.read("session"))!.current!.runs[0]!.progress).toBeUndefined();
     expect(f.changes).toEqual([]);
   });
+});
+
+it("projects bounded sanitized command receipts from current and prior Goal stages only", async () => {
+  const event = tool({
+    arguments: { command: "bun run verify", cwd: ".", token: "private-fixture-value" },
+    result: JSON.stringify({
+      exit_code: 0,
+      stdout: "All checks passed\n" + "case passed\n".repeat(400),
+      stderr: "",
+    }),
+  });
+  const f = await fixture({ readTrace: (id) => (id === "first" ? [event] : undefined) });
+  const first = await f.runtime();
+  first.evidence.observe(event);
+  const current = await first.evidence.snapshot((await first.port.read()).goal);
+  const receipt = current.commands[0]!;
+  expect(receipt).toMatchObject({
+    id: current.catalog[0]!.id,
+    tool: "shell",
+    exit_code: 0,
+    truncated: true,
+  });
+  expect(receipt.arguments_excerpt).toContain("bun run verify");
+  expect(receipt.arguments_excerpt).not.toContain("private-fixture-value");
+  expect(receipt.stdout_excerpt).toStartWith("All checks passed");
+  expect(receipt.stdout_excerpt.length).toBe(3072);
+  await first.port.checkpoint({
+    summary: "Verified",
+    next_step: "Report",
+    evidence_ids: [receipt.id],
+  });
+  await settle(f);
+  await f.admit("second");
+  const second = await f.runtime("second");
+  expect((await second.evidence.snapshot((await second.port.read()).goal)).commands).toEqual([
+    receipt,
+  ]);
+  second.evidence.observe(
+    tool({
+      call_id: "failed-recheck",
+      arguments: event.arguments,
+      result: JSON.stringify({ exit_code: 1, stdout: "FAILED" }),
+    }),
+  );
+  expect((await second.evidence.snapshot((await second.port.read()).goal)).commands).toEqual([]);
 });

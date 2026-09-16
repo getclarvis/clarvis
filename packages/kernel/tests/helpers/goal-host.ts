@@ -133,7 +133,6 @@ export async function goalHostFixture(
         readArtifact?: (path: string) => Promise<Uint8Array>;
         signal?: AbortSignal;
         onChange?: (change: GoalRuntimeChange) => void;
-        verification?: Parameters<typeof createGoalRuntimePort>[0]["verification"];
       } = {},
     ) {
       const goal = (await repository.read("session"))!.current!;
@@ -156,7 +155,6 @@ export async function goalHostFixture(
         signal: overrides.signal,
         logger,
         now: () => clock++,
-        verification: overrides.verification,
         onChange:
           overrides.onChange ??
           ((change) => {

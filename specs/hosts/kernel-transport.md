@@ -22,6 +22,12 @@ observer/write refusal plus receipt replay in
 request/result/receipt transport in
 [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
 
+Steward status, bounded reviews and separate usage travel inside the existing Goal state DTO, with
+no new control method or message type. They remain host-owned data. Production: `GoalStewardReview`
+in [goals.ts](../../packages/protocol/src/goals.ts) and the existing Goal codec. Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
+reads those fields through the real IPC client.
+
 Goal availability, state and receipts are decoded on receipt. The bounded state must belong to the
 requested session, and its optional physical run must also belong to the connected workspace. A
 receipt must identify the requested operation. `goals.formulate` additionally requires the

@@ -58,6 +58,5 @@ export function goalRun(executionId: string, phase: GoalRun["phase"] = "running"
     automatic: true,
     phase,
     admitted_at: 1,
-    verifications: [],
   };
 }

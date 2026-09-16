@@ -37,7 +37,7 @@ import { toGoalKernelError } from "./errors.ts";
 import type { HostedSessionTransactions } from "../hosting/sessions.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
 import { projectGoalTrajectory } from "./trajectory.ts";
-import { verifyTraceInspectedArtifacts } from "./trace-reads.ts";
+import { verifyTraceNormativeSources } from "./trace-reads.ts";
 
 const identifier = z
   .string()
@@ -168,7 +168,7 @@ export function createGoalService(options: {
         session_id: sessionId,
         session_revision: current.revision ?? 0,
         kind: "conversation",
-        user_preview: "Work toward the persistent goal",
+        user_preview: `Work toward the persistent goal: ${bound.objective}`,
         params: { ...params, ...(previous === undefined ? {} : { continue_from: previous }) },
       });
     } catch (error) {
@@ -325,7 +325,7 @@ export function createGoalService(options: {
 
       let sources: GoalDefinitionSource[];
       try {
-        sources = await verifyTraceInspectedArtifacts({
+        sources = await verifyTraceNormativeSources({
           trace: options.readTrace(formulationExecutionId) ?? [],
           paths: ready.normative_source_paths,
           readFile: (path) => options.readWorkspaceFile(path),
@@ -532,7 +532,7 @@ export function createGoalService(options: {
             )
           ) {
             options.assertWritable();
-            return applyGoalControl(session.goal_state, control, {
+            return applyGoalControl(goalStateFromSession(session), control, {
               session_id: sessionId,
               now: Date.now(),
               physically_busy: options.registry.occupied(sessionId),

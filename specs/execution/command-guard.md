@@ -244,8 +244,10 @@ verdict applies to that exact call and cannot register an effect, install an aut
 session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
 parameter list, environment bindings split at their first `=`, and structured analysis issues. This
 lets the reviewer assess options, wrappers, `NAME=value`, `env NAME=value command` and dynamic values
-without treating parameter syntax alone as uncertainty. Both paths recheck the authority revision after inference. Missing evidence,
-invalid output and stale revisions become `unsure` and use the configured human/deny fallback.
+without treating parameter syntax alone as uncertainty. Both paths recheck the authority revision
+and the atomically captured Plans semantic revision after inference. A changed Plans revision also
+invalidates a compiled envelope before reuse. Missing evidence, invalid output and stale revisions
+become `unsure` and use the configured human/deny fallback.
 Both paths set the auxiliary agent instance to `judge` on the run-decorated provider. The common
 prompt-cache composer consequently emits the current session's canonical `<session>_judge` key and
 retains the run TTL. Breakpoints cover only stable policy and optional stable guidance, never Goal,
@@ -329,6 +331,12 @@ evidence for routine bounded prerequisites. The enabled rollout requires host va
 registered effect, target, evidence and grant coverage after the model responds; uncertain or
 noninferable effects stay human-only. Review on remains human review, and containment alone grants
 no semantic authority.
+
+Goal Steward output is an internal note, never an operator message, approval or new authority
+anchor. It cannot invoke Auto Guard or grant effects. Production: `createGoalCapability` and
+`buildGoalStewardRequest`. Test: `observes completed dispatch and delivers an internal correction
+without human steering` in
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
 
 A host-started Goal stage does not admit its synthetic start or continuation message as operator
 evidence. Literal Goals supply the complete definition explicitly declared by the user. Guided Goals

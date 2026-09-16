@@ -4,7 +4,7 @@ Persistent conversation objectives, semantic formulation and bounded continuatio
 private product capability owns the domain without depending on the kernel, plans or a transport.
 It depends on `@clarvis/loop` only for the generic run executor contract used by its bounded
 formulation runtime; the loop does not name Goals. The host supplies session transactions, execution
-authority, isolated executor dependencies and evidence verification.
+authority, isolated executor dependencies and evidence validation.
 
 The owning contract is [goals](../../specs/capabilities/goals.md). Hosting, plan finalization and
 prompt-cache behavior retain their owning package contracts; domain tests alone do not qualify
@@ -72,7 +72,8 @@ does not maintain another allowlist. `callPurpose: "goal"` identifies the provid
 putting semantic payloads in logs.
 The Kernel binds every reported normative path to a complete successful read. The retained trace may
 abbreviate the result text, but a host-owned digest of the complete pre-cap result lets the Kernel
-revalidate large files without accepting a partial range or trusting a model-supplied digest.
+revalidate large files and ordered multi-file batches without accepting a partial range or trusting
+a model-supplied digest.
 
 `GoalRecord` keeps constraints, exclusions, assumptions, normative source snapshots and literal,
 guided or auto origin alongside its existing objective and criteria. Old pre-release state decodes
@@ -84,35 +85,6 @@ Production: `buildGoalAgentRequest`, `goalAgentPrompt`, `runGoalAgent` and
 `goalFormulationResultSchema` under [src/agent](src/agent), plus `applyGoalFormulation` in
 [control.ts](src/control.ts). Test: [agent-run.test.ts](tests/unit/agent-run.test.ts) covers the fixed
 request, schema rejection, deterministic criterion IDs, accounting and backward-compatible decode.
-
-## Independent completion verification
-
-Every final result for a literal, guided or auto Goal passes a separate `goal-agent` verification
-run before the Goal finalization gate accepts it. The strict `achieved`, `not_achieved` or
-`inconclusive` verdict covers definition fidelity, the objective and every qualitative criterion.
-Host and human criteria remain deterministic prerequisites and cannot be overruled by the model.
-The advertised output schema structurally permits `criterion_id` only for criterion assessments,
-matching the persisted validator rather than accepting a shape that would be rejected after model
-usage was spent.
-Every reported inspected path must come from its own complete successful read; aggregated or
-truncated output is not inspection evidence. Invalid claims remain an inconclusive verification
-result and enter the bounded recovery path instead of terminating Goal control.
-For guided and auto origins, the verifier treats a host-confirmed origin digest match as exact
-formulation provenance even when that bounded input recorded truncation. Missing, partial or
-mismatched provenance remains inconclusive; later Goal stages cannot substitute for the original
-formulation input.
-
-`recordGoalVerification` persists at most four fenced audits on the primary `GoalRun`. The Kernel,
-not the model, calculates definition, candidate, final-attempt, evidence and inspected-artifact
-digests. A current `achieved` proof lets the gate pass; negative proof produces one bounded recovery
-nudge and is reused for an unchanged attempt. Settlement performs no inference and completes only
-after physical closure when the exact achieved proof remains current. An LLM verdict is audit
-evidence, never completion authority.
-
-Production: `buildGoalVerificationRequest` and `validateGoalVerificationResult` in
-[verification.ts](src/agent/verification.ts), `recordGoalVerification` in
-[verification-state.ts](src/verification-state.ts), and the gate in
-[capability.ts](src/capability.ts). Test: [verification.test.ts](tests/unit/verification.test.ts).
 
 ## Entry capability
 
@@ -129,8 +101,6 @@ settings or the host fallback; it belongs only to the formulation run and is cap
 ceiling. Time, iteration, call-timeout and retry defaults remain 120,000 ms, eight iterations,
 60,000 ms per call and one transport retry. An omitted model inherits `default_model`; an explicit
 invalid model fails when formulation is invoked.
-Its `verification` block separately defaults to a 32,000-token stage reserve, 16,000 tokens per
-attempt, three attempts, six iterations, 90,000 ms total and 60,000 ms per call.
 
 `createGoalCapability` consumes a host-bound `GoalRuntimePort` and requires activation for that
 session, execution and persisted entry-agent instance. It contributes `get_goal` and `update_goal`
@@ -152,6 +122,20 @@ another action remain invalid. Optional evidence IDs retain their empty default.
 structured output from requiring unrelated action fields and producing calls the runtime rejects.
 
 The goal gate disables fast acceptance and revalidates completion before an ordinary final result.
+Its host-owned Goal Steward then reviews semantic sufficiency with a separate read-only execution.
+Current observation decisions become internal notes at a safe iteration boundary; operator steering
+takes precedence. A not-achieved final review returns a concrete correction; failure or inconclusive
+review prevents completion. The domain owns the fixed schema, request policy, settings, review state
+and idempotent usage reducer; the Kernel owns scheduling, reads, fencing and durable settlement.
+`goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
+Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
+The host checks semantic targets and current-evaluation artifact reads before accepting the Steward's
+output, with one bounded corrective nudge inside that same evaluation. Repeated invalid output fails
+closed; historical reads cannot establish current inspection. The host reserves review slots for
+completion so observations cannot exhaust the final review allowance. Its fixed policy separates
+fresh artifact inspection from host-recorded command execution: eligible command receipts from
+prior Goal stages can establish tests already run, while later edits and contradictions still
+require renewed validation by the work agent.
 One nonempty invalid final receives a recovery nudge; a repeated invalid final or the first empty
 final stops with explicit blocking. Reporting a blocker uses safe interruption without requiring
 plan task completion. Checkpoint requests still pass all plan/review/delegation gates. Plan state

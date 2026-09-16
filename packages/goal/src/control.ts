@@ -225,6 +225,7 @@ export function applyGoalControl(
         old.reason = "Replaced by the user";
         old.updated_at = context.now;
       }
+      delete old.steward.last_steward_execution_id;
       archive(state, old);
     }
     if (context.new_goal_id === undefined)
@@ -294,6 +295,7 @@ export function applyGoalControl(
         action.assumptions !== undefined
       ) {
         goal.objective_revision += 1;
+        delete goal.steward.last_steward_execution_id;
         delete goal.candidate;
         goal.human_acceptances = [];
         if (action.objective !== undefined) goal.objective = action.objective;
@@ -310,10 +312,12 @@ export function applyGoalControl(
       requireInactive(goal, context);
       if (goal.status === "active")
         throw new GoalError("conflict", "Pause or cancel the goal before clearing it");
+      delete goal.steward.last_steward_execution_id;
       archive(state, goal);
       delete state.current;
     } else if (action.kind === "pause" || action.kind === "cancel") {
       goal.status = action.kind === "pause" ? "paused" : "cancelled";
+      if (action.kind === "cancel") delete goal.steward.last_steward_execution_id;
       goal.reason = action.kind === "pause" ? "Paused by the user" : "Cancelled by the user";
       if (action.kind === "cancel" || action.running)
         cancel_execution_id = goal.runs.find((run) => run.phase !== "closed")?.execution_id;

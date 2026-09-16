@@ -15,7 +15,7 @@ function completeReads(trace: readonly TraceEvent[]): CompleteRead[] {
     const tool = event.tool_name ? `${event.mcp_name}.${event.tool_name}` : event.mcp_name;
     if (tool === "read_file") {
       const args = event.arguments as { path?: unknown };
-      if (typeof args.path === "string" && !event.result.includes("continue with offset="))
+      if (typeof args.path === "string")
         observations.push({
           tool,
           paths: [args.path],
@@ -26,11 +26,15 @@ function completeReads(trace: readonly TraceEvent[]): CompleteRead[] {
       const args = event.arguments as { paths?: unknown };
       if (
         Array.isArray(args.paths) &&
-        args.paths.every((path) => typeof path === "string") &&
-        !event.result.includes("more file(s) not shown") &&
-        !event.result.includes("use read_file for the rest")
+        args.paths.length <= 64 &&
+        args.paths.every((path) => typeof path === "string")
       )
-        observations.push({ tool, paths: args.paths, result: event.result });
+        observations.push({
+          tool,
+          paths: args.paths,
+          result: event.result,
+          ...(event.result_digest === undefined ? {} : { resultDigest: event.result_digest }),
+        });
     }
   }
   return observations;
@@ -65,21 +69,61 @@ function exactRead(observation: CompleteRead, path: string, content: string): bo
   );
 }
 
-/** Bind model-reported inspected paths to complete successful reads and current confined bytes. */
-export async function verifyTraceInspectedArtifacts(options: {
+/** Bind model-reported normative paths to complete successful reads and current confined bytes. */
+export async function verifyTraceNormativeSources(options: {
   trace: readonly TraceEvent[];
   paths: readonly string[];
   readFile(path: string): Promise<{ path: string; content: string }>;
 }): Promise<Array<{ path: string; digest: string }>> {
   const paths = [...new Set(options.paths)];
   if (paths.length !== options.paths.length || paths.length > 32)
-    throw new Error("Goal verifier inspected paths must be bounded and unique");
+    throw new Error("Goal normative source paths must be bounded and unique");
   const reads = completeReads(options.trace);
+  const currentFiles = new Map<string, { path: string; content: string }>();
+  const readCurrent = async (path: string) => {
+    let current = currentFiles.get(path);
+    if (current === undefined) {
+      current = await options.readFile(path);
+      currentFiles.set(path, current);
+    }
+    return current;
+  };
+  const batchMatches = new Map<CompleteRead, boolean>();
+  const matchesBatch = async (observation: CompleteRead) => {
+    if (observation.tool !== "read_files" || observation.resultDigest === undefined) return false;
+    const known = batchMatches.get(observation);
+    if (known !== undefined) return known;
+    const sections: string[] = [];
+    try {
+      for (const path of observation.paths) {
+        const body = rendered((await readCurrent(path)).content);
+        if (body === undefined) return false;
+        sections.push(`==> ${path} <==\n${body}`);
+      }
+    } catch {
+      batchMatches.set(observation, false);
+      return false;
+    }
+    const matches =
+      createHash("sha256").update(sections.join("\n\n")).digest("hex") === observation.resultDigest;
+    batchMatches.set(observation, matches);
+    return matches;
+  };
   const artifacts: Array<{ path: string; digest: string }> = [];
   for (const requested of paths) {
-    const current = await options.readFile(requested);
-    if (!reads.some((observation) => exactRead(observation, requested, current.content)))
-      throw new Error("Goal verifier path was not read completely in its own trace");
+    const current = await readCurrent(requested);
+    let matched = false;
+    for (const observation of reads) {
+      if (
+        observation.paths.includes(requested) &&
+        (exactRead(observation, requested, current.content) || (await matchesBatch(observation)))
+      ) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched)
+      throw new Error("Goal normative source was not read completely in the formulation trace");
     artifacts.push({
       path: current.path,
       digest: createHash("sha256").update(current.content).digest("hex"),
@@ -88,19 +132,7 @@ export async function verifyTraceInspectedArtifacts(options: {
   return artifacts;
 }
 
-/** Revalidate a previously inspected snapshot without accepting replacement bytes. */
-export async function verificationArtifactsCurrent(
-  artifacts: readonly { path: string; digest: string }[],
-  readFile: (path: string) => Promise<{ path: string; content: string }>,
-): Promise<boolean> {
-  for (const artifact of artifacts) {
-    try {
-      const current = await readFile(artifact.path);
-      if (createHash("sha256").update(current.content).digest("hex") !== artifact.digest)
-        return false;
-    } catch {
-      return false;
-    }
-  }
-  return true;
+/** Complete text reads in this evaluation are fenced even when observation output has no path field. */
+export function completeTraceReadPaths(trace: readonly TraceEvent[]): string[] {
+  return [...new Set(completeReads(trace).flatMap((read) => read.paths))];
 }

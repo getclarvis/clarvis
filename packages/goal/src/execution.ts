@@ -81,7 +81,9 @@ export function admitGoalRun(
     automatic: input.automatic,
     admitted_at: input.now,
     phase: "preparing",
-    verifications: [],
+    steward_reviews: [],
+    steward_review_count: 0,
+    steward_intervention_count: 0,
   });
   if (input.automatic) goal.auto_continuations += 1;
   return changed(state, goal, input.now);
@@ -352,6 +354,7 @@ export function settleGoalRun(
       run.candidate.objective_revision === goal.objective_revision
     ) {
       goal.status = "complete";
+      delete goal.steward.last_steward_execution_id;
       goal.reason = "Completion committed after criteria, gates and durable reconciliation";
     } else {
       goal.status = "blocked";

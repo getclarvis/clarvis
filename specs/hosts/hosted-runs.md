@@ -58,6 +58,14 @@ evidence. Production: `goalAuthorityMessages`, `goalReviewContext` and
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
 and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
+Goal Steward belongs to the physically admitted Goal entry run. Its finite auxiliary executions use
+the owner-scoped run store without creating conversation turns or independent hosted controllers.
+The retained coordinator closes before work settlement; auxiliary usage and domain state commit
+atomically in the Session transaction. Settlement reuses the current achieved review and rechecks
+the proposed result and fences without another model call. Production: `prepareHostedGoalTurn` and
+`createFileRunHost`. Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
 Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
 host rejects it before inference when a Goal or physical run already owns the conversation. Its
 separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock
@@ -72,16 +80,6 @@ Production: `createGoalService` in [service.ts](../../packages/kernel/src/goals/
 Test: [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
 and formulation recovery in
 [goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts).
-
-Goal completion verification is internal to the active hosted turn, not a public RPC operation or
-post-run job. The order `-200` Goal gate starts a distinct read-only execution while the primary run
-is still open. Both share controller cancellation, runtime placement, deadline and usage accounting,
-but retain separate execution IDs and traces. The session lock is not held during inference;
-persistence rechecks all fences. Physical closure invokes a read-only proof check, never another
-model call. Production: `prepareHostedGoalTurn` in
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and `verifyCompletion` in
-[runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts). Test:
-[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
 
 `WorkspaceClientManager` discovers or launches Code's companion `local-host` entry, selected by
 `resolveLocalKernelArtifact`. The application entry composes the local subscription manager,

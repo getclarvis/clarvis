@@ -27,14 +27,6 @@ describe("goal settings", () => {
             call_timeout_ms: 10_000,
             max_retries: 0,
           },
-          verification: {
-            stage_token_limit: 3000,
-            attempt_token_limit: 1500,
-            max_attempts: 2,
-            iteration_limit: 4,
-            timeout_ms: 30_000,
-            call_timeout_ms: 10_000,
-          },
         },
       }),
     ).toEqual({
@@ -49,14 +41,6 @@ describe("goal settings", () => {
           max_iterations: 4,
           call_timeout_ms: 10_000,
           max_retries: 0,
-        },
-        verification: {
-          stage_token_limit: 3000,
-          attempt_token_limit: 1500,
-          max_attempts: 2,
-          iteration_limit: 4,
-          timeout_ms: 30_000,
-          call_timeout_ms: 10_000,
         },
       },
     });
@@ -77,11 +61,6 @@ describe("goal settings", () => {
     expect(
       goalsSettingsSchema.safeParse({ agent: { formulation: { arbitrary: true } } }).success,
     ).toBe(false);
-    expect(
-      goalsSettingsSchema.safeParse({ agent: { verification: { max_attempts: 4 } } }).success,
-    ).toBe(false);
-    expect(
-      goalsSettingsSchema.safeParse({ agent: { verification: { arbitrary: true } } }).success,
-    ).toBe(false);
+    expect(goalsSettingsSchema.safeParse({ agent: { verification: {} } }).success).toBe(false);
   });
 });

@@ -127,7 +127,9 @@ enforce turn/totals ownership. Its optional `Session.goal_state` is host-owned e
 file-store saves: clients cannot insert, remove or revert it. `goals.ts` defines the independent
 goal DTOs, user controls and service contract; defining those types alone does not advertise the
 service on a host. A goal run's optional `progress` contains its latest bounded annotation, separate
-from checkpoint disposition and a completion candidate. Lifecycle and mutation rules are specified in
+from checkpoint disposition and a completion candidate. Optional Steward DTO fields expose its
+compact status, bounded review history and separate consumption without importing domain runtime.
+They are host-owned audit data, never commands or operator authority. Lifecycle and mutation rules are specified in
 [sessions](../../specs/hosts/sessions.md#host-owned-conversation-transactions).
 
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed

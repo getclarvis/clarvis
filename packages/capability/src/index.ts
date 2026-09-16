@@ -414,6 +414,7 @@ export type {
   OperatorElicitationContext,
   OperatorAuthorityBinding,
   OperatorReviewContext,
+  OperatorReviewContextSnapshot,
   OperatorReviewContextProvider,
   OperatorAuthoritySeed,
   AuthorityEnvelopeV1,
@@ -423,6 +424,6 @@ export type {
 } from "./operator-authority.ts";
 export {
   OPERATOR_AUTHORITY_PORT,
-  OPERATOR_REVIEW_CONTEXT_PORT,
+  PLANS_REVIEW_CONTEXT_PORT,
   inheritOperatorAuthority,
 } from "./operator-authority.ts";

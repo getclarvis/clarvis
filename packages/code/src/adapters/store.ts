@@ -907,8 +907,16 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
    */
   function appendRunFailure(execId: string, error: { code: string; message: string }): void {
     const prefix = `${execId}::`;
-    if (error.code === "goal_blocked") {
-      const bounded = boundTranscriptText(`Goal blocked: ${error.message}`);
+    if (
+      error.code === "goal_blocked" ||
+      error.code === "goal_steward_failed" ||
+      error.code === "goal_steward_inconclusive"
+    ) {
+      const bounded = boundTranscriptText(
+        error.code === "goal_blocked"
+          ? `Goal blocked: ${error.message}`
+          : `Goal Steward: ${error.code === "goal_steward_failed" ? "review failed" : "review inconclusive"}`,
+      );
       upsert(`${prefix}goal-blocked`, () => ({
         kind: "annotation",
         status: "ok",

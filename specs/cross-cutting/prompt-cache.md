@@ -96,15 +96,6 @@ plan gates and a final schema;
 the complete preceding history remains a prefix and the catalog/key stay equal. Controlled responses
 prove serialization, not remote cache hits or automatic host continuation.
 
-The independent Goal verifier never continues the primary run and never shares its cache key. It
-uses a host-minted agent instance and isolated `goal-agent` request, while the primary Goal's
-session/instance cache identity remains stable. Proof reuse is a Kernel digest decision and performs
-no provider call. Production: `buildGoalVerificationRequest` in
-[verification.ts](../../packages/goal/src/agent/verification.ts) and runtime composition in
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
-[goal-file-host-compaction.test.ts](../../packages/kernel/tests/integration/goal-file-host-compaction.test.ts)
-and [goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
-
 Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
 in the final volatile message. Auto Guard likewise keeps its nonreplaceable policy and optional
@@ -113,6 +104,21 @@ the exact call. Plan lifecycle/progress fields never enter that payload. Product
 `goalAgentPrompt`, `planReviewContext`, `reviewerContextPayload` and `createJudgeElicit`. Test:
 `keeps one byte-identical semantic prefix while mode and trajectory remain volatile` and `adds
 stable Plan substance beside the Goal and keeps volatile context out of the prefix`.
+
+Goal Steward uses a fixed policy, read-only catalog and output schema for observation and completion.
+Each evaluation appends a delimited user frame to its own persisted context using `continue_from`,
+a stable `goal-steward` instance and the real conversation ID. Host IDs, revisions and digests remain
+outside model frames. Command execution receipts belong only to the appended evidence frame; the
+fixed policy distinguishes those receipts from fresh artifact inspection. The runtime fingerprint covers model execution metadata, configuration generation,
+profile, catalog, schema, compaction policy and TTL; incompatibility starts a fresh base. No earlier
+message is rewritten. A rejected Steward submission appends its corrective nudge and fresh tool
+reads in the same evaluation without replacing historical messages, the catalog or the cache key.
+Production: `buildGoalStewardRequest`, `createStewardExecutionRuntime` and `createStewardResultGate`.
+Test: `returns unfinished work to the same run and preserves the private serialized prefix` in
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
+and `rejects historical artifact reads and repairs in the same evaluation` compare actual SDK
+messages, tools and composed cache keys. This proves prefix serialization,
+not a remote provider cache hit.
 
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
 all tool results. A pause received during inference must not insert a user reminder inside the

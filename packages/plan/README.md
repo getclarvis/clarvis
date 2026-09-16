@@ -29,6 +29,8 @@ substantive title, objective, context, task title/detail/exit fields and validat
 progress, outcomes, assignees, revisions, timestamps, paths and digests are excluded, so ordinary
 task progress does not churn Auto Guard input. The Judge receives this stable projection beside any
 Goal definition when deciding whether a routine bounded prerequisite belongs to the requested work.
+The snapshot carries a host-owned semantic revision; reviewer results are refused if that revision
+changes during inference, and stale compiled envelopes or cached decisions are not reused.
 
 `read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
 options for the first page, default limit and absent status/retention filters. Non-null IDs and

@@ -458,6 +458,13 @@ captures decreasing stop-mode ceilings across two automatic continuations and re
 token/iteration settings before inference. Product host registration is required before this internal
 composition is an available goal control surface.
 
+Goal Steward evaluations similarly use independent finite stop-mode allowances. The effective work
+cap is the default auxiliary cap, never a reserve subtracted from pursuit. Auxiliary measured usage
+is charged once to Session totals and the Steward ledger, including stale outcomes; unknown usage
+remains unknown and cannot support completion. Production: `createStewardExecutionRuntime` and
+`settleStewardEvaluation`. Test: `Goal Steward coordinator` in
+[goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts).
+
 The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
 persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
 from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
@@ -476,21 +483,6 @@ Production: `GOAL_FORMULATION_DEFAULTS` and `buildGoalAgentRequest` in
 [service.ts](../../packages/kernel/src/goals/service.ts).
 Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and formulation accounting
 in [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
-
-Each admitted Goal stage partitions its remaining pursuit allowance before launch. The verification
-reserve is `min(stage_token_limit, floor(remaining/2))`; the primary request receives the positive
-remainder. If both cannot remain positive, the Goal becomes `budget_limited` before a run starts.
-Verification defaults to 32,000 net tokens per stage, 16,000 per attempt, three attempts, six
-iterations, 90,000 ms total, 60,000 ms per call and one retry, all lowerable by host ceilings.
-Attempts share one sub-ledger.
-
-Primary and verifier providers pass through the same deadline wrapper and usage tracker. Settlement
-debits their aggregate once to Goal consumption and Session totals; individual verifier usage
-remains audit data and is never added again. Production: `GOAL_VERIFICATION_DEFAULTS` in
-[verification.ts](../../packages/goal/src/agent/verification.ts) and `prepareHostedGoalTurn` in
-[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts). Test:
-[goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts) and
-[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts).
 
 ### 4.4 The output-token reservation (`packages/loop/src/runtime/loop/output-budget.ts`)
 

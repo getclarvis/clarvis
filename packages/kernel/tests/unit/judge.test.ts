@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import {
   createCapabilityServices,
   OPERATOR_AUTHORITY_PORT,
-  OPERATOR_REVIEW_CONTEXT_PORT,
+  PLANS_REVIEW_CONTEXT_PORT,
   type LLMCallParams,
   type LLMProvider,
   type RunCapabilityContext,
@@ -116,7 +116,10 @@ describe("call-local command judge", () => {
         defaultModel: "anthropic/test",
         authority: ledger.reader,
         reviewContext: {
-          snapshot: () => [{ kind: "plan", content: JSON.stringify(plan) }],
+          snapshot: () => ({
+            revision: plan.objective,
+            contexts: [{ kind: "plan", content: JSON.stringify(plan) }],
+          }),
         },
       },
       {},
@@ -137,6 +140,45 @@ describe("call-local command judge", () => {
     expect(calls[0]!.messages[0]).toEqual(calls[1]!.messages[0]);
     expect(calls[0]!.messages[0]!.content).not.toContain("Deliver the local desktop MVP");
     expect(calls[0]!.cacheBreakpoints).toEqual([]);
+  });
+
+  it("rejects an allow produced from a Plan revision that changed in flight", async () => {
+    const ledger = authority("Implement the active Plan");
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let revision = "plan:1";
+    const judge = createJudgeElicit(
+      {
+        llm: {
+          async call() {
+            entered.resolve();
+            await release.promise;
+            return {
+              toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "allow" } }],
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/test",
+        authority: ledger.reader,
+        reviewContext: {
+          snapshot: () => ({
+            revision,
+            contexts: [
+              { kind: "plan", content: JSON.stringify({ objective: `Objective ${revision}` }) },
+            ],
+          }),
+        },
+      },
+      { on_unsure: "deny" },
+      undefined,
+    )!;
+    const decision = judge(request("npm install"));
+    await entered.promise;
+    revision = "plan:2";
+    release.resolve();
+    await expect(decision).resolves.toEqual({ allowed: false, answerer: "judge" });
   });
 
   it("distinguishes an authenticated ask_user answer from its model-authored question", async () => {
@@ -481,13 +523,16 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
   );
   const services = createCapabilityServices();
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
-  services.provide(OPERATOR_REVIEW_CONTEXT_PORT, {
-    snapshot: () => [
-      {
-        kind: "plan",
-        content: JSON.stringify({ objective: "Run the implementation checks" }),
-      },
-    ],
+  services.provide(PLANS_REVIEW_CONTEXT_PORT, {
+    snapshot: () => ({
+      revision: "plan:1",
+      contexts: [
+        {
+          kind: "plan",
+          content: JSON.stringify({ objective: "Run the implementation checks" }),
+        },
+      ],
+    }),
   });
   const reviewed: string[] = [];
   const contexts: unknown[] = [];

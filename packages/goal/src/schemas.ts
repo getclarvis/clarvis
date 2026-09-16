@@ -6,7 +6,6 @@ export const GOAL_CONTROL_MAX_BYTES = GOAL_STATE_MAX_BYTES - 64 * 1024;
 export const GOAL_ARCHIVE_MAX = 8;
 export const GOAL_RUNS_MAX = 256;
 export const GOAL_RECEIPTS_MAX = 64;
-export const GOAL_VERIFICATIONS_MAX = 4;
 
 const id = z
   .string()
@@ -150,46 +149,59 @@ export const goalOriginSchema = z.discriminatedUnion("kind", [
   goalFormulationOriginSchema.extend({ kind: z.literal("auto") }).strict(),
 ]);
 
-export const goalVerificationVerdictSchema = z.enum(["achieved", "not_achieved", "inconclusive"]);
-
-export const goalVerificationAssessmentSchema = z
+export const goalStewardReviewSchema = z
   .object({
-    scope: z.enum(["definition", "objective", "criterion"]),
-    criterion_id: id.optional(),
-    verdict: z.enum(["satisfied", "unsatisfied", "inconclusive"]),
-    rationale: text,
-    evidence_ids: z.array(id).max(32),
-    inspected_paths: z.array(z.string().trim().min(1).max(4096)).max(16),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    if ((value.scope === "criterion") !== (value.criterion_id !== undefined))
-      ctx.addIssue({
-        code: "custom",
-        path: ["criterion_id"],
-        message: "criterion_id is required only for criterion assessments",
-      });
-    if (new Set(value.evidence_ids).size !== value.evidence_ids.length)
-      ctx.addIssue({ code: "custom", path: ["evidence_ids"], message: "duplicate evidence id" });
-    if (new Set(value.inspected_paths).size !== value.inspected_paths.length)
-      ctx.addIssue({ code: "custom", path: ["inspected_paths"], message: "duplicate path" });
-  });
-
-export const goalVerificationSchema = z
-  .object({
-    verification_execution_id: id,
+    steward_execution_id: id,
+    mode: z.enum(["observation", "completion"]),
+    goal_id: id,
+    work_execution_id: id,
     control_revision: counter,
     objective_revision: counter,
     definition_digest: digest,
-    candidate_digest: digest,
-    final_attempt_digest: digest,
+    trajectory_digest: digest,
+    plan_context_revision: z.string().min(1).max(512),
+    operator_steering_epoch: counter,
+    candidate_digest: digest.optional(),
+    final_attempt_digest: digest.optional(),
     evidence_digest: digest,
-    verdict: goalVerificationVerdictSchema,
+    decision: z.enum(["aligned", "steer", "new_run", "achieved", "not_achieved", "inconclusive"]),
     summary: text,
-    assessments: z.array(goalVerificationAssessmentSchema).min(2).max(34),
+    guidance: text.optional(),
+    next_step: text.optional(),
     inspected_artifacts: z.array(goalDefinitionSourceSchema).max(32),
     usage: goalUsageSchema,
-    verified_at: counter,
+    reviewed_at: counter,
+  })
+  .strict();
+
+export const goalStewardChainSchema = z
+  .object({
+    last_steward_execution_id: id.optional(),
+    pending_execution_id: id.optional(),
+    trajectory_digest: digest.optional(),
+    operator_steering_epoch: counter.default(0),
+    last_consumed_work_sequence: counter,
+    runtime_fingerprint: z.string().max(64),
+    prompt_cache_ttl: z.enum(["5m", "1h"]),
+    status: z.enum([
+      "idle",
+      "observing",
+      "aligned",
+      "intervened",
+      "new_run_recommended",
+      "verifying",
+      "verified",
+      "attention",
+    ]),
+    consumption: z
+      .object({
+        input: counter,
+        output: counter,
+        cached: counter.optional(),
+        net_tokens: counter,
+        usage_unknown: z.boolean(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -210,7 +222,9 @@ export const goalRunSchema = z
     checkpoint: goalCheckpointSchema.optional(),
     progress: goalProgressSchema.optional(),
     candidate: goalCandidateSchema.optional(),
-    verifications: z.array(goalVerificationSchema).max(GOAL_VERIFICATIONS_MAX).default([]),
+    steward_reviews: z.array(goalStewardReviewSchema).max(8).default([]),
+    steward_review_count: counter.default(0),
+    steward_intervention_count: counter.default(0),
   })
   .strict();
 
@@ -228,6 +242,14 @@ export const goalRecordSchema = z
     assumptions: semanticItems,
     sources: z.array(goalDefinitionSourceSchema).max(16).default([]),
     origin: goalOriginSchema.default({ kind: "literal" }),
+    steward: goalStewardChainSchema.default({
+      last_consumed_work_sequence: 0,
+      operator_steering_epoch: 0,
+      runtime_fingerprint: "",
+      prompt_cache_ttl: "5m",
+      status: "idle",
+      consumption: { input: 0, output: 0, cached: 0, net_tokens: 0, usage_unknown: false },
+    }),
     status: goalStatusSchema,
     reason: text.optional(),
     created_at: counter,
@@ -343,10 +365,9 @@ export type GoalCandidate = z.infer<typeof goalCandidateSchema>;
 export type GoalCheckpoint = z.infer<typeof goalCheckpointSchema>;
 export type GoalProgress = z.infer<typeof goalProgressSchema>;
 export type GoalUsage = z.infer<typeof goalUsageSchema>;
-export type GoalVerificationVerdict = z.infer<typeof goalVerificationVerdictSchema>;
-export type GoalVerificationAssessment = z.infer<typeof goalVerificationAssessmentSchema>;
-export type GoalVerification = z.infer<typeof goalVerificationSchema>;
 export type GoalRun = z.infer<typeof goalRunSchema>;
 export type GoalRecord = z.infer<typeof goalRecordSchema>;
 export type GoalReceipt = z.infer<typeof goalReceiptSchema>;
 export type GoalState = z.infer<typeof goalStateSchema>;
+export type GoalStewardReview = z.infer<typeof goalStewardReviewSchema>;
+export type GoalStewardChainState = z.infer<typeof goalStewardChainSchema>;

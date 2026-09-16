@@ -129,6 +129,8 @@ specified in [goals](../../specs/capabilities/goals.md); repository tests do not
 continuation or the complete product journey.
 `prepareHostedGoalTurn` composes a mandatory goal capability, finite stop-mode request budget,
 atomic turn/goal intent, revision-fenced terminal evidence and the internal continuation policy.
+Goal start and resume previews include the complete current objective after
+`Work toward the persistent goal:`; this display text does not change the model input.
 Its command-review authority never comes from the synthetic Goal start or continuation message.
 Literal Goals contribute their complete user-declared definition; guided Goals contribute their
 exact seed after the exact source-execution user messages; auto Goals contribute only those exact
@@ -180,31 +182,6 @@ Production: `projectGoalTrajectory` in [trajectory.ts](src/goals/trajectory.ts),
 [file-host.ts](src/hosting/file-host.ts). Test:
 [goal-trajectory.test.ts](tests/unit/goal-trajectory.test.ts) and
 [goal-formulate-service.test.ts](tests/integration/goal-formulate-service.test.ts).
-Before the Goal gate accepts a final answer, `createGoalRuntimePort` performs deterministic
-candidate/source/evidence validation and starts a separate read-only verifier through the same
-runtime placement. Trace-backed reads become digest-bound inspected artifacts; a short transaction
-persists the verdict only while definition, candidate, result, evidence and revisions remain
-current. Negative or inconclusive verdicts return bounded guidance to the primary run. Settlement
-only reads a matching achieved proof after physical closure and never calls a model.
-An invalid result or a claimed path without one complete trace read is an inconclusive verifier
-attempt, not a `goal_control_failed` host outage; the ordinary bounded nudge/block path remains in
-control.
-For guided and auto Goals, the verifier reconstructs the exact host-recorded formulation execution
-set instead of projecting the current live stage. The canonical digest must match the persisted
-origin digest; the same guided seed exclusion is reapplied. This keeps later stages and verifier
-activity out of the fence while still failing closed on missing or partial source recovery.
-
-`prepareHostedGoalTurn` reserves `min(stage_token_limit, floor(remaining/2))` for verification and
-caps the primary run with the remainder. Both provider paths share one deadline and usage tracker,
-so primary and verifier calls enter Goal consumption and Session totals exactly once. Native,
-stdio/remote and complete Container hosting use this composition; Container reads inside its guest
-Kernel against the mounted workspace, with only model calls brokered by the host.
-
-Production: [runtime-port.ts](src/goals/runtime-port.ts),
-[verification-input.ts](src/goals/verification-input.ts), [trace-reads.ts](src/goals/trace-reads.ts)
-and [hosted-turn.ts](src/goals/hosted-turn.ts). Test:
-[goal-verification.test.ts](tests/integration/goal-verification.test.ts) and the exact-source
-regression in [goal-trajectory.test.ts](tests/unit/goal-trajectory.test.ts).
 `createGoalRuntimePort` implements the bound model operations over that private repository. It
 revalidates execution/revision after asynchronous evidence reads and again in the short transaction.
 Notifications follow successful durable publication; a notification failure does not roll back state.
@@ -213,6 +190,26 @@ bytes. Tool identity follows the actual trace mapper's flat-name versus qualifie
 goal controls and polling never enter the evidence catalog. Shell checks require exit zero even when
 transport succeeded, newer contradictory results invalidate older successes, and confined artifact
 reads recheck their digest. Qualitative relevance remains model judgment.
+Before completion, the host revalidates normative source digests and the current candidate plus
+host/human evidence. `createGoalStewardCoordinator` owns one finite read-only evaluation at a time
+through `createStewardExecutionRuntime`. It binds the late Plan review port, fences semantic output
+and returns internal corrections or a final verdict to the Goal capability. A private result gate
+validates the Steward's cited reads and semantic targets before accepting its output, allowing one
+corrective nudge within the same evaluation budget; a second invalid result fails closed. Batched
+reads remain verifiable from the full-result digest when trace display text is abbreviated.
+Observations reserve evaluation slots for completion, and prior observation failures do not
+reclassify later inconclusive verdicts. Its private frame carries bounded, sanitized command receipts
+from the eligible evidence catalog, including command arguments, exit code and output excerpts,
+so execution checks can be reviewed without granting the Steward command tools.
+Session accounting and
+Goal Steward state settle atomically, separately from the unchanged pursuit allowance. Compatible
+evaluations continue their private persisted prefix; observation failure degrades monitoring while
+final failure prevents completion. The same native graph runs in the Container Kernel using its
+injected model broker, without receiving host provider credentials.
+Production: [runtime-port.ts](src/goals/runtime-port.ts) and
+[hosted-turn.ts](src/goals/hosted-turn.ts). Test:
+[goal-runtime-port.test.ts](tests/integration/goal-runtime-port.test.ts) and
+[goal-hosted-continuation.test.ts](tests/integration/goal-hosted-continuation.test.ts).
 The goal capability composition test exercises `get_goal`/`update_goal` with the actual loop, plan,
 SDK transport and durable host port under controlled responses. A manually admitted continuation retains its
 plan, catalog, cache identity and complete serialized prefix; blocking or refused plan review keeps
@@ -801,7 +798,9 @@ LLM provider. The shared prompt-cache decorator therefore retains the authentica
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
 Explicit breakpoints end at stable reviewer policy/guidance; Goal, Plan, operator evidence and call
 facts remain together in the final volatile message after that boundary. Plan progress fields never
-enter that message.
+enter that message. Plans publishes a semantic revision beside the projected definition; both
+reviewer paths recheck it after inference and refuse/cache no decision produced from stale Plan
+substance.
 Each real call-local or effect-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
@@ -1178,8 +1177,6 @@ workspace scope is a file inside the agent's own working tree.
 | debug | `runs.event.unmapped`                                          | `path`, `kind`, `capability`, `reason`                                                          |
 | debug | `runs.rehydrated`                                              | `execution_id`, `events_total`, `events_mapped`, `events_dropped`                               |
 | debug | `sessions.rehydrate`                                           | `session_id`, `found`, `turns`, `pending`                                                       |
-| info  | `goal.verification.completed`                                  | `execution_id`, `verification_execution_id`, `verdict`, counts, `elapsed_ms`, token counts      |
-| warn  | `goal.verification.failed`                                     | `execution_id`, `verification_execution_id`, optional token counts                              |
 | warn  | `local.process.failed`                                         | `command`, `exit_code`, `duration_ms`, `stdout_chars`, `stderr_chars`                           |
 | warn  | `local.git.failed`                                             | `op`, `repo_host`, `cause`                                                                      |
 | warn  | `transport.frame_dropped`                                      | `direction`, `reason`, `bytes`                                                                  |

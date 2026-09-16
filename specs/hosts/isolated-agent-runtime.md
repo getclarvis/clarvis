@@ -96,6 +96,13 @@ journals and continuation execute inside the same Kernel. Disabled Plans or Memo
 native disabled semantics. Goal plus manager Workflow remains subject to the ordinary Goals
 contract.
 
+Goal Steward uses that same guest-native Goal hosting path and injected model execution resolver.
+Its read-only tools inspect the guest workspace; credentials and provider adapters remain on the host.
+Production: `goalStewardRuntime`, `createStewardExecutionRuntime` and `prepareHostedGoalTurn`.
+Test: `native Goal pauses, survives Kernel recreation, and resumes explicitly` in
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+exercises native composition with a controlled broker; physical engine qualification remains separate.
+
 Goal auto/guided formulation is also native to the guest Kernel. Its semantic run uses the same
 admitted workspace root, canonical read-only Tools capability, owner-scoped trace store, runtime
 placement and logical model resolver as other guest runs. The host broker accepts the distinct
@@ -104,18 +111,6 @@ guest DTO. Configuration projection carries only the non-contributable `goals.ag
 policy already admitted by the host. No host-filesystem bridge substitutes for guest workspace
 reads, and external MCP, skills, hooks, Tasks, Plans, Memory, Workflows, Goal controls and delegation
 remain absent from formulation.
-
-The same guest-native composition verifies every Goal final attempt. The verifier runs before
-physical closure with a separate execution ID and trace, reads the mounted logical workspace only
-through guest canonical Tools, and reaches the host solely through the admitted model broker with
-purpose `goal`. No host filesystem shortcut or Goal bridge exists. Its verdict is fenced audit
-evidence; guest settlement alone may complete the Goal. Native, stdio/remote and Container therefore
-share one implementation and authority boundary. Production: `createContainerNativeKernel` in
-`packages/kernel/src/hosting/container-native.ts`, `createKernelGoalAgentRuntime` in
-`packages/kernel/src/goals/agent-runtime.ts`, and `prepareHostedGoalTurn` in
-`packages/kernel/src/goals/hosted-turn.ts`. Test:
-`packages/kernel/tests/integration/goal-verification.test.ts` and
-`packages/kernel/tests/integration/container-kernel-host.test.ts`.
 
 The public `goals.formulate` request/result/receipt crosses the same version 11 Kernel transport as
 Host/Sandbox. Goal state, sessions and formulation traces remain in canonical owner-scoped stores,

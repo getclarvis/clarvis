@@ -28,7 +28,7 @@ import {
   reviewerFailureKind,
   type ReviewerFailureKind,
 } from "./reviewer-trace.ts";
-import { reviewerContextPayload } from "./review-context.ts";
+import { reviewerContextIsCurrent, reviewerContextSnapshot } from "./review-context.ts";
 
 export type { ReviewerFailureKind } from "./reviewer-trace.ts";
 
@@ -186,6 +186,7 @@ export function createEffectReviewService(deps: {
   const audit = deps.audit ?? NOOP_LOGGER;
   const config = deps.options ?? {};
   const cache = new Map<string, EffectReviewReceipt>();
+  const compiledContextRevisions = new Map<number, string | undefined>();
   const unboundRefusals = new Set<string>();
   const wasRefused = (batch: GuardEffectBatch): boolean => {
     const key = refusalKey(batch);
@@ -226,7 +227,9 @@ export function createEffectReviewService(deps: {
     ): Promise<EffectReviewReceipt> {
       const started = performance.now();
       const state = deps.authority?.snapshot();
-      const reviewContext = reviewerContextPayload(state?.review_context, deps.reviewContext);
+      const reviewContext = reviewerContextSnapshot(state?.review_context, deps.reviewContext);
+      const contextCurrent = () =>
+        reviewerContextIsCurrent(deps.reviewContext, reviewContext.live_revision);
       let revision = state?.revision ?? 0;
       let attempts = 0;
       const receipt = (
@@ -253,7 +256,13 @@ export function createEffectReviewService(deps: {
         )
       )
         return receipt("unsure");
-      const key = JSON.stringify([revision, reviewContext, batch, call]);
+      const key = JSON.stringify([
+        revision,
+        reviewContext.live_revision,
+        reviewContext.payload,
+        batch,
+        call,
+      ]);
       const limitedKeys = batch.facts
         .filter((fact) => fact.id === "github.actions.rerun_failed")
         .map((fact) => effectDigest(fact.id, fact.target!.digest));
@@ -261,6 +270,7 @@ export function createEffectReviewService(deps: {
         return receipt("unsure");
       const cached = cache.get(key);
       if (cached !== undefined) {
+        if (!contextCurrent()) return receipt("unsure");
         if (
           reserve &&
           cached.decision === "allow" &&
@@ -441,6 +451,9 @@ export function createEffectReviewService(deps: {
       let envelope = state.envelope?.revision === revision ? state.envelope : undefined;
       if (
         envelope === undefined ||
+        (reviewContext.live_revision !== undefined &&
+          (!compiledContextRevisions.has(revision) ||
+            compiledContextRevisions.get(revision) !== reviewContext.live_revision)) ||
         !batch.facts.every((fact) =>
           envelope!.grants.some((grant) => deps.registry.get(fact.id)?.covers(grant, fact)),
         )
@@ -449,7 +462,9 @@ export function createEffectReviewService(deps: {
           "compile",
           {
             operator_evidence: state.evidence,
-            ...(reviewContext === undefined ? {} : { review_context: reviewContext }),
+            ...(reviewContext.payload === undefined
+              ? {}
+              : { review_context: reviewContext.payload }),
             revision,
             effects: batch.facts,
             descriptors: deps.registry.list().map(({ id, class: effectClass, inference }) => ({
@@ -463,7 +478,11 @@ export function createEffectReviewService(deps: {
           envelopeSchema,
         );
         envelope = validateAuthorityEnvelope(output, deps.authority, deps.registry, batch);
-        if (envelope === undefined || !installAuthorityEnvelope(deps.authority, envelope)) {
+        if (
+          !contextCurrent() ||
+          envelope === undefined ||
+          !installAuthorityEnvelope(deps.authority, envelope)
+        ) {
           completeStage("unsure", "none", operationalFailure ?? "invalid_response");
           return receipt("unsure", "none", operationalFailure ?? "invalid_response");
         }
@@ -472,6 +491,7 @@ export function createEffectReviewService(deps: {
           return receipt("unsure");
         envelope = installed.envelope;
         revision = installed.revision;
+        compiledContextRevisions.set(revision, reviewContext.live_revision);
         completeStage("allow", "none");
         audit.info(
           {
@@ -497,7 +517,7 @@ export function createEffectReviewService(deps: {
       const output = await invoke(
         "decide",
         {
-          ...(reviewContext === undefined ? {} : { review_context: reviewContext }),
+          ...(reviewContext.payload === undefined ? {} : { review_context: reviewContext.payload }),
           call,
           effects: batch.facts,
           envelope,
@@ -507,7 +527,7 @@ export function createEffectReviewService(deps: {
       const decision = decisionSchema.safeParse(output);
       const current = deps.authority.snapshot();
       if (wasRefused(batch)) return receipt("deny");
-      if (current.status !== "active" || current.revision !== revision) {
+      if (current.status !== "active" || current.revision !== revision || !contextCurrent()) {
         completeStage("unsure", "none");
         return receipt("unsure");
       }
@@ -547,7 +567,16 @@ export function createEffectReviewService(deps: {
       completeStage(answer.decision, answer.relation);
       if (answer.decision !== "unsure") {
         if (cache.size >= 128) cache.clear();
-        cache.set(JSON.stringify([revision, reviewContext, batch, call]), answer);
+        cache.set(
+          JSON.stringify([
+            revision,
+            reviewContext.live_revision,
+            reviewContext.payload,
+            batch,
+            call,
+          ]),
+          answer,
+        );
       }
       return answer;
     },

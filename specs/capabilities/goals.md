@@ -25,7 +25,9 @@ request; trajectory and workspace reads may resolve references and retain alread
 cannot delete, replace or widen the seed. Literal mode never invokes this runtime. There is no
 background observer, second Goal machine, draft queue or public job catalog.
 
-The fixed prompt asks for an observable result rather than implementation steps, separates context,
+The base prompt is byte-identical across auto and guided formulation. It contains both mode rules;
+mode, seed, projected trajectory, digest, truncation and workspace availability appear only in the
+volatile user input. The fixed prompt asks for an observable result rather than implementation steps, separates context,
 quotations and meta commentary from operational authorization, preserves later corrections and
 pivots, decomposes coherent compound requests into criteria, and exposes explicit constraints,
 exclusions and necessary assumptions. It never infers permission, publication, spend, destruction or
@@ -39,6 +41,9 @@ fields, empty strings, duplicate normalized semantics and bounds violations are 
 cannot supply host criteria, IDs, revisions, limits, digests, execution identities, provider settings
 or authority. `formulationCriteria` normalizes descriptions and assigns ordered `criterion-NN` IDs.
 Invalid output fails the operation without partial creation or fallback to the seed.
+Human criteria apply only when an explicit human decision is indispensable to the currently
+requested result. Permission boundaries for future or excluded work remain constraints/exclusions;
+they do not create approval work or elicitation inside the current Goal.
 
 The run uses fixed profile and entry `goal-agent`, `shared_prompt: ""`, no MCP servers, no declared
 tools, no spawnable agents and only the `read_workspace` grant. Its output schema contributes the
@@ -48,6 +53,13 @@ read file(s), image, directory, glob, grep, diff, file stat and tree operations 
 write/edit/shell/monitor and every Goal, Plan, Memory, Workflow, skill, hook, MCP or delegation
 surface is absent and undispatchable. If Tools is disabled or the host ceiling forbids reads, the run
 continues from seed/trajectory with `workspace_read_available: false` and receives no substitute.
+For a normative source, the trace retains a host-minted SHA-256 attestation of the complete tool
+result before its display copy is abbreviated. Commit-time rereading must match that attestation;
+an actual ranged/partial read, missing file or changed snapshot still fails closed. Production:
+`verifyTraceInspectedArtifacts` in
+[trace-reads.ts](../../packages/kernel/src/goals/trace-reads.ts). Test: the complete-large and partial
+source cases in
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
 
 The default request takes the ordinary run's resolved token allowance as its own independent budget
 and stops at 120,000 ms or eight iterations. Each provider call is
@@ -57,6 +69,17 @@ formulation token allowance while lowering the other limits; omitted model inher
 while an explicit invalid model fails on
 use without falling back to the current profile. The run has host-minted execution and agent-instance
 IDs, its own persisted trace, no conversation turn, and provider `callPurpose: "goal"`.
+
+When work starts, the command reviewers receive the complete persisted definition as host-attested
+Goal review context alongside, but separate from, the exact operator evidence that created it. The
+context guides relevance and necessity; it cannot grant authority or manufacture acceptance of a
+human criterion. Production: `goalReviewContext` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and the reviewer payloads in
+[judge.ts](../../packages/kernel/src/guard/judge.ts) and
+[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts). Test:
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts),
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts) and
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
 `projectGoalTrajectory` reconstructs every persisted `continue_from` ancestor reachable from
 non-pending conversation turns, then orders sanitized user messages, final-answer assistant results,
@@ -117,14 +140,22 @@ retry.
 `registerGoalCommands` exposes `/goal`, explicit auto/guided formulation, literal objective creation
 and the edit/pause/resume/cancel/clear controls through the normal Code registry. Formulation prepares
 an empty conversation when needed, never dispatches the slash command to the ordinary model, does not
-open a pre-creation form, and does not silently replace a current Goal. Created opens the existing
-view; insufficient, stale and failed outcomes show one question/message without automatic retry.
+open a pre-creation form, and does not silently replace a current Goal. Created reveals the compact
+Goal sidebar section without navigating away from the transcript; insufficient, stale and failed
+outcomes show one question/message without automatic retry. The controller exposes the in-flight
+formulation state, so the Lead activity line and sidebar distinguish analysis from an idle TUI.
+The sidebar follows the Plan pattern: objective/title emphasis, lifecycle tone, status metadata and
+the navigation key occupy the same visual roles. It owns the bounded summary, and `Ctrl+O` opens the
+existing complete Goal view while that section is revealed. Literal creation and successful control also
+remain in the transcript rather than forcing the view open.
 Unsupported hosts refuse controls explicitly. The deterministic form stages objective, bounded
 criteria, constraints, exclusions, assumptions and finite limits in one reviewed mutation;
 replacement retains the previous goal and requires confirmation. Editing a terminal goal also uses
 replacement. Physical work, including unknown work without a live hosted reference, blocks editing.
-The view distinguishes durable status, physical execution, origin, semantic arrays, normative source
-paths/digests, completion candidate, checkpoint and qualitative model assessment. A semantic edit
+The view distinguishes durable status, current physical execution, origin and every semantic array.
+It shows normative paths with a shortened SHA-256 display and only actionable negative or
+inconclusive review assessments; raw execution IDs, full digests, detailed accounting, completion
+candidate prose and satisfied review narration stay out of the primary presentation. A semantic edit
 announces that it converts the whole definition to literal and clears source bindings; limit-only
 edits preserve them. A paused goal may still have a running physical stage.
 Human criteria display pending or accepted status from the host's persisted acceptance for the
@@ -160,6 +191,9 @@ Production: `registerGoalCommands`, `GoalForm` and `GoalView` in
 [runtime.tsx](../../packages/code/src/runtime.tsx).
 Test: [goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx) covers
 literal dispatch, physical-state display, pinned review and replacement confirmation;
+[sidebar-render.test.tsx](../../packages/code/tests/integration/sidebar-render.test.tsx) and
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx) cover
+the compact Goal projection and `Ctrl+O` navigation;
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts) covers live and already
 closed automatic stages, painted-prefix preservation and a delayed read after conversation change.
 
@@ -202,6 +236,9 @@ commit. The model supplies only a path; the host computes its digest. A missing,
 changed read fails closed. Later drift does not redefine the Goal: the view reports attention and
 completion remains blocked until a semantic edit, or cancel/clear followed by formulation. Files the
 Goal authorizes changing are execution evidence, not normative sources.
+An explicit `read_file` range counts as complete only when its observed rendering equals that entire
+confined reread and has no continuation marker. Thus line one with an ample limit is valid, while an
+actually partial range remains invalid.
 
 `revision` is the CAS revision of state; `objective_revision` changes with any objective, criteria,
 constraint, exclusion or assumption edit; `control_revision` fences pending admission and late
@@ -262,6 +299,13 @@ separate read-only `goal-agent` run at the Goal gate. Literal definitions are au
 written; guided definitions remain subordinate to their exact seed and normative sources; auto
 definitions remain faithful to projected trajectory and sources. Candidate prose is not proof.
 
+For guided and auto origins, verification reconstructs only the host-recorded formulation source
+execution IDs and applies the same guided-seed exclusion. It compares that canonical digest with
+the persisted origin digest. A matching digest remains authoritative even when the original bounded
+projection recorded truncation; later Goal stages and the verifier's own live run cannot enter the
+projection or make its fence move during inference. Missing source runs, a partial continuation
+chain or a digest mismatch remains inconclusive.
+
 The host requires exact verdict coverage for definition, objective and qualitative criteria,
 validates evidence IDs, binds inspected paths to successful complete trace reads and computes all
 digests. `GoalRun.verifications` retains the newest four audits. Any relevant definition, candidate,
@@ -270,16 +314,28 @@ inference and never adopts new bytes. An unchanged negative proof is reused. The
 order `-200`, before Plan order `-100`; a later Plan nudge changes the final attempt and requires a
 new Goal proof.
 
+A verifier may cite a path only after a complete successful read of that path in its own trace;
+aggregated output carrying truncation is not sufficient. Invalid structured output, omitted
+normative inspection or an incomplete claimed read yields an inconclusive attempt and the same
+bounded recovery path as a negative verdict. Those model-output failures do not become
+`goal_control_failed`, which remains reserved for unavailable bound host control or storage.
+
 Only a current `achieved` proof lets the gate pass. After physical closure, settlement performs no
 model call and `settleGoalRun` remains the sole writer of `status: complete`. A verifier verdict is
 therefore fenced audit evidence, not completion authority.
+The verifier output schema and persistent schema share the same discriminated assessment shape:
+definition and objective assessments cannot carry `criterion_id`, while criterion assessments must.
 
 Production: `verifyCompletion` and `readCompletionProof` in
 [runtime-port.ts](../../packages/kernel/src/goals/runtime-port.ts), `recordGoalVerification` in
 [verification-state.ts](../../packages/goal/src/verification-state.ts), and the gate in
-[capability.ts](../../packages/goal/src/capability.ts). Test:
+[capability.ts](../../packages/goal/src/capability.ts); exact formulation-source reconstruction is
+owned by [verification-input.ts](../../packages/kernel/src/goals/verification-input.ts) and
+[trajectory.ts](../../packages/kernel/src/goals/trajectory.ts). Test:
 [verification.test.ts](../../packages/goal/tests/unit/verification.test.ts) and
 [goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
+The exact-source regression is pinned in
+[goal-trajectory.test.ts](../../packages/kernel/tests/unit/goal-trajectory.test.ts).
 Test: [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
 covers the real file host, IPC, provider adapter, read-only tools, source digest, separate trace,
 single work admission, empty auto, receipt replay, Session CAS and source drift.

@@ -9,6 +9,7 @@ export interface GoalTrajectoryOptions {
   max_runs?: number;
   exclude_user_text?: string;
   exclude_execution_outputs?: string;
+  source_execution_ids?: readonly string[];
   workspace_read_available: boolean;
 }
 
@@ -31,6 +32,8 @@ export async function projectGoalTrajectory(
   const maxBytes = Math.max(1024, options.max_bytes ?? 128 * 1024);
   const maxRuns = Math.max(1, Math.min(256, options.max_runs ?? 256));
   const byId = new Map<string, RunDetail>();
+  const exactSources =
+    options.source_execution_ids === undefined ? undefined : new Set(options.source_execution_ids);
   let partial = false;
 
   const load = async (executionId: string): Promise<void> => {
@@ -45,16 +48,24 @@ export async function projectGoalTrajectory(
       return;
     }
     byId.set(executionId, run);
-    if (run.continue_from !== undefined) await load(run.continue_from);
+    if (run.continue_from !== undefined) {
+      if (exactSources === undefined || exactSources.has(run.continue_from))
+        await load(run.continue_from);
+      else partial = true;
+    }
   };
-  for (const turn of session.turns) {
-    if (
-      turn.kind !== "conversation" ||
-      turn.status === "pending" ||
-      turn.execution_id === undefined
-    )
-      continue;
-    await load(turn.execution_id);
+  if (exactSources !== undefined) {
+    for (const executionId of exactSources) await load(executionId);
+  } else {
+    for (const turn of session.turns) {
+      if (
+        turn.kind !== "conversation" ||
+        turn.status === "pending" ||
+        turn.execution_id === undefined
+      )
+        continue;
+      await load(turn.execution_id);
+    }
   }
 
   const entries: TrajectoryEntry[] = [];

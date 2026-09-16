@@ -6,6 +6,7 @@ import {
   resolveProvider,
   type AuthorityEnvelopeV1,
   type OperatorAuthorityReader,
+  type OperatorReviewContextProvider,
   type LLMProvider,
   type ProviderConfig,
   type Logger,
@@ -27,6 +28,7 @@ import {
   reviewerFailureKind,
   type ReviewerFailureKind,
 } from "./reviewer-trace.ts";
+import { reviewerContextPayload } from "./review-context.ts";
 
 export type { ReviewerFailureKind } from "./reviewer-trace.ts";
 
@@ -174,6 +176,7 @@ export function createEffectReviewService(deps: {
   providers: ProviderConfig[];
   defaultModel?: string;
   authority?: OperatorAuthorityReader;
+  reviewContext?: OperatorReviewContextProvider;
   registry: GuardEffectRegistry;
   audit?: Logger;
   signal?: AbortSignal;
@@ -223,6 +226,7 @@ export function createEffectReviewService(deps: {
     ): Promise<EffectReviewReceipt> {
       const started = performance.now();
       const state = deps.authority?.snapshot();
+      const reviewContext = reviewerContextPayload(state?.review_context, deps.reviewContext);
       let revision = state?.revision ?? 0;
       let attempts = 0;
       const receipt = (
@@ -249,7 +253,7 @@ export function createEffectReviewService(deps: {
         )
       )
         return receipt("unsure");
-      const key = JSON.stringify([revision, batch, call]);
+      const key = JSON.stringify([revision, reviewContext, batch, call]);
       const limitedKeys = batch.facts
         .filter((fact) => fact.id === "github.actions.rerun_failed")
         .map((fact) => effectDigest(fact.id, fact.target!.digest));
@@ -445,6 +449,7 @@ export function createEffectReviewService(deps: {
           "compile",
           {
             operator_evidence: state.evidence,
+            ...(reviewContext === undefined ? {} : { review_context: reviewContext }),
             revision,
             effects: batch.facts,
             descriptors: deps.registry.list().map(({ id, class: effectClass, inference }) => ({
@@ -491,7 +496,12 @@ export function createEffectReviewService(deps: {
       if (blocked || wasRefused(batch)) return receipt("deny");
       const output = await invoke(
         "decide",
-        { call, effects: batch.facts, envelope },
+        {
+          ...(reviewContext === undefined ? {} : { review_context: reviewContext }),
+          call,
+          effects: batch.facts,
+          envelope,
+        },
         decisionSchema,
       );
       const decision = decisionSchema.safeParse(output);
@@ -537,7 +547,7 @@ export function createEffectReviewService(deps: {
       completeStage(answer.decision, answer.relation);
       if (answer.decision !== "unsure") {
         if (cache.size >= 128) cache.clear();
-        cache.set(JSON.stringify([revision, batch, call]), answer);
+        cache.set(JSON.stringify([revision, reviewContext, batch, call]), answer);
       }
       return answer;
     },

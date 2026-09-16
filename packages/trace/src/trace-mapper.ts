@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { isBuiltinTraceEntry, type TraceEntry } from "@clarvis/capability";
 import type { Trace, TraceEvent } from "@clarvis/capability";
 import type { PersistedTraceProjectorRegistry } from "@clarvis/capability";
@@ -143,6 +144,8 @@ function mapEntryRaw(
     }
     case "tool_call": {
       const d = capDetail(entry.kind, entry.detail);
+      const completeResultDigest =
+        d.result_digest ?? createHash("sha256").update(entry.detail.result).digest("hex");
       const { mcp_name, tool_name } = splitToolName(d.name);
       const event: Extract<TraceEvent, { type: "tool_call" }> = {
         type: "tool_call",
@@ -154,6 +157,7 @@ function mapEntryRaw(
         tool_name,
         arguments: asObject(d.arguments),
         result: d.result,
+        result_digest: completeResultDigest,
         error: d.error,
       };
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;

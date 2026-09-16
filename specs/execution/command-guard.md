@@ -232,7 +232,14 @@ escaping rules can only be right or wrong once" (`packages/capability/src/glob.t
 typed field. Code composes operator-global guidance before workspace guidance. Complete registered
 effects use `EFFECT_REVIEW_POLICY`, the live authority envelope and mechanical descriptor coverage.
 An ordinary shell ask that cannot produce such an effect uses the call-local reviewer in `judge.ts`:
-it receives the complete command and host guard facts plus only host-owned operator evidence. Its
+it receives the complete command and host guard facts plus host-owned operator evidence. Top-level
+`review_context` contains the complete persisted Goal definition and the stable substantive Plan
+projection when present, separate from `operator_evidence`. Both reviewer paths treat those
+host-attested definitions as the operator's semantic objective and intended implementation path;
+they may establish a necessary routine bounded prerequisite such as installing declared project
+dependencies. They cannot authorize human-only effects, publication, deployment, destructive
+actions, credential access or external contact from that context, nor override constraints or
+exclusions. Its
 verdict applies to that exact call and cannot register an effect, install an authority grant or add
 session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
 parameter list, environment bindings split at their first `=`, and structured analysis issues. This
@@ -241,15 +248,17 @@ without treating parameter syntax alone as uncertainty. Both paths recheck the a
 invalid output and stale revisions become `unsure` and use the configured human/deny fallback.
 Both paths set the auxiliary agent instance to `judge` on the run-decorated provider. The common
 prompt-cache composer consequently emits the current session's canonical `<session>_judge` key and
-retains the run TTL. Breakpoints cover only stable policy and optional stable guidance, never the
-variable evidence/effect/call payload.
+retains the run TTL. Breakpoints cover only stable policy and optional stable guidance, never Goal,
+Plan or the variable evidence/effect/call payload. Plan progress, results, revisions and timestamps
+are excluded from the review projection.
 
 Production: `createEffectReviewService` in
 [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts) and
 `createJudgeElicit` in [judge.ts](../../packages/kernel/src/guard/judge.ts), composed by
 `createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
+[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
+[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and
 [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ### 3.5 Elicitation payload for a `guard_confirm`
@@ -314,11 +323,24 @@ in the table above, with no trace of the omission. Pinned:
 
 `EFFECT_REVIEW_POLICY` in
 [reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts) is always the first system
-message. Workspace and global guidance are additional data and never replace it. Only admitted
-operator evidence supplies semantic authority. The enabled rollout requires host validation of
+message. Workspace and global guidance are additional data and never replace it. Admitted operator
+evidence anchors authority; host-attested Goal and Plan semantics let the reviewer interpret that
+evidence for routine bounded prerequisites. The enabled rollout requires host validation of
 registered effect, target, evidence and grant coverage after the model responds; uncertain or
 noninferable effects stay human-only. Review on remains human review, and containment alone grants
 no semantic authority.
+
+A host-started Goal stage does not admit its synthetic start or continuation message as operator
+evidence. Literal Goals supply the complete definition explicitly declared by the user. Guided Goals
+supply the exact source-execution user messages followed by the exact seed; auto Goals supply only
+those exact source messages. Inferred objective, criteria, constraints, exclusions and assumptions,
+together with stable Plan substance, can authorize only a necessary routine bounded prerequisite;
+they never satisfy an explicit or human-only authority boundary. Production: `goalAuthorityMessages` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and its use by `createRunService` in
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: the exact literal/guided Goal
+authority cases in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
 Production: `createEffectReviewService` and `createGuardResolver`.
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts)

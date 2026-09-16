@@ -907,6 +907,16 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
    */
   function appendRunFailure(execId: string, error: { code: string; message: string }): void {
     const prefix = `${execId}::`;
+    if (error.code === "goal_blocked") {
+      const bounded = boundTranscriptText(`Goal blocked: ${error.message}`);
+      upsert(`${prefix}goal-blocked`, () => ({
+        kind: "annotation",
+        status: "ok",
+        tone: "warn",
+        text: bounded.text,
+      }));
+      return;
+    }
     const bounded = boundTranscriptText(`${error.code}: ${error.message}`);
     if (
       state.nodes.some(
@@ -1777,7 +1787,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           // append that never reaches it. The trace does carry the failure's
           // code, so a restored run says why it ended rather than only that it
           // did.
-          if (!ok && event.code !== undefined)
+          if (!ok && event.code !== undefined && event.code !== "goal_blocked")
             appendRunFailure(execId, { code: event.code, message: event.reason ?? "run failed" });
           settleRun(execId, ok);
           const index = upsert(ns("run"), () => ({

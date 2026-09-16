@@ -161,6 +161,16 @@ an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
 `packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
 `packages/trace/tests/unit/trace-mapper.test.ts`.
 
+`ToolCallDetail.result_digest` and the persisted `tool_call.result_digest` are the SHA-256 of the
+complete result before `RESULT_MAX` abbreviates its display copy. `createTrace` computes the digest
+before capping; `mapEntry` carries it and only derives a compatibility digest when a direct legacy
+entry bypassed the recorder. The digest attests bytes but does not expose or reconstruct omitted
+content. Production: `createTrace` in
+[in-memory-trace.ts](../../packages/trace/src/in-memory-trace.ts) and the `tool_call` mapping in
+[trace-mapper.ts](../../packages/trace/src/trace-mapper.ts). Test: `createTrace capping` in
+[in-memory-trace.test.ts](../../packages/trace/tests/unit/in-memory-trace.test.ts) and the tool
+projection case in [trace-mapper.test.ts](../../packages/trace/tests/unit/trace-mapper.test.ts).
+
 `ToolCallStartedDetail.control` is the optional `{ tool_execution_id, actions: ["interrupt"] }`
 capability for one live builtin shell invocation. `ToolCallDetail.interruption` is the optional
 `{ source: "operator" }` cause on a selectively interrupted terminal with a non-null error
@@ -447,7 +457,9 @@ blew halfway through the scan'".
 `packages/trace/src/in-memory-trace.ts`. Per call:
 
 1. If `sealed`, return.
-2. Build `{ at: performance.now() - startedAt, kind, detail: capDetail(kind, detail) }`.
+2. For a `tool_call`, attach the complete-result SHA-256, then build
+   `{ at: performance.now() - startedAt, kind, detail: capDetail(kind, detail) }`; other kinds go
+   directly through the same cap.
 3. `record` pushes to `trace.entries` **and** calls `onRecord(entry, true)`.
    `signal` only calls `onRecord(entry, false)`.
 4. `seal()` flips the flag; both become no-ops.

@@ -319,7 +319,7 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts` (a patch-v
 
 ### 3.3 `DEFAULT_BINDING_CANDIDATES` — the full vital-command table
 
-16 commands, each with 1-2 candidates (`packages/code/src/keys/interaction.ts`,
+17 commands, each with 1-2 candidates (`packages/code/src/keys/interaction.ts`,
 `DEFAULT_BINDING_CANDIDATES`):
 
 | Command | Candidates | `when` |
@@ -333,7 +333,8 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts` (a patch-v
 | `review.picker` | `alt+g` (enhanced, requires `meta`), `ctrl+g` | `overlay==none` |
 | `controls.open` | `alt+r` (enhanced, requires `meta`) | `overlay==none` |
 | `plan.open` | `ctrl+p`, `alt+p` (enhanced, requires `meta`) | `overlay in (none, plan)` |
-| `transcript.toggleCollapse` | `ctrl+o` | `overlay==none` |
+| `goal.toggle` | `ctrl+o` | `overlay==none` |
+| `transcript.toggleCollapse` | `ctrl+k` | `overlay==none` |
 | `transcript.focusPrev` | `ctrl+up` | `overlay==none` |
 | `transcript.focusNext` | `ctrl+down` | `overlay==none` |
 | `transcript.scrollPageUp` | `pageup` | `overlay==none` |

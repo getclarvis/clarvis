@@ -20,7 +20,7 @@ import {
   GoalAgentRunFailure,
   type GoalDefinitionSource,
 } from "@clarvis/goal";
-import { isBuiltinTraceEvent, type TraceEvent } from "@clarvis/capability";
+import type { TraceEvent } from "@clarvis/capability";
 import type {
   GoalFormulateResult,
   GoalService,
@@ -37,6 +37,7 @@ import { toGoalKernelError } from "./errors.ts";
 import type { HostedSessionTransactions } from "../hosting/sessions.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
 import { projectGoalTrajectory } from "./trajectory.ts";
+import { verifyTraceInspectedArtifacts } from "./trace-reads.ts";
 
 const identifier = z
   .string()
@@ -186,68 +187,6 @@ export function createGoalService(options: {
     }
   };
 
-  interface NormativeReadObservation {
-    tool: "read_file" | "read_files";
-    paths: string[];
-    result: string;
-  }
-  const normativeReadObservations = (executionId: string): NormativeReadObservation[] => {
-    const observations: NormativeReadObservation[] = [];
-    for (const event of options.readTrace(executionId) ?? []) {
-      if (!isBuiltinTraceEvent(event) || event.type !== "tool_call" || event.error !== null)
-        continue;
-      const tool = event.tool_name ? `${event.mcp_name}.${event.tool_name}` : event.mcp_name;
-      if (tool === "read_file") {
-        const args = event.arguments as { path?: unknown; offset?: unknown; limit?: unknown };
-        if (
-          typeof args.path === "string" &&
-          args.offset === undefined &&
-          args.limit === undefined &&
-          !event.result.includes("continue with offset=")
-        )
-          observations.push({ tool, paths: [args.path], result: event.result });
-      } else if (tool === "read_files") {
-        const args = event.arguments as { paths?: unknown };
-        if (
-          Array.isArray(args.paths) &&
-          args.paths.every((path) => typeof path === "string") &&
-          !event.result.includes("more file(s) not shown") &&
-          !event.result.includes("use read_file for the rest")
-        )
-          observations.push({ tool, paths: args.paths, result: event.result });
-      }
-    }
-    return observations;
-  };
-  const renderedCompleteFile = (content: string): string | undefined => {
-    const normalized = content
-      .replace(/^\uFEFF/u, "")
-      .replace(/\r\n/gu, "\n")
-      .replace(/\r/gu, "\n");
-    if (normalized === "") return "(empty file)";
-    const lines = normalized.split("\n");
-    if (lines.at(-1) === "") lines.pop();
-    if (lines.some((line) => line.length > 2_000)) return undefined;
-    return lines.map((line, index) => `${String(index + 1).padStart(6)}\t${line}`).join("\n");
-  };
-  const matchesCompleteRead = (
-    observation: NormativeReadObservation,
-    path: string,
-    content: string,
-  ): boolean => {
-    if (!observation.paths.includes(path)) return false;
-    const rendered = renderedCompleteFile(content);
-    if (rendered === undefined) return false;
-    if (observation.tool === "read_file") return observation.result === rendered;
-    const section = `==> ${path} <==\n${rendered}`;
-    return (
-      observation.result === section ||
-      observation.result.startsWith(`${section}\n\n`) ||
-      observation.result.endsWith(`\n\n${section}`) ||
-      observation.result.includes(`\n\n${section}\n\n`)
-    );
-  };
-
   const formulation = async (raw: unknown): Promise<GoalFormulateResult> => {
     const request = goalFormulateRequestSchema.parse(raw);
     const fingerprint = goalFormulationFingerprint(request);
@@ -384,25 +323,13 @@ export function createGoalService(options: {
         );
       const ready = analyzed.result;
 
-      const readObservations = normativeReadObservations(formulationExecutionId);
-      const sources: GoalDefinitionSource[] = [];
+      let sources: GoalDefinitionSource[];
       try {
-        for (const path of ready.normative_source_paths) {
-          const file = await options.readWorkspaceFile(path);
-          if (
-            !readObservations.some((observation) =>
-              matchesCompleteRead(observation, path, file.content),
-            )
-          )
-            throw kernelError(
-              "invalid_request",
-              "Normative source was not read completely at the committed snapshot",
-            );
-          sources.push({
-            path: file.path,
-            digest: createHash("sha256").update(file.content).digest("hex"),
-          });
-        }
+        sources = await verifyTraceInspectedArtifacts({
+          trace: options.readTrace(formulationExecutionId) ?? [],
+          paths: ready.normative_source_paths,
+          readFile: (path) => options.readWorkspaceFile(path),
+        });
       } catch {
         return commitReceipt(
           "insufficient_context",

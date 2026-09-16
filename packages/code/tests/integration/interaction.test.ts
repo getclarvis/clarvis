@@ -78,6 +78,9 @@ function fakeEffects(overrides: Partial<InteractionEffects> = {}): InteractionEf
     focusNext: () => {
       calls.push("focusNext");
     },
+    openGoal: () => {
+      calls.push("openGoal");
+    },
     toggleExpandAll: () => {
       calls.push("toggleExpandAll");
     },
@@ -189,11 +192,13 @@ test("modified arrows stay portable — they are plain xterm, not an enhanced ca
   expect(portable()["transcript.focusNext"]).toBe("ctrl+down");
 });
 
-test("Ctrl+O toggles expand/collapse (copy-mode's Alt+C is gone) and is overlay-gated", () => {
-  expect(portable()["transcript.toggleCollapse"]).toBe("ctrl+o");
+test("Ctrl+O owns Goal detail while Ctrl+K owns transcript expansion", () => {
+  expect(portable()["goal.toggle"]).toBe("ctrl+o");
+  expect(portable()["transcript.toggleCollapse"]).toBe("ctrl+k");
   expect(DEFAULT_BINDING_CANDIDATES["transcript.copyMode"]).toBeUndefined();
-  const [b] = find(buildVitalBindings(portable(), DEFAULT_WHEN), "transcript.toggleCollapse");
-  expect(b?.when).toBe("overlay==none");
+  const vital = buildVitalBindings(portable(), DEFAULT_WHEN);
+  expect(find(vital, "goal.toggle")[0]?.when).toBe("overlay==none");
+  expect(find(vital, "transcript.toggleCollapse")[0]?.when).toBe("overlay==none");
 });
 
 test("Ctrl+P toggles the plan; enhanced terminals also retain Alt+P", () => {
@@ -259,6 +264,7 @@ test("a pending modal keeps scrolling, suspend and cancel, and withholds the res
     "agent.picker",
     "isolation.picker",
     "review.picker",
+    "goal.toggle",
     "transcript.toggleCollapse",
     "transcript.focusPrev",
   ]) {
@@ -683,7 +689,7 @@ test("createInteraction: Tab, collapse and block-navigation commands each call t
   await settle();
   expect(effects.calls).toEqual(["focusNext"]);
 
-  press(t.renderer, "o", { ctrl: true });
+  press(t.renderer, "k", { ctrl: true });
   await settle();
   expect(effects.calls).toEqual(["focusNext", "toggleExpandAll"]);
 

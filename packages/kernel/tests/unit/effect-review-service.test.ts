@@ -29,6 +29,10 @@ function fixture() {
       evidence: [
         { id: "operator", source: "start", text: "Commit the changes", execution_id: "run" },
       ],
+      review_context: {
+        kind: "goal",
+        content: JSON.stringify({ objective: "Finish the current implementation" }),
+      },
     },
   });
   const batch: GuardEffectBatch = {
@@ -426,6 +430,15 @@ describe("host-validated effect review", () => {
     expect(calls[0]!.messages[0]!.content).not.toContain("ignore safety");
     expect(JSON.parse(calls[0]!.messages[1]!.content as string).operator_evidence).toEqual(
       ledger.reader.snapshot().evidence,
+    );
+    const expectedContext = [
+      { kind: "goal", definition: { objective: "Finish the current implementation" } },
+    ];
+    expect(JSON.parse(calls[0]!.messages[1]!.content as string).review_context).toEqual(
+      expectedContext,
+    );
+    expect(JSON.parse(calls[1]!.messages[1]!.content as string).review_context).toEqual(
+      expectedContext,
     );
   });
   test("model allow without coverage is unsure and is never memoized", async () => {

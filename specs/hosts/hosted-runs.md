@@ -44,6 +44,20 @@ Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 Test: automatic-stage and delayed-goal-read cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
+The host also seeds command-review authority separately from the synthetic Goal work prompt. Guided
+stages preserve the exact seed after exact user messages reconstructed from host-recorded source
+executions; auto stages use only those source messages; literal stages serialize the complete
+user-declared definition. The reviewer also receives the complete persisted Goal definition as a
+separate host-attested `review_context`, so it can assess whether a command is necessary for the
+current objective without converting inferred assumptions or human criteria into permission.
+Automatic continuations inherit both fields and never capture their synthetic reminder as fresh
+evidence. Production: `goalAuthorityMessages`, `goalReviewContext` and
+`GoalExecutionPolicy` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts), consumed by `createRunService` in
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: Goal authority coverage in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
+
 Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
 host rejects it before inference when a Goal or physical run already owns the conversation. Its
 separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock

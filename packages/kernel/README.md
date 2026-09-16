@@ -129,6 +129,12 @@ specified in [goals](../../specs/capabilities/goals.md); repository tests do not
 continuation or the complete product journey.
 `prepareHostedGoalTurn` composes a mandatory goal capability, finite stop-mode request budget,
 atomic turn/goal intent, revision-fenced terminal evidence and the internal continuation policy.
+Its command-review authority never comes from the synthetic Goal start or continuation message.
+Literal Goals contribute their complete user-declared definition; guided Goals contribute their
+exact seed after the exact source-execution user messages; auto Goals contribute only those exact
+source messages. The complete persisted definition is supplied separately as host-attested reviewer
+context, so the judge can assess relevance without treating model-formulated semantics as operator
+authority or inferred human approval.
 Evidence validation releases the session lock so user controls remain available; the terminal write
 rechecks those controls and charges usage once. The host also checks the persisted absolute deadline
 before every physical model call. An already-started call may finish and remains chargeable, while
@@ -144,6 +150,11 @@ performs creation, checkpoint continuation and completion through the real FileK
 `/goal` commands observe these host-owned stages through the same service. The guest bridge runs the
 canonical capability against closed host operations; real engine, complete local/remote,
 real-provider and installed-artifact qualification require separate evidence.
+Production: `prepareHostedGoalTurn` and `goalAuthorityMessages` in
+[hosted-turn.ts](src/goals/hosted-turn.ts), consumed by `createRunService` in
+[run-service.ts](src/runs/run-service.ts). Test: Goal authority cases in
+[goal-hosted-continuation.test.ts](tests/integration/goal-hosted-continuation.test.ts) and
+[run-service-lifecycle.test.ts](tests/unit/run-service-lifecycle.test.ts).
 `GoalService.formulate` owns the interactive semantic pre-run. It checks the full
 session/Goal/physical-work fence before inference, projects bounded owner-scoped conversation
 evidence, and runs `goal-agent` without holding the session transaction. The isolated dependency set
@@ -151,6 +162,8 @@ replaces the host capability list with canonical Tools; only its read-only surfa
 `submit_result` are reachable. There are no MCP, skill, hook, workflow, plan, memory, Goal control or
 delegation ports. The host supplies model/provider/runtime placement, stamps identities, verifies
 complete trace-backed normative reads, rereads confined files and computes their SHA-256 digests.
+An explicit `read_file` range is accepted only when its trace rendering still equals the entire
+confined reread and has no continuation marker; genuinely partial ranges remain fail-closed.
 
 Every terminal analysis outcome is retained in the existing receipt ring. Ready output creates one
 Goal through `applyGoalFormulation`, persists its receipt and formulation usage, then enters the same
@@ -173,6 +186,13 @@ runtime placement. Trace-backed reads become digest-bound inspected artifacts; a
 persists the verdict only while definition, candidate, result, evidence and revisions remain
 current. Negative or inconclusive verdicts return bounded guidance to the primary run. Settlement
 only reads a matching achieved proof after physical closure and never calls a model.
+An invalid result or a claimed path without one complete trace read is an inconclusive verifier
+attempt, not a `goal_control_failed` host outage; the ordinary bounded nudge/block path remains in
+control.
+For guided and auto Goals, the verifier reconstructs the exact host-recorded formulation execution
+set instead of projecting the current live stage. The canonical digest must match the persisted
+origin digest; the same guided seed exclusion is reapplied. This keeps later stages and verifier
+activity out of the fence while still failing closed on missing or partial source recovery.
 
 `prepareHostedGoalTurn` reserves `min(stage_token_limit, floor(remaining/2))` for verification and
 caps the primary run with the remainder. Both provider paths share one deadline and usage tracker,
@@ -183,7 +203,8 @@ Kernel against the mounted workspace, with only model calls brokered by the host
 Production: [runtime-port.ts](src/goals/runtime-port.ts),
 [verification-input.ts](src/goals/verification-input.ts), [trace-reads.ts](src/goals/trace-reads.ts)
 and [hosted-turn.ts](src/goals/hosted-turn.ts). Test:
-[goal-verification.test.ts](tests/integration/goal-verification.test.ts).
+[goal-verification.test.ts](tests/integration/goal-verification.test.ts) and the exact-source
+regression in [goal-trajectory.test.ts](tests/unit/goal-trajectory.test.ts).
 `createGoalRuntimePort` implements the bound model operations over that private repository. It
 revalidates execution/revision after asynchronous evidence reads and again in the short transaction.
 Notifications follow successful durable publication; a notification failure does not roll back state.
@@ -764,7 +785,12 @@ overrides and guidance. Code no longer supplies a complete system prompt. Worksp
 cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
 owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
 ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` with the complete call
-and the same host-owned evidence. That verdict is valid only for the exact call and installs no
+and the same host-owned evidence. Hosted Goal runs supply their complete persisted definition, and
+the active Plans capability supplies only its stable substantive specification, as separate
+host-attested review context. Both reviewers treat those definitions as the operator's semantic
+objective and implementation path, so a necessary bounded prerequisite such as installing declared
+dependencies can be approved. They cannot infer human-only effects, publication, deployment,
+destruction, credential access or external contact from that context. A verdict is valid only for the exact call and installs no
 descriptor, envelope grant or session permission. The evidence is chronological: a fresh publication
 instruction can refer to the authenticated implementation scope from earlier turns, while an old
 publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
@@ -773,8 +799,9 @@ untrusted context, and decline, cancel or another elicitation kind grants nothin
 Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
 LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
 composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
-Explicit breakpoints end at stable reviewer policy/guidance; operator evidence and call facts remain
-after that boundary.
+Explicit breakpoints end at stable reviewer policy/guidance; Goal, Plan, operator evidence and call
+facts remain together in the final volatile message after that boundary. Plan progress fields never
+enter that message.
 Each real call-local or effect-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are

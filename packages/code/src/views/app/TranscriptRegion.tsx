@@ -20,6 +20,7 @@ import {
   type TranscriptViewportHandle,
 } from "../transcript/TranscriptViewport.tsx";
 import { ElicitBlock } from "../ElicitBlock.tsx";
+import type { GoalController } from "../../features/goal/controller.ts";
 
 /** Normal bottom breathing room between the newest transcript row and composer chrome. */
 const TRANSCRIPT_READING_RUNWAY_ROWS = 3;
@@ -75,6 +76,8 @@ export interface TranscriptRegionProps {
   onScrollbox: (scrollbox: ScrollBoxRenderable) => void;
   onHistoryHandle?: (handle: TranscriptViewportHandle | undefined) => void;
   draftNonEmpty?: Accessor<boolean>;
+  goals?: GoalController;
+  onOpenGoal?: () => void;
 }
 
 /**
@@ -207,6 +210,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
           onOpenDetail={props.onOpenDetail}
           footerHint={props.layout.sidebarHint}
           onClose={props.layout.closeDrawer}
+          goals={props.goals}
+          onOpenGoal={props.onOpenGoal}
         />
       </Show>
       <Show
@@ -258,6 +263,8 @@ export function TranscriptRegion(props: TranscriptRegionProps): JSX.Element {
                 onOpenDetail={props.onOpenDetail}
                 footerHint={props.layout.sidebarHint}
                 onClose={props.layout.closeDrawer}
+                goals={props.goals}
+                onOpenGoal={props.onOpenGoal}
               />
             </box>
           </SurfaceOverlay>

@@ -173,7 +173,11 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
       sameController && previousAuthority?.status === "active"
         ? previousAuthority.binding.outcome_id
         : undefined;
-    const currentEvidence = (authorityAdmission?.captureInput === false ? [] : params.messages)
+    const admittedMessages =
+      prepared?.kind === "ordinary" && prepared.goal !== undefined
+        ? prepared.goal.authorityMessages
+        : params.messages;
+    const currentEvidence = (authorityAdmission?.captureInput === false ? [] : admittedMessages)
       .filter((message) => message.role === "user")
       .map((message) => ({
         id: randomUUID(),
@@ -204,6 +208,9 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
               outcome_id: continuedOutcome ?? randomUUID(),
             },
             evidence: [...settledEvidence, ...currentEvidence],
+            ...(prepared?.kind === "ordinary" && prepared.goal !== undefined
+              ? { review_context: prepared.goal.reviewContext }
+              : {}),
           };
     if (prepared?.kind === "workflow")
       return prepared.start(operatorAuthoritySeed, authorityAdmission?.signal);

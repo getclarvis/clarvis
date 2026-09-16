@@ -22,6 +22,7 @@ export interface GoalController {
   view: Accessor<GoalView | undefined>;
   available: Accessor<boolean>;
   busy: Accessor<boolean>;
+  formulating: Accessor<boolean>;
   loading: Accessor<boolean>;
   failure: Accessor<string>;
   pendingOperation: Accessor<string | undefined>;
@@ -61,6 +62,7 @@ export function createGoalController(deps: {
   const [view, setView] = createSignal<GoalView>();
   const [available, setAvailable] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  const [formulating, setFormulating] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [failure, setFailure] = createSignal("");
   const [pendingOperation, setPendingOperation] = createSignal<string>();
@@ -189,6 +191,7 @@ export function createGoalController(deps: {
     view,
     available,
     busy,
+    formulating,
     loading,
     failure,
     pendingOperation,
@@ -270,6 +273,7 @@ export function createGoalController(deps: {
       if (disposed || busy())
         throw new Error("A goal operation is already running or the interface is closed.");
       setBusy(true);
+      setFormulating(true);
       let entry: Observation | undefined;
       try {
         const binding = deps.binding() ?? (await deps.prepare());
@@ -323,6 +327,7 @@ export function createGoalController(deps: {
         if (entry === undefined || current(entry)) setFailure(message(error));
         throw error;
       } finally {
+        setFormulating(false);
         setBusy(false);
       }
     },

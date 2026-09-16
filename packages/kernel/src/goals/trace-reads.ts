@@ -5,6 +5,7 @@ interface CompleteRead {
   tool: "read_file" | "read_files";
   paths: string[];
   result: string;
+  resultDigest?: string;
 }
 
 function completeReads(trace: readonly TraceEvent[]): CompleteRead[] {
@@ -13,14 +14,14 @@ function completeReads(trace: readonly TraceEvent[]): CompleteRead[] {
     if (!isBuiltinTraceEvent(event) || event.type !== "tool_call" || event.error !== null) continue;
     const tool = event.tool_name ? `${event.mcp_name}.${event.tool_name}` : event.mcp_name;
     if (tool === "read_file") {
-      const args = event.arguments as { path?: unknown; offset?: unknown; limit?: unknown };
-      if (
-        typeof args.path === "string" &&
-        args.offset === undefined &&
-        args.limit === undefined &&
-        !event.result.includes("continue with offset=")
-      )
-        observations.push({ tool, paths: [args.path], result: event.result });
+      const args = event.arguments as { path?: unknown };
+      if (typeof args.path === "string" && !event.result.includes("continue with offset="))
+        observations.push({
+          tool,
+          paths: [args.path],
+          result: event.result,
+          ...(event.result_digest === undefined ? {} : { resultDigest: event.result_digest }),
+        });
     } else if (tool === "read_files") {
       const args = event.arguments as { paths?: unknown };
       if (
@@ -51,7 +52,10 @@ function exactRead(observation: CompleteRead, path: string, content: string): bo
   if (!observation.paths.includes(path)) return false;
   const body = rendered(content);
   if (body === undefined) return false;
-  if (observation.tool === "read_file") return observation.result === body;
+  if (observation.tool === "read_file")
+    return observation.resultDigest === undefined
+      ? observation.result === body
+      : observation.resultDigest === createHash("sha256").update(body).digest("hex");
   const section = `==> ${path} <==\n${body}`;
   return (
     observation.result === section ||

@@ -478,6 +478,8 @@ export function App(props: AppProps): JSX.Element {
   const term = useTerminalDimensions();
   const dims = (): { w: number; h: number } => ({ w: term().width, h: term().height });
   const sidebarHasContent = (): boolean =>
+    props.run.goals?.formulating() === true ||
+    props.run.goals?.view()?.state.current !== undefined ||
     props.activity.plan != null ||
     props.activity.subagents.length > 0 ||
     [...(props.run.workflowActivity()?.nodes.values() ?? [])].some((n) => n.kind === "leader");
@@ -519,7 +521,11 @@ export function App(props: AppProps): JSX.Element {
   });
   const [diffNode, setDiffNode] = createSignal<TranscriptToolNode | null>(null);
   useSpinnerClock(
-    () => props.run.active() || props.run.localBusy() || props.run.compacting?.() === true,
+    () =>
+      props.run.active() ||
+      props.run.localBusy() ||
+      props.run.compacting?.() === true ||
+      props.run.goals?.formulating() === true,
   );
   let inputEl: TextareaRenderable | undefined;
   let dock:
@@ -547,13 +553,14 @@ export function App(props: AppProps): JSX.Element {
     historyHandle?.returnToLeadTail();
     submit();
   };
-  type AutoSidebarIntent = "plan" | "workflow" | "agents";
+  type AutoSidebarIntent = "goal" | "plan" | "workflow" | "agents";
   interface AutoSidebarState {
     context: string | null;
     opened: boolean;
     dismissed: boolean;
   }
   const autoSidebar: Record<AutoSidebarIntent, AutoSidebarState> = {
+    goal: { context: null, opened: false, dismissed: false },
     plan: { context: null, opened: false, dismissed: false },
     workflow: { context: null, opened: false, dismissed: false },
     agents: { context: null, opened: false, dismissed: false },
@@ -585,6 +592,11 @@ export function App(props: AppProps): JSX.Element {
   };
 
   const sidebarSectionAvailable = (section: AutoSidebarIntent): boolean => {
+    if (section === "goal")
+      return (
+        props.run.goals?.formulating() === true ||
+        props.run.goals?.view()?.state.current !== undefined
+      );
     if (section === "plan") return props.activity.plan !== null;
     if (section === "workflow")
       return [...(props.run.workflowActivity()?.nodes.values() ?? [])].some(
@@ -595,7 +607,9 @@ export function App(props: AppProps): JSX.Element {
   let manualSidebarReveal = 0;
   const openActivitySidebar = (requested?: AutoSidebarIntent): void => {
     const section =
-      requested ?? (["agents", "workflow", "plan"] as const).find(sidebarSectionAvailable) ?? null;
+      requested ??
+      (["goal", "agents", "workflow", "plan"] as const).find(sidebarSectionAvailable) ??
+      null;
     if (section === null || !sidebarSectionAvailable(section)) {
       notify(
         requested === undefined
@@ -614,6 +628,12 @@ export function App(props: AppProps): JSX.Element {
     if (layout.drawerOpen()) closeActivitySidebar();
     else openActivitySidebar();
   };
+
+  createEffect(() => {
+    if (props.run.goals?.formulating() !== true) return;
+    const binding = props.run.goals.binding();
+    requestAutomaticSidebar("goal", `formulation:${binding?.sessionId ?? "preparing"}`);
+  });
 
   createEffect(() => {
     const context = visiblePlanContext(props.store, props.activity);
@@ -725,6 +745,18 @@ export function App(props: AppProps): JSX.Element {
     focusNext: () => {
       ts.clearFocus();
       inputEl?.focus();
+    },
+    openGoal: () => {
+      if (props.run.goals?.view()?.state.current === undefined) {
+        notify(
+          props.run.goals?.formulating()
+            ? "Goal formulation is still running."
+            : "No Goal in this conversation.",
+          "warn",
+        );
+        return;
+      }
+      commands.runCommand("goal.open");
     },
     toggleExpandAll: () => {
       if (overlays.overlay() !== "none") return;
@@ -844,7 +876,7 @@ export function App(props: AppProps): JSX.Element {
   commands.registerAction({
     name: "activity.toggle",
     title: "Toggle run activity sidebar",
-    desc: "Open or close the current Plan, parallel workflow, or sub-agent sidebar",
+    desc: "Open or close the current Goal, Plan, parallel workflow, or sub-agent sidebar",
     slash: false,
     surface: "internal",
     group: "navigate",
@@ -1254,7 +1286,11 @@ export function App(props: AppProps): JSX.Element {
         ? { text: "", tone: "info" }
         : hint();
   const leadActivityPhase = (): LeadActivityPhase => {
-    const busy = props.run.active() || props.run.localBusy() || props.run.compacting?.() === true;
+    const busy =
+      props.run.active() ||
+      props.run.localBusy() ||
+      props.run.compacting?.() === true ||
+      props.run.goals?.formulating() === true;
     if (!busy) return "ready";
     if (
       props.run.active() &&
@@ -1271,6 +1307,7 @@ export function App(props: AppProps): JSX.Element {
     return "working";
   };
   const leadActivityDetail = (): string => {
+    if (props.run.goals?.formulating()) return "Goal formulation · reading context";
     const goal = props.run.goals?.view()?.state.current;
     const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
     if (!props.run.active()) return detail.join(` ${glyph("separator")} `);
@@ -1336,6 +1373,9 @@ export function App(props: AppProps): JSX.Element {
     const toggleKey = commandKeyLabel(interaction.keymap, "activity.toggle", {
       visibility: "registered",
     });
+    if (sidebarReveal()?.section === "goal" && sidebarSectionAvailable("goal")) {
+      return `${toggleKey === undefined ? "^L" : `[${toggleKey}]`} close`;
+    }
     return `${toggleKey === undefined ? "Ctrl+L" : `[${toggleKey}]`} open / close sidebar`;
   };
 
@@ -1501,6 +1541,8 @@ export function App(props: AppProps): JSX.Element {
                 onScrollbox={(el) => (scrollEl = el)}
                 onHistoryHandle={(handle) => (historyHandle = handle)}
                 draftNonEmpty={draftNonEmpty}
+                goals={props.run.goals}
+                onOpenGoal={() => commands.runCommand("goal.open")}
               />
             }
           />

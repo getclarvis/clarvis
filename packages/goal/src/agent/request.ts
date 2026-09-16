@@ -220,7 +220,7 @@ export function buildGoalAgentRequest(
   const profile: AgentProfile = {
     name: "goal-agent",
     model: runtime.model_ref,
-    base_prompt: goalAgentPrompt(parsed.mode),
+    base_prompt: goalAgentPrompt(),
     tools: [],
     grants: ["read_workspace"],
     can_spawn: [],

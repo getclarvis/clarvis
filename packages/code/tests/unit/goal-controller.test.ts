@@ -185,6 +185,21 @@ describe("goal presentation controller", () => {
     ]);
   });
 
+  it("exposes formulation as live presentation state until its own run settles", async () => {
+    const f = fixture();
+    const formulate = f.service.formulate.bind(f.service);
+    const gate = Promise.withResolvers<void>();
+    f.service.formulate = async (request) => {
+      await gate.promise;
+      return formulate(request);
+    };
+    const pending = f.controller.formulate("auto");
+    expect(f.controller.formulating()).toBe(true);
+    gate.resolve();
+    await pending;
+    expect(f.controller.formulating()).toBe(false);
+  });
+
   it("recovers a lost formulation reply without starting another analysis", async () => {
     const f = fixture();
     const formulate = f.service.formulate.bind(f.service);

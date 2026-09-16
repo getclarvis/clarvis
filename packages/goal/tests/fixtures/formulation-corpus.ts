@@ -142,6 +142,28 @@ export const goalFormulationCorpus: GoalFormulationCorpusCase[] = [
     required_fragments: ["release candidate", "human", "approval"],
   },
   {
+    name: "future approval is only an authority boundary",
+    language: "pt",
+    mode: "guided",
+    seed: "Recomende device authorization ou browser PKCE. Não implemente; qualquer implementação futura exige aprovação explícita.",
+    trajectory: "[]",
+    result: {
+      status: "ready",
+      objective: "Recomendar device authorization ou browser PKCE",
+      criteria: [
+        {
+          kind: "qualitative",
+          description: "A recomendação escolhe uma alternativa e justifica a escolha",
+        },
+      ],
+      constraints: ["Qualquer implementação futura exige aprovação explícita"],
+      exclusions: ["Implementar a recomendação"],
+      assumptions: [],
+      normative_source_paths: [],
+    },
+    required_fragments: ["Recomendar", "implementação futura", "Implementar"],
+  },
+  {
     name: "genuinely ambiguous context",
     language: "pt",
     mode: "auto",

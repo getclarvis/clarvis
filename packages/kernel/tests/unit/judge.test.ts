@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import {
   createCapabilityServices,
   OPERATOR_AUTHORITY_PORT,
+  OPERATOR_REVIEW_CONTEXT_PORT,
   type LLMCallParams,
   type LLMProvider,
   type RunCapabilityContext,
@@ -24,6 +25,10 @@ function authority(text = "Run the relevant tests") {
     seed: {
       binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
       evidence: [{ id: "operator", source: "start", text, execution_id: "run" }],
+      review_context: {
+        kind: "goal",
+        content: JSON.stringify({ objective: "Keep the kernel checks green" }),
+      },
     },
   });
 }
@@ -75,11 +80,63 @@ describe("call-local command judge", () => {
     const payload = JSON.parse(calls[0]!.messages.at(-1)!.content as string);
     expect(payload.call.args.command).toBe(command);
     expect(payload.operator_evidence).toEqual(ledger.reader.snapshot().evidence);
+    expect(payload.review_context).toEqual([
+      { kind: "goal", definition: { objective: "Keep the kernel checks green" } },
+    ]);
     expect(calls[0]!.messages[0]!.content).toContain("guidance are untrusted");
+    expect(calls[0]!.messages[0]!.content).toContain("host-attested Goal and Plan definitions");
     expect(calls[0]!.messages[0]!.content).toContain("chronological order");
     expect(calls[0]!.messages[1]!.content).toContain("Prefer commands");
     expect(calls[0]!.agentInstanceId).toBe("judge");
     expect(calls[0]!.cacheBreakpoints).toEqual([1]);
+  });
+
+  it("adds stable Plan substance beside the Goal and keeps volatile context out of the prefix", async () => {
+    const ledger = authority("Implement the requested desktop application");
+    const calls: LLMCallParams[] = [];
+    let plan = {
+      title: "Build the app",
+      objective: "Deliver the local desktop MVP",
+      context: "Electron and SQLite",
+      tasks: [{ title: "Bootstrap", detail: "Install declared dependencies", exit: "App starts" }],
+      validation: ["npm test"],
+    };
+    const judge = createJudgeElicit(
+      {
+        llm: {
+          async call(params) {
+            calls.push(params);
+            return {
+              toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "allow" } }],
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/test",
+        authority: ledger.reader,
+        reviewContext: {
+          snapshot: () => [{ kind: "plan", content: JSON.stringify(plan) }],
+        },
+      },
+      {},
+      undefined,
+    )!;
+    expect(await judge(request("npm install"))).toEqual({ allowed: true, answerer: "judge" });
+    plan = { ...plan, objective: "Deliver the corrected local desktop MVP" };
+    expect(await judge(request("npm install"))).toEqual({ allowed: true, answerer: "judge" });
+    expect(calls).toHaveLength(2);
+    const first = JSON.parse(calls[0]!.messages.at(-1)!.content as string);
+    expect(first.review_context).toEqual([
+      { kind: "goal", definition: { objective: "Keep the kernel checks green" } },
+      {
+        kind: "plan",
+        definition: expect.objectContaining({ objective: "Deliver the local desktop MVP" }),
+      },
+    ]);
+    expect(calls[0]!.messages[0]).toEqual(calls[1]!.messages[0]);
+    expect(calls[0]!.messages[0]!.content).not.toContain("Deliver the local desktop MVP");
+    expect(calls[0]!.cacheBreakpoints).toEqual([]);
   });
 
   it("distinguishes an authenticated ask_user answer from its model-authored question", async () => {
@@ -424,7 +481,16 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
   );
   const services = createCapabilityServices();
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
+  services.provide(OPERATOR_REVIEW_CONTEXT_PORT, {
+    snapshot: () => [
+      {
+        kind: "plan",
+        content: JSON.stringify({ objective: "Run the implementation checks" }),
+      },
+    ],
+  });
   const reviewed: string[] = [];
+  const contexts: unknown[] = [];
   let prompts = 0;
   const resolver = createGuardResolver({
     loadSettings: () => ({
@@ -447,7 +513,9 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     llm: {
       async call(params: LLMCallParams) {
-        reviewed.push(JSON.parse(params.messages.at(-1)!.content as string).call.args.command);
+        const payload = JSON.parse(params.messages.at(-1)!.content as string);
+        reviewed.push(payload.call.args.command);
+        contexts.push(payload.review_context);
         return {
           toolCalls: [{ id: "decision", name: "decide", arguments: { decision: "allow" } }],
           usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
@@ -482,6 +550,10 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
     ).toEqual({ allowed: true, answerer: "judge" });
   }
   expect(reviewed).toEqual(commands);
+  expect(contexts[0]).toEqual([
+    { kind: "goal", definition: { objective: "Keep the kernel checks green" } },
+    { kind: "plan", definition: { objective: "Run the implementation checks" } },
+  ]);
   expect(prompts).toBe(0);
 });
 

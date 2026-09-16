@@ -52,11 +52,17 @@ a later user pause or cancellation remains authoritative. Resume alone does not 
 
 ## Semantic formulation
 
-`runGoalAgent` executes a fixed `goal-agent` profile through the generic loop executor. Auto mode
+`runGoalAgent` executes a fixed `goal-agent` profile through the generic loop executor. Its base
+prompt is byte-identical across auto and guided runs: both precedence rules live in that fixed
+policy, while mode, seed, trajectory, digest, truncation and workspace availability occur only in
+the final volatile user message. Auto mode
 treats the bounded trajectory as primary; guided mode treats the validated seed as primary and uses
 trajectory and workspace reads only to resolve it. Both require structured `submit_result`; invalid
 output is a failed operation and never falls back to command text. `formulationCriteria` assigns
 deterministic host-owned IDs and accepts only qualitative or human criteria.
+Human criteria are reserved for decisions indispensable to the result currently requested. A later
+approval boundary on future or excluded work remains a constraint/exclusion and cannot manufacture
+an elicitation for work the user did not authorize.
 
 The request has no MCP servers, skills, hooks, workflows, memory, plans, Goal control or delegation.
 It carries only `read_workspace`, a finite stop-mode budget, an empty shared prompt and the strict
@@ -64,6 +70,9 @@ formulation output schema. The Kernel replaces the capability list with its cano
 capability, so the effective file surface comes from `@clarvis/tools` `readOnlyTools`; this package
 does not maintain another allowlist. `callPurpose: "goal"` identifies the provider call without
 putting semantic payloads in logs.
+The Kernel binds every reported normative path to a complete successful read. The retained trace may
+abbreviate the result text, but a host-owned digest of the complete pre-cap result lets the Kernel
+revalidate large files without accepting a partial range or trusting a model-supplied digest.
 
 `GoalRecord` keeps constraints, exclusions, assumptions, normative source snapshots and literal,
 guided or auto origin alongside its existing objective and criteria. Old pre-release state decodes
@@ -82,6 +91,16 @@ Every final result for a literal, guided or auto Goal passes a separate `goal-ag
 run before the Goal finalization gate accepts it. The strict `achieved`, `not_achieved` or
 `inconclusive` verdict covers definition fidelity, the objective and every qualitative criterion.
 Host and human criteria remain deterministic prerequisites and cannot be overruled by the model.
+The advertised output schema structurally permits `criterion_id` only for criterion assessments,
+matching the persisted validator rather than accepting a shape that would be rejected after model
+usage was spent.
+Every reported inspected path must come from its own complete successful read; aggregated or
+truncated output is not inspection evidence. Invalid claims remain an inconclusive verification
+result and enter the bounded recovery path instead of terminating Goal control.
+For guided and auto origins, the verifier treats a host-confirmed origin digest match as exact
+formulation provenance even when that bounded input recorded truncation. Missing, partial or
+mismatched provenance remains inconclusive; later Goal stages cannot substitute for the original
+formulation input.
 
 `recordGoalVerification` persists at most four fenced audits on the primary `GoalRun`. The Kernel,
 not the model, calculates definition, candidate, final-attempt, evidence and inspected-artifact

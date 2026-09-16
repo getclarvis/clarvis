@@ -56,10 +56,28 @@ const evidenceList = z
       new Set(entries.map((entry) => entry.id)).size === entries.length,
   );
 const consumedSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);
+const reviewContextSchema = z
+  .object({
+    kind: z.enum(["goal", "plan"]),
+    content: z
+      .string()
+      .min(2)
+      .max(MESSAGES_TOTAL_MAX_CHARS)
+      .refine((content) => {
+        try {
+          const parsed: unknown = JSON.parse(content);
+          return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed);
+        } catch {
+          return false;
+        }
+      }),
+  })
+  .strict();
 const seedSchema = z
   .object({
     binding: bindingSchema,
     evidence: evidenceList,
+    review_context: reviewContextSchema.optional(),
     parent_run_id: identifier.optional(),
     ceiling: authorityEnvelopeSchema.optional(),
     consumed_effects: consumedSchema.optional(),
@@ -149,6 +167,14 @@ export function createOperatorAuthorityRuntime(input: {
     revision: 0,
     status: admitted ? "active" : "revoked",
     evidence: [],
+    ...(seed?.review_context === undefined
+      ? {}
+      : {
+          review_context: {
+            ...seed.review_context,
+            content: sanitizeText(seed.review_context.content),
+          },
+        }),
     ...(seed?.ceiling === undefined
       ? {}
       : { ceiling: seed.ceiling, parent_run_id: seed.parent_run_id }),

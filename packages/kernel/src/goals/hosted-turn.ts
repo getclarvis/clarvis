@@ -3,6 +3,7 @@ import {
   type Capability,
   type LLMProvider,
   type Logger,
+  type OperatorReviewContext,
   type TraceEvent,
 } from "@clarvis/capability";
 import {
@@ -15,16 +16,18 @@ import {
   limitGoalForVerificationBudget,
   stopGoalContinuation,
   type GoalRepository,
+  type GoalRecord,
   type GoalUsage,
   type GoalVerificationInput,
   type GoalVerificationPolicy,
   type GoalVerificationRunResult,
 } from "@clarvis/goal";
-import type { RunRequest } from "@clarvis/loop";
+import type { Message, RunRequest } from "@clarvis/loop";
 import type { ModelCost, RunDetail, SessionService, StartRunParams } from "@clarvis/protocol";
 import { generateExecutionId } from "@clarvis/trace";
 import type { HostedExecutionBinding, HostedPreparationContext } from "../hosting/sessions.ts";
 import { kernelError } from "../core/errors.ts";
+import { protoMessagesToEngine } from "../runs/map-message.ts";
 import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
@@ -35,11 +38,59 @@ import { projectGoalVerificationInput } from "./verification-input.ts";
 /** Mandatory entry capability and finite request policy for one host-admitted stage. */
 export interface GoalExecutionPolicy {
   capability: Capability;
+  /** Exact operator-authored inputs that defined this Goal; inferred semantics never grant authority. */
+  authorityMessages: readonly Message[];
+  /** Complete persisted Goal definition supplied to reviewers separately from operator authority. */
+  reviewContext: OperatorReviewContext;
   observe(event: TraceEvent): void;
   /** Observe complete host inference accounting without trusting zero-filled guest totals. */
   trackModel(provider: LLMProvider): LLMProvider;
   /** Apply after ordinary profile/settings resolution, before immutable launch preparation. */
   constrain(request: RunRequest): RunRequest;
+}
+
+async function goalAuthorityMessages(
+  goal: GoalRecord,
+  readRun: ((executionId: string) => Promise<RunDetail | null>) | undefined,
+): Promise<Message[]> {
+  const messages: Message[] = [];
+  if (goal.origin.kind !== "literal" && readRun !== undefined) {
+    for (const executionId of goal.origin.source_execution_ids) {
+      const run = await readRun(executionId);
+      if (run === null) continue;
+      messages.push(
+        ...protoMessagesToEngine(run.messages.filter((message) => message.role === "user")),
+      );
+    }
+  }
+  if (goal.origin.kind === "guided") messages.push({ role: "user", content: goal.origin.seed });
+  else if (goal.origin.kind === "literal")
+    messages.push({
+      role: "user",
+      content: JSON.stringify({
+        objective: goal.objective,
+        criteria: goal.criteria,
+        constraints: goal.constraints,
+        exclusions: goal.exclusions,
+        assumptions: goal.assumptions,
+      }),
+    });
+  return messages;
+}
+
+function goalReviewContext(goal: GoalRecord): OperatorReviewContext {
+  return {
+    kind: "goal",
+    content: JSON.stringify({
+      objective: goal.objective,
+      criteria: goal.criteria.map(({ description, kind }) => ({ description, kind })),
+      constraints: goal.constraints,
+      exclusions: goal.exclusions,
+      assumptions: goal.assumptions,
+      normative_sources: goal.sources.map(({ path }) => ({ path })),
+      origin: goal.origin.kind,
+    }),
+  };
 }
 
 /**
@@ -91,6 +142,12 @@ export async function prepareHostedGoalTurn(options: {
   const now = options.now ?? Date.now;
   const automatic = options.context.continuationOf !== undefined;
   const previous = goal.runs.at(-1);
+  const authorityMessages = await goalAuthorityMessages(
+    goal,
+    options.verification === undefined
+      ? undefined
+      : (sourceExecutionId) => options.verification!.readRun(sourceExecutionId),
+  );
   if (
     automatic &&
     (previous === undefined ||
@@ -222,6 +279,8 @@ export async function prepareHostedGoalTurn(options: {
   };
   const policy: GoalExecutionPolicy = {
     capability: createGoalCapability(runtime),
+    authorityMessages,
+    reviewContext: goalReviewContext(goal),
     observe: (event) => options.evidence.observe(event),
     trackModel(provider) {
       return trackWithDeadline(provider);

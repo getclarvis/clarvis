@@ -87,6 +87,25 @@ describe("Goal semantic agent", () => {
     });
   });
 
+  it("keeps one byte-identical semantic prefix while mode and trajectory remain volatile", () => {
+    const guided = buildGoalAgentRequest({ model_ref: "fixture/model", providers: [] }, input);
+    const automatic = buildGoalAgentRequest(
+      { model_ref: "fixture/model", providers: [] },
+      {
+        ...input,
+        mode: "auto",
+        seed: undefined,
+        trajectory: { ...input.trajectory, projection: '{"entries":["different"]}' },
+      },
+    );
+    expect(guided.profiles[0]!.base_prompt).toBe(automatic.profiles[0]!.base_prompt);
+    expect(guided.profiles[0]!.base_prompt).not.toContain(input.seed!);
+    expect(guided.profiles[0]!.base_prompt).not.toContain(input.trajectory.projection);
+    expect(guided.messages).not.toEqual(automatic.messages);
+    expect(guided.shared_prompt).toBe("");
+    expect(automatic.shared_prompt).toBe("");
+  });
+
   it("requires the exact mode shape and bounds guided seeds", () => {
     expect(goalFormulateInputSchema.safeParse({ mode: "auto", seed: "x" }).success).toBe(false);
     expect(goalFormulateInputSchema.safeParse({ mode: "guided" }).success).toBe(false);

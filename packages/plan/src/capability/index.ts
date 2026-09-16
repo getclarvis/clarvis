@@ -24,6 +24,7 @@ import type {
 } from "@clarvis/capability";
 import {
   NOOP_LOGGER,
+  OPERATOR_REVIEW_CONTEXT_PORT,
   TOOL_EFFECT_PORT,
   bestEffort,
   bind,
@@ -48,6 +49,7 @@ import {
 } from "./runtime-tools.ts";
 import { PLAN_PORT, type PlanDelegationPort } from "./task-port.ts";
 import { createPlanCatalogRun } from "./catalog.ts";
+import { planReviewContext } from "./review-context.ts";
 
 export { PLAN_PORT } from "./task-port.ts";
 export type { PlanDelegationPort, DelegateTaskAugmentation, SpawnGate } from "./task-port.ts";
@@ -231,6 +233,12 @@ export function createPlansCapability(options: PlansCapabilityOptions): Capabili
             );
           }
           return port;
+        },
+      });
+      ctx.services.provide(OPERATOR_REVIEW_CONTEXT_PORT, {
+        snapshot: () => {
+          const context = planReviewContext(planSession.cached());
+          return context === undefined ? [] : [context];
         },
       });
 

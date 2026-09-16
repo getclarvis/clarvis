@@ -33,24 +33,23 @@ export async function projectGoalVerificationInput(options: {
   readRun(executionId: string): Promise<RunDetail | null>;
 }): Promise<GoalVerificationProjection> {
   const currentExecution = options.candidate.execution_id;
-  const projectedSession: Session = {
-    ...structuredClone(options.session),
-    turns: options.session.turns.map((turn) =>
-      turn.kind === "conversation" &&
-      turn.execution_id === currentExecution &&
-      turn.status === "pending"
-        ? { ...turn, status: "running" }
-        : turn,
-    ),
-  };
+  const formulatedOrigin = options.goal.origin.kind === "literal" ? undefined : options.goal.origin;
   const trajectory = await projectGoalTrajectory(
-    projectedSession,
+    options.session,
     (executionId) => options.readRun(executionId),
     {
       max_entries: 128,
       max_bytes: 128 * 1024,
       workspace_read_available: options.workspaceReadAvailable,
       exclude_execution_outputs: currentExecution,
+      ...(formulatedOrigin === undefined
+        ? {}
+        : {
+            source_execution_ids: formulatedOrigin.source_execution_ids,
+            ...(formulatedOrigin.kind === "guided"
+              ? { exclude_user_text: formulatedOrigin.seed }
+              : {}),
+          }),
     },
   );
   const definitionDigest = goalDefinitionDigest(options.goal);
@@ -99,6 +98,12 @@ export async function projectGoalVerificationInput(options: {
       digest: trajectory.digest,
       truncated: trajectory.truncated,
       partial: trajectory.partial,
+      ...(formulatedOrigin === undefined
+        ? {}
+        : {
+            origin_digest: formulatedOrigin.trajectory_digest,
+            digest_matches_origin: trajectory.digest === formulatedOrigin.trajectory_digest,
+          }),
     },
     required_targets: {
       definition: true,

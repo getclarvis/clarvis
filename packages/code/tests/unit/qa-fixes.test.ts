@@ -36,6 +36,26 @@ test("a failed run leaves its cause in the transcript", () => {
   });
 });
 
+test("a live Goal block is a Goal warning rather than a generic run error", () => {
+  createRoot((dispose) => {
+    const store = createTranscriptStore();
+    store.openRun("exec_1");
+    store.appendRunFailure("exec_1", {
+      code: "goal_blocked",
+      message: "Completion still needs evidence",
+    });
+    expect(store.nodes.some((node) => node.kind === "error")).toBe(false);
+    expect(store.nodes).toContainEqual(
+      expect.objectContaining({
+        kind: "annotation",
+        tone: "warn",
+        text: "Goal blocked: Completion still needs evidence",
+      }),
+    );
+    dispose();
+  });
+});
+
 test("a run that completed is not labelled Failed by what happened afterwards", () => {
   // Memory indexing fails after the answer is delivered, and both the header
   // and the footer read the whole composed line.

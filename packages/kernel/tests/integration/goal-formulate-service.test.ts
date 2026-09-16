@@ -25,7 +25,10 @@ describe("Goal formulation through the real file host", () => {
             item.tools?.some((tool) => tool.function.name === "submit_result"),
           ).length === 1
         )
-          return { name: "read_files", arguments: { paths: ["request.md"] } };
+          return {
+            name: "read_file",
+            arguments: { path: "request.md", offset: 1, limit: 2000 },
+          };
         return {
           name: "submit_result",
           arguments: {
@@ -117,6 +120,105 @@ describe("Goal formulation through the real file host", () => {
     });
     expect((await fixture.client.goals.get("conversation")).state.current).toBeUndefined();
     expect(fixture.requests).toEqual([]);
+  });
+
+  it("attests a complete normative read whose persisted trace result is abbreviated", async () => {
+    const fixture = await createGoalFileHostFixture();
+    cleanups.push(fixture.close);
+    const content = Array.from(
+      { length: 600 },
+      (_, index) => `requirement ${String(index + 1)} must remain observable`,
+    ).join("\n");
+    await writeFile(join(fixture.workspaceRoot, "large-spec.md"), content);
+    let formulationCalls = 0;
+    fixture.setResponder(async (request) => {
+      if (request.tools?.some((tool) => tool.function.name === "submit_result")) {
+        formulationCalls++;
+        if (formulationCalls === 1)
+          return {
+            name: "read_file",
+            arguments: { path: "large-spec.md", offset: 1, limit: 2000 },
+          };
+        return {
+          name: "submit_result",
+          arguments: {
+            status: "ready",
+            objective: "Implement the complete large specification",
+            criteria: [],
+            constraints: [],
+            exclusions: [],
+            assumptions: ["large-spec.md is normative"],
+            normative_source_paths: ["large-spec.md"],
+          },
+        };
+      }
+      return {
+        name: "update_goal",
+        arguments: { update: { action: "blocked", reason: "Fixture work run is observable" } },
+      };
+    });
+
+    const receipt = await fixture.client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "large-normative-source",
+      mode: "guided",
+      seed: "Implement large-spec.md",
+    });
+
+    expect(receipt.formulation.outcome).toBe("created");
+    expect((await fixture.client.goals.get("conversation")).state.current?.sources).toEqual([
+      { path: "large-spec.md", digest: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    ]);
+    const trace = fixture.host.kernel.readRunTrace(receipt.formulation.formulation_execution_id!);
+    const read = trace?.find(
+      (event) =>
+        event.type === "tool_call" && "mcp_name" in event && event.mcp_name === "read_file",
+    );
+    expect(read).toMatchObject({
+      type: "tool_call",
+      result: expect.stringContaining("...[truncated]"),
+      result_digest: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+  });
+
+  it("rejects an actually partial ranged read of a normative source", async () => {
+    const fixture = await createGoalFileHostFixture();
+    cleanups.push(fixture.close);
+    await writeFile(join(fixture.workspaceRoot, "partial.md"), "first line\nsecond line\n");
+    fixture.setResponder(async () => {
+      const formulationCalls = fixture.requests.filter((item) =>
+        item.tools?.some((tool) => tool.function.name === "submit_result"),
+      ).length;
+      if (formulationCalls === 1)
+        return { name: "read_file", arguments: { path: "partial.md", offset: 2, limit: 1 } };
+      return {
+        name: "submit_result",
+        arguments: {
+          status: "ready",
+          objective: "Honor the whole normative source",
+          criteria: [],
+          constraints: [],
+          exclusions: [],
+          assumptions: [],
+          normative_source_paths: ["partial.md"],
+        },
+      };
+    });
+
+    const receipt = await fixture.client.goals.formulate({
+      session_id: "conversation",
+      expected_revision: 0,
+      operation_id: "partial-source",
+      mode: "guided",
+      seed: "Use partial.md",
+    });
+
+    expect(receipt.formulation).toMatchObject({
+      outcome: "insufficient_context",
+      message: expect.stringContaining("could not be revalidated"),
+    });
+    expect((await fixture.client.goals.get("conversation")).state.current).toBeUndefined();
   });
 
   it("records a recoverable failed receipt when the semantic run returns invalid output", async () => {

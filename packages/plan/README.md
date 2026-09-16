@@ -24,6 +24,12 @@ is not closure: the lead must inspect its outcome before recording `done` or gen
 The finalization note does not ask for invented evidence or early completion; see
 [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
+The active capability publishes a run-scoped reviewer context containing only the Plan's
+substantive title, objective, context, task title/detail/exit fields and validation list. Status,
+progress, outcomes, assignees, revisions, timestamps, paths and digests are excluded, so ordinary
+task progress does not churn Auto Guard input. The Judge receives this stable projection beside any
+Goal definition when deciding whether a routine bounded prerequisite belongs to the requested work.
+
 `read_plan` accepts an omitted or null ID for the active plan. `list_plans` accepts omitted or null
 options for the first page, default limit and absent status/retention filters. Non-null IDs and
 cursors must be nonempty; later pages use only provider-issued cursors. Shared read/list schemas

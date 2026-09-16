@@ -325,22 +325,52 @@ export function createGoalRuntimePort(options: {
           verification_execution_id: verificationExecutionId,
         };
       }
-      const result = validateGoalVerificationResult(
-        completed.result,
-        projected.qualitative_criterion_ids,
-        projected.evidence_ids,
-      );
-      const inspectedPaths = result.assessments.flatMap((assessment) => assessment.inspected_paths);
-      if (initial.goal.sources.some((source) => !inspectedPaths.includes(source.path)))
-        throw new GoalError(
-          "invalid_request",
-          "Independent Goal verification did not inspect every normative source",
+      let result: ReturnType<typeof validateGoalVerificationResult>;
+      let artifacts: Awaited<ReturnType<typeof verifyTraceInspectedArtifacts>>;
+      try {
+        result = validateGoalVerificationResult(
+          completed.result,
+          projected.qualitative_criterion_ids,
+          projected.evidence_ids,
         );
-      const artifacts = await verifyTraceInspectedArtifacts({
-        trace: options.verification.readTrace(completed.execution_id) ?? [],
-        paths: [...new Set(inspectedPaths)],
-        readFile: (path) => options.verification!.readFile(path),
-      });
+        const inspectedPaths = result.assessments.flatMap(
+          (assessment) => assessment.inspected_paths,
+        );
+        if (initial.goal.sources.some((source) => !inspectedPaths.includes(source.path)))
+          return {
+            valid: false,
+            reasons: ["Independent Goal verification did not inspect every normative source"],
+            qualitative_criteria: projected.qualitative_criterion_ids,
+            revision: initial.goal.revision,
+            verdict: "inconclusive",
+            verification_execution_id: completed.execution_id,
+          };
+        artifacts = await verifyTraceInspectedArtifacts({
+          trace: options.verification.readTrace(completed.execution_id) ?? [],
+          paths: [...new Set(inspectedPaths)],
+          readFile: (path) => options.verification!.readFile(path),
+        });
+      } catch {
+        signal?.throwIfAborted();
+        logger.warn(
+          {
+            event: "goal.verification.rejected",
+            execution_id: binding.execution_id,
+            verification_execution_id: completed.execution_id,
+          },
+          "Independent Goal verification claimed invalid or incomplete inspection",
+        );
+        return {
+          valid: false,
+          reasons: [
+            "Independent Goal verification claimed an invalid result or a path it did not read completely",
+          ],
+          qualitative_criteria: projected.qualitative_criterion_ids,
+          revision: initial.goal.revision,
+          verdict: "inconclusive",
+          verification_execution_id: completed.execution_id,
+        };
+      }
       if (
         options.evidence.generation !== initial.evidence.generation ||
         !(await options.verification.validateDefinitionSources(initial.goal.sources))

@@ -1,5 +1,6 @@
 import { isBuiltinTraceEntry } from "@clarvis/capability";
 import { describe, it, expect } from "bun:test";
+import { createHash } from "node:crypto";
 import { createTrace } from "@clarvis/trace";
 import { ARGS_MAX, MODEL_RESPONSE_MAX, RESULT_MAX, TRUNCATED_SUFFIX } from "@clarvis/trace";
 import type { TraceEntry } from "@clarvis/capability";
@@ -47,6 +48,9 @@ describe("createTrace capping", () => {
     if (!isBuiltinTraceEntry(entry) || entry.kind !== "tool_call")
       throw new Error("expected a tool_call entry");
     expect(entry.detail.result).toHaveLength(RESULT_MAX + TRUNCATED_SUFFIX.length);
+    expect(entry.detail.result_digest).toBe(
+      createHash("sha256").update("x".repeat(200_000)).digest("hex"),
+    );
     expect((entry.detail.arguments as { content: string }).content).toHaveLength(
       ARGS_MAX + TRUNCATED_SUFFIX.length,
     );

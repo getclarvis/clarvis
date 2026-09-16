@@ -67,6 +67,10 @@ Tool arguments additionally share a 64 Ki-character aggregate key/string budget,
 ceiling and depth 32. Those structural bounds complement the 10,000-character per-leaf cap: a very
 wide object made of small values cannot bypass it, and cyclic/deep contributed detail is replaced
 with an explicit truncation marker rather than overflowing the stack.
+A terminal tool call also retains `result_digest`, the SHA-256 of its complete result before the
+5,000-character display cap. This bounded host attestation lets security-sensitive consumers compare
+a current reconstruction with the actual result without retaining or exposing the omitted text; it
+does not restore that text or make a truncated trace result complete.
 
 `mapEntry` accepts an immutable `PersistedTraceProjectorRegistry` from the host. A matching
 capability-owned projector runs before built-in mapping and before the generic contributed-event

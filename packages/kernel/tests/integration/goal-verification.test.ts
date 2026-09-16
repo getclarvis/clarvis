@@ -273,6 +273,52 @@ describe("independent Goal verification through the real file host", () => {
     ).toBe(true);
   });
 
+  it("treats an unbound inspected path as inconclusive instead of losing Goal control", async () => {
+    const f = await createGoalFileHostFixture();
+    cleanups.push(f.close);
+    let primaryCalls = 0;
+    let verificationCalls = 0;
+    f.setResponder(async () => {
+      primaryCalls++;
+      if (primaryCalls === 1)
+        return {
+          name: "update_goal",
+          arguments: {
+            update: {
+              action: "candidate",
+              summary: "Candidate awaiting bounded verification",
+              assessments: [
+                {
+                  criterion_id: "objective",
+                  kind: "qualitative",
+                  justification: "The candidate is ready for an independent verifier",
+                },
+              ],
+            },
+          },
+        };
+      return { text: "Proposed result with no bound artifact read" };
+    });
+    f.setVerificationResponder(async (_request, ids) => {
+      verificationCalls++;
+      return verificationResult(ids, "achieved", ["unread-result.txt"]);
+    });
+
+    await createLiteralGoal(f, "verify-unbound-artifact");
+    await f.until(
+      async () => (await f.client.goals.get("conversation")).state.current?.status === "blocked",
+    );
+    await f.until(() => f.host.stats().runs === 0);
+
+    const goal = (await f.client.goals.get("conversation")).state.current!;
+    expect(verificationCalls).toBeGreaterThan(0);
+    expect(goal.runs[0]!.verifications).toEqual([]);
+    expect((await f.host.kernel.runs.get(goal.runs[0]!.execution_id)).result).toMatchObject({
+      status: "failed",
+      error: { code: "goal_blocked" },
+    });
+  });
+
   it("refuses a verifier verdict that did not inspect every normative source", async () => {
     const f = await createGoalFileHostFixture();
     cleanups.push(f.close);
@@ -339,6 +385,10 @@ describe("independent Goal verification through the real file host", () => {
     const goal = (await f.client.goals.get("conversation")).state.current!;
     expect(verificationCalls).toBeGreaterThan(0);
     expect(goal.runs[0]!.verifications).toEqual([]);
+    expect((await f.host.kernel.runs.get(goal.runs[0]!.execution_id)).result).toMatchObject({
+      status: "failed",
+      error: { code: "goal_blocked" },
+    });
   });
 
   it("blocks normative source drift before spending a verifier call", async () => {

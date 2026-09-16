@@ -105,6 +105,15 @@ no provider call. Production: `buildGoalVerificationRequest` in
 [goal-file-host-compaction.test.ts](../../packages/kernel/tests/integration/goal-file-host-compaction.test.ts)
 and [goal-verification.test.ts](../../packages/kernel/tests/integration/goal-verification.test.ts).
 
+Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
+rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
+in the final volatile message. Auto Guard likewise keeps its nonreplaceable policy and optional
+guidance before one volatile payload containing Goal, stable Plan substance, operator evidence and
+the exact call. Plan lifecycle/progress fields never enter that payload. Production:
+`goalAgentPrompt`, `planReviewContext`, `reviewerContextPayload` and `createJudgeElicit`. Test:
+`keeps one byte-identical semantic prefix while mode and trajectory remain volatile` and `adds
+stable Plan substance beside the Goal and keeps volatile context out of the prefix`.
+
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
 all tool results. A pause received during inference must not insert a user reminder inside the
 assistant-call/tool-result exchange. The complete exchange persists unchanged into resume; cached

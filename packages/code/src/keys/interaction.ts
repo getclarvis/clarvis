@@ -65,6 +65,8 @@ export interface InteractionEffects {
   openReviewPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
+  /** Open the current Goal detail from the shell. */
+  openGoal(): void;
   toggleExpandAll(): void;
   openDiff(): void;
   openPlan(): void;
@@ -120,7 +122,8 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
     { key: "ctrl+p" },
     { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
   ],
-  "transcript.toggleCollapse": [{ key: "ctrl+o" }],
+  "goal.toggle": [{ key: "ctrl+o" }],
+  "transcript.toggleCollapse": [{ key: "ctrl+k" }],
   "tool.interruptFocused": [],
   "transcript.focusPrev": [{ key: "ctrl+up" }],
   "transcript.focusNext": [{ key: "ctrl+down" }],
@@ -142,6 +145,7 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "review.picker": "overlay==none",
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
+  "goal.toggle": "overlay==none",
   "transcript.scrollPageUp": "overlay==none",
   "transcript.scrollPageDown": "overlay==none",
   "transcript.followTail": "overlay==none",
@@ -261,6 +265,7 @@ const ACTION_PROJECTION: Readonly<Record<string, Record<string, unknown>>> = {
     essential: true,
   },
   "app.suspend": { uiSurfaces: ["full-help"] },
+  "goal.toggle": { uiSurfaces: ["full-help"] },
   "transcript.toggleCollapse": {
     uiSurfaces: ["footer", "full-help"],
     footerLabel: "expand",
@@ -608,6 +613,11 @@ export function createInteraction(
       title: "Next focus target",
       desc: "Move focus without activating content or changing transcript selection",
       category: "navigation",
+    }),
+    command("goal.toggle", () => effects.openGoal(), {
+      title: "Goal details",
+      desc: "Open the current Goal; use the same key there to return",
+      category: "view",
     }),
     command("transcript.toggleCollapse", () => effects.toggleExpandAll(), {
       title: "Expand / collapse blocks",

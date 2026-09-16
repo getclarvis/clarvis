@@ -243,6 +243,26 @@ describe("independent Goal verification", () => {
       usage: { kind: "measured", input: 12, output: 3, cached: 4 },
     });
     expect(captured).toMatchObject({ owner: "owner", callPurpose: "goal" });
+    expect(
+      (
+        captured!.rawBody as {
+          output_schema: { properties: { assessments: { items: { oneOf: unknown[] } } } };
+        }
+      ).output_schema.properties.assessments.items.oneOf,
+    ).toEqual([
+      expect.objectContaining({
+        required: expect.not.arrayContaining(["criterion_id"]),
+        properties: expect.objectContaining({ scope: { const: "definition" } }),
+      }),
+      expect.objectContaining({
+        required: expect.not.arrayContaining(["criterion_id"]),
+        properties: expect.objectContaining({ scope: { const: "objective" } }),
+      }),
+      expect.objectContaining({
+        required: expect.arrayContaining(["criterion_id"]),
+        properties: expect.objectContaining({ scope: { const: "criterion" } }),
+      }),
+    ]);
 
     next = outcome("error", undefined) as ExecuteRunOutcome;
     await expect(runGoalVerification(runtime, input)).rejects.toMatchObject({

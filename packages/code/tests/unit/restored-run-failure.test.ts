@@ -43,3 +43,17 @@ test("a failure with no recorded code adds no invented node", () => {
   ]);
   expect(errors).toEqual([]);
 });
+
+test("a restored Goal block remains domain state instead of a generic guard-trip error", () => {
+  const errors = replay([
+    ev({ type: "run_started", at: 0 }),
+    ev({
+      type: "run_ended",
+      at: 5,
+      status: "failed",
+      reason: "guard_trip",
+      code: "goal_blocked",
+    }),
+  ]);
+  expect(errors).toEqual([]);
+});

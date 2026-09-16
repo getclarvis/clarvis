@@ -126,7 +126,8 @@ test("goal slash controls never dispatch a prompt and preserve invalid syntax", 
   expect(commands.route("goal.open", "-- pause the deployment")).toBe(true);
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "pause the deployment" });
-  expect(f.opened).toEqual(["goal.open"]);
+  expect(f.opened).toEqual([]);
+  expect(f.notices).toContain("Literal Goal created; the first work stage is starting.");
   commands.route("goal.open", "pause --running");
   await settled();
   expect(f.requests[1]?.action).toEqual({ kind: "pause", running: true });
@@ -175,7 +176,9 @@ test("guided and auto commands formulate outside the composer while literal esca
   expect(commands.route("goal.open", "implemente a spec 123")).toBe(true);
   await settled();
   expect(f.formulations[0]).toMatchObject({ mode: "guided", seed: "implemente a spec 123" });
-  expect(f.opened).toEqual(["goal.open"]);
+  expect(f.opened).toEqual([]);
+  expect(f.notices).toContain("Formulating a Goal from your request…");
+  expect(f.notices).toContain("Goal created; the first work stage is starting.");
 
   f.opened.splice(0);
   commands.route("goal.open", "auto");
@@ -228,16 +231,32 @@ test("goal view separates pause from physical execution and identifies qualitati
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Goal: paused");
-  expect(frame).toContain("Physical execution: running");
-  expect(frame).toContain("Model assessment");
-  expect(frame).toContain("Net tokens: 0 / 10000");
+  expect(frame).toContain("Paused · 0 stages · literal");
+  expect(frame).toContain("Run running");
+  expect(frame).toContain("• Fixture is complete");
+  expect(frame).toContain("Budget 0 / 10k tokens");
   f.keys.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("Edit goal");
   f.keys.press("x");
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "pause", running: true });
+});
+
+test("goal view does not repeat an objective-only qualitative criterion", async () => {
+  const objective = "Validate compact goal presentation";
+  const f = fixture(
+    goalView({
+      objective,
+      criteria: [{ id: "objective", kind: "qualitative", description: objective }],
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame.match(new RegExp(objective, "g"))).toHaveLength(1);
+  expect(frame).not.toContain("Criteria");
 });
 
 test("goal view exposes guided provenance and the complete semantic definition", async () => {
@@ -263,7 +282,7 @@ test("goal view exposes guided provenance and the complete semantic definition",
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Origin: guided");
+  expect(frame).toContain("Paused · 0 stages · guided");
   expect(frame).toContain("Constraints");
   expect(frame).toContain("Preserve compatibility");
   expect(frame).toContain("Exclusions");
@@ -272,6 +291,8 @@ test("goal view exposes guided provenance and the complete semantic definition",
   expect(frame).toContain("The referenced contract is current");
   expect(frame).toContain("Normative sources");
   expect(frame).toContain("specs/capabilities/goals.md");
+  expect(frame).toContain("sha256:aaaaaaaaaaaa…");
+  expect(frame).not.toContain("a".repeat(64));
 });
 
 test("goal form displays explicit whole-goal limits and submits its pinned revision", async () => {
@@ -349,10 +370,10 @@ test("saving an unchanged goal review closes without a host mutation", async () 
   await settled();
   await rendered.renderOnce();
   expect(f.requests).toHaveLength(0);
-  expect(rendered.captureCharFrame()).toContain("Goal: paused");
+  expect(rendered.captureCharFrame()).toContain("Paused · 0 stages · literal");
 });
 
-test("goal detail renders durable progress diagnostics and accepts a pending human criterion", async () => {
+test("goal detail keeps actionable review state compact and accepts a pending human criterion", async () => {
   const run = {
     ...goalRun("stage-1", "closed"),
     verifications: [
@@ -447,18 +468,18 @@ test("goal detail renders durable progress diagnostics and accepts a pending hum
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 44 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Goal: blocked (Awaiting review)");
+  expect(frame).toContain("Blocked · 1 stage · literal");
+  expect(frame).toContain("Awaiting review");
   expect(frame).toContain("Review is required");
-  expect(frame).toContain("usage incomplete");
-  expect(frame).toContain("cache estimated");
-  expect(frame).toContain("Completion candidate: All automated checks passed");
-  expect(frame).toContain("Progress: Implementation completed");
-  expect(frame).toContain("Checkpoint: Stage verified");
-  expect(frame).toContain("Independent verification: not_achieved · verification-1");
-  expect(frame).toContain("objective: unsatisfied · Observable result is incomplete");
-  expect(frame).toContain("artifact: inconclusive · Artifact could not be established");
-  expect(frame).toContain("an achieved LLM verdict is");
-  expect(frame).toContain("fenced audit evidence, not completion authority");
+  expect(frame).toContain("Budget 225 / 10k tokens · 2 / 8 continuations");
+  expect(frame).not.toContain("usage incomplete");
+  expect(frame).not.toContain("cache estimated");
+  expect(frame).toContain("Review · not achieved");
+  expect(frame).toContain("objective · unsatisfied — Observable result is incomplete");
+  expect(frame).toContain("artifact · inconclusive — Artifact could not be established");
+  expect(frame).not.toContain("All automated checks passed");
+  expect(frame).not.toContain("verification-1");
+  expect(frame).not.toContain("fenced audit evidence");
 
   f.keys.press("a");
   await rendered.renderOnce();
@@ -502,14 +523,14 @@ test.each([
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain(
-    `Human approval (${scenario.status}): Review the checkpoint`,
+    `Review the checkpoint · approval ${scenario.status === "accepted" ? "accepted" : "needed"}`,
   );
   f.keys.press("a");
   await rendered.renderOnce();
   if (scenario.status === "accepted") {
-    expect(rendered.captureCharFrame()).toContain("Goal: paused");
+    expect(rendered.captureCharFrame()).toContain("Paused · 0 stages · literal");
   } else {
-    expect(rendered.captureCharFrame()).not.toContain("Goal: paused");
+    expect(rendered.captureCharFrame()).not.toContain("Paused · 0 stages · literal");
   }
   expect(f.requests).toHaveLength(0);
 });
@@ -528,7 +549,9 @@ test.each(["complete", "cancelled"] as const)(
     await rendered.renderOnce();
     f.keys.press("a");
     await rendered.renderOnce();
-    expect(rendered.captureCharFrame()).toContain(`Goal: ${status}`);
+    expect(rendered.captureCharFrame()).toContain(
+      status === "complete" ? "Completed · 0 stages · literal" : "Canceled · 0 stages · literal",
+    );
     expect(f.requests).toHaveLength(0);
   },
 );
@@ -587,7 +610,7 @@ test("unknown physical work remains visible and prevents review without a hosted
   await f.goals.refresh();
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Physical execution: unknown");
+  expect(rendered.captureCharFrame()).toContain("Run unknown");
   f.keys.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("Edit goal");

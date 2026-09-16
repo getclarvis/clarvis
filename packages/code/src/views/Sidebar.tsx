@@ -17,6 +17,9 @@ import { followSelection } from "../ui/patterns/list-navigation.ts";
 import { compactKey } from "../keys/keyspec.ts";
 import { taskTone } from "./blocks.tsx";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
+import type { GoalController } from "../features/goal/controller.ts";
+import type { GoalRecord } from "@clarvis/protocol";
+import { goalStatusPresentation } from "../features/goal/presentation.ts";
 
 const CONTEXT_WIDTH = 16;
 export const PLAN_SIDEBAR_TASK_LIMIT = 12;
@@ -191,7 +194,7 @@ function SectionHeader(props: {
 }
 
 /** Sidebar section selected by one bounded automatic or explicit reveal intent. */
-export type SidebarRevealSection = "plan" | "workflow" | "agents";
+export type SidebarRevealSection = "goal" | "plan" | "workflow" | "agents";
 
 /** Run-scoped reveal token consumed by the Sidebar's native ScrollBox. */
 export interface SidebarRevealIntent {
@@ -207,9 +210,15 @@ function planProgress(plan: PlanActivity): string {
   return `${completed}/${plan.tasks.length} completed`;
 }
 
+function planDisplayLifecycle(plan: PlanActivity): ReturnType<typeof uiLifecycle> {
+  if (plan.tasks.length > 0 && plan.tasks.every((task) => task.status === "done"))
+    return "completed";
+  return uiLifecycle(plan.status);
+}
+
 function planStatusColor(plan: PlanActivity): string {
   if (plan.removed && !isExpectedPlanDiscard(plan)) return tokens.del;
-  switch (uiLifecycle(plan.status)) {
+  switch (planDisplayLifecycle(plan)) {
     case "running":
     case "completed":
       return tokens.add;
@@ -244,7 +253,7 @@ function PlanSummary(props: { plan: Accessor<PlanActivity> }): JSX.Element {
             ? `Completed ${glyph("separator")} ${planProgress(props.plan())} ${glyph("separator")} history discarded`
             : props.plan().removed
               ? `Unavailable ${glyph("separator")} ${planProgress(props.plan())}`
-              : `${lifecycleLabel(uiLifecycle(props.plan().status))} ${glyph("separator")} ${planProgress(props.plan())}`}
+              : `${lifecycleLabel(planDisplayLifecycle(props.plan()))} ${glyph("separator")} ${planProgress(props.plan())}`}
         </span>
         <Show when={!props.plan().removed}>
           <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
@@ -272,7 +281,11 @@ function PlanSummary(props: { plan: Accessor<PlanActivity> }): JSX.Element {
             // its final task made a finished plan look like it was still
             // executing.
             const active = (): boolean =>
-              !props.plan().removed && isLivePlan(props.plan()) && entry.index === currentIndex();
+              !props.plan().removed &&
+              isLivePlan(props.plan()) &&
+              planDisplayLifecycle(props.plan()) === "running" &&
+              currentPlanTask(props.plan()) !== undefined &&
+              entry.index === currentIndex();
             const tone = () => taskTone(task.status);
             const removed = (): boolean => props.plan().removed === true;
             return (
@@ -329,6 +342,8 @@ export function Sidebar(props: {
   reveal?: Accessor<SidebarRevealIntent | null>;
   footerHint?: Accessor<string>;
   onClose?: () => void;
+  goals?: GoalController;
+  onOpenGoal?: () => void;
 }): JSX.Element {
   const renderer = useRenderer();
   let activityScrollEl: ScrollBoxRenderable | undefined;
@@ -354,6 +369,8 @@ export function Sidebar(props: {
         left.order - right.order,
     );
   const hasContent = (): boolean =>
+    props.goals?.formulating() === true ||
+    props.goals?.view()?.state.current !== undefined ||
     props.activity.plan !== null ||
     leaders().length > 0 ||
     props.workflow?.()?.sequence !== undefined ||
@@ -374,11 +391,13 @@ export function Sidebar(props: {
     const reveal = props.reveal?.();
     if (reveal === null || reveal === undefined) return;
     const available =
-      reveal.section === "plan"
-        ? props.activity.plan !== null
-        : reveal.section === "workflow"
-          ? leaders().length > 0 || props.workflow?.()?.sequence !== undefined
-          : props.activity.subagents.length > 0;
+      reveal.section === "goal"
+        ? props.goals?.formulating() === true || props.goals?.view()?.state.current !== undefined
+        : reveal.section === "plan"
+          ? props.activity.plan !== null
+          : reveal.section === "workflow"
+            ? leaders().length > 0 || props.workflow?.()?.sequence !== undefined
+            : props.activity.subagents.length > 0;
     if (!available) return;
     const revealAfterLayout = (): void => {
       activityScrollEl?.scrollChildIntoView(`sidebar-section-${reveal.section}`);
@@ -408,6 +427,45 @@ export function Sidebar(props: {
         minHeight={0}
         verticalScrollbarOptions={scrollbarOptions()}
       >
+        <Show
+          when={
+            props.goals?.formulating() === true || props.goals?.view()?.state.current !== undefined
+          }
+        >
+          <box
+            id="sidebar-section-goal"
+            flexDirection="column"
+            paddingBottom={1}
+            onMouseDown={() => props.onOpenGoal?.()}
+          >
+            <SectionHeader label="Goal" />
+            <text fg={tokens.accent2} wrapMode="word" maxHeight={3}>
+              <b>
+                {props.goals?.formulating()
+                  ? "Formulating Goal"
+                  : props.goals?.view()?.state.current?.objective}
+              </b>
+            </text>
+            <Show when={props.goals?.formulating()}>
+              <text fg={tokens.muted}>Reading conversation and workspace…</text>
+            </Show>
+            <Show when={!props.goals?.formulating() && props.goals?.view()?.state.current}>
+              {(goal: Accessor<GoalRecord>) => {
+                const status = () => goalStatusPresentation(goal().status);
+                return (
+                  <text fg={status().color} wrapMode="none" truncate>
+                    <span>{`${status().label} ${glyph("separator")} ${goal().runs.length} stage${goal().runs.length === 1 ? "" : "s"}`}</span>
+                    <span style={{ fg: tokens.muted }}>{` ${glyph("separator")} `}</span>
+                    <span style={{ fg: tokens.accent }}>
+                      <b>{`[${compactKey("ctrl+o")}]`}</b>
+                    </span>
+                    <span style={{ fg: tokens.muted }}> full Goal</span>
+                  </text>
+                );
+              }}
+            </Show>
+          </box>
+        </Show>
         <Show when={props.activity.plan !== null}>
           <box id="sidebar-section-plan" flexDirection="column">
             <SectionHeader label="Plan" />

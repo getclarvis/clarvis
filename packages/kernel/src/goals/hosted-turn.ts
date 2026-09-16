@@ -213,8 +213,13 @@ export async function prepareHostedGoalTurn(options: {
           sequenceBase: goal.steward.last_consumed_work_sequence,
           digestBase: goal.steward.trajectory_digest,
           epochBase: goal.steward.operator_steering_epoch,
-          recoverUsage: async (id) =>
-            measureGoalRunUsage((await options.readRun?.(id))?.result?.usage),
+          recoverUsage: async (id) => {
+            const usage = (await options.readRun?.(id))?.result?.usage;
+            return {
+              usage: measureGoalRunUsage(usage),
+              accounting: usage?.by_agent?.map((row) => ({ ...row, type: "subagent" as const })),
+            };
+          },
           provenance: stewardProvenance,
           signal: options.context.signal,
           readTrace: options.steward.readTrace,

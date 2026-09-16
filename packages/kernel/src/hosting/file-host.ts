@@ -1,3 +1,4 @@
+import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
 import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { goalsSettingsSchema } from "@clarvis/goal/settings";
@@ -240,19 +241,16 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             runtime: (limit, ttl) => kernel.goalStewardRuntime(limit, ttl, owner),
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
             readFile: (path) => kernel.files.readFile(path),
-            async settle(mutate, usage) {
+            async settle(mutate, usage, accounting) {
               await sessions.transact(context.session.id, (session) => {
                 const current = goalStateFromSession(session);
                 if (!current) throw kernelError("conflict", "Goal Steward session disappeared");
                 const result = mutate(current);
                 session.goal_state = goalStateToDto(result.state);
-                if (result.charged && usage.kind === "measured") {
-                  session.totals.input += usage.input;
-                  session.totals.output += usage.output;
-                  if (usage.cached === undefined) delete session.totals.cached;
-                  else if (session.totals.cached !== undefined)
-                    session.totals.cached += usage.cached;
-                }
+                if (result.charged)
+                  addGoalAuxiliaryUsage(session.totals, usage, accounting, (model) =>
+                    prices.get(model),
+                  );
                 return { session, result: undefined };
               });
             },
@@ -459,6 +457,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             },
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
             readWorkspaceFile: (path) => kernel.files.readFile(path),
+            priceFor: (model) => prices.get(model),
             formulateRun: (input) => kernel.goalAgentRuntime(owner).run(input),
             workspaceReadAvailable: goalAgentAvailability.workspaceReadAvailable,
           }),

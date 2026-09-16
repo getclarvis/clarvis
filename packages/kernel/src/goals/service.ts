@@ -1,3 +1,5 @@
+import { addGoalAuxiliaryUsage } from "./usage.ts";
+import type { ModelCost } from "@clarvis/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -63,6 +65,7 @@ export function createGoalService(options: {
   readRun(executionId: string): Promise<RunDetail | null>;
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
   readWorkspaceFile(path: string): Promise<{ path: string; content: string }>;
+  priceFor?: (model: string) => ModelCost | undefined;
   formulateRun(input: GoalAgentRunInput): Promise<GoalAgentRunResult>;
   workspaceReadAvailable: boolean;
 }): { service: GoalService; close(): Promise<void> } {
@@ -234,6 +237,7 @@ export function createGoalService(options: {
         outcome: "insufficient_context" | "failed",
         details: { question?: string; message?: string },
         usage?: GoalAgentRunResult["usage"],
+        accounting?: GoalAgentRunResult["accounting"],
       ): Promise<GoalFormulateResult> => {
         const committed = await options.transactions.transact(request.session_id, (session) => {
           const stale = (session.revision ?? 0) !== (captured.revision ?? 0);
@@ -250,11 +254,8 @@ export function createGoalService(options: {
               : details),
           });
           session.goal_state = goalStateToDto(result.state);
-          if (usage?.kind === "measured" && !result.replayed) {
-            session.totals.input += usage.input;
-            session.totals.output += usage.output;
-            if (session.totals.cached !== undefined) session.totals.cached += usage.cached ?? 0;
-          }
+          if (!result.replayed)
+            addGoalAuxiliaryUsage(session.totals, usage, accounting, options.priceFor);
           return {
             session,
             result: { ...result.receipt, formulation: result.receipt.formulation! },
@@ -313,6 +314,7 @@ export function createGoalService(options: {
           "failed",
           { message: "Goal formulation failed; try again" },
           error instanceof GoalAgentRunFailure ? error.usage : undefined,
+          error instanceof GoalAgentRunFailure ? error.accounting : undefined,
         );
       }
       if (analyzed.result.status === "insufficient_context")
@@ -320,6 +322,7 @@ export function createGoalService(options: {
           "insufficient_context",
           { question: analyzed.result.question, message: analyzed.result.reason },
           analyzed.usage,
+          analyzed.accounting,
         );
       const ready = analyzed.result;
 
@@ -335,6 +338,7 @@ export function createGoalService(options: {
           "insufficient_context",
           { message: "A normative source could not be revalidated; invoke /goal again" },
           analyzed.usage,
+          analyzed.accounting,
         );
       }
 
@@ -355,12 +359,13 @@ export function createGoalService(options: {
             message: "Conversation changed during formulation; invoke /goal again",
           });
           session.goal_state = goalStateToDto(stale.state);
-          if (analyzed.usage.kind === "measured" && !stale.replayed) {
-            session.totals.input += analyzed.usage.input;
-            session.totals.output += analyzed.usage.output;
-            if (session.totals.cached !== undefined)
-              session.totals.cached += analyzed.usage.cached ?? 0;
-          }
+          if (!stale.replayed)
+            addGoalAuxiliaryUsage(
+              session.totals,
+              analyzed.usage,
+              analyzed.accounting,
+              options.priceFor,
+            );
           return { session, result: { domain: stale, stale: true } };
         }
         const definition = ready;
@@ -410,12 +415,13 @@ export function createGoalService(options: {
           },
         );
         session.goal_state = goalStateToDto(domain.state);
-        if (analyzed.usage.kind === "measured" && !domain.replayed) {
-          session.totals.input += analyzed.usage.input;
-          session.totals.output += analyzed.usage.output;
-          if (session.totals.cached !== undefined)
-            session.totals.cached += analyzed.usage.cached ?? 0;
-        }
+        if (!domain.replayed)
+          addGoalAuxiliaryUsage(
+            session.totals,
+            analyzed.usage,
+            analyzed.accounting,
+            options.priceFor,
+          );
         return { session, result: { domain, stale: false } };
       });
       if (!committed.stale && committed.domain.start) {

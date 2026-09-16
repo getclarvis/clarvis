@@ -1,3 +1,4 @@
+import type { PerAgentUsage } from "@clarvis/capability";
 import { createHash } from "node:crypto";
 import {
   sanitizeText,
@@ -14,6 +15,7 @@ import {
   type GoalStewardPort,
   type GoalStewardReview,
   type GoalStewardFinalizeAttempt,
+  GoalStewardRunFailure,
   type GoalStewardRunResult,
   type GoalStewardRunInput,
   type GoalUsage,
@@ -54,7 +56,7 @@ export interface StewardCoordinatorOptions {
   sequenceBase?: number;
   digestBase?: string;
   epochBase?: number;
-  recoverUsage?(executionId: string): Promise<GoalUsage>;
+  recoverUsage?(executionId: string): Promise<{ usage: GoalUsage; accounting?: PerAgentUsage[] }>;
   provenance?: {
     entries: Array<{ actor: string; text: string }>;
     partial: boolean;
@@ -67,6 +69,7 @@ export interface StewardCoordinatorOptions {
   settle(
     mutate: (previous: GoalState) => { state: GoalState; charged: boolean },
     usage: GoalUsage,
+    accounting?: PerAgentUsage[],
   ): Promise<void>;
   changed(): void;
   readEvidence?(goal: GoalRecord): Promise<Pick<GoalEvidenceSnapshot, "catalog" | "commands">>;
@@ -133,7 +136,10 @@ export function createGoalStewardCoordinator(
     let before = await read();
     const orphan = before.goal.steward.pending_execution_id;
     if (orphan !== undefined) {
-      const recoveredUsage = (await options.recoverUsage?.(orphan)) ?? { kind: "unknown" as const };
+      const recovered = (await options.recoverUsage?.(orphan)) ?? {
+        usage: { kind: "unknown" as const },
+      };
+      const recoveredUsage = recovered.usage;
       await options.settle(
         (previous) =>
           settleStewardEvaluation(previous, {
@@ -147,6 +153,7 @@ export function createGoalStewardCoordinator(
             controlRevision: before.goal.control_revision,
           }),
         recoveredUsage,
+        recovered.accounting,
       );
       before = await read();
     }
@@ -278,11 +285,13 @@ export function createGoalStewardCoordinator(
       const artifacts = await verifyTraceNormativeSources({
         trace: evaluationTrace,
         paths,
+        allowIncomplete: result.decision !== "completion",
         readFile: (path) => options.readFile(path),
       });
       return { result, artifacts };
     };
     let usage: GoalUsage = { kind: "unknown" };
+    let accounting: PerAgentUsage[] | undefined;
     let review: GoalStewardReview | undefined;
     let continued = false;
     abort = new AbortController();
@@ -307,6 +316,7 @@ export function createGoalStewardCoordinator(
         },
       });
       usage = outcome.usage;
+      accounting = outcome.accounting;
       signal.throwIfAborted();
       if (usage.kind === "unknown") throw new Error("Goal Steward usage is unknown");
       continued = true;
@@ -344,39 +354,44 @@ export function createGoalStewardCoordinator(
     } catch (error) {
       if (error !== null && typeof error === "object" && "usage" in error)
         usage = (error as { usage: GoalUsage }).usage;
+      if (error instanceof GoalStewardRunFailure) accounting = error.accounting;
       failed = true;
       options.runtimePort.logger?.warn(
         { event: "goal.steward.failed", execution_id: executionId, mode },
         "Goal Steward evaluation did not produce a current decision",
       );
     } finally {
-      await options.settle((previous) => {
-        const current = previous.current;
-        if (
-          review !== undefined &&
-          (!current ||
-            current.control_revision !== review.control_revision ||
-            stewardDefinitionDigest(current) !== review.definition_digest ||
-            input.snapshot().digest !== review.trajectory_digest ||
-            provider?.snapshot().revision !== review.plan_context_revision ||
-            (review.candidate_digest !== undefined &&
-              stewardDigest(current.candidate) !== review.candidate_digest))
-        )
-          review = undefined;
-        return settleStewardEvaluation(previous, {
-          binding: options.binding,
-          executionId,
-          usage,
-          review,
-          sequence: trajectory.sequence,
-          trajectoryDigest: trajectory.digest,
-          steeringEpoch: trajectory.epoch,
-          fingerprint,
-          now: Date.now(),
-          continued,
-          controlRevision: before.goal.control_revision,
-        });
-      }, usage);
+      await options.settle(
+        (previous) => {
+          const current = previous.current;
+          if (
+            review !== undefined &&
+            (!current ||
+              current.control_revision !== review.control_revision ||
+              stewardDefinitionDigest(current) !== review.definition_digest ||
+              input.snapshot().digest !== review.trajectory_digest ||
+              provider?.snapshot().revision !== review.plan_context_revision ||
+              (review.candidate_digest !== undefined &&
+                stewardDigest(current.candidate) !== review.candidate_digest))
+          )
+            review = undefined;
+          return settleStewardEvaluation(previous, {
+            binding: options.binding,
+            executionId,
+            usage,
+            review,
+            sequence: trajectory.sequence,
+            trajectoryDigest: trajectory.digest,
+            steeringEpoch: trajectory.epoch,
+            fingerprint,
+            now: Date.now(),
+            continued,
+            controlRevision: before.goal.control_revision,
+          });
+        },
+        usage,
+        accounting,
+      );
       if (attempt === undefined) ready = review;
       options.runtimePort.logger?.info(
         {

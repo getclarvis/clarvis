@@ -543,3 +543,27 @@ describe("Goal formulation through the real file host", () => {
     );
   });
 });
+
+it("preserves unknown formulation telemetry instead of charging measured zero", async () => {
+  const fixture = await createGoalFileHostFixture();
+  cleanups.push(fixture.close);
+  fixture.setResponder(async () => ({
+    name: "submit_result",
+    arguments: {
+      status: "insufficient_context",
+      question: "Which output?",
+      reason: "Need a concrete target",
+    },
+    usage: "missing",
+  }));
+  const result = await fixture.client.goals.formulate({
+    session_id: "conversation",
+    expected_revision: 0,
+    operation_id: "missing-usage",
+    mode: "guided",
+    seed: "Investigate the desired output",
+  });
+  expect(result.formulation.outcome).toBe("insufficient_context");
+  const session = await fixture.client.sessions.get("conversation");
+  expect(session!.totals.input).toBe(0);
+});

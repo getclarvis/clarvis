@@ -111,3 +111,19 @@ it("retains a complete batch section while rejecting a later tool-truncated file
     "not read completely",
   );
 });
+
+it("allows partial exploration in observations without attesting incomplete files", async () => {
+  const events = trace("==> first.txt <==\n     1\tfirst\n\n==> last.txt <==\n     1\tpart");
+  const options = {
+    trace: events,
+    paths: ["first.txt", "last.txt"],
+    readFile: async (path: string) => ({
+      path,
+      content: path === "first.txt" ? "first" : "part\nrest",
+    }),
+  };
+  expect(await verifyTraceNormativeSources({ ...options, allowIncomplete: true })).toEqual([
+    { path: "first.txt", digest: createHash("sha256").update("first").digest("hex") },
+  ]);
+  await expect(verifyTraceNormativeSources(options)).rejects.toThrow("not read completely");
+});

@@ -1,3 +1,4 @@
+import type { PerAgentUsage } from "@clarvis/capability";
 import type { ProviderConfig } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { GoalUsage } from "../schemas.ts";
@@ -46,6 +47,7 @@ export interface GoalAgentRunResult {
   result: GoalFormulationResult;
   usage: GoalUsage;
   elapsed_ms: number;
+  accounting?: PerAgentUsage[];
 }
 
 export type GoalFormulationResult =

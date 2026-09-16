@@ -73,6 +73,7 @@ function exactRead(observation: CompleteRead, path: string, content: string): bo
 export async function verifyTraceNormativeSources(options: {
   trace: readonly TraceEvent[];
   paths: readonly string[];
+  allowIncomplete?: boolean;
   readFile(path: string): Promise<{ path: string; content: string }>;
 }): Promise<Array<{ path: string; digest: string }>> {
   const paths = [...new Set(options.paths)];
@@ -122,6 +123,7 @@ export async function verifyTraceNormativeSources(options: {
         break;
       }
     }
+    if (!matched && options.allowIncomplete) continue;
     if (!matched)
       throw new Error("Goal normative source was not read completely in the formulation trace");
     artifacts.push({

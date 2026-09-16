@@ -1,3 +1,4 @@
+import type { PerAgentUsage } from "@clarvis/capability";
 import { z } from "zod";
 import type { GoalAgentBudget, GoalAgentRuntime } from "./types.ts";
 import type { GoalUsage } from "../schemas.ts";
@@ -75,6 +76,7 @@ export interface GoalStewardRunResult {
   result: GoalStewardResult;
   usage: GoalUsage;
   elapsed_ms: number;
+  accounting?: PerAgentUsage[];
 }
 
 /** Host-owned catalogs constrain all semantic target and evidence references. */

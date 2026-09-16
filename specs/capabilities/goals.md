@@ -856,3 +856,20 @@ Production: `createContainerNativeKernel` in
 in [capability.ts](../../packages/goal/src/capability.ts). Test:
 [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
 and the native Goal suites cited above.
+
+### Auxiliary accounting and exploratory reads
+
+Formulation captures provider telemetry rather than inferring measured usage from loop totals.
+Auxiliary results retain host-only model attribution for retry-inclusive session pricing; unknown
+usage or cache does not become a measured zero or an invented cost. Receipt and Steward settlement
+fences prevent duplicate charges. Production: `createKernelGoalAgentRuntime`, `createGoalUsageTracker`
+and `addGoalAuxiliaryUsage` in [agent-runtime.ts](../../packages/kernel/src/goals/agent-runtime.ts)
+and [usage.ts](../../packages/kernel/src/goals/usage.ts). Test:
+[goal-auxiliary-usage.test.ts](../../packages/kernel/tests/unit/goal-auxiliary-usage.test.ts) and
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
+Observations may explore partial file reads; only complete reads become fenced artifact evidence.
+Completion citations remain strict. Production: `verifyTraceNormativeSources` and the observation
+validator in [trace-reads.ts](../../packages/kernel/src/goals/trace-reads.ts) and
+[steward-coordinator.ts](../../packages/kernel/src/goals/steward-coordinator.ts). Test:
+[goal-trace-reads.test.ts](../../packages/kernel/tests/unit/goal-trace-reads.test.ts).

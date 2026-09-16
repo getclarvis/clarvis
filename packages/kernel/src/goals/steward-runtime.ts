@@ -134,12 +134,13 @@ export function createStewardExecutionRuntime(options: {
           },
           input,
         );
-        return { ...result, usage: tracker.measure() };
+        return { ...result, usage: tracker.measure(), accounting: tracker.accounting() };
       } catch (error) {
         throw new GoalStewardRunFailure(
           input.execution_id,
           tracker.measure(),
           error instanceof GoalStewardRunFailure ? error.code : "goal_steward_failed",
+          tracker.accounting(),
         );
       }
     },

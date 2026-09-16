@@ -1,5 +1,11 @@
+import { createGoalUsageTracker } from "./usage.ts";
 import type { ProviderConfig } from "@clarvis/capability";
-import { runGoalAgent, type GoalAgentRunInput, type GoalAgentRunResult } from "@clarvis/goal";
+import {
+  runGoalAgent,
+  GoalAgentRunFailure,
+  type GoalAgentRunInput,
+  type GoalAgentRunResult,
+} from "@clarvis/goal";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import type { RunExecutor } from "../runs/run-service.ts";
 
@@ -27,16 +33,28 @@ export function createKernelGoalAgentRuntime(options: KernelGoalAgentRuntimeOpti
   const deps: ExecuteRunDeps = { ...options.deps, capabilities: tools };
   return {
     workspaceReadAvailable,
-    run: (input) =>
-      runGoalAgent(
-        {
-          owner: options.owner,
-          model_ref: options.model,
-          providers: options.providers,
-          execute_run: options.executeRun,
-          deps,
-        },
-        input,
-      ),
+    async run(input) {
+      const tracker = createGoalUsageTracker();
+      try {
+        const result = await runGoalAgent(
+          {
+            owner: options.owner,
+            model_ref: options.model,
+            providers: options.providers,
+            execute_run: options.executeRun,
+            deps: { ...deps, llm: tracker.wrap(deps.llm) },
+          },
+          input,
+        );
+        return { ...result, usage: tracker.measure(), accounting: tracker.accounting() };
+      } catch (error) {
+        throw new GoalAgentRunFailure(
+          input.execution_id,
+          tracker.measure(),
+          error instanceof GoalAgentRunFailure ? error.message : "failed",
+          tracker.accounting(),
+        );
+      }
+    },
   };
 }

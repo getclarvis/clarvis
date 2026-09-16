@@ -1,8 +1,10 @@
+import type { PerAgentUsage } from "@clarvis/capability";
 import type { Usage } from "@clarvis/capability";
 import { buildGoalAgentRequest, goalFormulationResultSchema } from "./request.ts";
 import type { GoalAgentRunInput, GoalAgentRunResult, GoalAgentRuntime } from "./types.ts";
 
 function measuredUsage(usage: Usage): GoalAgentRunResult["usage"] {
+  if (usage.by_agent.length === 0) return { kind: "unknown" };
   const input = usage.by_agent.reduce((sum, row) => sum + row.input_tokens, 0);
   const output = usage.by_agent.reduce((sum, row) => sum + row.output_tokens, 0);
   const cached = usage.by_agent.reduce((sum, row) => sum + row.cached_tokens, 0);
@@ -15,6 +17,7 @@ export class GoalAgentRunFailure extends Error {
     readonly execution_id: string,
     readonly usage: GoalAgentRunResult["usage"],
     status: string,
+    readonly accounting?: PerAgentUsage[],
   ) {
     super(`Goal formulation run ended with ${status}`);
     this.name = "GoalAgentRunFailure";

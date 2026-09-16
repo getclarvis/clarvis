@@ -1349,3 +1349,8 @@ Concurrent changes to other executable inputs withhold trust. Profile definition
 remain held through async file mutation and rollback companion changes on failure.
 
 Concrete configuration refusals live in the shared authority ledger. Identical before/after bytes cannot trigger another prompt merely by switching edit and write; corrected bytes receive their own decision. The bounded ledger persists only under the validated authority binding and is invalidated by fresh admitted evidence. See [self-configuration](../../specs/hosts/self-configuration.md).
+
+Goal formulation and Steward executions capture provider usage, including retries, through the
+same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
+when usage and cache measurements are known. Partial observation reads do not attest complete
+artifacts; completion still requires complete current reads for every cited artifact.

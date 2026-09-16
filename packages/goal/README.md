@@ -164,3 +164,6 @@ bun --filter @clarvis/goal lint
 
 Tests exercise domain controls, execution fencing, reconciliation, bounds and criteria without a
 provider. Kernel composition, protocol, runtime and real PTY tests own their respective seams.
+
+Auxiliary execution results can carry host-only per-model accounting alongside domain usage;
+unknown formulation telemetry remains unknown rather than being inferred from empty loop totals.

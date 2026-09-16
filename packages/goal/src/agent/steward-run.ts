@@ -1,3 +1,4 @@
+import type { PerAgentUsage } from "@clarvis/capability";
 import type {
   GoalStewardRuntime,
   GoalStewardRunInput,
@@ -12,6 +13,7 @@ export class GoalStewardRunFailure extends Error {
     readonly execution_id: string,
     readonly usage: GoalStewardRunResult["usage"],
     readonly code = "goal_steward_failed",
+    readonly accounting?: PerAgentUsage[],
   ) {
     super("goal_steward_failed");
     this.name = "GoalStewardRunFailure";

@@ -40,7 +40,8 @@ Production: `registerBackgroundCommands` in
 Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
 
 `/goal` uses the same registry for deterministic inspection and controls, including literal
-`/goal -- <objective>`, reviewed replacement, a criteria/limits form, pause, resume, cancel and
+`/goal -- <objective>`, semantic `/goal auto` from the conversation or `/goal <seed>` from a
+primary request, reviewed replacement, a criteria/limits form, pause, resume, cancel and
 archive. Invalid control syntax returns `block` and remains in the composer. A form pins both the
 conversation generation and the reviewed revision, so navigation cannot retarget an old draft.
 Physical execution gates editing independently from goal status; pause alone does not imply a stopped

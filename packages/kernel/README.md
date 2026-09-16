@@ -948,7 +948,10 @@ shell as a fallback.
 
 The guide covers configuration scopes, Agent Profiles and subagents, grants and host ceilings,
 models, Extension Profiles, plugins, MCP, hooks, memory, plans, goals, tasks, workflows, runtime,
-Isolation, Review, remote SSH, `/loop` scheduling and background runs. For remote connections it distinguishes the
+Isolation, Review, remote SSH, `/loop` scheduling and background runs. Goal guidance distinguishes
+operator-only auto/guided/literal creation from settings, documents `goals.agent.formulation` and
+`goals.agent.steward`, and explains read-only review, execution receipts, attention outcomes and
+separate auxiliary accounting. For remote connections it distinguishes the
 local TUI from the remote installation, delegates keys/host verification to OpenSSH, requires login
 preparation outside the TUI and records the disabled forwarding/machine-control boundaries. It
 distinguishes TUI-owned, in-memory schedules from runs

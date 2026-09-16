@@ -100,7 +100,14 @@ Coordinate work carefully, preserve unrelated changes, and report validation evi
     content: `{
   "memory": {"enabled": true, "provider": {"kind": "wiki"}},
   "plans": {"mode": "review", "retention": "keep", "provider": {"kind": "markdown"}},
-  "goals": {"max_net_tokens": 100000, "max_auto_continuations": 8, "max_no_progress_checkpoints": 3},
+  "goals": {
+    "max_net_tokens": 100000, "max_auto_continuations": 8, "max_no_progress_checkpoints": 3,
+    "agent": {
+      "formulation": {"max_net_tokens": 20000, "max_iterations": 8},
+      "steward": {"max_net_tokens": 20000, "max_reviews_per_work_run": 8,
+        "max_interventions_per_work_run": 3, "max_completion_reviews_per_attempt": 1}
+    }
+  },
   "tasks": {
     "provider": {"kind": "mcp", "server": "tasks", "protocol": "clarvis.tasks.v2"},
     "writes": "disabled"

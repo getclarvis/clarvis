@@ -16,6 +16,7 @@ import {
   recordGoalCheckpoint,
   recordGoalProgress,
   type GoalRuntimePort,
+  type GoalStewardCompletionDecision,
 } from "../../src/index.ts";
 
 function fixture(overrides: Partial<GoalRuntimePort> = {}) {
@@ -224,6 +225,10 @@ describe("host-bound goal capability", () => {
         accepted_at: 4,
       },
     ];
+    goal.constraints = ["Keep the public protocol compatible"];
+    goal.exclusions = ["Do not publish"];
+    goal.assumptions = ["The fixture represents the requested surface"];
+    goal.sources = [{ path: "specs/capabilities/goals.md", digest: "a".repeat(64) }];
     f.port.read = async () => ({
       goal: structuredClone(goal),
       evidence: [
@@ -243,10 +248,11 @@ describe("host-bound goal capability", () => {
       1,
     );
     expect(f.blocks[0]!.content).toContain('"id":"quality"');
-    expect(result).toMatchObject({
-      kind: "result",
-      text: expect.stringContaining('"accepted_human_criteria":["review"]'),
-    });
+    expect(f.blocks[0]!.content).toContain('"constraints":["Keep the public protocol compatible"]');
+    expect(result.kind).toBe("result");
+    if (result.kind !== "result") throw new Error("Expected get_goal result");
+    expect(result.text).toContain('"accepted_human_criteria":["review"]');
+    expect(result.text).toContain('"normative_sources":[{"path":"specs/capabilities/goals.md"');
   });
 
   it.each(["session_id", "agent_instance_id", "executionId"] as const)(
@@ -605,4 +611,79 @@ describe("host-bound goal capability", () => {
       result: { error: { code: "goal_control_failed" } },
     });
   });
+});
+
+it("routes Steward completion decisions and respects pending operator steering", async () => {
+  let decision: GoalStewardCompletionDecision = {
+    kind: "achieved",
+    review_id: "review",
+  };
+  let throws = false;
+  let pending = false;
+  const f = fixture({
+    steward: {
+      bindReviewContext: () => undefined,
+      scheduleObservation: () => undefined,
+      takeReadyIntervention: async () => undefined,
+      closeCoordinator: async () => undefined,
+      reviewCompletion: async () => {
+        if (throws) throw new Error("Unavailable");
+        return decision;
+      },
+    },
+  });
+  f.bc.steerProbe = () => pending;
+  f.allowCompletion();
+  const c = await f.attach();
+  const gate = c.gates![0]!;
+  expect(await gate.check({ mode: "text", text: "Done" })).toEqual({ kind: "pass" });
+  decision = { kind: "not_achieved", review_id: "review", next_step: "Run tests" };
+  expect(await gate.check({ mode: "submit", value: { done: true } })).toMatchObject({
+    kind: "nudge",
+    note: "[goal steward] Run tests",
+  });
+  for (const reason of ["goal_steward_failed", "goal_steward_inconclusive"]) {
+    decision = { kind: "inconclusive", review_id: "review", reason };
+    expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+      kind: "terminal",
+      result: { error: { code: reason } },
+    });
+  }
+  throws = true;
+  expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({
+    kind: "terminal",
+    result: { error: { code: "goal_steward_failed" } },
+  });
+  expect(await gate.check({ mode: "text", text: "x".repeat(128 * 1024) })).toMatchObject({
+    kind: "terminal",
+    result: { error: { code: "goal_steward_inconclusive" } },
+  });
+  pending = true;
+  expect(await gate.check({ mode: "text", text: "Done" })).toMatchObject({ kind: "nudge" });
+});
+
+it("delivers Steward interventions only at an iteration boundary", async () => {
+  let kind: "steer" | "new_run" = "steer";
+  const notes: string[] = [];
+  const f = fixture({
+    steward: {
+      bindReviewContext: () => undefined,
+      scheduleObservation: () => undefined,
+      closeCoordinator: async () => undefined,
+      reviewCompletion: async () => ({ kind: "achieved", review_id: "review" }),
+      takeReadyIntervention: async () =>
+        kind === "steer"
+          ? { kind, guidance: "Verify output" }
+          : { kind, next_step: "Finish tests" },
+    },
+  });
+  f.bc.ctx.appendNote = (note) => {
+    notes.push(note);
+  };
+  const c = await f.attach();
+  await c.hooks!.beforeIteration!();
+  kind = "new_run";
+  await c.hooks!.beforeIteration!();
+  expect(notes[0]).toBe("[goal steward] Verify output");
+  expect(notes[1]).toContain("checkpoint");
 });

@@ -3,6 +3,7 @@ import {
   type Capability,
   type LLMProvider,
   type Logger,
+  type OperatorReviewContext,
   type TraceEvent,
 } from "@clarvis/capability";
 import {
@@ -13,26 +14,82 @@ import {
   goalDeadlineLimit,
   stopGoalContinuation,
   type GoalRepository,
+  type GoalRecord,
 } from "@clarvis/goal";
-import type { RunRequest } from "@clarvis/loop";
-import type { ModelCost, SessionService, StartRunParams } from "@clarvis/protocol";
+import type { Message, RunRequest } from "@clarvis/loop";
+import type { ModelCost, RunDetail, SessionService, StartRunParams } from "@clarvis/protocol";
 import { generateExecutionId } from "@clarvis/trace";
 import type { HostedExecutionBinding, HostedPreparationContext } from "../hosting/sessions.ts";
 import { kernelError } from "../core/errors.ts";
+import { protoMessagesToEngine } from "../runs/map-message.ts";
 import type { GoalEvidenceSource } from "./evidence.ts";
 import { createGoalRuntimePort } from "./runtime-port.ts";
 import { goalStateFromSession, goalStateToDto } from "./session-state.ts";
 import { settleGoalSession } from "./settlement.ts";
-import { createGoalUsageTracker } from "./usage.ts";
+import { createGoalUsageTracker, measureGoalRunUsage } from "./usage.ts";
+import { projectStewardOrigin } from "./steward-input.ts";
+import {
+  createGoalStewardCoordinator,
+  type StewardCoordinatorOptions,
+  type StewardExecutionRuntime,
+} from "./steward-coordinator.ts";
 
 /** Mandatory entry capability and finite request policy for one host-admitted stage. */
 export interface GoalExecutionPolicy {
   capability: Capability;
+  /** Exact operator-authored inputs that defined this Goal; inferred semantics never grant authority. */
+  authorityMessages: readonly Message[];
+  /** Complete persisted Goal definition supplied to reviewers separately from operator authority. */
+  reviewContext: OperatorReviewContext;
   observe(event: TraceEvent): void;
   /** Observe complete host inference accounting without trusting zero-filled guest totals. */
   trackModel(provider: LLMProvider): LLMProvider;
   /** Apply after ordinary profile/settings resolution, before immutable launch preparation. */
   constrain(request: RunRequest): RunRequest;
+}
+
+async function goalAuthorityMessages(
+  goal: GoalRecord,
+  readRun: ((executionId: string) => Promise<RunDetail | null>) | undefined,
+): Promise<Message[]> {
+  const messages: Message[] = [];
+  if (goal.origin.kind !== "literal" && readRun !== undefined) {
+    for (const executionId of goal.origin.source_execution_ids) {
+      const run = await readRun(executionId);
+      if (run === null) continue;
+      messages.push(
+        ...protoMessagesToEngine(run.messages.filter((message) => message.role === "user")),
+      );
+    }
+  }
+  if (goal.origin.kind === "guided") messages.push({ role: "user", content: goal.origin.seed });
+  else if (goal.origin.kind === "literal")
+    messages.push({
+      role: "user",
+      content: JSON.stringify({
+        objective: goal.objective,
+        criteria: goal.criteria,
+        constraints: goal.constraints,
+        exclusions: goal.exclusions,
+        assumptions: goal.assumptions,
+      }),
+    });
+  return messages;
+}
+
+function goalReviewContext(goal: GoalRecord): OperatorReviewContext {
+  return {
+    kind: "goal",
+    content: JSON.stringify({
+      objective: goal.objective,
+      criteria: goal.criteria.map(({ description, kind }) => ({ description, kind })),
+      constraints: goal.constraints,
+      exclusions: goal.exclusions,
+      assumptions: goal.assumptions,
+      normative_sources: goal.sources.map(({ path }) => ({ path })),
+      origin: goal.origin.kind,
+    }),
+  };
 }
 
 /**
@@ -46,10 +103,22 @@ export async function prepareHostedGoalTurn(options: {
   repository: GoalRepository;
   sessions: Pick<SessionService, "get">;
   evidence: GoalEvidenceSource;
+  /** Revalidate host-owned normative snapshots immediately before completion. */
+  validateDefinitionSources?(
+    sources: readonly { path: string; digest: string }[],
+  ): Promise<boolean>;
+  readRun?(executionId: string): Promise<RunDetail | null>;
   prepareExecution(policy: GoalExecutionPolicy): Promise<HostedExecutionBinding>;
   logger?: Logger;
   now?: () => number;
   priceFor?(model: string): ModelCost | undefined;
+  onChange?(sessionId: string): void;
+  steward?: {
+    runtime(workTokenLimit: number, ttl: "5m" | "1h"): StewardExecutionRuntime;
+    readTrace: StewardCoordinatorOptions["readTrace"];
+    readFile: StewardCoordinatorOptions["readFile"];
+    settle: StewardCoordinatorOptions["settle"];
+  };
 }): Promise<HostedExecutionBinding> {
   const params = structuredClone(options.params);
   const initial = goalStateFromSession(options.context.session);
@@ -68,6 +137,12 @@ export async function prepareHostedGoalTurn(options: {
   const now = options.now ?? Date.now;
   const automatic = options.context.continuationOf !== undefined;
   const previous = goal.runs.at(-1);
+  const authorityMessages = await goalAuthorityMessages(
+    goal,
+    options.readRun === undefined
+      ? undefined
+      : (sourceExecutionId) => options.readRun!(sourceExecutionId),
+  );
   if (
     automatic &&
     (previous === undefined ||
@@ -87,6 +162,17 @@ export async function prepareHostedGoalTurn(options: {
     goal_id: goal.goal_id,
     objective_revision: goal.objective_revision,
   };
+  const usageTracker = createGoalUsageTracker();
+  const trackWithDeadline = (provider: LLMProvider): LLMProvider => {
+    const tracked = usageTracker.wrap(provider);
+    return {
+      call(call) {
+        const deadline = goalDeadlineLimit(goal, now());
+        if (deadline !== undefined) throw new ProviderError(deadline.reason, { kind: "client" });
+        return tracked.call(call);
+      },
+    };
+  };
   const runtime = createGoalRuntimePort({
     repository: options.repository,
     binding,
@@ -94,7 +180,54 @@ export async function prepareHostedGoalTurn(options: {
     signal: options.context.signal,
     logger: options.logger,
     now,
+    onChange: () => options.onChange?.(sessionId),
   });
+  let stewardRuntime: StewardExecutionRuntime | undefined;
+  const stewardProvenance =
+    options.steward === undefined
+      ? undefined
+      : await projectStewardOrigin(
+          goal,
+          options.context.session,
+          options.readRun === undefined ? undefined : (id) => options.readRun!(id),
+        );
+  const steward =
+    options.steward === undefined
+      ? undefined
+      : createGoalStewardCoordinator({
+          binding,
+          repository: options.repository,
+          runtimePort: runtime,
+          runtime() {
+            if (!stewardRuntime) throw new Error("Goal Steward work budget is not admitted");
+            return stewardRuntime;
+          },
+          initialMessages: (goal.steward.last_steward_execution_id === undefined
+            ? authorityMessages
+            : automatic
+              ? []
+              : protoMessagesToEngine(params.messages ?? [])
+          ).flatMap((message) =>
+            typeof message.content === "string" && message.role === "user" ? [message.content] : [],
+          ),
+          sequenceBase: goal.steward.last_consumed_work_sequence,
+          digestBase: goal.steward.trajectory_digest,
+          epochBase: goal.steward.operator_steering_epoch,
+          recoverUsage: async (id) => {
+            const usage = (await options.readRun?.(id))?.result?.usage;
+            return {
+              usage: measureGoalRunUsage(usage),
+              accounting: usage?.by_agent?.map((row) => ({ ...row, type: "subagent" as const })),
+            };
+          },
+          provenance: stewardProvenance,
+          signal: options.context.signal,
+          readTrace: options.steward.readTrace,
+          readFile: options.steward.readFile,
+          settle: options.steward.settle,
+          changed: () => options.onChange?.(sessionId),
+          readEvidence: (current) => options.evidence.snapshot(current),
+        });
   const stopped = async (reason: "revoked" | "superseded" | "failed"): Promise<void> => {
     if (reason === "superseded") return;
     await options.repository.transact(sessionId, (state) => ({
@@ -110,19 +243,15 @@ export async function prepareHostedGoalTurn(options: {
     }));
   };
   const policy: GoalExecutionPolicy = {
-    capability: createGoalCapability(runtime),
-    observe: (event) => options.evidence.observe(event),
+    capability: createGoalCapability({ ...runtime, steward }),
+    authorityMessages,
+    reviewContext: goalReviewContext(goal),
+    observe: (event) => {
+      options.evidence.observe(event);
+      steward?.observe(event);
+    },
     trackModel(provider) {
-      const tracked = usageTracker.wrap(provider);
-      return {
-        call(call) {
-          const deadline = goalDeadlineLimit(goal, now());
-          if (deadline !== undefined) {
-            throw new ProviderError(deadline.reason, { kind: "client" });
-          }
-          return tracked.call(call);
-        },
-      };
+      return trackWithDeadline(provider);
     },
     constrain(request) {
       const bounded = structuredClone(request);
@@ -154,10 +283,13 @@ export async function prepareHostedGoalTurn(options: {
         ),
         on_exceed: "stop",
       };
+      stewardRuntime ??= options.steward?.runtime(
+        bounded.budget.total_token_limit!,
+        bounded.prompt_cache_ttl ?? "5m",
+      );
       return bounded;
     },
   };
-  const usageTracker = createGoalUsageTracker();
   let execution: HostedExecutionBinding;
   try {
     execution = await options.prepareExecution(policy);
@@ -219,8 +351,17 @@ export async function prepareHostedGoalTurn(options: {
           !options.context.signal.aborted
         ) {
           try {
-            const validation = await runtime.validateCompletion();
-            if (validation.valid) validationRevision = validation.revision;
+            const sourcesCurrent =
+              options.validateDefinitionSources === undefined ||
+              (await options.validateDefinitionSources(before.current.sources));
+            if (sourcesCurrent) {
+              const validation = await runtime.validateCompletion();
+              if (
+                validation.valid &&
+                (steward === undefined || (await steward.completionCurrent(result.result)))
+              )
+                validationRevision = validation.revision;
+            }
           } catch (error) {
             const latest = (await options.repository.read(sessionId))?.current;
             if (

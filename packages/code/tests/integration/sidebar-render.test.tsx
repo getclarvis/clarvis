@@ -26,6 +26,8 @@ import { tokens } from "../../src/theme/tokens.ts";
 import { selectionBg } from "../../src/theme/surfaces.ts";
 import { glyph } from "../../src/theme/glyphs.ts";
 import { taskTone } from "../../src/views/blocks.tsx";
+import { createGoalController, type GoalController } from "../../src/features/goal/controller.ts";
+import { goalView } from "../helpers/goals.ts";
 
 function fgOf(frame: { lines: { spans: { text: string; fg: RGBA }[] }[] }, needle: string): string {
   for (const line of frame.lines) {
@@ -54,6 +56,8 @@ async function mount(
     onSelectSubagent?: (id: string) => void;
     onOpenDetail?: () => void;
     workflow?: () => WorkflowActivity | null;
+    goals?: GoalController;
+    onOpenGoal?: () => void;
   } = {},
 ): Promise<TestRendererSetup> {
   const width = opts.width ?? 28;
@@ -69,6 +73,8 @@ async function mount(
           onOpenDetail={opts.onOpenDetail}
           width={() => width}
           workflow={opts.workflow}
+          goals={opts.goals}
+          onOpenGoal={opts.onOpenGoal}
         />
       </box>
     ),
@@ -117,6 +123,44 @@ test("workflow progress matches the compact settled and running vocabulary", () 
     running: 1,
     label: "2/3 finished · 1 running",
   });
+});
+
+test("Goal uses the same compact sidebar pattern and opens its complete screen from the row", async () => {
+  const goals = createGoalController({
+    binding: () => ({ sessionId: "goal-session", generation: 1 }),
+    prepare: async () => ({ sessionId: "goal-session", generation: 1 }),
+    service: () => ({
+      availability: async () => ({ available: true }),
+      get: async () => goalView({ objective: "Ship the observable result", status: "active" }),
+      subscribe: async () => () => {},
+      receipt: async () => null,
+      formulate: async () => {
+        throw new Error("not used");
+      },
+      control: async () => {
+        throw new Error("not used");
+      },
+    }),
+  });
+  try {
+    await goals.refresh();
+    let opened = 0;
+    const t = await mount(activity({}), { width: 44, goals, onOpenGoal: () => opened++ });
+    const out = t.captureCharFrame();
+    const spans = t.captureSpans();
+    expect(out).toContain("Goal");
+    expect(out).toContain("Running · 0 stages · [^o] full goal");
+    expect(out.replace(/\s+/gu, " ")).toContain("Ship the observable result");
+    expect(out).toContain("[^o] full goal");
+    expect(fgOf(spans, "Ship the observable result")).toBe(tokens.accent2.toLowerCase());
+    expect(fgOf(spans, "Running")).toBe(tokens.add.toLowerCase());
+    const goalRow = out.split("\n").findIndex((row) => row.includes("Goal"));
+    await t.mockMouse.click(2, goalRow);
+    expect(opened).toBe(1);
+    t.renderer.destroy();
+  } finally {
+    goals.dispose();
+  }
 });
 
 test("agent rows reuse plan glyphs and tones without a failure header", async () => {
@@ -665,6 +709,28 @@ test("a completed plan does not leave its final task looking active", async () =
   const rows = await frame(a, 36);
   expect(rows.join("\n")).toContain("Shipped task");
   expect(rows.join("\n")).not.toContain("› Shipped task");
+});
+
+test("an active projection with every task done renders as completed without an active row", async () => {
+  const a = activity({
+    plan: {
+      id: "settling",
+      title: "Settling plan",
+      status: "active",
+      retention: "keep",
+      revision: 3,
+      spec_revision: 1,
+      tasks: [
+        { id: "one", title: "First task", status: "done" },
+        { id: "two", title: "Final task", status: "done" },
+      ],
+    },
+  });
+  const rows = await frame(a, 44);
+  const joined = rows.join("\n");
+  expect(joined.replace(/[│\s]+/gu, " ")).toContain("Completed · 2/2 completed · [^p] full plan");
+  expect(joined).not.toContain("Running");
+  expect(joined).not.toContain("› Final task");
 });
 
 test("a live plan transition updates the already-mounted sidebar task list", async () => {

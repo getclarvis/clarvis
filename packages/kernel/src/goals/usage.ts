@@ -1,6 +1,12 @@
 import { goalUsageSchema, type GoalUsage } from "@clarvis/goal";
-import { ProviderError, type LLMProvider, type LLMUsage } from "@clarvis/capability";
-import type { RunUsage } from "@clarvis/protocol";
+import {
+  ProviderError,
+  type LLMProvider,
+  type LLMUsage,
+  type PerAgentUsage,
+} from "@clarvis/capability";
+import { addRunUsage } from "../sessions/usage.ts";
+import type { SessionTotals, ModelCost, RunUsage } from "@clarvis/protocol";
 
 /**
  * Observe the host provider port for one goal stage, including child and auxiliary calls.
@@ -10,14 +16,26 @@ import type { RunUsage } from "@clarvis/protocol";
 export function createGoalUsageTracker(): {
   wrap(provider: LLMProvider): LLMProvider;
   measure(): GoalUsage;
+  accounting(): PerAgentUsage[];
 } {
+  const rows: PerAgentUsage[] = [];
   let pending = 0;
   let unknown = false;
   let cacheUnknown = false;
   let input = 0;
   let output = 0;
   let cached = 0;
-  const observe = (usage: LLMUsage) => {
+  const observe = (usage: LLMUsage, model: string) => {
+    rows.push({
+      type: "lead",
+      model,
+      input_tokens: usage.input_tokens,
+      output_tokens: usage.output_tokens,
+      cached_tokens: usage.cached_tokens,
+      cache_write_tokens: usage.cache_write_tokens,
+      iterations: 0,
+      subagents_spawned: 0,
+    });
     unknown ||= usage.usage_unknown === true;
     cacheUnknown ||= usage.cache_unknown === true;
     input += usage.input_tokens;
@@ -29,10 +47,11 @@ export function createGoalUsageTracker(): {
       return {
         async call(params) {
           pending++;
+          const model = `${params.provider}/${params.model}`;
           try {
             const result = await provider.call(params);
-            observe(result.usage);
-            if (result.retriedUsage !== undefined) observe(result.retriedUsage);
+            observe(result.usage, model);
+            if (result.retriedUsage !== undefined) observe(result.retriedUsage, model);
             return result;
           } catch (error) {
             const usage =
@@ -40,7 +59,7 @@ export function createGoalUsageTracker(): {
                 ? (error.accumulatedUsage ?? error.partialUsage)
                 : undefined;
             if (usage === undefined) unknown = true;
-            else observe(usage);
+            else observe(usage, model);
             throw error;
           } finally {
             pending--;
@@ -48,6 +67,7 @@ export function createGoalUsageTracker(): {
         },
       };
     },
+    accounting: () => structuredClone(rows),
     measure() {
       if (unknown || pending > 0) return { kind: "unknown" };
       const result = goalUsageSchema.safeParse({
@@ -104,4 +124,33 @@ export function measureGoalRunUsage(usage: RunUsage | undefined): GoalUsage {
     ...(cached === undefined ? {} : { cached }),
   });
   return total.success ? total.data : { kind: "unknown" };
+}
+
+/** Settle measured auxiliary tokens and attributed prices without charging the work allowance. */
+export function addGoalAuxiliaryUsage(
+  totals: SessionTotals,
+  usage: GoalUsage | undefined,
+  accounting: PerAgentUsage[] | undefined,
+  priceFor: ((model: string) => ModelCost | undefined) | undefined,
+): void {
+  if (usage?.kind !== "measured") return;
+  addRunUsage(totals, {
+    iterations: 0,
+    elapsed_ms: 0,
+    input_tokens: usage.input,
+    output_tokens: usage.output,
+    ...(usage.cached === undefined ? {} : { cached_tokens: usage.cached }),
+  });
+  if (accounting === undefined || usage.cached === undefined) return;
+  const priced: SessionTotals = { input: 0, output: 0 };
+  addRunUsage(
+    priced,
+    {
+      iterations: 0,
+      elapsed_ms: 0,
+      by_agent: accounting.map((row) => ({ ...row, role: row.type })),
+    },
+    priceFor,
+  );
+  if (priced.cost_usd !== undefined) totals.cost_usd = (totals.cost_usd ?? 0) + priced.cost_usd;
 }

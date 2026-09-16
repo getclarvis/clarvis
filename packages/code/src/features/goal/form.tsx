@@ -75,6 +75,25 @@ export function GoalForm(
       }))
     )
       return;
+    if (
+      value.kind === "edit" &&
+      action.kind === "edit" &&
+      value.resetsFormulationOrigin &&
+      (action.objective !== undefined ||
+        action.criteria !== undefined ||
+        action.constraints !== undefined ||
+        action.exclusions !== undefined ||
+        action.assumptions !== undefined) &&
+      !(await host.confirm({
+        message: "Save this goal as a literal definition?",
+        confirmLabel: "save as literal",
+        detail: [
+          "Editing semantic fields clears normative source bindings and the guided/auto origin.",
+          "Clear and formulate again to preserve a new formulation audit.",
+        ],
+      }))
+    )
+      return;
     await deps.goals.control(action, value.expectedRevision, value.binding);
     host.markDirty(false);
     deps.close();
@@ -139,6 +158,54 @@ export function GoalForm(
           },
         ),
     },
+    {
+      label: "Constraints",
+      value: (draft().constraints ?? []).join(" · ") || "none",
+      edit: () =>
+        editor.startMultiline(
+          "Constraints (one per line)",
+          (draft().constraints ?? []).join("\n"),
+          (value) =>
+            update({
+              constraints: value
+                .split("\n")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            }),
+        ),
+    },
+    {
+      label: "Exclusions",
+      value: (draft().exclusions ?? []).join(" · ") || "none",
+      edit: () =>
+        editor.startMultiline(
+          "Exclusions (one per line)",
+          (draft().exclusions ?? []).join("\n"),
+          (value) =>
+            update({
+              exclusions: value
+                .split("\n")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            }),
+        ),
+    },
+    {
+      label: "Assumptions",
+      value: (draft().assumptions ?? []).join(" · ") || "none",
+      edit: () =>
+        editor.startMultiline(
+          "Assumptions (one per line)",
+          (draft().assumptions ?? []).join("\n"),
+          (value) =>
+            update({
+              assumptions: value
+                .split("\n")
+                .map((item) => item.trim())
+                .filter(Boolean),
+            }),
+        ),
+    },
     ...draft().criteria.map((item, index) => ({
       label:
         item.kind === "host"
@@ -177,10 +244,10 @@ export function GoalForm(
           {
             key: "delete",
             label: "remove criterion",
-            when: () => selection() >= 5 && selection() < fields().length - 1,
+            when: () => selection() >= 8 && selection() < fields().length - 1,
             run: () =>
               update({
-                criteria: draft().criteria.filter((_value, index) => index !== selection() - 5),
+                criteria: draft().criteria.filter((_value, index) => index !== selection() - 8),
               }),
           },
         ],

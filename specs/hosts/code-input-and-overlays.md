@@ -40,18 +40,36 @@ Production: `registerBackgroundCommands` in
 Test: [background-commands.test.tsx](../../packages/code/tests/integration/background-commands.test.tsx).
 
 `/goal` uses the same registry for deterministic inspection and controls, including literal
-`/goal -- <objective>`, reviewed replacement, a criteria/limits form, pause, resume, cancel and
+`/goal -- <objective>`, semantic `/goal auto` from the conversation or `/goal <seed>` from a
+primary request, reviewed replacement, a criteria/limits form, pause, resume, cancel and
 archive. Invalid control syntax returns `block` and remains in the composer. A form pins both the
 conversation generation and the reviewed revision, so navigation cannot retarget an old draft.
 Physical execution gates editing independently from goal status; pause alone does not imply a stopped
 run. Replacement, including editing a terminal goal, requires explicit confirmation.
 Human criteria show whether the host accepted them for the current objective revision. The
 acceptance picker offers only pending criteria; historical approvals cannot satisfy a revised goal.
+Formulation publishes immediate activity instead of freezing the composer or switching screens. A
+compact Goal section shares the activity sidebar with Plan, parallel work and agents; it shows
+formulation/progress state and uses Plan's title, lifecycle-tone, metadata and key placement. It uses
+`Ctrl+O` to toggle the existing full Goal view while revealed;
+the full view binds the same key to return directly to the transcript.
+The sidebar footer remains structural and shows only its `Ctrl+L` close action while open; Goal
+navigation stays on the Goal row and is not duplicated in that footer.
+The full view omits its former explanatory subtitle and presents the semantic definition before
+compact budget and actionable review state. Source digests are abbreviated visually; internal
+execution IDs, full digests, detailed accounting and candidate narration do not compete with the
+definition. A Plan projection whose tasks are all done renders `Completed` and no current-task
+highlight even if its aggregate status has not settled yet.
+Successful formulation and literal creation leave the user in the transcript. A domain
+`goal_blocked` becomes Goal attention rather than a generic `guard_trip` error row.
 Production: `registerGoalCommands` in
 [commands.ts](../../packages/code/src/features/goal/commands.ts), `GoalForm` and `GoalView` in
 [form.tsx](../../packages/code/src/features/goal/form.tsx) and
 [view.tsx](../../packages/code/src/features/goal/view.tsx).
-Test: [goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx).
+Test: [goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx),
+[sidebar-render.test.tsx](../../packages/code/tests/integration/sidebar-render.test.tsx),
+[app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx) and
+[restored-run-failure.test.ts](../../packages/code/tests/unit/restored-run-failure.test.ts).
 The owning authority and completion contract is [goals](../capabilities/goals.md).
 
 ### `InputDock.tsx` — the composer

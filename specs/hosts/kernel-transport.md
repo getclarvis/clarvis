@@ -5,23 +5,35 @@
 
 ## 1. Purpose
 
-The ordinary operation catalog includes `goals.availability`, `goals.get`, `goals.control` and
-`goals.receipt`. The host advertises the optional boolean goals capability only with conversation
+The ordinary operation catalog includes `goals.availability`, `goals.get`, `goals.control`,
+`goals.formulate` and `goals.receipt`. The host advertises the optional boolean goals capability only with conversation
 hosting. Older handshakes without it receive an unavailable facade rather than unknown RPC calls.
-Control has write metadata; state and receipts have read metadata. The closed top-level envelope
-and the goal service's nested schema reject unknown control fields before mutation.
+Control and formulate have write metadata; state and receipts have read metadata. The closed
+top-level envelope and the goal service's nested schemas reject unknown control/formulation fields
+before mutation. Auto requests forbid `seed`; guided requests require a nonempty seed of at most
+16,384 characters. Neither DTO transports prompts, providers, toolsets, host paths or authority.
 Production: [operations.ts](../../packages/kernel/src/transport/operations.ts),
 [client.ts](../../packages/kernel/src/transport/client.ts), and
 [service.ts](../../packages/kernel/src/goals/service.ts).
 Test: the catalog dispatch cases in
 [transport-codecs.test.ts](../../packages/kernel/tests/contract/transport-codecs.test.ts), and
 observer/write refusal plus receipt replay in
-[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts).
+[file-run-host.test.ts](../../packages/kernel/tests/integration/file-run-host.test.ts), and semantic
+request/result/receipt transport in
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
+Steward status, bounded reviews and separate usage travel inside the existing Goal state DTO, with
+no new control method or message type. They remain host-owned data. Production: `GoalStewardReview`
+in [goals.ts](../../packages/protocol/src/goals.ts) and the existing Goal codec. Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts)
+reads those fields through the real IPC client.
 
 Goal availability, state and receipts are decoded on receipt. The bounded state must belong to the
 requested session, and its optional physical run must also belong to the connected workspace. A
-receipt must identify the requested operation. Malformed responses close the connection instead of
-being coerced into a usable goal view.
+receipt must identify the requested operation. `goals.formulate` additionally requires the
+formulation block with mode and created/insufficient/stale/failed outcome; its execution ID is absent
+when auto answers deterministically without inference. The same receipt lookup recovers every
+outcome. Malformed responses close the connection instead of being coerced into a usable goal view.
 
 `goals.subscribe` and `goals.unsubscribe` are special read operations. The client installs its
 listener before awaiting the subscription acknowledgement; callers await that acknowledgement
@@ -471,11 +483,11 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 9; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 9`
+`HelloParams` = `{ wire_version: 11; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 11`
 (`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 9; capabilities: KernelCapabilities; project: ProjectRef;
+`HelloResult` = `{ wire_version: 11; capabilities: KernelCapabilities; project: ProjectRef;
 workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
 `HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.

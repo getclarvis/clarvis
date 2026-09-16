@@ -1,5 +1,6 @@
 import {
   NOOP_LOGGER,
+  PLANS_REVIEW_CONTEXT_PORT,
   openCallEnvelope,
   type AgentBuildContext,
   type AgentLoopContribution,
@@ -19,6 +20,7 @@ import { GET_GOAL, UPDATE_GOAL, buildGoalTools, getGoalInputSchema } from "./too
 
 export const GOAL_CAPABILITY_NAME = "goal";
 const runtimePorts = new WeakMap<Capability, GoalRuntimePort>();
+const absentReviewContext = { snapshot: () => ({ revision: "absent", contexts: [] }) };
 
 /** Recover trusted placement authority only for a capability created by this factory. */
 export function goalRuntimePortOf(capability: Capability): GoalRuntimePort | undefined {
@@ -91,14 +93,36 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
         required: true,
         preserveStateOnInterruption: true,
         order: -200,
-        guardTripCodes: ["goal_blocked", "goal_control_failed"],
+        guardTripCodes: [
+          "goal_blocked",
+          "goal_control_failed",
+          "goal_steward_failed",
+          "goal_steward_inconclusive",
+        ],
         forAgent(scope) {
           if (!scope.entry) return null;
           return {
             attach(bc: AgentBuildContext): AgentLoopContribution {
+              const steward = port.steward;
+              steward?.bindReviewContext(
+                runContext.services.get(PLANS_REVIEW_CONTEXT_PORT) ?? absentReviewContext,
+              );
               const tools = buildGoalTools();
               let checkpoint: CheckpointMetadata | undefined;
               let finalNudged = false;
+              const reviewed = new Set<string>();
+              const recordReviews = (): void => {
+                for (const review of snapshot.goal.runs.at(-1)?.steward_reviews ?? []) {
+                  if (reviewed.has(review.steward_execution_id)) continue;
+                  reviewed.add(review.steward_execution_id);
+                  bc.trace.record("goal_steward_review", {
+                    steward_execution_id: review.steward_execution_id,
+                    work_execution_id: binding.execution_id,
+                    mode: review.mode,
+                    decision: review.decision,
+                  });
+                }
+              };
               /** Publish outside dispatch so a reminder never splits an assistant/tool exchange. */
               const publish = (): void => {
                 bc.ctx.setStableBlock(GOAL_BLOCK_KIND, goalContextBlock(snapshot));
@@ -107,6 +131,7 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                 const next = await port.read(signal);
                 signal?.throwIfAborted();
                 snapshot = checkSnapshot(next, binding);
+                recordReviews();
               };
               const failed = (code: string, message: string): AgentResult => ({
                 status: "error",
@@ -136,6 +161,21 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                     if (cancelled !== null) return cancelled;
                     try {
                       await refresh(signal);
+                      if (!bc.steerProbe?.()) {
+                        const intervention = await steward?.takeReadyIntervention(signal);
+                        signal?.throwIfAborted();
+                        if (intervention !== undefined && !bc.steerProbe?.()) {
+                          bc.ctx.appendNote(
+                            intervention.kind === "steer"
+                              ? `[goal steward] ${intervention.guidance}`
+                              : `[goal steward] Request update_goal checkpoint after the current safe boundary. Next step: ${intervention.next_step}`,
+                          );
+                          bc.trace.record("goal_steward_intervention", {
+                            work_execution_id: binding.execution_id,
+                            decision: intervention.kind,
+                          });
+                        }
+                      }
                       const cancelled = bc.maybeCancelled();
                       if (cancelled !== null) return cancelled;
                       publish();
@@ -144,8 +184,14 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                       return bc.maybeCancelled() ?? unavailable();
                     }
                   },
-                  afterDispatch: publish,
-                  onTeardown: publish,
+                  afterDispatch() {
+                    publish();
+                    steward?.scheduleObservation();
+                  },
+                  async onTeardown() {
+                    await steward?.closeCoordinator();
+                    publish();
+                  },
                 },
                 handlers: [
                   {
@@ -274,7 +320,67 @@ export function createGoalCapability(port: GoalRuntimePort): Capability {
                           };
                         }
                         const validation = await port.validateCompletion();
-                        if (validation.valid) return { kind: "pass" };
+                        if (validation.valid) {
+                          if (steward === undefined) return { kind: "pass" };
+                          if (bc.steerProbe?.())
+                            return {
+                              kind: "nudge",
+                              note: "Process the pending operator message before concluding this Goal.",
+                            };
+                          const resume = bc.clock?.pauseCompute();
+                          try {
+                            const projected =
+                              attempt.mode === "text"
+                                ? { mode: "text" as const, text: attempt.text ?? "" }
+                                : {
+                                    mode: "submit" as const,
+                                    text: attempt.text,
+                                    submitted_value: attempt.value,
+                                  };
+                            if (Buffer.byteLength(JSON.stringify(projected), "utf8") > 128 * 1024)
+                              return {
+                                kind: "terminal",
+                                result: failed(
+                                  "goal_steward_inconclusive",
+                                  "Final attempt exceeds the Goal Steward review bound",
+                                ),
+                              };
+                            const decision = await steward.reviewCompletion(projected, bc.signal);
+                            await refresh();
+                            if (bc.steerProbe?.())
+                              return {
+                                kind: "nudge",
+                                note: "Process the pending operator message before concluding this Goal.",
+                              };
+                            if (decision.kind === "achieved") return { kind: "pass" };
+                            if (decision.kind === "not_achieved")
+                              return {
+                                kind: "nudge",
+                                note: `[goal steward] ${decision.next_step}`,
+                              };
+                            return {
+                              kind: "terminal",
+                              result: failed(
+                                decision.reason === "goal_steward_failed"
+                                  ? "goal_steward_failed"
+                                  : "goal_steward_inconclusive",
+                                decision.reason,
+                              ),
+                            };
+                          } catch {
+                            return {
+                              kind: "terminal",
+                              result:
+                                bc.maybeCancelled() ??
+                                failed(
+                                  "goal_steward_failed",
+                                  "Goal Steward could not verify completion",
+                                ),
+                            };
+                          } finally {
+                            resume?.();
+                          }
+                        }
                         if (
                           !finalNudged &&
                           (attempt.mode !== "text" || (attempt.text?.trim().length ?? 0) > 0)

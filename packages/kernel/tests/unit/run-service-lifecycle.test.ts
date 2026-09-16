@@ -5,6 +5,7 @@ import { MockLLM } from "@clarvis/loop/testing";
 import type { RunHandle } from "@clarvis/protocol";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
+import type { GoalExecutionPolicy } from "../../src/goals/hosted-turn.ts";
 import { createRunService } from "../../src/runs/run-service.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
@@ -160,6 +161,58 @@ describe("run-service lifecycle reservation", () => {
     expect(captured?.externalSignal).not.toBe(controller.signal);
     expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");
     expect(JSON.stringify(captured?.rawBody)).toContain("synthetic skill seed");
+    await handle.closed;
+  });
+  it("uses the exact Goal-defining operator input instead of its synthetic start message", async () => {
+    let captured: ExecuteRunArgs | undefined;
+    const service = createRunService({
+      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      owner: "owner",
+      ingestGraceMs: 0,
+      operatorAuthorityFor: () => ({
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        signal: new AbortController().signal,
+      }),
+      assembleRunRequest: (params) => params,
+      executeRun: async (args) => {
+        captured = args;
+        return {
+          executionId: "goal-authority",
+          response: {
+            status: "completed",
+            result: "done",
+            usage: { iterations_used: 1, elapsed_ms: 1, by_agent: [] },
+          },
+        };
+      },
+    });
+    const goal = {
+      authorityMessages: [{ role: "user", content: "Implement every requirement in @DESIGN.md" }],
+      reviewContext: {
+        kind: "goal",
+        content: JSON.stringify({ objective: "Implement the design" }),
+      },
+      capability: {} as GoalExecutionPolicy["capability"],
+      observe() {},
+      trackModel(provider) {
+        return provider;
+      },
+      constrain(request) {
+        return request;
+      },
+    } satisfies GoalExecutionPolicy;
+    const handle = await service.start(
+      {
+        execution_id: "goal-authority",
+        messages: [{ role: "user", content: "Work toward the current persistent goal" }],
+      },
+      { kind: "ordinary", rawBody: {}, goal },
+    );
+    await handle.done;
+    expect(captured?.operatorAuthoritySeed?.evidence.map((entry) => entry.text)).toEqual([
+      "Implement every requirement in @DESIGN.md",
+    ]);
+    expect(captured?.operatorAuthoritySeed?.review_context).toEqual(goal.reviewContext);
     await handle.closed;
   });
   it("keeps an admitted prompt larger than the former evidence ceiling active", async () => {

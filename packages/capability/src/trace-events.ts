@@ -92,6 +92,8 @@ export type BuiltinTraceEvent =
        */
       arguments_original?: object;
       result: string;
+      /** SHA-256 of the complete pre-retention result, for host-side snapshot attestation. */
+      result_digest?: string;
       error: string | null;
       diff?: string;
       guard?: CommandGuardReview;

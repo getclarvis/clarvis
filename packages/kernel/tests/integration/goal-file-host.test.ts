@@ -68,6 +68,10 @@ describe("goal through the real file host and SDK HTTP", () => {
       expect(query).toMatchObject({ ok: true, result: expect.stringContaining("Query defaults") });
     expect(f.requests).toHaveLength(4);
     expect(goal.auto_continuations).toBe(0);
+    const session = await f.client.sessions.get("conversation");
+    expect(session?.turns[0]?.user_preview).toBe(
+      "Work toward the persistent goal: Inspect plan queries",
+    );
   });
 
   it("reports budget_limited after the real loop stops with exhausted measured usage", async () => {
@@ -163,8 +167,8 @@ describe("goal through the real file host and SDK HTTP", () => {
     });
     expect(goal.consumption.cached).toBeUndefined();
     expect((await f.client.sessions.get("conversation"))!.totals).toEqual({
-      input: 3060,
-      output: 30,
+      input: 3060 + f.stewardUsages.reduce((sum, usage) => sum + usage.input, 0),
+      output: 30 + f.stewardUsages.reduce((sum, usage) => sum + usage.output, 0),
     });
     expect(f.requests).toHaveLength(3);
   });

@@ -29,6 +29,10 @@ function fixture() {
       evidence: [
         { id: "operator", source: "start", text: "Commit the changes", execution_id: "run" },
       ],
+      review_context: {
+        kind: "goal",
+        content: JSON.stringify({ objective: "Finish the current implementation" }),
+      },
     },
   });
   const batch: GuardEffectBatch = {
@@ -427,6 +431,15 @@ describe("host-validated effect review", () => {
     expect(JSON.parse(calls[0]!.messages[1]!.content as string).operator_evidence).toEqual(
       ledger.reader.snapshot().evidence,
     );
+    const expectedContext = [
+      { kind: "goal", definition: { objective: "Finish the current implementation" } },
+    ];
+    expect(JSON.parse(calls[0]!.messages[1]!.content as string).review_context).toEqual(
+      expectedContext,
+    );
+    expect(JSON.parse(calls[1]!.messages[1]!.content as string).review_context).toEqual(
+      expectedContext,
+    );
   });
   test("model allow without coverage is unsure and is never memoized", async () => {
     const { envelope, ledger, registry, batch } = fixture();
@@ -470,6 +483,42 @@ describe("host-validated effect review", () => {
       },
     });
     expect((await service.review(batch, {}, "command_guard")).decision).toBe("unsure");
+    expect(ledger.reader.snapshot().envelope).toBeUndefined();
+  });
+  test("a concurrent Plan revision invalidates compilation before authority is installed", async () => {
+    const { envelope, ledger, registry, batch } = fixture();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let planRevision = "plan:1";
+    const service = createEffectReviewService({
+      authority: ledger.reader,
+      reviewContext: {
+        snapshot: () => ({
+          revision: planRevision,
+          contexts: [
+            {
+              kind: "plan",
+              content: JSON.stringify({ objective: `Objective ${planRevision}` }),
+            },
+          ],
+        }),
+      },
+      registry,
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+      defaultModel: "anthropic/test",
+      llm: {
+        async call() {
+          entered.resolve();
+          await release.promise;
+          return response("compile", envelope);
+        },
+      },
+    });
+    const decision = service.review(batch, {}, "command_guard");
+    await entered.promise;
+    planRevision = "plan:2";
+    release.resolve();
+    await expect(decision).resolves.toMatchObject({ decision: "unsure" });
     expect(ledger.reader.snapshot().envelope).toBeUndefined();
   });
   test("times out even when the provider ignores cancellation", async () => {

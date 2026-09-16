@@ -1,6 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
 import { createRoot } from "solid-js";
-import type { GoalControlRequest, GoalService, GoalView as GoalViewDto } from "@clarvis/protocol";
+import type {
+  GoalControlRequest,
+  GoalFormulateRequest,
+  GoalFormulateResult,
+  GoalService,
+  GoalView as GoalViewDto,
+} from "@clarvis/protocol";
 import { createCommands, type CommandUi } from "../../src/keys/commands.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import { registerGoalCommands } from "../../src/features/goal/commands.ts";
@@ -22,6 +28,11 @@ const settled = () => new Promise<void>((resolve) => setImmediate(resolve));
 function fixture(initial: GoalViewDto = goalView()) {
   let state = initial;
   const requests: GoalControlRequest[] = [];
+  const formulations: GoalFormulateRequest[] = [];
+  let formulationOutcome: GoalFormulateResult["formulation"] = {
+    mode: "guided",
+    outcome: "created",
+  };
   const opened: string[] = [];
   const notices: string[] = [];
   const keys = createFakeKeymap();
@@ -31,6 +42,15 @@ function fixture(initial: GoalViewDto = goalView()) {
     get: async () => structuredClone(state),
     subscribe: async () => () => {},
     receipt: async () => null,
+    formulate: async (request) => {
+      formulations.push(request);
+      return {
+        operation_id: request.operation_id,
+        revision: state.state.revision,
+        fingerprint: "fixture",
+        formulation: { ...formulationOutcome, mode: request.mode },
+      };
+    },
     control: async (request) => {
       requests.push(request);
       state = { ...state, state: { ...state.state, revision: state.state.revision + 1 } };
@@ -61,6 +81,7 @@ function fixture(initial: GoalViewDto = goalView()) {
   cleanup.push(() => controls.dispose());
   return {
     requests,
+    formulations,
     opened,
     notices,
     keys,
@@ -76,6 +97,9 @@ function fixture(initial: GoalViewDto = goalView()) {
     },
     notify: (message: string) => {
       notices.push(message);
+    },
+    formulationOutcome(value: GoalFormulateResult["formulation"]) {
+      formulationOutcome = value;
     },
   };
 }
@@ -102,13 +126,14 @@ test("goal slash controls never dispatch a prompt and preserve invalid syntax", 
   expect(commands.route("goal.open", "-- pause the deployment")).toBe(true);
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "pause the deployment" });
-  expect(f.opened).toEqual(["goal.open"]);
+  expect(f.opened).toEqual([]);
+  expect(f.notices).toContain("Literal Goal created; the first work stage is starting.");
   commands.route("goal.open", "pause --running");
   await settled();
   expect(f.requests[1]?.action).toEqual({ kind: "pause", running: true });
 });
 
-test("an existing goal opens replacement review without sending a mutation", async () => {
+test("an existing goal refuses guided formulation without replacement", async () => {
   const f = fixture();
   cleanup.push(
     createRoot((dispose) => {
@@ -126,8 +151,73 @@ test("an existing goal opens replacement review without sending a mutation", asy
     }),
   );
   await settled();
-  expect(f.opened).toEqual(["goal.open"]);
+  expect(f.opened).toEqual([]);
   expect(f.requests).toHaveLength(0);
+  expect(f.notices.some((notice) => notice.includes("already exists"))).toBe(true);
+});
+
+test("guided and auto commands formulate outside the composer while literal escape stays direct", async () => {
+  const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
+  let commands!: ReturnType<typeof createCommands>;
+  cleanup.push(
+    createRoot((dispose) => {
+      commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  expect(commands.route("goal.open", "implemente a spec 123")).toBe(true);
+  await settled();
+  expect(f.formulations[0]).toMatchObject({ mode: "guided", seed: "implemente a spec 123" });
+  expect(f.opened).toEqual([]);
+  expect(f.notices).toContain("Formulating a Goal from your request…");
+  expect(f.notices).toContain("Goal created; the first work stage is starting.");
+
+  f.opened.splice(0);
+  commands.route("goal.open", "auto");
+  await settled();
+  expect(f.formulations[1]).toMatchObject({ mode: "auto" });
+  expect(f.formulations[1]).not.toHaveProperty("seed");
+
+  commands.route("goal.open", "-- auto");
+  await settled();
+  expect(f.requests[0]?.action).toEqual({ kind: "create", objective: "auto" });
+  expect(f.formulations).toHaveLength(2);
+});
+
+test("a clarification result is shown once without automatically repeating analysis", async () => {
+  const f = fixture({ state: { version: 1, revision: 0, archive: [], receipts: [] } });
+  f.formulationOutcome({
+    mode: "auto",
+    outcome: "insufficient_context",
+    question: "Qual resultado você quer?",
+  });
+  cleanup.push(
+    createRoot((dispose) => {
+      const commands = createCommands(
+        f.interaction,
+        { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+        f.ui,
+      );
+      registerGoalCommands(commands.scope(), f);
+      commands.route("goal.open", "auto");
+      return () => {
+        commands.dispose();
+        dispose();
+      };
+    }),
+  );
+  await settled();
+  expect(f.notices).toContain("Qual resultado você quer?");
+  expect(f.formulations).toHaveLength(1);
+  expect(f.opened).toEqual([]);
 });
 
 test("goal view separates pause from physical execution and identifies qualitative assessment", async () => {
@@ -141,16 +231,68 @@ test("goal view separates pause from physical execution and identifies qualitati
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Goal: paused");
-  expect(frame).toContain("Physical execution: running");
-  expect(frame).toContain("Model assessment");
-  expect(frame).toContain("Net tokens: 0 / 10000");
+  expect(frame).toContain("Paused · 0 stages · literal");
+  expect(frame).toContain("Run running");
+  expect(frame).toContain("• Fixture is complete");
+  expect(frame).toContain("Budget 0 / 10k tokens");
   f.keys.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("Edit goal");
   f.keys.press("x");
   await settled();
   expect(f.requests[0]?.action).toEqual({ kind: "pause", running: true });
+});
+
+test("goal view does not repeat an objective-only qualitative criterion", async () => {
+  const objective = "Validate compact goal presentation";
+  const f = fixture(
+    goalView({
+      objective,
+      criteria: [{ id: "objective", kind: "qualitative", description: objective }],
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame.match(new RegExp(objective, "g"))).toHaveLength(1);
+  expect(frame).not.toContain("Criteria");
+});
+
+test("goal view exposes guided provenance and the complete semantic definition", async () => {
+  const f = fixture(
+    goalView({
+      status: "paused",
+      constraints: ["Preserve compatibility"],
+      exclusions: ["Do not publish"],
+      assumptions: ["The referenced contract is current"],
+      sources: [{ path: "specs/capabilities/goals.md", digest: "a".repeat(64) }],
+      origin: {
+        kind: "guided",
+        seed: "Implement the Goal contract",
+        formulation_execution_id: "formulation-1",
+        source_session_revision: 2,
+        source_execution_ids: ["conversation-1"],
+        trajectory_digest: "b".repeat(64),
+        trajectory_truncated: false,
+      },
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Paused · 0 stages · guided");
+  expect(frame).toContain("Constraints");
+  expect(frame).toContain("Preserve compatibility");
+  expect(frame).toContain("Exclusions");
+  expect(frame).toContain("Do not publish");
+  expect(frame).toContain("Assumptions");
+  expect(frame).toContain("The referenced contract is current");
+  expect(frame).toContain("Normative sources");
+  expect(frame).toContain("specs/capabilities/goals.md");
+  expect(frame).toContain("sha256:aaaaaaaaaaaa…");
+  expect(frame).not.toContain("a".repeat(64));
 });
 
 test("goal form displays explicit whole-goal limits and submits its pinned revision", async () => {
@@ -228,10 +370,10 @@ test("saving an unchanged goal review closes without a host mutation", async () 
   await settled();
   await rendered.renderOnce();
   expect(f.requests).toHaveLength(0);
-  expect(rendered.captureCharFrame()).toContain("Goal: paused");
+  expect(rendered.captureCharFrame()).toContain("Paused · 0 stages · literal");
 });
 
-test("goal detail renders durable progress diagnostics and accepts a pending human criterion", async () => {
+test("goal detail keeps actionable review state compact and accepts a pending human criterion", async () => {
   const run = {
     ...goalRun("stage-1", "closed"),
     progress: { summary: "Implementation completed", evidence: [] },
@@ -283,16 +425,16 @@ test("goal detail renders durable progress diagnostics and accepts a pending hum
   view.attention = "Review is required";
   const f = fixture(view);
   await f.goals.refresh();
-  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 38 });
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 44 });
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Goal: blocked (Awaiting review)");
+  expect(frame).toContain("Blocked · 1 stage · literal");
+  expect(frame).toContain("Awaiting review");
   expect(frame).toContain("Review is required");
-  expect(frame).toContain("usage incomplete");
-  expect(frame).toContain("cache estimated");
-  expect(frame).toContain("Completion candidate: All automated checks passed");
-  expect(frame).toContain("Progress: Implementation completed");
-  expect(frame).toContain("Checkpoint: Stage verified");
+  expect(frame).toContain("Budget 225 / 10k tokens · 2 / 8 continuations");
+  expect(frame).not.toContain("usage incomplete");
+  expect(frame).not.toContain("cache estimated");
+  expect(frame).not.toContain("All automated checks passed");
 
   f.keys.press("a");
   await rendered.renderOnce();
@@ -336,14 +478,14 @@ test.each([
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain(
-    `Human approval (${scenario.status}): Review the checkpoint`,
+    `Review the checkpoint · approval ${scenario.status === "accepted" ? "accepted" : "needed"}`,
   );
   f.keys.press("a");
   await rendered.renderOnce();
   if (scenario.status === "accepted") {
-    expect(rendered.captureCharFrame()).toContain("Goal: paused");
+    expect(rendered.captureCharFrame()).toContain("Paused · 0 stages · literal");
   } else {
-    expect(rendered.captureCharFrame()).not.toContain("Goal: paused");
+    expect(rendered.captureCharFrame()).not.toContain("Paused · 0 stages · literal");
   }
   expect(f.requests).toHaveLength(0);
 });
@@ -362,7 +504,9 @@ test.each(["complete", "cancelled"] as const)(
     await rendered.renderOnce();
     f.keys.press("a");
     await rendered.renderOnce();
-    expect(rendered.captureCharFrame()).toContain(`Goal: ${status}`);
+    expect(rendered.captureCharFrame()).toContain(
+      status === "complete" ? "Completed · 0 stages · literal" : "Canceled · 0 stages · literal",
+    );
     expect(f.requests).toHaveLength(0);
   },
 );
@@ -421,9 +565,57 @@ test("unknown physical work remains visible and prevents review without a hosted
   await f.goals.refresh();
   const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 32 });
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Physical execution: unknown");
+  expect(rendered.captureCharFrame()).toContain("Run unknown");
   f.keys.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("Edit goal");
   expect(f.requests).toHaveLength(0);
+});
+
+test("Goal view exposes bounded Steward state without technical identifiers", async () => {
+  const run = goalRun("private-work-id");
+  run.steward_review_count = 2;
+  run.steward_intervention_count = 1;
+  run.steward_reviews = [
+    {
+      steward_execution_id: "private-steward-id",
+      mode: "observation",
+      goal_id: "goal-fixture",
+      work_execution_id: "private-work-id",
+      control_revision: 1,
+      objective_revision: 1,
+      definition_digest: "a".repeat(64),
+      trajectory_digest: "b".repeat(64),
+      plan_context_revision: "private-revision",
+      operator_steering_epoch: 0,
+      evidence_digest: "c".repeat(64),
+      decision: "steer",
+      summary: "Result still needs verification",
+      guidance: "Verify the final artifact",
+      inspected_artifacts: [],
+      usage: { kind: "measured", input: 10, output: 5, cached: 0 },
+      reviewed_at: 1,
+    },
+  ];
+  const f = fixture(
+    goalView({
+      runs: [run],
+      steward: {
+        last_consumed_work_sequence: 1,
+        runtime_fingerprint: "a".repeat(64),
+        prompt_cache_ttl: "5m",
+        status: "intervened",
+        consumption: { input: 10, output: 5, cached: 0, net_tokens: 15, usage_unknown: false },
+      },
+    }),
+  );
+  await f.goals.refresh();
+  const rendered = await openRender(() => GoalView(f.host, f), { width: 110, height: 40 });
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).toContain("Steward");
+  expect(frame).toContain("Result still needs verification");
+  expect(frame).toContain("Verify the final artifact");
+  expect(frame).not.toContain("private-work-id");
+  expect(frame).not.toContain("private-steward-id");
 });

@@ -15,10 +15,13 @@ import {
   type GoalReceipt,
   type GoalState,
   type GoalLimits,
+  type GoalDefinitionSource,
+  type GoalOrigin,
 } from "./schemas.ts";
 
 const objective = z.string().trim().min(1).max(16384);
 const criteria = z.array(goalCriterionSchema).max(32);
+const semanticItems = z.array(z.string().trim().min(1).max(4096)).max(16);
 const limitOverrides = goalLimitsSchema.partial().extend({
   max_auto_continuations: goalLimitsSchema.shape.max_auto_continuations.removeDefault().optional(),
   max_no_progress_checkpoints: goalLimitsSchema.shape.max_no_progress_checkpoints
@@ -61,6 +64,9 @@ export const goalControlSchema = z
           kind: z.literal("edit"),
           objective: objective.optional(),
           criteria: criteria.optional(),
+          constraints: semanticItems.optional(),
+          exclusions: semanticItems.optional(),
+          assumptions: semanticItems.optional(),
           limits: limitOverrides.optional(),
         })
         .strict(),
@@ -90,6 +96,8 @@ export interface GoalControlContext {
   entry_token_limit?: number;
   now: number;
   physically_busy: boolean;
+  /** Host-owned idempotency fingerprint for a semantic formulation operation. */
+  fingerprint?: string;
 }
 
 /** A durable receipt is the mutation result; current display state is read independently. */
@@ -99,6 +107,33 @@ export interface GoalControlResult {
   replayed: boolean;
   start: boolean;
   cancel_execution_id?: string;
+}
+
+export interface GoalFormulationDefinition {
+  objective: string;
+  criteria: GoalRecord["criteria"];
+  constraints: string[];
+  exclusions: string[];
+  assumptions: string[];
+}
+
+export interface GoalFormulationContext extends GoalControlContext {
+  sources: GoalDefinitionSource[];
+  origin: Exclude<GoalOrigin, { kind: "literal" }>;
+  operation_id: string;
+  expected_revision: number;
+  fingerprint: string;
+}
+
+export interface GoalFormulationReceiptInput {
+  operation_id: string;
+  expected_revision: number;
+  fingerprint: string;
+  formulation_execution_id?: string;
+  mode: "auto" | "guided";
+  outcome: "insufficient_context" | "stale_context" | "failed";
+  question?: string;
+  message?: string;
 }
 
 /** Empty optional session state carries no objective and does not authorize execution. */
@@ -160,9 +195,11 @@ export function applyGoalControl(
   const state = boundedGoalState(previous ?? emptyGoalState(), true);
   if (state.current !== undefined && state.current.session_id !== context.session_id)
     throw new GoalError("conflict", "Goal belongs to another conversation");
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify({ session_id: context.session_id, control }))
-    .digest("hex");
+  const fingerprint =
+    context.fingerprint ??
+    createHash("sha256")
+      .update(JSON.stringify({ session_id: context.session_id, control }))
+      .digest("hex");
   const known = state.receipts.find((receipt) => receipt.operation_id === control.operation_id);
   if (known !== undefined) {
     if (known.fingerprint !== fingerprint)
@@ -188,6 +225,7 @@ export function applyGoalControl(
         old.reason = "Replaced by the user";
         old.updated_at = context.now;
       }
+      delete old.steward.last_steward_execution_id;
       archive(state, old);
     }
     if (context.new_goal_id === undefined)
@@ -202,6 +240,11 @@ export function applyGoalControl(
       objective_revision: 1,
       objective: action.objective,
       criteria: action.criteria,
+      constraints: [],
+      exclusions: [],
+      assumptions: [],
+      sources: [],
+      origin: { kind: "literal" },
       status: "active",
       created_at: context.now,
       updated_at: context.now,
@@ -238,15 +281,30 @@ export function applyGoalControl(
       if (
         action.objective === undefined &&
         action.criteria === undefined &&
+        action.constraints === undefined &&
+        action.exclusions === undefined &&
+        action.assumptions === undefined &&
         action.limits === undefined
       )
         throw new GoalError("invalid_request", "Goal edit is empty");
-      if (action.objective !== undefined || action.criteria !== undefined) {
+      if (
+        action.objective !== undefined ||
+        action.criteria !== undefined ||
+        action.constraints !== undefined ||
+        action.exclusions !== undefined ||
+        action.assumptions !== undefined
+      ) {
         goal.objective_revision += 1;
+        delete goal.steward.last_steward_execution_id;
         delete goal.candidate;
         goal.human_acceptances = [];
         if (action.objective !== undefined) goal.objective = action.objective;
         if (action.criteria !== undefined) goal.criteria = action.criteria;
+        if (action.constraints !== undefined) goal.constraints = action.constraints;
+        if (action.exclusions !== undefined) goal.exclusions = action.exclusions;
+        if (action.assumptions !== undefined) goal.assumptions = action.assumptions;
+        goal.sources = [];
+        goal.origin = { kind: "literal" };
       }
       if (action.limits !== undefined)
         goal.limits = goalLimitsSchema.parse({ ...goal.limits, ...action.limits });
@@ -254,10 +312,12 @@ export function applyGoalControl(
       requireInactive(goal, context);
       if (goal.status === "active")
         throw new GoalError("conflict", "Pause or cancel the goal before clearing it");
+      delete goal.steward.last_steward_execution_id;
       archive(state, goal);
       delete state.current;
     } else if (action.kind === "pause" || action.kind === "cancel") {
       goal.status = action.kind === "pause" ? "paused" : "cancelled";
+      if (action.kind === "cancel") delete goal.steward.last_steward_execution_id;
       goal.reason = action.kind === "pause" ? "Paused by the user" : "Cancelled by the user";
       if (action.kind === "cancel" || action.running)
         cancel_execution_id = goal.runs.find((run) => run.phase !== "closed")?.execution_id;
@@ -316,4 +376,73 @@ export function applyGoalControl(
     start,
     ...(cancel_execution_id === undefined ? {} : { cancel_execution_id }),
   };
+}
+
+/** Apply a host-validated semantic proposal through the same create invariants as literal control. */
+export function applyGoalFormulation(
+  previous: GoalState | undefined,
+  definition: GoalFormulationDefinition,
+  context: GoalFormulationContext,
+): GoalControlResult {
+  const created = applyGoalControl(
+    previous,
+    {
+      expected_revision: context.expected_revision,
+      operation_id: context.operation_id,
+      action: { kind: "create", objective: definition.objective, criteria: definition.criteria },
+    },
+    context,
+  );
+  if (created.replayed) return created;
+  const current = created.state.current!;
+  current.constraints = structuredClone(definition.constraints);
+  current.exclusions = structuredClone(definition.exclusions);
+  current.assumptions = structuredClone(definition.assumptions);
+  current.sources = structuredClone(context.sources);
+  current.origin = structuredClone(context.origin);
+  const formulation = {
+    formulation_execution_id: context.origin.formulation_execution_id,
+    mode: context.origin.kind,
+    outcome: "created" as const,
+  };
+  created.state.receipts[created.state.receipts.length - 1] = {
+    ...created.state.receipts.at(-1)!,
+    formulation,
+  };
+  const state = boundedGoalState(created.state);
+  return { ...created, state, receipt: state.receipts.at(-1)! };
+}
+
+/** Persist a terminal analysis outcome without creating or partially mutating a Goal. */
+export function recordGoalFormulationReceipt(
+  previous: GoalState | undefined,
+  input: GoalFormulationReceiptInput,
+): GoalControlResult {
+  const state = boundedGoalState(previous ?? emptyGoalState(), true);
+  const known = state.receipts.find((receipt) => receipt.operation_id === input.operation_id);
+  if (known !== undefined) {
+    if (known.fingerprint !== input.fingerprint)
+      throw new GoalError("conflict", "Operation ID was already used for a different goal control");
+    return { state, receipt: known, replayed: true, start: false };
+  }
+  if (state.revision !== input.expected_revision)
+    throw new GoalError("conflict", "Goal revision changed; reload before applying control");
+  state.revision += 1;
+  const receipt: GoalReceipt = {
+    operation_id: input.operation_id,
+    fingerprint: input.fingerprint,
+    revision: state.revision,
+    formulation: {
+      ...(input.formulation_execution_id === undefined
+        ? {}
+        : { formulation_execution_id: input.formulation_execution_id }),
+      mode: input.mode,
+      outcome: input.outcome,
+      ...(input.question === undefined ? {} : { question: input.question }),
+      ...(input.message === undefined ? {} : { message: input.message }),
+    },
+  };
+  state.receipts = [...state.receipts, receipt].slice(-GOAL_RECEIPTS_MAX);
+  const bounded = boundedGoalState(state);
+  return { state: bounded, receipt: bounded.receipts.at(-1)!, replayed: false, start: false };
 }

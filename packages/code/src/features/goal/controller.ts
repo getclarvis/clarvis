@@ -3,6 +3,8 @@ import { createSignal, type Accessor } from "solid-js";
 import type {
   GoalControlAction,
   GoalControlRequest,
+  GoalFormulateRequest,
+  GoalFormulateResult,
   GoalReceipt,
   GoalService,
   GoalView,
@@ -20,6 +22,7 @@ export interface GoalController {
   view: Accessor<GoalView | undefined>;
   available: Accessor<boolean>;
   busy: Accessor<boolean>;
+  formulating: Accessor<boolean>;
   loading: Accessor<boolean>;
   failure: Accessor<string>;
   pendingOperation: Accessor<string | undefined>;
@@ -29,6 +32,7 @@ export interface GoalController {
     expectedRevision?: number,
     expectedBinding?: GoalBinding | null,
   ): Promise<GoalReceipt>;
+  formulate(mode: "auto" | "guided", seed?: string): Promise<GoalFormulateResult>;
   recover(): Promise<GoalReceipt | null>;
   reset(): void;
   dispose(): void;
@@ -58,10 +62,11 @@ export function createGoalController(deps: {
   const [view, setView] = createSignal<GoalView>();
   const [available, setAvailable] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+  const [formulating, setFormulating] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [failure, setFailure] = createSignal("");
   const [pendingOperation, setPendingOperation] = createSignal<string>();
-  const pending = new Map<string, GoalControlRequest>();
+  const pending = new Map<string, GoalControlRequest | GoalFormulateRequest>();
   let observation: Observation | undefined;
   let disposed = false;
   let emptyRead = 0;
@@ -186,6 +191,7 @@ export function createGoalController(deps: {
     view,
     available,
     busy,
+    formulating,
     loading,
     failure,
     pendingOperation,
@@ -260,6 +266,68 @@ export function createGoalController(deps: {
         if (entry === undefined || current(entry)) setFailure(message(error));
         throw error;
       } finally {
+        setBusy(false);
+      }
+    },
+    async formulate(mode, seed) {
+      if (disposed || busy())
+        throw new Error("A goal operation is already running or the interface is closed.");
+      setBusy(true);
+      setFormulating(true);
+      let entry: Observation | undefined;
+      try {
+        const binding = deps.binding() ?? (await deps.prepare());
+        if (disposed || !same(binding, deps.binding()))
+          throw new Error("The goal conversation changed.");
+        entry = observe(binding);
+        if (pending.has(binding.sessionId))
+          throw new Error(
+            "The previous goal change is unconfirmed. Recover its receipt before another change.",
+          );
+        await refreshEntry(entry);
+        if (!current(entry)) throw new Error("The goal conversation changed.");
+        if (!available() || view() === undefined)
+          throw new Error(failure() || "Goal state is unavailable.");
+        const request: GoalFormulateRequest =
+          mode === "auto"
+            ? {
+                session_id: binding.sessionId,
+                expected_revision: view()!.state.revision,
+                operation_id: (deps.operationId ?? randomUUID)(),
+                mode,
+              }
+            : {
+                session_id: binding.sessionId,
+                expected_revision: view()!.state.revision,
+                operation_id: (deps.operationId ?? randomUUID)(),
+                mode,
+                seed: seed ?? "",
+              };
+        pending.set(binding.sessionId, request);
+        setPendingOperation(request.operation_id);
+        let receipt: GoalFormulateResult;
+        try {
+          receipt = await entry.service.formulate(request);
+          pending.delete(binding.sessionId);
+          if (current(entry)) setPendingOperation(undefined);
+        } catch (error) {
+          const recovered = await lookup(entry).catch(() => null);
+          if (recovered?.formulation === undefined) {
+            if (definiteRefusal(error)) {
+              pending.delete(binding.sessionId);
+              if (current(entry)) setPendingOperation(undefined);
+            }
+            throw error;
+          }
+          receipt = { ...recovered, formulation: recovered.formulation };
+        }
+        if (current(entry)) await refreshEntry(entry).catch(() => undefined);
+        return receipt;
+      } catch (error) {
+        if (entry === undefined || current(entry)) setFailure(message(error));
+        throw error;
+      } finally {
+        setFormulating(false);
         setBusy(false);
       }
     },

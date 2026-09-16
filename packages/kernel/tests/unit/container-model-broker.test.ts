@@ -109,6 +109,7 @@ describe("Container model admission", () => {
   test("closed native structures, bounded JSON and inline-only media", () => {
     const f = fixture();
     try {
+      expect(decodeContainerModelCall({ ...f.request(), purpose: "goal" }).purpose).toBe("goal");
       expect(
         decodeContainerModelCall({
           ...f.request(),

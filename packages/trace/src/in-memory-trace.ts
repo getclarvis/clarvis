@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { RecordingTrace, TraceDetailFor, TraceEntry, TraceKind } from "@clarvis/capability";
 import type { TraceHandle } from "./trace-handle.ts";
 import { capDetail } from "./cap-detail.ts";
@@ -45,15 +46,26 @@ export function createTrace(
   const trace: RecordingTrace = { entries: [] };
   let sealed = false;
   const now = (): number => performance.now() - startedAt;
+  const retainedDetail = <K extends TraceKind>(
+    kind: K,
+    detail: TraceDetailFor<K>,
+  ): TraceDetailFor<K> => {
+    if (kind !== "tool_call") return capDetail(kind, detail);
+    const tool = detail as TraceDetailFor<"tool_call">;
+    return capDetail(kind, {
+      ...tool,
+      result_digest: createHash("sha256").update(tool.result).digest("hex"),
+    } as TraceDetailFor<K>);
+  };
   const record = <K extends TraceKind>(kind: K, detail: TraceDetailFor<K>): void => {
     if (sealed) return;
-    const entry = { at: now(), kind, detail: capDetail(kind, detail) } as TraceEntry;
+    const entry = { at: now(), kind, detail: retainedDetail(kind, detail) } as TraceEntry;
     trace.entries.push(entry);
     onRecord?.(entry, true);
   };
   const signal = <K extends TraceKind>(kind: K, detail: TraceDetailFor<K>): void => {
     if (sealed) return;
-    const entry = { at: now(), kind, detail: capDetail(kind, detail) } as TraceEntry;
+    const entry = { at: now(), kind, detail: retainedDetail(kind, detail) } as TraceEntry;
     onRecord?.(entry, false);
   };
   const entries = (): TraceEntry[] => trace.entries;

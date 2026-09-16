@@ -44,6 +44,43 @@ Production: `goalBinding`, `prepareGoalConversation` and `synchronizeGoal` in
 Test: automatic-stage and delayed-goal-read cases in
 [run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
 
+The host also seeds command-review authority separately from the synthetic Goal work prompt. Guided
+stages preserve the exact seed after exact user messages reconstructed from host-recorded source
+executions; auto stages use only those source messages; literal stages serialize the complete
+user-declared definition. The reviewer also receives the complete persisted Goal definition as a
+separate host-attested `review_context`, so it can assess whether a command is necessary for the
+current objective without converting inferred assumptions or human criteria into permission.
+Automatic continuations inherit both fields and never capture their synthetic reminder as fresh
+evidence. Production: `goalAuthorityMessages`, `goalReviewContext` and
+`GoalExecutionPolicy` in
+[hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts), consumed by `createRunService` in
+[run-service.ts](../../packages/kernel/src/runs/run-service.ts). Test: Goal authority coverage in
+[goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
+and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
+
+Goal Steward belongs to the physically admitted Goal entry run. Its finite auxiliary executions use
+the owner-scoped run store without creating conversation turns or independent hosted controllers.
+The retained coordinator closes before work settlement; auxiliary usage and domain state commit
+atomically in the Session transaction. Settlement reuses the current achieved review and rechecks
+the proposed result and fences without another model call. Production: `prepareHostedGoalTurn` and
+`createFileRunHost`. Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
+Goal formulation uses the same authenticated controller but is not a hosted conversation turn. The
+host rejects it before inference when a Goal or physical run already owns the conversation. Its
+separate semantic execution is persisted in the owner-scoped run/trace store, while the session lock
+is released. After a ready result passes the full-session revision CAS, the host publishes Goal and
+receipt before calling the same `startControlled` path used by literal creation. Insufficient, stale
+and failed outcomes publish only a receipt and therefore create no hosted observation. Code recovers
+that receipt without resubmitting analysis.
+
+Production: `createGoalService` in [service.ts](../../packages/kernel/src/goals/service.ts),
+`startControlled` in [registry.ts](../../packages/kernel/src/hosting/registry.ts), and
+`createGoalController` in [controller.ts](../../packages/code/src/features/goal/controller.ts).
+Test: [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
+and formulation recovery in
+[goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts).
+
 `WorkspaceClientManager` discovers or launches Code's companion `local-host` entry, selected by
 `resolveLocalKernelArtifact`. The application entry composes the local subscription manager,
 memory and lazy runtime factory without importing the renderer. Closing the manager closes its

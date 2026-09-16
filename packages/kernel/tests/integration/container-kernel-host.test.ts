@@ -1,3 +1,4 @@
+import { stewardResponse } from "../helpers/steward-response.ts";
 import { expect, spyOn, test } from "bun:test";
 import { containerNativeFixture } from "../helpers/container-native.ts";
 import type { PlanDocumentDto } from "@clarvis/protocol";
@@ -320,6 +321,8 @@ test("native Goal pauses, survives Kernel recreation, and resumes explicitly", a
   const fixture = await containerNativeFixture({
     llm: {
       call: async (params) => {
+        if (params.promptCacheKey?.endsWith("_goal-steward"))
+          return stewardResponse(params.messages);
         const step = calls++;
         const tool = params.tools.find((item) => item.toolName === "update_goal");
         if (tool === undefined) throw new Error("fixture missing native Goal tool");

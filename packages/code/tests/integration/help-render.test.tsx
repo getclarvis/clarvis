@@ -68,7 +68,7 @@ function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
         run: () => {},
       }),
     ],
-    bindings: [{ key: "ctrl+o", cmd: "transcript.toggleCollapse", when: "overlay==none" }],
+    bindings: [{ key: "ctrl+k", cmd: "transcript.toggleCollapse", when: "overlay==none" }],
   });
   return {
     interaction: {
@@ -209,7 +209,7 @@ test("help documents the global keys its own overlay deactivates", async () => {
   const out = await frame();
   expect(out).toContain("Available elsewhere");
   expect(out).toContain("Toggle the focused block, else all collapsible blocks");
-  expect(out).toContain("[^o]");
+  expect(out).toContain("[^k]");
   // ...and it does not repeat what is active right here.
   const elsewhereBlock = out.slice(out.indexOf("Available elsewhere"));
   expect(elsewhereBlock).not.toContain("Cancel the current run");

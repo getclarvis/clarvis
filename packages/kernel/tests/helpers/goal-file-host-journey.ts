@@ -179,7 +179,16 @@ export async function runGoalFileHostJourney(
   expect(session.turns.map((turn) => turn.execution_id)).toEqual(
     goal.runs.map((run) => run.execution_id),
   );
-  expect(session.totals).toEqual(totals);
+  expect(session.totals).toEqual(
+    f.stewardUsages.reduce(
+      (sum, usage) => ({
+        input: sum.input + usage.input,
+        output: sum.output + usage.output,
+        cached: sum.cached + usage.cached,
+      }),
+      totals,
+    ),
+  );
   const leaderKey = `conversation_${session.agent_instance_id!}`;
   expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(2);
   const lead = f.requests.filter((request) => request.prompt_cache_key === leaderKey);

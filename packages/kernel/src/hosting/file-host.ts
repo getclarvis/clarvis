@@ -1,3 +1,5 @@
+import { addGoalAuxiliaryUsage } from "../goals/usage.ts";
+import { createHash } from "node:crypto";
 import { bestEffort, NOOP_LOGGER, sanitizeText } from "@clarvis/capability";
 import { goalsSettingsSchema } from "@clarvis/goal/settings";
 import { ownerFromWorkspace, workspaceScopeKey } from "@clarvis/paths";
@@ -20,6 +22,7 @@ import { createHostedSessionCoordinator } from "./sessions.ts";
 import type { HostingPeer } from "./admission.ts";
 import { createLocalHostOperator } from "./operator.ts";
 import { createGoalRepository } from "../goals/repository.ts";
+import { goalStateFromSession, goalStateToDto } from "../goals/session-state.ts";
 import { createGoalEvidenceSource } from "../goals/evidence.ts";
 import { prepareHostedGoalTurn, type GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { createGoalService } from "../goals/service.ts";
@@ -234,15 +237,54 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           params,
           context,
           repository,
+          steward: {
+            runtime: (limit, ttl) => kernel.goalStewardRuntime(limit, ttl, owner),
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readFile: (path) => kernel.files.readFile(path),
+            async settle(mutate, usage, accounting) {
+              await sessions.transact(context.session.id, (session) => {
+                const current = goalStateFromSession(session);
+                if (!current) throw kernelError("conflict", "Goal Steward session disappeared");
+                const result = mutate(current);
+                session.goal_state = goalStateToDto(result.state);
+                if (result.charged)
+                  addGoalAuxiliaryUsage(session.totals, usage, accounting, (model) =>
+                    prices.get(model),
+                  );
+                return { session, result: undefined };
+              });
+            },
+          },
           sessions: sessions.sessions,
           evidence: createGoalEvidenceSource({
             executionId: params.execution_id!,
             workspaceRoot: options.kernel.workspaceRoot,
             readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
           }),
+          async validateDefinitionSources(sources) {
+            for (const source of sources) {
+              try {
+                const current = await kernel.files.readFile(source.path);
+                if (createHash("sha256").update(current.content).digest("hex") !== source.digest)
+                  return false;
+              } catch {
+                return false;
+              }
+            }
+            return true;
+          },
+          readRun: async (executionId) => {
+            try {
+              return await kernel.runs.get(executionId);
+            } catch (error) {
+              if (toKernelError(error).code === "not_found") return null;
+              throw error;
+            }
+          },
           prepareExecution,
           logger,
           priceFor: (model) => prices.get(model),
+          onChange: (sessionId) => goalChanges.notify(sessionId),
         });
       },
     });
@@ -365,6 +407,7 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
           throw kernelError("resource_exhausted", "previous local connections are still closing");
         const connection = owned.connect(role);
         roles.set(connection.peer.id, role);
+        const goalAgentAvailability = kernel.goalAgentRuntime(owner);
         goalServices.set(
           connection.peer.id,
           createGoalService({
@@ -385,11 +428,38 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
                 goalControls--;
               };
             },
-            defaultLimits: async () =>
-              goalsSettingsSchema.parse((await kernel.config.getSettings()).merged.goals ?? {}),
+            defaultLimits: async () => {
+              const settings = goalsSettingsSchema.parse(
+                (await kernel.config.getSettings()).merged.goals ?? {},
+              );
+              return {
+                max_auto_continuations: settings.max_auto_continuations,
+                max_no_progress_checkpoints: settings.max_no_progress_checkpoints,
+                ...(settings.max_net_tokens === undefined
+                  ? {}
+                  : { max_net_tokens: settings.max_net_tokens }),
+                ...(settings.deadline_at === undefined
+                  ? {}
+                  : { deadline_at: settings.deadline_at }),
+              };
+            },
             entryTokenLimit: (params) => kernel.prepareRun(params, owner).tokenLimit,
             logger,
             subscribe: async (sessionId, listener) => goalChanges.subscribe(sessionId, listener),
+            transactions: sessions,
+            readRun: async (executionId) => {
+              try {
+                return await kernel.runs.get(executionId);
+              } catch (error) {
+                if (toKernelError(error).code === "not_found") return null;
+                throw error;
+              }
+            },
+            readTrace: (executionId) => kernel.readRunTrace(executionId, owner),
+            readWorkspaceFile: (path) => kernel.files.readFile(path),
+            priceFor: (model) => prices.get(model),
+            formulateRun: (input) => kernel.goalAgentRuntime(owner).run(input),
+            workspaceReadAvailable: goalAgentAvailability.workspaceReadAvailable,
           }),
         );
         return {

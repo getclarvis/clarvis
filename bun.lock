@@ -50,6 +50,7 @@
       "name": "@clarvis/goal",
       "dependencies": {
         "@clarvis/capability": "workspace:*",
+        "@clarvis/loop": "workspace:*",
         "zod": "^4.4.3",
       },
     },

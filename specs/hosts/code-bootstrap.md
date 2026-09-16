@@ -52,13 +52,18 @@ coalesce state reads and follow host-started stages through `RunHost.synchronize
 disposes subscriptions and late presentation callbacks. Goal continuation has no client timer or
 run-start bypass. The activity line combines durable goal status with the independently tracked run
 status, and a checkpoint is displayed separately from final completion.
+Semantic formulation is also a first-class presentation state: it drives the Lead activity line and
+the Goal section of the shared activity sidebar until the host returns a receipt. Creation keeps the
+transcript mounted; the complete Goal view opens only by explicit `/goal`, click, or contextual
+`Ctrl+O` from that sidebar section. Once open, the same `Ctrl+O` returns to the transcript.
 Production: goal controller composition and `closeWorkspace` in
 [runtime.tsx](../../packages/code/src/runtime.tsx), `registerCodeCommands` in
 [command-composition.ts](../../packages/code/src/app/command-composition.ts), and `runOutcomeStatus`
 in [run-host.ts](../../packages/code/src/run-host.ts).
 Test: [goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts),
 [goal-commands.test.tsx](../../packages/code/tests/integration/goal-commands.test.tsx) and
-[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts).
+[run-host.test.ts](../../packages/code/tests/component/run-host.test.ts), plus Goal sidebar navigation
+in [app-shell-render.test.tsx](../../packages/code/tests/integration/app-shell-render.test.tsx).
 
 Goal status remains separate from the run's status string so the settled-outcome classifier cannot
 confuse a cancelled goal with a completed physical run. `LeadActivityLine` retains the current

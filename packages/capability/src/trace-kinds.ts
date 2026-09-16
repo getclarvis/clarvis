@@ -134,6 +134,8 @@ export interface ToolCallDetail {
   name: string;
   arguments: unknown;
   result: string;
+  /** SHA-256 of the complete result before retention caps are applied. */
+  result_digest?: string;
   error: string | null;
   diff?: string;
   /** Final command-review outcome, present only when the host guard exposes its mode. */

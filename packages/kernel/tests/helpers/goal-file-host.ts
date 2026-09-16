@@ -20,7 +20,7 @@ export interface GoalFixtureRequest {
 
 export type GoalFixtureResponse = (
   { text: string } | { name: string; arguments: Record<string, unknown> }
-) & { usage?: "missing" | "no_cache" };
+) & { usage?: "missing" | "no_cache"; commentary?: string };
 
 /** Real file host, IPC, provider HTTP and SDK; only the provider's responses are controlled. */
 export async function createGoalFileHostFixture(
@@ -31,6 +31,7 @@ export async function createGoalFileHostFixture(
     planRetention?: "keep" | "discard";
     memory?: boolean;
     preserveRecentTokens?: number;
+    budgetTokenLimit?: number;
   } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), "clarvis-goal-file-host-"));
@@ -57,11 +58,14 @@ export async function createGoalFileHostFixture(
       repository: createFilePlanRepository({ workspaceRoot, lockDir: join(root, "plan-locks") }),
     });
     const requests: GoalFixtureRequest[] = [];
+    const stewardRequests: GoalFixtureRequest[] = [];
+    const stewardUsages: Array<{ input: number; output: number; cached: number }> = [];
     const usages: Array<{ input: number; output: number; cached: number }> = [];
     const errors: string[] = [];
     let respond: (request: GoalFixtureRequest) => Promise<GoalFixtureResponse> = async () => {
       throw new Error("Goal fixture responder was not installed");
     };
+    let respondSteward: typeof respond | undefined;
     const started = performance.now();
     const timeoutMs = options.timeoutMs ?? 30000;
     const provider = Bun.serve({
@@ -71,13 +75,65 @@ export async function createGoalFileHostFixture(
       async fetch(request) {
         try {
           const body = (await request.json()) as GoalFixtureRequest;
-          requests.push(body);
-          if (requests.length > 24 || performance.now() - started > timeoutMs)
+          const steward = body.prompt_cache_key?.endsWith("_goal-steward") === true;
+          (steward ? stewardRequests : requests).push(body);
+          if (
+            requests.length + stewardRequests.length > 40 ||
+            performance.now() - started > timeoutMs
+          )
             throw new Error("Goal fixture physical-call or duration limit exceeded");
           const index = requests.length;
-          const result = await respond(body);
+          const frame = steward
+            ? (JSON.parse(
+                String(body.messages.findLast((message) => message.role === "user")!.content),
+              ) as {
+                goal_header: { mode: string; criteria: Array<{ id: string; kind: string }> };
+              })
+            : undefined;
+          const result: GoalFixtureResponse =
+            frame === undefined
+              ? await respond(body)
+              : respondSteward !== undefined
+                ? await respondSteward(body)
+                : {
+                    name: "submit_result",
+                    arguments:
+                      frame.goal_header.mode === "observation"
+                        ? { decision: "aligned", summary: "Work is aligned" }
+                        : {
+                            decision: "completion",
+                            verdict: "achieved",
+                            summary: "Synthetic result observed",
+                            assessments: [
+                              {
+                                scope: "definition",
+                                verdict: "satisfied",
+                                rationale: "Definition matches",
+                                evidence_ids: [],
+                                inspected_paths: [],
+                              },
+                              {
+                                scope: "objective",
+                                verdict: "satisfied",
+                                rationale: "Result observed",
+                                evidence_ids: [],
+                                inspected_paths: [],
+                              },
+                              ...frame.goal_header.criteria
+                                .filter((criterion) => criterion.kind === "qualitative")
+                                .map((criterion) => ({
+                                  scope: "criterion",
+                                  criterion_id: criterion.id,
+                                  verdict: "satisfied",
+                                  rationale: "Criterion observed",
+                                  evidence_ids: [],
+                                  inspected_paths: [],
+                                })),
+                            ],
+                          },
+                  };
           const usage = { input: 1000 + index * 10, output: 10, cached: 500 };
-          if (result.usage !== "missing") usages.push(usage);
+          if (result.usage !== "missing") (steward ? stewardUsages : usages).push(usage);
           const chunk = {
             id: `response-${index}`,
             object: "chat.completion.chunk",
@@ -91,6 +147,7 @@ export async function createGoalFileHostFixture(
                   ...("text" in result
                     ? { content: result.text }
                     : {
+                        ...(result.commentary === undefined ? {} : { content: result.commentary }),
                         tool_calls: [
                           {
                             index: 0,
@@ -159,6 +216,9 @@ export async function createGoalFileHostFixture(
         plans: { mode: options.plansMode ?? "on", retention: options.planRetention ?? "keep" },
         ...(options.memory === true ? { memory: { enabled: true } } : {}),
         guard: { type: "shell", mode: "off" },
+        ...(options.budgetTokenLimit === undefined
+          ? {}
+          : { budget: { on_exceed: "stop", total_token_limit: options.budgetTokenLimit } }),
       }),
     );
     await mkdir(global.agentsDir);
@@ -251,11 +311,16 @@ export async function createGoalFileHostFixture(
       host,
       planStore,
       requests,
+      stewardRequests,
+      stewardUsages,
       usages,
       errors,
       close,
       setResponder(value: typeof respond) {
         respond = value;
+      },
+      setStewardResponder(value: typeof respond) {
+        respondSteward = value;
       },
       async until(predicate: () => boolean | Promise<boolean>) {
         const deadline = performance.now() + timeoutMs;

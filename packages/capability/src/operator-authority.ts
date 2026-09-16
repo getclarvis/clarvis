@@ -56,10 +56,34 @@ export interface OperatorAuthorityBinding {
   outcome_id?: string;
 }
 
+/** Host-attested execution objective supplied to reviewers as context, never as operator evidence. */
+export interface OperatorReviewContext {
+  kind: "goal" | "plan";
+  /** Canonical bounded JSON describing one current host-attested semantic definition. */
+  content: string;
+}
+
+/** Run-scoped semantic definitions that reviewers may consult without treating them as evidence. */
+export interface OperatorReviewContextSnapshot {
+  /** Host-owned identity that changes whenever the projected semantic definitions change. */
+  revision: string;
+  contexts: readonly OperatorReviewContext[];
+}
+
+export interface OperatorReviewContextProvider {
+  snapshot(): OperatorReviewContextSnapshot;
+}
+
+/** Late-bound semantic context published by the Plans capability. */
+export const PLANS_REVIEW_CONTEXT_PORT: PortKey<OperatorReviewContextProvider> = {
+  id: "plans.review_context",
+};
+
 /** Bounded host-only input, separate from the model-visible run request. */
 export interface OperatorAuthoritySeed {
   binding: OperatorAuthorityBinding;
   evidence: readonly OperatorEvidence[];
+  review_context?: OperatorReviewContext;
   /** Independent child runs may only inherit an already compiled intersection. */
   parent_run_id?: string;
   ceiling?: AuthorityEnvelopeV1;
@@ -98,6 +122,7 @@ export interface OperatorAuthorityState {
   status: "active" | "settled" | "revoked";
   revision: number;
   evidence: OperatorEvidence[];
+  review_context?: OperatorReviewContext;
   envelope?: AuthorityEnvelopeV1;
   /** Inherited limits cannot be enlarged by child interpretation. */
   ceiling?: AuthorityEnvelopeV1;
@@ -141,6 +166,9 @@ export function inheritOperatorAuthority(
       ...entry,
       source: "inherited",
     })),
+    ...(state.review_context === undefined
+      ? {}
+      : { review_context: structuredClone(state.review_context) }),
     consumed_effects: state.consumed_effects ?? [],
   };
 }

@@ -16,6 +16,10 @@ const seed = (text = "Open a PR"): OperatorAuthoritySeed => ({
     outcome_id: "outcome",
   },
   evidence: [{ id: "input", source: "start", text, execution_id: "first" }],
+  review_context: {
+    kind: "goal",
+    content: JSON.stringify({ objective: "Prepare the bounded change" }),
+  },
 });
 const runtime = (initial = seed(), prior?: OperatorAuthorityState) =>
   createOperatorAuthorityRuntime({ seed: initial, prior, owner: "owner", executionId: "run" });
@@ -64,6 +68,7 @@ describe("host operator ledger", () => {
     });
     const inherited = inheritOperatorAuthority(parent.reader, "parent");
     expect(inherited).toBeDefined();
+    expect(inherited?.review_context).toEqual(parent.reader.snapshot().review_context);
     parent.onSteer({ agent: "lead", iteration: 1, message: "Do not commit" });
     const child = createOperatorAuthorityRuntime({
       seed: inherited,
@@ -81,12 +86,17 @@ describe("host operator ledger", () => {
     const forged = seed();
     forged.binding.owner_key_name = "other";
     expect(runtime(forged).reader.snapshot().status).toBe("revoked");
+    const malformedContext = seed();
+    malformedContext.review_context = { kind: "goal", content: "not-json" };
+    expect(runtime(malformedContext).reader.snapshot().status).toBe("revoked");
   });
   test("detaches snapshots and increments revision once for a steer id", () => {
     const ledger = runtime();
     const before = ledger.reader.snapshot();
     before.evidence[0]!.text = "forged";
     expect(ledger.reader.snapshot().evidence[0]!.text).toBe("Open a PR");
+    before.review_context!.content = "{}";
+    expect(ledger.reader.snapshot().review_context).toEqual(seed().review_context);
     const steer = { agent: "lead" as const, iteration: 1, id: "steer", message: "Do not push" };
     ledger.onSteer(steer);
     ledger.onSteer(steer);

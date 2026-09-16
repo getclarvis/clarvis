@@ -8,7 +8,7 @@ import type { ConnectionManager } from "@clarvis/mcp-client";
 import type { Logger } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
 import type { RunJournal } from "@clarvis/trace";
-import type { RunResponse } from "@clarvis/capability";
+import type { LLMCallParams, RunResponse } from "@clarvis/capability";
 import type { CompactionSource, SteerSource } from "@clarvis/capability";
 import { createToolInterruptRegistry, type ToolInterruptSource } from "./tools/tool-interrupt.ts";
 import type { TraceEvent } from "@clarvis/capability";
@@ -123,6 +123,8 @@ export interface ExecuteRunArgs {
   rawBody: unknown;
   owner: string;
   deps: ExecuteRunDeps;
+  /** Host-owned accounting purpose applied to ordinary generation calls in this run. */
+  callPurpose?: LLMCallParams["callPurpose"];
   onEvent?: (event: TraceEvent) => void;
   externalSignal?: AbortSignal;
   elicit?: Elicit;
@@ -334,6 +336,7 @@ export async function executeRun({
   rawBody,
   owner,
   deps,
+  callPurpose,
   onEvent,
   externalSignal,
   elicit,
@@ -557,6 +560,7 @@ export async function executeRun({
               call: (params) =>
                 deps.llm.call({
                   ...params,
+                  callPurpose: params.callPurpose ?? callPurpose,
                   executionId,
                   sessionId: params.sessionId ?? identity.sessionId,
                   agentInstanceId: params.agentInstanceId ?? identity.agentInstanceId,

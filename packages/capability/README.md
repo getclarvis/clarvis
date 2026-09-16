@@ -414,3 +414,16 @@ private writer. The answer is authenticated operator text; the model-authored qu
 separate, untrusted context. It is not a capability service and does not itself grant an effect.
 
 `OperatorAuthorityState.denied_effects` carries bounded identities of concrete refused batches at the current evidence revision. It grants no authority; the kernel owns recording and validation, and fresh host-admitted evidence invalidates these exact-review identities. See [self-configuration](../../specs/hosts/self-configuration.md).
+
+`OperatorReviewContext` carries bounded host-attested Goal or Plan JSON beside, never inside,
+`OperatorEvidence`. `PLANS_REVIEW_CONTEXT_PORT` lets Plans publish an atomically revisioned current
+semantic definition without access to the authority writer. Reviewers use these definitions as the
+operator's semantic objective and intended implementation path for routine bounded prerequisites;
+they do not authorize human-only effects, publication, deployment, destructive work, credential
+access or external contact. Goal context is inherited only with already-fenced run authority, while
+Plan context is read live and revalidated after inference; a changed revision makes the decision
+unsure and prevents stale cache or envelope reuse. Terminal `tool_call` trace
+vocabulary likewise carries an optional `result_digest`, minted before result-text retention caps so
+a host can attest complete bytes without retaining the omitted text. The owning contracts are
+[command guard](../../specs/execution/command-guard.md) and
+[trace](../../specs/foundations/trace.md).

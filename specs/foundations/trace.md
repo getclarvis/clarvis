@@ -29,6 +29,13 @@ When the process dies before the batch path completes, `recoverOrphans` folds th
 `interrupted` record (`packages/trace/src/json-trace-store.ts`,
 `packages/trace/src/journal-recovery.ts`).
 
+Goal Steward evaluations use ordinary persisted executions with their own IDs and continuation
+contexts. The work capability records `goal_steward_review` and `goal_steward_intervention` through
+the open trace vocabulary; no builtin event or engine dependency is added. Production:
+`createGoalCapability` in [capability.ts](../../packages/goal/src/capability.ts) and `runGoalSteward`
+in [steward-run.ts](../../packages/goal/src/agent/steward-run.ts). Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
 ## 2. Surface
 
 ### 2a. `@clarvis/capability` — vocabulary (entrypoints `.` and `./trace`)
@@ -160,6 +167,16 @@ an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
 `packages/capability/src/trace-kinds.ts` and the `tool_call` arm in
 `packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
 `packages/trace/tests/unit/trace-mapper.test.ts`.
+
+`ToolCallDetail.result_digest` and the persisted `tool_call.result_digest` are the SHA-256 of the
+complete result before `RESULT_MAX` abbreviates its display copy. `createTrace` computes the digest
+before capping; `mapEntry` carries it and only derives a compatibility digest when a direct legacy
+entry bypassed the recorder. The digest attests bytes but does not expose or reconstruct omitted
+content. Production: `createTrace` in
+[in-memory-trace.ts](../../packages/trace/src/in-memory-trace.ts) and the `tool_call` mapping in
+[trace-mapper.ts](../../packages/trace/src/trace-mapper.ts). Test: `createTrace capping` in
+[in-memory-trace.test.ts](../../packages/trace/tests/unit/in-memory-trace.test.ts) and the tool
+projection case in [trace-mapper.test.ts](../../packages/trace/tests/unit/trace-mapper.test.ts).
 
 `ToolCallStartedDetail.control` is the optional `{ tool_execution_id, actions: ["interrupt"] }`
 capability for one live builtin shell invocation. `ToolCallDetail.interruption` is the optional
@@ -447,7 +464,9 @@ blew halfway through the scan'".
 `packages/trace/src/in-memory-trace.ts`. Per call:
 
 1. If `sealed`, return.
-2. Build `{ at: performance.now() - startedAt, kind, detail: capDetail(kind, detail) }`.
+2. For a `tool_call`, attach the complete-result SHA-256, then build
+   `{ at: performance.now() - startedAt, kind, detail: capDetail(kind, detail) }`; other kinds go
+   directly through the same cap.
 3. `record` pushes to `trace.entries` **and** calls `onRecord(entry, true)`.
    `signal` only calls `onRecord(entry, false)`.
 4. `seal()` flips the flag; both become no-ops.

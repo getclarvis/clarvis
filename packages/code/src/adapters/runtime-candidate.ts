@@ -10,7 +10,7 @@ export interface RuntimeCandidate {
   version: string;
   source_revision: string;
   repository: typeof CANDIDATE_REPOSITORY;
-  kernel_wire_version: 10;
+  kernel_wire_version: 11;
   broker_version: 1;
   channel_version: 1;
   targets: readonly ["linux-x64", "linux-arm64"];
@@ -25,7 +25,7 @@ export interface RuntimeCandidate {
 interface RuntimeCandidateTarget {
   base: { image: string; digest: `sha256:${string}`; abi: "clarvis-linux-glibc-v1" };
   artifact: { asset: string; sha256: string; size: number };
-  kernel_wire_version: 10;
+  kernel_wire_version: 11;
   broker_version: 1;
   channel_version: 1;
 }
@@ -60,7 +60,7 @@ function validTarget(value: unknown, target: "linux-x64" | "linux-arm64"): boole
     Number.isSafeInteger(artifact.size) &&
     artifact.size > 0 &&
     artifact.size <= 512 * 1024 * 1024 &&
-    root.kernel_wire_version === 10 &&
+    root.kernel_wire_version === 11 &&
     root.broker_version === 1 &&
     root.channel_version === 1
   );
@@ -105,7 +105,7 @@ export function parseRuntimeCandidate(value: unknown, tag: string): RuntimeCandi
     item.repository !== CANDIDATE_REPOSITORY ||
     typeof item.source_revision !== "string" ||
     !/^[a-f0-9]{40}$/u.test(item.source_revision) ||
-    item.kernel_wire_version !== 10 ||
+    item.kernel_wire_version !== 11 ||
     item.broker_version !== 1 ||
     item.channel_version !== 1 ||
     JSON.stringify(item.targets) !== JSON.stringify(["linux-x64", "linux-arm64"]) ||

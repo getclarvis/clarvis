@@ -158,6 +158,15 @@ host services, not this writer. No secret may be inferred from loading guidance.
 
 Builtin configuration examples remain owned by `CONFIGURATION_EXAMPLES` in
 [configuration-examples.ts](../../packages/kernel/src/skills/configuration-examples.ts).
+The embedded guide distinguishes idle operator Goal creation (auto, guided or literal) from saved
+creation defaults and bounded formulation/Steward settings. It explains that read-only Steward
+review grants no command authority, consumes execution receipts rather than executing checks, and
+settles auxiliary usage separately from the work allowance. The capability example includes both
+auxiliary settings blocks. The owning behavior is specified in [Goals](../capabilities/goals.md).
+Production: `CLARVIS_CONFIGURE_SKILL` in
+[clarvis-configure.ts](../../packages/kernel/src/skills/clarvis-configure.ts).
+Test: disclosure and body budget in
+[builtin-skills.test.ts](../../packages/kernel/tests/component/builtin-skills.test.ts).
 Their syntax and loader behavior are tested in
 [configuration-guidance.test.ts](../../packages/kernel/tests/integration/configuration-guidance.test.ts).
 The real interface evidence contract is the repository's PTY validation workflow; deterministic

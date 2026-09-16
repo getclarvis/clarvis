@@ -145,7 +145,9 @@ describe("goal compaction through the real file host and SDK", () => {
     const compactions = events.filter((event) => event.type === "compaction");
     expect(compactions).toHaveLength(1);
     expect(compactions[0]).toMatchObject({ operation: "summarization", requested: true });
-    const lead = f.requests.filter((request) => request.tools?.length);
+    const lead = f.requests.filter((request) =>
+      request.tools?.some((tool) => tool.function.name === "get_goal"),
+    );
     expect(lead).toHaveLength(9);
     expect(new Set(f.requests.map((request) => request.prompt_cache_key)).size).toBe(1);
     for (let index = 1; index < lead.length; index++) {
@@ -182,7 +184,16 @@ describe("goal compaction through the real file host and SDK", () => {
       usage_unknown: false,
     });
     const session = (await f.client.sessions.get("conversation"))!;
-    expect(session.totals).toEqual(totals);
+    expect(session.totals).toEqual(
+      f.stewardUsages.reduce(
+        (sum, usage) => ({
+          input: sum.input + usage.input,
+          output: sum.output + usage.output,
+          cached: sum.cached + usage.cached,
+        }),
+        totals,
+      ),
+    );
     expect((await f.planStore.list()).plans[0]!.tasks[0]!.status).toBe("done");
   });
 });

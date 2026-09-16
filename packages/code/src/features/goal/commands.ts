@@ -25,7 +25,7 @@ export function registerGoalCommands(
         notify: (message) => deps.notify(message, "warn"),
       });
   });
-  const open = (value?: GoalDraft): void => {
+  const openEditor = (value?: GoalDraft): void => {
     draft = value;
     deps.ui.openView("goal.open", view);
   };
@@ -46,12 +46,35 @@ export function registerGoalCommands(
         if (binding?.sessionId !== now?.sessionId || binding?.generation !== now?.generation)
           throw new Error("The goal conversation changed. Enter the command again.");
         if (command.kind === "show") {
-          open();
+          openEditor();
           return;
         }
         if (!deps.goals.available())
           throw new Error(deps.goals.failure() || "Goals are unavailable on this host.");
         const current = deps.goals.view()?.state.current;
+        if (command.kind === "formulate") {
+          if (current !== undefined)
+            throw new Error(
+              "A goal already exists; review, cancel or clear it before formulating another.",
+            );
+          deps.notify(
+            command.mode === "auto"
+              ? "Formulating a Goal from this conversation…"
+              : "Formulating a Goal from your request…",
+            "info",
+          );
+          const receipt = await deps.goals.formulate(command.mode, command.seed);
+          if (receipt.formulation.outcome === "created")
+            deps.notify("Goal created; the first work stage is starting.", "success");
+          else
+            deps.notify(
+              receipt.formulation.question ??
+                receipt.formulation.message ??
+                "Goal formulation did not create a goal.",
+              "warn",
+            );
+          return;
+        }
         if (command.kind === "edit" || (command.kind === "create" && current !== undefined)) {
           const physical = deps.goals.view()?.physical_run;
           if (
@@ -59,7 +82,7 @@ export function registerGoalCommands(
             current?.runs.some((run) => run.phase !== "closed")
           )
             throw new Error("Wait for physical execution to end before reviewing this goal.");
-          open(
+          openEditor(
             createGoalDraft(
               deps.goals.view(),
               binding,
@@ -82,10 +105,15 @@ export function registerGoalCommands(
             deps.goals.pendingOperation() === undefined &&
             deps.goals.view()?.state.current === undefined
           )
-            open(createGoalDraft(deps.goals.view(), deps.goals.binding(), command.objective));
+            openEditor(createGoalDraft(deps.goals.view(), deps.goals.binding(), command.objective));
           throw error;
         }
-        open();
+        deps.notify(
+          command.kind === "create"
+            ? "Literal Goal created; the first work stage is starting."
+            : "Goal updated.",
+          "success",
+        );
       },
       (error) =>
         deps.notify(error instanceof Error ? error.message : "Goal command failed.", "warn"),
@@ -99,8 +127,9 @@ export function registerGoalCommands(
     surface: "slash",
     group: "actions",
     desc: "Inspect or control this conversation's persistent objective",
-    args: [{ name: "<objective> | -- <literal objective>" }],
+    args: [{ name: "auto | <seed> | -- <literal objective>" }],
     subcommands: [
+      { name: "auto", desc: "Formulate from this conversation's trajectory" },
       { name: "edit", desc: "Review the objective, criteria and limits" },
       { name: "pause", desc: "Pause future stages; --running also cancels the bound run" },
       { name: "resume", desc: "Revalidate and resume within the remaining limits" },

@@ -11,6 +11,7 @@ import {
   createCapabilityServices,
   createCapabilityRequestView,
   createComputeClock,
+  PLANS_REVIEW_CONTEXT_PORT,
   type AgentLoopContribution,
   type AgentScope,
   type CapabilityEvent,
@@ -149,6 +150,43 @@ describe("createPlansCapability — requiresUserInput", () => {
   it("is true for mode 'review', in both its terse and block forms", () => {
     expect(capability.requiresUserInput!(requestViewWithPlans("review"))).toBe(true);
     expect(capability.requiresUserInput!(requestViewWithPlans({ mode: "review" }))).toBe(true);
+  });
+});
+
+describe("createPlansCapability — reviewer context", () => {
+  it("publishes only stable Plan substance and ignores progress fields", async () => {
+    const services = createCapabilityServices();
+    const { run } = await forRun("on", services);
+    const contribution = attachEntry(run!);
+    expect(services.get(PLANS_REVIEW_CONTEXT_PORT)?.snapshot()).toEqual({
+      revision: "absent",
+      contexts: [],
+    });
+    await dispatch(contribution, {
+      id: "create",
+      name: CREATE_PLAN_TOOL_NAME,
+      arguments: {
+        title: "Desktop MVP",
+        objective: "Deliver the local application",
+        context: "Electron",
+        tasks: [{ title: "Bootstrap", detail: "Install dependencies", exit: "App starts" }],
+        validation: ["npm test"],
+      },
+    });
+    const snapshot = services.get(PLANS_REVIEW_CONTEXT_PORT)!.snapshot();
+    const context = snapshot.contexts[0]!;
+    expect(snapshot.revision).not.toBe("absent");
+    expect(context.kind).toBe("plan");
+    expect(JSON.parse(context.content)).toEqual({
+      title: "Desktop MVP",
+      objective: "Deliver the local application",
+      context: "Electron",
+      tasks: [{ title: "Bootstrap", detail: "Install dependencies", exit: "App starts" }],
+      validation: ["npm test"],
+    });
+    expect(context.content).not.toContain("revision");
+    expect(context.content).not.toContain("status");
+    expect(context.content).not.toContain("result");
   });
 });
 

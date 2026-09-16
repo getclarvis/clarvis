@@ -67,6 +67,30 @@ or output. Production: `callReviewerWithTrace` in
 `packages/kernel/src/runs/map-events.ts`. Test: `packages/kernel/tests/unit/reviewer-trace.test.ts`
 and `packages/kernel/tests/unit/observability.test.ts`.
 
+Goal Steward keeps its own ordinary execution trace and provider purpose `goal`. Its operational
+`goal.steward.failed` and `goal.steward.settled` records contain execution identity, mode, disposition
+and usage kind, without semantic payloads. The work trace records bounded `goal_steward_review` and
+`goal_steward_intervention` metadata; the durable domain review remains the source for UI substance.
+Production: `createGoalStewardCoordinator` and `createGoalCapability`. Test:
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
+Goal formulation follows the same separation. Its semantic `executeRun` is persisted normally under
+its own execution ID and each actual provider call carries host-owned purpose `goal`. The operation
+log `goal.formulation.completed` contains only session/formulation IDs, mode, terminal outcome,
+duration when known and token/cache counts. `goal.formulation.failed` likewise carries IDs only.
+Neither log contains seed, objective, criteria, trajectory, prompt, tool arguments/results, source
+paths/digests, provider metadata or response. The run trace remains the owner-scoped execution audit;
+the operation log is never used for recovery, and receipt recovery never emits or replays another
+model call.
+
+Production: formulation diagnostics in
+[service.ts](../../packages/kernel/src/goals/service.ts), purpose propagation in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts), and the Container purpose codec in
+[container-model-contract.ts](../../packages/kernel/src/hosting/container-model-contract.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) verifies `callPurpose`,
+while [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts)
+verifies the separate persisted execution and receipt replay.
+
 ## 2. Surface
 
 ### 2.1 The port (`@clarvis/capability`)

@@ -66,7 +66,7 @@ entrypoint and cannot be supplied in the message.
 
 The guest verifies the configuration digest, artifact target, base ABI and wire, broker and channel
 versions before constructing services. The ready reply repeats generation and digests. The launcher
-then opens model dispatch and performs public wire version 10 hello. Memory recovery starts once,
+then opens model dispatch and performs public wire version 11 hello. Memory recovery starts once,
 after the first successful hello response is sent.
 
 Production: `parseContainerInitialize` in
@@ -95,6 +95,35 @@ and keeps native seed, write, delete and index behavior. Workflows, leaders, Goa
 journals and continuation execute inside the same Kernel. Disabled Plans or Memory retain their
 native disabled semantics. Goal plus manager Workflow remains subject to the ordinary Goals
 contract.
+
+Goal Steward uses that same guest-native Goal hosting path and injected model execution resolver.
+Its read-only tools inspect the guest workspace; credentials and provider adapters remain on the host.
+Production: `goalStewardRuntime`, `createStewardExecutionRuntime` and `prepareHostedGoalTurn`.
+Test: `native Goal pauses, survives Kernel recreation, and resumes explicitly` in
+[container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts)
+exercises native composition with a controlled broker; physical engine qualification remains separate.
+
+Goal auto/guided formulation is also native to the guest Kernel. Its semantic run uses the same
+admitted workspace root, canonical read-only Tools capability, owner-scoped trace store, runtime
+placement and logical model resolver as other guest runs. The host broker accepts the distinct
+`goal` call purpose but receives no prompt policy, provider selection or tool authority from the
+guest DTO. Configuration projection carries only the non-contributable `goals.agent` model/limit
+policy already admitted by the host. No host-filesystem bridge substitutes for guest workspace
+reads, and external MCP, skills, hooks, Tasks, Plans, Memory, Workflows, Goal controls and delegation
+remain absent from formulation.
+
+The public `goals.formulate` request/result/receipt crosses the same version 11 Kernel transport as
+Host/Sandbox. Goal state, sessions and formulation traces remain in canonical owner-scoped stores,
+so idle placement changes retain receipts and provenance. A formulation run is not a conversation
+turn, and an interrupted Container does not invent a receipt or replay an unknown creation.
+
+Production: `createContainerNativeKernel` in
+`packages/kernel/src/hosting/container-native.ts`, `createKernelGoalAgentRuntime` in
+`packages/kernel/src/goals/agent-runtime.ts`, and purpose validation in
+`packages/kernel/src/hosting/container-model-contract.ts`.
+Test: `packages/kernel/tests/integration/goal-formulate-service.test.ts` establishes the common native
+service/runtime seam; Container process and real-engine formulation remain distributable canary
+evidence rather than an inference from that test.
 
 Tasks is unavailable because its only provider is MCP. Plugins, external Skills, external Hooks,
 generic MCP and executable or plugin capability providers are neither loaded nor exposed. An

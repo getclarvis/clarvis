@@ -1,3 +1,4 @@
+import { stewardResponse } from "../helpers/steward-response.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -53,14 +54,19 @@ async function fixture(
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      const wire = (await request.json()) as { prompt_cache_key: string };
-      const result = await responder.call({
-        model: "test",
-        provider: "fixture",
-        messages: [],
-        tools: [],
-        promptCacheKey: wire.prompt_cache_key,
-      });
+      const wire = (await request.json()) as {
+        prompt_cache_key: string;
+        messages: Array<{ role: string; content?: unknown }>;
+      };
+      const result = wire.prompt_cache_key?.endsWith("_goal-steward")
+        ? stewardResponse(wire.messages)
+        : await responder.call({
+            model: "test",
+            provider: "fixture",
+            messages: [],
+            tools: [],
+            promptCacheKey: wire.prompt_cache_key,
+          });
       const calls = result.toolCalls ?? [];
       const chunk = {
         id: "file-host-fixture",
@@ -322,8 +328,11 @@ describe("file kernel behind the hosted RPC", () => {
     await until(() => f.host.stats().runs === 0);
     const view = await f.client.goals.get("conversation");
     expect(view.state.current).toMatchObject({ status: "complete", auto_continuations: 1 });
-    expect(view.state.current!.runs.map((run) => run.execution_id)).toEqual(f.entered);
-    expect(f.entered).toHaveLength(2);
+    const primaryExecutions = view.state.current!.runs.map((run) => run.execution_id);
+    expect(f.entered.filter((executionId) => primaryExecutions.includes(executionId))).toEqual(
+      primaryExecutions,
+    );
+    expect(f.entered).toHaveLength(3);
     expect(view.physical_run).toBeUndefined();
     await until(() => invalidations.length >= 5);
     expect(
@@ -332,10 +341,10 @@ describe("file kernel behind the hosted RPC", () => {
     unsubscribe();
     expect(new Set(f.goalLlm!.calls.map((call) => call.promptCacheKey)).size).toBe(1);
     const session = (await f.client.sessions.get("conversation"))!;
-    expect(session.turns.map((turn) => turn.execution_id)).toEqual(f.entered);
+    expect(session.turns.map((turn) => turn.execution_id)).toEqual(primaryExecutions);
     expect(session.agent_instance_id).toBeDefined();
     expect(await f.client.goals.control(request)).toEqual(receipt);
-    expect(f.entered).toHaveLength(2);
+    expect(f.entered).toHaveLength(3);
   });
 
   test("pause retains physical work, fences foreign control and prevents automatic continuation", async () => {
@@ -452,7 +461,7 @@ describe("file kernel behind the hosted RPC", () => {
       async () => (await next.goals.get("conversation")).state.current?.status === "complete",
     );
     await until(() => f.host.stats().runs === 0);
-    expect(f.entered).toHaveLength(2);
+    expect(f.entered).toHaveLength(3);
     expect(
       (await next.goals.get("conversation")).state.current!.consumption.net_tokens,
     ).toBeGreaterThan(0);

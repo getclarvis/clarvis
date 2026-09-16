@@ -472,6 +472,12 @@ test("goal state stays visible when idle and does not replace the physical run o
       get: async () => goalView({ status: "paused" }),
       subscribe: async () => () => {},
       receipt: async () => null,
+      formulate: async (request) => ({
+        operation_id: request.operation_id,
+        revision: 1,
+        fingerprint: "fixture",
+        formulation: { mode: request.mode, outcome: "created" },
+      }),
       control: async () => {
         throw new Error("No control expected");
       },
@@ -489,6 +495,48 @@ test("goal state stays visible when idle and does not replace the physical run o
     frame = await captureUntil(t, "working");
     expect(frame).toContain("Goal paused");
     expect(frame).not.toContain("Checkpoint saved");
+    t.renderer.destroy();
+  } finally {
+    goals.dispose();
+  }
+});
+
+test("Ctrl+O toggles Goal detail from the partial sidebar and back to the transcript", async () => {
+  const goals = createGoalController({
+    binding: () => ({ sessionId: "session-hosted", generation: 1 }),
+    prepare: async () => {
+      throw new Error("No goal creation expected");
+    },
+    service: () => ({
+      availability: async () => ({ available: true }),
+      get: async () => goalView({ objective: "Keep the Goal visible", status: "active" }),
+      subscribe: async () => () => {},
+      receipt: async () => null,
+      formulate: async () => {
+        throw new Error("No formulation expected");
+      },
+      control: async () => {
+        throw new Error("No control expected");
+      },
+    }),
+  });
+  try {
+    await goals.refresh();
+    const t = await mountApp(defaultProps({ goals }));
+    press(t, "l", { ctrl: true });
+    let frame = await captureUntil(t, "[^o] full goal");
+    expect(frame).toContain("Keep the Goal visible");
+    expect(frame).toContain("[^l] close");
+    expect(frame).not.toContain("open Goal");
+    press(t, "o", { ctrl: true });
+    frame = await captureUntil(t, "Budget 0 / 10k tokens");
+    expect(frame).toContain("Running · 0 stages · literal");
+    expect(frame).not.toContain("One objective for this conversation");
+    press(t, "o", { ctrl: true });
+    frame = await captureUntil(t, "[^o] full goal");
+    expect(frame).toContain("Keep the Goal visible");
+    expect(frame).toContain("[^l] close");
+    expect(frame).not.toContain("open Goal");
     t.renderer.destroy();
   } finally {
     goals.dispose();
@@ -2814,7 +2862,7 @@ test("model-backed prompt and skill submit also return an old reader to the Lead
   t.renderer.destroy();
 });
 
-test("transcript navigation: ctrl+down focuses a block, ctrl+o toggles it, escape clears the focus", async () => {
+test("transcript navigation: ctrl+down focuses a block, ctrl+k toggles it, escape clears the focus", async () => {
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2834,7 +2882,7 @@ test("transcript navigation: ctrl+down focuses a block, ctrl+o toggles it, escap
   await captureUntil(t, "New task");
   press(t, "down", { ctrl: true });
   await t.renderOnce();
-  press(t, "o", { ctrl: true });
+  press(t, "k", { ctrl: true });
   await t.renderOnce();
   press(t, "escape");
   await t.renderOnce();
@@ -2883,7 +2931,7 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   const open = await captureUntil(t, "Tab navigation plan");
   expect(open).toContain("│ Plan");
   press(t, "down", { ctrl: true });
-  press(t, "o", { ctrl: true });
+  press(t, "k", { ctrl: true });
   await t.renderOnce();
   press(t, "tab");
   await t.renderOnce();
@@ -2894,9 +2942,9 @@ test("Tab returns block focus to the composer with a sidebar open and never sele
   await t.renderOnce();
   expect(submissions).toEqual(["submit from composer after Tab"]);
 
-  press(t, "o", { ctrl: true });
+  press(t, "k", { ctrl: true });
   await t.renderOnce();
-  // Ctrl+O now targets the transcript as a whole; it must not re-toggle the
+  // Ctrl+K now targets the transcript as a whole; it must not re-toggle the
   // block that Tab just left behind.
   expect(t.captureCharFrame()).toContain("blocks expanded");
   t.renderer.destroy();

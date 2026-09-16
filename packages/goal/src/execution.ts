@@ -1,6 +1,6 @@
 import { GoalError } from "./errors.ts";
 import { boundedGoalState } from "./control.ts";
-import { goalAdmission, goalDeadlineLimit, goalNetTokens } from "./policy.ts";
+import { goalAdmission, goalDeadlineLimit, goalHasPhysicalRun, goalNetTokens } from "./policy.ts";
 import {
   goalCandidateSchema,
   goalCheckpointSchema,
@@ -81,6 +81,9 @@ export function admitGoalRun(
     automatic: input.automatic,
     admitted_at: input.now,
     phase: "preparing",
+    steward_reviews: [],
+    steward_review_count: 0,
+    steward_intervention_count: 0,
   });
   if (input.automatic) goal.auto_continuations += 1;
   return changed(state, goal, input.now);
@@ -351,6 +354,7 @@ export function settleGoalRun(
       run.candidate.objective_revision === goal.objective_revision
     ) {
       goal.status = "complete";
+      delete goal.steward.last_steward_execution_id;
       goal.reason = "Completion committed after criteria, gates and durable reconciliation";
     } else {
       goal.status = "blocked";
@@ -381,6 +385,26 @@ export function pauseGoalForPolicy(previous: GoalState, reason: string, now: num
   goal.reason = reason;
   goal.control_revision = state.revision + 1;
   return changed(state, goal, now);
+}
+
+/** Fail closed before admission when the host cannot reserve both stage budget partitions. */
+export function limitGoalForVerificationBudget(
+  previous: GoalState,
+  input: { goal_id: string; control_revision: number; reason: string; now: number },
+): GoalState {
+  const state = boundedGoalState(previous, true);
+  const goal = state.current;
+  if (
+    goal?.goal_id !== input.goal_id ||
+    goal.status !== "active" ||
+    goal.control_revision !== input.control_revision ||
+    goalHasPhysicalRun(goal)
+  )
+    return state;
+  goal.status = "budget_limited";
+  goal.reason = input.reason;
+  goal.control_revision = state.revision + 1;
+  return changed(state, goal, input.now);
 }
 
 /**

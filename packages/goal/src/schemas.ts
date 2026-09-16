@@ -19,6 +19,11 @@ const counter = z
   .max(Number.MAX_SAFE_INTEGER - 1);
 const text = z.string().trim().min(1).max(4096);
 const digest = z.string().regex(/^[a-f0-9]{64}$/u);
+const semanticItems = z.array(text).max(16).default([]);
+
+export const goalDefinitionSourceSchema = z
+  .object({ path: z.string().trim().min(1).max(4096), digest })
+  .strict();
 
 export const goalStatusSchema = z.enum([
   "active",
@@ -127,6 +132,79 @@ export const goalUsageSchema = z.discriminatedUnion("kind", [
     }),
 ]);
 
+const goalFormulationOriginSchema = z.object({
+  formulation_execution_id: id,
+  source_session_revision: counter,
+  source_execution_ids: z.array(id).max(256),
+  trajectory_digest: digest,
+  trajectory_truncated: z.boolean(),
+  formulation_usage: goalUsageSchema.optional(),
+});
+
+export const goalOriginSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("literal") }).strict(),
+  goalFormulationOriginSchema
+    .extend({ kind: z.literal("guided"), seed: z.string().trim().min(1).max(16384) })
+    .strict(),
+  goalFormulationOriginSchema.extend({ kind: z.literal("auto") }).strict(),
+]);
+
+export const goalStewardReviewSchema = z
+  .object({
+    steward_execution_id: id,
+    mode: z.enum(["observation", "completion"]),
+    goal_id: id,
+    work_execution_id: id,
+    control_revision: counter,
+    objective_revision: counter,
+    definition_digest: digest,
+    trajectory_digest: digest,
+    plan_context_revision: z.string().min(1).max(512),
+    operator_steering_epoch: counter,
+    candidate_digest: digest.optional(),
+    final_attempt_digest: digest.optional(),
+    evidence_digest: digest,
+    decision: z.enum(["aligned", "steer", "new_run", "achieved", "not_achieved", "inconclusive"]),
+    summary: text,
+    guidance: text.optional(),
+    next_step: text.optional(),
+    inspected_artifacts: z.array(goalDefinitionSourceSchema).max(32),
+    usage: goalUsageSchema,
+    reviewed_at: counter,
+  })
+  .strict();
+
+export const goalStewardChainSchema = z
+  .object({
+    last_steward_execution_id: id.optional(),
+    pending_execution_id: id.optional(),
+    trajectory_digest: digest.optional(),
+    operator_steering_epoch: counter.default(0),
+    last_consumed_work_sequence: counter,
+    runtime_fingerprint: z.string().max(64),
+    prompt_cache_ttl: z.enum(["5m", "1h"]),
+    status: z.enum([
+      "idle",
+      "observing",
+      "aligned",
+      "intervened",
+      "new_run_recommended",
+      "verifying",
+      "verified",
+      "attention",
+    ]),
+    consumption: z
+      .object({
+        input: counter,
+        output: counter,
+        cached: counter.optional(),
+        net_tokens: counter,
+        usage_unknown: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
 export const goalRunSchema = z
   .object({
     execution_id: id,
@@ -144,6 +222,9 @@ export const goalRunSchema = z
     checkpoint: goalCheckpointSchema.optional(),
     progress: goalProgressSchema.optional(),
     candidate: goalCandidateSchema.optional(),
+    steward_reviews: z.array(goalStewardReviewSchema).max(8).default([]),
+    steward_review_count: counter.default(0),
+    steward_intervention_count: counter.default(0),
   })
   .strict();
 
@@ -156,6 +237,19 @@ export const goalRecordSchema = z
     objective_revision: counter,
     objective: z.string().trim().min(1).max(16384),
     criteria: z.array(goalCriterionSchema).max(32),
+    constraints: semanticItems,
+    exclusions: semanticItems,
+    assumptions: semanticItems,
+    sources: z.array(goalDefinitionSourceSchema).max(16).default([]),
+    origin: goalOriginSchema.default({ kind: "literal" }),
+    steward: goalStewardChainSchema.default({
+      last_consumed_work_sequence: 0,
+      operator_steering_epoch: 0,
+      runtime_fingerprint: "",
+      prompt_cache_ttl: "5m",
+      status: "idle",
+      consumption: { input: 0, output: 0, cached: 0, net_tokens: 0, usage_unknown: false },
+    }),
     status: goalStatusSchema,
     reason: text.optional(),
     created_at: counter,
@@ -215,6 +309,16 @@ export const goalReceiptSchema = z
     execution_id: id.optional(),
     goal_id: id.optional(),
     status: goalStatusSchema.optional(),
+    formulation: z
+      .object({
+        formulation_execution_id: id.optional(),
+        mode: z.enum(["auto", "guided"]),
+        outcome: z.enum(["created", "insufficient_context", "stale_context", "failed"]),
+        question: text.optional(),
+        message: text.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -253,6 +357,8 @@ export const goalStateSchema = z
 export type GoalStatus = z.infer<typeof goalStatusSchema>;
 export type GoalLimits = z.infer<typeof goalLimitsSchema>;
 export type GoalCriterion = z.infer<typeof goalCriterionSchema>;
+export type GoalDefinitionSource = z.infer<typeof goalDefinitionSourceSchema>;
+export type GoalOrigin = z.infer<typeof goalOriginSchema>;
 export type GoalEvidenceRef = z.infer<typeof goalEvidenceRefSchema>;
 export type GoalAssessment = z.infer<typeof goalAssessmentSchema>;
 export type GoalCandidate = z.infer<typeof goalCandidateSchema>;
@@ -263,3 +369,5 @@ export type GoalRun = z.infer<typeof goalRunSchema>;
 export type GoalRecord = z.infer<typeof goalRecordSchema>;
 export type GoalReceipt = z.infer<typeof goalReceiptSchema>;
 export type GoalState = z.infer<typeof goalStateSchema>;
+export type GoalStewardReview = z.infer<typeof goalStewardReviewSchema>;
+export type GoalStewardChainState = z.infer<typeof goalStewardChainSchema>;

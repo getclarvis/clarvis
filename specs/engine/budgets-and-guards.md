@@ -458,6 +458,32 @@ captures decreasing stop-mode ceilings across two automatic continuations and re
 token/iteration settings before inference. Product host registration is required before this internal
 composition is an available goal control surface.
 
+Goal Steward evaluations similarly use independent finite stop-mode allowances. The effective work
+cap is the default auxiliary cap, never a reserve subtracted from pursuit. Auxiliary measured usage
+is charged once to Session totals and the Steward ledger, including stale outcomes; unknown usage
+remains unknown and cannot support completion. Production: `createStewardExecutionRuntime` and
+`settleStewardEvaluation`. Test: `Goal Steward coordinator` in
+[goal-steward.test.ts](../../packages/kernel/tests/unit/goal-steward.test.ts).
+
+The separate semantic Goal formulation run is also hard stop-mode, but its allowance is not the
+persisted Goal pursuit budget. Its omitted token allowance equals the ordinary run budget resolved
+from merged settings or the host fallback, while `goals.agent.formulation.max_net_tokens` may
+override it; the host token ceiling still caps either value. `buildGoalAgentRequest` keeps fixed
+defaults of 120,000 ms, eight entry iterations, 60,000 ms per provider call and one transport retry;
+the ordinary environment/provider ceilings can lower those values again during validation. It has no
+soft escalation, elicitation or spawn budget. Measured semantic usage is committed once to Session
+totals and copied to formulation origin, never to `GoalRecord.consumption`; the later work run starts
+with the full separately resolved Goal allowance. Failed or invalid semantic outcomes retain measured
+usage when the executor supplied it.
+
+Production: `GOAL_FORMULATION_DEFAULTS` and `buildGoalAgentRequest` in
+[request.ts](../../packages/goal/src/agent/request.ts), `goalAgentRuntime` in
+[kernel.ts](../../packages/kernel/src/kernel.ts), `GoalAgentRunFailure` in
+[run.ts](../../packages/goal/src/agent/run.ts), and accounting in
+[service.ts](../../packages/kernel/src/goals/service.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and formulation accounting
+in [goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
 ### 4.4 The output-token reservation (`packages/loop/src/runtime/loop/output-budget.ts`)
 
 `withOutputTokenBudget(llm, budget)` wraps every `.call`:

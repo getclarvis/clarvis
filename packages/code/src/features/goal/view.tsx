@@ -1,8 +1,9 @@
 import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
-import type { GoalControlAction, GoalRecord } from "@clarvis/protocol";
+import type { GoalControlAction, GoalRecord, GoalStewardReview } from "@clarvis/protocol";
 import type { ViewHost } from "../../keys/commands.ts";
 import { tokens } from "../../theme/tokens.ts";
+import { glyph } from "../../theme/glyphs.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
 import { bindLevelKeys, createFieldEditor, ViewFrame } from "../../views/config/view-host.tsx";
 import { registerLevel } from "../../ui/patterns/level-keys.ts";
@@ -10,6 +11,12 @@ import { detachObserved } from "../../core/tasks.ts";
 import type { GoalController } from "./controller.ts";
 import { createGoalDraft, type GoalDraft } from "./draft.ts";
 import { GoalForm } from "./form.tsx";
+import {
+  compactGoalCount,
+  compactSourceDigest,
+  goalStatusPresentation,
+  stewardStatusLabel,
+} from "./presentation.ts";
 
 /** Only the host's acceptance for this criterion and objective revision satisfies human review. */
 function humanAccepted(goal: GoalRecord, criterionId: string): boolean {
@@ -17,6 +24,15 @@ function humanAccepted(goal: GoalRecord, criterionId: string): boolean {
     (acceptance) =>
       acceptance.criterion_id === criterionId &&
       acceptance.objective_revision === goal.objective_revision,
+  );
+}
+
+function visibleCriteria(goal: GoalRecord): GoalRecord["criteria"] {
+  const objective = goal.objective.trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+  return goal.criteria.filter(
+    (criterion) =>
+      criterion.kind !== "qualitative" ||
+      criterion.description.trim().replace(/\s+/gu, " ").toLocaleLowerCase() !== objective,
   );
 }
 
@@ -49,6 +65,9 @@ export function GoalView(
       (goal()?.runs.some((run) => run.phase !== "closed") ?? false)
     );
   };
+  const executionState = (): string | undefined =>
+    goals.view()?.physical_run?.execution_state ??
+    goal()?.runs.findLast((run) => run.phase !== "closed")?.phase;
   const report = (error: unknown): void =>
     deps.notify(error instanceof Error ? error.message : "Goal operation failed.");
   const act = (action: GoalControlAction): void =>
@@ -114,6 +133,11 @@ export function GoalView(
         enabled,
         scroll: () => scroll,
         verbs: [
+          {
+            key: "ctrl+o",
+            label: "close goal",
+            run: () => host.close(),
+          },
           {
             key: "e",
             label: "edit goal",
@@ -189,12 +213,7 @@ export function GoalView(
     <Show
       when={draft()}
       fallback={
-        <ViewFrame
-          host={host}
-          title="Goal"
-          unscoped
-          purpose="One objective for this conversation. The host continues while authorized and within its limits."
-        >
+        <ViewFrame host={host} title="Goal" unscoped>
           <Show when={goals.failure()}>
             <text fg={tokens.warn}>{goals.failure()}</text>
           </Show>
@@ -223,76 +242,110 @@ export function GoalView(
                 minHeight={0}
                 verticalScrollbarOptions={scrollbarOptions()}
               >
-                <text fg={tokens.fg}>{current().objective}</text>
-                <text
-                  fg={tokens.accent}
-                >{`Goal: ${current().status}${current().reason ? ` (${current().reason})` : ""}`}</text>
-                <text
-                  fg={tokens.fg}
-                >{`Physical execution: ${goals.view()?.physical_run?.execution_state ?? current().runs.findLast((run) => run.phase !== "closed")?.phase ?? "none"}${goals.view()?.physical_run?.execution_id ? ` · ${goals.view()!.physical_run!.execution_id}` : ""}`}</text>
-                <Show
-                  when={
-                    goals.view()?.physical_run?.attention !== undefined &&
-                    goals.view()?.physical_run?.attention !== "none"
-                  }
-                >
-                  <text
-                    fg={tokens.warn}
-                  >{`Execution attention: ${goals.view()?.physical_run?.attention}`}</text>
-                </Show>
-                <Show when={goals.view()?.attention}>
-                  <text fg={tokens.warn}>{goals.view()?.attention}</text>
-                </Show>
-                <text
-                  fg={tokens.fg}
-                >{`Net tokens: ${current().consumption.net_tokens} / ${current().limits.max_net_tokens}${current().consumption.usage_unknown ? " · usage incomplete" : ""}${current().consumption.cache_estimated ? " · cache estimated" : ""}`}</text>
-                <text
-                  fg={tokens.muted}
-                >{`Input ${current().consumption.input} · cached ${current().consumption.cached ?? "unknown"} · output ${current().consumption.output} · overrun ${current().consumption.overrun_tokens}`}</text>
-                <text
-                  fg={tokens.fg}
-                >{`Automatic continuations: ${current().auto_continuations} / ${current().limits.max_auto_continuations}`}</text>
-                <text
-                  fg={tokens.fg}
-                >{`Checkpoints without progress: ${current().no_progress_checkpoints} / ${current().limits.max_no_progress_checkpoints}`}</text>
-                <text
-                  fg={tokens.fg}
-                >{`Deadline: ${current().limits.deadline_at === undefined ? "none" : new Date(current().limits.deadline_at!).toISOString()}`}</text>
-                <text fg={tokens.accent} marginTop={1}>
-                  Criteria
-                </text>
-                <Show when={current().criteria.length === 0}>
-                  <text fg={tokens.fg}>{`Model assessment: ${current().objective}`}</text>
-                </Show>
-                <For each={current().criteria}>
-                  {(criterion) => (
+                <box flexDirection="column" maxWidth={100}>
+                  <text fg={tokens.accent2} wrapMode="word">
+                    <b>{current().objective}</b>
+                  </text>
+                  <text marginTop={1} fg={goalStatusPresentation(current().status).color}>
+                    {`${goalStatusPresentation(current().status).label} ${glyph("separator")} ${current().runs.length} stage${current().runs.length === 1 ? "" : "s"} ${glyph("separator")} ${current().origin.kind}`}
+                  </text>
+                  <Show when={current().status !== "complete" && current().reason}>
+                    <text fg={tokens.warn}>{current().reason}</text>
+                  </Show>
+                  <Show when={stewardStatusLabel(current())}>
                     <text
-                      fg={tokens.fg}
-                    >{`${criterion.kind === "qualitative" ? "Model assessment" : criterion.kind === "human" ? `Human approval (${humanAccepted(current(), criterion.id) ? "accepted" : "pending"})` : "Host check"}: ${criterion.description}`}</text>
-                  )}
-                </For>
-                <Show when={current().candidate}>
-                  <text
-                    fg={tokens.muted}
-                  >{`Completion candidate: ${current().candidate!.summary}`}</text>
-                </Show>
-                <Show when={current().runs.at(-1)?.progress}>
-                  <text
-                    fg={tokens.fg}
-                  >{`Progress: ${current().runs.at(-1)!.progress!.summary}`}</text>
-                </Show>
-                <Show when={current().runs.at(-1)?.checkpoint}>
-                  <text
-                    fg={tokens.fg}
-                  >{`Checkpoint: ${current().runs.at(-1)!.checkpoint!.summary}\nNext: ${current().runs.at(-1)!.checkpoint!.next_step}`}</text>
-                </Show>
-                <text
-                  fg={tokens.muted}
-                >{`${current().runs.length} stages · ${goals.view()?.state.archive.length ?? 0} archived goals`}</text>
-                <text fg={tokens.muted}>
-                  A saved checkpoint ends one stage. Goal completion is a separate host decision;
-                  model assessment is not independent verification.
-                </text>
+                      marginTop={1}
+                      fg={tokens.accent}
+                    >{`Steward  ${stewardStatusLabel(current())}`}</text>
+                    <text
+                      fg={tokens.muted}
+                    >{`${current().runs.at(-1)?.steward_review_count ?? 0} reviews ${glyph("separator")} ${current().runs.at(-1)?.steward_intervention_count ?? 0} interventions`}</text>
+                    <Show when={current().runs.at(-1)?.steward_reviews?.at(-1)}>
+                      {(review: Accessor<GoalStewardReview>) => (
+                        <>
+                          <text marginTop={1} fg={tokens.fg} wrapMode="word">
+                            {review().summary}
+                          </text>
+                          <Show when={review().next_step ?? review().guidance}>
+                            <text marginTop={1} fg={tokens.warn} wrapMode="word">
+                              {`Next step: ${review().next_step ?? review().guidance}`}
+                            </text>
+                          </Show>
+                        </>
+                      )}
+                    </Show>
+                  </Show>
+                  <Show when={executionState() !== undefined && executionState() !== "closed"}>
+                    <text fg={tokens.fg}>{`Run ${executionState()}`}</text>
+                  </Show>
+                  <Show
+                    when={
+                      goals.view()?.physical_run?.attention !== undefined &&
+                      goals.view()?.physical_run?.attention !== "none"
+                    }
+                  >
+                    <text
+                      fg={tokens.warn}
+                    >{`Execution attention: ${goals.view()?.physical_run?.attention}`}</text>
+                  </Show>
+                  <Show when={goals.view()?.attention}>
+                    <text fg={tokens.warn}>{goals.view()?.attention}</text>
+                  </Show>
+                  <text marginTop={1} fg={tokens.accent}>
+                    Usage
+                  </text>
+                  <text fg={tokens.muted}>
+                    {`Budget ${compactGoalCount(current().consumption.net_tokens)} / ${compactGoalCount(current().limits.max_net_tokens)} tokens ${glyph("separator")} ${current().auto_continuations} / ${current().limits.max_auto_continuations} continuations`}
+                  </text>
+                  <Show when={visibleCriteria(current()).length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Criteria
+                    </text>
+                    <For each={visibleCriteria(current())}>
+                      {(criterion) => (
+                        <text fg={tokens.fg} wrapMode="word">
+                          {`${criterion.kind === "human" ? (humanAccepted(current(), criterion.id) ? "✓" : "○") : "•"} ${criterion.description}${criterion.kind === "human" ? ` ${glyph("separator")} approval ${humanAccepted(current(), criterion.id) ? "accepted" : "needed"}` : criterion.kind === "host" ? ` ${glyph("separator")} host check` : ""}`}
+                        </text>
+                      )}
+                    </For>
+                  </Show>
+                  <Show when={current().constraints.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Constraints
+                    </text>
+                    <For each={current().constraints}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().exclusions.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Exclusions
+                    </text>
+                    <For each={current().exclusions}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().assumptions.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Assumptions
+                    </text>
+                    <For each={current().assumptions}>
+                      {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
+                    </For>
+                  </Show>
+                  <Show when={current().sources.length > 0}>
+                    <text fg={tokens.accent} marginTop={1}>
+                      Normative sources
+                    </text>
+                    <For each={current().sources}>
+                      {(source) => (
+                        <text fg={tokens.fg} wrapMode="word">
+                          {`${source.path} ${glyph("separator")} ${compactSourceDigest(source.digest)}`}
+                        </text>
+                      )}
+                    </For>
+                  </Show>
+                </box>
               </scrollbox>
             )}
           </Show>

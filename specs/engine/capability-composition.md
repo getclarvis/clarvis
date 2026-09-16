@@ -540,6 +540,28 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
   (`packages/loop/src/runtime/loop/run-agent.ts`) — a gate that declares no `fastAcceptOk` is treated as trivially passable, so
   a capability that never implements it never blocks the fast path.
 
+### 4.5 Host-isolated Goal agents
+
+`@clarvis/goal` may invoke the ordinary `executeRun` contract for its semantic formulation agent,
+and Goal Steward, but the loop remains generic and contains no Goal branch. The Kernel supplies a copied
+`ExecuteRunDeps` whose capability list replaces the ordinary host list with exactly the canonical
+Tools capability. The fixed Goal profile grants only `read_workspace`, so Tools derives its effective
+surface from `readOnlyTools`; the Goal package does not filter a full capability set or duplicate the
+tool allowlist. Missing/disabled Tools leaves the run with no tool substitute.
+
+The run request has an empty MCP server list, no spawn authority, fixed entry/profile/output schema,
+finite stop-mode budget and the host-owned call purpose `goal`. `executeRun` forwards that purpose to
+the existing provider-call port without inspecting it or changing capability activation. No Goal
+state, prompt, provider selection, source digest or host path enters the generic engine contract.
+
+Production: `createKernelGoalAgentRuntime` in
+[agent-runtime.ts](../../packages/kernel/src/goals/agent-runtime.ts), `buildGoalAgentRequest` in
+[request.ts](../../packages/goal/src/agent/request.ts), and `executeRun` in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: [agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts) and the effective tool
+catalog assertion in
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts).
+
 ## 5. Invariants
 
 **INV-068.** `BUILTIN_CAPABILITY_NAMES` (`packages/loop/src/runtime/orchestrator.ts`) is a

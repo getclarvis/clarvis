@@ -1,4 +1,5 @@
 import { describe, it, expect } from "bun:test";
+import { createHash } from "node:crypto";
 import { mapTrace, mapEntry, RESULT_MAX } from "@clarvis/trace";
 import { DELEGATE_TASK_MAX_CHARS, type TraceEntry, type TraceEvent } from "@clarvis/capability";
 import { capDetail, ARGS_MAX } from "../../src/cap-detail.ts";
@@ -101,6 +102,9 @@ describe("trace-mapper — tool projection", () => {
     ];
     const ev = byType(mapTrace(entries, ANCHOR).events, "tool_call")[0]!;
     expect(ev.diff).toBe("@@ -1 +1 @@\n-old\n+new\n");
+    expect(ev.result_digest).toBe(
+      createHash("sha256").update("Replaced 1 occurrence in a.ts.").digest("hex"),
+    );
     expect(ev.guard).toEqual({ mode: "auto", outcome: "allowed", answerer: "judge" });
   });
 });

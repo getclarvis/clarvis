@@ -52,30 +52,78 @@ export function canonicalJudgeJson(value: JudgeJson): string {
   return JSON.stringify(visit(value));
 }
 
-/** Construct the two independent user blocks; their exact framing is owned by this executor. */
+interface JudgePromptShape {
+  authority?: JudgeJson;
+  descriptors?: JudgeJson;
+  guidance?: JudgeJson;
+  operator_evidence?: JudgeJson;
+  review_context?: JudgeJson;
+}
+
+function promptShape(snapshot: JudgeJson): JudgePromptShape {
+  if (snapshot === null || Array.isArray(snapshot) || typeof snapshot !== "object")
+    throw new Error("Invalid private Judge snapshot.");
+  return snapshot;
+}
+
+function framed(tag: string, value: JudgeJson): string {
+  return `<${tag}>\n${canonicalJudgeJson(value)}\n</${tag}>`;
+}
+
+/**
+ * Construct a fixed semantic head, append-only evidence region and volatile review tail.
+ *
+ * Goal and Plan retain dedicated positions even while absent. Each authenticated operator entry is
+ * its own message, so later input extends the reusable prefix instead of rewriting an evidence blob.
+ */
 export function judgePrompt(snapshot: JudgeJson, currentCase: JudgeJson) {
+  const shape = promptShape(snapshot);
+  const contexts = Array.isArray(shape.review_context) ? shape.review_context : [];
+  const context = (kind: "goal" | "plan"): JudgeJson =>
+    contexts.find(
+      (entry) =>
+        entry !== null && !Array.isArray(entry) && typeof entry === "object" && entry.kind === kind,
+    ) ?? null;
+  const evidence = Array.isArray(shape.operator_evidence) ? shape.operator_evidence : [];
+  const stable = [
+    framed(
+      "judge_configuration_v1",
+      JSON.parse(
+        JSON.stringify({ guidance: shape.guidance, descriptors: shape.descriptors }),
+      ) as JudgeJson,
+    ),
+    framed("judge_goal_v1", context("goal")),
+    framed("judge_plan_v1", context("plan")),
+    ...evidence.map((entry) => framed("judge_operator_evidence_v1", entry)),
+  ];
+  const tail = [
+    framed("judge_authority_v1", shape.authority ?? null),
+    framed("judge_case_v1", currentCase),
+  ];
   return {
-    seed: `<judge_snapshot_v1>\n${canonicalJudgeJson(snapshot)}\n</judge_snapshot_v1>`,
-    current: `<judge_case_v1>\n${canonicalJudgeJson(currentCase)}\n</judge_case_v1>`,
+    messages: [...stable, ...tail],
+    stableCount: stable.length,
   };
 }
 
-/** Validate exact immutable head and add its breakpoint without rewriting engine-owned metadata. */
+/** Validate the exact immutable sequence and mark the last stable message as cacheable. */
 export function judgeCacheBreakpoints(
   params: LLMCallParams,
-  seed: string,
-  current: string,
+  prompt: ReturnType<typeof judgePrompt>,
 ): readonly number[] {
   const messages = params.messages;
   if (
     messages[0]?.role !== "system" ||
     messages[0].content !== JUDGE_POLICY ||
-    messages[1]?.role !== "user" ||
-    messages[1].content !== seed ||
-    messages[2]?.role !== "user" ||
-    messages[2].content !== current ||
+    messages.length < prompt.messages.length + 1 ||
+    prompt.messages.some(
+      (content, index) =>
+        messages[index + 1]?.role !== "user" || messages[index + 1]?.content !== content,
+    ) ||
     messages.slice(1).some((message) => message.role === "system")
   )
     throw new Error("Invalid private Judge prompt framing.");
-  return [...new Set([...(params.cacheBreakpoints ?? []), 1])].sort((left, right) => left - right);
+  return [...new Set([...(params.cacheBreakpoints ?? []), prompt.stableCount])].sort(
+    (left, right) => left - right,
+  );
 }

@@ -57,9 +57,13 @@ The package depends on Loop for this execution boundary; the native host uses it
 
 Internal `executeJudge` creates a fresh noncontinuable run from a host service allowlist. It supplies
 only the private capability, omits the environment preamble and preserves the parent-resolved TTL,
-session and effective base provider. System policy is fixed; canonical snapshot and volatile case
-are separate user messages. The provider adapter validates this framing and adds the snapshot cache
-breakpoint without rewriting the engine's messages or identity.
+session and effective base provider. System policy is fixed. Configuration and dedicated Goal/Plan
+slots form a fixed semantic head; each authenticated operator input occupies its own chronological
+user message; the current authority fence and case form the volatile tail. Absent Goal/Plan slots
+remain explicit so later availability changes bytes without shifting positions. The provider adapter
+validates this framing and marks the end of the evidence prefix without rewriting engine messages or
+identity. Operational Goal state and Plan CAS/task-status headers remain owned by the work run and do
+not enter the reviewer.
 
 Command output is capped at 1024 tokens per attempt; effects at 2048. The independent output budget
 covers exactly one or two stages and configured retries. Each stage has its own deadline; the run

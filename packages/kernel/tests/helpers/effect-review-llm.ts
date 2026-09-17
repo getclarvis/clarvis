@@ -20,14 +20,23 @@ interface Case {
 
 /** Decode actual private framing and the authoritative compile tool result in integration fixtures. */
 export function effectReviewInput(params: LLMCallParams) {
+  const texts = params.messages.map((message) => contentToText(message.content));
+  const decode = (name: string, text: string) =>
+    JSON.parse(text.slice(name.length + 3, text.lastIndexOf(`\n</${name}>`))) as unknown;
   const frame = (name: string) => {
-    const text = params.messages
-      .map((message) => contentToText(message.content))
-      .find((value) => value.startsWith(`<${name}>\n`));
+    const text = texts.find((value) => value.startsWith(`<${name}>\n`));
     if (text === undefined) throw new Error(`Missing ${name}`);
-    return JSON.parse(text.slice(name.length + 3, text.lastIndexOf(`\n</${name}>`))) as unknown;
+    return decode(name, text);
   };
-  const snapshot = frame("judge_snapshot_v1") as Snapshot;
+  const snapshot: Snapshot = {
+    authority: frame("judge_authority_v1") as Snapshot["authority"],
+    operator_evidence: texts
+      .filter((value) => value.startsWith("<judge_operator_evidence_v1>\n"))
+      .map(
+        (value) =>
+          decode("judge_operator_evidence_v1", value) as Snapshot["operator_evidence"][number],
+      ),
+  };
   const packet = frame("judge_case_v1") as {
     facts: Case;
     host_transition?: CompiledAuthorityTransition;

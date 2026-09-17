@@ -19,6 +19,7 @@ export type JudgeElicit = (req: ElicitRequest) => Promise<JudgeElicitAnswer>;
 import {
   reviewerContextIsCurrent,
   reviewerContextSnapshot,
+  reviewerAuthoritySnapshot,
   type ReviewerContextSource,
 } from "./review-context.ts";
 
@@ -53,7 +54,7 @@ export function createCommandReview(
     const currentCase = JSON.parse(callFacts(req, undefined)) as JudgeJson;
     const snapshot = JSON.parse(
       JSON.stringify({
-        authority: state,
+        authority: reviewerAuthoritySnapshot(state),
         operator_evidence: state?.evidence ?? [],
         review_context: context.payload,
         review_context_revision: context.live_revision,

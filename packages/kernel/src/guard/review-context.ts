@@ -1,4 +1,5 @@
 import type { OperatorReviewContext, OperatorReviewContextProvider } from "@clarvis/capability";
+import type { OperatorAuthorityState } from "@clarvis/capability";
 
 /** Resolve optional Plans only when reviewing; activation order must not freeze its absence. */
 export type ReviewerContextSource =
@@ -16,6 +17,18 @@ export type ReviewerContextPayload = Array<{
 export interface ReviewerContextSnapshot {
   live_revision?: string;
   payload?: ReviewerContextPayload;
+}
+
+/** Remove fields published in dedicated prompt regions from the volatile authority fence. */
+export function reviewerAuthoritySnapshot(state: OperatorAuthorityState | undefined) {
+  if (state === undefined) return undefined;
+  const {
+    binding: _binding,
+    evidence: _evidence,
+    review_context: _reviewContext,
+    ...authority
+  } = state;
+  return authority;
 }
 
 /** Decode host-shaped semantic definitions into one ordered model payload. */

@@ -98,8 +98,12 @@ prove serialization, not remote cache hits or automatic host continuation.
 
 Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
-in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, canonical host snapshot and separate volatile
-case; its snapshot breakpoint and full-key invalidation are specified by [Judge](../capabilities/judge.md).
+in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
+and Plan slots, chronological per-entry operator evidence and a volatile authority/case tail. Empty
+semantic slots preserve their positions; new operator input extends the prefix; a changed Plan
+invalidates from its existing slot. The reviewer excludes the work run's operational Goal reminder,
+Plan CAS header and transcript, and does not duplicate evidence or semantic context inside its
+authority tail. Its breakpoint and full-key invalidation are specified by [Judge](../capabilities/judge.md).
 The effect reviewer uses the same framing and authoritative compile transition. Plan
 lifecycle/progress fields never enter either review context. Production: `goalAgentPrompt`,
 `planReviewContext`, `createCommandReview` and `judgeCacheBreakpoints`. Test:

@@ -153,11 +153,18 @@ private profile, no MCP servers or grants, no continuation, no compaction and on
 capability. Elicitation, steering, tool interruption, host metadata and authority substrate are not
 copied. The factory supplies empty connection machinery and the projected internal trace store.
 
-The sole system block is fixed versioned policy. A canonical object-key ordering creates the stable
-user snapshot; the following user block contains the volatile case. Arrays retain their semantic
-order. Non-JSON/cyclic input is rejected. The private provider adapter validates the exact head and
-preserves engine breakpoints while adding the end of the stable snapshot. Compile's tool result
-supersedes authority without rewriting that prefix. Independent cases share no transcript.
+The sole system block is fixed versioned policy. Canonical object-key ordering applies within every
+user block and arrays retain their semantic order. The user sequence is fixed configuration,
+dedicated Goal slot, dedicated Plan slot, one chronological block per authenticated operator
+evidence entry, current authority fence, then the volatile case. Goal and Plan slots contain only
+their bounded host-attested semantic projections; the work run's operational Goal reminder and Plan
+CAS/task-status header are excluded. Empty slots serialize as `null`, so their positions never move.
+New operator input extends the stable evidence prefix instead of rewriting preceding entries. The
+authority fence excludes evidence and review context because those already occupy dedicated blocks.
+Non-JSON/cyclic input is rejected. The private provider adapter validates the exact sequence and
+preserves engine breakpoints while adding the end of the stable evidence prefix. Compile's tool
+result supersedes authority in the private transcript without rewriting that prefix. Independent
+cases share no transcript.
 
 Per-attempt output caps are 1024 for command and 2048 for effects. The aggregate output budget is
 cap times configured attempts times the closed stage count. Its reservations cap each retry group

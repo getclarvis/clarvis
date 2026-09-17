@@ -25,6 +25,7 @@ import {
 } from "./authority-review-transaction.ts";
 import { consumeAuthorityEffects, denyAuthorityEffect } from "./operator-authority.ts";
 import {
+  reviewerAuthoritySnapshot,
   reviewerContextIsCurrent,
   reviewerContextSnapshot,
   type ReviewerContextSource,
@@ -203,7 +204,7 @@ export function createHostEffectReview(deps: {
           snapshot: () =>
             JSON.parse(
               JSON.stringify({
-                authority: authority.snapshot(),
+                authority: reviewerAuthoritySnapshot(authority.snapshot()),
                 operator_evidence: state.evidence,
                 review_context: context.payload,
                 review_context_revision: context.live_revision,

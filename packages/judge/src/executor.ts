@@ -123,7 +123,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
       calledStages.add(stage);
       let cacheBreakpoints: readonly number[];
       try {
-        cacheBreakpoints = judgeCacheBreakpoints(params, prompt.seed, prompt.current);
+        cacheBreakpoints = judgeCacheBreakpoints(params, prompt);
       } catch (error) {
         framingFailure = { error };
         throw error;
@@ -200,10 +200,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
     servers: [],
     providers: input.providers,
     guard_escalation: false,
-    messages: [
-      { role: "user", content: prompt.seed },
-      { role: "user", content: prompt.current },
-    ],
+    messages: prompt.messages.map((content) => ({ role: "user" as const, content })),
     profiles: [
       {
         name: "judge",

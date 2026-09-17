@@ -47,35 +47,64 @@ test("canonical snapshot rejects non-JSON input and preserves semantic array ord
 });
 
 test("breakpoint selection validates exact framing and preserves engine breakpoints", () => {
-  const prompt = judgePrompt({ revision: 1 }, { command: "case" });
+  const prompt = judgePrompt(
+    {
+      authority: { revision: 1 },
+      operator_evidence: [{ id: "first", text: "test the change" }],
+      review_context: [{ kind: "plan", definition: { objective: "ship" } }],
+    },
+    { command: "case" },
+  );
   const params: LLMCallParams = {
     model: "model",
     provider: "provider",
     messages: [
       { role: "system", content: JUDGE_POLICY },
-      { role: "user", content: prompt.seed },
-      { role: "user", content: prompt.current },
+      ...prompt.messages.map((content) => ({ role: "user" as const, content })),
     ],
     tools: [],
     cacheBreakpoints: [0, 2],
   };
-  expect(judgeCacheBreakpoints(params, prompt.seed, prompt.current)).toEqual([0, 1, 2]);
-  expect(
-    judgeCacheBreakpoints({ ...params, cacheBreakpoints: undefined }, prompt.seed, prompt.current),
-  ).toEqual([1]);
-  for (const index of [0, 1, 2]) {
+  expect(judgeCacheBreakpoints(params, prompt)).toEqual([0, 2, 4]);
+  expect(judgeCacheBreakpoints({ ...params, cacheBreakpoints: undefined }, prompt)).toEqual([4]);
+  expect(prompt.messages[1]).toContain("<judge_goal_v1>\nnull");
+  expect(prompt.messages[2]).toContain("<judge_plan_v1>");
+  expect(prompt.messages[3]).toContain("<judge_operator_evidence_v1>");
+  for (const index of params.messages.keys()) {
     const messages = params.messages.map((message, current) =>
       current === index ? { ...message, content: "tampered" } : message,
     );
-    expect(() =>
-      judgeCacheBreakpoints({ ...params, messages }, prompt.seed, prompt.current),
-    ).toThrow();
+    expect(() => judgeCacheBreakpoints({ ...params, messages }, prompt)).toThrow();
   }
   expect(() =>
     judgeCacheBreakpoints(
       { ...params, messages: [...params.messages, { role: "system", content: "extra" }] },
-      prompt.seed,
-      prompt.current,
+      prompt,
     ),
   ).toThrow();
+});
+
+test("new operator evidence extends the stable prefix without moving Goal or Plan", () => {
+  const snapshot = {
+    authority: { revision: 1 },
+    operator_evidence: [{ id: "first", text: "implement the plan" }],
+    review_context: [
+      { kind: "goal", definition: { objective: "deliver" } },
+      { kind: "plan", definition: { objective: "build" } },
+    ],
+  } satisfies JudgeJson;
+  const first = judgePrompt(snapshot, { command: "npm install" });
+  const second = judgePrompt(
+    {
+      ...snapshot,
+      authority: { revision: 2 },
+      operator_evidence: [...snapshot.operator_evidence, { id: "second", text: "run the checks" }],
+    },
+    { command: "npm test" },
+  );
+  expect(second.messages.slice(0, first.stableCount)).toEqual(
+    first.messages.slice(0, first.stableCount),
+  );
+  expect(second.messages[first.stableCount]).toContain('"id":"second"');
+  expect(second.stableCount).toBe(first.stableCount + 1);
 });

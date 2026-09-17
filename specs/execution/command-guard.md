@@ -237,7 +237,11 @@ host-attested definitions as the operator's semantic objective and intended impl
 they may establish a necessary routine bounded prerequisite such as installing declared project
 dependencies. They cannot authorize human-only effects, publication, deployment, destructive
 actions, credential access or external contact from that context, nor override constraints or
-exclusions. Its
+exclusions. The Judge serializes the bounded Goal and Plan projections in dedicated fixed-position
+slots, then one message per chronological operator-evidence entry. It does not receive the work
+run's Goal operational reminder, Plan CAS/task-status header or transcript. The volatile authority
+block omits evidence and review context already sent in those slots, preventing duplicate prompt
+input. Its
 verdict applies to that exact call and cannot register an effect, install an authority grant or add
 session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
 parameter list, environment bindings split at their first `=`, and structured analysis issues. This

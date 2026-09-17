@@ -48,7 +48,7 @@ test("concurrent command and effect executions retain independent observation cu
           providers: [{ name: "anthropic", kind: "anthropic" }],
           timeoutMs: 20000,
           maxRetries: 0,
-          snapshot: { revision: 1 },
+          snapshot: { authority: { revision: 1 } },
           currentCase: { kind },
           observation: {
             path: kind === "command" ? "call_local" : "effect_review",
@@ -127,7 +127,7 @@ test.each(["command", "compile"] as const)(
                   return transition;
                 },
               },
-        snapshot: { revision: 0, guidance: "bounded" },
+        snapshot: { authority: { revision: 0 }, guidance: "bounded" },
         currentCase: { command: "private command" },
         createServices(input) {
           expect(input.executionBaseLlm).toBe(base);
@@ -205,12 +205,12 @@ test.each(["command", "compile"] as const)(
         expect(call.messages[0]).toEqual({ role: "system", content: JUDGE_POLICY });
         expect(call.messages[1]?.role).toBe("user");
         expect(call.messages[2]?.role).toBe("user");
-        expect(call.cacheBreakpoints).toContain(1);
+        expect(call.cacheBreakpoints).toContain(3);
         expect(JSON.stringify(call.messages)).not.toContain(root);
         expect(call.tools?.map((entry) => entry.wireName)).toEqual(["judge_step"]);
       }
       if (calls.length === 2)
-        expect(calls[1]!.messages.slice(0, 3)).toEqual(calls[0]!.messages.slice(0, 3));
+        expect(calls[1]!.messages.slice(0, 6)).toEqual(calls[0]!.messages.slice(0, 6));
     } finally {
       await infrastructure.connections.closeAll();
       rmSync(root, { recursive: true, force: true });
@@ -253,8 +253,8 @@ test.each(["command", "effects"] as const)(
                 },
           snapshot:
             index === 0
-              ? { revision: 1, guidance: "stable" }
-              : { guidance: "stable", revision: index === 1 ? 1 : 2 },
+              ? { authority: { revision: 1 }, guidance: "stable" }
+              : { guidance: "stable", authority: { revision: index === 1 ? 1 : 2 } },
           currentCase: { command: `case-${index}` },
           createServices: () => ({
             ...infrastructure,
@@ -267,15 +267,15 @@ test.each(["command", "effects"] as const)(
             },
           }),
         });
-      expect(calls[0]!.messages.slice(0, 2)).toEqual(calls[1]!.messages.slice(0, 2));
-      expect(calls[1]!.messages[1]).not.toEqual(calls[2]!.messages[1]);
+      expect(calls[0]!.messages.slice(0, 4)).toEqual(calls[1]!.messages.slice(0, 4));
+      expect(calls[1]!.messages[4]).not.toEqual(calls[2]!.messages[4]);
       for (const [index, call] of calls.entries()) {
-        expect(call.messages).toHaveLength(3);
+        expect(call.messages).toHaveLength(6);
         expect(call.promptCacheTtl).toBe("5m");
-        expect(JSON.stringify(call.messages[2])).toContain(`case-${index}`);
+        expect(JSON.stringify(call.messages[5])).toContain(`case-${index}`);
         if (kind === "effects") {
-          expect(JSON.stringify(call.messages[2])).toContain(`case-token-${index}`);
-          expect(JSON.stringify(call.messages.slice(0, 2))).not.toContain("case-token-");
+          expect(JSON.stringify(call.messages[5])).toContain(`case-token-${index}`);
+          expect(JSON.stringify(call.messages.slice(0, 5))).not.toContain("case-token-");
         }
       }
     } finally {

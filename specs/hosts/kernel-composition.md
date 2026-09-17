@@ -14,6 +14,17 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
+Native FileKernel composes one host-bound Judge capability and projected private trace store.
+Its eligibility covers automatic command/configuration review; Memory indexing removes it, and the
+Container graph does not invoke this factory. Work-run providers and parent observation remain host
+bindings. The [Judge contract](../capabilities/judge.md#native-host-composition) owns this boundary
+and the current consumer-cutover limit.
+Production: `createHostJudge` in [judge-host.ts](../../packages/kernel/src/guard/judge-host.ts),
+`createFileKernel` and `composeIndexPassDeps`.
+Test: [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) and
+[index-pass-deps.test.ts](../../packages/kernel/tests/unit/index-pass-deps.test.ts).
+
+
 The in-process facade exposes an unavailable `GoalService`; authenticated conversation hosting
 supplies the live service per connection. `InProcessKernel.prepareRun` accepts a host-only goal
 policy, and `readRunTrace` resolves canonical evidence under the requested resident owner scope.
@@ -346,3 +357,17 @@ types. Code and Server consume the kernel entrypoints; neither imports the loop.
 `@clarvis/worktrees` dependency. The loop constructs `@clarvis/mcp-client`'s authorization
 coordinator from the host options; Code supplies the operating-system browser opener, while Server and
 other headless hosts can omit it without changing the wire contract.
+
+## Public execution trace view
+
+`createInProcessKernel` composes one idempotent public trace view into the dependencies shared by
+ordinary execution and `RunService`. Internal executions cannot be listed, retrieved, continued,
+compacted, inspected for context or deleted by id through those services. `buildExecuteRunDeps`
+already supplies that public view for native construction; `built.resolved.store` remains physical
+for crash recovery, owner-wide maintenance and retention. The model request cannot override this
+classification. Details and shared ID reservation semantics belong to [trace](../foundations/trace.md).
+Production: `createInProcessKernel` composition in [kernel.ts](../../packages/kernel/src/kernel.ts),
+`createNativeKernel` in [native-kernel.ts](../../packages/kernel/src/native-kernel.ts), and
+`buildExecuteRunDeps` in [build-run-deps.ts](../../packages/loop/src/runtime/build-run-deps.ts).
+Test: `keeps internal executions outside every public run surface` in
+[owner-isolation.test.ts](../../packages/kernel/tests/integration/owner-isolation.test.ts).

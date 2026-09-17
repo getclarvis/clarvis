@@ -176,6 +176,7 @@ async function fixture(
               });
             },
             deps: {
+              executionVisibility: "public",
               env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
               workspaceRoot: root,
               connections,

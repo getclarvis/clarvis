@@ -1,3 +1,4 @@
+import { createHostJudge } from "./guard/judge-host.ts";
 import { createNativeKernel } from "./native-kernel.ts";
 import { createAuthoringMutationReview } from "./configuration/authoring-mutations.ts";
 import type { RunServiceConfig } from "./runs/run-service.ts";
@@ -807,6 +808,13 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         : {}),
     },
     compose(built) {
+      const judgeHost = createHostJudge({
+        deps: built.deps,
+        physicalStore: built.resolved.store,
+        loadSettings: loadGuardSettings,
+        audit: auditLogger,
+        toolsEnabled: opts.builtins?.tools !== false,
+      });
       const memoryPluginPort: MemoryPluginPort = {
         locate: (plugin) =>
           pluginContributions.locateCapabilityExecutable(
@@ -862,6 +870,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           operatorAuthority: createOperatorAuthorityRuntime,
           hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
           capabilities: [
+            judgeHost.capability,
             ...(base.capabilities ?? []).filter(
               (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
             ),
@@ -953,7 +962,11 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
               try {
                 await capabilityExecutables.close();
               } finally {
-                await subscriptionManager?.close();
+                try {
+                  await subscriptionManager?.close();
+                } finally {
+                  await judgeHost.close();
+                }
               }
             },
           };

@@ -6,7 +6,7 @@ export const DEFAULT_GUARD_JUDGE_PROMPT = "";
 
 /** Additional reviewer guidance and its source, never a replacement system policy. */
 export interface GuardJudgePrompt {
-  prompt: string;
+  guidance: string;
   source: "workspace" | "global" | "global+workspace" | "builtin";
 }
 
@@ -53,10 +53,10 @@ export function loadGuardJudgePrompt(dirs: ClarvisDirs): GuardJudgePrompt {
   if (global !== undefined && workspace !== undefined) {
     const combined = `Operator-global guidance:\n${global}\n\nWorkspace guidance:\n${workspace}`;
     if (Buffer.byteLength(combined) <= MAX_GUARD_JUDGE_PROMPT_BYTES)
-      return { prompt: combined, source: "global+workspace" };
-    return { prompt: global, source: "global" };
+      return { guidance: combined, source: "global+workspace" };
+    return { guidance: global, source: "global" };
   }
-  if (workspace !== undefined) return { prompt: workspace, source: "workspace" };
-  if (global !== undefined) return { prompt: global, source: "global" };
-  return { prompt: DEFAULT_GUARD_JUDGE_PROMPT, source: "builtin" };
+  if (workspace !== undefined) return { guidance: workspace, source: "workspace" };
+  if (global !== undefined) return { guidance: global, source: "global" };
+  return { guidance: DEFAULT_GUARD_JUDGE_PROMPT, source: "builtin" };
 }

@@ -1,3 +1,4 @@
+import { kernelCapabilityRegistry } from "../../src/config/capability-registry.ts";
 import { expect, test } from "bun:test";
 import { loadEnv, type ModelExecutionInfo, type ModelExecutionResolver } from "@clarvis/capability";
 import { validateBody } from "@clarvis/loop/testing";
@@ -49,7 +50,7 @@ test("catalog assembler validates the delegated closure and reviewer without nat
     guard_mode: "auto",
     guard_judge: { model: "alias/org/model:tag" },
   });
-  const { request } = validateBody(body, loadEnv({}), undefined, {
+  const { request } = validateBody(body, loadEnv({}), kernelCapabilityRegistry, {
     modelExecutionResolver: resolver,
   });
   expect(request.providers).toEqual([]);

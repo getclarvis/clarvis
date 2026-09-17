@@ -47,8 +47,6 @@ export type GuardMode = "off" | "on" | "auto";
 
 /** Caller-owned judge configuration for guard confirmations. */
 export interface GuardJudge {
-  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
-  prompt?: string;
   /** Data below the host's immutable safety policy. */
   guidance?: string;
   /** Model id the judge runs on; omitted defers to the kernel's default. */

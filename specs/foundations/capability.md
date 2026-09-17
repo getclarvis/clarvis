@@ -70,6 +70,7 @@ to [trace-recording-and-persistence](trace.md) and [observability-and-diagnostic
 | --- | --- | --- |
 | `name` | `string` | `packages/capability/src/contract.ts` |
 | `required?` | `boolean` | host-required activation, declared seed and entry attachment; propagated to `RunCapability` |
+| `requiredFor?(view)` | `boolean` | pure synchronous conditional requirement, resolved once before concurrent activation |
 | `persistedTraceProjectors?` | `readonly PersistedTraceProjector[]` | static, collected before activation (`packages/capability/src/contract.ts`) |
 | `grants?` | `readonly CapabilityGrantDeclaration[]` | added to the request vocabulary before validation (`packages/capability/src/contract.ts`) |
 | `seedMarker?` | `string` | collected from every **registered** capability, active or not (`packages/capability/src/contract.ts`) |
@@ -93,6 +94,8 @@ actually stores (§4.3).
 | `env` | `EnvConfig` | `packages/capability/src/contract.ts` |
 | `workspaceRoot` | `string` | `packages/capability/src/contract.ts` |
 | `llm` | `LLMProvider` | `packages/capability/src/contract.ts` |
+| `executionBaseLlm` | `LLMProvider` | effective host provider before current execution identity/cache decoration |
+| `resolvedPromptCacheTtl` | `"5m" \| "1h"` | effective lifetime resolved before activation |
 | `elicit?` | `Elicit` | the host's raw elicit channel, when the MCP client supports elicitation |
 | `logger?` | `Logger` | `packages/capability/src/contract.ts` |
 | `emit` | `CapabilityEventListener` | emit a host-visible event; listener throws are swallowed by the engine |
@@ -174,8 +177,9 @@ a host:
 | `merge` | `"lastWins" \| (scopes) => unknown` | how stacked settings scopes combine |
 | `pluginContributable` | `boolean` | whether an enabled plugin's manifest may contribute the block |
 | `pluginDescription?` | `string` | manifest describe text |
-| `pluginForbiddenReason?` | `string` | explanatory rejection declared as a `z.undefined` field when not contributable |
+| `pluginForbiddenReason?` | `string` | explicit rejection enforced by the manifest parser with the host registry |
 | `requestParams?` | `z.ZodRawShape` | per-run request parameters |
+| `referencedModels?(view)` | `readonly string[]` | pure references used by generic provider/catalog validation after structural parsing |
 
 `SettingsValueScope` carries `origin: "plugin" \| "operator"` and the value
 (`packages/capability/src/settings-spec.ts`).
@@ -274,7 +278,6 @@ three per-agent override blocks. `AgentProfile` is the full agent definition: `n
 | `guard_escalation?` | `boolean` | whether a hard convergence-guard trip asks the user; off by default, deliberately not inferred from elicit-channel presence — a headless caller's auto-declining channel would otherwise add a prompt round-trip to every trip with no change in outcome |
 | `agents?` | `AgentsParam` | see below |
 | `guard_mode?` | `GuardMode` (`off \| on \| auto`) | — |
-| `guard_judge?` | `GuardJudgeConfig` | judge `prompt`, optional `model`/`on_unsure`/`timeout_ms` |
 | `hook_user_prompt_expansion?` | `{ command_name: string }` | host-derived context for the one user-invoked skill expansion that seeded the run; ordinary prompts and model-initiated skill loads omit it |
 
 `PromptCacheTtl`'s doc-comment states Anthropic bills a `5m` write at 1.25x base input and a `1h` write
@@ -766,7 +769,8 @@ Test: `awaits iteration preparation and stops the sweep on a terminal result or 
 
 ### 4.2 Per-scope activation
 
-A host registration marked `required: true` must activate before inference. If it declares a seed,
+A host registration marked `required: true` or whose pure `requiredFor(view)` predicate returns true
+must activate before inference. All predicates resolve once before any activation. If it declares a seed,
 that seed must be available and non-empty; its entry-agent attachment must also be non-null. The
 derived `RunCapability.required` preserves this rule through extension admission and entry
 composition. Refusal or setup timeout cannot silently omit mandatory controls. `CapabilityUnavailableError`
@@ -1360,3 +1364,22 @@ Test: [steer-queue.test.ts](../../packages/kernel/tests/unit/steer-queue.test.ts
 steer case in [direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts).
 
 `OperatorAuthorityState.denied_effects` stores bounded exact refusal identities, never evidence or grants. It is a detached reader projection of kernel-owned state; it is not accepted in an authority seed. Production: `OperatorAuthorityState` in [operator-authority.ts](../../packages/capability/src/operator-authority.ts) and `createOperatorAuthorityRuntime` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts). Test: bounded, revision-fenced refusal storage and forged seed rejection in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
+
+### Execution disclosure vocabulary
+
+`ExecutionVisibility` is the neutral `public | internal` discriminator required by `ExecutionRecord`.
+The host chooses it; agent identity and request content cannot imply a class. Storage, summaries,
+journal versioning and recovery validation are owned by [trace](trace.md).
+Production: `ExecutionVisibility` and `ExecutionRecord` in
+[trace-events.ts](../../packages/capability/src/trace-events.ts).
+Test: both classes and invalid writes in
+[trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts).
+
+
+`OperatorAuthorityState.envelope_context_revision` is a host-owned bounded compilation binding,
+separate from evidence and model candidate fields. Its persistence, replacement and revocation
+contract belongs to [effect review](../execution/effect-review.md).
+Production: `OperatorAuthorityState` in
+[operator-authority.ts](../../packages/capability/src/operator-authority.ts).
+Test: the compile-context continuation/replacement case in
+[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).

@@ -17,17 +17,9 @@ import { settingsSchema, type SettingsFile } from "./settings-schema.ts";
  *   `mergeSettings` still merged it with the engine's strategy. The registry
  *   itself only rejects a duplicate *within* the registry, so this is the only
  *   place the collision can be seen.
- * @throws {@link Error} when a registered spec declares any plugin-manifest
- *   surface — `pluginContributable`, `pluginDescription` or
- *   `pluginForbiddenReason`. The manifest schema and the fragment a manifest
- *   contributes are both built from the engine's *built-in* specs alone
- *   (`capabilityPluginFields`, `pluginSettingsFragment`), so a registered spec's
- *   plugin declaration reaches nothing: `true` would not admit the key into a
- *   manifest, and a `pluginForbiddenReason` would never be the message a
- *   manifest is rejected with. A field that is read by no one is worse than one
- *   that does not exist, because the capability author believes they asked for
- *   something — so this is refused at registration-time rather than discovered
- *   when a plugin's block is silently dropped.
+ * @throws {@link Error} when a registered spec declares plugin contributions or
+ * description metadata, which the generic manifest does not compose. Explicit
+ * prohibitions are supported when the host supplies its registry to the parser.
  * @remarks The built-in blocks stay spread **statically** into
  *   {@link settingsSchema}, which is what keeps zod's inference exact and the
  *   `ParsedRunRequest`/`RunRequest` drift locks meaningful. Only the registered
@@ -49,16 +41,12 @@ export function settingsSchemaFor(registry?: CapabilityRegistry): z.ZodType<Sett
           "a registered capability must declare a key the engine does not already own.",
       );
     }
-    if (
-      spec.pluginContributable ||
-      spec.pluginDescription !== undefined ||
-      spec.pluginForbiddenReason !== undefined
-    ) {
+    if (spec.pluginContributable || spec.pluginDescription !== undefined) {
       throw new Error(
         `capability settings key '${spec.key}' declares a plugin-manifest surface, which only a ` +
           "built-in settings spec has; the plugin manifest schema is composed statically from " +
           "the engine's own blocks, so a registered spec's plugin fields are read by nobody. " +
-          "Declare 'pluginContributable: false' with no plugin description or forbidden reason.",
+          "Declare 'pluginContributable: false' with no plugin description.",
       );
     }
   }

@@ -108,9 +108,9 @@ with these top-level fields: `execution_id?`, `continue_from?`, `session_id?`, `
 `prompt_cache_ttl?`, `messages`, `servers`, `profiles`, `entry`, `providers`, `vision_model?`,
 `budget`, `elicit_wait_ms?`, `guard_escalation?`, `output_schema?`, plus
 `...capabilityRequestParamFields` (`packages/loop/src/validation/request/request-schema.ts`) — a
-static spread of every **built-in** capability's own request params (e.g. `guard_judge`, from the
-agent-tools capability's settings spec, `packages/loop/src/runtime/capabilities/tools-settings.ts`,
-confirmed reached at `packages/loop/src/validation/request/provider-rules.ts`).
+static spread of every **built-in** capability's own request params (for example `guard_mode`
+from tools). Product parameters are supplied by the host's `CapabilityRegistry` and read through
+`CapabilityRequestView.requestParam`; their owners remain outside the engine.
 
 The hooks capability contributes `hook_user_prompt_expansion?: { command_name: string }`. It is a
 reserved host context field used by the kernel when a user explicitly invokes a skill command;
@@ -426,6 +426,14 @@ runtime (`canSpawnChildren`/`shape.isLead`), which is [grants-and-tool-exposure]
 
 ### 4.5 Provider rules (`provider-rules.ts`)
 
+After structural parsing, `validateBody` evaluates each registered settings spec's pure
+`referencedModels(view)` callback once. Returned references participate in provider usage checks
+and resolvability against the same optional host model catalog as profile references. Invalid
+structural input never invokes these callbacks; request-parameter collision checks remain unchanged.
+Production: `validateBody`, `rejectProviderConfigIssues`, `requireResolvableModelProviders`.
+Test: `validates every registered model reference with the host provider rules` in
+[request-schema-facade.test.ts](../../packages/loop/tests/component/request-schema-facade.test.ts).
+
 When `validateBody` receives `modelExecutionResolver`, request `providers` must be empty. Profile,
 vision and reviewer references must resolve to the exact requested pair; unknown or mismatched pairs
 fail closed, including aliases. Provider kind for reasoning-summary validation comes from catalog
@@ -465,11 +473,10 @@ never set a key in `FORBIDDEN_PROVIDER_BODY_KEYS` (from `@clarvis/capability`) �
 are the cached prefix, `model`/`stream`/`tool_choice`/`stream_options` are resolved per call.
 
 `referencedProviders` (`packages/loop/src/validation/request/provider-rules.ts`) — the `used`
-set for rule (b) — is every profile's `model` provider token **plus** `data.guard_judge?.model`'s
-provider, because the guard judge resolves through the same provider registry without appearing in
-`profiles`. Proven at `packages/loop/tests/unit/request-provider-validation.test.ts`: an
-unused provider may carry an unsupported `body` freely, but the same provider becomes rejected the
-moment a `guard_judge` names it.
+set for rule (b) — includes every profile model and every registered `referencedModels` result.
+An otherwise unused provider becomes subject to body restrictions as soon as a registered
+capability names it. Production: `referencedProviders`. Test:
+`packages/loop/tests/unit/request-provider-validation.test.ts`.
 
 `requireResolvableModelProviders` (`packages/loop/src/validation/request/provider-rules.ts`)
 resolves every profile's `model` and, when present, `vision_model`, via `resolveProvider`
@@ -536,10 +543,9 @@ verdict this module itself never reaches.
 `settingsSchemaFor(registry)` (`packages/loop/src/settings/capability-settings.ts`): returns
 the bare `settingsSchema` when the registry is empty; otherwise, for every registered spec, throws a
 plain `Error` if `spec.key` already names a built-in block (`packages/loop/src/settings/capability-settings.ts`)
-or if the spec declares any plugin-manifest surface (`pluginContributable`, `pluginDescription`,
-`pluginForbiddenReason` — `packages/loop/src/settings/capability-settings.ts`, because the
-manifest schema is composed statically from the engine's own built-in specs alone and would silently
-ignore a registered spec's claim); else extends `settingsSchema` with `{ [spec.key]:
+or if the spec declares a plugin contribution/description surface (`pluginContributable`,
+`pluginDescription` — `packages/loop/src/settings/capability-settings.ts`). Explicit registered
+prohibitions are enforced by `pluginManifestSchemaFor` when the host supplies its registry; else extends `settingsSchema` with `{ [spec.key]:
 spec.schema.optional() }` and re-`.strict()`s.
 
 `mergeSettings(scopes, registry?)` (`packages/loop/src/settings/settings-merge.ts`) folds an
@@ -668,7 +674,7 @@ Production: `packages/loop/src/validation/request/budget-rules.ts`. Test:
 `packages/loop/tests/unit/request-budget-rules.test.ts`.
 
 **B.** A provider's `body` is rejected as `invalid_provider_config` only when that provider is
-**used** by this run (a profile's `model` or `guard_judge.model` resolves to it) — an unused entry in
+**used** by this run (a profile model or registered model reference resolves to it) — an unused entry in
 the whole-workspace `providers[]` registry may carry an unsupported `body` freely.
 Production: `packages/loop/src/validation/request/provider-rules.ts`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts`.
@@ -684,9 +690,9 @@ preserves valid customization` in `packages/loop/tests/unit/agent-frontmatter.te
 **D.** `settingsSchemaFor` and `readCapabilitySettings` refuse, at registration time, three distinct
 misuses that would otherwise fail *silently*: a registered spec's `key` shadowing a built-in block
 (would let `.extend()` — last-wins — silently replace the engine's own validation for that block);
-and a registered spec declaring any of `pluginContributable`/`pluginDescription`/
-`pluginForbiddenReason` (would be accepted and then read by nobody, since the plugin manifest schema
-is composed only from the engine's built-in specs).
+and a registered spec declaring `pluginContributable` or `pluginDescription`
+(would be accepted without contributing that surface). Registered `pluginForbiddenReason` declarations
+are supported by the host-supplied manifest registry.
 Production: `packages/loop/src/settings/capability-settings.ts`. Test:
 `packages/loop/tests/unit/capability-settings.test.ts` (exhaustively, over every
 key of `settingsSchema.shape`).
@@ -828,14 +834,11 @@ is a compile-time-only edge with zero runtime cost.
   time; a host-registered capability cannot be named there without the engine depending on it, which
   is the registry's whole purpose. So it is not two mechanisms for one job — it is the type boundary
   between what the engine knows statically and what a host adds.
-- **The precise reason `guard_judge`'s provider is folded into `referencedProviders` but not into any
-  other per-run accounting** (e.g. it is not a `profiles[]` entry, so it never participates in
-  `enforcePerProfileRules`'s aggregate-character sum or in `enforceBudgetMode`'s "running agents" set)
-  is stated as intentional in the doc comment (`packages/loop/src/validation/request/provider-rules.ts`)
-  but the guard capability's own semantics — what `guard_judge` actually does at runtime — are out of
-  this document's scope (owned by the tools/guard capability document) and are unverified beyond the
-  one call site this subsystem reads (`profile-rules.ts` is not one of them; only
-  `packages/loop/src/validation/request/provider-rules.ts` touches `guard_judge`).
+- Registered model references participate in provider validation without becoming profile entries
+  or contributing to the engine's running-agent budgets. Their execution/accounting policy belongs
+  to their owning capability. See [Judge](../capabilities/judge.md) and
+  [command guard](../execution/command-guard.md).
+
 - **`typo-suggestion.ts`'s `editDistance`/`typoBudget` have no call site inside this document's own
   scope** (`settings-schema.ts`, `settings-merge.ts`, `capability-settings.ts`, `engine-server.ts`,
   `agent-frontmatter.ts` — none import from `typo-suggestion.js`). Their two production consumers are
@@ -852,10 +855,10 @@ is a compile-time-only edge with zero runtime cost.
 
 `effect_review` is a non-plugin cross-cutting settings block. It carries model, timeout, retry,
 uncertainty fallback and operator rollout. Kernel scope resolution admits only reductions from
-workspace configuration. `guard_judge` accepts optional guidance and deprecated prompt data, plus
-explicit overrides; a full prompt is not required. Authority seeds remain absent from the strict
+workspace configuration. `guard_judge` accepts optional `guidance` and explicit overrides; additional guidance is not required.
+Unknown keys are rejected rather than converted to guidance. Authority seeds remain absent from the strict
 public request schema. Production:
-[effect-review-settings.ts](../../packages/loop/src/runtime/capabilities/effect-review-settings.ts),
+[settings.ts](../../packages/judge/src/settings.ts),
 [tools-settings.ts](../../packages/loop/src/runtime/capabilities/tools-settings.ts), and
 [run-service.ts](../../packages/kernel/src/runs/run-service.ts). The complete contract is
 [effect review](../execution/effect-review.md).

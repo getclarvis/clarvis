@@ -1,5 +1,8 @@
 # @clarvis/capability
 
+Reviewer configuration types belong to the owning Judge package. Neutral `RunRequest` carries no
+reviewer field; consumers use the generic capability request view. Authority vocabulary stays here.
+
 The **capability contract**: what a cross-cutting loop feature is written against, and the machinery
 that composes a list of them. A dependency-free leaf of the graph — its only external dependency is
 `zod` — so a capability can live in its own package instead of inside `@clarvis/loop`.
@@ -103,6 +106,12 @@ All `forRun` activations and `seedBlock` contributions run concurrently under
 `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (5 s by default, hard-capped at 60 s); a timeout skips an
 optional capability or block without retaining the run. A host registration marked `required: true`
 must activate, supply non-empty content for any declared seed, and attach to the entry agent.
+`requiredFor(view)` provides the same guarantee conditionally. The engine evaluates all such
+predicates synchronously before starting any activation; a thrown predicate stops preflight.
+`executionBaseLlm` exposes the effective host provider before execution identity/cache decoration,
+while `resolvedPromptCacheTtl` carries the lifetime already selected for the current run.
+Settings specs may declare pure `referencedModels(view)` callbacks so host-contributed model
+references participate in the same provider and catalog validation as engine references.
 Failure, refusal or unavailable extension capacity stops before inference with
 `required_capability_unavailable`. The flag propagates to `RunCapability`; it does not grant controls
 to children, which retain ordinary per-scope filtering. Required entry attachment errors use the
@@ -427,3 +436,13 @@ vocabulary likewise carries an optional `result_digest`, minted before result-te
 a host can attest complete bytes without retaining the omitted text. The owning contracts are
 [command guard](../../specs/execution/command-guard.md) and
 [trace](../../specs/foundations/trace.md).
+
+`ExecutionRecord.visibility` is the required neutral `ExecutionVisibility` discriminator (`public` or
+`internal`). The host supplies it explicitly; Trace owns storage, validation and query semantics.
+
+
+The authority ledger retains `envelope_context_revision` beside the installed envelope. This
+host-owned binding survives a validated checkpoint and is replaced atomically with compilation;
+revocation or settlement clears it. Reviewers compare it with the current live Plans revision,
+including disappearance, instead of maintaining a separate compile cache. It is not model-authored
+candidate data or operator evidence. See [effect review](../../specs/execution/effect-review.md).

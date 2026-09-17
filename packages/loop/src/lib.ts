@@ -144,7 +144,6 @@ export type {
   BudgetConfig,
   Grant,
   GuardMode,
-  GuardJudgeConfig,
   ReasoningSummary,
   ReasoningEffort,
   CompactionConfigInput,

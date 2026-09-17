@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { describe, it, expect } from "bun:test";
 import { loadEnv } from "@clarvis/capability";
+import { JOURNAL_VERSION, type JournalHeader } from "@clarvis/trace";
 import {
   createFileKernel,
   createKernelEnvironment,
@@ -568,8 +569,9 @@ function seedJournal(
   mkdirSync(ownerDir, { recursive: true });
   const startedAt = Date.now() - ageHours * 3_600_000;
   const file = join(ownerDir, `${startedAt}.${ownerSegment(id)}.jsonl`);
-  const header = {
-    v: 1,
+  const header: JournalHeader = {
+    v: JOURNAL_VERSION,
+    visibility: "public",
     id,
     owner_key_name: owner,
     started_at: startedAt,

@@ -195,7 +195,6 @@ export type {
   RunRequest,
   AgentsParam,
   GuardMode,
-  GuardJudgeConfig,
   HandlerResult,
   GateVerdict,
   HookVerdict,
@@ -377,6 +376,7 @@ export type {
   ContributedTraceEvent,
   PersistedContributedTraceEvent,
   ExecutionRecord,
+  ExecutionVisibility,
   ExecutionRecovery,
   PersistedTraceProjection,
   PersistedTraceProjectorContext,
@@ -406,7 +406,6 @@ export {
 } from "./capability-run-policies.ts";
 export type { CapabilityRunPolicies, CapabilitySkillPlansMode } from "./capability-run-policies.ts";
 export type {
-  EffectReviewConfig,
   ReviewedEffectClass,
   ReviewedEffectInference,
   ReviewedEffectTarget,

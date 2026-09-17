@@ -172,7 +172,6 @@ function toStartParams(
     ...(!container && input.guardJudge
       ? {
           guard_judge: {
-            prompt: input.guardJudge.prompt,
             guidance: input.guardJudge.guidance,
             ...(input.guardJudge.model ? { model: input.guardJudge.model } : {}),
             ...(input.guardJudge.onUnsure ? { on_unsure: input.guardJudge.onUnsure } : {}),

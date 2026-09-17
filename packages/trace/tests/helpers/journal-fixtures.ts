@@ -8,7 +8,13 @@ export const JOURNAL_STARTED_AT = 1_700_000_000_000;
 const request = makeExecutionRecord({ id: "fixture", owner_key_name: JOURNAL_OWNER }).request;
 
 export function journalHeader(id: string, startedAt = JOURNAL_STARTED_AT) {
-  return { id, owner_key_name: JOURNAL_OWNER, started_at: startedAt, request };
+  return {
+    visibility: "public" as const,
+    id,
+    owner_key_name: JOURNAL_OWNER,
+    started_at: startedAt,
+    request,
+  };
 }
 
 export function leadIteration(iteration: number, input: number, output: number): TraceEvent {

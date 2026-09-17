@@ -251,7 +251,9 @@ describe("Goal semantic agent", () => {
       owner: "owner",
       model_ref: "fixture/model",
       providers: [],
-      deps: {} as GoalAgentRuntime["deps"],
+      deps: {
+        executionVisibility: "public",
+      } as GoalAgentRuntime["deps"],
       async execute_run(args: ExecuteRunArgs): Promise<ExecuteRunOutcome> {
         captured = args;
         return {
@@ -293,7 +295,9 @@ describe("Goal semantic agent", () => {
       owner: "owner",
       model_ref: "fixture/model",
       providers: [],
-      deps: {} as GoalAgentRuntime["deps"],
+      deps: {
+        executionVisibility: "public",
+      } as GoalAgentRuntime["deps"],
       async execute_run(): Promise<ExecuteRunOutcome> {
         return {
           executionId: "formulation-1",

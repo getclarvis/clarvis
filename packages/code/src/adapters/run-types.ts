@@ -33,7 +33,6 @@ export interface ProfileInfo {
 }
 
 interface GuardJudgeInput {
-  prompt?: string;
   guidance?: string;
   model?: string;
   onUnsure?: "ask" | "deny";

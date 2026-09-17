@@ -533,7 +533,12 @@ export interface ExecutionRecovery {
   synthesized_tool_calls: number;
 }
 
+/** Host-owned disclosure class, never inferred from agent identity or payload. */
+export type ExecutionVisibility = "public" | "internal";
+
 export interface ExecutionRecord {
+  /** Required for every new record, including recovered executions. */
+  visibility: ExecutionVisibility;
   /** Host-owned intent state, never reconstructed from final_context. */
   operator_authority_state?: OperatorAuthorityState;
   id: string;

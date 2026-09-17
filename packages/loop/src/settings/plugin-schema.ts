@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { editDistance, typoBudget } from "./typo-suggestion.ts";
-import { capabilityExecutablesSchema, capabilityRunPoliciesSchema } from "@clarvis/capability";
+import {
+  capabilityExecutablesSchema,
+  capabilityRunPoliciesSchema,
+  type CapabilityRegistry,
+} from "@clarvis/capability";
 import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.ts";
 import { capabilityPluginFields } from "../runtime/capabilities/settings-specs.ts";
 import { mcpServerPluginSchema, pluginNameField, type SettingsFile } from "./settings-schema.ts";
@@ -106,6 +110,30 @@ export const pluginManifestSchema = z
 
 /** The inferred type of a validated plugin manifest; see {@link pluginManifestSchema}. */
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
+
+/** Apply host-registered prohibitions without admitting additional plugin contributions. */
+export function pluginManifestSchemaFor(
+  registry?: CapabilityRegistry,
+): typeof pluginManifestSchema {
+  const prohibitions = (registry?.specs() ?? []).filter(
+    (spec) => spec.pluginForbiddenReason !== undefined,
+  );
+  for (const spec of prohibitions) {
+    if (spec.pluginContributable || spec.key in pluginManifestSchema.shape)
+      throw new Error(`invalid registered plugin prohibition for '${spec.key}'`);
+  }
+  return pluginManifestSchema.superRefine((manifest, ctx) => {
+    for (const spec of prohibitions) {
+      if (manifest[spec.key] !== undefined)
+        ctx.addIssue({
+          code: "invalid_type",
+          expected: "undefined",
+          path: [spec.key],
+          message: spec.pluginForbiddenReason!,
+        });
+    }
+  });
+}
 
 /** The manifest keys {@link pluginManifestSchema} gives meaning to. */
 const KNOWN_MANIFEST_KEYS: ReadonlySet<string> = new Set(Object.keys(pluginManifestSchema.shape));

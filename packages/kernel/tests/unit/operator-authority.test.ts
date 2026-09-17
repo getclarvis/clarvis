@@ -25,6 +25,35 @@ const runtime = (initial = seed(), prior?: OperatorAuthorityState) =>
   createOperatorAuthorityRuntime({ seed: initial, prior, owner: "owner", executionId: "run" });
 
 describe("host operator ledger", () => {
+  test("keeps compile context with its envelope across continuation and clears it on replacement", () => {
+    const ledger = runtime();
+    const envelope = {
+      version: 1 as const,
+      revision: ledger.reader.snapshot().revision,
+      objectives: [],
+      grants: [],
+      exclusions: [],
+    };
+    expect(installAuthorityEnvelope(ledger.reader, envelope, "plan-1")).toBe(true);
+    const prior = ledger.finalize({ status: "completed", disposition: "checkpoint" });
+    const continued = runtime(seed(), prior);
+    expect(continued.reader.snapshot().envelope_context_revision).toBe("plan-1");
+    expect(installAuthorityEnvelope(continued.reader, envelope, "")).toBe(false);
+    expect(continued.reader.snapshot().envelope_context_revision).toBe("plan-1");
+    expect(installAuthorityEnvelope(continued.reader, envelope)).toBe(true);
+    expect(continued.reader.snapshot().envelope_context_revision).toBeUndefined();
+    expect(installAuthorityEnvelope(continued.reader, envelope, `${"p".repeat(1_024)}:123`)).toBe(
+      true,
+    );
+    expect(installAuthorityEnvelope(continued.reader, envelope, "p".repeat(2_049))).toBe(false);
+    expect(continued.finalize({ status: "cancelled" }).envelope_context_revision).toBeUndefined();
+    expect(runtime(seed(), { ...prior, envelope: undefined }).reader.snapshot().status).toBe(
+      "revoked",
+    );
+    expect(
+      runtime(seed(), { ...prior, envelope_context_revision: "" }).reader.snapshot().status,
+    ).toBe("revoked");
+  });
   test("mints a new outcome only for a fresh-evidence transition and replaces the old envelope", () => {
     const ledger = runtime();
     const initial = {

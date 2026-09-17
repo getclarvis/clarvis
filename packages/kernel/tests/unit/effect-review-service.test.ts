@@ -9,7 +9,7 @@ import {
   createEffectReviewService,
   effectReviewServiceFor,
   validateAuthorityEnvelope,
-} from "../../src/guard/effect-review-service.ts";
+} from "../helpers/legacy-effect-review-baseline.ts";
 import {
   createOperatorAuthorityRuntime,
   installAuthorityEnvelope,
@@ -82,7 +82,45 @@ function response(name: string, args: unknown): LLMCallResult {
     usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
   };
 }
-describe("host-validated effect review", () => {
+describe("pre-migration effect reviewer characterization", () => {
+  test("reuses installed compile context across reviewers and recompiles when Plans disappears", async () => {
+    const { ledger, registry, batch, envelope } = fixture();
+    let live = true;
+    const stages: string[] = [];
+    const create = () =>
+      createEffectReviewService({
+        authority: ledger.reader,
+        registry,
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/test",
+        reviewContext: () =>
+          live ? { snapshot: () => ({ revision: "plan-1", contexts: [] }) } : undefined,
+        llm: {
+          async call(params) {
+            const stage = params.tools![0]!.fullName;
+            stages.push(stage);
+            return response(
+              stage,
+              stage === "compile"
+                ? envelope
+                : {
+                    decision: "allow",
+                    relation: "direct",
+                    grant_ids: ["commit"],
+                  },
+            );
+          },
+        },
+      });
+    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect(ledger.reader.snapshot().envelope_context_revision).toBe("plan-1");
+    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect(stages).toEqual(["compile", "decide", "decide"]);
+    live = false;
+    expect((await create().review(batch, {}, "command_guard")).decision).toBe("allow");
+    expect(stages).toEqual(["compile", "decide", "decide", "compile", "decide"]);
+    expect(ledger.reader.snapshot().envelope_context_revision).toBeUndefined();
+  });
   test("retains historical target exclusions without admitting historical target grants", () => {
     const { ledger, registry, batch, envelope } = fixture();
     const exclusions = [{ effect_id: "workspace.content.write", target_digests: [target] }];

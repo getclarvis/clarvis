@@ -1,3 +1,4 @@
+import { createTraceVisibilityView } from "@clarvis/trace";
 import type { RunServiceConfig } from "./runs/run-service.ts";
 import { type ExecuteRunDeps, type SkillsProvider } from "@clarvis/loop";
 import type { MemoryFactory } from "@clarvis/memory/capability";
@@ -458,6 +459,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const mergedRegistry = composeKernelCapabilityRegistry(opts.deps.capabilityRegistry);
   const runDeps: ExecuteRunDeps = {
     ...opts.deps,
+    executionVisibility: "public",
+    traceStore: createTraceVisibilityView(opts.deps.traceStore, "public"),
     capabilityRegistry: mergedRegistry,
     persistedTraceProjectors: composePersistedTraceProjectors(opts.deps.persistedTraceProjectors, [
       guardReviewerModelCallProjector,

@@ -1,5 +1,8 @@
 # `@clarvis/protocol`
 
+Reviewer configuration carries bounded `guidance`, model, fallback, timeout and retry overrides.
+The strict host schema rejects unknown fields; guidance never replaces the host policy.
+
 The transport-agnostic contract between a Clarvis kernel and its UI clients.
 This package contains wire DTOs and TypeScript interfaces only.
 

@@ -36,6 +36,7 @@ function seededConfig() {
 function buildDeps(workspaceRoot: string): ExecuteRunDeps {
   const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000" });
   return {
+    executionVisibility: "public",
     env,
     llm: new MockLLM({ script: [{ text: "Done." }] }),
     connections: createConnectionManager({

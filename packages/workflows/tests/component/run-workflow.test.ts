@@ -113,7 +113,10 @@ async function harness(
   const briefs: string[] = [];
   const log = recordingLogger("debug");
   const ctx = makeCtx({
-    deps: { logger: log.logger } as WorkflowCtx["deps"],
+    deps: {
+      executionVisibility: "public",
+      logger: log.logger,
+    } as WorkflowCtx["deps"],
     workflowDefs: defs,
     ...(execute !== undefined ? { runDeps: promptRunDeps(execute) } : {}),
     assemble: (spec: LeaderSpec) => {

@@ -80,8 +80,8 @@ Goal review context alongside, but separate from, the exact operator evidence th
 context guides relevance and necessity; it cannot grant authority or manufacture acceptance of a
 human criterion. Production: `goalReviewContext` in
 [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts) and the reviewer payloads in
-[judge.ts](../../packages/kernel/src/guard/judge.ts) and
-[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts). Test:
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts) and
+[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts). Test:
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts),
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts) and
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).

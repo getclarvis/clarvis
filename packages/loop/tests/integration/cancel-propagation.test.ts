@@ -10,6 +10,7 @@ import type { TraceStore } from "@clarvis/trace";
 
 function makeDeps(llm: LLMProvider, traceStore: TraceStore): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm,
     connections: mockConnections(mockMCPFactory({})),

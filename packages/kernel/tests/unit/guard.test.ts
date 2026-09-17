@@ -1,3 +1,4 @@
+import { createCapabilityRequestView } from "@clarvis/capability";
 import { describe, it, expect } from "bun:test";
 import { isAbsolute, relative, resolve } from "node:path";
 import { analyzeShell, type ShellFacts, type GuardContext } from "@clarvis/tools/guard";
@@ -456,6 +457,10 @@ describe("createGuardElicit", () => {
 describe("createGuardResolver", () => {
   function ctx(over: Partial<RunCapabilityContext>): RunCapabilityContext {
     return {
+      requestParam: (key: string) =>
+        over.request === undefined
+          ? undefined
+          : createCapabilityRequestView(over.request).requestParam(key),
       owner: "o",
       request: { guard_mode: "on" },
       entryGrants: [],
@@ -668,7 +673,7 @@ describe("createGuardResolver", () => {
     });
     const resolution = await resolver(
       ctx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: { guard_mode: "auto", guard_judge: { guidance: "judge" } } as never,
         elicit: async () => {
           asked = true;
           return { action: "accept", content: { decision: "allow" } };
@@ -703,6 +708,7 @@ describe("default posture: an unconfigured workspace", () => {
     return {
       owner: "o",
       request: {},
+      requestParam: () => undefined,
       entryGrants: [],
       env: {},
       workspaceRoot: ROOT,

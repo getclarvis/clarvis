@@ -240,7 +240,7 @@ the RC's pinned Bun version, and an engine when Container is selected. See the
 
 ## Packages
 
-Clarvis is one product made from 19 private, unversioned workspace packages. They are implementation
+Clarvis is one product made from 20 private, unversioned workspace packages. They are implementation
 units and are not published independently.
 
 | Package                                        | Role                | Path                   | Description                                                           |
@@ -259,6 +259,7 @@ units and are not published independently.
 | [`@clarvis/memory`](packages/memory)           | product capability  | `packages/memory`      | Markdown memory wiki, search, and indexing.                           |
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                              |
 | [`@clarvis/goal`](packages/goal)               | product capability  | `packages/goal`        | Semantic formulation, persistent objectives and bounded continuation. |
+| [`@clarvis/judge`](packages/judge)             | product capability  | `packages/judge`       | Semantic reviewer configuration and isolated review capability.       |
 | [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                          |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                          |
 | [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.            |

@@ -57,9 +57,9 @@ export type {
 export { PLANS_DEFAULTS } from "@clarvis/plan/settings";
 export type { PlansSettingsBlock } from "@clarvis/plan/settings";
 export { parseModelRef } from "@clarvis/capability";
+export { parsePluginManifest } from "./plugins/manifest-schema.ts";
 export {
   readJsonFile,
-  parsePluginManifest,
   readPluginAgentFiles,
   PLUGIN_RESOURCE_LIMITS,
   readBoundedPluginText,

@@ -18,7 +18,7 @@ export interface TestRunInfrastructureOptions {
  */
 export function createTestRunInfrastructure(
   options: TestRunInfrastructureOptions,
-): Pick<ExecuteRunDeps, "connections" | "traceStore" | "workspaceRoot"> {
+): Pick<ExecuteRunDeps, "connections" | "traceStore" | "workspaceRoot" | "executionVisibility"> {
   return {
     connections: createConnectionManager({
       workspace: options.workspaceRoot,
@@ -27,6 +27,7 @@ export function createTestRunInfrastructure(
       callTimeoutMs: options.env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
     }),
     traceStore: createMemoryTraceStore(),
+    executionVisibility: "public",
     workspaceRoot: options.workspaceRoot,
   };
 }

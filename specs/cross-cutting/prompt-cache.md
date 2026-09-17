@@ -98,12 +98,18 @@ prove serialization, not remote cache hits or automatic host continuation.
 
 Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
-in the final volatile message. Auto Guard likewise keeps its nonreplaceable policy and optional
-guidance before one volatile payload containing Goal, stable Plan substance, operator evidence and
-the exact call. Plan lifecycle/progress fields never enter that payload. Production:
-`goalAgentPrompt`, `planReviewContext`, `reviewerContextPayload` and `createJudgeElicit`. Test:
-`keeps one byte-identical semantic prefix while mode and trajectory remain volatile` and `adds
-stable Plan substance beside the Goal and keeps volatile context out of the prefix`.
+in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
+and Plan slots, chronological per-entry operator evidence and a volatile authority/case tail. Empty
+semantic slots preserve their positions; new operator input extends the prefix; a changed Plan
+invalidates from its existing slot. The reviewer excludes the work run's operational Goal reminder,
+Plan CAS header and transcript, and does not duplicate evidence or semantic context inside its
+authority tail. Its breakpoint and full-key invalidation are specified by [Judge](../capabilities/judge.md).
+The effect reviewer uses the same framing and authoritative compile transition. Plan
+lifecycle/progress fields never enter either review context. Production: `goalAgentPrompt`,
+`planReviewContext`, `createCommandReview` and `judgeCacheBreakpoints`. Test:
+`keeps one byte-identical semantic prefix while mode and trajectory remain volatile`, Judge executor
+framing tests and the real-engine host case in
+[judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 
 Goal Steward uses a fixed policy, read-only catalog and output schema for observation and completion.
 Each evaluation appends a delimited user frame to its own persisted context using `continue_from`,
@@ -186,8 +192,8 @@ have different jobs and are not interchangeable.
 [`assembleLeader`](../../packages/kernel/src/workflows/workflows-service.ts),
 [`runSubagent`](../../packages/loop/src/runtime/subagents/run-subagent.ts) and
 [memory queue claims](../../packages/memory/src/file-store/jobs.ts), plus
-`GUARD_REVIEW_AGENT_INSTANCE_ID` in
-[reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts).
+`executeJudge` in
+[executor.ts](../../packages/judge/src/executor.ts).
 Test: [`prompt-cache-identity.test.ts`](../../packages/capability/tests/unit/prompt-cache-identity.test.ts),
 [`prompt-cache-provider.test.ts`](../../packages/llm/tests/unit/prompt-cache-provider.test.ts),
 [`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts)

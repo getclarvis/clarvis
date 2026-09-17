@@ -89,6 +89,10 @@ export interface RunCapabilityContext extends CapabilityRequestView {
   readonly env: EnvConfig;
   readonly workspaceRoot: string;
   readonly llm: LLMProvider;
+  /** Effective host provider before this execution's identity and cache decorators. */
+  readonly executionBaseLlm: LLMProvider;
+  /** Effective cache lifetime resolved before capability activation. */
+  readonly resolvedPromptCacheTtl: "5m" | "1h";
   /** The host's raw elicit channel, when the MCP client supports elicitation. */
   readonly elicit?: Elicit;
   readonly logger?: Logger;
@@ -134,6 +138,8 @@ export interface Capability {
   readonly name: string;
   /** Fail before inference if activation, a declared seed or entry-agent attachment is unavailable. */
   readonly required?: boolean;
+  /** Pure synchronous request preflight; evaluated once before any activation. */
+  requiredFor?(view: CapabilityRequestView): boolean;
   /** Static persisted projections this capability owns, collected before activation. */
   readonly persistedTraceProjectors?: readonly PersistedTraceProjector[];
   /** Grants this capability adds to the request vocabulary before validation. */

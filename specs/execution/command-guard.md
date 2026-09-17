@@ -130,19 +130,18 @@ The object is `.strict()` — an unknown key is `unrecognized_keys`
 `GUARD_PLUGIN_FORBIDDEN_REASON`, surfaced through `GUARD_PLUGIN_FIELDS` as
 a `z.undefined()` field that exists solely "so that trying it explains why".
 
-### 2.5 Run-request params (`packages/loop/src/runtime/capabilities/tools-settings.ts`)
+### 2.5 Run-request params
 
 | Param | Schema |
 | --- | --- |
 | `guard_mode` | `z.enum(["off","on","auto"])` |
-| `guard_judge` | `.strict()` object : `guidance?` and deprecated `prompt?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"deny"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
+| `guard_judge` | `.strict()` object : `guidance?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"deny"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
 
-Both reach the request schema through `capabilityRequestParamFields`
-(`packages/loop/src/runtime/capabilities/settings-specs.ts`) and the spec's
-`requestParams` (`packages/loop/src/runtime/capabilities/tools-settings.ts`). The protocol mirrors them as `StartRunParams.guard_mode`
-/ `guard_judge` (`packages/protocol/src/runs.ts`, types); the
-capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts` and
-`GuardJudgeConfig`.
+`guard_mode` is contributed by the built-in tools settings spec in
+`packages/loop/src/runtime/capabilities/tools-settings.ts`. `guard_judge` is contributed by
+`judgeSettingsSpec` in `packages/judge/src/settings.ts`, registered by the Kernel before parsing.
+The Protocol mirrors them as `StartRunParams.guard_mode` and `guard_judge` without depending on
+Judge. Neutral Capability vocabulary retains `GuardMode`; `GuardJudgeConfig` belongs to Judge.
 
 ### 2.6 `@clarvis/code` surface
 
@@ -228,8 +227,7 @@ escaping rules can only be right or wrong once" (`packages/capability/src/glob.t
 
 ### 3.4 `guard_judge` guidance and automatic decisions
 
-`guard_judge.prompt` remains a deprecated alias for bounded additional guidance; `guidance` is the
-typed field. Code composes operator-global guidance before workspace guidance. Complete registered
+`guard_judge.guidance` is the only typed field for bounded additional guidance. Code composes operator-global guidance before workspace guidance. Complete registered
 effects use `EFFECT_REVIEW_POLICY`, the live authority envelope and mechanical descriptor coverage.
 An ordinary shell ask that cannot produce such an effect uses the call-local reviewer in `judge.ts`:
 it receives the complete command and host guard facts plus host-owned operator evidence. Top-level
@@ -239,7 +237,11 @@ host-attested definitions as the operator's semantic objective and intended impl
 they may establish a necessary routine bounded prerequisite such as installing declared project
 dependencies. They cannot authorize human-only effects, publication, deployment, destructive
 actions, credential access or external contact from that context, nor override constraints or
-exclusions. Its
+exclusions. The Judge serializes the bounded Goal and Plan projections in dedicated fixed-position
+slots, then one message per chronological operator-evidence entry. It does not receive the work
+run's Goal operational reminder, Plan CAS/task-status header or transcript. The volatile authority
+block omits evidence and review context already sent in those slots, preventing duplicate prompt
+input. Its
 verdict applies to that exact call and cannot register an effect, install an authority grant or add
 session coverage. Each segment supplies its exact source, normalized argv, explicit executable and
 parameter list, environment bindings split at their first `=`, and structured analysis issues. This
@@ -248,15 +250,25 @@ without treating parameter syntax alone as uncertainty. Both paths recheck the a
 and the atomically captured Plans semantic revision after inference. A changed Plans revision also
 invalidates a compiled envelope before reuse. Missing evidence, invalid output and stale revisions
 become `unsure` and use the configured human/deny fallback.
-Both paths set the auxiliary agent instance to `judge` on the run-decorated provider. The common
-prompt-cache composer consequently emits the current session's canonical `<session>_judge` key and
-retains the run TTL. Breakpoints cover only stable policy and optional stable guidance, never Goal,
-Plan or the variable evidence/effect/call payload. Plan progress, results, revisions and timestamps
-are excluded from the review projection.
+Command review resolves `JUDGE_PORT` at invocation and uses its private child run. The Judge owns
+fixed policy, canonical snapshot breakpoint, separate volatile case, resolved TTL and semantic
+memoization. The host adapter keeps only in-flight answer deduplication, including one human fallback
+for concurrent identical cases; human answers are never cached as semantic verdicts. Missing port or
+architecture failure propagates without elicitation. Retirement denies without asking a human.
+Effect review uses the same port and private execution boundary.
+Both paths preserve `judge` affinity and recheck authority and live Plans context.
 
-Production: `createEffectReviewService` in
-[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts) and
-`createJudgeElicit` in [judge.ts](../../packages/kernel/src/guard/judge.ts), composed by
+Production: `createCommandReview` in
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts).
+Test: [command-review.test.ts](../../packages/kernel/tests/unit/command-review.test.ts) pins eight
+concurrent callers, configured fallback counts, architecture faults and cancellation;
+[judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) runs the adapter
+through the real coordinator/engine and proves cache reuse and private accounting.
+The old direct-provider characterization in `judge.test.ts` uses a test-only baseline helper; it
+is not evidence for production private execution.
+Production: `createHostEffectReview` in
+[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts) and
+`createCommandReview` in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), composed by
 `createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
@@ -323,8 +335,8 @@ in the table above, with no trace of the omission. Pinned:
 
 ### 3.8 The nonreplaceable reviewer policy
 
-`EFFECT_REVIEW_POLICY` in
-[reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts) is always the first system
+`JUDGE_POLICY` in
+[prompt.ts](../../packages/judge/src/prompt.ts) is always the first system
 message. Workspace and global guidance are additional data and never replace it. Admitted operator
 evidence anchors authority; host-attested Goal and Plan semantics let the reviewer interpret that
 evidence for routine bounded prerequisites. The enabled rollout requires host validation of
@@ -350,7 +362,7 @@ authority cases in
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts)
 and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
-Production: `createEffectReviewService` and `createGuardResolver`.
+Production: `createHostEffectReview` and `createGuardResolver`.
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts)
 and [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
@@ -671,7 +683,7 @@ Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
 ### 4.7 Answering an `ask`
 
 The composed elicit applies session coverage only to the exact analyzable non-host command. Auto
-uses `EffectReviewService.review` for a complete registered effect and `createJudgeElicit` for an
+uses `EffectReviewService.review` for a complete registered effect and `createCommandReview` for an
 ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
 keyed by the authority revision and complete guard request, including the raw command, and install no
 grant. `unsure` denies by default and goes to the human channel only when `on_unsure` is explicitly `ask`. Human
@@ -683,8 +695,8 @@ answers after the controller or scope is retired. `humanApprovalFor` is availabl
 Host/Sandbox runs; Container guests receive no approval port.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
-[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts), and
-[judge.ts](../../packages/kernel/src/guard/judge.ts),
+[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts), and
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts),
 [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
@@ -727,7 +739,7 @@ untrusted data and supplies authenticated intent separately. Both cache keys inc
 revision; a steer invalidates an in-flight result. Shadow mode records effect analysis while
 preserving the existing call-local Auto or human outcome.
 
-Production: `createGuardResolver`, `createEffectReviewService` and `createJudgeElicit`. Test:
+Production: `createGuardResolver`, `createHostEffectReview` and `createCommandReview`. Test:
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
 
@@ -761,9 +773,10 @@ itself because guard mode is resolved from host settings it never sees"
   policy when the workspace has no list of its own. Pinned by
   `packages/code/tests/integration/run-controls-render.test.tsx` and
   `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
-- **Judge guidance** resolution is workspace `guard-judge.md` → global → absent, with a blank or
+- **Judge guidance** composes global `guard-judge.md` before workspace guidance, preserving only
+  global guidance if the combined bound is exceeded, with a blank or
   unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts`) and a >32 KiB file rejected without reading its body; pinned at
-  `packages/code/tests/integration/guard-judge-prompt.test.ts`. The prompt is sent only
+  `packages/code/tests/integration/guard-judge-prompt.test.ts`. The guidance is sent only
   when the mode is `auto` (`packages/code/src/runtime.tsx`, `judgePayloadFor`). `judgePayloadFor`
   (called by `buildRunHost` in `packages/code/src/runtime.tsx`) is the only production path that attaches `guard_judge` to a
   run request, and its return type is `{ guardJudge?: { guidance: string } }`
@@ -1336,10 +1349,9 @@ separately postures guard confirmations per principal
     like wrappers and are excluded, because each changes the privileges, environment or arguments the
     real command ends up with — looking past one would let a deny list be walked around by prefixing
     it (`SAFE_WRAPPERS`' TSDoc in `packages/tools/src/guard/dialects/posix.ts`).
-  - The **1 MiB judge-prompt cap** exists because over-size is treated as *absent*, not truncated:
-    cutting an operator's security policy in half would judge commands against half a rule set, while
-    falling back to the built-in prompt judges them against a complete one. It sits far above any
-    policy a person writes — the default is under 2 KB — so reaching it means the wrong file
+  - The **32 KiB guidance cap** treats oversized input as absent instead of truncating instructions.
+    The Kernel supplies its invariant policy independently. Combined global/workspace guidance must
+    fit the same bound; otherwise only the operator-global guidance remains
     (`packages/code/src/adapters/guard-judge-prompt.ts`).
 
   Both starter allow lists carry an explicit, test-enforced inclusion/exclusion rationale. Their
@@ -1364,9 +1376,18 @@ separately postures guard confirmations per principal
 
 Complete effect attestation may refine the global undecidable route into a judgeable effect; it never
 overrides a deterministic deny. An ordinary shell call that remains `external.unknown` may instead
-receive an exact-call Auto verdict from `createJudgeElicit`, without entering the effect registry or
+receive an exact-call Auto verdict from `createCommandReview`, without entering the effect registry or
 authority envelope. Syntax issues remain available for both review paths and do not themselves prove
 confinement. The compiler, ledger, composition, target checks, exact grants and structured failures
 are owned by [effect review](effect-review.md). Production: `createGuardResolver`, `attestShell` and
-`createJudgeElicit`. Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts)
+`createCommandReview`. Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts)
 and [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
+
+
+Native `createGuardHumanApproval` deduplicates identical in-flight requests per current allowlist
+scope. Canonical full request identity preserves differences in authority/context while ignoring JSON
+property order. Success and failure both remove pending entries; no human answer becomes a reusable
+semantic verdict. Replacing the scope cannot share the previous question or accept its late answer.
+Production: [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts), `createGuardHumanApproval`.
+Test: [human-approval.test.ts](../../packages/kernel/tests/unit/human-approval.test.ts) pins eight callers,
+no settled-answer memoization and controller replacement.

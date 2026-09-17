@@ -14,6 +14,7 @@ export type {
   ContributedTraceEvent,
   PersistedContributedTraceEvent,
   ExecutionRecord,
+  ExecutionVisibility,
   ExecutionRecovery,
   ExecutionStatus,
 } from "./trace-events.ts";

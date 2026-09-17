@@ -36,6 +36,7 @@ function managerHandle(executionId: string, closed: Promise<void>): RunHandle {
 
 function settledRecord(id: string, context: ContextSnapshotEntry[]): ExecutionRecord {
   return {
+    visibility: "public",
     id,
     owner_key_name: "owner",
     status: "completed",
@@ -80,7 +81,10 @@ describe("run-service lifecycle reservation", () => {
     async (admission) => {
       let captured: ExecuteRunArgs | undefined;
       const service = createRunService({
-        deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+        deps: {
+          executionVisibility: "public",
+          traceStore: createMemoryTraceStore(),
+        } as ExecuteRunDeps,
         owner: "owner",
         ingestGraceMs: 0,
         operatorAuthorityFor: () =>
@@ -122,7 +126,10 @@ describe("run-service lifecycle reservation", () => {
     const controller = new AbortController();
     let captured: ExecuteRunArgs | undefined;
     const service = createRunService({
-      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore: createMemoryTraceStore(),
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -166,7 +173,10 @@ describe("run-service lifecycle reservation", () => {
   it("uses the exact Goal-defining operator input instead of its synthetic start message", async () => {
     let captured: ExecuteRunArgs | undefined;
     const service = createRunService({
-      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore: createMemoryTraceStore(),
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -220,7 +230,10 @@ describe("run-service lifecycle reservation", () => {
     let authorityStatus: string | undefined;
     let evidenceText: string | undefined;
     const service = createRunService({
-      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore: createMemoryTraceStore(),
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -282,7 +295,10 @@ describe("run-service lifecycle reservation", () => {
     await traceStore.insert(previous);
     let captured: ExecuteRunArgs | undefined;
     const service = createRunService({
-      deps: { traceStore } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore,
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -347,7 +363,10 @@ describe("run-service lifecycle reservation", () => {
     await traceStore.insert(previous);
     let captured: ExecuteRunArgs | undefined;
     const service = createRunService({
-      deps: { traceStore } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore,
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -379,7 +398,10 @@ describe("run-service lifecycle reservation", () => {
 
     let foreignCaptured: ExecuteRunArgs | undefined;
     const foreignService = createRunService({
-      deps: { traceStore } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore,
+      } as ExecuteRunDeps,
       owner: "owner",
       ingestGraceMs: 0,
       operatorAuthorityFor: () => ({
@@ -520,7 +542,10 @@ describe("run-service lifecycle reservation", () => {
     const firstClosed = deferred();
     let generation = 0;
     const service = createRunService({
-      deps: { traceStore: createMemoryTraceStore() } as ExecuteRunDeps,
+      deps: {
+        executionVisibility: "public",
+        traceStore: createMemoryTraceStore(),
+      } as ExecuteRunDeps,
       owner: "owner",
       assembleRunRequest: () => ({}),
       isManagerRun: () => true,

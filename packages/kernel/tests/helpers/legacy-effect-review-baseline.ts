@@ -1,45 +1,44 @@
+import { refusalKey } from "../../src/guard/effect-refusal.ts";
+export { validateAuthorityEnvelope } from "../../src/guard/authority-validation.ts";
+import { createAuthorityReviewTransaction } from "../../src/guard/authority-review-transaction.ts";
+import { JUDGE_DEFAULTS, type GuardJudgeConfig } from "@clarvis/judge/settings";
 import { z } from "zod";
 import {
   NOOP_LOGGER,
   ProviderError,
   parseModelRef,
   resolveProvider,
-  type AuthorityEnvelopeV1,
   type OperatorAuthorityReader,
-  type OperatorReviewContextProvider,
   type LLMProvider,
   type ProviderConfig,
   type Logger,
   type NamespacedTool,
   type TracePort,
 } from "@clarvis/capability";
-import type { GuardEffectRegistry } from "./effects/registry.ts";
-import type { GuardEffectBatch, GuardEffectFact } from "./effects/types.ts";
+import type { GuardEffectRegistry } from "../../src/guard/effects/registry.ts";
+import type { GuardEffectBatch, GuardEffectFact } from "../../src/guard/effects/types.ts";
 import {
-  installAuthorityEnvelope,
   consumeAuthorityEffects,
   denyAuthorityEffect,
-} from "./operator-authority.ts";
-import { effectDigest } from "./effects/facts.ts";
-import { authorityEnvelopeSchema as envelopeSchema } from "./authority-schema.ts";
-import { EFFECT_REVIEW_POLICY, GUARD_REVIEW_AGENT_INSTANCE_ID } from "./reviewer-policy.ts";
+} from "../../src/guard/operator-authority.ts";
+import { effectDigest } from "../../src/guard/effects/facts.ts";
+import { authorityEnvelopeSchema as envelopeSchema } from "../../src/guard/authority-schema.ts";
+import { EFFECT_REVIEW_POLICY, GUARD_REVIEW_AGENT_INSTANCE_ID } from "./legacy-reviewer-policy.ts";
 import {
   callReviewerWithTrace,
   reviewerFailureKind,
   type ReviewerFailureKind,
-} from "./reviewer-trace.ts";
-import { reviewerContextIsCurrent, reviewerContextSnapshot } from "./review-context.ts";
+} from "../../src/guard/reviewer-trace.ts";
+import {
+  reviewerContextIsCurrent,
+  reviewerContextSnapshot,
+  type ReviewerContextSource,
+} from "../../src/guard/review-context.ts";
 
-export type { ReviewerFailureKind } from "./reviewer-trace.ts";
+export type { ReviewerFailureKind } from "../../src/guard/reviewer-trace.ts";
 
 /** Shared configuration for compiler and per-call reviewer. */
-export interface EffectReviewOptions {
-  model?: string;
-  timeout_ms?: number;
-  max_retries?: number;
-  on_unsure?: "ask" | "deny";
-  guidance?: string;
-}
+export type EffectReviewOptions = GuardJudgeConfig;
 
 /** Structured operational receipt; contains no prompt, command or operator text. */
 export interface EffectReviewReceipt {
@@ -61,122 +60,13 @@ const decisionSchema = z
   })
   .strict();
 
-/** Reject an envelope atomically unless all references, inference ceilings and targets are valid. */
-export function validateAuthorityEnvelope(
-  value: unknown,
-  reader: OperatorAuthorityReader,
-  registry: GuardEffectRegistry,
-  batch: GuardEffectBatch,
-): AuthorityEnvelopeV1 | undefined {
-  const parsed = envelopeSchema.safeParse(value);
-  const state = reader.snapshot();
-  if (!parsed.success || state.status !== "active" || parsed.data.revision !== state.revision)
-    return undefined;
-  const envelope = parsed.data;
-  const evidence = new Set(state.evidence.map((entry) => entry.id));
-  const targets = new Set(
-    batch.facts.flatMap((fact) => (fact.target === undefined ? [] : [fact.target.digest])),
-  );
-  if (new Set(envelope.grants.map((grant) => grant.id)).size !== envelope.grants.length)
-    return undefined;
-  if (
-    new Set(envelope.objectives.map((objective) => objective.id)).size !==
-    envelope.objectives.length
-  )
-    return undefined;
-  for (const objective of envelope.objectives) {
-    if (
-      objective.evidence_ids.some((key) => !evidence.has(key)) ||
-      objective.target_digests.some((key) => !targets.has(key))
-    )
-      return undefined;
-  }
-  for (const grant of envelope.grants) {
-    const descriptor = registry.get(grant.effect_id);
-    if (
-      descriptor === undefined ||
-      descriptor.inference === "human_only" ||
-      (grant.relation === "bounded_prerequisite" && descriptor.inference !== "bounded") ||
-      !descriptor.validateConstraints(grant.constraints) ||
-      grant.evidence_ids.some((key) => !evidence.has(key)) ||
-      grant.target_digests.some((key) => !targets.has(key)) ||
-      !batch.facts.some((fact) => descriptor.covers(grant, fact))
-    )
-      return undefined;
-    if (
-      state.ceiling !== undefined &&
-      !state.ceiling.grants.some(
-        (parent) =>
-          parent.effect_id === grant.effect_id &&
-          parent.relation === grant.relation &&
-          grant.target_digests.every((target) => parent.target_digests.includes(target)) &&
-          JSON.stringify(parent.constraints) === JSON.stringify(grant.constraints),
-      )
-    )
-      return undefined;
-  }
-  for (const item of envelope.exclusions) {
-    const retained = [
-      ...(state.envelope?.exclusions ?? []),
-      ...(state.ceiling?.exclusions ?? []),
-    ].some((previous) => JSON.stringify(previous) === JSON.stringify(item));
-    if (
-      (item.effect_id !== undefined && registry.get(item.effect_id) === undefined) ||
-      (!retained && item.target_digests?.some((target) => !targets.has(target)))
-    )
-      return undefined;
-  }
-  if (
-    state.envelope?.exclusions.some(
-      (item) =>
-        !envelope.exclusions.some(
-          (candidate) => JSON.stringify(candidate) === JSON.stringify(item),
-        ),
-    )
-  )
-    return undefined;
-  if (
-    state.ceiling?.exclusions.some(
-      (item) =>
-        !envelope.exclusions.some(
-          (candidate) => JSON.stringify(candidate) === JSON.stringify(item),
-        ),
-    )
-  )
-    return undefined;
-  return envelope;
-}
-
-/** Equivalent prepared file mutations keep their identity when a caller switches edit and write. */
-function refusalKey(batch: GuardEffectBatch): string {
-  return effectDigest(
-    ...batch.facts
-      .map((fact) => {
-        const constraints = { ...fact.constraints };
-        if (
-          typeof constraints.diff_digest === "string" &&
-          typeof constraints.expected_revision === "string" &&
-          typeof constraints.next_revision === "string"
-        )
-          delete constraints.operation;
-        return JSON.stringify([
-          fact.id,
-          fact.target?.digest,
-          fact.target?.state_digest,
-          Object.entries(constraints).sort(([left], [right]) => left.localeCompare(right)),
-        ]);
-      })
-      .sort(),
-  );
-}
-
 /** One shared compiler/reviewer with post-model host validation and revision-fenced caching. */
 export function createEffectReviewService(deps: {
   llm: LLMProvider;
   providers: ProviderConfig[];
   defaultModel?: string;
   authority?: OperatorAuthorityReader;
-  reviewContext?: OperatorReviewContextProvider;
+  reviewContext?: ReviewerContextSource;
   registry: GuardEffectRegistry;
   audit?: Logger;
   signal?: AbortSignal;
@@ -186,7 +76,6 @@ export function createEffectReviewService(deps: {
   const audit = deps.audit ?? NOOP_LOGGER;
   const config = deps.options ?? {};
   const cache = new Map<string, EffectReviewReceipt>();
-  const compiledContextRevisions = new Map<number, string | undefined>();
   const unboundRefusals = new Set<string>();
   const wasRefused = (batch: GuardEffectBatch): boolean => {
     const key = refusalKey(batch);
@@ -314,7 +203,7 @@ export function createEffectReviewService(deps: {
         const priorAttempts = attempts;
         const timeout = new AbortController();
         let timedOut = false;
-        const timeoutMs = config.timeout_ms ?? 20000;
+        const timeoutMs = config.timeout_ms ?? JUDGE_DEFAULTS.timeoutMs;
         const timer = setTimeout(() => {
           timedOut = true;
           timeout.abort();
@@ -362,7 +251,7 @@ export function createEffectReviewService(deps: {
               toolChoice: { type: "function", function: { name: stage } },
               signal,
               timeoutMs,
-              maxRetries: config.max_retries ?? 1,
+              maxRetries: config.max_retries ?? JUDGE_DEFAULTS.maxRetries,
               maxOutputTokens: 2048,
               reasoningEffort: "low",
               agentInstanceId: GUARD_REVIEW_AGENT_INSTANCE_ID,
@@ -451,13 +340,21 @@ export function createEffectReviewService(deps: {
       let envelope = state.envelope?.revision === revision ? state.envelope : undefined;
       if (
         envelope === undefined ||
-        (reviewContext.live_revision !== undefined &&
-          (!compiledContextRevisions.has(revision) ||
-            compiledContextRevisions.get(revision) !== reviewContext.live_revision)) ||
+        state.envelope_context_revision !== reviewContext.live_revision ||
         !batch.facts.every((fact) =>
           envelope!.grants.some((grant) => deps.registry.get(fact.id)?.covers(grant, fact)),
         )
       ) {
+        const transaction = createAuthorityReviewTransaction({
+          authority: deps.authority,
+          registry: deps.registry,
+          batch,
+          caseDigest: effectDigest(key),
+          expectedAuthorityRevision: revision,
+          expectedReviewContextRevision: reviewContext.live_revision,
+          reviewContext: deps.reviewContext,
+          signal: deps.signal,
+        });
         const output = await invoke(
           "compile",
           {
@@ -477,21 +374,13 @@ export function createEffectReviewService(deps: {
           },
           envelopeSchema,
         );
-        envelope = validateAuthorityEnvelope(output, deps.authority, deps.registry, batch);
-        if (
-          !contextCurrent() ||
-          envelope === undefined ||
-          !installAuthorityEnvelope(deps.authority, envelope)
-        ) {
+        const transition = transaction.validateAndInstall(output);
+        if (transition === undefined) {
           completeStage("unsure", "none", operationalFailure ?? "invalid_response");
           return receipt("unsure", "none", operationalFailure ?? "invalid_response");
         }
-        const installed = deps.authority.snapshot();
-        if (installed.status !== "active" || installed.envelope?.revision !== installed.revision)
-          return receipt("unsure");
-        envelope = installed.envelope;
-        revision = installed.revision;
-        compiledContextRevisions.set(revision, reviewContext.live_revision);
+        envelope = transition.envelope;
+        revision = transition.revision;
         completeStage("allow", "none");
         audit.info(
           {

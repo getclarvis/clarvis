@@ -15,6 +15,7 @@ const validPlanRef: PlanRef = {
 
 function baseStoredExecution(capabilityState?: Record<string, unknown>): StoredExecution {
   return {
+    visibility: "public",
     id: "exec_1",
     owner_key_name: "owner",
     status: "completed",

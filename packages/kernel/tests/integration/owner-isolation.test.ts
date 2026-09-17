@@ -92,6 +92,7 @@ function makeKernel(
     subscribeToRun: () => () => {},
   };
   const deps: ExecuteRunDeps = {
+    executionVisibility: "public",
     env,
     llm: new MockLLM({ script: [{ text: "Done.", delayMs: runDelayMs }] }),
     connections: createConnectionManager({
@@ -154,6 +155,7 @@ function deferred(): {
 
 function record(owner: string, id: string, startedAt: number): ExecutionRecord {
   return {
+    visibility: "public",
     id,
     owner_key_name: owner,
     status: "completed",
@@ -182,6 +184,52 @@ function record(owner: string, id: string, startedAt: number): ExecutionRecord {
 }
 
 describe("owner isolation", () => {
+  it("keeps internal executions outside every public run surface", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "clarvis-private-run-"));
+    const { kernel, traceStore, deps } = makeKernel(ws);
+    try {
+      const hidden = {
+        ...record(stateOwner("alice"), "hidden", 2_000),
+        visibility: "internal" as const,
+        final_context: [
+          {
+            message: { role: "user" as const, content: "PRIVATE_SENTINEL" },
+            evictable: false,
+            summary: false,
+            canonical: true,
+          },
+        ],
+      };
+      await traceStore.insert(hidden);
+      await traceStore.insert(record(stateOwner("alice"), "shown", 1_000));
+      const runs = kernel.forOwner("alice").runs;
+      expect(await runs.list({ limit: 1, offset: 0 })).toMatchObject({
+        total: 1,
+        items: [{ execution_id: "shown" }],
+      });
+      await expect(runs.get("hidden")).rejects.toMatchObject({ code: "not_found" });
+      await expect(runs.context("hidden")).rejects.toMatchObject({ code: "not_found" });
+      await expect(runs.compact("hidden")).rejects.toMatchObject({ code: "not_found" });
+      await expect(runs.delete("hidden")).rejects.toMatchObject({ code: "not_found" });
+      const handle = await runs.start({
+        agent: "solo",
+        continue_from: "hidden",
+        messages: [{ role: "user", content: "continue" }],
+      });
+      await expect(handle.done).resolves.toMatchObject({
+        status: "failed",
+        error: { code: "continuation_unavailable" },
+      });
+      await handle.closed;
+      expect((deps.llm as MockLLM).calls).toHaveLength(0);
+      expect(traceStore.getById(stateOwner("alice"), "hidden")?.final_context).toEqual(
+        hidden.final_context,
+      );
+    } finally {
+      await kernel.close();
+    }
+  });
+
   it("rejects invalid owner-cache bounds and a cross-project workspace", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-own-invalid-cache-"));
     expect(() => makeKernel(ws, { maxOwners: 0 })).toThrow("maxOwners");
@@ -586,6 +634,7 @@ describe("owner isolation", () => {
     const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
     const kernel = createInProcessKernel({
       deps: {
+        executionVisibility: "public",
         env,
         llm: new MockLLM({ script: [{ text: "ok" }] }),
         connections: createConnectionManager({
@@ -622,6 +671,7 @@ describe("owner isolation", () => {
     const build = () =>
       createInProcessKernel({
         deps: {
+          executionVisibility: "public",
           env,
           llm: new MockLLM({ script: [{ text: "ok" }] }),
           connections: createConnectionManager({
@@ -649,6 +699,7 @@ describe("owner isolation", () => {
     expect(() =>
       createInProcessKernel({
         deps: {
+          executionVisibility: "public",
           env,
           llm: new MockLLM({ script: [{ text: "ok" }] }),
           connections: createConnectionManager({

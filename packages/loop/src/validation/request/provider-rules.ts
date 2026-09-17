@@ -56,21 +56,11 @@ function rejectProviderMapIssues(
  *
  * @param data - the parsed request.
  * @returns the set of provider names some model reference in this run names.
- * @remarks Every profile's model, **and the guard judge's**. The judge is not a
- *   profile and never appears in `profiles`, yet it resolves through the very
- *   same registry, so a provider reached only by it would read as unused — and
- *   the one rule {@link rejectProviderMapIssues} applies only to a used provider
- *   is the refusal of a `body` the SDK cannot send. That is the silent drop the
- *   rule exists to make loud, on every judge call, with nothing said anywhere.
- *
- *   A judge with no `model` of its own falls back to the settings default, which
- *   the host has already written onto the entry profile by the time a request is
- *   assembled, so that case is covered by `profiles`.
+ * @remarks Includes model references declared by registered settings specs.
  */
-function referencedProviders(data: ParsedRunRequest): Set<string> {
+function referencedProviders(data: ParsedRunRequest, extraModels: readonly string[]): Set<string> {
   const tokens = data.profiles.map((p) => p.model);
-  const judge = data.guard_judge?.model;
-  if (judge !== undefined) tokens.push(judge);
+  tokens.push(...extraModels);
   return new Set(tokens.map((t) => parseModelRef(t).provider));
 }
 
@@ -85,11 +75,12 @@ function referencedProviders(data: ParsedRunRequest): Set<string> {
 export function rejectProviderConfigIssues(
   data: ParsedRunRequest,
   resolver?: ModelExecutionResolver,
+  extraModels: readonly string[] = [],
 ): void {
   rejectCatalogProviders(data.providers, resolver);
   const registry = data.providers;
   if (registry.length === 0) return;
-  const referenced = referencedProviders(data);
+  const referenced = referencedProviders(data, extraModels);
   const seenProviders = new Set<string>();
   for (const e of registry) {
     if (seenProviders.has(e.name)) {
@@ -154,11 +145,11 @@ export function rejectProviderConfigIssues(
 export function requireResolvableModelProviders(
   data: ParsedRunRequest,
   resolver?: ModelExecutionResolver,
+  extraModels: readonly string[] = [],
 ): void {
   const refs = data.profiles.map((p) => p.model);
+  refs.push(...extraModels);
   if (data.vision_model !== undefined) refs.push(data.vision_model);
-  if (resolver !== undefined && data.guard_judge?.model !== undefined)
-    refs.push(data.guard_judge.model);
   for (const ref of refs) {
     if (resolver !== undefined) {
       const parsed = parseModelRef(ref);

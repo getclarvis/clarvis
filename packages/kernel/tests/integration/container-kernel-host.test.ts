@@ -20,6 +20,39 @@ import { connectKernelClient } from "../../src/transport/client.ts";
 import { modelCallInput } from "../../src/hosting/container-model-contract.ts";
 import { DISCOVERY_SCHEMA } from "@clarvis/workflows";
 
+test("Container rejects Judge request controls before inference and permits guard off", async () => {
+  let calls = 0;
+  const fixture = await containerNativeFixture({
+    llm: {
+      call: async (params) => {
+        calls++;
+        expect(params.agentInstanceId).not.toBe("judge");
+        return {
+          text: "Completed",
+          usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+        };
+      },
+    },
+  });
+  try {
+    for (const params of [
+      { guard_mode: "auto" as const },
+      { guard_mode: "on" as const },
+      { guard_judge: {} },
+      { guard_mode: "off" as const, guard_judge: { guidance: "fixture" } },
+    ]) {
+      await expect(fixture.start(params)).rejects.toMatchObject({ code: "unsupported" });
+      expect(calls).toBe(0);
+    }
+    const { attachment } = await fixture.start({ guard_mode: "off" });
+    await attachment.handle.done;
+    await attachment.handle.closed;
+    expect(calls).toBe(1);
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("native runs receive the admitted Container placement through the system section", async () => {
   let calls = 0;
   const fixture = await containerNativeFixture({

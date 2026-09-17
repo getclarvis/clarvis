@@ -39,6 +39,7 @@ function spyLLM(): { llm: LLMProvider; ttls: (string | undefined)[] } {
 
 function makeDeps(capabilities: Capability[], llm?: LLMProvider): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm: llm ?? new MockLLM({ script: [{ text: "done" }] }),
     connections: mockConnections(mockMCPFactory({})),
@@ -73,6 +74,108 @@ function stateful(name: string, state: unknown): { cap: Capability; seen: unknow
  * capability itself, because the capability is doing exactly what it was asked.
  */
 describe("the run context a capability is built with", () => {
+  it.each([undefined, "5m", "1h"] as const)(
+    "publishes the effective provider and TTL before activation (%s)",
+    async (ttl) => {
+      const spy = spyLLM();
+      let observed = false;
+      const observer: Capability = {
+        name: "observer",
+        forRun(ctx) {
+          observed = true;
+          expect(ctx.executionBaseLlm).toBe(spy.llm);
+          expect(ctx.llm).not.toBe(spy.llm);
+          expect(ctx.resolvedPromptCacheTtl).toBe(ttl ?? "1h");
+          return null;
+        },
+      };
+      const result = await executeRun({
+        rawBody: { ...BODY, ...(ttl === undefined ? {} : { prompt_cache_ttl: ttl }) },
+        owner: "test",
+        deps: makeDeps([observer, needsHuman], spy.llm),
+        elicit: async () => ({ action: "decline" }),
+      });
+      expect(result.response.status).toBe("completed");
+      expect(observed).toBe(true);
+      expect(spy.ttls).toEqual([ttl ?? "1h"]);
+    },
+  );
+
+  it("evaluates all conditional requirements once before any activation", async () => {
+    const order: string[] = [];
+    const capabilities = ["first", "second"].map((name): Capability => ({
+      name,
+      requiredFor(view) {
+        expect(view.request.entry).toBe("solo");
+        order.push(`preflight:${name}`);
+        return true;
+      },
+      forRun() {
+        order.push(`activate:${name}`);
+        return { name, forAgent: () => ({ attach: () => ({}) }) };
+      },
+    }));
+    const result = await executeRun({ rawBody: BODY, owner: "test", deps: makeDeps(capabilities) });
+    expect(result.response.status).toBe("completed");
+    expect(order).toEqual([
+      "preflight:first",
+      "preflight:second",
+      "activate:first",
+      "activate:second",
+    ]);
+  });
+
+  it("does not activate any capability when a conditional preflight throws", async () => {
+    let activations = 0;
+    const llm = new MockLLM({ script: [] });
+    const deps = makeDeps(
+      [
+        {
+          name: "first",
+          forRun: () => {
+            activations++;
+            return null;
+          },
+        },
+        {
+          name: "invalid",
+          requiredFor: () => {
+            throw new Error("invalid preflight");
+          },
+          forRun: () => null,
+        },
+      ],
+      llm,
+    );
+    await expect(executeRun({ rawBody: BODY, owner: "test", deps })).rejects.toThrow(
+      "invalid preflight",
+    );
+    expect(activations).toBe(0);
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it("keeps a declined conditional capability optional for an ineligible request", async () => {
+    const result = await executeRun({
+      rawBody: BODY,
+      owner: "test",
+      deps: makeDeps([{ name: "unused", requiredFor: () => false, forRun: () => null }]),
+    });
+    expect(result.response.status).toBe("completed");
+  });
+
+  it.each([true, false])(
+    "controls the entry environment only through host deps (%s)",
+    async (includeEnvironmentPreamble) => {
+      const llm = new MockLLM({ script: [{ text: "done" }] });
+      const deps = { ...makeDeps([], llm), includeEnvironmentPreamble };
+      const result = await executeRun({ rawBody: BODY, owner: "test", deps });
+      expect(result.response.status).toBe("completed");
+      const system = llm.calls[0]!.messages.find((message) => message.role === "system")!;
+      if (typeof system.content !== "string") throw new Error("Expected a text system prompt");
+      expect(system.content.includes(deps.workspaceRoot)).toBe(includeEnvironmentPreamble);
+    },
+  );
+
   it("hands a continued run the state the previous run filed", async () => {
     const first = stateful("plans", { id: "plan-1" });
     const deps = makeDeps([first.cap]);

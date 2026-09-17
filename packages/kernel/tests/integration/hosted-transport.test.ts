@@ -83,6 +83,7 @@ async function fixture(kind: "loopback" | "local") {
     globalConfigDir: join(root, "global"),
     ...kernelIdentity(root),
     deps: {
+      executionVisibility: "public",
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_AGENT_TOOLS_ENABLED: "0" }),
       workspaceRoot: root,
       llm: new MockLLM({ script: [] }),

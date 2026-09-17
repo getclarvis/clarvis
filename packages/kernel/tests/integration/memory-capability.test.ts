@@ -76,6 +76,7 @@ describe("kernel memory composition root", () => {
     const llm = new MockLLM({ script: [{ text: "first" }, { text: "second" }] });
     const memory = memoryComposition();
     const deps: ExecuteRunDeps = {
+      executionVisibility: "public",
       env,
       llm,
       connections: createConnectionManager({

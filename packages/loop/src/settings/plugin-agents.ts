@@ -1,7 +1,8 @@
 import { opendirSync, type Dirent } from "node:fs";
 import { join, relative, sep } from "node:path";
 import type { ZodError } from "zod";
-import { pluginManifestSchema, type PluginManifest } from "./plugin-schema.ts";
+import { pluginManifestSchemaFor, type PluginManifest } from "./plugin-schema.ts";
+import type { CapabilityRegistry } from "@clarvis/capability";
 import { PLUGIN_RESOURCE_LIMITS, readBoundedPluginText } from "./plugin-resources.ts";
 
 /** One agent markdown file discovered under a plugin's agents directory. */
@@ -155,7 +156,10 @@ export type PluginManifestParse =
  * file-read and error-reporting conventions; only the JSON parse + schema check
  * are shared, so every host validates a manifest the exact same way.
  */
-export function parsePluginManifest(raw: string): PluginManifestParse {
+export function parsePluginManifest(
+  raw: string,
+  registry?: CapabilityRegistry,
+): PluginManifestParse {
   if (Buffer.byteLength(raw, "utf8") > PLUGIN_RESOURCE_LIMITS.manifestBytes) {
     return {
       ok: false,
@@ -171,7 +175,7 @@ export function parsePluginManifest(raw: string): PluginManifestParse {
   } catch (error) {
     return { ok: false, kind: "json", error };
   }
-  const parsed = pluginManifestSchema.safeParse(json);
+  const parsed = pluginManifestSchemaFor(registry).safeParse(json);
   if (!parsed.success) return { ok: false, kind: "schema", error: parsed.error };
   return { ok: true, manifest: parsed.data };
 }

@@ -14,6 +14,7 @@ const BASE = {
 
 function deps(llm: MockLLM): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm,
     connections: mockConnections(mockMCPFactory({})),

@@ -786,7 +786,7 @@ async function runApp(
     mode: GuardMode,
   ): { guardJudge?: { guidance: string } } {
     if (mode !== "auto") return {};
-    const guidance = loadGuardJudgePrompt(runtimeDirs).prompt;
+    const guidance = loadGuardJudgePrompt(runtimeDirs).guidance;
     return guidance.length === 0 ? {} : { guardJudge: { guidance } };
   }
 

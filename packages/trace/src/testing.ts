@@ -1,4 +1,5 @@
-import { ConflictError } from "@clarvis/capability";
+import { assertExecutionVisibility } from "./visibility.ts";
+import { ConflictError, PersistenceError } from "@clarvis/capability";
 import { sanitizeDeep } from "@clarvis/capability";
 import {
   recordToSummary,
@@ -31,7 +32,13 @@ export function createMemoryTraceStore(): TraceStore {
   };
 
   return {
+    visibilityQueries: true,
     insert(record): Promise<void> {
+      try {
+        assertExecutionVisibility(record.visibility);
+      } catch {
+        return Promise.reject(new PersistenceError("Unclassified execution cannot be persisted."));
+      }
       const m = ownerMap(record.owner_key_name);
       if (m.has(record.id)) {
         return Promise.reject(
@@ -41,6 +48,7 @@ export function createMemoryTraceStore(): TraceStore {
         );
       }
       m.set(record.id, {
+        visibility: record.visibility,
         id: record.id,
         owner_key_name: record.owner_key_name,
         status: record.status,
@@ -72,13 +80,17 @@ export function createMemoryTraceStore(): TraceStore {
       return Promise.resolve();
     },
 
-    getById(owner, id): StoredExecution | null {
-      return byOwner.get(owner)?.get(id) ?? null;
+    getById(owner, id, visibility): StoredExecution | null {
+      const record = byOwner.get(owner)?.get(id);
+      return record !== undefined && (visibility === undefined || record.visibility === visibility)
+        ? record
+        : null;
     },
 
-    replaceFinalContext(owner, id, context, usage): Promise<boolean> {
+    replaceFinalContext(owner, id, context, usage, visibility): Promise<boolean> {
       const record = byOwner.get(owner)?.get(id);
-      if (record === undefined) return Promise.resolve(false);
+      if (record === undefined || (visibility !== undefined && record.visibility !== visibility))
+        return Promise.resolve(false);
       record.final_context = structuredClone([...context]);
       record.total_input_tokens += usage?.input ?? 0;
       record.total_output_tokens += usage?.output ?? 0;
@@ -91,15 +103,19 @@ export function createMemoryTraceStore(): TraceStore {
       return byOwner.get(owner)?.has(id) ?? false;
     },
 
-    list(owner, limit, offset): ListResult {
-      const all = [...(byOwner.get(owner)?.values() ?? [])];
+    list(owner, limit, offset, visibility): ListResult {
+      const all = [...(byOwner.get(owner)?.values() ?? [])].filter(
+        (record) => visibility === undefined || record.visibility === visibility,
+      );
       return {
         items: sortDescPaginate(all, limit, offset).map(recordToSummary),
         total: all.length,
       };
     },
 
-    deleteById(owner, id): boolean {
+    deleteById(owner, id, visibility): boolean {
+      if (visibility !== undefined && byOwner.get(owner)?.get(id)?.visibility !== visibility)
+        return false;
       return byOwner.get(owner)?.delete(id) ?? false;
     },
 
@@ -110,10 +126,13 @@ export function createMemoryTraceStore(): TraceStore {
     },
 
     listAcrossOwners(limit, offset, filter): ListResult {
-      const all =
+      const candidates =
         filter?.owner !== undefined
           ? [...(byOwner.get(filter.owner)?.values() ?? [])]
           : [...byOwner.values()].flatMap((m) => [...m.values()]);
+      const all = candidates.filter(
+        (record) => filter?.visibility === undefined || record.visibility === filter.visibility,
+      );
       return {
         items: sortDescPaginate(all, limit, offset).map(recordToSummary),
         total: all.length,

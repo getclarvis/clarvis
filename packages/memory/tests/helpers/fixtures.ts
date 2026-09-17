@@ -39,6 +39,7 @@ export function makeExecutionRecord(
   over: Partial<ExecutionRecord> & { id: string; owner_key_name: string },
 ): ExecutionRecord {
   return {
+    visibility: "public",
     status: "completed",
     started_at: 1_700_000_000_000,
     ended_at: 1_700_000_000_500,

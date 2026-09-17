@@ -47,6 +47,7 @@ function stubDeps(
 ): ExecuteRunDeps {
   const env = loadEnv({ CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000", CLARVIS_LOG_LEVEL: "silent" });
   return {
+    executionVisibility: "public",
     env,
     llm,
     connections: createConnectionManager({

@@ -15,7 +15,6 @@ import { handlerBaseOf, type HandlerBase } from "@clarvis/capability";
 export {
   defaultGuardMode,
   guardModeSchema,
-  guardJudgeSchema,
   AGENT_TOOLS_SETTINGS_FIELDS,
   AGENT_TOOLS_REQUEST_PARAMS,
   GUARD_PLUGIN_FIELDS,
@@ -57,7 +56,7 @@ export interface GuardResolution {
 }
 
 /**
- * Host port: resolves the run's guard from the request (guard_mode/guard_judge),
+ * Host port: resolves the run's guard from the request and registered parameters,
  * the host's settings, and the client's elicit channel — all reachable through
  * the RunCapabilityContext. Return undefined to run unguarded.
  */

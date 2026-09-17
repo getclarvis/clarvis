@@ -17,6 +17,7 @@ COPY packages/skills/package.json      packages/skills/
 COPY packages/memory/package.json      packages/memory/
 COPY packages/plan/package.json        packages/plan/
 COPY packages/goal/package.json        packages/goal/
+COPY packages/judge/package.json       packages/judge/
 COPY packages/tasks/package.json       packages/tasks/
 COPY packages/protocol/package.json    packages/protocol/
 COPY packages/loop/package.json        packages/loop/

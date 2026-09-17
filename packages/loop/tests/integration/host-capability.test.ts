@@ -84,6 +84,7 @@ function hostCapability(log: {
 function makeDeps(llm: MockLLM): ExecuteRunDeps {
   const env = loadEnv({ CLARVIS_MCP_CONNECT_TIMEOUT_MS: "2000", CLARVIS_LOG_LEVEL: "silent" });
   return {
+    executionVisibility: "public",
     env,
     llm,
     connections: mockConnections(mockMCPFactory({}), env),
@@ -181,7 +182,14 @@ describe("executeRun — capability run-end", () => {
       owner: "host",
       deps: {
         ...base,
-        ...(env === undefined ? {} : { env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...env }) }),
+        ...(env === undefined
+          ? {
+              executionVisibility: "public",
+            }
+          : {
+              executionVisibility: "public",
+              env: loadEnv({ CLARVIS_LOG_LEVEL: "silent", ...env }),
+            }),
         logger: {
           debug: () => undefined,
           info: () => undefined,
@@ -258,7 +266,14 @@ describe("executeRun — capability setup", () => {
       owner: "host",
       deps: {
         ...base,
-        ...(extensionAdmission === undefined ? {} : { extensionAdmission }),
+        ...(extensionAdmission === undefined
+          ? {
+              executionVisibility: "public",
+            }
+          : {
+              executionVisibility: "public",
+              extensionAdmission,
+            }),
         env: loadEnv({
           CLARVIS_LOG_LEVEL: "silent",
           CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS: "5",
@@ -297,43 +312,44 @@ describe("executeRun — capability setup", () => {
     expect(JSON.stringify(warnings)).toContain("capability.setup_timeout");
   });
 
-  it.each(["declined", "timeout", "missing-seed", "empty-seed", "seed-timeout", "missing-entry"])(
-    "refuses mandatory capability %s before any inference",
-    async (mode) => {
-      const llm = new MockLLM({ script: [{ text: "must not infer" }] });
-      const capability: Capability = {
-        name: "mandatory",
-        required: true,
-        forRun: () => {
-          if (mode === "declined") return null;
-          if (mode === "timeout") return new Promise<never>(() => undefined);
-          return {
-            name: "mandatory",
-            seedBlock: () =>
-              mode === "missing-seed"
-                ? undefined
-                : mode === "empty-seed"
-                  ? "  "
-                  : mode === "seed-timeout"
-                    ? new Promise<never>(() => undefined)
-                    : "required context",
-            forAgent: () => (mode === "missing-entry" ? null : { attach: () => ({}) }),
-          };
-        },
-      };
-      if (mode === "missing-entry") {
-        const { outcome } = await runWith([capability], undefined, llm);
-        expect(outcome.response).toMatchObject({
-          status: "error",
-          error: { code: "required_capability_unavailable" },
-        });
-      } else
-        await expect(runWith([capability], undefined, llm)).rejects.toMatchObject({
-          code: "required_capability_unavailable",
-        });
-      expect(llm.calls).toEqual([]);
-    },
-  );
+  it.each(
+    ["declined", "timeout", "missing-seed", "empty-seed", "seed-timeout", "missing-entry"].flatMap(
+      (mode) => [true, false].map((conditional) => ({ mode, conditional })),
+    ),
+  )("refuses mandatory capability %j before any inference", async ({ mode, conditional }) => {
+    const llm = new MockLLM({ script: [{ text: "must not infer" }] });
+    const capability: Capability = {
+      name: "mandatory",
+      ...(conditional ? { requiredFor: () => true } : { required: true }),
+      forRun: () => {
+        if (mode === "declined") return null;
+        if (mode === "timeout") return new Promise<never>(() => undefined);
+        return {
+          name: "mandatory",
+          seedBlock: () =>
+            mode === "missing-seed"
+              ? undefined
+              : mode === "empty-seed"
+                ? "  "
+                : mode === "seed-timeout"
+                  ? new Promise<never>(() => undefined)
+                  : "required context",
+          forAgent: () => (mode === "missing-entry" ? null : { attach: () => ({}) }),
+        };
+      },
+    };
+    if (mode === "missing-entry") {
+      const { outcome } = await runWith([capability], undefined, llm);
+      expect(outcome.response).toMatchObject({
+        status: "error",
+        error: { code: "required_capability_unavailable" },
+      });
+    } else
+      await expect(runWith([capability], undefined, llm)).rejects.toMatchObject({
+        code: "required_capability_unavailable",
+      });
+    expect(llm.calls).toEqual([]);
+  });
 
   it("activates mandatory controls and keeps pre-start cancellation distinct from missing controls", async () => {
     const llm = new MockLLM({ script: [{ text: "done" }] });
@@ -376,41 +392,44 @@ describe("executeRun — capability setup", () => {
     expect(JSON.stringify(warnings)).toContain("capability.setup_timeout");
   });
 
-  it("refuses mandatory activation when physical extension capacity is unavailable", async () => {
-    const admission = createExtensionAdmissionController({
-      maxActiveNormal: 1,
-      maxActiveRunEnd: 1,
-      maxActivePerOperation: 1,
-    });
-    const release = Promise.withResolvers<void>();
-    const held = admission.call("held", "normal", () => release.promise);
-    const llm = new MockLLM({ script: [] });
-    let invoked = false;
-    try {
-      await expect(
-        runWith(
-          [
-            {
-              name: "mandatory",
-              required: true,
-              forRun: () => {
-                invoked = true;
-                return null;
+  it.each([true, false])(
+    "refuses mandatory activation when physical extension capacity is unavailable (%s)",
+    async (conditional) => {
+      const admission = createExtensionAdmissionController({
+        maxActiveNormal: 1,
+        maxActiveRunEnd: 1,
+        maxActivePerOperation: 1,
+      });
+      const release = Promise.withResolvers<void>();
+      const held = admission.call("held", "normal", () => release.promise);
+      const llm = new MockLLM({ script: [] });
+      let invoked = false;
+      try {
+        await expect(
+          runWith(
+            [
+              {
+                name: "mandatory",
+                ...(conditional ? { requiredFor: () => true } : { required: true }),
+                forRun: () => {
+                  invoked = true;
+                  return null;
+                },
               },
-            },
-          ],
-          undefined,
-          llm,
-          admission,
-        ),
-      ).rejects.toMatchObject({ code: "required_capability_unavailable" });
-      expect(invoked).toBe(false);
-      expect(llm.calls).toEqual([]);
-    } finally {
-      release.resolve();
-      await held;
-    }
-  });
+            ],
+            undefined,
+            llm,
+            admission,
+          ),
+        ).rejects.toMatchObject({ code: "required_capability_unavailable" });
+        expect(invoked).toBe(false);
+        expect(llm.calls).toEqual([]);
+      } finally {
+        release.resolve();
+        await held;
+      }
+    },
+  );
 
   it.each(["scope", "attach"] as const)(
     "validates required entry %s before auxiliary vision inference",

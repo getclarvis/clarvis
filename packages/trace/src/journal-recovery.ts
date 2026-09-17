@@ -94,7 +94,9 @@ function parseHeader(line: string): JournalHeader | null {
   }
   if (!isRecord(raw)) return null;
   const { v, id, owner_key_name, started_at, request } = raw;
-  if (typeof v !== "number" || v > JOURNAL_VERSION) return null;
+  if (v !== JOURNAL_VERSION) return null;
+  const visibility = raw.visibility;
+  if (visibility !== "public" && visibility !== "internal") return null;
   if (typeof id !== "string" || id.length === 0) return null;
   if (typeof owner_key_name !== "string" || owner_key_name.length === 0) return null;
   if (typeof started_at !== "number" || !Number.isFinite(started_at)) return null;
@@ -109,6 +111,7 @@ function parseHeader(line: string): JournalHeader | null {
   const hostMetadata = raw.host_metadata;
   return {
     v,
+    visibility,
     id,
     owner_key_name,
     started_at,
@@ -402,6 +405,7 @@ export function journalToRecord(parsed: JournalParseSuccess): ExecutionRecord {
   }
 
   return {
+    visibility: parsed.header.visibility,
     id: parsed.header.id,
     owner_key_name: parsed.header.owner_key_name,
     status: "interrupted",

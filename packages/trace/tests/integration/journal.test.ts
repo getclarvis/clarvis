@@ -81,7 +81,13 @@ describe("createRunJournal", () => {
     };
     const journal = createRunJournal({
       path,
-      header: { id: "exec-s", owner_key_name: OWNER, started_at: STARTED_AT, request: withSecret },
+      header: {
+        visibility: "public",
+        id: "exec-s",
+        owner_key_name: OWNER,
+        started_at: STARTED_AT,
+        request: withSecret,
+      },
     });
     journal.close();
     expect(readFileSync(path, "utf8")).not.toContain("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA");

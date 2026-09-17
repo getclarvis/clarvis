@@ -47,6 +47,7 @@ function buildDeps(workspaceRoot: string, script?: MockLLMScriptStep[]): Execute
     CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec",
   });
   return {
+    executionVisibility: "public",
     env,
     llm: new MockLLM({ script: script ?? [{ text: "Done." }] }),
     connections: createConnectionManager({

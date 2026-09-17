@@ -8,6 +8,7 @@ import {
 } from "@clarvis/capability";
 import type { Capability, TraceEvent, SteerMessage } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
+import { createTraceVisibilityView } from "@clarvis/trace";
 import { ConflictError, PersistenceError } from "@clarvis/capability";
 import { MockLLM, mockConnections, mockMCPFactory } from "../helpers/fixtures.ts";
 import { makeTestTraceStore } from "../contract/_helpers.ts";
@@ -25,6 +26,7 @@ const BODY = {
 
 function makeDeps(over: Partial<ExecuteRunDeps> = {}): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm: new MockLLM({ script: [{ text: "done" }] }),
     connections: mockConnections(mockMCPFactory({})),
@@ -45,6 +47,87 @@ function insertThrows(thrown: unknown): TraceStore {
 }
 
 describe("executeRun (shared engine)", () => {
+  it("shares in-flight execution ids across public and internal views", async () => {
+    const physical = makeTestTraceStore();
+    let started!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const llm = new MockLLM({ script: [{ text: "done" }] });
+    const deps = makeDeps({
+      traceStore: createTraceVisibilityView(physical, "public"),
+      llm: {
+        async call(params) {
+          started();
+          await blocked;
+          return llm.call(params);
+        },
+      },
+    });
+    const body = { ...BODY, execution_id: "shared-in-flight" };
+    const first = executeRun({ rawBody: body, owner: "owner", deps });
+    try {
+      await entered;
+      await expect(
+        executeRun({
+          rawBody: body,
+          owner: "owner",
+          deps: {
+            ...deps,
+            executionVisibility: "internal",
+            traceStore: createTraceVisibilityView(physical, "internal"),
+          },
+        }),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect(llm.calls).toHaveLength(0);
+    } finally {
+      release();
+      await first;
+    }
+    expect(llm.calls).toHaveLength(1);
+  });
+
+  it("rejects missing host visibility before activation or inference", async () => {
+    let activations = 0;
+    const llm = new MockLLM({ script: [{ text: "unreachable" }] });
+    const deps = makeDeps({
+      llm,
+      capabilities: [
+        {
+          name: "probe",
+          forRun() {
+            activations++;
+            return null;
+          },
+        },
+      ],
+    });
+    delete (deps as Partial<ExecuteRunDeps>).executionVisibility;
+    await expect(executeRun({ rawBody: BODY, owner: "owner", deps })).rejects.toBeInstanceOf(
+      PersistenceError,
+    );
+    expect(activations).toBe(0);
+    expect(llm.calls).toHaveLength(0);
+  });
+
+  it.each(["public", "internal"] as const)(
+    "persists the explicit host %s classification",
+    async (visibility) => {
+      const deps = makeDeps({ executionVisibility: visibility });
+      const result = await executeRun({
+        rawBody: { ...BODY, execution_id: "classified" },
+        owner: "owner",
+        deps,
+      });
+      expect(result.response.status).toBe("completed");
+      expect(deps.traceStore.getById("owner", "classified")?.visibility).toBe(visibility);
+    },
+  );
+
   it("publishes the run trace during forRun and journals later contributed records", async () => {
     const journaled: TraceEvent[] = [];
     const traceStore: TraceStore = {

@@ -47,6 +47,7 @@ async function setup(options?: LocalKernelListenerOptions) {
     globalConfigDir: join(root, "global"),
     ...kernelIdentity(root),
     deps: {
+      executionVisibility: "public",
       env,
       workspaceRoot: root,
       llm: new MockLLM({ script: [{ text: "RPC result." }] }),

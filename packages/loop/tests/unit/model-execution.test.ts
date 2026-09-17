@@ -57,7 +57,7 @@ test("closed catalog uses the context window as the conservative output ceiling 
   expect(profile.maxOutputTokens).toBe(uncapped.contextWindowTokens);
 });
 
-test("catalog refuses transports, missing models, vision and judge targets, and resolver aliases", () => {
+test("catalog refuses transports, missing models, vision targets, and resolver aliases", () => {
   const validate = (body: unknown, catalog = resolver) =>
     validateBody(body, env, undefined, { modelExecutionResolver: catalog });
   expect(() => validate({ ...request, providers: VALID_REQUEST.providers })).toThrow(
@@ -69,7 +69,6 @@ test("catalog refuses transports, missing models, vision and judge targets, and 
   expect(() => validate({ ...request, vision_model: "alias/missing" })).toThrow(
     /execution catalog/,
   );
-  expect(() => validate({ ...request, guard_judge: { model: "alias/missing" } })).toThrow();
   expect(() => validate(request, { resolve: () => ({ ...info, provider: "other" }) })).toThrow(
     /execution catalog/,
   );

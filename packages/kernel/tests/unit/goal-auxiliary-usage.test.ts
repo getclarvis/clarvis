@@ -65,6 +65,16 @@ it("formulation uses provider uncertainty instead of zero-initialized loop total
     providers: [],
     deps: {
       env: loadEnv({}),
+      capabilities: [
+        { name: "tools", forRun: () => null },
+        {
+          name: "judge",
+          required: true,
+          forRun: () => {
+            throw new Error("Goal formulation must not instantiate Judge");
+          },
+        },
+      ],
       llm: {
         call: async () => ({
           text: "Done",
@@ -79,6 +89,7 @@ it("formulation uses provider uncertainty instead of zero-initialized loop total
       },
     } as unknown as ExecuteRunDeps,
     executeRun: async (args) => {
+      expect(args.deps.capabilities?.map((capability) => capability.name)).toEqual(["tools"]);
       await args.deps.llm.call({ provider: "fixture", model: "model", messages: [], tools: [] });
       return {
         executionId: "formulation",

@@ -29,6 +29,7 @@ const PACKAGE_THRESHOLDS = {
   capability: { functions: 1, lines: 1 },
   code: { functions: 0.93, lines: 0.96 },
   goal: { functions: 0.95, lines: 0.98 },
+  judge: { functions: 0.95, lines: 0.98 },
   hooks: { functions: 1, lines: 1 },
   kernel: { functions: 0.94, lines: 0.97 },
   llm: { functions: 1, lines: 1 },
@@ -74,6 +75,10 @@ const TYPE_ONLY_PACKAGES = new Set(["protocol"]);
 // below is one of the three permanent reasons. Do not open a fourth: an
 // untested module belongs in a test, not here.
 const NO_COUNTER_ALLOWLIST = {
+  judge: [
+    // Pure re-export barrel.
+    "src/index.ts",
+  ],
   capability: [
     // Type-only: declares interfaces/aliases and emits nothing at runtime.
     "src/agents-port.ts",

@@ -1,3 +1,4 @@
+import { judgeSettingsSpec, type EffectReviewConfig } from "@clarvis/judge/settings";
 import { createCapabilityRegistry, type CapabilityRegistry } from "@clarvis/capability";
 import { settingsSchemaFor, type SettingsFile as LoopSettingsFile } from "@clarvis/loop/host";
 import { memorySettingsSpec, type MemorySettingsBlock } from "@clarvis/memory/settings";
@@ -20,6 +21,7 @@ import { runtimeSettingsSpec, type RuntimeSettingsBlock } from "../runtime/setti
  *   placement settings.
  */
 export const kernelCapabilityRegistry: CapabilityRegistry = createCapabilityRegistry();
+kernelCapabilityRegistry.register(judgeSettingsSpec);
 kernelCapabilityRegistry.register(memorySettingsSpec);
 kernelCapabilityRegistry.register(plansSettingsSpec);
 kernelCapabilityRegistry.register(goalsSettingsSpec);
@@ -65,6 +67,7 @@ export const kernelSettingsSchema = settingsSchemaFor(kernelCapabilityRegistry);
  * so it is the right place to compose the two.
  */
 export type KernelSettingsFile = LoopSettingsFile & {
+  effect_review?: EffectReviewConfig;
   memory?: MemorySettingsBlock;
   plans?: PlansSettingsBlock;
   goals?: GoalsSettingsBlock;

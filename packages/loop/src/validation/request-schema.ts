@@ -19,6 +19,8 @@ import {
 import { enforcePerProfileRules } from "./request/profile-rules.ts";
 import { requireKnownGrants } from "./request/grant-registry.ts";
 import type { RunShape } from "./request/run-shape.ts";
+import { createCapabilityRequestView } from "@clarvis/capability";
+import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.ts";
 
 export { serverSchema } from "./request/server-schemas.ts";
 export { agentProfileSchema, grantSchema, modelField } from "./request/profile-schemas.ts";
@@ -49,8 +51,12 @@ export function validateBody(
   requireKnownSpawnTargets(data, shape);
   enforceBudgetMode(data, shape);
   enforceEnvCeilings(data, env);
-  rejectProviderConfigIssues(data, options.modelExecutionResolver);
-  requireResolvableModelProviders(data, options.modelExecutionResolver);
+  const view = createCapabilityRequestView(data);
+  const referencedModels = [...BUILTIN_SETTINGS_SPECS, ...(registry?.specs() ?? [])].flatMap(
+    (spec) => spec.referencedModels?.(view) ?? [],
+  );
+  rejectProviderConfigIssues(data, options.modelExecutionResolver, referencedModels);
+  requireResolvableModelProviders(data, options.modelExecutionResolver, referencedModels);
   enforcePerProfileRules(data, env, options.modelExecutionResolver);
   return { request: data, shape };
 }

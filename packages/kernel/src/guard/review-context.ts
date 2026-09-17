@@ -1,4 +1,13 @@
 import type { OperatorReviewContext, OperatorReviewContextProvider } from "@clarvis/capability";
+import type { OperatorAuthorityState } from "@clarvis/capability";
+
+/** Resolve optional Plans only when reviewing; activation order must not freeze its absence. */
+export type ReviewerContextSource =
+  OperatorReviewContextProvider | (() => OperatorReviewContextProvider | undefined);
+
+function currentProvider(source: ReviewerContextSource | undefined) {
+  return typeof source === "function" ? source() : source;
+}
 
 export type ReviewerContextPayload = Array<{
   kind: OperatorReviewContext["kind"];
@@ -10,12 +19,24 @@ export interface ReviewerContextSnapshot {
   payload?: ReviewerContextPayload;
 }
 
+/** Remove fields published in dedicated prompt regions from the volatile authority fence. */
+export function reviewerAuthoritySnapshot(state: OperatorAuthorityState | undefined) {
+  if (state === undefined) return undefined;
+  const {
+    binding: _binding,
+    evidence: _evidence,
+    review_context: _reviewContext,
+    ...authority
+  } = state;
+  return authority;
+}
+
 /** Decode host-shaped semantic definitions into one ordered model payload. */
 export function reviewerContextSnapshot(
   persisted: OperatorReviewContext | undefined,
-  live: OperatorReviewContextProvider | undefined,
+  live: ReviewerContextSource | undefined,
 ): ReviewerContextSnapshot {
-  const liveSnapshot = live?.snapshot();
+  const liveSnapshot = currentProvider(live)?.snapshot();
   const contexts = [
     ...(persisted === undefined ? [] : [persisted]),
     ...(liveSnapshot?.contexts ?? []),
@@ -42,8 +63,8 @@ export function reviewerContextSnapshot(
 
 /** Reject a reviewer result if its late-bound Plans definition changed in flight. */
 export function reviewerContextIsCurrent(
-  live: OperatorReviewContextProvider | undefined,
+  live: ReviewerContextSource | undefined,
   revision: string | undefined,
 ): boolean {
-  return live?.snapshot().revision === revision;
+  return currentProvider(live)?.snapshot().revision === revision;
 }

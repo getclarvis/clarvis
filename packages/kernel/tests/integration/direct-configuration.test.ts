@@ -2,14 +2,14 @@ import { afterEach, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { contentToText, loadEnv, NOOP_LOGGER } from "@clarvis/capability";
+import { contentToText, loadEnv, NOOP_LOGGER, OPERATOR_AUTHORITY_PORT } from "@clarvis/capability";
+import { installAuthorityEnvelope } from "../../src/guard/operator-authority.ts";
 import { executeRun } from "@clarvis/loop";
 import { MockLLM } from "@clarvis/loop/testing";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
 import { createFileKernel } from "../../src/bootstrap.ts";
-import { withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
+import { effectReviewInput, withHostValidatedEffectReview } from "../helpers/effect-review-llm.ts";
 import { settingsDocumentRevision } from "../../src/config/config-store.ts";
-import { EFFECT_REVIEW_POLICY } from "../../src/guard/reviewer-policy.ts";
 
 const temporary: string[] = [];
 afterEach(() => {
@@ -74,6 +74,7 @@ it("uses an accepted ask_user authorization in the following configuration revie
   });
   const reviewed = withHostValidatedEffectReview(agent);
   let reviewerEvidence: Array<Record<string, unknown>> | undefined;
+  const reviewerRevisions: Array<{ snapshot: number; installed?: number }> = [];
   const kernel = await createFileKernel({
     workspaceRoot,
     globalDir,
@@ -86,15 +87,47 @@ it("uses an accepted ask_user authorization in the following configuration revie
         ...args,
         deps: {
           ...args.deps,
+          capabilities: [
+            ...(args.deps.capabilities ?? []),
+            {
+              name: "prior-outcome-fixture",
+              required: true,
+              forRun(ctx) {
+                const authority = ctx.services.get(OPERATOR_AUTHORITY_PORT)!;
+                const state = authority.snapshot();
+                expect(
+                  installAuthorityEnvelope(authority, {
+                    version: 1,
+                    revision: state.revision,
+                    objectives: [
+                      {
+                        id: "inspect-only",
+                        summary: "Inspect the documentation coverage",
+                        target_digests: [],
+                        evidence_ids: state.evidence.map((entry) => entry.id),
+                      },
+                    ],
+                    grants: [],
+                    exclusions: [],
+                  }),
+                ).toBe(true);
+                return { name: "prior-outcome-fixture", forAgent: () => ({ attach: () => ({}) }) };
+              },
+            },
+          ],
           llm: {
             async call(params) {
               if (
-                params.messages[0]?.content === EFFECT_REVIEW_POLICY &&
-                params.tools?.[0]?.wireName === "compile"
-              )
-                reviewerEvidence = JSON.parse(
-                  params.messages.at(-1)!.content as string,
-                ).operator_evidence;
+                params.agentInstanceId === "judge" &&
+                params.tools?.[0]?.wireName === "judge_step"
+              ) {
+                const input = effectReviewInput(params);
+                reviewerEvidence = input.snapshot.operator_evidence;
+                reviewerRevisions.push({
+                  snapshot: input.snapshot.authority.revision,
+                  installed: input.transition?.revision,
+                });
+              }
               return reviewed.call(params);
             },
           },
@@ -123,6 +156,10 @@ it("uses an accepted ask_user authorization in the following configuration revie
     await run.closed;
     expect(questions).toBe(1);
     expect(readFileSync(target, "utf8")).toBe(updated);
+    expect(reviewerRevisions).toHaveLength(2);
+    expect(reviewerRevisions[0]!.installed).toBeUndefined();
+    expect(reviewerRevisions[1]!.snapshot).toBe(reviewerRevisions[0]!.snapshot);
+    expect(reviewerRevisions[1]!.installed).toBeGreaterThan(reviewerRevisions[0]!.snapshot);
     expect(reviewerEvidence?.at(-1)).toMatchObject({
       source: "ask_user",
       prompt: "Authorize updating SAFE-09 through SAFE-11 in the coverage matrix?",

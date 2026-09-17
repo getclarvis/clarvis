@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createJsonTraceStore } from "@clarvis/trace";
+import { createJsonTraceStore, projectTraceStoreWrites } from "@clarvis/trace";
 
 import { createMemoryTraceStore } from "../../src/testing.ts";
 import { traceStoreConformance } from "./trace-store-conformance.ts";
@@ -12,6 +12,19 @@ traceStoreConformance("JSON", () => {
   const dir = mkdtempSync(join(tmpdir(), "clarvis-trace-contract-"));
   return {
     store: createJsonTraceStore({ dir }),
+    dispose: () => rmSync(dir, { recursive: true, force: true }),
+  };
+});
+
+traceStoreConformance("projected JSON", () => {
+  const dir = mkdtempSync(join(tmpdir(), "clarvis-projected-contract-"));
+  return {
+    store: projectTraceStoreWrites(createJsonTraceStore({ dir }), {
+      header: (header) => header,
+      event: (event) => event,
+      record: (record) => record,
+      context: (context) => context,
+    }),
     dispose: () => rmSync(dir, { recursive: true, force: true }),
   };
 });

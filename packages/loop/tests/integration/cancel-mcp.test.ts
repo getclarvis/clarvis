@@ -9,6 +9,7 @@ import type { LLMProvider } from "@clarvis/capability";
 
 function makeDeps(llm: LLMProvider, traceStore = makeTestTraceStore()): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm,
     connections: mockConnections(mockMCPFactory({})),

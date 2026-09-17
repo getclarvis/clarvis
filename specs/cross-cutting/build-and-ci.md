@@ -1070,7 +1070,7 @@ suppressed because the product is broken on Windows, not because they do not app
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
 version in `mise.toml`: every host Bun CI job, the release package matrix, the release publication gate,
-their runtime evidence, the crash-canary default and its evidence, both Docker stages, all 19
+their runtime evidence, the crash-canary default and its evidence, both Docker stages, all 20
 `engines.bun` fields, root `@types/bun`, and the declared plus resolved lockfile entry.
 Production: `bunVersionFailures` in `tooling/checks/bun-version.ts` validates the snapshot, and `package.json`
 (`scripts.lint:intent`) runs `check:bun-version` inside `lint:intent`.
@@ -1244,7 +1244,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 
 | Dependency | Direction forced by | Kind |
 | --- | --- | --- |
-| Bun ≥ 1.4.0 | `engines` in all 19 manifests; exact `mise.toml`; `check:bun-version` in `lint:intent` | runtime |
+| Bun ≥ 1.4.0 | `engines` in all 20 manifests; exact `mise.toml`; `check:bun-version` in `lint:intent` | runtime |
 | `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts` — the build cannot produce the artifact without it | static value import |
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts` and `packages/code/tooling/artifact/smoke.ts` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts` uses `HOME_ENV` | static value import |

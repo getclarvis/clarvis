@@ -10,6 +10,7 @@
  * request-param passthrough.
  */
 import type { z } from "zod";
+import type { CapabilityRequestView } from "./contract.ts";
 
 /** Where a settings-scope value came from: an enabled `plugin`'s manifest or the
  * `operator`'s own settings.json. */
@@ -49,6 +50,8 @@ export interface CapabilitySettingsSpec {
   pluginForbiddenReason?: string;
   /** Per-run request parameters (optional-wrapped, described zod fields). */
   requestParams?: z.ZodRawShape;
+  /** Pure synchronous model references, evaluated after structural request validation. */
+  referencedModels?(view: CapabilityRequestView): readonly string[];
 }
 
 /** Request-param keys a spec adds to the run request (assembler passthrough). */

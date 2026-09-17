@@ -1,3 +1,4 @@
+import type { ExecutionVisibility } from "@clarvis/capability";
 import { composePromptCacheKey, sanitizeErrorMessage, contentToText } from "@clarvis/capability";
 import { randomUUID } from "node:crypto";
 import type { WorkspaceStatePaths } from "@clarvis/paths";
@@ -19,7 +20,7 @@ import type { RunContinuation } from "@clarvis/capability";
 import { compileResultContract } from "./tools/result-contract.ts";
 import { generateExecutionId } from "@clarvis/trace";
 import { mapTrace } from "@clarvis/trace";
-import { buildRecord } from "@clarvis/trace";
+import { assertExecutionVisibility, buildRecord } from "@clarvis/trace";
 import {
   ConflictError,
   ContinuationUnavailableError,
@@ -86,8 +87,12 @@ export interface ExecuteRunDeps {
   llm: LLMProvider;
   connections: ConnectionManager;
   traceStore: TraceStore;
+  /** Explicit host-owned persistence classification; independent of model request data. */
+  executionVisibility: ExecutionVisibility;
   logger?: Logger;
   workspaceRoot: string;
+  /** Host-only control for isolated runs that need no operational environment in their prompt. */
+  includeEnvironmentPreamble?: boolean;
   /** Long-lived capabilities, built once with the deps (tools, ask-user,
    * skills, plus anything the host registers). */
   capabilities?: Capability[];
@@ -160,11 +165,11 @@ function isExecutionIdConflict(err: unknown): boolean {
 }
 
 /**
- * Per-{@link TraceStore} registry of execution ids currently running, keyed by
+ * Per-physical-store registry of execution ids currently running, keyed by
  * owner, used by {@link reserveExecutionId} to reject a concurrent duplicate id
  * before its trace has been persisted.
  */
-const inFlightIds = new WeakMap<TraceStore, Map<string, Set<string>>>();
+const inFlightIds = new WeakMap<object, Map<string, Set<string>>>();
 /**
  * Claim `executionId` for `owner` for the duration of a run, guarding against two
  * in-flight runs sharing an id (the persisted-trace uniqueness check cannot yet
@@ -175,10 +180,11 @@ const inFlightIds = new WeakMap<TraceStore, Map<string, Set<string>>>();
  *   flight for this owner.
  */
 function reserveExecutionId(store: TraceStore, owner: string, executionId: string): () => void {
-  let byOwner = inFlightIds.get(store);
+  const namespace = store.executionIdNamespace ?? store;
+  let byOwner = inFlightIds.get(namespace);
   if (byOwner === undefined) {
     byOwner = new Map();
-    inFlightIds.set(store, byOwner);
+    inFlightIds.set(namespace, byOwner);
   }
   let ids = byOwner.get(owner);
   if (ids === undefined) {
@@ -346,6 +352,7 @@ export async function executeRun({
   capabilities,
   onCapabilityEvent,
 }: ExecuteRunArgs): Promise<ExecuteRunOutcome> {
+  assertExecutionVisibility(deps.executionVisibility);
   const extensionAdmission = extensionAdmissionFor(deps);
   const allCapabilities = [...(deps.capabilities ?? []), ...(capabilities ?? [])];
   const persistedTraceProjectors = createRunTraceProjectors(
@@ -541,6 +548,7 @@ export async function executeRun({
           openJournal: (startedAt: number): RunJournal | undefined => {
             journal = deps.traceStore.openJournal?.({
               header: {
+                visibility: deps.executionVisibility,
                 id: executionId,
                 owner_key_name: owner,
                 started_at: startedAt,
@@ -552,6 +560,11 @@ export async function executeRun({
             return journal;
           },
           env: deps.env,
+          executionBaseLlm: deps.llm,
+          resolvedPromptCacheTtl: promptCacheTtl,
+          ...(deps.includeEnvironmentPreamble === undefined
+            ? {}
+            : { includeEnvironmentPreamble: deps.includeEnvironmentPreamble }),
           ...(deps.modelExecutionResolver === undefined
             ? {}
             : { modelExecutionResolver: deps.modelExecutionResolver }),
@@ -598,6 +611,7 @@ export async function executeRun({
         deps.env.CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS,
       );
       const record = buildRecord({
+        visibility: deps.executionVisibility,
         id: executionId,
         owner,
         request: parsed,

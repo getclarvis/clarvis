@@ -363,3 +363,29 @@ describe("journalToRecord", () => {
     });
   });
 });
+
+it.each(["public", "internal"] as const)("recovers explicit %s visibility", async (visibility) => {
+  const parsed = await parseWhole(
+    JSON.stringify({ ...journalHeader("visible"), v: JOURNAL_VERSION, visibility }),
+  );
+  expect(parsed.ok).toBe(true);
+  if (parsed.ok) expect(journalToRecord(parsed).visibility).toBe(visibility);
+});
+
+it.each([undefined, null, "unknown", false])(
+  "rejects a current journal with invalid visibility %j",
+  async (visibility) => {
+    expect(
+      await parseWhole(
+        JSON.stringify({ ...journalHeader("invalid"), v: JOURNAL_VERSION, visibility }),
+      ),
+    ).toMatchObject({ ok: false, reason: "bad_header" });
+  },
+);
+
+it("refuses pre-feature journals rather than inferring public visibility", async () => {
+  expect(await parseWhole(JSON.stringify({ ...journalHeader("legacy"), v: 1 }))).toMatchObject({
+    ok: false,
+    reason: "bad_header",
+  });
+});

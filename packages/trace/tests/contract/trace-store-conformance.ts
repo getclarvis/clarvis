@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { ConflictError } from "@clarvis/capability";
+import { ConflictError, PersistenceError, type ExecutionRecord } from "@clarvis/capability";
 import type { TraceStore } from "@clarvis/trace";
+import { createTraceVisibilityView } from "@clarvis/trace";
 
 import { makeExecutionRecord } from "../helpers/execution-record.ts";
 
@@ -26,6 +27,123 @@ export function traceStoreConformance(
     });
 
     const current = (): TraceStore => harness.store;
+
+    it("filters before offset and total, including cross-owner pages", async () => {
+      const physical = current();
+      const publicView = createTraceVisibilityView(physical, "public");
+      const internalView = createTraceVisibilityView(physical, "internal");
+      for (let index = 0; index < 6; index++)
+        await physical.insert(
+          makeExecutionRecord({
+            id: `row-${index}`,
+            owner_key_name: "alice",
+            started_at: index,
+            visibility: index % 2 === 0 ? "public" : "internal",
+          }),
+        );
+      await physical.insert(
+        makeExecutionRecord({
+          id: "other",
+          owner_key_name: "bob",
+          started_at: 9,
+          visibility: "internal",
+        }),
+      );
+      expect(publicView.list("alice", 1, 1)).toMatchObject({ total: 3, items: [{ id: "row-2" }] });
+      expect(internalView.list("alice", 1, 1)).toMatchObject({
+        total: 3,
+        items: [{ id: "row-3" }],
+      });
+      expect(publicView.list("alice", 0, 0)).toEqual({ total: 3, items: [] });
+      expect(publicView.listAcrossOwners!(1, 1)).toMatchObject({
+        total: 3,
+        items: [{ id: "row-2" }],
+      });
+      expect(internalView.listAcrossOwners!(1, 1)).toMatchObject({
+        total: 4,
+        items: [{ id: "row-5" }],
+      });
+      expect(internalView.listAcrossOwners!(1, 1, { owner: "alice" })).toMatchObject({
+        total: 3,
+        items: [{ id: "row-3" }],
+      });
+      expect(publicView.executionIdNamespace).toBe(internalView.executionIdNamespace);
+      expect(createTraceVisibilityView(publicView, "public")).toBe(publicView);
+      expect(() => createTraceVisibilityView(publicView, "internal")).toThrow(PersistenceError);
+    });
+
+    it("hides internal lookup and mutations while reserving the physical id", async () => {
+      const physical = current();
+      const publicView = createTraceVisibilityView(physical, "public");
+      const internalView = createTraceVisibilityView(physical, "internal");
+      const record = makeExecutionRecord({
+        id: "private",
+        owner_key_name: "alice",
+        visibility: "internal",
+      });
+      await internalView.insert(record);
+      expect(publicView.getById("alice", "private")).toBeNull();
+      expect(publicView.getById("bob", "private")).toBeNull();
+      expect(publicView.deleteById("alice", "private")).toBe(false);
+      expect(await publicView.replaceFinalContext("alice", "private", [])).toBe(false);
+      expect(internalView.getById("alice", "private")).not.toBeNull();
+      expect(publicView.existsForOwner("alice", "private")).toBe(true);
+      await expect(publicView.insert({ ...record, visibility: "public" })).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+      await expect(publicView.insert(record)).rejects.toBeInstanceOf(PersistenceError);
+      expect(await internalView.replaceFinalContext("alice", "private", [])).toBe(true);
+      expect(internalView.deleteById("alice", "private")).toBe(true);
+    });
+
+    it("owner deletion and retention cover both visibility classes", async () => {
+      const physical = current();
+      const publicView = createTraceVisibilityView(physical, "public");
+      for (const visibility of ["public", "internal"] as const)
+        await physical.insert(
+          makeExecutionRecord({
+            id: visibility,
+            owner_key_name: "alice",
+            visibility,
+            started_at: 1,
+          }),
+        );
+      expect(publicView.cleanup(2, 10)).toBe(2);
+      for (const visibility of ["public", "internal"] as const)
+        await physical.insert(
+          makeExecutionRecord({
+            id: visibility,
+            owner_key_name: "alice",
+            visibility,
+          }),
+        );
+      expect(publicView.deleteOwner("alice")).toBe(2);
+      expect(physical.list("alice", 10, 0)).toEqual({ items: [], total: 0 });
+    });
+
+    it.each(["public", "internal"] as const)(
+      "materializes %s visibility on records and summaries",
+      async (visibility) => {
+        const record = makeExecutionRecord({ id: visibility, owner_key_name: "alice", visibility });
+        await current().insert(record);
+        expect(current().getById("alice", visibility)?.visibility).toBe(visibility);
+        expect(current().list("alice", 10, 0).items[0]?.visibility).toBe(visibility);
+        if (current().listAcrossOwners)
+          expect(current().listAcrossOwners!(10, 0).items[0]?.visibility).toBe(visibility);
+      },
+    );
+
+    it.each([undefined, null, "unknown", false])(
+      "refuses unclassified writes %j without creating a record",
+      async (visibility) => {
+        const record = {
+          ...makeExecutionRecord({ id: "invalid", owner_key_name: "alice" }),
+          visibility,
+        } as unknown as ExecutionRecord;
+        await expect(current().insert(record)).rejects.toBeInstanceOf(PersistenceError);
+        expect(current().existsForOwner("alice", "invalid")).toBe(false);
+      },
+    );
 
     it("inserts and retrieves the complete record by owner and id", async () => {
       const record = makeExecutionRecord({

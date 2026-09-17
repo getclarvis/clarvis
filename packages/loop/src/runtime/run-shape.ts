@@ -44,6 +44,7 @@ export interface RunShape {
   isLead: boolean;
   userInputEnabled: boolean;
   askUserGranted: boolean;
+  humanParkLikely: boolean;
   softMode: boolean;
   spawnableRegistry: SubagentProfileRegistry;
   fullRegistry: SubagentProfileRegistry;
@@ -83,6 +84,7 @@ export function deriveRunShape(
     isLead,
     userInputEnabled,
     askUserGranted,
+    humanParkLikely,
     softMode,
   } = deriveRequestShape(request, capabilityNeedsHuman)!;
   const canSpawn = entryProfile.can_spawn ?? [];
@@ -101,6 +103,7 @@ export function deriveRunShape(
     isLead,
     userInputEnabled,
     askUserGranted,
+    humanParkLikely,
     softMode,
     spawnableRegistry,
     fullRegistry: registry,

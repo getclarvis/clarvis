@@ -74,7 +74,7 @@ function runtimeFor(isolation: IsolationMode): RuntimeConfig {
   return isContainerIsolation(isolation) ? { backend: isolation } : { backend: "native" };
 }
 
-/** Placement-only copy for Isolation settings; command review stays a separate control. */
+/** Placement-only copy for Isolation settings; Guard stays a separate control. */
 export function isolationPlacementLines(isolation: IsolationMode): string[] {
   switch (isolation) {
     case "host":

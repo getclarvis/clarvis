@@ -472,8 +472,8 @@ something is running** — the open node's status, else the open workflow's stat
 
 **Live merge (`mergeTreeNodes`).** The live projection is applied only when
 `live.root === executionId`. Live nodes are keyed by `runId` over the persisted map, with
-live `status` mapped `running→running`, `ok→completed`, anything else→`failed`, and the merged
-list is re-sorted by `started_at ?? 0`.
+live `status` mapped `running→running`, `ok→completed`, `cancelled→cancelled`, and
+`error→failed`; the merged list is re-sorted by `started_at ?? 0`.
 
 **Workflow detail.** The tree, task and result screens share `DetailColumn`, `DetailTitle`,
 `DetailHeading` and `detailStatusColor` with Goal and Plan. The reading column is bounded to
@@ -609,7 +609,7 @@ Approval. Neither path changes the other axis.
 `applyGuard` degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
 degraded value and says why. It uses the same `guardPolicyForWrite` preservation path.
 
-The Command-review row's `Source` value comes from `guardSource()` : it reads as the
+The Guard row's `Source` value comes from `guardSource()` : it reads as the
 scope that actually supplied the persisted value (`settingSource("guard")`, itself
 `deps.settings.origin?.(key) ?? "product default"`) *unless* the live `deps.guard.mode()`
 has since diverged from that persisted value, in which case it reads `"session"` — the same

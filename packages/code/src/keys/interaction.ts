@@ -59,9 +59,9 @@ export interface InteractionEffects {
    *   screen first uses it to put the user back there.
    */
   openAgentPicker(onClose?: () => void): void;
-  /** Open the isolation picker without changing command review. */
+  /** Open the isolation picker without changing Guard. */
   openIsolationPicker(): void;
-  /** Open the command-review picker without changing isolation. */
+  /** Open the Guard picker without changing isolation. */
   openReviewPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;

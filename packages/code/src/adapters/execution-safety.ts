@@ -4,7 +4,7 @@ import type { GuardMode } from "./guard-mode.ts";
 import type { MemoryMode } from "./memory-mode.ts";
 import type { RuntimeStatus } from "@clarvis/protocol";
 
-/** User-facing execution boundary, independent from command review. */
+/** User-facing execution boundary, independent from Guard. */
 export type IsolationMode = "host" | "sandbox" | "docker" | "podman";
 
 /** Actual active native placement overrides next-run preferences; an idle native host does not. */
@@ -112,7 +112,7 @@ export function memoryState(settings: SettingsFile, sessionMode: MemoryMode = "o
   return modelResolves(memory.model ?? settings.default_model, settings) ? "on" : "inert";
 }
 
-/** Resolve the configured execution boundary without folding command review into it. */
+/** Resolve the configured execution boundary without folding Guard into it. */
 export function deriveIsolation(settings: SettingsFile): IsolationMode {
   if (settings.runtime?.backend === "docker") return "docker";
   if (settings.runtime?.backend === "podman") return "podman";

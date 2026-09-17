@@ -1654,7 +1654,7 @@ export function App(props: AppProps): JSX.Element {
           placement="portal"
         >
           {(lifecycle) => (
-            <Suspense fallback={<text>Loading command review{glyph("ellipsis")}</text>}>
+            <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
               <ReviewPicker
                 interaction={interaction}
                 settings={props.fleet.settings}

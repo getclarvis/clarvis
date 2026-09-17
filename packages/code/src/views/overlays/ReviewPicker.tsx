@@ -15,7 +15,7 @@ import { isContainerIsolation } from "../../features/run/isolation.ts";
 const CURRENT_COL_WIDTH = glyphColWidth("radioOn");
 const LABEL_COL_WIDTH = 10;
 
-/** Quick picker for command review, independent from the execution boundary. */
+/** Quick picker for Guard, independent from the execution boundary. */
 export function ReviewPicker(props: {
   interaction: Interaction;
   settings: SettingsAdapter;

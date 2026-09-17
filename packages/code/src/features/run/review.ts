@@ -10,7 +10,7 @@ export interface ReviewChoice {
 }
 
 export const REVIEW_CHOICES: readonly ReviewChoice[] = [
-  { value: "off", label: "Off", detail: "no command review or approval prompts" },
+  { value: "off", label: "Off", detail: "no Guard or approval prompts" },
   { value: "on", label: "Approval", detail: "ask before unlisted or risky commands" },
   { value: "auto", label: "Auto", detail: "an LLM reviews risk; uncertainty is denied by default" },
 ];

@@ -672,7 +672,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Isolation, command review, memory and plan retention for the next run",
+    desc: "Isolation, Guard, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",

@@ -67,9 +67,9 @@ const PLAN_RETENTION_CHOICES = [
 ] as const satisfies readonly PickItem[];
 
 /**
- * Per-run controls expose isolation and command review as independent axes.
+ * Per-run controls expose isolation and Guard as independent axes.
  * Isolation persists globally because container placement is host-owned;
- * review and completed-plan retention use the selected scope, while memory is
+ * Guard and completed-plan retention use the selected scope, while memory is
  * session-only.
  */
 export function RunControlsPanel(

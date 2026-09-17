@@ -9,19 +9,27 @@ const verdict = {
 };
 
 /** The sole private tool accepts one closed action at the current stage. */
+const compileAuthorityStepSchema = z
+  .object({ action: z.literal("compile_authority"), candidate: authorityEnvelopeSchema })
+  .strict();
+const decideEffectsStepSchema = z
+  .object({
+    action: z.literal("decide_effects"),
+    ...verdict,
+    revision,
+    transition_token: token,
+    grant_ids: z.array(token).max(32),
+    relation: z.enum(["direct", "bounded_prerequisite", "none"]),
+  })
+  .strict();
+export const decideCommandStepSchema = z
+  .object({ action: z.literal("decide_command"), ...verdict })
+  .strict();
+
 export const judgeStepSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("compile_authority"), candidate: authorityEnvelopeSchema }).strict(),
-  z
-    .object({
-      action: z.literal("decide_effects"),
-      ...verdict,
-      revision,
-      transition_token: token,
-      grant_ids: z.array(token).max(32),
-      relation: z.enum(["direct", "bounded_prerequisite", "none"]),
-    })
-    .strict(),
-  z.object({ action: z.literal("decide_command"), ...verdict }).strict(),
+  compileAuthorityStepSchema,
+  decideEffectsStepSchema,
+  decideCommandStepSchema,
 ]);
 
 /** Validated host transaction output; it grants no authority outside the host ledger. */

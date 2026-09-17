@@ -36,6 +36,8 @@ checks the package's import boundary. Kernel tests own registry composition and 
 The internal `judgeStepSchema` closes the three `judge_step` actions, and `createJudgeStepMachine`
 validates each complete provider response before dispatch. Command/decide finish in one accepted
 step; compile returns the validated host transition and requires decide to cite its revision/token.
+Command runs expose only the `decide_command` input schema to the provider, so the model cannot
+select an effect-compilation action that the command state machine must reject.
 Multiple calls, free text, malformed arguments and wrong ordering close the case without a nudge.
 The host alone validates and installs authority; its operational faults propagate separately from
 semantic rejection. Closing the machine fences pending transaction results without rolling back an
@@ -81,13 +83,11 @@ Host validators run again on reuse. Uncertainty, stale state and failures are no
 aborts children, clears caches and refuses new inference. Authority installation, refusals, effect
 consumption and human fallback remain in the Kernel. Command, effect and configuration consumers use this shared port.
 
-
 The native Kernel binds a projected internal store once per host and uses the exact effective base
 provider from the work run. Host observation metadata identifies consumer, stage and private
 execution; it does not enter semantic cache keys. Each actual call emits one payload-free parent
 event, while cache reuse emits none. The child keeps its own accounting. Memory indexing excludes
 the capability; the Container composition does not install the native host factory.
-
 
 Effect cases carry `facts` and an optional trusted `host_transition` in the volatile message.
 The case-specific transition token does not alter the stable snapshot prefix. Compile supplies its

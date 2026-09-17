@@ -115,7 +115,13 @@ test.each([
     );
     release.resolve();
     for (const answer of await Promise.all([first, ...others]))
-      expect(answer).toEqual({ allowed, answerer: humans === 0 ? "judge" : "human" });
+      expect(answer).toEqual({
+        allowed,
+        answerer: humans === 0 ? "judge" : "human",
+        ...((outcome === "invalid_response" || outcome === "transport") && fallback === "deny"
+          ? { review: { failure_kind: outcome } }
+          : {}),
+      });
     expect(reviews).toBe(1);
     expect(prompts).toBe(humans);
     await review(request);

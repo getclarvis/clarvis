@@ -120,6 +120,9 @@ transitions, rejection before installation, host fault propagation and late-resu
 `createJudgeRunCapability` creates one mandatory `judge-private` contribution for the entry agent,
 with one forced `judge_step` tool and an injected aggregate output budget. Its response-admission
 seam checks the complete model response before dispatch without executing authority transactions.
+A command run publishes the strict `decide_command` schema rather than the three-action union;
+admission applies that same schema, the state machine still enforces its stage, and effect runs
+retain their staged protocol.
 A handler without admission fails closed. Compile invokes the host transaction in the handler and
 returns a tool result; decide returns a terminal completed structured receipt in that same iteration.
 A text finalization is terminal `judge_invalid_response`, never a nudge. Host transaction exceptions
@@ -135,7 +138,8 @@ Production: [run-capability.ts](../../packages/judge/src/run-capability.ts),
 `projectJudgeResponse`; [judge-event-projection.ts](../../packages/kernel/src/guard/judge-event-projection.ts),
 `createJudgeEventProjection`.
 Test: [run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts)
-runs the ordinary engine and asserts one iteration for command, two for compile/decide, terminal
+runs the ordinary engine and asserts the command-only provider schema, one iteration for command,
+two for compile/decide, terminal
 errors without extra inference, a single tool catalog and no partial compile on multiple calls.
 
 

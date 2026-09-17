@@ -2,6 +2,7 @@ import {
   canonicalJudgeJson,
   JudgeArchitectureError,
   type JudgeCoordinator,
+  type JudgeFailureKind,
   type JudgeJson,
 } from "@clarvis/judge";
 import type { GuardJudgeConfig } from "@clarvis/judge/settings";
@@ -11,6 +12,7 @@ import { callFacts } from "./command-facts.ts";
 export interface JudgeElicitAnswer {
   allowed: boolean;
   answerer: "judge" | "human";
+  review?: { failure_kind: JudgeFailureKind };
 }
 
 export type JudgeElicit = (req: ElicitRequest) => Promise<JudgeElicitAnswer>;
@@ -85,8 +87,15 @@ export function createCommandReview(
           req,
           "Operator authority or Plan context changed during automatic command review.",
         );
-      if (result.kind === "failed")
+      if (result.kind === "failed") {
+        if (config.on_unsure !== "ask" || human === undefined)
+          return {
+            allowed: false,
+            answerer: "judge",
+            review: { failure_kind: result.failureKind },
+          };
         return fallback(req, "The automatic command reviewer did not return a valid decision.");
+      }
       if (result.receipt.decision !== "unsure")
         return { allowed: result.receipt.decision === "allow", answerer: "judge" };
       return fallback(

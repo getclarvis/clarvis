@@ -58,9 +58,9 @@ test.each([
   },
   {
     kind: "command",
-    script: [{ toolCalls: [tool(command)] }],
+    script: [{ toolCalls: [tool(compile)] }],
     iterations: 1,
-    completed: true,
+    completed: false,
     installs: 0,
   },
   {
@@ -153,6 +153,17 @@ test.each([
               function: { name: "judge_step" },
             });
             expect(params.tools?.map((entry) => entry.wireName)).toEqual(["judge_step"]);
+            const schema = params.tools?.[0]?.inputSchema as Record<string, unknown>;
+            if (fixture.kind === "command") {
+              expect(schema.oneOf).toBeUndefined();
+              expect(schema.required).toEqual(["action", "decision"]);
+              expect(schema.properties).toMatchObject({
+                action: { const: "decide_command" },
+                decision: { enum: ["allow", "deny", "unsure"] },
+              });
+            } else {
+              expect(schema.oneOf).toBeArray();
+            }
             const result = await llm.call(params);
             privateRun.admitResponse(result.toolCalls, result.text);
             return result;

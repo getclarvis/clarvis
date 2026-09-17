@@ -7,17 +7,22 @@ import {
   type OutputTokenBudget,
 } from "@clarvis/capability";
 import { z } from "zod";
-import { judgeStepSchema } from "./private-protocol.ts";
+import { decideCommandStepSchema, judgeStepSchema } from "./private-protocol.ts";
 import { createJudgeStepMachine, type JudgeStepBinding } from "./step-machine.ts";
 
-const tool: NamespacedTool = {
+const tool = (binding: JudgeStepBinding): NamespacedTool => ({
   fullName: "judge_step",
   wireName: "judge_step",
   mcpName: "",
   toolName: "judge_step",
-  description: "Return exactly the requested private review stage.",
-  inputSchema: z.toJSONSchema(judgeStepSchema),
-};
+  description:
+    binding.kind === "command"
+      ? "Decide the exact command case with action decide_command."
+      : "Return exactly the requested private review stage.",
+  inputSchema: z.toJSONSchema(
+    binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema,
+  ),
+});
 const invalidResult = (): AgentResult => ({
   status: "error",
   partialText: "",
@@ -35,6 +40,8 @@ export function createJudgeRunCapability(
   outputBudget: OutputTokenBudget,
 ) {
   const machine = createJudgeStepMachine(binding);
+  const responseSchema = binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema;
+  const runTool = tool(binding);
   let admitted: LLMToolCall | undefined;
   let invalid = false;
   let hostFailure: { error: unknown } | undefined;
@@ -62,7 +69,7 @@ export function createJudgeRunCapability(
           return {
             attach(bc) {
               return {
-                tools: [tool],
+                tools: [runTool],
                 outputBudget,
                 forcedChoice: () => ({ type: "function", function: { name: "judge_step" } }),
                 gates: [
@@ -103,7 +110,7 @@ export function createJudgeRunCapability(
                         agent: bc.agent,
                         subagentInstanceId: bc.subagentInstanceId,
                         iteration,
-                        schema: tool.inputSchema,
+                        schema: runTool.inputSchema,
                         validate: bc.validateArgs,
                       });
                       if (envelope.invalid !== null) {
@@ -199,7 +206,7 @@ export function createJudgeRunCapability(
           return false;
         }
       }
-      const parsed = judgeStepSchema.safeParse(raw);
+      const parsed = responseSchema.safeParse(raw);
       if (!parsed.success) {
         reject();
         return false;

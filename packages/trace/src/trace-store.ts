@@ -1,6 +1,7 @@
 import type {
   ContextSnapshotEntry,
   ExecutionRecord,
+  ExecutionVisibility,
   ExecutionStatus,
   TokenAccumulator,
 } from "@clarvis/capability";
@@ -38,6 +39,8 @@ export type StoredExecution = ExecutionRecord;
 
 /** The lightweight per-execution row returned by {@link TraceStore.list}. */
 export interface StoredSummary {
+  /** Materialized disclosure class, required even in lightweight indexes. */
+  visibility: ExecutionVisibility;
   /** The execution id. */
   id: string;
   /** The owner key name this execution is filed under. */
@@ -75,6 +78,12 @@ export interface ListResult {
  * @remarks The concrete implementation is {@link createJsonTraceStore}.
  */
 export interface TraceStore {
+  /** Physical identity shared by wrappers for concurrent execution-id reservations. */
+  readonly executionIdNamespace?: object;
+  /** Backend attests that visibility queries filter before lookup, mutation and paging. */
+  readonly visibilityQueries?: true;
+  /** A fixed disclosure class on a view; absent on an unrestricted physical store. */
+  readonly viewVisibility?: ExecutionVisibility;
   /**
    * Persist a finished execution.
    *
@@ -93,28 +102,31 @@ export interface TraceStore {
   /**
    * Read a full execution by id.
    *
-   * @returns the stored execution, or `null` when no such id exists for `owner`.
+   * @returns the stored execution, or `null` when no such id exists for `owner`
+   * or it does not match the selected visibility.
    */
-  getById(owner: string, id: string): StoredExecution | null;
+  getById(owner: string, id: string, visibility?: ExecutionVisibility): StoredExecution | null;
   /** Atomically replace one settled run's continuation snapshot and charge summarizer usage. */
   replaceFinalContext(
     owner: string,
     id: string,
     context: readonly ContextSnapshotEntry[],
     usage?: TokenAccumulator,
+    visibility?: ExecutionVisibility,
   ): Promise<boolean>;
   /**
    * List an owner's executions, newest first, with limit/offset paging.
+   * Visibility filtering precedes selection and the matching total.
    *
    * @returns the page of summaries and the owner's total count.
    */
-  list(owner: string, limit: number, offset: number): ListResult;
+  list(owner: string, limit: number, offset: number, visibility?: ExecutionVisibility): ListResult;
   /**
    * Delete an execution by id.
    *
    * @returns `true` if a record was removed, `false` if none matched.
    */
-  deleteById(owner: string, id: string): boolean;
+  deleteById(owner: string, id: string, visibility?: ExecutionVisibility): boolean;
   /**
    * Delete every execution stored for `owner`, plus that owner's lock files.
    *
@@ -141,7 +153,11 @@ export interface TraceStore {
    *   because a trace holds the full conversation. An operator who needs one run
    *   goes through that owner's own scope, which is an explicit, auditable act.
    */
-  listAcrossOwners?(limit: number, offset: number, filter?: { owner?: string }): ListResult;
+  listAcrossOwners?(
+    limit: number,
+    offset: number,
+    filter?: { owner?: string; visibility?: ExecutionVisibility },
+  ): ListResult;
   /** Whether an execution with `id` exists for `owner`. */
   existsForOwner(owner: string, id: string): boolean;
   /**
@@ -263,6 +279,7 @@ export type JournalingTraceStore = TraceStore &
  */
 export function recordToSummary(record: StoredExecution): StoredSummary {
   return {
+    visibility: record.visibility,
     id: record.id,
     owner: record.owner_key_name,
     status: record.status,

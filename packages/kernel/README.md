@@ -1,5 +1,12 @@
 # `@clarvis/kernel`
 
+Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
+Command and configuration review read its typed overrides through the generic request view.
+The host manifest parser enforces the same registered operator-only prohibition for plugins.
+
+Reviewer overrides accept bounded `guidance` as additional context. Unknown configuration fields
+are rejected by the strict request schema; guidance never replaces host policy or operator evidence.
+
 The in-process implementation of `@clarvis/protocol` over `@clarvis/loop`.
 It is the Clarvis server core: applications can use it directly or consume the same typed services
 through its RPC transports, including the independently owned local workspace host.
@@ -7,7 +14,7 @@ through its RPC transports, including the independently owned local workspace ho
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/goal`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/goal`, `@clarvis/judge`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
@@ -781,7 +788,7 @@ operator-owned `effect_review` settings or the default model; `guard_judge` supp
 overrides and guidance. Code no longer supplies a complete system prompt. Workspace guidance
 cannot grant authority. The [effect-review contract](../../specs/execution/effect-review.md)
 owns the host evidence ledger, effect registry, rollout and validated effect path. A generic shell
-ask whose sole fact is `external.unknown` instead reaches `createJudgeElicit` with the complete call
+ask whose sole fact is `external.unknown` instead reaches `createCommandReview` with the complete call
 and the same host-owned evidence. Hosted Goal runs supply their complete persisted definition, and
 the active Plans capability supplies only its stable substantive specification, as separate
 host-attested review context. Both reviewers treat those definitions as the operator's semantic
@@ -793,14 +800,12 @@ instruction can refer to the authenticated implementation scope from earlier tur
 publication instruction alone cannot authorize a changed outcome. Accepted entry-agent `ask_user`
 answers join that evidence before the next review; their model-authored questions are labeled
 untrusted context, and decline, cancel or another elicitation kind grants nothing.
-Every compiler and reviewer call sets the stable auxiliary instance `judge` on the run-decorated
-LLM provider. The shared prompt-cache decorator therefore retains the authenticated run session,
-composes the canonical `<session>_judge` affinity, and applies the run TTL for every provider kind.
-Explicit breakpoints end at stable reviewer policy/guidance; Goal, Plan, operator evidence and call
-facts remain together in the final volatile message after that boundary. Plan progress fields never
-enter that message. Plans publishes a semantic revision beside the projected definition; both
-reviewer paths recheck it after inference and refuse/cache no decision produced from stale Plan
-substance.
+Call-local command review obtains `JUDGE_PORT` lazily and executes the private Judge run through the
+work run's effective base provider. The child owns its `judge` identity, resolved TTL, fixed policy,
+canonical snapshot breakpoint and separate volatile case. Effect compilation and decision use the same private execution boundary. Both retain canonical session affinity and recheck
+live Plans context before accepting a result. Plan progress fields are excluded from its projection.
+The command adapter coalesces concurrent human fallbacks without caching human answers. Missing
+Judge composition and architecture faults propagate; retirement never asks a human.
 Each real call-local or effect-review provider invocation also records one kernel-owned
 `guard_reviewer_model_call` event through `RUN_TRACE_PORT`. It totals winning and retried usage,
 retains unknown usage/cache flags, and reports a cache-read ratio only when cache counters are
@@ -1357,3 +1362,48 @@ Goal formulation and Steward executions capture provider usage, including retrie
 same usage tracker. Once-only auxiliary settlement applies model prices to session cost totals
 when usage and cache measurements are known. Partial observation reads do not attest complete
 artifacts; completion still requires complete current reads for every cited artifact.
+
+The Kernel composes a public trace view for ordinary execution and run services. Internal records
+are absent from run lookup, listing, context, compaction, continuation and deletion by ID. Their IDs
+remain reserved across the physical store. Native recovery and retention cover both classes.
+
+### Private Judge trace projection
+
+The host-owned `createJudgeTraceStore` factory composes internal visibility with strict projections
+of journal headers/events, final records and context replacements. It retains operational identity,
+status and accounting while removing prompts, model/provider prose, arguments/results and private
+state. Known live-only events are discarded; unknown shapes fail closed without raw fallback.
+`createHostJudge` binds this store once in native FileKernel composition, together with empty MCP
+machinery and the work run's effective base provider. Its pure eligibility predicate includes
+editing/execution profiles in Auto and guard-off mode (automatic configuration review), and excludes
+explicit human-only mode and disabled tools. Memory indexing removes the capability.
+Actual private calls emit one payload-free parent event with `judge_execution_id`; cache reuse emits
+none, and child usage does not enter the parent execution ledger. Real JSON integration tests verify
+private visibility and removal of case/model prose. Command, effect and configuration consumers use this binding. See the [Judge contract](../../specs/capabilities/judge.md).
+
+The authority ledger retains `envelope_context_revision` beside the installed envelope. This
+host-owned binding survives a validated checkpoint and is replaced atomically with compilation;
+revocation or settlement clears it. Reviewers compare it with the current live Plans revision,
+including disappearance, instead of maintaining a separate compile cache. It is not model-authored
+candidate data or operator evidence. See [effect review](../../specs/execution/effect-review.md).
+
+Effect compilation uses `createAuthorityReviewTransaction`: it captures host authority and context
+before inference, validates the candidate against registered descriptors, and installs once through
+the ledger. The resulting case-bound transition distinguishes the compiler's own revision change
+from an external change, including envelope replacement at the same revision. Validation lives in
+`authority-validation.ts`; the Judge package never receives the authority writer.
+
+Native human guard approval coalesces identical pending questions within the current controller's
+allowlist scope, using canonical full request identity. Settlement removes the pending entry; human
+consent is not memoized. A replacement scope gets its own question, and late answers from the old
+scope remain denied.
+
+Configuration review applies the same pending-only rule across direct configuration and authoring
+consumers in one run. Its identity includes the complete prepared change and authority binding;
+distinct proposals do not share a question, and settlement, channel failure or cancellation cannot
+leave reusable human consent.
+
+Effect review audit starts are emitted by the native inference binding, once per actual call, using
+its private stage/consumer descriptor. The adapter records bounded typed failures and semantic
+completion; compilation records the installed authority revision. Cache reuse emits no start, and
+usage remains in the single parent model-call event rather than being counted again from audit logs.

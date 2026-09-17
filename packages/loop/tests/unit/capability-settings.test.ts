@@ -8,6 +8,7 @@ import {
 import { settingsSchema } from "../../src/settings/settings-schema.ts";
 import {
   pluginManifestSchema,
+  pluginManifestSchemaFor,
   pluginSettingsFragment,
   unknownManifestKeys,
 } from "../../src/settings/plugin-schema.ts";
@@ -107,15 +108,15 @@ describe("settingsSchemaFor", () => {
     ).toThrow("capability settings key 'audit' declares a plugin-manifest surface");
   });
 
-  it("refuses a registered spec carrying only a forbidden reason", () => {
-    // pluginContributable stays at its false default here: the reason text is
-    // the manifest's rejection message for a built-in key, and a registered
-    // spec's is never the message anything is rejected with.
-    expect(() =>
-      settingsSchemaFor(
-        registryOf(spec("audit", { pluginForbiddenReason: "a plugin may not contribute 'audit'" })),
-      ),
-    ).toThrow("capability settings key 'audit' declares a plugin-manifest surface");
+  it("honors a host-registered prohibition while preserving foreign metadata", () => {
+    const registry = registryOf(spec("audit", { pluginForbiddenReason: "operator only" }));
+    expect(() => settingsSchemaFor(registry)).not.toThrow();
+    const schema = pluginManifestSchemaFor(registry);
+    expect(schema.parse({ ...MANIFEST, foreign_metadata: true })).toMatchObject({
+      foreign_metadata: true,
+    });
+    expect(() => schema.parse({ ...MANIFEST, audit: {} })).toThrow("operator only");
+    expect(schema.safeParse(MANIFEST).success).toBe(true);
   });
 
   it("admits a registered spec that claims no plugin surface at all", () => {

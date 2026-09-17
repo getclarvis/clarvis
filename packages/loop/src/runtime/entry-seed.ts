@@ -13,6 +13,8 @@ import type { RunShape } from "./run-shape.ts";
  */
 export interface EntrySeedDeps {
   workspaceRoot: string;
+  /** Host-only opt-out; ordinary entry prompts retain their real environment. */
+  includeEnvironmentPreamble?: boolean;
   continuation?: RunContinuation;
   /** The run's active capabilities; their systemSection(id) feeds the head. */
   runCapabilities?: readonly RunCapability[];
@@ -110,7 +112,7 @@ export function buildEntrySeed(a: {
   const systemHead: Message = {
     role: "system",
     content: buildSystemSections({
-      workspaceRoot: deps.workspaceRoot,
+      ...(deps.includeEnvironmentPreamble === false ? {} : { workspaceRoot: deps.workspaceRoot }),
       ...(shape.sharedPrompt !== undefined ? { sharedPrompt: shape.sharedPrompt } : {}),
       ...(entryResolved.basePrompt !== undefined
         ? { profilePrompt: entryResolved.basePrompt }

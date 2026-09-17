@@ -26,6 +26,7 @@ function body(models: Record<string, unknown>): Record<string, unknown> {
 
 function makeDeps(llm: MockLLM): ExecuteRunDeps {
   return {
+    executionVisibility: "public",
     env: loadEnv({}),
     llm,
     connections: mockConnections(mockMCPFactory({})),

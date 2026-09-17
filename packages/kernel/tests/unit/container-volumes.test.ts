@@ -465,7 +465,7 @@ describe.skipIf(process.platform === "win32")("fixed preparer shell control flow
     expect(await readFile(join(f.root, "content/ready"), "utf8")).toBe("1:1000:1000\n");
     expect(await readFile(join(f.root, "state/ready"), "utf8")).toBe("1:1000:1000\n");
     const log = await readFile(f.log, "utf8");
-    expect(log).not.toContain("-R");
+    expect(log).not.toMatch(/(?:^|\s)-R(?:\s|$)/);
     expect(await f.run()).toBe(0);
     expect(await readFile(f.log, "utf8")).toBe(log);
     expect(await f.run("2000:2000")).toBe(73);

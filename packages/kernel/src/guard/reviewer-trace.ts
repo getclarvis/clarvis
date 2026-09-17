@@ -26,6 +26,7 @@ export type ReviewerFailureKind =
 const detailSchema = z
   .object({
     reviewer: z.literal("judge"),
+    judge_execution_id: z.string().min(1).max(256).optional(),
     path: z.enum(["call_local", "effect_review"]),
     consumer: z.enum(["command_guard", "configure_clarvis"]),
     stage: z.enum(["compile", "decide"]),
@@ -126,6 +127,7 @@ function usageFields(usage: LLMUsage, cacheUsageKnown = true) {
 }
 
 export interface ReviewerTraceIdentity {
+  judge_execution_id?: string;
   path: "call_local" | "effect_review";
   consumer: "command_guard" | "configure_clarvis";
   stage: "compile" | "decide";
@@ -192,6 +194,9 @@ export async function callReviewerWithTrace(
         : addUsage(result.usage, result.retriedUsage);
     options.trace?.record(GUARD_REVIEWER_MODEL_CALL, {
       reviewer: "judge",
+      ...(options.judge_execution_id === undefined
+        ? {}
+        : { judge_execution_id: options.judge_execution_id }),
       path: options.path,
       consumer: options.consumer,
       stage: options.stage,
@@ -217,6 +222,9 @@ export async function callReviewerWithTrace(
         : unknownUsage();
     options.trace?.record(GUARD_REVIEWER_MODEL_CALL, {
       reviewer: "judge",
+      ...(options.judge_execution_id === undefined
+        ? {}
+        : { judge_execution_id: options.judge_execution_id }),
       path: options.path,
       consumer: options.consumer,
       stage: options.stage,

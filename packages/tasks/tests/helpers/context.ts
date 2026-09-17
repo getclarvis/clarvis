@@ -39,6 +39,12 @@ export function runContext(
     entryGrants: [],
     env: loadEnv({}),
     workspaceRoot: "/workspace",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: { call: async () => ({}) as never },
     emit: () => undefined,
     executionId: "exec-1",

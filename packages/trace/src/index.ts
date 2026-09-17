@@ -66,6 +66,9 @@ export {
 export type { JsonTraceStoreOptions } from "./json-trace-store.ts";
 export { buildRecord } from "./record-builder.ts";
 export type { BuildRecordInput } from "./record-builder.ts";
+export { projectTraceStoreWrites } from "./projected-store.ts";
+export type { TraceWriteProjection } from "./projected-store.ts";
+export { assertExecutionVisibility } from "./visibility.ts";
 export { mapEntry, mapTrace } from "./trace-mapper.ts";
 export { resolveTraceStore } from "./trace-store-factory.ts";
 export type { ResolveTraceStoreOptions, ResolvedTraceStore } from "./trace-store-factory.ts";
@@ -99,3 +102,5 @@ export { iterationSpanId, deriveEventSpan } from "./event-span.ts";
 export type { SpanPhase, SpanKind, EventSpan } from "./event-span.ts";
 export { createTrace } from "./in-memory-trace.ts";
 export type { TraceHandle } from "./trace-handle.ts";
+
+export { createTraceVisibilityView } from "./visibility-view.ts";

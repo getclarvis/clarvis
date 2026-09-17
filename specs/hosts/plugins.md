@@ -921,7 +921,8 @@ plus every built-in settings spec marked `pluginContributable`. Across the whole
 one spec sets it `true` — `hooksSettingsSpec`
 (`packages/loop/src/runtime/capabilities/hooks.ts`). The built-in `agentTools`, `sandbox` and
 `agents` specs set it `false`; the host-registered Memory, Plans, Tasks and Workflows specs likewise
-declare `false` and cannot add a plugin-manifest surface.
+declare `false` and cannot add plugin contributions. Judge registers an explicit prohibition that
+the Kernel supplies to the generic manifest parser.
 
 ### 4.10 Install / update / uninstall
 
@@ -1176,10 +1177,14 @@ All of the following are derived directly from this document's own source and te
    `packages/loop/tests/unit/plugin-schema.test.ts` asserts the fragment carries only
    `mcpServers` + `hooks` and never `bootstrapSkill`.
 
-6. **A *registered* (non-built-in) capability may not declare any plugin-manifest surface.**
-   `settingsSchemaFor` throws at registration when a registered spec sets `pluginContributable`,
-   `pluginDescription` or `pluginForbiddenReason`
-   (`packages/loop/src/settings/capability-settings.ts`). Unpinned by a test in this document's scope.
+6. **Registered capabilities cannot add plugin contributions but may declare prohibitions.**
+   `settingsSchemaFor` refuses `pluginContributable` and `pluginDescription`.
+   `pluginManifestSchemaFor` enforces registered `pluginForbiddenReason` declarations using the host
+   registry, preserving loose foreign metadata. Kernel supplies that registry for installed and
+   imported manifests. Production: `packages/loop/src/settings/capability-settings.ts`,
+   `packages/loop/src/settings/plugin-schema.ts`, `packages/kernel/src/plugins/manifest-schema.ts`.
+   Test: `packages/loop/tests/unit/capability-settings.test.ts` and
+   `packages/kernel/tests/component/judge-settings-registration.test.ts`.
 
 7. **`bootstrapSkill` never reaches merged settings.** It is not `pluginContributable` and the
    docstring states both consequences — it never travels `settingsScopes`, and it is not part of the

@@ -840,7 +840,9 @@ describe("the elicit mux — a prompt nobody will ever answer", () => {
 
 describe("a host that wired no logger", () => {
   test("changes nothing: the engine deps a leader runs against keep their identity", async () => {
-    const deps = {} as WorkflowCtx["deps"];
+    const deps = {
+      executionVisibility: "public",
+    } as WorkflowCtx["deps"];
     const runDeps = workflowRunDeps(completed);
     const ctx = makeCtx({ deps, runDeps, assemble: (spec) => requestWithPrompt(spec.prompt) });
 

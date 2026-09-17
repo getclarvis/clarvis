@@ -138,6 +138,12 @@ function fixture(overrides: Partial<GoalRuntimePort> = {}) {
     entryGrants: [],
     env: loadEnv({}),
     workspaceRoot: "/fixture",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: {
       call: async () => {
         throw new Error("Unexpected inference");

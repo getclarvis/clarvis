@@ -604,7 +604,7 @@ in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:
 | `session_id?` / `agent_instance_id?` | `string` | persisted conversation and entry-agent instance |
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts`) |
 | `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts`) |
-| `guard_judge?` | `GuardJudge` | caller-owned judge prompt/model/timeout |
+| `guard_judge?` | `GuardJudge` | caller-owned judge guidance/model/timeout |
 | `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts`) |
 | `task?` | `ActiveTaskRequestDto` | binds one external task |
@@ -1152,7 +1152,7 @@ on the engine" as one design, not two.
 `ElicitationCommandDetail` adds optional closed analysis, effect, authority and reviewer fields.
 Legacy command/cwd/reason details remain valid. `CommandGuardReview` carries optional effect ID,
 relation and failure kind for replay. `GuardJudge` accepts optional guidance and explicit retries;
-deprecated prompt is data, never a system-policy replacement. Public run requests contain no
+guidance is data, never a system-policy replacement. Public run requests contain no
 operator evidence seed or controller binding. Production:
 [runs.ts](../../packages/protocol/src/runs.ts) and
 [review-detail-schema.ts](../../packages/kernel/src/guard/review-detail-schema.ts).

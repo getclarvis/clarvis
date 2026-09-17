@@ -1,5 +1,16 @@
 # `@clarvis/loop`
 
+Semantic reviewer settings are host-registered product parameters. This engine names no reviewer
+configuration and validates registered model references generically. Host-supplied manifest
+registries may add explicit prohibitions, but cannot introduce plugin contributions.
+
+Host composition may set `includeEnvironmentPreamble: false` on `ExecuteRunDeps` for isolated
+executions without operational tools. Ordinary runs retain the real environment preamble.
+Capability activation receives `executionBaseLlm` before per-execution decoration and the resolved
+`resolvedPromptCacheTtl`; composing a child execution must preserve the host provider wrappers.
+Conditional `requiredFor(view)` declarations are resolved before concurrent activation, and
+registered settings specs can declare `referencedModels(view)` for generic provider validation.
+
 Selective shell interruption waits up to two seconds for executor settlement and bounded partial
 stdout/stderr. Global cancellation can preempt that wait. A noncooperative executor instead returns
 an explicit unconfirmed-termination error, never a falsely confirmed operator terminal. Live control
@@ -586,3 +597,10 @@ authenticated answer; other elicitation kinds and non-accepted outcomes create n
 [effect review](../../specs/execution/effect-review.md).
 
 The Host/Sandbox guard resolution may supply a prepared `reviewMutation` callback. Tools transport it only to the entry agent within the captured editing ceiling. It is an in-process host port, never a profile option or container projection; the optional tools boundary remains type-only on composition paths.
+
+`ExecuteRunDeps.executionVisibility` is required host-owned persistence classification. It is
+validated before capability activation and copied into the journal header and final record.
+`buildExecuteRunDeps` explicitly selects `public` and a public trace view for ordinary host composition;
+its resolved physical store remains available for maintenance. ID reservations use the shared physical
+namespace across views. The model request
+cannot select visibility.

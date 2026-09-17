@@ -1,3 +1,4 @@
+import { JUDGE_CAPABILITY_NAME } from "@clarvis/judge";
 import { HOOKS_CAPABILITY_NAME } from "@clarvis/capability";
 import {
   createMemoryCapability,
@@ -14,7 +15,7 @@ import { PLANS_CAPABILITY_NAME } from "@clarvis/plan/schemas";
  * @param deps - the run deps the host composed for ordinary runs.
  * @param memoryFactory - the same factory the host's own memory capability was
  *   built from, or `undefined` when the host runs without memory.
- * @returns `deps` without workspace hooks, with memory enqueue suppressed and
+ * @returns `deps` without workspace hooks or Judge, with memory enqueue suppressed and
  *   planning replaced in place by its catalog-only projection.
  * @remarks Capability composition is the host's job, and this is the host's one
  *   composition whose correctness is invisible at every other layer — which is
@@ -42,7 +43,9 @@ export function composeIndexPassDeps(
       ...(deps.capabilities ?? [])
         .filter(
           (capability) =>
-            capability.name !== HOOKS_CAPABILITY_NAME && capability.name !== MEMORY_CAPABILITY_NAME,
+            capability.name !== HOOKS_CAPABILITY_NAME &&
+            capability.name !== MEMORY_CAPABILITY_NAME &&
+            capability.name !== JUDGE_CAPABILITY_NAME,
         )
         .map((capability) =>
           capability.name === PLANS_CAPABILITY_NAME ? createPlansCatalogCapability() : capability,

@@ -246,6 +246,8 @@ not re-enumerated field-by-field here to avoid a second, driftable copy of the s
 | `iterationSpanId` | `(agent, subagentInstanceId, iteration) => string` | `packages/trace/src/event-span.ts` |
 | `createJsonTraceStore` | `(opts: JsonTraceStoreOptions) => JournalingTraceStore` | `packages/trace/src/json-trace-store.ts` |
 | `resolveTraceStore` | `(opts?) => { store, path }` | `packages/trace/src/trace-store-factory.ts` |
+| `createTraceVisibilityView` | `(store, visibility) => TraceStore` | `packages/trace/src/visibility-view.ts` |
+| `projectTraceStoreWrites` | `(store, projection: TraceWriteProjection) => TraceStore` | `packages/trace/src/projected-store.ts` |
 | `createRunJournal` | `(opts: CreateRunJournalOptions) => RunJournal` | `packages/trace/src/journal.ts` |
 | `parseJournalChunks` | `(chunks: AsyncIterable<string>, limits) => Promise<JournalParseResult>` | `packages/trace/src/journal-recovery.ts` |
 | `repairUnsettledToolCalls` | `(events) => TraceEvent[]` | `packages/trace/src/journal-recovery.ts` |
@@ -351,6 +353,7 @@ the `PersistenceError` it extends. It is not exported from `index.ts` — a call
 | Field | Type | Note |
 | --- | --- | --- |
 | `id` | `string` | `exec_<uuidv4>` when minted here (`packages/trace/src/execution-id.ts`) |
+| `visibility` | `ExecutionVisibility` | Required host-owned `public` or `internal`; never inferred from payload or identity |
 | `owner_key_name` | `string` | `packages/trace/src/record-builder.ts` |
 | `status` | `ExecutionStatus` | one of six: `completed`, `budget_exhausted`, `error`, `cancelled`, `soft_limit_declined`, `interrupted` (`packages/capability/src/execution-status.ts`) |
 | `started_at`, `ended_at`, `elapsed_ms` | `number` | absolute Unix ms; `ended_at = started_at + elapsed_ms` (`packages/trace/src/record-builder.ts`) |
@@ -365,6 +368,25 @@ the `PersistenceError` it extends. It is not exported from `index.ts` — a call
 `ExecutionStatus` has six members, and `interrupted` is documented at
 `packages/capability/src/execution-status.ts` as "never produced by a live run — only by
 `@clarvis/trace`'s `TraceStore.recoverOrphans`".
+
+Every new record and summary materializes visibility, including crash recovery. The JSON and memory
+stores reject missing or invalid classes before inserting. The ordinary host dependency composition
+selects `public` explicitly; `ExecuteRunDeps.executionVisibility` is required and checked before
+activation. Neither the model request nor the agent identity controls this field. The unrestricted physical store retains both classes. `createTraceVisibilityView` selects one class
+for public or internal operations. Kernel services and ordinary engine dependencies use the public
+view; housekeeping and diagnostics retain the physical store.
+
+The pre-release format change rejects unclassified legacy record bodies, ignores unclassified
+summary sidecars in favor of a classified full record, and quarantines journals from earlier
+versions. No missing-field fallback turns a new or old payload into a public execution. Existing
+pre-feature state may be removed through the ordinary retention/deletion paths; this change adds
+no migration or compatibility reader.
+
+Production: `ExecutionVisibility` in [trace-events.ts](../../packages/capability/src/trace-events.ts),
+`assertExecutionVisibility` in [visibility.ts](../../packages/trace/src/visibility.ts), and
+`parseHeader`/`journalToRecord` in [journal-recovery.ts](../../packages/trace/src/journal-recovery.ts).
+Test: visibility cases in [trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts)
+and [journal-recovery.test.ts](../../packages/trace/tests/unit/journal-recovery.test.ts).
 
 ### 3b. On-disk layout
 
@@ -420,12 +442,12 @@ than guarded:
 The first JSONL record is a `JournalHeader` (`packages/trace/src/journal.ts`):
 
 ```json
-{"v":1,"id":"exec_…","owner_key_name":"alice","started_at":1700000000000,
+{"v":2,"visibility":"public","id":"exec_…","owner_key_name":"alice","started_at":1700000000000,
  "request":{…sanitized…},"host_metadata":{…sanitized…},
  "writer":{"pid":4242,"host":"laptop"}}
 ```
 
-`JOURNAL_VERSION = 1`. `request` passes through `sanitizeDeep`, which the doc
+`JOURNAL_VERSION = 2`. `request` passes through `sanitizeDeep`, which the doc
 comment says makes a recovered record's request "byte-equivalent to the one a normal run
 would have persisted"; pinned at `packages/trace/tests/integration/journal.test.ts`. `writer`
 records pid+host so a peer can ask whether the writer is alive.
@@ -711,7 +733,8 @@ Lines are `writeSync` and **deliberately not `fsync`ed** : "The failure this gua
 against is *process* death … data handed to `write(2)` survives all three, because it sits in the
 kernel's page cache."
 
-Every method is infallible by contract. `die()` closes the fd, marks the journal
+After header classification succeeds, every journal method is infallible by contract.
+Missing or invalid visibility throws before a file is opened or a live journal is registered. `die()` closes the fd, marks the journal
 dead, and logs **once**; subsequent calls no-op. Pinned at
 `packages/trace/tests/integration/journal.test.ts` (unopenable path) (append after close is
 silent) (mid-run append failure disables and stays quiet).
@@ -722,6 +745,22 @@ unlinking. The loop calls `discard()` immediately after a successful `insert`
 (`packages/loop/src/runtime/execute-run.ts`).
 
 ### 4j. Journal parsing
+
+Host-owned `projectTraceStoreWrites` requires projections for all payload-bearing writes: header,
+event, final record and replacement context. Header projection completes before opening the physical
+journal. Header, record and context projection exceptions become a constant `PersistenceError`
+without the original exception prose; no unprojected write follows. Event projection failure closes
+and disables that journal, records one payload-free `trace.journal_projection_failed` diagnostic,
+and preserves the best-effort journal contract. A later final insert still requires its own successful
+record projection. Null events are ignored. Optional store capabilities remain optional, and all
+read, identity, deletion, retention and recovery operations preserve the underlying store semantics.
+The adapter is a write boundary, not a visibility filter or a domain-specific confidentiality policy.
+Production: `projectTraceStoreWrites` in
+[projected-store.ts](../../packages/trace/src/projected-store.ts).
+Test: payload sentinels and failure paths in
+[projected-store.test.ts](../../packages/trace/tests/integration/projected-store.test.ts), and the
+projected JSON instance of the shared store conformance matrix in
+[trace-store.test.ts](../../packages/trace/tests/contract/trace-store.test.ts).
 
 `createJournalLineParser` (`packages/trace/src/journal-recovery.ts`) drives the package's one
 journal parser, `parseJournalChunks`, which is streaming and always bounded — there is no
@@ -744,7 +783,8 @@ whole-text, unbounded variant beside it. The three limits are `JournalParseLimit
 | otherwise | pushed verbatim, unknown `type` included |
 | no header at `finish()` | `{ ok:false, reason:"empty" }` |
 
-`parseHeader` requires an object with numeric `v <= JOURNAL_VERSION`, non-empty string
+`parseHeader` requires an object with `v === JOURNAL_VERSION`, explicit `visibility` equal to
+`public` or `internal`, non-empty string
 `id` and `owner_key_name`, finite numeric `started_at`, and `request` **present and an object**. The comment states the rule: "Recovery must not reject a journal because a
 request shape changed under it, but every consumer reads `record.request.*`, so an absent one would be
 a dereference waiting to happen." `writer` is admitted only when both fields have the right primitive
@@ -1340,3 +1380,30 @@ event projection and model context; missing recovery state fails closed. Product
 [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts).
 Test: [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
 See [effect review](../execution/effect-review.md).
+
+## Visibility views and physical identity
+
+`TraceStore` backends attest native filtering with `visibilityQueries: true`. Query methods accept
+an optional class: get, list, delete and replacement context, plus the cross-owner filter. The JSON
+store filters summary/body classifications before heap retention, offset and total; the memory store
+filters before sorting. An unreadable classification is excluded from a filtered query. Physical
+unfiltered diagnostics keep their existing corruption/count behavior. Lookup checks the full record
+class again before returning it; mutations recheck under their existing leases. A hidden id produces
+null/false before record-specific lock contention can reveal its state.
+
+`createTraceVisibilityView` fixes one class and rejects unsupported backends or attempts to broaden
+an existing view. Reapplying the same class is idempotent. Insert and journal header must already
+match the selected class. Owner deletion, cleanup and recovery remain physical operations spanning
+both classes. `existsForOwner` also spans both classes as the internal ID-conflict primitive, not a
+public discovery API. `executionIdNamespace` is shared through visibility and projection wrappers;
+the engine keys its in-flight reservation by this physical identity, so concurrent public/internal
+runs cannot reuse an ID before either record is inserted.
+
+Production: `createTraceVisibilityView` in [visibility-view.ts](../../packages/trace/src/visibility-view.ts),
+`matchesVisibility` in [json-trace-store.ts](../../packages/trace/src/json-trace-store.ts), memory queries
+in [testing.ts](../../packages/trace/src/testing.ts), and `reserveExecutionId` in
+[execute-run.ts](../../packages/loop/src/runtime/execute-run.ts).
+Test: mixed pages, namespace conflicts, context replacement, deletion and retention in
+[trace-store-conformance.ts](../../packages/trace/tests/contract/trace-store-conformance.ts), quarantine
+and internal recovery in [visibility.test.ts](../../packages/trace/tests/integration/visibility.test.ts),
+and in-flight cross-view conflict in [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).

@@ -1,5 +1,8 @@
 # `@clarvis/code`
 
+The review-guidance loader and run adapter emit only `guidance` in reviewer configuration,
+with operator-global text before bounded workspace guidance.
+
 The flagship Clarvis terminal UI. It connects to an independently owned workspace host through
 `@clarvis/kernel` and renders runs with SolidJS and OpenTUI.
 

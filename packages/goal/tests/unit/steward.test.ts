@@ -288,7 +288,9 @@ describe("Steward settlement", () => {
         owner: "owner",
         model_ref: "fixture/model",
         providers: [],
-        deps: {} as GoalStewardRuntime["deps"],
+        deps: {
+          executionVisibility: "public",
+        } as GoalStewardRuntime["deps"],
         execute_run: async () => ({
           executionId: "review",
           response: {

@@ -108,7 +108,9 @@ describe("admittedRunCapability", () => {
     });
     await lifecycle.onUserSteer!({ agent: "lead", iteration: 1, message: "continue" });
     expect(await wrapped.finalizeRun!({ status: "completed" })).toEqual({ state: true });
-    await wrapped.onRunEnd!({} as Parameters<NonNullable<RunCapability["onRunEnd"]>>[0]);
+    await wrapped.onRunEnd!({
+      visibility: "public",
+    } as Parameters<NonNullable<RunCapability["onRunEnd"]>>[0]);
 
     expect(wrapped.order).toBe(7);
     expect(wrapped.guardTripCodes).toEqual(["guarded"]);

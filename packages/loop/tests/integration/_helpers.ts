@@ -183,6 +183,7 @@ export async function makeHarness(opts: HarnessOptions): Promise<TestHarness> {
     ...(opts.mcpLimits ?? {}),
   });
   const deps: ExecuteRunDeps = {
+    executionVisibility: "public",
     env,
     llm: opts.llm,
     connections,

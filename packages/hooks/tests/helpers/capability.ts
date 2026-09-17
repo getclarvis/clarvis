@@ -31,6 +31,12 @@ export function context(over: Partial<RunCapabilityContext> = {}): RunCapability
     entryGrants: [],
     env: loadEnv({}),
     workspaceRoot: "/ws",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: {
       async call() {
         throw new Error("unused test LLM");

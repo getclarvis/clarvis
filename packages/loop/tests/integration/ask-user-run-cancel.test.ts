@@ -27,6 +27,7 @@ describe("run cancellation interrupts a pending question", () => {
       });
 
     const deps: ExecuteRunDeps = {
+      executionVisibility: "public",
       env: loadEnv({}),
       llm,
       connections: mockConnections(mockMCPFactory({})),

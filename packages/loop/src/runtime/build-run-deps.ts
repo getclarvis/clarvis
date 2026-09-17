@@ -18,7 +18,11 @@ import {
   type RuntimeEnvironment,
 } from "@clarvis/mcp-client";
 import { setPathsLogger, type WorkspaceStatePaths } from "@clarvis/paths";
-import { resolveTraceStore, type ResolvedTraceStore } from "@clarvis/trace";
+import {
+  createTraceVisibilityView,
+  resolveTraceStore,
+  type ResolvedTraceStore,
+} from "@clarvis/trace";
 import {
   admissionStateLogger,
   createAiSdkProvider,
@@ -173,7 +177,7 @@ export interface BuildRunDepsOptions {
    */
   hookCredentialNames?: () => readonly string[];
   /** Host port for the tools guard: resolves the run's guard from the
-   * request (guard_mode/guard_judge), host settings, and the elicit channel. */
+   * request and registered parameters, host settings, and the elicit channel. */
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   /** Host port naming the environment variables that hold credentials, so the
@@ -818,12 +822,13 @@ export async function buildExecuteRunDeps({
   capabilities.push(...(extraCapabilities ?? []));
 
   const deps: ExecuteRunDeps = {
+    executionVisibility: "public",
     ...(statePaths === undefined ? {} : { statePaths }),
     env,
     ...(modelExecutionResolver === undefined ? {} : { modelExecutionResolver }),
     llm,
     connections,
-    traceStore: resolved.store,
+    traceStore: createTraceVisibilityView(resolved.store, "public"),
     logger,
     workspaceRoot,
     capabilities,

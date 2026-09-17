@@ -14,7 +14,7 @@ Production: `OperatorAuthorityReader` in
 [operator-authority.ts](../../packages/capability/src/operator-authority.ts),
 `createGuardEffectRegistry` in [registry.ts](../../packages/kernel/src/guard/effects/registry.ts),
 and `validateAuthorityEnvelope` in
-[effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts).
+[effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
 ## Evidence and lifetime
@@ -136,6 +136,17 @@ authorize a write, and operational settings are refused before elicitation.
 
 ## Compiler and decision
 
+Guard and configuration review resolve the optional Plans context through a getter at each review,
+not during capability activation. Post-inference fences resolve it again: changed, newly available
+or removed context invalidates the result. An activation-order miss cannot permanently hide a Plan.
+Production: `reviewerContextSnapshot` and `reviewerContextIsCurrent` in
+[review-context.ts](../../packages/kernel/src/guard/review-context.ts); `createGuardRuntimeResolver`
+and `createConfigurationReview` supply lazy port getters.
+Test: [review-context.test.ts](../../packages/kernel/tests/unit/review-context.test.ts),
+`review resolves Plans after activation and rejects replacement or removal in flight` and
+`a newly available Plans context invalidates a review begun without one`.
+
+
 The compiler runs lazily for a revision whose effects are not covered. Its forced tool uses a closed,
 bounded schema. Unknown effects, evidence IDs, targets or constraints invalidate the entire output.
 Only bounded descriptors accept prerequisite inference. Explicit effects require direct evidence;
@@ -147,10 +158,38 @@ exclusion never admits a historical target for a grant. Production: `validateAut
 Test: `retains historical target exclusions without admitting historical target grants` in
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
+`OperatorAuthorityState.envelope_context_revision` binds the installed envelope to its live review
+context. Only the host installation seam supplies this nonempty identifier (at most 2048 characters); it is absent from the
+model candidate schema and authority seed. Validated checkpoint restoration retains it with the
+envelope; malformed or orphaned binding revokes the restored state. Installation replaces or clears
+it atomically, and settlement/revocation clears it. Reviewers compare this ledger field with the
+current context, including absence, rather than maintaining a separate compile cache.
+Production: `installAuthorityEnvelope` and `createOperatorAuthorityRuntime` in
+[operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts), and
+`createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
+Test: `keeps compile context with its envelope across continuation and clears it on replacement` in
+[operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and
+`reuses installed compile context across reviewers and recompiles when Plans disappears` in
+[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+
 Cache identity includes authority revision and exact facts. Failures, invalid responses, uncertainty
 and human fallback do not become clean cached verdicts. Failed-only rerun identity is reserved once
 before execution and persists across recompilation and continuation; execution failure does not
 refund the attempt. A stale revision cannot install an envelope or execute an allow.
+
+The compile transaction captures authority revision, installed interpretation identity, live context
+revision and case digest before inference. It rechecks them before and after candidate validation,
+then installs synchronously through the private ledger seam. An intervening envelope replacement at
+the same revision is stale too. Only one installation attempt is permitted per transaction.
+The returned transition contains the installed envelope/revision and a case-bound digest; its own
+authenticated outcome revision is expected, while later external changes invalidate it. Rejection
+after installation never rolls back the envelope. No separate compile cache is introduced.
+Production: `createAuthorityReviewTransaction` and `installedAuthorityTransition` in
+[authority-review-transaction.ts](../../packages/kernel/src/guard/authority-review-transaction.ts);
+`validateAuthorityEnvelope` in [authority-validation.ts](../../packages/kernel/src/guard/authority-validation.ts).
+Test: [authority-review-transaction.test.ts](../../packages/kernel/tests/unit/authority-review-transaction.test.ts)
+pins pre/post-install fences, same-revision replacement, case binding, detached state and the
+compile's own outcome revision; the existing effect-review suite executes this transaction too.
 
 The compiler preserves objective identities for the same outcome. A proposed new outcome must cite
 the newest evidence in every objective and grant, follow a fresh evidence revision, and originate in
@@ -158,11 +197,12 @@ a root runtime. The host then mints a new outcome binding and increments revisio
 replaced; exclusions survive validation. The model supplies the semantic distinction, while the host
 enforces freshness, binding and coverage.
 
-`effectReviewServiceFor` shares one service per host reader. The restricted configuration writer
-uses that same service for attested facts and audit; its existing explicit consent path needs no
+Guard and configuration adapters resolve one run-owned `JUDGE_PORT` lazily; no WeakMap service
+shares inference, configuration or caches. The host ledger shares installed envelopes and refusals,
+while Judge owns semantic receipt caches and in-flight inference. The restricted writer's explicit consent path needs no
 additional model decision.
 
-Production: `createEffectReviewService`, `validateAuthorityEnvelope`, `consumeAuthorityEffects`.
+Production: `createHostEffectReview`, `validateAuthorityEnvelope`, `consumeAuthorityEffects`.
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
 ## Reviewer configuration and rollout
@@ -175,8 +215,8 @@ The fallback defaults to `deny`: `unsure`, missing authority coverage, an unavai
 provider failure, timeout, or malformed structured output returns a denial to the calling model so it
 can choose another command. `on_unsure: "ask"` is the explicit opt-in for human fallback; human-only
 policy decisions such as credential, dangerous-command, and explicit escalation asks remain human.
-`guard_judge.prompt` is deprecated guidance; `guidance` is the typed replacement. Neither replaces the
-first system message, `EFFECT_REVIEW_POLICY`, which is owned by the kernel. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; an absent prompt does not disable Auto.
+`guard_judge.guidance` is bounded additional context and cannot replace the
+fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
 
 The explicit rollout stages are `shadow`, `local` and `ci_retry`. Shadow computes review evidence
 without changing the existing guard outcome. An absent rollout uses the same conservative effect
@@ -192,21 +232,19 @@ disable filesystem, credential, capability, placement or host/guest invariants.
 Auto consults exact human session consent before effect review for eligible asks. Deny-list rulings
 still stop the call first, and explicit Host escalation never consumes session consent. Human
 consent is not operator evidence. Production: `createGuardResolver` in
-[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and `createJudgeElicit` in
-[judge.ts](../../packages/kernel/src/guard/judge.ts). Test:
+[resolver.ts](../../packages/kernel/src/guard/resolver.ts) and `createCommandReview` in
+[command-review.ts](../../packages/kernel/src/guard/command-review.ts). Test:
 [guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts) and
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
 
-Compiler and judge have their own explicit timeout, retries, output cap and reasoning effort.
-Their model calls use the shared `judge` auxiliary instance on the run's decorated provider, so
-session affinity, canonical prompt-cache key and TTL follow the same composition as ordinary and
-memory runs. Effect review marks only its stable system policy; guidance remains bundled with the
-current authority evidence and effect facts outside that breakpoint. Production:
-`GUARD_REVIEW_AGENT_INSTANCE_ID`
-in [reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts),
-`createEffectReviewService` and `createJudgeElicit`. Test:
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
+Compiler and decision stages retain explicit timeout, retries, output cap and reasoning effort
+inside the private Judge run. Its effective base provider, session and resolved TTL preserve normal
+provider composition. Fixed policy and a canonical host snapshot form the stable prefix; exact case
+facts and any case-specific transition token follow in a volatile message.
+Production: `executeJudge` in [executor.ts](../../packages/judge/src/executor.ts), `createHostJudge`,
+`createHostEffectReview` and `createCommandReview`. Test:
+[executor.test.ts](../../packages/judge/tests/integration/executor.test.ts) and
+[judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 Timeout, auth, quota, rate limit, transport, admission, cancellation, invalid response and unknown
 failure are distinct receipts. Cancellation is enforced even if a provider ignores its signal.
 Audit fields contain counts, timing, model identity, effect IDs and digests, never raw command,
@@ -220,8 +258,8 @@ distinguishes `call_local` from `effect_review`, `command_guard` from `configure
 accounting is incomplete. Cancellation wins once even when the provider settles later. An internal
 verdict or receipt cache hit produces no event because it made no provider call. Production:
 `callReviewerWithTrace` and `guardReviewerModelCallProjector` in
-[reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts), plus `createJudgeElicit` and
-`createEffectReviewService`. Test:
+[reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts), plus `createCommandReview` and
+`createHostEffectReview`. Test:
 [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts),
 [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
 [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
@@ -237,9 +275,9 @@ reasoning, justification or opaque provider metadata. Instrumentation observes t
 [execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts), "keeps contributed
 trace accounting out of provider messages and final_context".
 
-Production: [reviewer-policy.ts](../../packages/kernel/src/guard/reviewer-policy.ts),
+Production: [prompt.ts](../../packages/judge/src/prompt.ts),
 [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
-[effect-review-settings.ts](../../packages/loop/src/runtime/capabilities/effect-review-settings.ts),
+[settings.ts](../../packages/judge/src/settings.ts),
 and [review-audit-schema.ts](../../packages/kernel/src/guard/review-audit-schema.ts).
 Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
 
@@ -272,10 +310,45 @@ and rejects unknown compositions, protected paths and synthetic evidence sources
 
 `runEffectReviewCanary` in
 [effect-review.ts](../../packages/kernel/tests/canary/effect-review.ts) is outside the mandatory suite.
-An authorized host caller supplies the real SDK's subscription resolver, explicit opt-in and one
-model each for `openai-codex` and `xai-grok`. One to five trials run forced compile/decide contracts,
-a short timeout and injected invalid-response handling. Results retain stage usage, attempts,
+An authorized host caller supplies the real SDK's subscription resolver, explicit opt-in and two
+distinct subscription model identities selected by the operator. One to three trials run native Judge capability
+compile/decide contracts, a short timeout and injected invalid-response handling. Each scenario
+must persist exactly one projected internal run in disposable storage. Results retain provider
+cache counters when available, stage usage, attempts,
 failure kinds and latency percentiles, without prompts, commands, credentials or evidence text.
 Decisions are observations, not probabilistic unit-test expectations. The
 [canary gate test](../../packages/kernel/tests/unit/effect-review-canary-gates.test.ts) proves that
-missing opt-in or invalid bounds stop before any provider access.
+missing opt-in, duplicate model identities or invalid bounds stop before any provider access. A
+single global budget refuses attempt twenty-one before it reaches the provider, and simulated
+authorization failure still exercises native private execution without exposing credentials.
+
+
+## Shared Judge consumer
+
+`createHostEffectReview` supplies current case facts separately from live host snapshots and trusted
+compile/validation callbacks. A usable transition is exposed only when its grants cover the current
+facts. The host validates cited grants in fact order, relation, revision and transition token again
+after inference; only then may it reserve a one-attempt effect. Exact refusals are checked before and
+after inference. A compiled exclusion denies without a decide invocation. Cancelled reviews never
+fall through to a human question. Configuration accepts the host's own compilation revision while
+still rejecting external changes before the write. Architecture errors propagate without fallback.
+Production: `createHostEffectReview`, `createConfigurationReview` and `createGuardRuntimeResolver`.
+Test: [effect-review.test.ts](../../packages/kernel/tests/unit/effect-review.test.ts) checks shared
+ledger/refusals, invalid grant/relation/revision/token, exclusions and missing composition;
+[direct-configuration.test.ts](../../packages/kernel/tests/integration/direct-configuration.test.ts)
+executes the real private protocol for authoring and pins operator-question counts.
+The old direct-provider characterization and canary helper are baseline-only; they do not qualify
+this private execution path. Real-provider/cache qualification remains outstanding.
+
+
+The native factory emits `effect_review.reviewer.started` once per actual provider invocation, with
+stage/consumer read from the private execution descriptor and live authority revision. Cache hits
+emit no start. The host adapter records typed operational/validation failures with the compile or
+decide stage and aggregate attempts; logs contain no case or provider prose. The separate parent
+model-call event remains the usage authority, one event per actual invocation. Compilation records
+`operator_authority.recompiled`; terminal semantic decisions record reviewer completion.
+Production: `createHostJudge` and `createHostEffectReview`.
+Test: the command/effects real-engine cases in
+[judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) verify compile/decide
+identity, start counts, private accounting and cache reuse; failure-audit cases in
+[effect-review.test.ts](../../packages/kernel/tests/unit/effect-review.test.ts) validate the closed schema.

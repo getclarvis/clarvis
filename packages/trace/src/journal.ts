@@ -1,6 +1,7 @@
+import { assertExecutionVisibility } from "./visibility.ts";
 import { closeSync, openSync, unlinkSync, writeSync } from "node:fs";
 import { hostname } from "node:os";
-import type { RunRequest } from "@clarvis/capability";
+import type { ExecutionVisibility, RunRequest } from "@clarvis/capability";
 import type { TraceEvent } from "@clarvis/capability";
 import type { Logger } from "@clarvis/capability";
 import { sanitizeDeep } from "@clarvis/capability";
@@ -9,7 +10,7 @@ import { sanitizeDeep } from "@clarvis/capability";
  * Journal format version, stamped on every header line and bumped whenever the
  * shape of a line changes.
  */
-export const JOURNAL_VERSION = 1;
+export const JOURNAL_VERSION = 2;
 
 /** Filename extension of a run journal, chosen so it cannot be read as a record. */
 export const JOURNAL_SUFFIX = ".jsonl";
@@ -36,6 +37,8 @@ export const JOURNAL_OVERSIZED_SUFFIX = ".jsonl.oversized";
  * to the one a normal run would have persisted.
  */
 export interface JournalHeader {
+  /** Explicit host classification retained during recovery. */
+  visibility: ExecutionVisibility;
   /** {@link JOURNAL_VERSION} at the time the journal was opened. */
   v: number;
   /** The execution id this journal belongs to. */
@@ -131,6 +134,7 @@ export interface CreateRunJournalOptions {
  */
 export function createRunJournal(opts: CreateRunJournalOptions): RunJournal {
   const { path, header, logger } = opts;
+  assertExecutionVisibility(header.visibility);
   let fd: number | null = null;
   let dead = false;
 
@@ -155,6 +159,7 @@ export function createRunJournal(opts: CreateRunJournalOptions): RunJournal {
     fd = openSync(path, "ax", 0o600);
     const line: JournalHeader = {
       v: JOURNAL_VERSION,
+      visibility: header.visibility,
       id: header.id,
       owner_key_name: header.owner_key_name,
       started_at: header.started_at,

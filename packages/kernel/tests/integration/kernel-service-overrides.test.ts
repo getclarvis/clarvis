@@ -42,6 +42,7 @@ it("preserves override identity with ZERO default config, secret, plugin, model 
       providerAuthService: provided.providerAuth,
       extensionProfileService: provided.extensionProfiles,
       deps: {
+        executionVisibility: "public",
         env,
         workspaceRoot: root,
         llm: new MockLLM({ script: [] }),

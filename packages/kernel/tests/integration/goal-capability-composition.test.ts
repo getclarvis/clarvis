@@ -193,6 +193,7 @@ async function fixture(mode: "checkpoint" | "blocked" | "review") {
         return { action: "cancel" };
       },
       deps: {
+        executionVisibility: "public",
         env,
         workspaceRoot,
         connections,

@@ -624,7 +624,7 @@ test("startRun maps the complete guard and active-task request without workspace
     executionId: "exec_task",
     messages: [],
     guardJudge: {
-      prompt: "review writes",
+      guidance: "review writes",
       model: "openai/judge",
       onUnsure: "deny",
       timeoutMs: 5_000,
@@ -634,7 +634,7 @@ test("startRun maps the complete guard and active-task request without workspace
   expect(captured).toMatchObject({
     execution_id: "exec_task",
     guard_judge: {
-      prompt: "review writes",
+      guidance: "review writes",
       model: "openai/judge",
       on_unsure: "deny",
       timeout_ms: 5_000,
@@ -642,6 +642,7 @@ test("startRun maps the complete guard and active-task request without workspace
     task: { id: "CLAR-42", provider_key: "provider-key", mode: "work" },
   });
   expect(captured).not.toHaveProperty("workspace");
+  expect(captured).not.toHaveProperty("guard_judge.prompt");
   ctrl.settle({ execution_id: "exec_task", status: "completed" });
   ctrl.close();
   await handle.done;
@@ -662,7 +663,7 @@ test("startRun keeps native capability settings but omits host guard settings fo
     executionId: "exec_container",
     messages: [],
     guardMode: "auto",
-    guardJudge: { prompt: "must not cross" },
+    guardJudge: { guidance: "must not cross" },
     memory: "off",
     plans: "off",
   });

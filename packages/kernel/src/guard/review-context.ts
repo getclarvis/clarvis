@@ -1,5 +1,13 @@
 import type { OperatorReviewContext, OperatorReviewContextProvider } from "@clarvis/capability";
 
+/** Resolve optional Plans only when reviewing; activation order must not freeze its absence. */
+export type ReviewerContextSource =
+  OperatorReviewContextProvider | (() => OperatorReviewContextProvider | undefined);
+
+function currentProvider(source: ReviewerContextSource | undefined) {
+  return typeof source === "function" ? source() : source;
+}
+
 export type ReviewerContextPayload = Array<{
   kind: OperatorReviewContext["kind"];
   definition: Record<string, unknown>;
@@ -13,9 +21,9 @@ export interface ReviewerContextSnapshot {
 /** Decode host-shaped semantic definitions into one ordered model payload. */
 export function reviewerContextSnapshot(
   persisted: OperatorReviewContext | undefined,
-  live: OperatorReviewContextProvider | undefined,
+  live: ReviewerContextSource | undefined,
 ): ReviewerContextSnapshot {
-  const liveSnapshot = live?.snapshot();
+  const liveSnapshot = currentProvider(live)?.snapshot();
   const contexts = [
     ...(persisted === undefined ? [] : [persisted]),
     ...(liveSnapshot?.contexts ?? []),
@@ -42,8 +50,8 @@ export function reviewerContextSnapshot(
 
 /** Reject a reviewer result if its late-bound Plans definition changed in flight. */
 export function reviewerContextIsCurrent(
-  live: OperatorReviewContextProvider | undefined,
+  live: ReviewerContextSource | undefined,
   revision: string | undefined,
 ): boolean {
-  return live?.snapshot().revision === revision;
+  return currentProvider(live)?.snapshot().revision === revision;
 }

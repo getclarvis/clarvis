@@ -40,7 +40,9 @@ export function workflowRunDeps(
  * leader's `executeRun` is faked (or never reached). */
 export function makeCtx(overrides: Partial<WorkflowCtx> = {}): WorkflowCtx {
   return {
-    deps: {} as WorkflowCtx["deps"],
+    deps: {
+      executionVisibility: "public",
+    } as WorkflowCtx["deps"],
     runDeps: workflowRunDeps(),
     owner: "owner",
     semaphore: createSemaphore(4),
@@ -152,6 +154,12 @@ export function runContextWithAgents(agents: AgentRegistry): RunCapabilityContex
     entryGrants: [],
     env: {} as RunCapabilityContext["env"],
     workspaceRoot: "/workspace",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: { call: () => Promise.reject(new Error("test LLM was not stubbed")) },
     emit: () => undefined,
     services,

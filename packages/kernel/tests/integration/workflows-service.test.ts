@@ -123,6 +123,7 @@ function buildDeps(
     return scriptedCall(params);
   };
   return {
+    executionVisibility: "public",
     env,
     llm,
     connections: createConnectionManager({
@@ -471,6 +472,7 @@ describe("WorkflowsService", () => {
       output_tokens: 0,
     });
     const trace = (id: string, status: ExecutionStatus, endedAt: number): ExecutionRecord => ({
+      visibility: "public",
       id,
       owner_key_name: "kernel-test",
       status,
@@ -1806,6 +1808,7 @@ describe("workflow memory ownership", () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-"));
     const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-global-"));
     const memory = memoryFactoryOverTree(ws);
+    const judgeRuns = new Set<string>();
     const deps = buildDeps(
       ws,
       [],
@@ -1825,7 +1828,17 @@ describe("workflow memory ownership", () => {
         },
         { name: "leader", when: () => true, script: [{ text: "leader findings" }] },
       ],
-      [createMemoryCapability(memory.factory)],
+      [
+        createMemoryCapability(memory.factory),
+        {
+          name: "judge",
+          required: true,
+          forRun(ctx) {
+            judgeRuns.add(ctx.executionId);
+            return { name: "judge", forAgent: () => ({ attach: () => ({}) }) };
+          },
+        },
+      ],
     );
     const kernel = createInProcessKernel({
       deps,
@@ -1844,12 +1857,17 @@ describe("workflow memory ownership", () => {
     // service holds the stream open for `DEFAULT_INGEST_CLOSE_GRACE_MS` waiting
     // for the job to settle. Nothing drains the queue here, so the stream would
     // linger for that whole grace. `done` does not wait on it.
-    expect((await handle.done).status).toBe("completed");
+    expect(await handle.done).toMatchObject({ status: "completed" });
 
     const llm = deps.llm as MockLLM;
     const managerCalls = llm.calls.filter(IS_MANAGER);
     const leaderCalls = llm.calls.filter((c) => !IS_MANAGER(c));
     expect(leaderCalls.length).toBeGreaterThan(0);
+    expect(judgeRuns.has(handle.execution_id)).toBe(true);
+    for (const call of leaderCalls) {
+      expect(call.executionId).toBeDefined();
+      expect(judgeRuns.has(call.executionId!)).toBe(true);
+    }
     const offered = (call: (typeof leaderCalls)[number]): string[] =>
       (call.tools ?? []).map((t) => t.wireName);
     expect(managerCalls.some((c) => offered(c).includes("read_memory"))).toBe(true);

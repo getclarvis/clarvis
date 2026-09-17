@@ -16,12 +16,12 @@ import { z } from "zod";
 import {
   PLUGIN_RESOURCE_LIMITS,
   mcpServerPluginSchema,
-  parsePluginManifest,
   readBoundedPluginText,
   suspectedManifestTypos,
   unknownManifestKeys,
   type PluginManifest,
 } from "@clarvis/loop/host";
+import { parsePluginManifest } from "./manifest-schema.ts";
 import {
   hooksDocumentSchema,
   convertHooksDocument,

@@ -1,6 +1,8 @@
+import { JUDGE_PORT } from "@clarvis/judge";
+import { judgePort } from "../helpers/judge-port.ts";
 import { expect, test } from "bun:test";
 import { resolve } from "node:path";
-import type { RunCapabilityContext } from "@clarvis/capability";
+import { createCapabilityServices, type RunCapabilityContext } from "@clarvis/capability";
 import { buildGuardContext, posixDialect, type GuardContext } from "@clarvis/tools/guard";
 import { createGuardResolver } from "../../src/guard/resolver.ts";
 import { createGuardSessionAllowlist } from "../../src/guard/guard-elicit.ts";
@@ -17,11 +19,15 @@ test("Auto reuses exact human session consent but still denies listed commands a
     }),
     sessionAllowlistFor: () => allowlist,
   });
+  const services = createCapabilityServices();
+  services.provide(JUDGE_PORT, judgePort());
   const ctx = {
+    services,
     owner: "owner",
     executionId: "run",
     workspaceRoot: root,
     env: {},
+    requestParam: () => undefined,
     request: {},
     llm: {
       call: async () => {

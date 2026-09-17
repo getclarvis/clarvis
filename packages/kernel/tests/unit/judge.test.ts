@@ -1,3 +1,5 @@
+import { JUDGE_PORT } from "@clarvis/judge";
+import { judgePort } from "../helpers/judge-port.ts";
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 import {
@@ -13,7 +15,7 @@ import { createTrace } from "@clarvis/trace";
 import { buildGuardContext, posixDialect } from "@clarvis/tools/guard";
 import type { ElicitRequest } from "@clarvis/loop";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
-import { createJudgeElicit } from "../../src/guard/judge.ts";
+import { createJudgeElicit } from "../helpers/legacy-command-review-baseline.ts";
 import { createGuardResolver } from "../../src/guard/resolver.ts";
 
 const workspace = resolve(".");
@@ -48,7 +50,61 @@ function request(command: string): ElicitRequest {
   return { tool: "shell", args: context.args, shell: context.shell } as ElicitRequest;
 }
 
-describe("call-local command judge", () => {
+describe("pre-migration command reviewer characterization", () => {
+  it.each([
+    { outcome: "allow", fallback: "ask", allowed: true, humans: 0 },
+    { outcome: "deny", fallback: "ask", allowed: false, humans: 0 },
+    { outcome: "unsure", fallback: "ask", allowed: true, humans: 1 },
+    { outcome: "invalid", fallback: "ask", allowed: true, humans: 1 },
+    { outcome: "failure", fallback: "ask", allowed: true, humans: 1 },
+    { outcome: "unsure", fallback: "deny", allowed: false, humans: 0 },
+    { outcome: "invalid", fallback: "deny", allowed: false, humans: 0 },
+    { outcome: "failure", fallback: "deny", allowed: false, humans: 0 },
+  ] as const)("preserves outcome and elicitation baseline for concurrent %j", async (scenario) => {
+    let modelCalls = 0;
+    let humanCalls = 0;
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const judge = createJudgeElicit(
+      {
+        llm: {
+          async call() {
+            modelCalls++;
+            entered.resolve();
+            await release.promise;
+            if (scenario.outcome === "failure") throw new Error("provider unavailable");
+            return {
+              toolCalls: [
+                { id: "decision", name: "decide", arguments: { decision: scenario.outcome } },
+              ],
+              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+            };
+          },
+        },
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        defaultModel: "anthropic/test",
+        authority: authority().reader,
+      },
+      { on_unsure: scenario.fallback },
+      async () => {
+        humanCalls++;
+        return true;
+      },
+    )!;
+    const first = judge(request("bun run test"));
+    await entered.promise;
+    const second = judge(request("bun run test"));
+    release.resolve();
+    const results = await Promise.all([first, second]);
+    for (const result of results)
+      expect(result).toEqual({
+        allowed: scenario.allowed,
+        answerer: scenario.humans === 0 ? "judge" : "human",
+      });
+    expect(modelCalls).toBe(1);
+    expect(humanCalls).toBe(scenario.humans);
+  });
+
   it("sees the complete command and host evidence, then memoizes an exact allow", async () => {
     const ledger = authority();
     const calls: LLMCallParams[] = [];
@@ -536,6 +592,21 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
   });
   const reviewed: string[] = [];
   const contexts: unknown[] = [];
+  services.provide(
+    JUDGE_PORT,
+    judgePort(async (input, context) => {
+      const facts = input.currentCase as { call: { args: { command: string } } };
+      reviewed.push(facts.call.args.command);
+      contexts.push((context.snapshot() as { review_context: unknown }).review_context);
+      return {
+        kind: "reviewed",
+        receipt: { action: "decide_command", decision: "allow" },
+        elapsedMs: 0,
+        attempts: 1,
+        cacheHit: false,
+      };
+    }),
+  );
   let prompts = 0;
   const resolver = createGuardResolver({
     loadSettings: () => ({
@@ -550,6 +621,7 @@ it("routes parameterized, environment-prefixed and dynamic asks to Auto without 
     workspaceRoot: workspace,
     services,
     env: {},
+    requestParam: () => undefined,
     request: { guard_mode: "auto" },
     elicit: async () => {
       prompts++;
@@ -608,6 +680,19 @@ it("keeps the call-local Auto outcome while effect review runs in shadow", async
   services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
   let reviewed = 0;
   let prompts = 0;
+  services.provide(
+    JUDGE_PORT,
+    judgePort(async () => {
+      reviewed++;
+      return {
+        kind: "reviewed",
+        receipt: { action: "decide_command", decision: "allow" },
+        elapsedMs: 0,
+        attempts: 1,
+        cacheHit: false,
+      };
+    }),
+  );
   const resolver = createGuardResolver({
     loadSettings: () => ({
       providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -621,6 +706,7 @@ it("keeps the call-local Auto outcome while effect review runs in shadow", async
     workspaceRoot: workspace,
     services,
     env: {},
+    requestParam: () => undefined,
     request: { guard_mode: "auto" },
     elicit: async () => {
       prompts++;
@@ -675,6 +761,7 @@ it("keeps an environment-prefixed dangerous call human while effect review runs 
     workspaceRoot: workspace,
     services,
     env: {},
+    requestParam: () => undefined,
     request: { guard_mode: "auto" },
     elicit: async () => {
       prompted++;
@@ -729,6 +816,7 @@ it.each(["credential_file", "dangerous"] as const)(
       workspaceRoot: workspace,
       services,
       env: {},
+      requestParam: () => undefined,
       request: { guard_mode: "auto" },
       elicit: async () => {
         prompted++;
@@ -777,6 +865,7 @@ it("keeps registered human-only effects out of the call-local reviewer", async (
     workspaceRoot: workspace,
     services,
     env: {},
+    requestParam: () => undefined,
     request: { guard_mode: "auto" },
     elicit: async () => {
       prompted++;

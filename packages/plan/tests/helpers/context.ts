@@ -50,6 +50,12 @@ export function fakeRunCapabilityContext(
     entryGrants: [],
     env: loadEnv({}),
     workspaceRoot: "/ws",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: {
       call: () => {
         throw new Error("fakeRunCapabilityContext: llm.call not stubbed");
@@ -91,6 +97,7 @@ export function fakeExecutionRecord(
       ? { status, error: { code: "test_error", message: "test error" }, usage }
       : { status, disposition: "final", result: null, usage };
   return {
+    visibility: "public",
     id: "run-1",
     owner_key_name: "test",
     status,

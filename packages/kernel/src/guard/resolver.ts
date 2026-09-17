@@ -1,17 +1,20 @@
 import {
+  JUDGE_DEFAULTS,
+  judgeRequestConfig,
+  type EffectReviewConfig,
+} from "@clarvis/judge/settings";
+import {
   NOOP_LOGGER,
   OPERATOR_AUTHORITY_PORT,
   PLANS_REVIEW_CONTEXT_PORT,
-  RUN_TRACE_PORT,
   type RunCapabilityContext,
-  type EffectReviewConfig,
 } from "@clarvis/capability";
 import type { ProcessRunner } from "../ports/process-runner.ts";
 import { createGuardEffectRegistry } from "./effects/registry.ts";
 import { attestShell } from "./effects/shell.ts";
 import { attestWorkspace } from "./effects/workspace.ts";
 import type { GuardEffectBatch } from "./effects/types.ts";
-import { effectReviewServiceFor } from "./effect-review-service.ts";
+import { createHostEffectReview } from "./effect-review.ts";
 import type {
   Guard,
   GuardElicit,
@@ -31,7 +34,8 @@ import {
 } from "./shell-guard.ts";
 import { createGuardSessionAllowlist, type GuardSessionAllowlist } from "./guard-elicit.ts";
 import { createGuardHumanApproval, type GuardHumanApproval } from "./human-approval.ts";
-import { createJudgeElicit } from "./judge.ts";
+import { JUDGE_PORT } from "@clarvis/judge";
+import { createCommandReview } from "./command-review.ts";
 
 /** Snapshot of settings fields needed to resolve a run-time tool guard. */
 export interface GuardSettings {
@@ -91,6 +95,7 @@ export interface GuardResolverDeps {
 export type GuardRuntimeContext = Pick<
   RunCapabilityContext,
   | "request"
+  | "requestParam"
   | "owner"
   | "env"
   | "workspaceRoot"
@@ -268,6 +273,7 @@ function createGuardRuntimeResolver(
   const auditRoot = deps.audit ?? NOOP_LOGGER;
   return (ctx): GuardResolution | undefined => {
     const settings = deps.loadSettings();
+    const judgeConfig = judgeRequestConfig(ctx);
     const guardMode = resolveGuardMode(ctx.request.guard_mode, settings.guard);
     const audit = auditRoot.child?.({ run_id: ctx.executionId, owner: ctx.owner }) ?? auditRoot;
     const container =
@@ -287,22 +293,17 @@ function createGuardRuntimeResolver(
     const registry = createGuardEffectRegistry();
     const batches = new WeakMap<object, GuardEffectBatch>();
     const calls = new WeakMap<object, GuardContext>();
-    const reviewer = effectReviewServiceFor({
-      llm: ctx.llm,
-      providers: settings.providers ?? [],
-      defaultModel:
-        settings.defaultModel ??
-        (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
+    const reviewer = createHostEffectReview({
+      judge: () => ctx.services?.get(JUDGE_PORT),
       authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
-      reviewContext: ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
-      trace: ctx.services?.get(RUN_TRACE_PORT),
+      reviewContext: () => ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
       registry,
       audit,
       signal: ctx.signal,
       options: {
         ...settings.effect_review,
-        ...ctx.request.guard_judge,
-        guidance: ctx.request.guard_judge?.guidance ?? ctx.request.guard_judge?.prompt,
+        ...judgeConfig,
+        guidance: judgeConfig?.guidance,
       },
     });
     const initialGuard = buildGuard(
@@ -441,25 +442,19 @@ function createGuardRuntimeResolver(
           };
     const judgeElicit =
       guardMode === "auto"
-        ? createJudgeElicit(
+        ? createCommandReview(
             {
-              llm: ctx.llm,
-              providers: settings.providers ?? [],
-              defaultModel:
-                settings.defaultModel ??
-                (ctx.env as { CLARVIS_DEFAULT_MODEL?: string }).CLARVIS_DEFAULT_MODEL,
+              judge: () => ctx.services?.get(JUDGE_PORT),
               authority: ctx.services?.get(OPERATOR_AUTHORITY_PORT),
-              reviewContext: ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
-              trace: ctx.services?.get(RUN_TRACE_PORT),
-              logger: deps.logger ?? ctx.logger,
+              reviewContext: () => ctx.services?.get(PLANS_REVIEW_CONTEXT_PORT),
               signal: ctx.signal,
             },
-            { ...settings.effect_review, ...ctx.request.guard_judge },
+            { ...settings.effect_review, ...judgeConfig },
             humanElicit,
           )
         : undefined;
     const onUnsure =
-      ctx.request.guard_judge?.on_unsure ?? settings.effect_review?.on_unsure ?? "deny";
+      judgeConfig?.on_unsure ?? settings.effect_review?.on_unsure ?? JUDGE_DEFAULTS.onUnsure;
     const chosenHuman =
       guardMode === "on" ||
       (guardMode === "auto" && judgeElicit === undefined && onUnsure === "ask")
@@ -470,7 +465,7 @@ function createGuardRuntimeResolver(
         event: "guard.resolved",
         mode: guardMode,
         source: ctx.request.guard_mode !== undefined ? "request" : "settings",
-        judge_configured: ctx.request.guard_judge !== undefined,
+        judge_configured: judgeConfig !== undefined,
         human_channel: humanElicit !== undefined,
       },
       "the run's command guard is resolved; every guarded call is ruled on under this mode",
@@ -552,7 +547,8 @@ function createGuardRuntimeResolver(
                 recordAnswer(audit, "judge", result.decision === "allow", false);
                 return { allowed: result.decision === "allow", answerer: "judge", review };
               }
-              if (onUnsure !== "ask") return { allowed: false, answerer: "judge", review };
+              if (onUnsure !== "ask" || result?.failure_kind === "cancelled")
+                return { allowed: false, answerer: "judge", review };
               const answer =
                 humanElicit === undefined
                   ? noHumanChannel(audit, ctx.executionId)

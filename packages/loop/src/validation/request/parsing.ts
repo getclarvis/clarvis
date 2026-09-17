@@ -111,6 +111,10 @@ function runRequestSchemaFor(
             "a registered capability must declare a param the engine does not already own.",
         );
       }
+      if (key in schema.shape)
+        throw new Error(
+          `capability request param '${key}' collides with another registered capability`,
+        );
     }
     schema = schema.extend(spec.requestParams) as unknown as typeof runRequestSchema;
   }

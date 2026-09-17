@@ -1,14 +1,5 @@
 import type { PortKey } from "./services.ts";
 
-/** Shared operator-owned reviewer settings; workspace input may only narrow operational limits. */
-export interface EffectReviewConfig {
-  model?: string;
-  timeout_ms?: number;
-  max_retries?: number;
-  on_unsure?: "ask" | "deny";
-  rollout?: "shadow" | "local" | "ci_retry";
-}
-
 /** Semantic effect classes; independent of coarse tool scheduling effects. */
 export type ReviewedEffectClass =
   | "read"
@@ -124,6 +115,8 @@ export interface OperatorAuthorityState {
   evidence: OperatorEvidence[];
   review_context?: OperatorReviewContext;
   envelope?: AuthorityEnvelopeV1;
+  /** Host-attested live review context used to compile the installed envelope. */
+  envelope_context_revision?: string;
   /** Inherited limits cannot be enlarged by child interpretation. */
   ceiling?: AuthorityEnvelopeV1;
   parent_run_id?: string;

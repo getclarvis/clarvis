@@ -42,7 +42,13 @@ sanitized request and current document, operation, document class and the digest
 auto mode can allow a covered effect. Command guard `off` does not disable restricted-writer
 validation or operational review. There is no general self-configuration consent setting. A human refusal rejects the concrete prepared change; it does not prohibit every future revision of the same target. The shared authority state retains a bounded identity for the complete refused batch, including target and before/after revisions. Switching between `edit` and `write` with identical resulting bytes does not open another prompt at the same evidence revision. A corrected proposal must undergo its own policy decision, while an authenticated steer can restrict or revoke the broader effect. Human prompts identify why the current policy requires intervention when automatic review cannot authorize the effect.
 
-Production: `denyAuthorityEffect` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts) and `createEffectReviewService` in [effect-review-service.ts](../../packages/kernel/src/guard/effect-review-service.ts). Test: exact refusal, equivalent edit/write, corrected bytes, continuation and fresh intent in [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), bounded and revision-fenced storage in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
+Direct configuration and authoring consumers share an identical question only while it is pending
+in the same physical run. Identity includes the complete attested facts, sanitized context and
+message, authority revision and controller binding. Settlement or channel failure removes the
+pending entry, so a later attempt asks again and human consent is never cached. A distinct proposal
+gets its own question, and cancellation fences every caller sharing a late answer.
+
+Production: `denyAuthorityEffect` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts), `createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts), and `createConfigurationReview` in [review.ts](../../packages/kernel/src/configuration/review.ts). Test: exact refusal, equivalent edit/write, corrected bytes, continuation and fresh intent in [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), bounded and revision-fenced storage in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and pending-question identity, retirement and cancellation in [configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts).
 
 Host-admitted steer arrival updates authority while a review is open, without prematurely
 acknowledging model delivery. After asynchronous review, cancellation and authority revision are

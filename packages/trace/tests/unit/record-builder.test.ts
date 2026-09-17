@@ -73,6 +73,7 @@ function response(by_agent: PerAgentUsage[], elapsed_ms = 500): RunResponse {
 describe("buildRecord", () => {
   it("sums per-agent usage into the record's four roll-up totals", () => {
     const record = buildRecord({
+      visibility: "public",
       id: "exec_1",
       owner: "alice",
       request: REQUEST,
@@ -97,6 +98,7 @@ describe("buildRecord", () => {
 
   it("totals zero for a run that used no agent", () => {
     const record = buildRecord({
+      visibility: "public",
       id: "exec_2",
       owner: "alice",
       request: REQUEST,
@@ -112,6 +114,7 @@ describe("buildRecord", () => {
 
   it("derives ended_at from the wall start plus the reported elapsed time", () => {
     const record = buildRecord({
+      visibility: "public",
       id: "exec_3",
       owner: "alice",
       request: REQUEST,
@@ -127,6 +130,7 @@ describe("buildRecord", () => {
   it("carries the response's status, the id, the owner and the trace through", () => {
     const trace: Trace = { events: [] };
     const record = buildRecord({
+      visibility: "public",
       id: "exec_4",
       owner: "bob",
       request: REQUEST,
@@ -147,6 +151,7 @@ describe("buildRecord", () => {
 
   it("omits final_context and capability_state entirely when neither is supplied", () => {
     const record = buildRecord({
+      visibility: "public",
       id: "exec_5",
       owner: "alice",
       request: REQUEST,
@@ -160,6 +165,7 @@ describe("buildRecord", () => {
 
   it("includes final_context and capability_state when supplied", () => {
     const record = buildRecord({
+      visibility: "public",
       id: "exec_6",
       owner: "alice",
       request: REQUEST,
@@ -181,6 +187,7 @@ describe("buildRecord", () => {
       },
     };
     const record = buildRecord({
+      visibility: "public",
       id: "exec_7",
       owner: "alice",
       request: REQUEST,

@@ -426,7 +426,7 @@ export interface AgentProfile {
  * and agent instance; `prompt_cache_ttl` sets how long a written cache prefix
  * survives; `output_schema` constrains the agent's result;
  * `elicit_wait_ms` bounds user elicitation; and `agents`, `guard_mode`,
- * `guard_judge` toggle or tune the corresponding capabilities for this run.
+ * registered parameters toggle or tune the corresponding capabilities for this run.
  *
  * A capability shipped in its own package takes its per-run param through a
  * registered {@link CapabilitySettingsSpec} instead, read back with
@@ -493,7 +493,6 @@ export interface RunRequest {
   guard_escalation?: boolean;
   agents?: AgentsParam;
   guard_mode?: GuardMode;
-  guard_judge?: GuardJudgeConfig;
   /**
    * Host-derived context for a user-invoked skill command.
    *
@@ -537,17 +536,6 @@ export interface AgentsParam {
 
 /** Command review: `off` skips this guard, `on` asks a human, and `auto` uses the host reviewer. */
 export type GuardMode = "off" | "on" | "auto";
-
-/** Optional reviewer overrides and guidance; the host always supplies its invariant policy. */
-export interface GuardJudgeConfig {
-  /** @deprecated Additional guidance only; cannot replace the kernel policy. */
-  prompt?: string;
-  guidance?: string;
-  model?: string;
-  on_unsure?: "ask" | "deny";
-  timeout_ms?: number;
-  max_retries?: number;
-}
 
 /**
  * The result of handling one tool call.

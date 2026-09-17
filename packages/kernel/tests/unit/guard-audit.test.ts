@@ -1,3 +1,4 @@
+import { createCapabilityRequestView } from "@clarvis/capability";
 import { describe, it, expect } from "bun:test";
 import { resolve } from "node:path";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -52,6 +53,10 @@ function ctx(tool: string, args: Record<string, unknown>, shell?: ShellFacts): G
 
 function runCtx(over: Partial<RunCapabilityContext>): RunCapabilityContext {
   return {
+    requestParam: (key: string) =>
+      over.request === undefined
+        ? undefined
+        : createCapabilityRequestView(over.request).requestParam(key),
     owner: "owner-1",
     executionId: "run-1",
     request: { guard_mode: "on" },
@@ -288,7 +293,7 @@ describe("guard audit records", () => {
       runCtx({
         request: {
           guard_mode: "auto",
-          guard_judge: { prompt: "judge", on_unsure: "ask" },
+          guard_judge: { guidance: "judge", on_unsure: "ask" },
         } as never,
         llm,
       }),
@@ -323,7 +328,7 @@ describe("guard audit records", () => {
       runCtx({
         request: {
           guard_mode: "auto",
-          guard_judge: { prompt: "judge", on_unsure: "ask" },
+          guard_judge: { guidance: "judge", on_unsure: "ask" },
         } as never,
         llm,
         elicit,
@@ -355,7 +360,7 @@ describe("guard audit records", () => {
     });
     const resolution = await resolver(
       runCtx({
-        request: { guard_mode: "auto", guard_judge: { prompt: "judge" } } as never,
+        request: { guard_mode: "auto", guard_judge: { guidance: "judge" } } as never,
         llm,
       }),
     );

@@ -297,13 +297,12 @@ capability touches its own module and this one file" contract stated in the modu
 comment (`packages/loop/src/runtime/capabilities/settings-specs.ts`).
 
 `settingsSchemaFor(registry?)` (`packages/loop/src/settings/capability-settings.ts`) is how a **host-registered**
-spec (memory/plan/workflows/tasks — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
+spec (memory/plan/judge/workflows/tasks — delegated to [kernel-config-and-agents](../hosts/kernel-config.md)) is admitted
 into the schema **without the engine's built-in set changing**: it `.extend()`s `settingsSchema`
 with one optional key per registered spec, throwing if a registered `key` collides with a built-in
-block (`packages/loop/src/settings/capability-settings.ts`) or if it tries to declare any plugin-manifest surface
-(`pluginContributable`/`pluginDescription`/`pluginForbiddenReason`, `packages/loop/src/settings/capability-settings.ts`)
-— that surface is composed **statically** from the built-in specs alone, so a registered spec's
-plugin fields would be read by nobody.
+block (`packages/loop/src/settings/capability-settings.ts`) or if it declares unsupported plugin
+contributions/descriptions. Registered prohibition messages are supported by the generic manifest
+parser when the host supplies the same registry; no engine-specific product key is needed.
 
 ### 3.2 Settings blocks contributed by this scope's modules
 
@@ -420,6 +419,23 @@ the order `foldContributions` later folds contributions in when none declares an
 (§3.5) for any run whose activation does not reorder them via `RunCapability.order`.
 
 ### 4.2 Per-run activation (`packages/loop/src/runtime/orchestrator.ts`)
+
+All `requiredFor(view)` predicates resolve synchronously before any activation. Effective
+requiredness is `required === true || requiredFor(view) === true`; it covers admission refusal,
+timeout, null activation, declared seeds and entry attachment. Predicate exceptions stop preflight
+before inference. The context exposes the effective host `executionBaseLlm` separately from the
+decorated `llm`, and carries `resolvedPromptCacheTtl` selected by `executeRun`.
+Production: `runOrchestrator` and `executeRun`. Test:
+[capability-run-context.test.ts](../../packages/loop/tests/component/capability-run-context.test.ts)
+and [host-capability.test.ts](../../packages/loop/tests/integration/host-capability.test.ts).
+
+The host-only `ExecuteRunDeps.includeEnvironmentPreamble` defaults to enabled. Setting it to false
+omits operational environment from the entry system prompt while preserving the real internal
+workspace root; it is not a request parameter or a capability-controlled setting.
+Production: `buildEntrySeed` in
+[entry-seed.ts](../../packages/loop/src/runtime/entry-seed.ts). Test:
+`controls the entry environment only through host deps` in
+[capability-run-context.test.ts](../../packages/loop/tests/component/capability-run-context.test.ts).
 
 1. `allCapabilities = deps.capabilities ?? []` — the **full registered list**
    (`packages/loop/src/runtime/orchestrator.ts`).
@@ -770,3 +786,14 @@ Capabilities cannot obtain the writer. Persistence and inheritance are owned by
 [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts) and
 [orchestrator.ts](../../packages/loop/src/runtime/orchestrator.ts). Test:
 [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts).
+
+### Host-owned execution visibility
+
+`ExecuteRunDeps.executionVisibility` is required and validated before activation. The engine copies
+it into the journal header and final record; ordinary `buildExecuteRunDeps` composition explicitly
+selects `public`. This classification is not a request parameter or a capability contribution.
+Production: `executeRun` in [execute-run.ts](../../packages/loop/src/runtime/execute-run.ts) and
+`buildExecuteRunDeps` in [build-run-deps.ts](../../packages/loop/src/runtime/build-run-deps.ts).
+Persistence and recovery semantics belong to [trace](../foundations/trace.md).
+Test: host classification and preflight rejection cases in
+[execute-run.test.ts](../../packages/loop/tests/component/execute-run.test.ts).

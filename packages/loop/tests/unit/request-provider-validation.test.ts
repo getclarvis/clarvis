@@ -166,7 +166,7 @@ describe("request provider semantic rules", () => {
     expect(validationCode(() => rejectProviderConfigIssues(data))).toBe(code);
   });
 
-  it("allows a body on an unused first-party provider but counts the guard judge as used", () => {
+  it("allows a body on an unused first-party provider but counts registered model references as used", () => {
     const unused = parsedRequest({
       providers: [
         ...VALID_REQUEST.providers,
@@ -176,15 +176,14 @@ describe("request provider semantic rules", () => {
     expect(() => rejectProviderConfigIssues(unused)).not.toThrow();
 
     const judged = parsedRequest({
-      guard_judge: { prompt: "Judge this command.", model: "google/judge" },
       providers: [
         ...VALID_REQUEST.providers,
         { name: "google", kind: "google", body: { routing: true } },
       ],
     });
-    expect(validationCode(() => rejectProviderConfigIssues(judged))).toBe(
-      "invalid_provider_config",
-    );
+    expect(
+      validationCode(() => rejectProviderConfigIssues(judged, undefined, ["google/auxiliary"])),
+    ).toBe("invalid_provider_config");
   });
 
   it("rejects an unresolved profile provider", () => {

@@ -1,3 +1,4 @@
+import { assertExecutionVisibility } from "./visibility.ts";
 import {
   createReadStream,
   mkdirSync,
@@ -13,7 +14,7 @@ import {
 import { promises as fsp } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
-import type { ExecutionRecord, Logger } from "@clarvis/capability";
+import type { ExecutionRecord, ExecutionVisibility, Logger } from "@clarvis/capability";
 import {
   executionIdConflict,
   levelEnabled,
@@ -52,6 +53,13 @@ import {
 } from "./trace-store.ts";
 
 const FILE_RE = /^(\d+)\.(.+)\.json$/;
+/** Decode only classified records; pre-feature bodies require explicit removal. */
+function parseExecution(raw: string, label: string, id: string): StoredExecution {
+  const record = parseStoredJson<StoredExecution>(raw, label, id);
+  assertExecutionVisibility(record.visibility);
+  return record;
+}
+
 /**
  * Extension of the per-record summary sidecar, replacing the record's own
  * `.json`.
@@ -764,7 +772,11 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
   const readSummarySidecar = (dir: string, filename: string): StoredSummary | null => {
     try {
       const path = join(dir, summaryName(filename));
-      return JSON.parse(readBoundedUtf8(path, "summary", maxSummaryBytes)) as StoredSummary;
+      const summary = JSON.parse(
+        readBoundedUtf8(path, "summary", maxSummaryBytes),
+      ) as StoredSummary;
+      assertExecutionVisibility(summary.visibility);
+      return summary;
     } catch {
       return null;
     }
@@ -787,6 +799,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     seg: string,
   ): Promise<string> => {
     const stored: StoredExecution = {
+      visibility: record.visibility,
       id: record.id,
       owner_key_name: record.owner_key_name,
       status: record.status,
@@ -864,7 +877,33 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     );
   };
 
-  const listOwner = (owner: string, limit: number, offset: number): ListResult => {
+  /** Filter before selection; an unreadable classification is never disclosed by a view. */
+  const matchesVisibility = (
+    dir: string,
+    name: string,
+    visibility?: ExecutionVisibility,
+  ): boolean => {
+    if (visibility === undefined) return true;
+    try {
+      const summary = readSummarySidecar(dir, name);
+      if (summary !== null) return summary.visibility === visibility;
+      const record = parseExecution(
+        readBoundedUtf8(join(dir, name), "record", maxRecordBytes),
+        "trace",
+        name,
+      );
+      return record.visibility === visibility;
+    } catch {
+      return false;
+    }
+  };
+
+  const listOwner = (
+    owner: string,
+    limit: number,
+    offset: number,
+    visibility?: ExecutionVisibility,
+  ): ListResult => {
     const normalized = normalizeTracePage(limit, offset);
     const pageSize = normalized.limit === 0 ? 0 : normalized.limit + normalized.offset;
     const rows: { started_at: number; id: string }[] = [];
@@ -875,6 +914,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     for (const name of readDirEntries(ownerDir(owner))) {
       const meta = parseName(name);
       if (meta === null || !belongsToGeneration(ownerSeg, name, generation.generation)) continue;
+      if (!matchesVisibility(ownerDir(owner), name, visibility)) continue;
       total += 1;
       retainNewest(rows, { started_at: meta.startedAt, id: name }, pageSize);
     }
@@ -884,7 +924,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     for (const row of page) {
       const sidecar = readSummarySidecar(dir, row.id);
       if (sidecar !== null) {
-        items.push(sidecar);
+        if (visibility === undefined || sidecar.visibility === visibility) items.push(sidecar);
         continue;
       }
       const path = join(dir, row.id);
@@ -900,7 +940,8 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         throw err;
       }
       try {
-        items.push(recordToSummary(parseStoredJson<StoredExecution>(raw, "trace", row.id)));
+        const summary = recordToSummary(parseExecution(raw, "trace", row.id));
+        if (visibility === undefined || summary.visibility === visibility) items.push(summary);
       } catch {
         logRecordUnreadable(owner, row.id, "corrupt", path);
         continue;
@@ -995,8 +1036,10 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
   let cleanupScan: Generator<CleanupCandidate | null> | null = null;
 
   const store: JournalingTraceStore = {
+    visibilityQueries: true,
     openJournal(opts: OpenJournalOptions): RunJournal {
       const { header } = opts;
+      assertExecutionVisibility(header.visibility);
       const seg = ownerSegment(header.id);
       const dir = ensureOwnerDir(header.owner_key_name);
       const path = join(dir, `${header.started_at}.${seg}${JOURNAL_SUFFIX}`);
@@ -1215,6 +1258,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     },
 
     async insert(record): Promise<void> {
+      assertExecutionVisibility(record.visibility);
       const owner = record.owner_key_name;
       const ownerSeg = ownerSegment(owner);
       let phase: TraceInsertPhase = "generation";
@@ -1289,9 +1333,10 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
       }
     },
 
-    getById(owner, id): StoredExecution | null {
+    getById(owner, id, visibility): StoredExecution | null {
       const match = findEntry(owner, id);
-      if (match === undefined) return null;
+      if (match === undefined || !matchesVisibility(ownerDir(owner), match, visibility))
+        return null;
       let raw: string;
       try {
         raw = readBoundedUtf8(join(ownerDir(owner), match), "record", maxRecordBytes);
@@ -1299,10 +1344,16 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         if (isEnoent(err)) return null;
         throw err;
       }
-      return parseStoredJson<StoredExecution>(raw, "trace", id);
+      const record = parseExecution(raw, "trace", id);
+      return visibility === undefined || record.visibility === visibility ? record : null;
     },
 
-    async replaceFinalContext(owner, id, context, usage): Promise<boolean> {
+    async replaceFinalContext(owner, id, context, usage, visibility): Promise<boolean> {
+      if (visibility !== undefined) {
+        const initial = findEntry(owner, id);
+        if (initial === undefined || !matchesVisibility(ownerDir(owner), initial, visibility))
+          return false;
+      }
       ensureLocksDir();
       const ownerSeg = ownerSegment(owner);
       await ensureActiveGeneration(owner, ownerSeg);
@@ -1327,11 +1378,8 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         if (match === undefined) return false;
         const dir = ownerDir(owner);
         const path = join(dir, match);
-        const stored = parseStoredJson<StoredExecution>(
-          readBoundedUtf8(path, "record", maxRecordBytes),
-          "trace",
-          id,
-        );
+        const stored = parseExecution(readBoundedUtf8(path, "record", maxRecordBytes), "trace", id);
+        if (visibility !== undefined && stored.visibility !== visibility) return false;
         stored.final_context = [...context];
         stored.total_input_tokens += usage?.input ?? 0;
         stored.total_output_tokens += usage?.output ?? 0;
@@ -1357,7 +1405,12 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
 
     list: listOwner,
 
-    deleteById(owner, id): boolean {
+    deleteById(owner, id, visibility): boolean {
+      if (visibility !== undefined) {
+        const initial = findEntry(owner, id);
+        if (initial === undefined || !matchesVisibility(ownerDir(owner), initial, visibility))
+          return false;
+      }
       ensureLocksDir();
       const ownerSeg = ownerSegment(owner);
       const deletionLease = acquireLocalLeaseSync(deleteLeasePathForSegment(ownerSeg), {
@@ -1376,7 +1429,8 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         const generation = readGenerationState(ownerSeg);
         if (generation.state !== "active") throw deletionInProgress(owner);
         const match = findEntry(owner, id);
-        if (match === undefined) return false;
+        if (match === undefined || !matchesVisibility(ownerDir(owner), match, visibility))
+          return false;
         try {
           unlinkSync(join(ownerDir(owner), match));
         } catch (err) {
@@ -1439,7 +1493,8 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
     },
 
     listAcrossOwners(limit, offset, filter): ListResult {
-      if (filter?.owner !== undefined) return listOwner(filter.owner, limit, offset);
+      if (filter?.owner !== undefined)
+        return listOwner(filter.owner, limit, offset, filter.visibility);
       const normalized = normalizeTracePage(limit, offset);
       const pageSize = normalized.limit === 0 ? 0 : normalized.limit + normalized.offset;
       const rows: {
@@ -1456,6 +1511,7 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
         for (const name of readDirEntries(dir)) {
           const meta = parseName(name);
           if (meta !== null && belongsToCurrentGeneration(ownerName, name)) {
+            if (!matchesVisibility(dir, name, filter?.visibility)) continue;
             total += 1;
             retainNewest(
               rows,
@@ -1470,7 +1526,8 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
       for (const row of page) {
         const sidecar = readSummarySidecar(row.dir, row.name);
         if (sidecar !== null) {
-          items.push(sidecar);
+          if (filter?.visibility === undefined || sidecar.visibility === filter.visibility)
+            items.push(sidecar);
           continue;
         }
         const path = join(row.dir, row.name);
@@ -1486,7 +1543,9 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
           throw err;
         }
         try {
-          items.push(recordToSummary(parseStoredJson<StoredExecution>(raw, "execution", row.id)));
+          const summary = recordToSummary(parseExecution(raw, "execution", row.id));
+          if (filter?.visibility === undefined || summary.visibility === filter.visibility)
+            items.push(summary);
         } catch {
           logRecordUnreadable(row.owner, row.name, "corrupt", path);
           continue;

@@ -28,6 +28,12 @@ function context(owner: string): RunCapabilityContext {
     entryGrants: [],
     env: loadEnv({}),
     workspaceRoot: "/workspace",
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     llm: { call: () => Promise.reject(new Error("unused")) },
     emit: () => undefined,
     executionId: "run-1",

@@ -24,6 +24,7 @@ const EVIDENCE_TOTAL_MAX_CHARS =
   MESSAGES_TOTAL_MAX_CHARS + MESSAGES_MAX_ENTRIES * (CONTENT_PARTS_MAX - 1);
 
 const identifier = z.string().min(1).max(256);
+const compiledContextRevisionSchema = z.string().min(1).max(2_048).optional();
 const bindingSchema = z
   .object({
     owner_key_name: identifier,
@@ -107,7 +108,7 @@ function sameBinding(left: OperatorAuthorityBinding, right: OperatorAuthorityBin
 /** Internal compiler seam; never published through CapabilityServices or a package entry. */
 const compilers = new WeakMap<
   OperatorAuthorityReader,
-  (envelope: AuthorityEnvelopeV1) => boolean
+  (envelope: AuthorityEnvelopeV1, contextRevision?: string) => boolean
 >();
 const consumers = new WeakMap<
   OperatorAuthorityReader,
@@ -138,8 +139,9 @@ export function consumeAuthorityEffects(
 export function installAuthorityEnvelope(
   reader: OperatorAuthorityReader,
   envelope: AuthorityEnvelopeV1,
+  contextRevision?: string,
 ): boolean {
-  return compilers.get(reader)?.(envelope) ?? false;
+  return compilers.get(reader)?.(envelope, contextRevision) ?? false;
 }
 
 /**
@@ -184,6 +186,7 @@ export function createOperatorAuthorityRuntime(input: {
     if (state.status === "revoked") return;
     state = { ...state, status: "revoked", revision: state.revision + 1 };
     delete state.envelope;
+    delete state.envelope_context_revision;
   };
   const append = (entries: readonly OperatorEvidence[]): void => {
     if (state.status !== "active") return;
@@ -218,10 +221,15 @@ export function createOperatorAuthorityRuntime(input: {
     const evidence = evidenceList.safeParse(prior.evidence);
     const envelope =
       prior.envelope === undefined ? undefined : authorityEnvelopeSchema.safeParse(prior.envelope);
+    const contextRevision = compiledContextRevisionSchema.safeParse(
+      prior.envelope_context_revision,
+    );
     const consumed = consumedSchema.safeParse(prior.consumed_effects ?? []);
     const denied = consumedSchema.safeParse(prior.denied_effects ?? []);
     if (
       evidence.success &&
+      contextRevision.success &&
+      (contextRevision.data === undefined || envelope?.success === true) &&
       consumed.success &&
       denied.success &&
       (envelope === undefined || envelope.success)
@@ -233,6 +241,9 @@ export function createOperatorAuthorityRuntime(input: {
         consumed_effects: consumed.data,
         denied_effects: denied.data,
         ...(envelope?.success ? { envelope: envelope.data } : {}),
+        ...(contextRevision.data === undefined
+          ? {}
+          : { envelope_context_revision: contextRevision.data }),
       };
     else revoke();
   }
@@ -252,7 +263,8 @@ export function createOperatorAuthorityRuntime(input: {
       return structuredClone(state);
     },
   });
-  compilers.set(reader, (envelope) => {
+  compilers.set(reader, (envelope, contextRevision) => {
+    if (!compiledContextRevisionSchema.safeParse(contextRevision).success) return false;
     if (reader.snapshot().status !== "active" || envelope.revision !== state.revision) return false;
     const previous = state.envelope;
     const changedOutcome =
@@ -276,6 +288,8 @@ export function createOperatorAuthorityRuntime(input: {
       };
     }
     state = { ...state, envelope: { ...structuredClone(envelope), revision: state.revision } };
+    if (contextRevision === undefined) delete state.envelope_context_revision;
+    else state.envelope_context_revision = contextRevision;
     return true;
   });
   consumers.set(reader, (revision, keys) => {
@@ -341,6 +355,7 @@ export function createOperatorAuthorityRuntime(input: {
       else if (outcome.disposition !== "checkpoint" && state.status === "active") {
         state = { ...state, status: "settled", revision: state.revision + 1 };
         delete state.envelope;
+        delete state.envelope_context_revision;
       }
       return structuredClone(state);
     },

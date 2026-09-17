@@ -315,7 +315,7 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `continueFrom` | `continue_from` | truthy |
 | `sessionId` | `session_id` | truthy |
 | `guardMode` | `guard_mode` | truthy |
-| `guardJudge` | `guard_judge` `{prompt, model?, on_unsure?, timeout_ms?}` | truthy |
+| `guardJudge` | `guard_judge` `{guidance?, model?, on_unsure?, timeout_ms?, max_retries?}` | truthy |
 | `memory` | `memory` | truthy |
 | `plans` | `plans` | truthy |
 | `task` | `task` | truthy |

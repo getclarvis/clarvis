@@ -11,6 +11,7 @@ function depsWith(): { deps: ExecuteRunDeps; llmCall: ReturnType<typeof vi.fn> }
   return {
     llmCall,
     deps: {
+      executionVisibility: "public",
       env: loadEnv({}),
       llm: { call: llmCall },
       connections: mockConnections(mockMCPFactory({})),

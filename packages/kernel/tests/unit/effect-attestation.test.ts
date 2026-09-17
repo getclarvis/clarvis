@@ -1,3 +1,6 @@
+import { JUDGE_PORT } from "@clarvis/judge";
+import { judgePort } from "../helpers/judge-port.ts";
+import type { GuardEffectFact } from "../../src/guard/effects/types.ts";
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -8,7 +11,6 @@ import type { ProcessRunRequest } from "../../src/ports/process-runner.ts";
 import {
   createCapabilityServices,
   OPERATOR_AUTHORITY_PORT,
-  type LLMCallParams,
   type RunCapabilityContext,
 } from "@clarvis/capability";
 import {
@@ -264,6 +266,19 @@ describe("closed effect attestation", () => {
       services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
       let reviewerCalls = 0;
       let humanPrompts = 0;
+      services.provide(
+        JUDGE_PORT,
+        judgePort(undefined, async () => {
+          reviewerCalls++;
+          return {
+            kind: "failed",
+            failureKind: "invalid_response",
+            elapsedMs: 0,
+            attempts: 1,
+            cacheHit: false,
+          };
+        }),
+      );
       const resolver = createGuardResolver({
         loadSettings: () => ({
           effect_review: { rollout: "local", max_retries: 0 },
@@ -279,6 +294,7 @@ describe("closed effect attestation", () => {
         workspaceRoot: root,
         services,
         env: {},
+        requestParam: () => undefined,
         request: { guard_mode: "auto" },
         elicit: async () => {
           humanPrompts++;
@@ -355,9 +371,49 @@ describe("closed effect attestation", () => {
         },
       });
       services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
-      const calls: LLMCallParams[] = [];
-      let grants: string[] = [];
+      const calls: string[] = [];
       let changeEnvironment = false;
+      services.provide(
+        JUDGE_PORT,
+        judgePort(undefined, async (input, context) => {
+          const facts = (input.currentCase as unknown as { effects: GuardEffectFact[] }).effects;
+          let transition;
+          if (context.binding.kind === "compile_effects") {
+            calls.push("compile");
+            transition = await context.binding.validateAndInstall({
+              version: 1,
+              revision: ledger.reader.snapshot().revision,
+              objectives: [],
+              exclusions: [],
+              grants: facts.map((fact, index) => ({
+                id: `grant${index}`,
+                effect_id: fact.id,
+                relation: "direct",
+                target_digests: [fact.target!.digest],
+                constraints: fact.constraints,
+                evidence_ids: ["operator"],
+              })),
+            });
+          } else transition = context.binding.transition;
+          if (transition === undefined) throw new Error("Fixture envelope rejected");
+          calls.push("decide");
+          if (changeEnvironment) deps.environment.GIT_DIR = "/unattested-repository";
+          return {
+            kind: "reviewed",
+            receipt: {
+              action: "decide_effects",
+              decision: "allow",
+              relation: "direct",
+              grant_ids: transition.envelope.grants.map((grant) => grant.id),
+              revision: transition.revision,
+              transition_token: transition.transition_token,
+            },
+            elapsedMs: 0,
+            attempts: 1,
+            cacheHit: false,
+          };
+        }),
+      );
       const resolver = createGuardResolver({
         loadSettings: () => ({
           effect_review: { rollout: "local" },
@@ -374,49 +430,11 @@ describe("closed effect attestation", () => {
         workspaceRoot: root,
         services,
         env: {},
+        requestParam: () => undefined,
         request: { guard_mode: "auto" },
         llm: {
-          async call(params: LLMCallParams) {
-            calls.push(params);
-            const payload = JSON.parse(params.messages[1]!.content as string);
-            const compile = params.tools?.[0]?.wireName === "compile";
-            if (!compile && changeEnvironment) deps.environment.GIT_DIR = "/unattested-repository";
-            const envelope = compile
-              ? {
-                  version: 1,
-                  revision: payload.revision,
-                  objectives: [],
-                  exclusions: [],
-                  grants: payload.effects.map(
-                    (
-                      fact: { id: string; target: { digest: string }; constraints: object },
-                      index: number,
-                    ) => ({
-                      id: `grant${index}`,
-                      effect_id: fact.id,
-                      relation: "direct",
-                      target_digests: [fact.target.digest],
-                      constraints: fact.constraints,
-                      evidence_ids: ["operator"],
-                    }),
-                  ),
-                }
-              : undefined;
-            if (envelope) grants = envelope.grants.map((grant: { id: string }) => grant.id);
-            return {
-              usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
-              toolCalls: [
-                {
-                  id: "decision",
-                  name: compile ? "compile" : "decide",
-                  arguments: envelope ?? {
-                    decision: "allow",
-                    relation: "direct",
-                    grant_ids: grants,
-                  },
-                },
-              ],
-            };
+          async call() {
+            throw new Error("Resolver must use the semantic port");
           },
         },
       } as unknown as RunCapabilityContext);

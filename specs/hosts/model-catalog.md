@@ -763,7 +763,7 @@ catalog case).
 | TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
 | TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`); `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts` (doc-comment) |
-| Effect review has no model or its provider cannot resolve | Returns a structured admission failure and follows `on_unsure` (`deny` by default; `ask` is explicit) | `packages/kernel/src/guard/effect-review-service.ts` |
+| Effect review has no model or its provider cannot resolve | Returns a structured admission failure and follows `on_unsure` (`deny` by default; `ask` is explicit) | `packages/kernel/src/guard/effect-review.ts` |
 
 ## 7. Coupling
 
@@ -817,8 +817,8 @@ catalog case).
   `packages/loop/src/runtime/vision-prepass.ts`,
   `packages/loop/src/runtime/subagents/subagent-profiles.ts` all call `resolveProvider` — request
   validation and per-agent provider resolution inside the loop, outside this document's scope.
-- `packages/kernel/src/guard/effect-review-service.ts` calls both `parseModelRef` and
-  `resolveProvider` to resolve the shared reviewer's model and report a typed admission failure.
+- `createHostJudge` supplies the model binding to the private Judge run, which uses the ordinary
+  Loop validation/model-resolution path; the effect adapter does not resolve providers itself.
 - Container model calls also use the same resolver on the host's captured provider registry, after
   exact logical provider/model admission, so raw settings never masquerade as resolved adapter
   configuration. Production: `createContainerModelBroker` in

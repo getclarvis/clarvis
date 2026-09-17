@@ -110,6 +110,14 @@ truncation: an over-limit journal is never presented as a complete recovered run
 
 ## What it reports to an operator
 
+`projectTraceStoreWrites` composes host-owned projections over every payload-bearing write:
+journal header, durable event, final record and replacement context. A failed header, record or
+context projection prevents that write with a payload-free `PersistenceError`; a failed event
+projection disables that journal and emits `trace.journal_projection_failed` once. It never retries
+against the raw store. Reads, identity conflicts, cleanup and recovery retain the underlying
+store's semantics. This adapter does not itself classify or filter execution visibility; the host
+must supply the appropriate read view and closed projections before persisting private runs.
+
 `createJsonTraceStore` and `resolveTraceStore` take an optional `logger`; the kernel passes
 `logger.child({ component: "trace" })`. Nothing here logs per trace entry or per journal delta —
 the store's own failures are what an operator cannot otherwise see, because they are failures of
@@ -173,6 +181,18 @@ one persistence-redaction smoke. Filesystem integrations do not repeat the share
 project it for a watching host, but the journal never receives it. The terminal `compaction` event
 remains durable and carries `fallback_reason` when a failed or ineffective summary ended in
 mechanical eviction.
+
+## Execution classification
+
+Every new record, summary and journal header carries explicit `public` or `internal` visibility.
+The stores reject missing or invalid classifications. Journal v2 requires the field and recovery
+preserves it. Pre-feature journals are quarantined; unclassified legacy record bodies are refused,
+with no automatic public fallback. An old summary can fall back only to a classified full record.
+This follows the pre-release discard policy and adds no migration reader. Visibility is host-owned;
+the physical store remains unrestricted. `createTraceVisibilityView` selects a class before lookup,
+context replacement, deletion, pagination and totals. Backends must attest native visibility queries;
+unsupported backends fail at composition. Both views share execution-ID reservation identity, owner
+deletion, cleanup and recovery. A view accepts only matching writes and cannot be broadened.
 
 ## The on-disk format is a contract
 

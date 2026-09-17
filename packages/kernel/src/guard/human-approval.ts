@@ -1,3 +1,4 @@
+import { canonicalJudgeJson, type JudgeJson } from "@clarvis/judge";
 import type { Elicit, GuardElicit } from "@clarvis/loop";
 import { createGuardElicit, type GuardSessionAllowlist } from "./guard-elicit.ts";
 
@@ -17,6 +18,10 @@ export function createGuardHumanApproval(options: {
   workspaceRoot: string;
   signal?: AbortSignal;
 }): GuardHumanApproval {
+  const pending = new Map<
+    GuardSessionAllowlist | undefined,
+    Map<string, Promise<{ allowed: boolean; persisted: boolean }>>
+  >();
   return {
     covers(request) {
       return (
@@ -26,20 +31,37 @@ export function createGuardHumanApproval(options: {
         options.allowlist()?.covers(request.shell) === true
       );
     },
-    async ask(request) {
+    ask(request) {
       const scope = options.allowlist();
-      const before = request.shell !== undefined && scope?.covers(request.shell) === true;
-      const answer = await createGuardElicit(options.elicit, {
-        allowlist: scope,
-        workspaceRoot: options.workspaceRoot,
-        signal: options.signal,
-      })(request);
-      if (options.signal?.aborted || scope !== options.allowlist()) {
-        return { allowed: false, persisted: false };
+      const key = canonicalJudgeJson(JSON.parse(JSON.stringify(request)) as JudgeJson);
+      let requests = pending.get(scope);
+      if (requests === undefined) {
+        requests = new Map();
+        pending.set(scope, requests);
       }
-      const allowed = answer === true || (typeof answer === "object" && answer.allowed);
-      const after = request.shell !== undefined && scope?.covers(request.shell) === true;
-      return { allowed, persisted: allowed && after && !before };
+      const existing = requests.get(key);
+      if (existing !== undefined) return existing;
+      const operation = (async () => {
+        const before = request.shell !== undefined && scope?.covers(request.shell) === true;
+        const answer = await createGuardElicit(options.elicit, {
+          allowlist: scope,
+          workspaceRoot: options.workspaceRoot,
+          signal: options.signal,
+        })(request);
+        if (options.signal?.aborted || scope !== options.allowlist()) {
+          return { allowed: false, persisted: false };
+        }
+        const allowed = answer === true || (typeof answer === "object" && answer.allowed);
+        const after = request.shell !== undefined && scope?.covers(request.shell) === true;
+        return { allowed, persisted: allowed && after && !before };
+      })();
+      requests.set(key, operation);
+      const retire = () => {
+        if (requests.get(key) === operation) requests.delete(key);
+        if (requests.size === 0 && pending.get(scope) === requests) pending.delete(scope);
+      };
+      void operation.then(retire, retire);
+      return operation;
     },
   };
 }

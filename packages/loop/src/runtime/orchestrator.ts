@@ -102,6 +102,11 @@ export interface OrchestratorDeps {
   onOperatorSteer?: (context: UserSteerContext) => void;
   env: EnvConfig;
   llm: LLMProvider;
+  /** Host provider before this execution's decorators; direct orchestrator callers already own it. */
+  executionBaseLlm?: LLMProvider;
+  resolvedPromptCacheTtl?: "5m" | "1h";
+  /** Default-on operational preamble, controlled only by the host. */
+  includeEnvironmentPreamble?: boolean;
   connections: ConnectionManager;
   logger?: Logger;
   onEvent?: (event: TraceEvent) => void;
@@ -220,6 +225,9 @@ export async function runOrchestrator(
   const persistedTraceProjectors =
     deps.persistedTraceProjectors ?? createRunTraceProjectors(allCapabilities);
   const requestView = deps.requestView ?? createCapabilityRequestView(request);
+  const requiredCapabilities = allCapabilities.map(
+    (capability) => capability.required === true || capability.requiredFor?.(requestView) === true,
+  );
   const shape = deriveRunShape(
     request,
     profileRegistry,
@@ -281,6 +289,11 @@ export async function runOrchestrator(
     env: deps.env,
     workspaceRoot: deps.workspaceRoot,
     llm: deps.llm,
+    executionBaseLlm: deps.executionBaseLlm ?? deps.llm,
+    resolvedPromptCacheTtl:
+      deps.resolvedPromptCacheTtl ??
+      request.prompt_cache_ttl ??
+      (shape.humanParkLikely ? "1h" : "5m"),
     ...(deps.elicit !== undefined ? { elicit: deps.elicit } : {}),
     ...(deps.logger !== undefined ? { logger: deps.logger } : {}),
     emit: deps.emitCapabilityEvent ?? ((): void => {}),
@@ -291,7 +304,8 @@ export async function runOrchestrator(
   const runCapabilities: RunCapability[] = orderCapabilities(
     (
       await Promise.all(
-        allCapabilities.map(async (capability) => {
+        allCapabilities.map(async (capability, index) => {
+          const required = requiredCapabilities[index] === true;
           let timedOut = false;
           // Always invoke the activation, even for a pre-aborted run. The
           // activation owns finalizeRun/onRunEnd, which must still observe the
@@ -328,7 +342,7 @@ export async function runOrchestrator(
               },
               "the host's extension gate is saturated; forRun is skipped before invocation",
             );
-            if (capability.required === true && deps.signal?.aborted !== true)
+            if (required && deps.signal?.aborted !== true)
               throw new CapabilityUnavailableError(capability.name, "activation");
             return null;
           }
@@ -344,7 +358,7 @@ export async function runOrchestrator(
             );
           }
           if (activated === null) {
-            if (capability.required === true && deps.signal?.aborted !== true)
+            if (required && deps.signal?.aborted !== true)
               throw new CapabilityUnavailableError(capability.name, "activation");
             return null;
           }
@@ -362,7 +376,7 @@ export async function runOrchestrator(
           }
           return {
             ...admittedRunCapability(capability.name, activated, extensionAdmission, deps.logger),
-            ...(capability.required === true ? { required: true } : {}),
+            ...(required ? { required: true } : {}),
           };
         }),
       )

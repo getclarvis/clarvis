@@ -37,6 +37,7 @@ function baseDeps(): ExecuteRunDeps {
     capabilities: [
       named("tools"),
       named(HOOKS_CAPABILITY_NAME),
+      named("judge"),
       named("agents"),
       named(MEMORY_CAPABILITY_NAME),
       named("tasks"),
@@ -51,6 +52,12 @@ function memoryFactory(): MemoryFactory {
 
 function context(): RunCapabilityContext {
   return {
+    resolvedPromptCacheTtl: "5m",
+    executionBaseLlm: {
+      call: async () => {
+        throw new Error("Unused execution provider");
+      },
+    },
     owner: "alice",
     request: { entry: "solo" } as RunRequest,
     entryGrants: [],
@@ -90,6 +97,20 @@ describe("composeIndexPassDeps", () => {
   });
   it("removes the workspace-hooks capability rather than leaving it inactive", () => {
     expect(names(composeIndexPassDeps(baseDeps(), undefined))).not.toContain(HOOKS_CAPABILITY_NAME);
+  });
+
+  it("removes Judge even when its admission predicate would require activation", () => {
+    const deps = baseDeps();
+    deps.capabilities!.push({
+      name: "judge",
+      requiredFor: () => {
+        throw new Error("Memory must not evaluate Judge admission");
+      },
+      forRun: () => {
+        throw new Error("Memory must not instantiate Judge");
+      },
+    });
+    expect(names(composeIndexPassDeps(deps, undefined))).not.toContain("judge");
   });
 
   it("keeps every other capability, in the order the host registered them", () => {
@@ -132,6 +153,7 @@ describe("composeIndexPassDeps", () => {
     expect(names(deps)).toEqual([
       "tools",
       HOOKS_CAPABILITY_NAME,
+      "judge",
       "agents",
       MEMORY_CAPABILITY_NAME,
       "tasks",

@@ -96,6 +96,8 @@ interface CommandDefBase {
 
 /** One named subcommand of a command, surfaced as an inline choice hint under `/token `. */
 export interface SubcommandSpec {
+  /** Controls discovery without disabling explicit slash routing. */
+  visible?: () => boolean;
   name: string;
   desc?: string;
 }

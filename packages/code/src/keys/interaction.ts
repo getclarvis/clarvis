@@ -59,9 +59,9 @@ export interface InteractionEffects {
    *   screen first uses it to put the user back there.
    */
   openAgentPicker(onClose?: () => void): void;
-  /** Open the isolation picker without changing command review. */
+  /** Open the isolation picker without changing Guard. */
   openIsolationPicker(): void;
-  /** Open the command-review picker without changing isolation. */
+  /** Open the Guard picker without changing isolation. */
   openReviewPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
@@ -108,11 +108,8 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
-  "activity.toggle": [{ key: "ctrl+l" }],
-  "isolation.picker": [
-    { key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] },
-    { key: "ctrl+s" },
-  ],
+  "activity.toggle": [{ key: "ctrl+s" }],
+  "isolation.picker": [{ key: "ctrl+i" }],
   "review.picker": [
     { key: "alt+g", minimumProfile: "enhanced", requires: ["meta"] },
     { key: "ctrl+g" },
@@ -123,6 +120,7 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
     { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
   ],
   "goal.toggle": [{ key: "ctrl+o" }],
+  "workflow.current": [{ key: "ctrl+w" }],
   "transcript.toggleCollapse": [{ key: "ctrl+k" }],
   "tool.interruptFocused": [],
   "transcript.focusPrev": [{ key: "ctrl+up" }],
@@ -146,6 +144,7 @@ export const DEFAULT_WHEN: Record<string, string> = {
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
   "goal.toggle": "overlay==none",
+  "workflow.current": "overlay==none",
   "transcript.scrollPageUp": "overlay==none",
   "transcript.scrollPageDown": "overlay==none",
   "transcript.followTail": "overlay==none",
@@ -679,6 +678,7 @@ export function createInteraction(
   ];
   const offCommands = keymap.registerLayer({ commands });
 
+  let offRunConfiguration: (() => void) | undefined;
   let offVital: (() => void) | undefined;
   let offContextualInterrupt: (() => void) | undefined;
   function configureKeyboard(config: KeyboardConfig): void {
@@ -711,6 +711,16 @@ export function createInteraction(
     );
     offVital?.();
     offVital = keymap.registerLayer({ priority: LAYER.VITAL, bindings: vital });
+    offRunConfiguration?.();
+    offRunConfiguration = keymap.registerLayer({
+      priority: LAYER.VITAL + 1,
+      enabled: () => effects.isRunActive(),
+      bindings: vital
+        .filter((binding) =>
+          ["agent.picker", "isolation.picker", "review.picker"].includes(String(binding.cmd)),
+        )
+        .map((binding) => ({ ...binding, cmd: () => {} })),
+    });
     offContextualInterrupt?.();
     const interruptKeys = resolveCommandBindings(
       "tool.interruptFocused",
@@ -766,6 +776,7 @@ export function createInteraction(
     process.off("SIGCONT", onContinue);
     const disposers = [
       offVital,
+      offRunConfiguration,
       offContextualInterrupt,
       offCommands,
       offWindowRelease,

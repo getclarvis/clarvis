@@ -207,7 +207,7 @@ test("the Docker consequences remain complete in a narrow Run controls viewport"
     "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
   );
   expect(prose).toContain("Outbound network access is enabled and may cause remote effects");
-  expect(prose).toContain("Commands run without Command Review.");
+  expect(prose).toContain("Commands run without Guard.");
   expect(prose).toContain("Git metadata is read-only; use Sandbox or Host for commits.");
   expect(prose).toContain(
     "Docker stays cold until the first run and fails closed if it cannot start.",
@@ -366,7 +366,7 @@ test("the guard-mode row writes settings.guard.mode at scope and syncs the sessi
   await t.renderOnce();
   await activateGuard(press, () => t.renderOnce(), 1);
   expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
-  expect(notes).toEqual(["review: approval (global settings)"]);
+  expect(notes).toEqual(["Guard: approval (global settings)"]);
   expect(guardSetModeCalls).toEqual(["on"]);
   t.renderer.destroy();
 });
@@ -401,7 +401,7 @@ test("guard 'auto' without a resolvable model falls back to writing 'on', not a 
   expect(writes).toEqual([{ scope: "global", patch: { guard: { type: "shell", mode: "on" } } }]);
   expect(guardSetModeCalls).toEqual(["on"]);
   expect(notes).toHaveLength(1);
-  expect(notes[0]).toContain("review: approval (global settings)");
+  expect(notes[0]).toContain("Guard: approval (global settings)");
   expect(notes[0]).toContain("Auto needs a usable default_model");
   t.renderer.destroy();
 });
@@ -418,7 +418,7 @@ test("isolation and review remain separately visible for a noncanonical legacy p
   await t.renderOnce();
   const out = t.captureCharFrame();
   expect(out).toContain("Isolation  sandbox");
-  expect(out).toContain("Command review  auto");
+  expect(out).toContain("Guard  auto");
   expect(out).not.toContain("custom");
   t.renderer.destroy();
 });

@@ -870,7 +870,9 @@ test("the 80x24 Extensions intro gives its rows to decisions instead of crowding
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Build one exact extension snapshot");
   expect(frame).toContain("Enter → begin guided setup");
-  expect(frame).toContain("Plugins and Marketplace");
+  expect(frame).not.toContain("Step 1 scope");
+  expect(frame).not.toContain("4 capabilities");
+  expect(frame).not.toContain("e → Extension Profiles");
   expect(frame).not.toContain("d8888b");
   rendered.renderer.destroy();
 });

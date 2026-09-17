@@ -68,7 +68,7 @@ export function compactKey(token: string, opts: { clientPlatform?: ClientPlatfor
   let shift = false;
   for (const m of parts.slice(0, -1)) {
     const mod = m.toLowerCase();
-    if (mod === "ctrl" || mod === "control") prefix += modifiedArrow ? "ctrl+" : "^";
+    if (mod === "ctrl" || mod === "control") prefix += "^";
     else if (mod === "cmd") prefix += "cmd+";
     else if (mod === "super") prefix += opts.clientPlatform === "macos" ? "cmd+" : "super+";
     else if (mod === "option") prefix += opts.clientPlatform === "macos" ? "opt+" : "alt+";
@@ -154,7 +154,7 @@ export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
   },
   { keys: ["@"], desc: "mention a workspace file (images attach)" },
   { keys: ["ctrl+a"], desc: "start of line" },
-  { keys: ["ctrl+w"], desc: "delete the previous word" },
+  { keys: ["ctrl+w"], desc: "delete the previous word (without a current workflow)" },
   { keys: ["ctrl+k", "ctrl+u"], desc: "delete to end / start of line" },
   { keys: ["ctrl+-", "ctrl+."], desc: "undo / redo" },
 ];

@@ -42,7 +42,10 @@ Test: [background-commands.test.tsx](../../packages/code/tests/integration/backg
 `/goal` uses the same registry for deterministic inspection and controls, including literal
 `/goal -- <objective>`, semantic `/goal auto` from the conversation or `/goal <seed>` from a
 primary request, reviewed replacement, a criteria/limits form, pause, resume, cancel and
-archive. Invalid control syntax returns `block` and remains in the composer. A form pins both the
+archive. Completion evaluates subcommand visibility against the current Goal: without one it
+offers only the root and automatic formulation; existing Goals expose only applicable edit, pause,
+resume, cancel and archive controls, including physical-execution restrictions. Visibility is
+discovery-only; explicitly typed routes retain their validation. Invalid control syntax returns `block` and remains in the composer. A form pins both the
 conversation generation and the reviewed revision, so navigation cannot retarget an old draft.
 Physical execution gates editing independently from goal status; pause alone does not imply a stopped
 run. Replacement, including editing a terminal goal, requires explicit confirmation.
@@ -53,7 +56,7 @@ compact Goal section shares the activity sidebar with Plan, parallel work and ag
 formulation/progress state and uses Plan's title, lifecycle-tone, metadata and key placement. It uses
 `Ctrl+O` to toggle the existing full Goal view while revealed;
 the full view binds the same key to return directly to the transcript.
-The sidebar footer remains structural and shows only its `Ctrl+L` close action while open; Goal
+The sidebar footer remains structural and shows only its `Ctrl+S` close action while open; Goal
 navigation stays on the Goal row and is not duplicated in that footer.
 The full view omits its former explanatory subtitle and presents the semantic definition before
 compact budget and actionable review state. Source digests are abbreviated visually; internal
@@ -216,7 +219,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `packages/code/src/views/overlays/ListPicker.tsx` |
 | `AgentProfilePicker(props)` | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/AgentProfilePicker.tsx` |
 | `IsolationPicker(props)` | Lazy retained `ListPicker` over Host, native Sandbox, lazy Docker and lazy Podman, with armed confirmation before direct-host execution | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`) |
-| `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto command review without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
+| `ReviewPicker(props)` | Lazy retained `ListPicker` over Off, Approval and Auto Guard modes without changing isolation | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
 | `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
@@ -442,9 +445,10 @@ after a fresh `createFilePromptHistory` against the same file.
 (`props.plan`, from `adapters/activity-store.ts` — owned by [hosts/code-run-host.md](code-run-host.md)) for the
 in-run task list, and, when a `Pick<PlansService, "read">` is supplied (`@clarvis/protocol`, owned by
 [capabilities/plan-capability.md](../capabilities/plan-capability.md)), the persisted `PlanDocumentDto` fetched via
-`plans.read(plan.id)` (`PlanOverlay.loadActivePlan`). `approvalLine(doc)` renders the
-distinct "human approval" vs. "specification revision" counters from `doc.approved_spec_revision`
-vs. `doc.spec_revision`, deliberately never sharing the label "revision" between them.
+`plans.read(plan.id)` (`PlanOverlay.loadActivePlan`). `approvalLine(doc)` shows a pending
+approval or a request to review a changed plan again; routine approvals and absent review gates
+produce no extra message. Revision counters remain internal to the approval contract.
+
 
 ## 4. Behavior
 
@@ -733,17 +737,24 @@ never calls the reader. The returned id must equal the requested live id or the 
 and the live task projection remains visible.
 
 When `document() !== null`, `spec()` supplies `scroll: () => scrollEl`, so arrows and page keys
-scroll readable Markdown. Without a document, the same spec supplies task-row navigation and
+scroll the structured reading view. Without a document, the same spec supplies task-row navigation and
 auto-selects `in_progress`, then `returned`, then `pending`. Escape and `Ctrl+P` both call
 `onClose`; `Ctrl+C` is not claimed locally, so the global cancel/quit behavior remains live. There
 are no list/filter/page verbs and no per-plan retention/delete mutations. Production:
 `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`, `loadActivePlan`, `spec`). Test:
 `packages/code/tests/integration/plan-overlay-render.test.tsx`.
 
-The readable document (`Prose` over `stripDocChrome(doc.markdown)`) renders whenever a document has
-been loaded for the _live_ plan; the interactive task-row list (`taskRow`) is only the fallback when
-`!document()` — so the two views never double-render the same tasks (`tasks` and the final `Show`
-gates in `PlanOverlay`).
+`PlanDetail` renders the parsed objective, context, tasks, validation and notes in a reading
+column bounded to 100 cells, matching Goal. Task status, meaningful detail, completion conditions
+and nonempty outcomes remain visible, while backend paths/IDs, revision counters, retention,
+assignees and empty fields are omitted. The stored Markdown is not rendered, so serialization
+syntax and duplicate task projections cannot leak into the view. Empty sections are omitted and
+an objective identical to the title is not repeated. The interactive task-row list (`taskRow`)
+remains the fallback when no document is available.
+Production: `PlanDetail`, `detailSection` and `approvalLine` in
+`packages/code/src/views/overlays/PlanOverlay.tsx`. Test:
+`packages/code/tests/integration/plan-overlay-render.test.tsx` (structured sections, empty fields,
+approval states and bounded layouts).
 
 ### The local `!` shell path (`adapters/local-shell.ts:runLocalBash`)
 
@@ -863,12 +874,12 @@ settled turn's persisted continuation; an empty session reports that there is no
     after `nav` in the same `LevelSpec`; ordering enforced by `registerLevel`, owned by
     [hosts/code-keyboard.md](code-keyboard.md)). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx`.
-23. **`PlanOverlay`'s readable markdown document supersedes the fallback task-row projection whenever
+23. **`PlanOverlay`'s structured document supersedes the fallback task-row projection whenever
     a document has been loaded for the live plan; they never both render.**
-    `packages/code/src/views/overlays/PlanOverlay.tsx` (`document`, final `Show` gates). Pinned:
-    `packages/code/tests/integration/plan-overlay-render.test.tsx` (readable sections shown once, "Wire the
-    projection reducer" appears exactly once even though it exists in both the live tasks and the
-    markdown body).
+    Production: `PlanDetail` and the `document` gates in
+    `packages/code/src/views/overlays/PlanOverlay.tsx`. Test:
+    `packages/code/tests/integration/plan-overlay-render.test.tsx` (readable sections shown once,
+    technical metadata and empty fields omitted, bounded wide and narrow layouts).
 24. **No live plan means no backend read. A returned document whose id differs from the live id is
     rejected rather than substituted as the current plan.** Production:
     `packages/code/src/views/overlays/PlanOverlay.tsx` (`activePlan`, `loadActivePlan`). Test:
@@ -890,7 +901,7 @@ settled turn's persisted continuation; an empty session reports that there is no
 27. **Escape or Ctrl+P closes the current-plan overlay and returns to the transcript.
     Ctrl+C is not claimed by the plan: the global command cancels the active run or enters quit while
     the plan stays open.** Production: `packages/code/src/views/overlays/PlanOverlay.tsx`
-    (`plan.escape`), `packages/code/src/views/App.tsx` (`openPlan`), and
+    (`detailCloseActions`), `packages/code/src/views/App.tsx` (`openPlan`), and
     `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`). Pinned by
     `packages/code/tests/integration/plan-overlay-render.test.tsx` and
     `packages/code/tests/integration/app-shell-render.test.tsx`.

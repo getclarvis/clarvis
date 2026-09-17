@@ -120,6 +120,15 @@ export function registerGoalCommands(
     );
     return true;
   };
+  const current = () => deps.goals.view()?.state.current;
+  const ready = () => deps.goals.available() && !deps.goals.busy();
+  const physicallyBusy = () => {
+    const physical = deps.goals.view()?.physical_run;
+    return (
+      (physical !== undefined && physical.execution_state !== "closed") ||
+      (current()?.runs.some((run) => run.phase !== "closed") ?? false)
+    );
+  };
   commands.registerAction({
     name: "goal.open",
     title: "Goal",
@@ -129,12 +138,44 @@ export function registerGoalCommands(
     desc: "Inspect or control this conversation's persistent objective",
     args: [{ name: "auto | <seed> | -- <literal objective>" }],
     subcommands: [
-      { name: "auto", desc: "Formulate from this conversation's trajectory" },
-      { name: "edit", desc: "Review the objective, criteria and limits" },
-      { name: "pause", desc: "Pause future stages; --running also cancels the bound run" },
-      { name: "resume", desc: "Revalidate and resume within the remaining limits" },
-      { name: "cancel", desc: "Cancel the goal and its bound execution" },
-      { name: "clear", desc: "Archive and unlink an inactive goal" },
+      {
+        name: "auto",
+        visible: () => ready() && current() === undefined,
+        desc: "Formulate from this conversation's trajectory",
+      },
+      {
+        name: "edit",
+        visible: () => ready() && current() !== undefined && !physicallyBusy(),
+        desc: "Review the objective, criteria and limits",
+      },
+      {
+        name: "pause",
+        visible: () => ready() && (current()?.status === "active" || physicallyBusy()),
+        desc: "Pause future stages; --running also cancels the bound run",
+      },
+      {
+        name: "resume",
+        visible: () =>
+          ready() &&
+          current() !== undefined &&
+          !["active", "complete", "cancelled"].includes(current()!.status) &&
+          !physicallyBusy(),
+        desc: "Revalidate and resume within the remaining limits",
+      },
+      {
+        name: "cancel",
+        visible: () =>
+          ready() &&
+          current() !== undefined &&
+          !["complete", "cancelled"].includes(current()!.status),
+        desc: "Cancel the goal and its bound execution",
+      },
+      {
+        name: "clear",
+        visible: () =>
+          ready() && current() !== undefined && current()?.status !== "active" && !physicallyBusy(),
+        desc: "Archive and unlink an inactive goal",
+      },
     ],
     run: () => {
       route("");

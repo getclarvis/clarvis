@@ -69,7 +69,7 @@ export const MEMORY_TOOL_CONTRACTS = {
     name: "query_memories",
     description:
       "Find the memory documents most relevant to a question, ranked by relevance. " +
-      "Handles English and Portuguese, accented or not, and returns a scored list with a " +
+      "Returns a scored list with a " +
       "matching excerpt from each document. Prefer this over grep_memories, which only " +
       "finds literal text.",
     schema: z

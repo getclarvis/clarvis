@@ -73,7 +73,7 @@ function document(path: string, title: string, status: PlanDocumentDto["status"]
     created_at: "2026-07-25T00:00:00Z",
     updated_at: "2026-07-25T00:00:00Z",
     created_by_run: "run-1",
-    objective: title,
+    objective: `Detail for ${title}.`,
     context: "",
     tasks: [],
     validation: [],
@@ -267,7 +267,7 @@ test("the active plan is read by stable id even when no path exists", async () =
   const remote: PlanDocumentDto = { ...base, id: "remote-plan-42" };
   const reads: string[] = [];
   const live = livePlan(remote);
-  const { t } = await mount(live, "remote-plan-42", {
+  const { t } = await mount(live, "Detail for Remote plan", {
     read: async (id) => {
       reads.push(id);
       return remote;
@@ -411,23 +411,24 @@ async function approvalFrame(doc: PlanDocumentDto): Promise<string> {
   return out;
 }
 
-test("an unapproved plan names the pending specification revision", async () => {
+test("an unapproved plan shows the pending decision without revision counters", async () => {
   const doc = {
     ...document(".clarvis/plans/a.md", "Needs approval", "awaiting_approval"),
     spec_revision: 2,
   };
   const out = await approvalFrame(doc);
-  expect(out).toContain("Human approval needed for specification #2");
-  expect(out).toContain("Execution update #1 · specification #2");
+  expect(out).toContain("Approval needed before work can continue.");
+  expect(out).not.toContain("specification #");
+  expect(out).not.toContain("Execution update");
 });
 
-test("an approved plan names the specification the human approved", async () => {
+test("an approved plan omits routine approval metadata", async () => {
   const doc = {
     ...document(".clarvis/plans/b.md", "Approved plan", "active"),
     spec_revision: 2,
     approved_spec_revision: 2,
   };
-  expect(await approvalFrame(doc)).toContain("Human-approved specification #2");
+  expect(await approvalFrame(doc)).not.toContain("approval");
 });
 
 test("a structural edit after approval reads as invalidated", async () => {
@@ -437,13 +438,16 @@ test("a structural edit after approval reads as invalidated", async () => {
     approved_spec_revision: 2,
   };
   expect(await approvalFrame(doc)).toContain(
-    "specification #3 changed after approval of specification #2",
+    "The plan changed. Review it again before work continues.",
   );
 });
 
 test("a plan that never needed review does not claim an approval", async () => {
   const doc = document(".clarvis/plans/d.md", "Ungated plan", "active");
-  expect(await approvalFrame(doc)).toContain("Human review was not required");
+  const out = await approvalFrame(doc);
+  expect(out).not.toContain("Human review was not required");
+  expect(out).not.toContain(".clarvis/plans/");
+  expect(out).not.toContain("keep");
 });
 
 test("a seeded plan renders readable sections without duplicating live tasks", async () => {
@@ -475,6 +479,20 @@ test("a seeded plan renders readable sections without duplicating live tasks", a
   const doc: PlanDocumentDto = {
     ...document(".clarvis/plans/demo.md", "Demo overhaul plan", "active"),
     markdown,
+    objective: "Ship the checkout redesign.",
+    context: "Cart flow regressed after the overhaul.",
+    tasks: [
+      {
+        id: "t1",
+        title: "Wire the projection reducer",
+        status: "in_progress",
+        detail: "Connect the live state.",
+        error: "",
+        reason: "",
+      },
+      { id: "t2", title: "Render the overlay body", status: "pending" },
+    ],
+    validation: ["suite green before release"],
   };
   const live: PlanActivity = {
     ...livePlan(doc),
@@ -488,6 +506,10 @@ test("a seeded plan renders readable sections without duplicating live tasks", a
   expect(out).toContain("Ship the checkout redesign.");
   expect(out).toContain("Cart flow regressed after the overhaul.");
   expect(out).not.toContain("id: demo");
+  expect(out).not.toContain("(t1)");
+  expect(out).not.toContain("Error:");
+  expect(out).not.toContain("Reason:");
+  expect(out).toContain("Connect the live state.");
   expect(out.split("Wire the projection reducer").length - 1).toBe(1);
   t.renderer.destroy();
 });
@@ -515,3 +537,64 @@ test("task selection bands mix against the page surface", async () => {
   expect(rgbToHex(taskSpan.bg).toLowerCase()).toBe(band);
   t.renderer.destroy();
 });
+
+for (const width of [60, 160]) {
+  test(`structured plan detail fits a ${width}-column terminal and preserves useful outcomes`, async () => {
+    const doc = {
+      ...document("hidden-plan-id.md", "Release checkout", "failed"),
+      objective: "Release checkout",
+      tasks: [
+        {
+          id: "t1",
+          title: "Verify checkout",
+          status: "failed" as const,
+          detail: "Inspect totals",
+          exit: "All checks pass",
+          error: "Totals do not match",
+          assignee: "internal-worker",
+        },
+        {
+          id: "t2",
+          title: "Publish",
+          status: "abandoned" as const,
+          reason: "Waiting for the checkout fix",
+        },
+      ],
+      notes: "Keep the current release available.",
+      markdown: "INTERNAL SERIALIZATION MUST NOT RENDER",
+    };
+    const { interaction } = fakeInteraction();
+    const t = await openRender(
+      (() => (
+        <PlanOverlay
+          interaction={interaction}
+          plan={() => livePlan(doc)}
+          plans={{ read: async () => doc }}
+        />
+      )) as never,
+      { width, height: 42 },
+    );
+    try {
+      const out = await captureUntil(t, "Keep the current release available.");
+      expect(out).toContain("Totals do not match");
+      expect(out).toContain("Waiting for the checkout fix");
+      expect(out).toContain("Done when: All checks pass");
+      expect(out.split("Release checkout")).toHaveLength(2);
+      for (const hidden of [
+        "hidden-plan-id",
+        "internal-worker",
+        "INTERNAL SERIALIZATION",
+        "Context",
+        "Validation",
+        "Objective",
+        "specification #",
+      ])
+        expect(out).not.toContain(hidden);
+      expect(Math.max(...out.split("\n").map((row) => row.trimEnd().length))).toBeLessThanOrEqual(
+        Math.min(width, 101),
+      );
+    } finally {
+      t.renderer.destroy();
+    }
+  });
+}

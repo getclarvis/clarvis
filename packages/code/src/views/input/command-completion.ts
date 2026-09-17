@@ -82,6 +82,7 @@ export function createCommandCompletionProvider(deps: CommandCompletionDeps): Co
       const nestedItems: CommandItem[] = entries.flatMap((entry) =>
         entry.slashes.flatMap((slash) =>
           entry.subcommands.flatMap((subcommand) => {
+            if (!(entry.canAct?.() ?? true) || !(subcommand.visible?.() ?? true)) return [];
             const label = `${slash}/${subcommand.name}`;
             if (!label.slice(1).toLowerCase().includes(normalized.toLowerCase())) return [];
             return [

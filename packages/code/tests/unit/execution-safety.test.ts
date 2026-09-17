@@ -138,19 +138,19 @@ describe("execution safety", () => {
       "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
       "The selected workspace is mounted directly; changes appear on the host immediately.",
       "Outbound network access is enabled and may cause remote effects or expose workspace content.",
-      "Commands run without Command Review.",
+      "Commands run without Guard.",
       "Git metadata is read-only; use Sandbox or Host for commits.",
     ]);
     expect(
       safetyDescription(
         deriveRunControls(onDisk({ runtime: { backend: "podman", network: "none" } }), "on", "off"),
       ),
-    ).toContain("Commands run without Command Review.");
+    ).toContain("Commands run without Guard.");
     expect(
       safetyDescription(
         deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "auto", "off"),
       ),
-    ).toContain("Commands run without Command Review.");
+    ).toContain("Commands run without Guard.");
   });
 });
 

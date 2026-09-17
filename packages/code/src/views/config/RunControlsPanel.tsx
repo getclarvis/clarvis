@@ -67,9 +67,9 @@ const PLAN_RETENTION_CHOICES = [
 ] as const satisfies readonly PickItem[];
 
 /**
- * Per-run controls expose isolation and command review as independent axes.
+ * Per-run controls expose isolation and Guard as independent axes.
  * Isolation persists globally because container placement is host-owned;
- * review and completed-plan retention use the selected scope, while memory is
+ * Guard and completed-plan retention use the selected scope, while memory is
  * session-only.
  */
 export function RunControlsPanel(
@@ -173,12 +173,12 @@ export function RunControlsPanel(
       });
       if (result.degraded) {
         deps.notify(
-          `review: approval (${host.scope()} settings) ${glyph("emDash")} Auto needs a usable default_model for the LLM judge`,
+          `Guard: approval (${host.scope()} settings) ${glyph("emDash")} Auto needs a usable default_model for the LLM judge`,
         );
         return;
       }
       deps.notify(
-        `review: ${mode === "on" ? "approval" : mode} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
+        `Guard: ${mode === "on" ? "approval" : mode} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
       );
     } catch (error) {
       deps.notify(errorText(error));
@@ -237,7 +237,7 @@ export function RunControlsPanel(
         break;
       case 1:
         if (isContainerIsolation(state().isolation)) return;
-        fe.startEnum("Command review", REVIEW_PICKER_CHOICES, state().guardMode, (value) =>
+        fe.startEnum("Guard", REVIEW_PICKER_CHOICES, state().guardMode, (value) =>
           detachObserved("run_controls_guard", () => applyGuard(value as GuardMode)),
         );
         break;
@@ -307,7 +307,7 @@ export function RunControlsPanel(
       <box flexDirection="column" width="100%" minWidth={0}>
         <StatusRow
           label="mutation"
-          text={`Isolation saves globally ${glyph("separator")} review/plans save to ${host.scope()} ${glyph("separator")} memory stays in this session`}
+          text={`Isolation saves globally ${glyph("separator")} Guard/plans save to ${host.scope()} ${glyph("separator")} memory stays in this session`}
         />
         <SettingRow
           setting={{
@@ -335,7 +335,7 @@ export function RunControlsPanel(
         </Show>
         <SettingRow
           setting={{
-            label: "Command review",
+            label: "Guard",
             configured: scopedGuard()?.mode ?? "inherit",
             effective: isContainerIsolation(state().isolation)
               ? "Not applicable in Container"

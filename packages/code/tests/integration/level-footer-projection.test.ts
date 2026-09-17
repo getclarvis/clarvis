@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { openCoreRenderer } from "../helpers/tracked-core-render.ts";
 import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
 import { registerUiActionFields, uiCommand } from "../../src/keys/actions.ts";
+import { detailCloseActions } from "../../src/ui/patterns/detail-view.tsx";
 import { LAYER, registerLevel, verb } from "../../src/ui/patterns/level-keys.ts";
 import { budgetFooterActions, projectActiveActions } from "../../src/ui/patterns/active-actions.ts";
 
@@ -86,6 +87,62 @@ test("a lower layer claiming the same letters does not hide the level's verbs", 
   } finally {
     offLevel();
     offInput();
+    offFields();
+    t.renderer.destroy();
+  }
+});
+
+for (const key of ["ctrl+p", "ctrl+o", "ctrl+w"]) {
+  test(`detail footer groups Escape and ${key} as one essential close action`, async () => {
+    const t = await openCoreRenderer({ width: 80, height: 24 });
+    const keymap = createDefaultOpenTuiKeymap(t.renderer);
+    const offFields = registerUiActionFields(keymap);
+    const offLevel = registerLevel(
+      keymap,
+      detailCloseActions(key, () => {}),
+    );
+    try {
+      const actions = projectActiveActions(
+        keymap.getActiveKeys({ includeBindings: true, includeMetadata: true }),
+      );
+      const close = actions.find((action) => action.footerLabel === "close")!;
+      expect(close.keys).toEqual(["esc", key.replace("ctrl+", "^")]);
+      expect(close.hintGroup).toBe("escape");
+      expect(close.essential).toBe(true);
+      expect(budgetFooterActions(actions, 40)).toContain(close);
+      expect(actions.filter((action) => action.footerLabel === "close")).toHaveLength(1);
+    } finally {
+      offLevel();
+      offFields();
+      t.renderer.destroy();
+    }
+  });
+}
+
+test("nested workflow footer separates back from close without changing the close identity", async () => {
+  const t = await openCoreRenderer({ width: 80, height: 24 });
+  const keymap = createDefaultOpenTuiKeymap(t.renderer);
+  const offFields = registerUiActionFields(keymap);
+  const offLevel = registerLevel(
+    keymap,
+    detailCloseActions(
+      "ctrl+w",
+      () => {},
+      () => {},
+    ),
+  );
+  try {
+    const actions = projectActiveActions(
+      keymap.getActiveKeys({ includeBindings: true, includeMetadata: true }),
+    );
+    expect(actions.find((action) => action.footerLabel === "close")?.keys).toEqual(["^w"]);
+    expect(actions.find((action) => action.footerLabel === "back")?.keys).toEqual(["esc"]);
+    expect(budgetFooterActions(actions, 40).map((action) => action.footerLabel)).toEqual([
+      "back",
+      "close",
+    ]);
+  } finally {
+    offLevel();
     offFields();
     t.renderer.destroy();
   }

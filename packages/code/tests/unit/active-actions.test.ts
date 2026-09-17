@@ -145,3 +145,28 @@ test("footer budgeting never overflows its width, even when every action is esse
     );
   }
 });
+
+test("footer labels are lowercase without changing help titles", () => {
+  const [action] = projectActiveActions([
+    key("review.picker", "ctrl+g", { footerLabel: "Guard", uiTitle: "Guard" }),
+  ]);
+  expect(actionSegment(action!)).toBe("[^g] guard");
+  expect(action!.title).toBe("Guard");
+});
+
+test("block navigation occupies one atomic footer segment and retains actual bindings", () => {
+  const actions = projectActiveActions([
+    key("transcript.focusPrev", "ctrl+up", { footerLabel: "previous block" }),
+    key("transcript.focusNext", "ctrl+down", { footerLabel: "next block" }),
+  ]);
+  const grouped = budgetFooterActions(actions, 100);
+  expect(grouped.map(actionSegment)).toEqual(["[^up / ^down] previous / next block"]);
+  expect(budgetFooterActions(actions, 20)).toEqual([]);
+  expect(
+    budgetFooterActions(
+      actions.filter((action) => action.id === "transcript.focusNext"),
+      100,
+    ).map(actionSegment),
+  ).toEqual(["[^down] next block"]);
+  expect(actions).toHaveLength(2);
+});

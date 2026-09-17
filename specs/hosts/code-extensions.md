@@ -29,6 +29,11 @@ executables are selected and consented together.
 
 ## 2. Guided Extension Profile composer
 
+The home shows its purpose, active snapshot, entry action and actionable errors, without a
+step-by-step preview or a duplicate child-shortcut legend in the body. The footer owns child
+navigation hints. `setupIntro` in `ExtensionsHub` owns this presentation, covered by the compact
+intro case in `packages/code/tests/integration/extensions-hub-render.test.tsx`.
+
 The composer follows the decision-first structure of first boot:
 
 | Step | Decision | Persistent effect |
@@ -67,16 +72,32 @@ waits for one of those operations. No `b`, `y`, or hidden Escape alias duplicate
 
 ### 3.1 Collection navigation
 
+Plugins shares the Goal/Plan/Workflow 100-cell reading column, detail title and section styles.
+Its root keeps compact inventory counts and collection navigation, with search/open instructions
+owned by the footer rather than duplicated in the body. A nonempty search remains visible.
+Plugin detail is a `ViewHost.level` child, so both local and shell Escape return to the plugin
+list before leaving for Extensions.
+Detail pages show plugin content without repeating the collection bar and global counts; install
+consent and source/security details remain available.
+Production: `MarketplaceBrowser` in `packages/code/src/views/config/MarketplaceBrowser.tsx`,
+using `DetailColumn`, `DetailTitle` and `DetailHeading`.
+Test: `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
+
 Plugins is a two-dimensional browser. Left/right changes the collection, up/down changes the plugin
 row, `/` searches the current collection, and Enter opens the selected plugin detail.
 
 Collections are ordered as:
 
-1. **All** — exact installed inventory plus listings whose name has no installed origin;
+1. **All** — exact installed inventory plus installable listings whose name has no installed origin;
 2. **Installed (N)** — every installed origin, active or inactive;
 3. one collection per exact marketplace URL, labelled by its presentation name;
 4. **Workspace (N)** — exact workspace plugin inventory;
 5. **Add Marketplace** — an action surface for a Git catalog URL.
+
+Unavailable catalog listings are omitted from All and source collections; installed plugins remain
+manageable, including their errors. Catalog rows omit the redundant Available label and show a
+marketplace name only when All mixes multiple source identities. A selected source collection
+already names its marketplace.
 
 The listing projection carries `marketplaceUrl` in addition to the marketplace label. Two catalogs
 with the same presentation name therefore never share a collection accidentally. On narrow

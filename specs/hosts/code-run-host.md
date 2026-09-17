@@ -1391,7 +1391,7 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
     reaches a declared provider" and inert-state cases).
 
-50. **Isolation is derived independently from Review.** A Docker or Podman runtime wins over native
+50. **Isolation is derived independently from Guard.** A Docker or Podman runtime wins over native
     Sandbox state; otherwise an enabled native Sandbox is `sandbox` and absence/disablement is
     `host`. Guard mode cannot change that result. Production:
     `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:

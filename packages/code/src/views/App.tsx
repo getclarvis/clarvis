@@ -734,12 +734,15 @@ export function App(props: AppProps): JSX.Element {
     isDraftNonEmpty: draftNonEmpty,
     hint: (message) => notify(message, "warn"),
     openAgentPicker: (onClose) => {
+      if (props.run.active()) return;
       if (overlays.openPicker("agentPicker", onClose)) notify("");
     },
     openIsolationPicker: () => {
+      if (props.run.active()) return;
       if (overlays.openPicker("isolationPicker")) notify("");
     },
     openReviewPicker: () => {
+      if (props.run.active()) return;
       if (overlays.openPicker("reviewPicker")) notify("");
     },
     focusNext: () => {
@@ -883,10 +886,18 @@ export function App(props: AppProps): JSX.Element {
     enabled: sidebarHasContent,
     run: toggleActivitySidebar,
   });
+  createEffect(() => {
+    if (
+      props.run.active() &&
+      ["agentPicker", "isolationPicker", "reviewPicker"].includes(overlays.overlay())
+    )
+      overlays.dismissTop();
+  });
   let notifiedMissingEntryAgent = false;
   let entryAgentPromptQueued = false;
   createEffect(() => {
     if (
+      props.run.active() ||
       entryAgentPromptQueued ||
       props.fleet.agents.active() !== "" ||
       props.fleet.agents.list().length === 0 ||
@@ -898,6 +909,7 @@ export function App(props: AppProps): JSX.Element {
     queueMicrotask(() => {
       entryAgentPromptQueued = false;
       if (
+        props.run.active() ||
         props.fleet.agents.active() !== "" ||
         overlays.overlay() !== "none" ||
         transientOverlay() !== "none"
@@ -1376,7 +1388,7 @@ export function App(props: AppProps): JSX.Element {
     if (sidebarReveal()?.section === "goal" && sidebarSectionAvailable("goal")) {
       return `${toggleKey === undefined ? "^L" : `[${toggleKey}]`} close`;
     }
-    return `${toggleKey === undefined ? "Ctrl+L" : `[${toggleKey}]`} open / close sidebar`;
+    return `${toggleKey === undefined ? "Ctrl+S" : `[${toggleKey}]`} open / close sidebar`;
   };
 
   createEffect(() => {
@@ -1642,7 +1654,7 @@ export function App(props: AppProps): JSX.Element {
           placement="portal"
         >
           {(lifecycle) => (
-            <Suspense fallback={<text>Loading command review{glyph("ellipsis")}</text>}>
+            <Suspense fallback={<text>Loading Guard{glyph("ellipsis")}</text>}>
               <ReviewPicker
                 interaction={interaction}
                 settings={props.fleet.settings}

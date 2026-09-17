@@ -53,7 +53,7 @@ test("the header states model, isolation, review and memory independently", () =
   expect(status.map((chip) => chip.key)).toEqual(["model", "isolation", "review", "memory"]);
   expect(status[0]!.text).toContain("grok-4.5");
   expect(status[1]!.text).toContain("Isolation: Sandbox");
-  expect(status[2]!.text).toContain("Review: Off");
+  expect(status[2]!.text).toContain("Guard: Off");
   expect(status[3]!.text).toContain("Memory: on");
 });
 
@@ -61,7 +61,7 @@ test("configuration joins the identity run rather than floating past the gap", (
   const plan = projectHeader(baseInput({ width: 140 }));
   for (const chip of plan.status) expect(chip.text.startsWith("  ·  ")).toBe(true);
   expect(plan.identity!.text + plan.status.map((chip) => chip.text).join("")).toBe(
-    "  ·  coder  ·  x-ai/grok-4.5  ·  Isolation: Sandbox  ·  Review: Off  ·  Memory: on",
+    "  ·  coder  ·  x-ai/grok-4.5  ·  Isolation: Sandbox  ·  Guard: Off  ·  Memory: on",
   );
 });
 

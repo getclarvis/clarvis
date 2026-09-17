@@ -68,7 +68,7 @@ function mount(opts: {
   uninstall?: (value: PluginView) => Promise<string>;
 }) {
   const harness = createFakeKeymap();
-  const { host } = createViewHost({
+  const { host, controls } = createViewHost({
     interaction: { keymap: harness.keymap } as unknown as Interaction,
     close: () => {},
     dispatch: () => {},
@@ -117,6 +117,7 @@ function mount(opts: {
   };
   return {
     host,
+    controls,
     deps,
     press: harness.press,
     installed,
@@ -151,11 +152,17 @@ test("shows available marketplace plugins and installs from the primary action",
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("0 installed");
   expect(frame).toContain("1 available");
-  expect(frame).toContain("/ Search this collection");
-  expect(frame).toContain("Enter → view plugin details");
+  expect(frame).not.toContain("Available ·");
+  expect(frame).not.toContain("/ Search this collection");
+  expect(frame).not.toContain("Enter → view plugin details");
   mounted.press("return");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Enter installs the plugin and adds it to");
+  const detail = rendered.captureCharFrame();
+  expect(detail).toContain("Enter installs the plugin and adds it to");
+  expect(detail).toContain("Authentication: On first use");
+  expect(detail).not.toContain("ON_FIRST_USE");
+  expect(detail).not.toContain("[All]");
+  expect(detail).not.toContain("0 installed");
   mounted.press("return");
   await settle(rendered, () => mounted.installed.length === 1);
   expect(mounted.notifications).toContain("installed demo-plugin");
@@ -171,7 +178,7 @@ test("installed inventory and full lifecycle details live in Marketplace", async
   await rendered.renderOnce();
   let frame = rendered.captureCharFrame();
   expect(frame).toContain("1 active");
-  expect(frame).toContain("Active · current Extension Profile");
+  expect(frame).toContain("Active");
   expect(frame).not.toContain("1 available");
   mounted.press("return");
   await rendered.renderOnce();
@@ -264,7 +271,7 @@ test("uninstall immediately replaces the active row with its available listing",
   );
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("1 available");
-  expect(frame).toContain("Enter → view plugin details");
+  expect(frame).not.toContain("Enter → view plugin details");
   expect(frame).not.toContain("Active · current Extension Profile");
   rendered.renderer.destroy();
 });
@@ -317,7 +324,7 @@ test("local and npm installations do not offer an update action", async () => {
   }
 });
 
-test("unavailable entries open an explanation instead of installing", async () => {
+test("unavailable catalog entries are omitted instead of offering an installation", async () => {
   const mounted = mount({
     listings: [
       listing({
@@ -334,7 +341,8 @@ test("unavailable entries open an explanation instead of installing", async () =
   mounted.press("return");
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("This source cannot be installed by the current host");
+  expect(frame).toContain("No plugins in this collection");
+  expect(frame).not.toContain("Demo Plugin");
   expect(mounted.installed).toEqual([]);
   rendered.renderer.destroy();
 });
@@ -469,7 +477,10 @@ test("left and right browse exact marketplace collections while up and down stay
     },
   };
   const mounted = mount({
-    listings: [listing()],
+    listings: [
+      listing(),
+      listing({ name: "unavailable", displayName: "Unavailable plugin", installable: false }),
+    ],
     plugins: [plugin({ name: "local-only", displayName: "Local Only", scope: "workspace" })],
     sources: [source],
   });
@@ -486,6 +497,13 @@ test("left and right browse exact marketplace collections while up and down stay
   mounted.press("right");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("[Demo Market]");
+  expect(rendered.captureCharFrame()).not.toContain("Unavailable plugin");
+  const pluginLine = rendered
+    .captureCharFrame()
+    .split("\n")
+    .find((line) => line.includes("Demo Plugin"));
+  expect(pluginLine).not.toContain("demo-market");
+  expect(pluginLine).not.toContain("Available");
   expect(rendered.captureCharFrame()).toContain("Demo Plugin");
   expect(rendered.captureCharFrame()).not.toContain("Local Only");
   mounted.press("right");
@@ -493,4 +511,25 @@ test("left and right browse exact marketplace collections while up and down stay
   expect(rendered.captureCharFrame()).toContain("[Workspace (1)]");
   expect(rendered.captureCharFrame()).toContain("Local Only");
   rendered.renderer.destroy();
+});
+
+test("shell Escape returns from plugin details to the collection before closing the view", async () => {
+  const mounted = mount({ listings: [listing()] });
+  const rendered = await openRender(
+    (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
+    { width: 100, height: 24 },
+  );
+  try {
+    await rendered.renderOnce();
+    mounted.press("return");
+    await rendered.renderOnce();
+    expect(mounted.host.level.depth()).toBe(1);
+    mounted.controls.escape();
+    await rendered.renderOnce();
+    expect(mounted.host.level.depth()).toBe(0);
+    expect(rendered.captureCharFrame()).toContain("1 available");
+    expect(rendered.captureCharFrame()).not.toContain("Authentication:");
+  } finally {
+    rendered.renderer.destroy();
+  }
 });

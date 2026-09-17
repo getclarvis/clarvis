@@ -1037,19 +1037,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
               {`Active  ${current!.id} ${glyph("separator")} ${summary(current!)}`}
             </text>
           </Show>
-          <text fg={tokens.muted} paddingTop={1}>
-            Step 1 scope {glyph("arrowRight")} 2 Extension Profile {glyph("arrowRight")} 3
-            extensions
-          </text>
-          <text fg={tokens.muted}>
-            4 capabilities {glyph("arrowRight")} 5 exact delta and apply
-          </text>
           <text fg={tokens.accent2} paddingTop={1}>
             Enter {glyph("arrowRight")} begin guided setup
-          </text>
-          <text fg={tokens.muted}>
-            e {glyph("arrowRight")} Extension Profiles m {glyph("arrowRight")} Plugins and
-            Marketplace c {glyph("arrowRight")} MCP
           </text>
           <Show when={brokenSources > 0}>
             <text

@@ -1,4 +1,4 @@
-import type { Accessor, JSX } from "solid-js";
+import type { JSX } from "solid-js";
 import { detachObserved } from "../../core/tasks.ts";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
@@ -11,8 +11,14 @@ import type {
   WorkflowDetail,
   WorkflowNode,
   WorkflowSummary,
-  WorkflowSequence,
 } from "@clarvis/protocol";
+import {
+  detailCloseActions,
+  DetailColumn,
+  DetailTitle,
+  DetailHeading,
+  detailStatusColor,
+} from "../../ui/patterns/detail-view.tsx";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { scrollbarOptions, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.ts";
@@ -38,8 +44,10 @@ export interface WorkflowsHubDeps {
   getRun: (id: string) => Promise<RunDetail | null>;
   delete?: (id: string) => Promise<void>;
   now: () => number;
+  /** Open one workflow directly; returning from its tree closes the view. */
+  initialExecutionId?: string | undefined;
   /** Live manager projection, merged over persisted records while this run is active. */
-  live?: () => WorkflowActivity | null;
+  live?: (() => WorkflowActivity | null) | undefined;
   openAgentPicker?: () => void;
   pollMs?: number;
   /** Internal test seam for the pending-operation warning. */
@@ -51,9 +59,7 @@ type NodePage =
   | { mode: "task"; meta: WorkflowNode };
 
 function statusColor(status: RunStatus): string {
-  if (status === "running") return tokens.warn;
-  if (status === "completed") return tokens.fg;
-  return tokens.del;
+  return detailStatusColor(uiLifecycle(status));
 }
 
 const glyphFor = (kind: WorkflowNode["kind"]): string =>
@@ -116,19 +122,8 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   const [node, setNode] = createSignal<NodePage | null>(null);
   const [listSel, setListSel] = createSignal(0);
   const [treeSel, setTreeSel] = createSignal(0);
-  const [lastUpdated, setLastUpdated] = createSignal<number>();
   const [loadError, setLoadError] = createSignal("");
   let nodeScrollEl: ScrollBoxRenderable | undefined;
-  const shortIds = new Map<string, string>();
-  let nextShortId = 1;
-  const shortId = (value: WorkflowNode): string => {
-    if (value.kind === "manager") return "Manager";
-    const existing = shortIds.get(value.run_id);
-    if (existing) return existing;
-    const assigned = `A${nextShortId++}`;
-    shortIds.set(value.run_id, assigned);
-    return assigned;
-  };
   const shortTitle = (value: string): string =>
     (value.split("\n").find((line) => line.trim()) ?? value).trim().replace(/\s+/g, " ");
 
@@ -147,7 +142,6 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
         const next = page.items.findIndex((item) => item.execution_id === selectedId);
         if (next >= 0) setListSel(next);
       }
-      setLastUpdated(deps.now());
       setLoadError("");
     } catch (error) {
       if (!disposed) setLoadError(error instanceof Error ? error.message : String(error));
@@ -177,7 +171,9 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
             ? "running"
             : current.status === "ok"
               ? "completed"
-              : "failed",
+              : current.status === "cancelled"
+                ? "cancelled"
+                : "failed",
         ...(current.startedAt !== undefined ? { started_at: current.startedAt } : {}),
         ...(current.endedAt !== undefined ? { ended_at: current.endedAt } : {}),
         ...(current.roundId !== undefined ? { round_id: current.roundId } : {}),
@@ -213,9 +209,8 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   let openWorkflowActive: string | undefined;
   let openWorkflowQueued: string | undefined;
   function openWorkflow(): void {
-    const workflow = selectedRow();
-    if (!workflow) return;
-    const id = workflow.execution_id;
+    const id = deps.initialExecutionId ?? selectedRow()?.execution_id;
+    if (!id) return;
     if (openWorkflowActive !== undefined) {
       if (id !== openWorkflowActive) openWorkflowQueued = id;
       diagnosticCount("workflows.open.coalesced", { id });
@@ -239,7 +234,6 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
             if (openWorkflowQueued === undefined) {
               setDetail(detail);
               setTreeSel(0);
-              setLastUpdated(deps.now());
               setLoadError("");
             }
           } catch (error) {
@@ -268,7 +262,6 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
         );
         if (index >= 0) setTreeSel(index);
       }
-      setLastUpdated(deps.now());
       setLoadError("");
     } catch (error) {
       if (!disposed) setLoadError(error instanceof Error ? error.message : String(error));
@@ -290,7 +283,6 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
             }
           : latest,
       );
-      setLastUpdated(deps.now());
       setLoadError("");
     } catch (error) {
       if (!disposed) setLoadError(error instanceof Error ? error.message : String(error));
@@ -344,7 +336,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   const reload = (): void => requestRefresh("list");
   const refreshTree = (): void => requestRefresh("tree");
   const refreshNode = (): void => requestRefresh("node");
-  onMount(reload);
+  onMount(() => (deps.initialExecutionId ? openWorkflow() : reload()));
 
   let openNodeActive: string | undefined;
   function openNode(): void {
@@ -369,7 +361,6 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
             ? { ...current, run }
             : current,
         );
-        setLastUpdated(deps.now());
         setLoadError("");
       } catch (error) {
         if (!disposed) setLoadError(error instanceof Error ? error.message : String(error));
@@ -386,6 +377,10 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
   }
 
   const backToList = (): void => {
+    if (deps.initialExecutionId) {
+      host.close();
+      return;
+    }
     setDetail(null);
     reload();
   };
@@ -430,19 +425,24 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
     );
   }
 
+  const closeActions = (back?: () => void) =>
+    detailCloseActions("ctrl+w", () => host.close(), back);
   const spec = (): LevelSpec => {
+    const close = closeActions(
+      inNode() ? backToTree : inTree() && !deps.initialExecutionId ? backToList : undefined,
+    );
     if (inNode()) {
       return {
         scroll: () => nodeScrollEl,
-        verbs: [{ key: "r", label: "refresh", run: refreshNode }],
-        escape: { label: "back", run: backToTree },
+        ...close,
+        verbs: [...(close.verbs ?? []), { key: "r", label: "refresh", run: refreshNode }],
       };
     }
     if (inTree()) {
       if (treeNodes().length === 0)
         return {
-          verbs: [{ key: "r", label: "refresh", run: refreshTree }],
-          escape: { label: "back", run: backToList },
+          ...close,
+          verbs: [...(close.verbs ?? []), { key: "r", label: "refresh", run: refreshTree }],
         };
       return {
         nav: {
@@ -452,6 +452,7 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
           activate: { label: "open", run: openNode },
         },
         verbs: [
+          ...(close.verbs ?? []),
           { key: "r", label: "refresh", run: refreshTree },
           {
             id: "ui.workflow.task.open",
@@ -464,9 +465,14 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
             essential: true,
           },
         ],
-        escape: { label: "back", run: backToList },
+        escape: close.escape,
       };
     }
+    if (deps.initialExecutionId)
+      return {
+        ...close,
+        verbs: [{ key: "r", label: "retry", run: openWorkflow }],
+      };
     if (listItems().length === 0)
       return {
         verbs: [
@@ -497,190 +503,189 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
     register: (enabled) => registerLevel(host.interaction.keymap, { ...spec(), enabled }),
   });
 
-  const title = (): string => {
-    if (inNode()) {
-      const current = node()!.meta;
-      const page = node()!.mode === "task" ? "Task" : "Result";
-      return `Workflows ${glyph("chevronRight")} ${shortTitle(detail()?.title ?? "")} ${glyph("chevronRight")} ${shortId(current)} ${glyph("separator")} ${shortTitle(current.title)} ${glyph("chevronRight")} ${page}`;
-    }
-    if (inTree()) return `Workflows ${glyph("chevronRight")} ${shortTitle(detail()?.title ?? "")}`;
-    return "Workflows";
-  };
-
-  const roundContext = (value: WorkflowNode): string => {
-    if (value.round_id === undefined) return value.profile ?? value.kind;
-    const pass = value.pass === undefined ? "" : ` ${glyph("separator")} pass ${value.pass + 1}`;
-    const item =
-      value.item_index === undefined ? "" : ` ${glyph("separator")} item ${value.item_index + 1}`;
-    const replica =
-      value.replica === undefined
-        ? ""
-        : ` ${glyph("separator")} replica ${value.replica + 1}/${value.replica_count ?? "?"}`;
-    return `round ${value.round_id}${pass}${item}${replica}`;
+  const title = (): string =>
+    inNode()
+      ? node()!.mode === "task"
+        ? "Workflow task"
+        : "Workflow result"
+      : inTree() || deps.initialExecutionId
+        ? "Workflow"
+        : "Workflows";
+  const progress = (): string => {
+    const leaders = treeNodes().filter((item) => item.kind === "leader");
+    const done = leaders.filter((item) => item.status === "completed").length;
+    const running = leaders.filter((item) => item.status === "running").length;
+    return `${lifecycleLabel(uiLifecycle(detail()?.status ?? "running"))} ${glyph("separator")} ${done}/${leaders.length} finished${running ? ` ${glyph("separator")} ${running} running` : ""}`;
   };
 
   return (
-    <ViewFrame
-      host={host}
-      title={title()}
-      mode="monitor"
-      purpose="Live workflow state; open an agent's result or full task"
-    >
-      <Show when={loadError()}>
-        <text flexShrink={0} fg={tokens.del} wrapMode="word">
-          {`Refresh failed: ${loadError()}`}
-        </text>
-      </Show>
-      <Show when={lastUpdated()}>
-        <text flexShrink={0} fg={tokens.muted}>
-          {`Updated ${relTime(lastUpdated()!, deps.now())}`}
-        </text>
-      </Show>
-      <Show when={inNode()}>
-        <text flexShrink={0} fg={tokens.muted} paddingBottom={1}>
-          {`${shortId(node()!.meta)} ${glyph("separator")} ${node()?.meta.profile ?? node()?.meta.kind ?? "agent"} ${glyph("separator")} ${lifecycleLabel(uiLifecycle(node()?.meta.status ?? "waiting"))}`}
-        </text>
-        <Show when={node()?.meta.error ?? node()?.meta.reason}>
+    <ViewFrame host={host} title={title()} unscoped>
+      <DetailColumn fill>
+        <Show when={loadError()}>
           <text flexShrink={0} fg={tokens.del} wrapMode="word">
-            {node()?.meta.error?.message ?? node()?.meta.reason}
+            {`Refresh failed: ${loadError()}`}
           </text>
         </Show>
-        <scrollbox
-          ref={(el: ScrollBoxRenderable) => (nodeScrollEl = el)}
-          flexGrow={1}
-          flexBasis={0}
-          minHeight={0}
-          paddingRight={SCROLLBOX_TABLE_GUTTER}
-          verticalScrollbarOptions={scrollbarOptions()}
-        >
-          <Prose block content={nodeContent()} />
-        </scrollbox>
-        <Show when={nodeUsage()} keyed>
-          {(usage: RunUsage) => (
-            <text flexShrink={0} fg={tokens.muted} paddingTop={1}>
-              {usageLine(usage)}
+        <Show when={inNode()}>
+          <DetailTitle>{node()!.meta.title}</DetailTitle>
+          <text
+            marginTop={1}
+            flexShrink={0}
+            fg={detailStatusColor(uiLifecycle(node()?.meta.status ?? "waiting"))}
+            paddingBottom={1}
+          >
+            {`${lifecycleLabel(uiLifecycle(node()?.meta.status ?? "waiting"))}`}
+          </text>
+          <Show when={node()?.meta.error ?? node()?.meta.reason}>
+            <text flexShrink={0} fg={tokens.del} wrapMode="word">
+              {node()?.meta.error?.message ?? node()?.meta.reason}
             </text>
-          )}
+          </Show>
+          <scrollbox
+            ref={(el: ScrollBoxRenderable) => (nodeScrollEl = el)}
+            flexGrow={1}
+            flexBasis={0}
+            minHeight={0}
+            paddingRight={SCROLLBOX_TABLE_GUTTER}
+            verticalScrollbarOptions={scrollbarOptions()}
+          >
+            <Prose block content={nodeContent()} />
+          </scrollbox>
+          <Show when={nodeUsage()} keyed>
+            {(usage: RunUsage) => (
+              <text flexShrink={0} fg={tokens.muted} paddingTop={1}>
+                {usageLine(usage)}
+              </text>
+            )}
+          </Show>
         </Show>
-      </Show>
 
-      <Show when={inTree()}>
-        <Show when={detail()?.sequence}>
-          {(sequence: Accessor<WorkflowSequence>) => (
-            <text
-              flexShrink={0}
-              fg={sequence().status === "awaiting_manager" ? tokens.warn : tokens.muted}
-            >
-              {sequence().status === "awaiting_manager"
-                ? `Awaiting Admiral ${glyph("separator")} revision ${sequence().revision} ${glyph("separator")} next ${sequence().next_round_id ?? "round"}`
-                : `${sequence().status} ${glyph("separator")} ${sequence().round_id ?? sequence().session_id} ${glyph("separator")} leaders ${sequence().leaders_started}/${sequence().max_total_leaders}`}
+        <Show when={inTree()}>
+          <DetailTitle>{detail()?.title ?? "Current workflow"}</DetailTitle>
+          <text
+            marginTop={1}
+            fg={detailStatusColor(uiLifecycle(detail()?.status ?? "running"))}
+            wrapMode="word"
+          >
+            {progress()}
+          </text>
+          <Show when={detail()?.sequence?.status === "awaiting_manager"}>
+            <text fg={tokens.warn}>Waiting for the next stage</text>
+          </Show>
+          <Show when={detail()?.sequence?.reason}>
+            <text fg={tokens.warn} wrapMode="word">
+              {detail()?.sequence?.reason}
             </text>
-          )}
+          </Show>
+          <DetailHeading>Tasks</DetailHeading>
+          <SelectableList<WorkflowNode>
+            each={treeNodes}
+            sel={treeSel}
+            idPrefix="workflow-node-"
+            empty={() => ({
+              text: "no nodes",
+              icon: "info",
+              hint: "the manager has not spawned agents",
+            })}
+            contentRows={() => treeNodes().length * (stackedRows() ? 2 : 1)}
+            row={(treeNode, i) => (
+              <Show
+                when={!stackedRows()}
+                fallback={
+                  <box flexDirection="column" flexShrink={0}>
+                    <SelectableRow selected={treeSel() === i()}>
+                      <span
+                        style={{ fg: treeNode.kind === "manager" ? tokens.accent : tokens.fg }}
+                      >{`${glyphFor(treeNode.kind)} ${treeNode.kind === "manager" ? "Coordinator" : shortTitle(treeNode.title)}`}</span>
+                    </SelectableRow>
+                    <text height={1} paddingLeft={4} wrapMode="none" truncate>
+                      <span style={{ fg: statusColor(treeNode.status) }}>
+                        {` ${glyph("separator")} ${lifecycleLabel(uiLifecycle(treeNode.status))}`}
+                      </span>
+                    </text>
+                  </box>
+                }
+              >
+                <PickerRow
+                  selected={treeSel() === i()}
+                  base={tokens.bg}
+                  cells={[
+                    {
+                      width: 2,
+                      text: glyphFor(treeNode.kind),
+                      fg: treeNode.kind === "manager" ? tokens.accent : tokens.fg,
+                    },
+                    {
+                      grow: true,
+                      text:
+                        treeNode.kind === "manager" ? "Coordinator" : shortTitle(treeNode.title),
+                      fg: tokens.fg,
+                    },
+                    {
+                      width: 14,
+                      text: lifecycleLabel(uiLifecycle(treeNode.status)),
+                      fg: statusColor(treeNode.status),
+                    },
+                  ]}
+                />
+              </Show>
+            )}
+          />
         </Show>
-        <SelectableList<WorkflowNode>
-          each={treeNodes}
-          sel={treeSel}
-          idPrefix="workflow-node-"
-          empty={() => ({
-            text: "no nodes",
-            icon: "info",
-            hint: "the manager has not spawned agents",
-          })}
-          contentRows={() => treeNodes().length * (stackedRows() ? 2 : 1)}
-          row={(treeNode, i) => (
-            <Show
-              when={!stackedRows()}
-              fallback={
-                <box flexDirection="column" flexShrink={0}>
-                  <SelectableRow selected={treeSel() === i()}>
-                    <span
-                      style={{ fg: treeNode.kind === "manager" ? tokens.accent : tokens.fg }}
-                    >{`${glyphFor(treeNode.kind)} ${shortId(treeNode)}  ${shortTitle(treeNode.title)}`}</span>
-                  </SelectableRow>
-                  <text height={1} paddingLeft={4} wrapMode="none" truncate>
-                    <span style={{ fg: tokens.muted }}>{roundContext(treeNode)}</span>
-                    <span style={{ fg: statusColor(treeNode.status) }}>
-                      {` ${glyph("separator")} ${lifecycleLabel(uiLifecycle(treeNode.status))}`}
-                    </span>
-                  </text>
-                </box>
-              }
-            >
-              <PickerRow
-                selected={treeSel() === i()}
-                base={tokens.bg}
-                cells={[
-                  {
-                    width: 12,
-                    text: `${glyphFor(treeNode.kind)} ${shortId(treeNode)}`,
-                    fg: treeNode.kind === "manager" ? tokens.accent : tokens.fg,
-                  },
-                  { grow: true, text: shortTitle(treeNode.title), fg: tokens.fg },
-                  {
-                    width: 18,
-                    shrink: true,
-                    text: roundContext(treeNode),
-                    fg: tokens.muted,
-                  },
-                  {
-                    width: 14,
-                    text: lifecycleLabel(uiLifecycle(treeNode.status)),
-                    fg: statusColor(treeNode.status),
-                  },
-                ]}
-              />
-            </Show>
-          )}
-        />
-      </Show>
 
-      <Show when={!inTree() && !inNode()}>
-        <SelectableList<WorkflowSummary>
-          each={listItems}
-          sel={listSel}
-          idPrefix="workflow-"
-          empty={() => ({
-            text: "no workflows yet",
-            icon: "info",
-            hint: "choose a workflow-enabled agent, then start a task",
-          })}
-          contentRows={() => listItems().length * (stackedRows() ? 2 : 1)}
-          row={(workflow, i) => (
-            <Show
-              when={!stackedRows()}
-              fallback={
-                <box flexDirection="column" flexShrink={0}>
-                  <SelectableRow selected={listSel() === i()}>
-                    <span style={{ fg: tokens.fg }}>{workflow.title || workflow.execution_id}</span>
-                  </SelectableRow>
-                  <text height={1} paddingLeft={4} fg={tokens.muted} wrapMode="none" truncate>
-                    {`${workflow.leader_count} agents ${glyph("separator")} ${lifecycleLabel(uiLifecycle(workflow.status))} ${glyph("separator")} ${relTime(workflow.updated_at, deps.now())}`}
-                  </text>
-                </box>
-              }
-            >
-              <PickerRow
-                selected={listSel() === i()}
-                base={tokens.bg}
-                cells={[
-                  {
-                    grow: true,
-                    text: workflow.title || workflow.execution_id,
-                    fg: tokens.fg,
-                  },
-                  { width: 12, text: `${workflow.leader_count} agents`, fg: tokens.muted },
-                  {
-                    width: 14,
-                    text: lifecycleLabel(uiLifecycle(workflow.status)),
-                    fg: statusColor(workflow.status),
-                  },
-                  { width: 10, text: relTime(workflow.updated_at, deps.now()), fg: tokens.muted },
-                ]}
-              />
-            </Show>
-          )}
-        />
-      </Show>
+        <Show when={!inTree() && !inNode() && !deps.initialExecutionId}>
+          <SelectableList<WorkflowSummary>
+            each={listItems}
+            sel={listSel}
+            idPrefix="workflow-"
+            empty={() => ({
+              text: "no workflows yet",
+              icon: "info",
+              hint: "choose a workflow-enabled agent, then start a task",
+            })}
+            contentRows={() => listItems().length * (stackedRows() ? 2 : 1)}
+            row={(workflow, i) => (
+              <Show
+                when={!stackedRows()}
+                fallback={
+                  <box flexDirection="column" flexShrink={0}>
+                    <SelectableRow selected={listSel() === i()}>
+                      <span style={{ fg: tokens.fg }}>
+                        {workflow.title || workflow.execution_id}
+                      </span>
+                    </SelectableRow>
+                    <text height={1} paddingLeft={4} fg={tokens.muted} wrapMode="none" truncate>
+                      {`${workflow.leader_count} agents ${glyph("separator")} ${lifecycleLabel(uiLifecycle(workflow.status))} ${glyph("separator")} ${relTime(workflow.updated_at, deps.now())}`}
+                    </text>
+                  </box>
+                }
+              >
+                <PickerRow
+                  selected={listSel() === i()}
+                  base={tokens.bg}
+                  cells={[
+                    {
+                      grow: true,
+                      text: workflow.title || workflow.execution_id,
+                      fg: tokens.fg,
+                    },
+                    { width: 12, text: `${workflow.leader_count} agents`, fg: tokens.muted },
+                    {
+                      width: 14,
+                      text: lifecycleLabel(uiLifecycle(workflow.status)),
+                      fg: statusColor(workflow.status),
+                    },
+                    { width: 10, text: relTime(workflow.updated_at, deps.now()), fg: tokens.muted },
+                  ]}
+                />
+              </Show>
+            )}
+          />
+        </Show>
+        <Show when={deps.initialExecutionId && !inTree() && !inNode() && !loadError()}>
+          <text fg={tokens.muted}>Loading workflow...</text>
+        </Show>
+      </DetailColumn>
     </ViewFrame>
   );
 }

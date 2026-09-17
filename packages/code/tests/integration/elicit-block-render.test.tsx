@@ -146,8 +146,8 @@ test("a workflow_review is an explicit preflight with a safe before-start promis
   expect(out).not.toContain("Agent asks");
   expect(out).toContain("Rounds: discover");
   expect(out).toContain("No leader has been launched yet");
-  expect(out).toContain("run workflow");
-  expect(out).toContain("do not run");
+  expect(out).toContain("[1] run workflow");
+  expect(out).toContain("[2] do not run");
 });
 
 test("workflow preflight has no default and submits only an explicitly highlighted decision", async () => {
@@ -155,13 +155,13 @@ test("workflow preflight has no default and submits only an explicitly highlight
   run.press("return");
   expect(run.resolved).toEqual([]);
   expect(run.notices).toEqual(["answer required: decision"]);
-  run.press("2");
+  run.press("1");
   run.press("return");
   expect(run.resolved).toEqual([{ action: "accept", content: { decision: "run" } }]);
   run.t.renderer.destroy();
 
   const cancel = await mountKeyed(WORKFLOW_REVIEW);
-  cancel.press("1");
+  cancel.press("2");
   cancel.press("return");
   expect(cancel.resolved).toEqual([{ action: "accept", content: { decision: "cancel" } }]);
   cancel.t.renderer.destroy();

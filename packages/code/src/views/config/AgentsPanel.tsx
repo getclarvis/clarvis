@@ -33,14 +33,12 @@ import {
 import { presentAgentsEvent } from "../../features/agents/events.ts";
 import type { HintTone } from "../hint.ts";
 import { registerLevel, verb, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { issueSet } from "./validation.ts";
 import {
   bindLevelKeys,
   createFieldEditor,
   Dash,
   LevelHost,
-  SectionHeader,
-  SettingRow,
+  SelectableRow,
   SelectableList,
 } from "./view-host.tsx";
 import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
@@ -53,6 +51,8 @@ import { modelPickerSpec } from "./pick-model.ts";
 import { truncateEnd } from "../truncate.ts";
 import { PickerRow } from "../overlays/PickerRow.tsx";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
+import { DetailColumn, DetailHeading, DetailTitle } from "../../ui/patterns/detail-view.tsx";
+import type { SettingPresentation } from "../../ui/presentation.ts";
 import { followSelection } from "../../ui/patterns/list-navigation.ts";
 
 /** Data and actions {@link AgentsPanel} needs from its host. */
@@ -80,10 +80,9 @@ const EDITOR_FIELDS = [
 type Effort = AgentFrontmatter["reasoning_effort"];
 
 /**
- * Config panel for agent profiles: lists agents with their grants, model,
- * iteration limit and readiness, and drills into a selected agent's editable
- * frontmatter fields (model, grants, spawn settings, reasoning effort,
- * base prompt).
+ * Config panel for agent profiles: lists names, roles and scope, then opens
+ * stable configuration rows with on-demand prose and provenance pages.
+ * Editors retain the controller-owned draft, validation and save rules.
  *
  * @remarks
  * Delegates mutation and validation to an {@link AgentsController} (built
@@ -118,6 +117,8 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   const [picker, setPicker] = createSignal<CatalogPickerSpec | null>(null);
   const [shared, setShared] = createSignal<SharedPromptView | null>(null);
   const [sharedOpen, setSharedOpen] = createSignal(false);
+  const [detailKind, setDetailKind] = createSignal<"content" | "origin">("content");
+  let detailScrollEl: ScrollBoxRenderable | undefined;
   detachObserved("shared_prompt_load", async () => {
     try {
       setShared(await deps.agents.sharedPrompt());
@@ -136,13 +137,12 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
   };
   const clampRow = (i: number): number => Math.max(0, Math.min(EDITOR_FIELDS.length - 1, i));
   let editorScrollEl: ScrollBoxRenderable | undefined;
+  let overviewScrollTop = 0;
   followSelection(
     () => editorScrollEl,
     "agent-field-",
     () => clampRow(row()),
   );
-
-  const editorIssues = issueSet(ctrl.draftIssues);
 
   function forkDraftWithNewName(source: AgentFile, targetScope: Scope): void {
     fe.start(`fork '${source.name}' to ${targetScope} as`, source.name, (name) => {
@@ -165,6 +165,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
     if (host.scope() !== a.scope) host.toggleScope();
     ctrl.openDraft(a);
     setRow(0);
+    overviewScrollTop = 0;
     host.level.push(a.name);
   }
 
@@ -521,6 +522,12 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       if (spec) setPicker(spec);
       return;
     }
+    if (field === "description") {
+      fe.startMultiline("Description", fm.description ?? "", (text) =>
+        ctrl.patchFm({ description: text.trim() || undefined }),
+      );
+      return;
+    }
     if (field === "base_prompt") {
       fe.startMultiline("Instructions", d.body, (v) => ctrl.setBody(v));
       return;
@@ -562,12 +569,14 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       );
       return;
     }
-    fe.start(field === "description" ? "Description" : field, (fm[field] as string) ?? "", (v) =>
-      ctrl.patchFm({ [field]: v.trim() || undefined }),
-    );
   }
 
   function specFor(depth: number): LevelSpec {
+    if (depth === 2)
+      return {
+        scroll: () => detailScrollEl,
+        verbs: [{ key: "e", label: "edit", run: editCurrent }],
+      };
     if (depth === 0)
       return {
         nav: {
@@ -588,9 +597,13 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
           count: () => 1,
           index: row,
           setIndex: setRow,
-          activate: { label: "edit", run: editShared },
+          activate: { label: "open", run: activateField },
         },
-        verbs: [{ key: "d", label: "disable", run: disableShared }, verb("clear", resetShared)],
+        verbs: [
+          { key: "i", label: "details", run: () => openDetail("origin") },
+          { key: "d", label: "disable", run: disableShared },
+          { key: "x", label: "restore", run: resetShared },
+        ],
       };
     }
     return {
@@ -598,9 +611,13 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
         count: () => EDITOR_FIELDS.length,
         index: row,
         setIndex: setRow,
-        activate: { label: "edit", run: () => editField(EDITOR_FIELDS[clampRow(row())]!) },
+        activate: { label: row() === 0 || row() === 7 ? "open" : "edit", run: activateField },
       },
-      verbs: [verb("rename", renameDraft), verb("delete", deleteDraft)],
+      verbs: [
+        { key: "i", label: "details", run: () => openDetail("origin") },
+        verb("rename", renameDraft),
+        verb("delete", deleteDraft),
+      ],
     };
   }
 
@@ -623,10 +640,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
           fg: tokens.del,
         };
       }
-      return {
-        text: glyph("success") + " " + view.source,
-        fg: tokens.add,
-      };
+      return null;
     }
     const a = selectedAgent();
     if (!a) return null;
@@ -640,7 +654,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       };
     }
     const seal = agentReadiness(a, agents(), settings.effective(), env, settings.knownGrants());
-    if (seal.runnable) return { text: glyph("success") + " runnable", fg: tokens.add };
+    if (seal.runnable) return null;
     const first = seal.issues[0]?.message ?? "not runnable";
     const more = seal.issues.length > 1 ? `  (+${seal.issues.length - 1} more)` : "";
     return { text: glyph("error") + " " + first + more, fg: tokens.del };
@@ -657,106 +671,56 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       return view.source;
     };
     return (
-      <box flexDirection="column">
+      <DetailColumn fill>
         <PickerRow
           selected={sel() === 0}
           base={tokens.bg}
           cells={[
-            { width: 11, text: "Shared", fg: tokens.accent2 },
-            { grow: true, text: "Shared prompt", fg: sel() === 0 ? tokens.fg : tokens.muted },
-            { width: 8, text: "", fg: tokens.muted },
-            { width: 22, shrink: true, text: sharedStatus(), fg: tokens.muted },
-            { width: 8, text: "", fg: tokens.muted },
-            { width: 4, text: "", fg: tokens.muted },
-            { width: 16, text: host.scope(), fg: tokens.muted },
+            { grow: true, text: "Shared prompt", fg: tokens.accent2 },
+            { width: 16, text: sharedStatus(), fg: tokens.muted },
           ]}
         />
-        <PickerRow
-          selected={false}
-          base={tokens.bg}
-          cells={[
-            { width: 11, text: "role", fg: tokens.muted },
-            { grow: true, text: "name", fg: tokens.muted },
-            { width: 8, text: "grants", fg: tokens.muted },
-            { width: 22, shrink: true, text: "model", fg: tokens.muted },
-            { width: 8, text: "iters", fg: tokens.muted },
-            { width: 4, text: "ok", fg: tokens.muted },
-            { width: 16, text: "scope", fg: tokens.muted },
-          ]}
-        />
+        <DetailHeading>Profiles</DetailHeading>
         <SelectableList<AgentFile>
           each={agents}
           sel={() => Math.max(0, sel() - 1)}
           idPrefix="agent-row-"
-          empty={() => ({ text: "no agents " + glyph("emDash") + " use Add to create one" })}
+          empty={() => ({ text: "No agents" })}
           trailing={
             <Show when={selBlockers()}>
-              <text flexShrink={0} fg={selBlockers()!.fg}>
-                {"  " + selBlockers()!.text}
+              <text flexShrink={0} fg={selBlockers()!.fg} wrapMode="word">
+                {selBlockers()!.text}
               </text>
             </Show>
           }
-          row={(a, i) => {
-            const on = (): boolean => sel() === i() + 1;
-            const fm = a.frontmatter;
-            const lead = (fm.can_spawn?.length ?? 0) > 0;
-            const tier = grantTier(fm.grants ?? []);
-            const inert = RANK[tier] > RANK[env.maxGrant];
-            const ready =
-              !a.invalid &&
-              agentReadiness(a, agents(), settings.effective(), env, settings.knownGrants())
-                .runnable;
-            return (
-              <PickerRow
-                selected={on()}
-                base={tokens.bg}
-                cells={[
-                  {
-                    width: 11,
-                    text: lead ? "Lead" : "Sub-agent",
-                    fg: lead ? tokens.accent2 : tokens.muted,
-                  },
-                  { grow: true, text: a.name, fg: on() ? tokens.fg : tokens.muted },
-                  {
-                    width: 8,
-                    text: tier + (inert ? " " + glyph("warning") : ""),
-                    fg: inert ? tokens.warn : tokens.muted,
-                  },
-                  {
-                    width: 22,
-                    shrink: true,
-                    text: fm.model ?? "(inherit)",
-                    fg: tokens.muted,
-                  },
-                  {
-                    width: 8,
-                    text: "it " + (fm.iteration_limit ?? glyph("emDash")),
-                    fg: tokens.muted,
-                  },
-                  {
-                    width: 4,
-                    text: ready ? glyph("success") : glyph("error"),
-                    fg: ready ? tokens.add : tokens.del,
-                  },
-                  {
-                    width: 16,
-                    text: a.scope + (ctrl.conflicts().includes(a.name) ? " shadow" : ""),
-                    fg: tokens.muted,
-                  },
-                ]}
-              />
-            );
-          }}
+          row={(a, i) => (
+            <PickerRow
+              selected={sel() === i() + 1}
+              base={tokens.bg}
+              cells={[
+                { grow: true, text: a.name, fg: tokens.fg },
+                {
+                  width: 11,
+                  text: (a.frontmatter.can_spawn?.length ?? 0) > 0 ? "Lead" : "Sub-agent",
+                  fg: tokens.muted,
+                },
+                {
+                  width: 18,
+                  text: a.scope + (ctrl.conflicts().includes(a.name) ? " shadow" : ""),
+                  fg: tokens.muted,
+                },
+              ]}
+            />
+          )}
         />
-      </box>
+      </DetailColumn>
     );
   }
 
-  function editorBody(): JSX.Element {
+  function agentSettings(): SettingPresentation[] {
     const d = ctrl.draft();
-    if (!d) return <Dash />;
+    if (!d) return [];
     const fm = d.frontmatter;
-    const issues = ctrl.draftIssues();
     const tier = grantTier(fm.grants ?? []);
     const nonCoding = (fm.grants ?? []).filter((x) => !CODING_GRANTS.includes(x));
     const grantsValue =
@@ -767,235 +731,268 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       tier === "exec" && RANK.exec > RANK[env.maxGrant]
         ? `${env.maxGrant} effective ${glyph("separator")} ${tier} configured`
         : tier;
-    const modelLacksReasoning = knownToLackReasoning(
-      configuredModelCapabilities(settings.effective().providers ?? [], fm.model),
+    return [
+      {
+        label: "Description",
+        configured: fm.description ? "custom description" : "not set",
+        effective: fm.description ? "Custom description active" : "No description",
+        source: `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Sub-agent model",
+        configured: fm.model ?? "inherit",
+        effective: fm.model ?? settings.effective().default_model ?? "No model configured",
+        source: fm.model ? `${d.scope} Agent Profile` : "effective settings",
+        applies: "when spawned",
+        mutation: "staged",
+      },
+      {
+        label: "Permissions",
+        summary: `${effectiveTierSummary} ${glyph("separator")} ${(fm.grants ?? []).length} grants`,
+        configured: grantsValue,
+        effective:
+          tier === "exec" && RANK.exec > RANK[env.maxGrant]
+            ? `${env.maxGrant} (host ceiling)`
+            : grantsValue,
+        source: `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Can delegate to",
+        configured: (fm.can_spawn ?? []).join(", ") || "none",
+        effective: (fm.can_spawn ?? []).join(", ") || "No delegation",
+        source: `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Default delegate",
+        configured: fm.default_spawn ?? "not set",
+        effective: fm.default_spawn ?? "Choose when delegating",
+        source: `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Iteration limit",
+        configured: fm.iteration_limit == null ? "inherit" : String(fm.iteration_limit),
+        effective: String(fm.iteration_limit ?? env.iterationDefault),
+        source: fm.iteration_limit == null ? "host environment" : `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+      {
+        label: "Sub-agent effort",
+        configured: fm.reasoning_effort ?? "inherit",
+        effective:
+          fm.reasoning_effort ??
+          settings.effective().default_reasoning_effort ??
+          "Provider default",
+        source: fm.reasoning_effort ? `${d.scope} Agent Profile` : "effective settings",
+        applies: "when spawned",
+        mutation: "staged",
+      },
+      {
+        label: "Instructions",
+        configured: d.body ? "custom instructions" : "none",
+        effective: d.body ? "Custom instructions active" : "No additional instructions",
+        source: `${d.scope} Agent Profile`,
+        applies: "next run",
+        mutation: "staged",
+      },
+    ];
+  }
+
+  function selectedSetting(): SettingPresentation | undefined {
+    return agentSettings()[clampRow(row())];
+  }
+
+  function fieldContent(): string {
+    if (sharedOpen()) return shared()?.prompt ?? "";
+    const d = ctrl.draft();
+    return row() === 0 ? (d?.frontmatter.description ?? "") : (d?.body ?? "");
+  }
+
+  function openDetail(kind: "content" | "origin"): void {
+    if (!sharedOpen()) overviewScrollTop = editorScrollEl?.scrollTop ?? 0;
+    setDetailKind(kind);
+    host.level.push(
+      kind === "origin"
+        ? "Details"
+        : sharedOpen()
+          ? "Prompt"
+          : (selectedSetting()?.label ?? "Content"),
     );
+  }
+
+  function editCurrent(): void {
+    if (sharedOpen()) editShared();
+    else editField(EDITOR_FIELDS[clampRow(row())]!);
+  }
+
+  function activateField(): void {
+    if ((sharedOpen() || row() === 0 || row() === 7) && fieldContent()) openDetail("content");
+    else editCurrent();
+  }
+
+  function compactValue(setting: SettingPresentation, index: number): string {
+    const fm = ctrl.draft()?.frontmatter;
+    if (index === 0 || index === 7)
+      return (index === 0 ? fm?.description : ctrl.draft()?.body) ? "view / edit" : "not set";
+    if (index === 2) return setting.summary ?? setting.effective;
+    const inherited = setting.configured === "inherit";
+    return setting.effective + (inherited ? ` ${glyph("separator")} inherited` : "");
+  }
+
+  function editorBody(): JSX.Element {
     return (
-      <scrollbox
-        ref={(el: ScrollBoxRenderable) => (editorScrollEl = el)}
-        flexGrow={1}
-        flexShrink={1}
-        minHeight={0}
-        verticalScrollbarOptions={scrollbarOptions()}
-      >
-        <box flexDirection="column">
-          <SectionHeader label="Identity" />
-          <SettingRow
-            id="agent-field-0"
-            setting={{
-              label: "Description",
-              summary: `${fm.description ? "custom description" : "not set"} ${glyph("separator")} ${d.scope} ${glyph("separator")} next run`,
-              configured: fm.description ? "custom description" : "not set",
-              effective: fm.description ? "Custom description active" : "No description",
-              source: `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 0}
-            expanded={row() === 0}
-          />
-          <Show when={row() === 0 && fm.description}>
-            <text fg={tokens.muted} wrapMode="word" paddingLeft={4}>
-              {fm.description}
-            </text>
-          </Show>
-          <SettingRow
-            id="agent-field-1"
-            setting={{
-              label: "Sub-agent model",
-              configured: fm.model ?? "inherit",
-              effective: fm.model ?? settings.effective().default_model ?? "No model configured",
-              source: fm.model ? `${d.scope} Agent Profile` : "effective settings",
-              applies: "when spawned",
-              mutation: "staged",
-            }}
-            selected={row() === 1}
-            expanded={row() === 1}
-          />
-          <Show when={editorIssues.for("model")}>
-            <text fg={tokens.del} wrapMode="word" paddingLeft={4}>
-              {editorIssues.for("model")!.message}
-            </text>
-          </Show>
-          <SectionHeader label="Permissions and delegation" />
-          <SettingRow
-            id="agent-field-2"
-            setting={{
-              label: "Permissions",
-              summary: `${effectiveTierSummary} ${glyph("separator")} ${(fm.grants ?? []).length} grants ${glyph("separator")} ${d.scope} ${glyph("separator")} next run`,
-              configured: grantsValue,
-              effective:
-                tier === "exec" && RANK.exec > RANK[env.maxGrant]
-                  ? `${env.maxGrant} (host ceiling)`
-                  : grantsValue,
-              source: `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 2}
-            expanded={row() === 2}
-          />
-          <SettingRow
-            id="agent-field-3"
-            setting={{
-              label: "Can delegate to",
-              configured: (fm.can_spawn ?? []).join(", ") || "none",
-              effective: (fm.can_spawn ?? []).join(", ") || "No delegation",
-              source: `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 3}
-            expanded={row() === 3}
-          />
-          <Show when={editorIssues.for("can_spawn")}>
-            <text fg={tokens.del} wrapMode="word" paddingLeft={4}>
-              {editorIssues.for("can_spawn")!.message}
-            </text>
-          </Show>
-          <SettingRow
-            id="agent-field-4"
-            setting={{
-              label: "Default delegate",
-              configured: fm.default_spawn ?? "not set",
-              effective: fm.default_spawn ?? "Choose when delegating",
-              source: `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 4}
-            expanded={row() === 4}
-          />
-          <Show when={editorIssues.for("default_spawn")}>
-            <text fg={tokens.del} wrapMode="word" paddingLeft={4}>
-              {editorIssues.for("default_spawn")!.message}
-            </text>
-          </Show>
-          <SectionHeader label="Execution" />
-          <SettingRow
-            id="agent-field-5"
-            setting={{
-              label: "Iteration limit",
-              configured: fm.iteration_limit == null ? "inherit" : String(fm.iteration_limit),
-              effective: String(fm.iteration_limit ?? env.iterationDefault),
-              source: fm.iteration_limit == null ? "host environment" : `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 5}
-            expanded={row() === 5}
-          />
-          <SettingRow
-            id="agent-field-6"
-            setting={{
-              label: "Sub-agent effort",
-              configured: fm.reasoning_effort ?? "inherit",
-              effective:
-                fm.reasoning_effort ??
-                settings.effective().default_reasoning_effort ??
-                "Provider default",
-              source: fm.reasoning_effort ? `${d.scope} Agent Profile` : "effective settings",
-              applies: "when spawned",
-              mutation: "staged",
-            }}
-            selected={row() === 6}
-            expanded={row() === 6}
-          />
-          <Show when={modelLacksReasoning}>
-            <text fg={tokens.warn} wrapMode="word" paddingLeft={4}>
-              {`${glyph("warning")} This model's catalog entry does not declare reasoning support`}
-            </text>
-          </Show>
-          <SettingRow
-            id="agent-field-7"
-            setting={{
-              label: "Instructions",
-              configured: d.body ? "custom instructions" : "none",
-              effective: d.body ? "Custom instructions active" : "No additional instructions",
-              source: `${d.scope} Agent Profile`,
-              applies: "next run",
-              mutation: "staged",
-            }}
-            selected={row() === 7}
-            expanded={row() === 7}
-          />
-          <Show when={row() === 7 && d.body}>
-            <text fg={tokens.muted} wrapMode="word" paddingLeft={4}>
-              {d.body}
-            </text>
-          </Show>
-          <box flexDirection="column" paddingTop={1}>
-            <Show when={issues.length === 0}>
-              <text flexShrink={0} fg={tokens.add}>
-                {"  " + glyph("success") + " runnable"}
+      <DetailColumn fill>
+        <scrollbox
+          ref={(el: ScrollBoxRenderable) => {
+            editorScrollEl = el;
+            if (overviewScrollTop > 0) {
+              const restore = (): void => {
+                el.scrollTop = overviewScrollTop;
+              };
+              host.interaction.renderer.once("frame", restore);
+              onCleanup(() => host.interaction.renderer.off("frame", restore));
+            }
+          }}
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={0}
+          verticalScrollbarOptions={scrollbarOptions()}
+        >
+          <For each={agentSettings()}>
+            {(setting, index) => (
+              <>
+                <Show when={index() === 0 || index() === 2 || index() === 5}>
+                  <DetailHeading>
+                    {index() === 0
+                      ? "Identity"
+                      : index() === 2
+                        ? "Permissions and delegation"
+                        : "Execution"}
+                  </DetailHeading>
+                </Show>
+                <SelectableRow id={`agent-field-${index()}`} selected={row() === index()}>
+                  <span style={{ fg: tokens.fg }}>{setting.label}</span>
+                  <span style={{ fg: tokens.muted }}>{"  " + compactValue(setting, index())}</span>
+                </SelectableRow>
+              </>
+            )}
+          </For>
+          <For each={ctrl.draftIssues()}>
+            {(issue) => (
+              <text fg={tone(issue.level).fg} wrapMode="word">
+                {issue.message}
               </text>
-            </Show>
-            <For each={issues.slice(0, 3)}>
-              {(issue) => (
-                <text flexShrink={0} fg={tone(issue.level).fg}>
-                  {"  " + tone(issue.level).glyph + " " + issue.message}
-                </text>
-              )}
-            </For>
-            <Show when={issues.length > 3}>
-              <text flexShrink={0} fg={tokens.muted}>
-                {`  (+${issues.length - 3} more)`}
-              </text>
-            </Show>
-          </box>
-        </box>
-      </scrollbox>
+            )}
+          </For>
+          <Show
+            when={knownToLackReasoning(
+              configuredModelCapabilities(
+                settings.effective().providers ?? [],
+                ctrl.draft()?.frontmatter.model,
+              ),
+            )}
+          >
+            <text fg={tokens.warn} wrapMode="word">
+              This model's catalog entry does not declare reasoning support
+            </text>
+          </Show>
+        </scrollbox>
+      </DetailColumn>
     );
   }
 
   function sharedEditorBody(): JSX.Element {
     const view = shared();
-    if (view === null) return <Dash />;
-    const scope = host.scope();
-    const layer = scope === "workspace" ? view.layers.workspace : view.layers.global;
-    const path = scope === "workspace" ? view.paths.workspace : view.paths.global;
-    const status = layer?.status ?? "inherited";
-    const origin = view.source === "disabled" ? "disabled" : view.source;
+    if (!view) return <Dash />;
+    const layer = host.scope() === "workspace" ? view.layers.workspace : view.layers.global;
     return (
-      <box flexDirection="column">
-        <SectionHeader label="Shared prompt" />
-        <SettingRow
-          id="shared-origin"
-          setting={{
-            label: "Origin",
-            configured: origin,
-            effective: origin,
-            source: path ?? "builtin",
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected
-          expanded
-        />
-        <SettingRow
-          id="shared-status"
-          setting={{
-            label: "Status",
-            configured: status,
-            effective: layer?.reason ?? status,
-            source: path ?? "builtin",
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={false}
-          expanded={status === "rejected"}
-        />
-        <Show when={view.prompt}>
-          <text fg={tokens.muted} wrapMode="word" paddingLeft={4}>
-            {view.prompt}
+      <DetailColumn>
+        <DetailTitle>Shared prompt</DetailTitle>
+        <text fg={tokens.muted}>{"Origin: " + view.source}</text>
+        <SelectableRow selected>
+          <span style={{ fg: tokens.fg }}>Prompt</span>
+          <span style={{ fg: tokens.muted }}>{view.prompt ? "  view / edit" : "  not set"}</span>
+        </SelectableRow>
+        <Show when={layer?.status === "rejected"}>
+          <text fg={tokens.del} wrapMode="word">
+            {layer?.reason ?? "override rejected"}
           </text>
         </Show>
-        <Show when={status === "rejected" && layer?.reason}>
-          <text fg={tokens.del} wrapMode="word" paddingLeft={4}>
-            {layer?.reason}
-          </text>
-        </Show>
-      </box>
+      </DetailColumn>
+    );
+  }
+
+  function detailBody(): JSX.Element {
+    const setting = selectedSetting();
+    const view = shared();
+    const path = host.scope() === "workspace" ? view?.paths.workspace : view?.paths.global;
+    const layer = host.scope() === "workspace" ? view?.layers.workspace : view?.layers.global;
+    return (
+      <DetailColumn fill>
+        <scrollbox
+          ref={(el: ScrollBoxRenderable) => (detailScrollEl = el)}
+          flexGrow={1}
+          flexShrink={1}
+          minHeight={0}
+          verticalScrollbarOptions={scrollbarOptions()}
+        >
+          <Show
+            when={detailKind() === "content"}
+            fallback={
+              <Show
+                when={sharedOpen()}
+                fallback={
+                  <>
+                    <DetailTitle>{setting?.label ?? "Details"}</DetailTitle>
+                    <Show when={setting?.configured !== setting?.effective}>
+                      <text fg={tokens.muted} wrapMode="word">
+                        {"Configured: " + setting?.configured}
+                      </text>
+                    </Show>
+                    <text fg={tokens.fg} wrapMode="word">
+                      {"Effective: " + setting?.effective}
+                    </text>
+                    <text fg={tokens.muted} wrapMode="word">
+                      {"Source: " + setting?.source}
+                    </text>
+                    <text fg={tokens.muted}>{"Applies: " + setting?.applies}</text>
+                  </>
+                }
+              >
+                <DetailTitle>Shared prompt</DetailTitle>
+                <text fg={tokens.fg}>{"Effective source: " + view?.source}</text>
+                <text fg={tokens.muted}>{"Local override: " + (layer?.status ?? "inherited")}</text>
+                <Show when={path}>
+                  <text fg={tokens.muted} wrapMode="word">
+                    {"Save location: " + path}
+                  </text>
+                </Show>
+                <text fg={tokens.muted}>Applies: next run</text>
+                <Show when={layer?.reason}>
+                  <text fg={tokens.del} wrapMode="word">
+                    {layer?.reason}
+                  </text>
+                </Show>
+              </Show>
+            }
+          >
+            <DetailTitle>
+              {sharedOpen() ? "Shared prompt" : (setting?.label ?? "Content")}
+            </DetailTitle>
+            <text fg={tokens.fg} wrapMode="word">
+              {fieldContent() || "Not set"}
+            </text>
+          </Show>
+        </scrollbox>
+      </DetailColumn>
     );
   }
 
@@ -1007,6 +1004,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
       levels={[
         { title: "Agents", body: listBody },
         { title: "Agents", body: () => (sharedOpen() ? sharedEditorBody() : editorBody()) },
+        { title: "Agents", body: detailBody },
       ]}
     />
   );

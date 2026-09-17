@@ -136,8 +136,8 @@ test("compactKey: normalizes every modifier spelling to the compact form", () =>
   expect(compactKey("super+s")).toBe("super+s");
   expect(compactKey("super+s", { clientPlatform: "macos" })).toBe("cmd+s");
   expect(compactKey("meta+s", { clientPlatform: "macos" })).toBe("opt+s");
-  expect(compactKey("ctrl+up")).toBe("ctrl+up");
-  expect(compactKey("ctrl+down")).toBe("ctrl+down");
+  expect(compactKey("ctrl+up")).toBe("^up");
+  expect(compactKey("ctrl+down")).toBe("^down");
   expect(compactKey("ctrl+down")).not.toBe(compactKey("ctrl+v"));
   expect(compactKey("return")).toBe(glyph("return"));
   expect(compactKey("kpenter")).toBe(glyph("return"));
@@ -152,6 +152,8 @@ test("compactKey: already-compact labels pass through unchanged (surfaces can re
   for (const label of [
     "alt+r",
     "^o",
+    "^up",
+    "^down",
     "esc",
     "pgup",
     glyph("return"),

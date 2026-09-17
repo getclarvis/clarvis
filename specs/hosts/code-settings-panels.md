@@ -147,8 +147,11 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `updates` | Updates | `updates.open` |
 | `controls` | Run controls | `controls.open` |
 
-The Agents panel lists Shared prompt ahead of agent rows: effective source, inherited/active/rejected
-status, preview, global or workspace edit, disable, and reset that deletes the scoped file. Opening a
+The Agents panel lists Shared prompt ahead of agent rows. Its overview shows the effective origin
+once and a stable `view / edit` prompt row; full prose opens in a separate scrollable level before
+editing. `i` opens provenance, with one scoped save path explicitly labeled as the save location,
+not the effective origin. Rejected overrides retain their reason. Disable and restore operate on
+the selected global/workspace scope; restore deletes the scoped file. Opening a
 scope with no override starts from the current effective prompt with `mode: replace`; cancel does not
 write. See [`agent-system-prompt.md`](../engine/agent-system-prompt.md). Production:
 `packages/code/src/views/config/AgentsPanel.tsx`. Test:

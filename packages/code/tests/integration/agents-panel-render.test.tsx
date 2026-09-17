@@ -71,9 +71,9 @@ function fakeAgentsStore(seed: AgentFile[]): FakeAgentsStore {
       paths: { global: "/fake/shared-agent.md" },
       layers: { global: { exists: false, status: "inherited" } },
     }),
-    writeSharedPrompt: async () => ({
-      source: "global",
-      prompt: "custom",
+    writeSharedPrompt: async (_scope, input) => ({
+      source: input.mode === "disabled" ? "disabled" : "global",
+      prompt: input.mode === "disabled" ? "" : input.body,
       diagnostics: [],
       paths: { global: "/fake/shared-agent.md" },
       layers: { global: { exists: true, status: "active" } },
@@ -327,8 +327,11 @@ test("a rejected shared prompt reports its layer reason in the list", async () =
   expect(rendered.captureCharFrame()).toContain("override too large");
 
   mounted.press("return");
-  await renderUntil(rendered, () => rendered.captureCharFrame().includes("Status"));
-  expect(rendered.captureCharFrame()).toContain("/fake/shared-agent.md");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("Origin:"));
+  expect(rendered.captureCharFrame()).not.toContain("/fake/shared-agent.md");
+  mounted.press("i");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame().split("/fake/shared-agent.md").length - 1).toBe(1);
   expect(rendered.captureCharFrame()).toContain("override too large");
 });
 
@@ -343,7 +346,7 @@ test("a shared prompt load failure is surfaced as an error notification", async 
   expect(mounted.notes).toContain("shared prompt unavailable");
 });
 
-test("opening Shared prompt shows origin, preview, disable and reset", async () => {
+test("Shared prompt separates overview, content, details and mutations", async () => {
   const mounted = mount(fixtureAgents());
   const rendered = await renderPanel(mounted, 30);
   await rendered.renderOnce();
@@ -354,34 +357,40 @@ test("opening Shared prompt shows origin, preview, disable and reset", async () 
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Origin");
   expect(frame).toContain("builtin");
-  expect(frame).toContain("# How you work");
+  expect(frame).not.toContain("# How you work");
+  expect(frame).toContain("view / edit");
   expect(frame).toContain("[d] disable");
-  expect(frame).toContain("[x] clear");
+  expect(frame).toContain("[x] restore");
 
   mounted.press("d");
-  await renderUntil(rendered, () => rendered.captureCharFrame().includes("custom"));
-  expect(rendered.captureCharFrame()).toContain("custom");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("Origin: disabled"));
+  expect(rendered.captureCharFrame()).toContain("Origin: disabled");
 
   mounted.press("x");
-  await renderUntil(rendered, () => rendered.captureCharFrame().includes("# How you work"));
-  expect(rendered.captureCharFrame()).toContain("# How you work");
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("builtin"));
 
   mounted.press("return");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).not.toContain("[^s] apply");
+  mounted.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("[^s] apply");
   await rendered.mockInput.typeText("\nKeep the scope explicit.");
   mounted.press("ctrl+s");
-  await renderUntil(rendered, () => rendered.captureCharFrame().includes("custom"));
-  expect(rendered.captureCharFrame()).toContain("custom");
+  await renderUntil(rendered, () =>
+    rendered.captureCharFrame().includes("Keep the scope explicit."),
+  );
+  expect(rendered.captureCharFrame()).toContain("Keep the scope explicit.");
 });
 
-test("L0 lists agents under a labeled column header with blockers anchored below", async () => {
+test("L0 lists concise profiles with blockers anchored below", async () => {
   const mounted = mount(fixtureAgents());
   const rendered = await renderPanel(mounted, 30);
   await rendered.renderOnce();
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
-  expect(frame).toMatch(/role\s+name\s+grants\s+model\s+iters\s+ok\s+scope/);
+  expect(frame).toContain("Profiles");
+  expect(frame).not.toContain("iters");
   expect(frame).toContain("Lead");
   expect(frame).toContain("Sub-agent");
   expect(frame).toContain("undeclared provider 'ghost'");
@@ -389,7 +398,7 @@ test("L0 lists agents under a labeled column header with blockers anchored below
   expect(frame).toContain("[r] rename");
   const rows = frame.split("\n");
   const builder = rows.findIndex((row) => row.includes("builder"));
-  expect(rows[builder - 1]).toContain("name");
+  expect(rows[builder - 1]).toContain("Profiles");
   expect(rows[builder + 1]).toContain("finder");
   expect(rows[builder + 2]).toContain("undeclared provider 'ghost'");
 
@@ -413,7 +422,8 @@ test("L1 groups fields and exposes the grants tier", async () => {
   expect(frame).toContain("Permissions and delegation");
   expect(frame).toContain("Execution");
   expect(frame).toContain("Permissions  edit effective · exec configured · 2 grants");
-  expect(frame.split("Builds things").length - 1).toBe(1);
+  expect(frame).not.toContain("Builds things");
+  expect(frame).not.toContain("Configured here");
 });
 
 test("L1 scrolls without description/model overlap at 80x24", async () => {
@@ -433,7 +443,7 @@ test("L1 scrolls without description/model overlap at 80x24", async () => {
   expect(rendered.captureCharFrame()).toContain("Instructions");
 });
 
-test("base_prompt opens the multiline editor", async () => {
+test("base_prompt opens a reader before the multiline editor", async () => {
   const initial = fixtureAgents();
   initial[0] = { ...initial[0]!, body: "line one\nline two" };
   const mounted = mount(initial);
@@ -443,6 +453,9 @@ test("base_prompt opens the multiline editor", async () => {
   await rendered.renderOnce();
   for (let index = 0; index < 7; index++) mounted.press("down");
   mounted.press("return");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).not.toContain("[^s] apply");
+  mounted.press("e");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("[^s] apply");
   expect(rendered.captureCharFrame()).toContain("line one");
@@ -483,6 +496,9 @@ test("the grants picker exposes the workflow grant", async () => {
   expect(rendered.captureCharFrame()).toContain("run_leader tool (entry agent)");
   mounted.press("return");
   mounted.press("escape");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toContain("3 grants");
+  mounted.press("i");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("+ workflow");
 });
@@ -547,7 +563,9 @@ test("the scope picker opens the selected physical copy", async () => {
   await rendered.renderOnce();
   mounted.press("down");
   mounted.press("return");
-  await renderUntil(rendered, () => rendered.captureCharFrame().includes("Workspace reviewer"));
+  await renderUntil(rendered, () => rendered.captureCharFrame().includes("view / edit"));
+  mounted.press("return");
+  await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("Workspace reviewer");
   expect(rendered.captureCharFrame()).not.toContain("Global reviewer");
 });
@@ -608,8 +626,11 @@ test("opening another agent while dirty asks before changing focus", async () =>
   mounted.press("return");
   mounted.press("return");
   await rendered.renderOnce();
+  mounted.press("e");
+  await rendered.renderOnce();
   await rendered.mockInput.typeText(" (edited)");
-  mounted.press("return");
+  mounted.press("ctrl+s");
+  mounted.host.level.pop();
   mounted.host.level.pop();
   mounted.press("down");
   mounted.press("return");
@@ -617,7 +638,8 @@ test("opening another agent while dirty asks before changing focus", async () =>
   expect(rendered.captureCharFrame()).toContain("discard them?");
   mounted.press("y");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Reads the repo");
+  expect(rendered.captureCharFrame()).toContain("finder");
+  expect(rendered.captureCharFrame()).toContain("view / edit");
 });
 
 test("model and default_spawn rows open their dedicated pickers", async () => {
@@ -652,7 +674,7 @@ test("model and default_spawn rows open their dedicated pickers", async () => {
   expect(second.captureCharFrame()).toMatch(/Default delegate\s+Choose when delegating/);
 });
 
-test("invalid and runnable agents expose their representative status rows", async () => {
+test("invalid agents show diagnostics while runnable agents stay quiet", async () => {
   const mounted = mount(fixtureAgentsExtra(), {
     providers: [{ name: "openrouter", models: { "glm-5.2": {} } }],
   });
@@ -669,7 +691,7 @@ test("invalid and runnable agents expose their representative status rows", asyn
   const rows = rendered.captureCharFrame().split("\n");
   const ready = rows.findIndex((row) => row.includes("ready"));
   expect(ready).toBeGreaterThanOrEqual(0);
-  expect(rows[ready + 1]).toContain("runnable");
+  expect(rendered.captureCharFrame()).not.toContain("runnable");
 });
 
 /**
@@ -735,4 +757,85 @@ test("a shipped agent open in the editor declines the rename there too", async (
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).not.toContain("rename 'marshall' to");
   expect(mounted.notes.some((n) => n.includes("fork it under a new name instead"))).toBe(true);
+});
+
+test("long description and instructions never expand when navigating and return preserves focus", async () => {
+  const initial = fixtureAgents();
+  initial[0]!.frontmatter.description = "Long description. ".repeat(100);
+  initial[0]!.body = "Long instruction. ".repeat(100);
+  const mounted = mount(initial);
+  const rendered = await renderPanel(mounted, 28, 70);
+  await rendered.renderOnce();
+  mounted.press("return");
+  await rendered.renderOnce();
+  const positions = () =>
+    rendered
+      .captureCharFrame()
+      .split("\n")
+      .flatMap((line, index) =>
+        /Description|Sub-agent model|Permissions {2}|Can delegate to|Default delegate|Iteration limit|Sub-agent effort|Instructions/.test(
+          line,
+        )
+          ? [index]
+          : [],
+      );
+  const before = positions();
+  for (let i = 0; i < 8; i++) {
+    expect(positions()).toEqual(before);
+    expect(rendered.captureCharFrame()).not.toContain("Long description.");
+    expect(rendered.captureCharFrame()).not.toContain("Long instruction.");
+    mounted.press("down");
+    await rendered.renderOnce();
+  }
+  mounted.press("return");
+  await rendered.renderOnce();
+  expect(mounted.host.level.depth()).toBe(2);
+  expect(rendered.captureCharFrame()).toContain("Long instruction.");
+  mounted.controls.escape();
+  await rendered.renderOnce();
+  expect(mounted.host.level.depth()).toBe(1);
+  expect(rendered.captureCharFrame()).toMatch(/▸ Instructions/);
+  expect(positions()).toEqual(before);
+});
+
+test("empty prose opens editing directly and cancel leaves the draft unchanged", async () => {
+  const mounted = mount([agent("empty")]);
+  const rendered = await renderPanel(mounted, 28);
+  await rendered.renderOnce();
+  mounted.press("return");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toMatch(/Description\s+not set/);
+  mounted.press("return");
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toContain("[^s] apply");
+  await rendered.mockInput.typeText("Unsaved prose");
+  mounted.press("escape");
+  await rendered.renderOnce();
+  expect(mounted.host.dirty()).toBe(false);
+  expect(rendered.captureCharFrame()).toMatch(/Description\s+not set/);
+});
+
+test("returning from details restores the overview scroll position in a short terminal", async () => {
+  const mounted = mount(fixtureAgents());
+  const rendered = await renderPanel(mounted, 12, 60);
+  await rendered.renderOnce();
+  mounted.press("return");
+  await rendered.renderOnce();
+  for (let i = 0; i < 7; i++) mounted.press("down");
+  await rendered.renderOnce();
+  const rowBefore = rendered
+    .captureCharFrame()
+    .split("\n")
+    .findIndex((line) => line.includes("Instructions"));
+  expect(rendered.captureCharFrame()).toContain("Instructions");
+  expect(rowBefore).toBeGreaterThan(0);
+  mounted.press("i");
+  await rendered.renderOnce();
+  expect(mounted.host.level.depth()).toBe(2);
+  mounted.controls.escape();
+  await rendered.renderOnce();
+  await renderUntil(rendered, () => /▸ Instructions/.test(rendered.captureCharFrame()));
+  const after = rendered.captureCharFrame();
+  expect(after).toMatch(/▸ Instructions/);
+  expect(after.split("\n").findIndex((line) => line.includes("Instructions"))).toBe(rowBefore);
 });

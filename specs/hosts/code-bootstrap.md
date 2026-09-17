@@ -1182,8 +1182,8 @@ reads `on`"). Five candidate chip sets are tried widest-first, and the first who
 
 | Rung | Chips                                                                           |
 | ---- | ------------------------------------------------------------------------------- |
-| 1    | `model.full`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}`  |
-| 2    | `model.short`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
+| 1    | `model.full`, `Isolation: {isolation}`, `Guard: {review}`, `Memory: {memory}`  |
+| 2    | `model.short`, `Isolation: {isolation}`, `Guard: {review}`, `Memory: {memory}` |
 | 3    | `model.short`, `Iso {isolation}`, `{review}`, `mem {memory}`                    |
 | 4    | `model.short`, `{isolation}`, `{review}`                                        |
 | 5    | `model.short`                                                                   |
@@ -1445,7 +1445,7 @@ context: the first live Plan reveals Plan, the first workflow state/leader revea
 first visible sub-agent reveals Agents. Each preserves `Lead transcript` selection and leaves
 `ActivityDetail` closed. An explicit close is sticky for later updates of the intent that opened the
 surface; the first event for a different section may still reveal it, and a new execution context
-may reveal each section once again. Automatic and explicit `Ctrl+L` intent both produce a split at
+may reveal each section once again. Automatic and explicit `Ctrl+S` intent both produce a split at
 ≥100 columns and a drawer below that threshold; while closed, and for every drawer presentation,
 `contentInset` stays 0. There is no stored sidebar preference or global toggle command.
 Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and

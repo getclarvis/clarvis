@@ -333,7 +333,7 @@ test("the review picker preserves saved approval while Container makes it inappl
   await rendered.renderOnce();
 
   const frame = rendered.captureCharFrame();
-  expect(frame).toContain("Select command review");
+  expect(frame).toContain("Select Guard");
   expect(frame).toContain("Not applicable in Container");
   expect(frame).toContain("uncertainty is denied by default");
 
@@ -342,8 +342,6 @@ test("the review picker preserves saved approval while Container makes it inappl
   await tick();
   expect(writes).toEqual([]);
   expect(modes).toEqual([]);
-  expect(notices).toEqual([
-    "Command Review is not applicable in Container. Use Isolation Sandbox or Host.",
-  ]);
+  expect(notices).toEqual(["Guard is not applicable in Container. Use Isolation Sandbox or Host."]);
   rendered.renderer.destroy();
 });

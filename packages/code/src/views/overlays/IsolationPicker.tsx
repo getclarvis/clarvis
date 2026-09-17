@@ -29,7 +29,7 @@ interface PendingIsolation {
 type IsolationApplyState =
   { phase: "saving" | "reconnecting"; label: string } | { phase: "failed"; message: string };
 
-/** Quick picker for execution isolation; command review is intentionally separate. */
+/** Quick picker for execution isolation; Guard is intentionally separate. */
 export function IsolationPicker(props: {
   interaction: Interaction;
   settings: SettingsAdapter;

@@ -77,7 +77,7 @@ test("cold full-page and floating surfaces remain in lazy chunks", () => {
     { path: "chunk-storage.js", source: 'purpose: "Clarvis-owned local files"' },
     { path: "chunk-doctor.js", source: 'title: "Clarvis Doctor"' },
     { path: "chunk-isolation.js", source: 'title: "Select isolation"' },
-    { path: "chunk-review.js", source: 'title: "Select command review"' },
+    { path: "chunk-review.js", source: 'title: "Select Guard"' },
   ];
   expect(() =>
     assertLazySurfaceArtifact({ entrySource: "const boot = true", javascriptChunks }),

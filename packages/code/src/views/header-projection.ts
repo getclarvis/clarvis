@@ -152,13 +152,13 @@ function statusChips(input: HeaderInput, room: number): HeaderField[] {
     [
       ["model", model.full],
       ["isolation", `Isolation: ${isolation}`],
-      ["review", `Review: ${review}`],
+      ["review", `Guard: ${review}`],
       ["memory", `Memory: ${memory}`],
     ],
     [
       ["model", model.short],
       ["isolation", `Isolation: ${isolation}`],
-      ["review", `Review: ${review}`],
+      ["review", `Guard: ${review}`],
       ["memory", `Memory: ${memory}`],
     ],
     [

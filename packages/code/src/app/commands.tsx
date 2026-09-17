@@ -338,6 +338,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   commands.registerAction({
     name: "agent.picker",
+    enabled: () => !deps.runActive(),
     title: "Switch agent",
     desc: "Pick the active agent",
     slash: "/agent",
@@ -358,6 +359,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   commands.registerAction({
     name: "isolation.picker",
+    enabled: () => !deps.runActive(),
     title: "Isolation",
     desc: "Choose Host, Sandbox, Docker or Podman isolation for the next run",
     surface: "internal",
@@ -371,12 +373,13 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
 
   commands.registerAction({
     name: "review.picker",
-    title: "Command review",
+    enabled: () => !deps.runActive(),
+    title: "Guard",
     desc: "Choose Off, Approval or Auto without changing isolation",
     surface: "internal",
     group: "navigate",
     actionSurfaces: ["footer", "full-help"],
-    footerLabel: "review",
+    footerLabel: "guard",
     hintPriority: 41,
     hintGroup: "navigation",
     run: () => effects.openReviewPicker(),
@@ -537,6 +540,30 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
                 },
               }),
           delete: deps.session.delete,
+        });
+    }),
+  });
+  commands.registerView({
+    name: "workflow.current",
+    title: "Current workflow",
+    desc: "Open the current workflow directly",
+    surface: "internal",
+    group: "navigate",
+    actionSurfaces: ["footer", "full-help"],
+    footerLabel: "open workflow",
+    hintPriority: 55,
+    hintGroup: "navigation",
+    enabled: () => deps.workflowActivity?.() != null,
+    view: lazyView(async () => {
+      const { WorkflowsHub } = await import("../views/cold-surfaces.ts");
+      return (host) =>
+        WorkflowsHub(host, {
+          list: () => deps.workflows.list(),
+          get: (id) => deps.workflows.get(id),
+          getRun: (id) => deps.getRun(id),
+          now: () => Date.now(),
+          initialExecutionId: deps.workflowActivity?.()?.root,
+          live: deps.workflowActivity,
         });
     }),
   });

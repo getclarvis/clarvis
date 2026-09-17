@@ -49,9 +49,7 @@ export function isolationConfirmation(
   return {
     message: "Run agent tools directly on this host?",
     danger: true,
-    detail: [
-      "Command Review remains a separate control and does not create a containment boundary.",
-    ],
+    detail: ["Guard remains a separate control and does not create a containment boundary."],
     confirmLabel: "use host",
     cancelLabel: "keep isolation",
   };
@@ -82,7 +80,7 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
     case "host":
       return [
         "No containment boundary.",
-        "Command Review remains a separate control and does not create isolation.",
+        "Guard remains a separate control and does not create isolation.",
       ];
     case "sandbox":
       return [
@@ -94,7 +92,7 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
       return [
         "The full native Kernel runs inside Docker; Plans, Memory, Workflows and Goals remain available.",
         "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-        "Commands run without Command Review; workspace writes and outbound network remain enabled.",
+        "Commands run without Guard; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",
         "Docker is selected before connecting and fails closed if the engine cannot start.",
       ];
@@ -102,7 +100,7 @@ export function isolationPlacementLines(isolation: IsolationMode): string[] {
       return [
         "The full native Kernel runs inside Podman; Plans, Memory, Workflows and Goals remain available.",
         "Skills, MCPs, Hooks, Plugins, Tasks and external capability providers are unavailable.",
-        "Commands run without Command Review; workspace writes and outbound network remain enabled.",
+        "Commands run without Guard; workspace writes and outbound network remain enabled.",
         "Git metadata is read-only; use Sandbox or Host for commits.",
         "Podman is selected before connecting and fails closed if the engine cannot start.",
       ];

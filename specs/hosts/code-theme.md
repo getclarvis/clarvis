@@ -673,3 +673,49 @@ status line with `MEMORY_PRESSURE_STATUS_RESTORING` or `MEMORY_PRESSURE_STATUS_F
   where the regex matches at all, but no test asserts this for the HSL percentage path specifically.
 - Memory-pressure presentation is a footer status owned by `App` and
   `adapters/memory-pressure.ts`, not a themed banner in this file set.
+
+## Detail presentation
+
+Goal, Plan and Workflow detail screens share `DetailColumn` (100-cell maximum reading width),
+`DetailTitle` (`accent2`, bold, wrapping), `DetailHeading` (`accent`, one-row section spacing),
+and `detailStatusColor`. Running/completed use `add`, failure/cancellation use `del`, required
+attention uses `warn`, and paused/waiting use `muted`. Labels accompany colors. No screen owns
+a separate copy of this presentation policy.
+Production: `packages/code/src/ui/patterns/detail-view.tsx`, consumed by `GoalView`, `PlanDetail`
+and `WorkflowsHub` in `packages/code/src/features/goal/view.tsx`,
+`packages/code/src/views/overlays/PlanOverlay.tsx`, and
+`packages/code/src/views/config/WorkflowsHub.tsx`.
+Test: `packages/code/tests/integration/plan-overlay-render.test.tsx` (wide and narrow detail),
+`packages/code/tests/integration/goal-commands.test.tsx`, and
+`packages/code/tests/integration/workflows-hub-render.test.tsx`.
+
+
+Execution detail footers use `detailCloseActions` in
+[detail-view.tsx](../../packages/code/src/ui/patterns/detail-view.tsx): Plan, Goal and direct Workflow
+roots group Escape with their own toggle key under the lowercase `close` label. Nested workflow
+pages retain a distinct Escape `back` action and Ctrl+W `close`. Close actions share the escape
+group, priority and essential width-budget treatment. Plan uses the same footer filtering as the
+Goal and Workflow frames, omitting the global cancel/quit hint without disabling Ctrl+C.
+Production: `detailCloseActions`, `registerLevel` in
+[level-keys.ts](../../packages/code/src/ui/patterns/level-keys.ts), and `PlanOverlay` in
+[PlanOverlay.tsx](../../packages/code/src/views/overlays/PlanOverlay.tsx).
+Test: [level-footer-projection.test.ts](../../packages/code/tests/integration/level-footer-projection.test.ts)
+checks grouped aliases, escape metadata, narrow budgets and separate nested navigation;
+[plan-overlay-render.test.tsx](../../packages/code/tests/integration/plan-overlay-render.test.tsx)
+checks close and Ctrl+C behavior.
+
+
+Footer labels are lowercase at the shared `actionSegment` formatting boundary, including composer
+commands; full Help and screen titles retain their original casing.
+Production: [active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts), `actionSegment`.
+Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), lowercase footer
+labels without changing Help titles.
+
+Agents uses the same `DetailColumn`, `DetailTitle` and `DetailHeading` primitives for overview,
+prose and provenance pages. Its single-line `SelectableRow` entries do not expand on focus;
+configuration details open on demand. Routine runnable status is omitted; warnings and errors
+retain semantic colors. The shared `SettingRow` used by other settings panels is unchanged.
+Production: [AgentsPanel.tsx](../../packages/code/src/views/config/AgentsPanel.tsx)
+(`editorBody`, `sharedEditorBody`, `detailBody`).
+Test: [agents-panel-render.test.tsx](../../packages/code/tests/integration/agents-panel-render.test.tsx)
+(long prose navigation and narrow overview).

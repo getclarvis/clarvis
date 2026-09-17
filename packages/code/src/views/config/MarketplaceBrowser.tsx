@@ -16,6 +16,7 @@ import { tone } from "../../theme/tone.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
 import { clampListIndex } from "../../ui/patterns/list-navigation.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
+import { DetailColumn, DetailTitle, DetailHeading } from "../../ui/patterns/detail-view.tsx";
 import { StableWindowedList } from "../../ui/patterns/windowed-list.tsx";
 import { formatElapsed, spinnerChar, tickNow, useSpinnerClock } from "../spinner.ts";
 import {
@@ -24,7 +25,6 @@ import {
   EmptyHint,
   ErrorBanner,
   LoadingHint,
-  SectionHeader,
   SelectableRow,
   ViewFrame,
 } from "./view-host.tsx";
@@ -83,13 +83,16 @@ function rowTone(row: MarketplaceRow): "ok" | "error" | "warn" | "pending" {
   return row.plugin.enabled ? "ok" : "pending";
 }
 
-function rowLifecycle(row: MarketplaceRow): string {
-  if (row.kind === "listing") return `Available ${glyph("separator")} ${row.listing.marketplace}`;
+function rowLifecycle(row: MarketplaceRow, showMarketplace: boolean): string {
+  if (row.kind === "listing") return showMarketplace ? row.listing.marketplace : "";
   if (row.plugin.error !== undefined)
     return `Unavailable ${glyph("separator")} ${pluginId(row.plugin)}`;
-  return row.plugin.enabled
-    ? `Active ${glyph("separator")} current Extension Profile`
-    : `Installed ${glyph("separator")} not in current Extension Profile`;
+  return row.plugin.enabled ? "Active" : "Installed";
+}
+
+function readableStatus(value: string): string {
+  const text = value.replaceAll("_", " ").toLowerCase();
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function contributionSummary(plugin: PluginView): string {
@@ -154,7 +157,11 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
   const [term, setTerm] = createSignal("");
   const [sel, setSel] = createSignal(0);
   const [collectionIndex, setCollectionIndex] = createSignal(0);
-  const [detailOpen, setDetailOpen] = createSignal(false);
+  const detailOpen = (): boolean => host.level.depth() > 0;
+  const setDetailOpen = (open: boolean): void => {
+    if (open && !detailOpen()) host.level.push("Details");
+    else if (!open && detailOpen()) host.level.pop();
+  };
   const [operation, setOperation] = createSignal<string>();
   const [operationStartedAt, setOperationStartedAt] = createSignal<number>();
   let detailScroll: ScrollBoxRenderable | undefined;
@@ -167,7 +174,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
       ...deps.plugins().map((plugin): MarketplaceRow => ({ kind: "plugin", plugin })),
       ...deps
         .listings()
-        .filter((listing) => !installedNames().has(listing.name))
+        .filter((listing) => listing.installable && !installedNames().has(listing.name))
         .map((listing): MarketplaceRow => ({ kind: "listing", listing })),
     ]),
   );
@@ -213,7 +220,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         .filter((plugin) => sourceNames.has(plugin.name))
         .map((plugin) => ({ kind: "plugin" as const, plugin })),
       ...sourceListings
-        .filter((listing) => !installedNames().has(listing.name))
+        .filter((listing) => listing.installable && !installedNames().has(listing.name))
         .map((listing) => ({ kind: "listing" as const, listing })),
     ]);
   });
@@ -221,6 +228,12 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
     const value = term().trim();
     return value === "" ? collectionRows() : fuzzyFilter(collectionRows(), value, haystack);
   });
+  const showMarketplace = createMemo(
+    () =>
+      currentCollection().kind === "all" &&
+      new Set(rows().flatMap((row) => (row.kind === "listing" ? [row.listing.marketplaceUrl] : [])))
+        .size > 1,
+  );
   const selected = (): MarketplaceRow | undefined => rows()[clampListIndex(sel(), rows().length)];
   const selectedPlugin = (): PluginView | undefined => {
     const row = selected();
@@ -235,7 +248,10 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
   const collectionWindow = createMemo(() => {
     const all = collections();
     const current = clampListIndex(collectionIndex(), all.length);
-    const slots = Math.max(3, Math.min(all.length, Math.floor((dimensions().width - 12) / 18)));
+    const slots = Math.max(
+      3,
+      Math.min(all.length, Math.floor((Math.min(100, dimensions().width) - 12) / 18)),
+    );
     const start = Math.max(0, Math.min(current - Math.floor(slots / 2), all.length - slots));
     return {
       before: start,
@@ -445,7 +461,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             when: () => selectedPlugin() !== undefined && operation() === undefined,
           },
         ],
-        escape: { label: "back to plugins", run: () => setDetailOpen(false) },
+        escape: { label: "back", run: () => setDetailOpen(false) },
       };
     }
     return {
@@ -455,7 +471,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         setIndex: setSel,
         lettersNav: false,
         activate: {
-          label: "view details",
+          label: "open",
           run: openPrimary,
           when: () => selected() !== undefined && operation() === undefined,
         },
@@ -492,7 +508,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         {
           id: "marketplace.search",
           key: "/",
-          label: "search collection",
+          label: "search",
           run: search,
           when: () => currentCollection().kind !== "add",
           hintGroup: "navigation",
@@ -605,7 +621,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
                   </span>
                   <span style={{ fg: tokens.fg }}>{row() ? displayName(row()!) : ""}</span>
                   <span style={{ fg: tokens.muted }}>
-                    {row() ? `  ${rowLifecycle(row()!)}` : ""}
+                    {row() ? `  ${rowLifecycle(row()!, showMarketplace())}` : ""}
                   </span>
                 </SelectableRow>
               );
@@ -634,9 +650,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
     const contributions = plugin.contributions;
     return (
       <box flexDirection="column">
-        <text fg={tokens.accent} wrapMode="word">
-          <b>{plugin.displayName ?? plugin.name}</b>
-        </text>
+        <DetailTitle>{plugin.displayName ?? plugin.name}</DetailTitle>
         <text fg={tokens.fg} wrapMode="word">
           {plugin.shortDescription ?? plugin.description ?? "Installed plugin"}
         </text>
@@ -645,7 +659,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             {plugin.description}
           </text>
         </Show>
-        <SectionHeader label="Extension Profile" />
+        <DetailHeading>Extension Profile</DetailHeading>
         <text
           fg={plugin.error ? tokens.del : plugin.enabled ? tokens.add : tokens.warn}
           wrapMode="word"
@@ -678,7 +692,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             plugin.repository
           }
         >
-          <SectionHeader label="Publisher" />
+          <DetailHeading>Publisher</DetailHeading>
           <Show when={plugin.author}>
             {(author: Accessor<NonNullable<PluginView["author"]>>) => (
               <>
@@ -724,7 +738,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             plugin.defaultPrompt?.[0]
           }
         >
-          <SectionHeader label="Presentation" />
+          <DetailHeading>Presentation</DetailHeading>
           <Show when={plugin.category}>
             <text fg={tokens.muted}>{`category   ${plugin.category}`}</text>
           </Show>
@@ -762,7 +776,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             {(prompt) => <text fg={tokens.muted} wrapMode="word">{`prompt     ${prompt}`}</text>}
           </For>
         </Show>
-        <SectionHeader label="Capabilities" />
+        <DetailHeading>Capabilities</DetailHeading>
         <text fg={tokens.muted}>{contributionSummary(plugin)}</text>
         <For each={contributions.agents}>
           {(name) => <text fg={tokens.warn}>{`agent      ${name}`}</text>}
@@ -791,12 +805,12 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             >{`policy     /${policy.skill} ${glyph("arrowRight")} plans:${policy.mode}`}</text>
           )}
         </For>
-        <SectionHeader label="Security" />
+        <DetailHeading>Security</DetailHeading>
         <text fg={tokens.muted}>{`hooks      ${contributions.hooks} active with this plugin`}</text>
         <For each={contributions.executables}>
           {(command) => <text fg={tokens.warn} wrapMode="word">{`executes   ${command}`}</text>}
         </For>
-        <SectionHeader label="Source" />
+        <DetailHeading>Source</DetailHeading>
         <Show when={plugin.installSource}>
           <text fg={tokens.muted} wrapMode="word">{`origin     ${plugin.installSource}`}</text>
         </Show>
@@ -814,13 +828,11 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
   function listingDetail(listing: MarketplaceListing): JSX.Element {
     return (
       <box flexDirection="column">
-        <text fg={tokens.accent} wrapMode="word">
-          <b>{listing.displayName ?? listing.name}</b>
-        </text>
+        <DetailTitle>{listing.displayName ?? listing.name}</DetailTitle>
         <text fg={tokens.fg} wrapMode="word">
           {listing.description}
         </text>
-        <SectionHeader label="Install" />
+        <DetailHeading>Install</DetailHeading>
         <text fg={listing.installable ? tokens.accent2 : tokens.muted} wrapMode="word">
           {listing.installable
             ? `Enter installs the plugin and adds it to ${deps.extensionProfile() ?? "the current Extension Profile"}.`
@@ -830,19 +842,25 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
           Installation approves the complete plugin: agents, skills, MCP servers, hooks and
           services.
         </text>
-        <SectionHeader label="Source" />
-        <text fg={tokens.muted} wrapMode="word">{`marketplace  ${listing.marketplace}`}</text>
+        <DetailHeading>Source</DetailHeading>
+        <text fg={tokens.muted} wrapMode="word">{`Marketplace: ${listing.marketplace}`}</text>
         <text
           fg={tokens.muted}
           wrapMode="word"
-        >{`${listing.sourceType.padEnd(12)} ${listing.source}`}</text>
-        <text fg={tokens.muted}>{`installation ${listing.installation}`}</text>
-        <text fg={tokens.muted}>{`authentication ${listing.authentication}`}</text>
+        >{`Source (${listing.sourceType}): ${listing.source}`}</text>
+        <text
+          fg={tokens.muted}
+          wrapMode="word"
+        >{`Installation: ${readableStatus(listing.installation)}`}</text>
+        <text
+          fg={tokens.muted}
+          wrapMode="word"
+        >{`Authentication: ${readableStatus(listing.authentication)}`}</text>
         <Show when={listing.category}>
-          <text fg={tokens.muted}>{`category     ${listing.category}`}</text>
+          <text fg={tokens.muted}>{`Category: ${listing.category}`}</text>
         </Show>
         <Show when={listing.homepage}>
-          <text fg={tokens.muted} wrapMode="word">{`homepage     ${listing.homepage}`}</text>
+          <text fg={tokens.muted} wrapMode="word">{`Homepage: ${listing.homepage}`}</text>
         </Show>
         <For each={listing.notes}>
           {(note) => <text fg={tokens.warn} wrapMode="word">{`${glyph("warning")} ${note}`}</text>}
@@ -866,7 +884,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         <text fg={tokens.muted} wrapMode="word">
           Its plugins become available in this browser. Nothing is installed or activated yet.
         </text>
-        <SectionHeader label="Expected content" />
+        <DetailHeading>Expected content</DetailHeading>
         <text fg={tokens.muted} wrapMode="word">
           The repository must publish marketplace.json or .agents/marketplace.json.
         </text>
@@ -888,53 +906,47 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
   };
 
   return (
-    <ViewFrame
-      host={host}
-      title="Plugins"
-      unscoped
-      purpose="Browse marketplaces and compose the current Extension Profile"
-      mutationContract="Install approves the complete plugin and activates it in that Extension Profile"
-      footerStatus={footerStatus}
-    >
-      <Show when={currentSourceError()}>
-        <ErrorBanner
-          text={`${currentSourceError()!.url}: ${currentSourceError()!.error ?? "unknown source error"}`}
-        />
-      </Show>
-      <text fg={tokens.muted} flexShrink={0} wrapMode="none" truncate>
-        {`${activeCount()} active ${glyph("separator")} ${deps.plugins().length} installed ${glyph("separator")} ${available()} available ${glyph("separator")} Extension Profile ${deps.extensionProfile() ?? "loading"}`}
-      </text>
-      {collectionBar()}
-      <Show when={currentCollection().kind !== "add"}>
-        <text
-          fg={term() === "" ? tokens.muted : tokens.accent2}
-          flexShrink={0}
-          wrapMode="none"
-          truncate
+    <ViewFrame host={host} title="Plugins" unscoped footerStatus={footerStatus}>
+      <DetailColumn fill>
+        <Show when={currentSourceError()}>
+          <ErrorBanner
+            text={`${currentSourceError()!.url}: ${currentSourceError()!.error ?? "unknown source error"}`}
+          />
+        </Show>
+        <Show when={!detailOpen()}>
+          <text fg={tokens.muted} flexShrink={0} wrapMode="word">
+            {`${activeCount()} active ${glyph("separator")} ${deps.plugins().length} installed ${glyph("separator")} ${available()} available`}
+          </text>
+          <box flexShrink={0} marginTop={1} marginBottom={1}>
+            {collectionBar()}
+          </box>
+        </Show>
+        <Show when={!detailOpen() && currentCollection().kind !== "add" && term() !== ""}>
+          <text
+            fg={term() === "" ? tokens.muted : tokens.accent2}
+            flexShrink={0}
+            wrapMode="none"
+            truncate
+          >
+            {`Search: ${term()}`}
+          </text>
+        </Show>
+        <Show
+          when={detailOpen()}
+          fallback={currentCollection().kind === "add" ? addMarketplaceView() : list()}
         >
-          {term() === "" ? "/ Search this collection" : `/ ${term()}`}
-        </text>
-      </Show>
-      <Show when={!detailOpen() && currentCollection().kind !== "add" && selected()}>
-        <text fg={tokens.accent2} flexShrink={0}>
-          {`Enter ${glyph("arrowRight")} view plugin details`}
-        </text>
-      </Show>
-      <Show
-        when={detailOpen()}
-        fallback={currentCollection().kind === "add" ? addMarketplaceView() : list()}
-      >
-        <scrollbox
-          ref={(element: ScrollBoxRenderable) => (detailScroll = element)}
-          flexGrow={1}
-          minHeight={0}
-          verticalScrollbarOptions={scrollbarOptions()}
-        >
-          {detail()}
-        </scrollbox>
-      </Show>
-      <Show when={editor.editing()}>{editor.EditInput()}</Show>
-      {editor.PickerInput()}
+          <scrollbox
+            ref={(element: ScrollBoxRenderable) => (detailScroll = element)}
+            flexGrow={1}
+            minHeight={0}
+            verticalScrollbarOptions={scrollbarOptions()}
+          >
+            {detail()}
+          </scrollbox>
+        </Show>
+        <Show when={editor.editing()}>{editor.EditInput()}</Show>
+        {editor.PickerInput()}
+      </DetailColumn>
     </ViewFrame>
   );
 }

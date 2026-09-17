@@ -11,6 +11,8 @@ export interface ActiveAction {
   description: string;
   category: string;
   keys: string[];
+  /** Distinct directional actions grouped only for footer presentation. */
+  keyGroups?: string[][];
   surfaces: ActionSurface[];
   footerLabel: string;
   hintPriority: number;
@@ -74,7 +76,9 @@ export function projectActiveActions(
 
 /** A complete footer unit; key and label are never truncated independently. */
 export function actionSegment(action: ActiveAction): string {
-  return `[${action.keys.join("/")}] ${action.footerLabel}`;
+  const keys =
+    action.keyGroups?.map((group) => group.join("/")).join(" / ") ?? action.keys.join("/");
+  return `[${keys}] ${action.footerLabel.toLowerCase()}`;
 }
 
 /**
@@ -166,7 +170,23 @@ export function budgetFooterActions(
   measure: (value: string) => number = (value) => Bun.stringWidth(value),
 ): ActiveAction[] {
   if (width <= 0) return [];
-  const eligible = actions.filter((action) => action.surfaces.includes("footer"));
+  let eligible = actions.filter((action) => action.surfaces.includes("footer"));
+  const previous = eligible.find((action) => action.id === "transcript.focusPrev");
+  const next = eligible.find((action) => action.id === "transcript.focusNext");
+  if (previous && next) {
+    eligible = eligible
+      .filter((action) => action !== next)
+      .map((action) =>
+        action === previous
+          ? {
+              ...previous,
+              keys: [...previous.keys, ...next.keys],
+              keyGroups: [previous.keys, next.keys],
+              footerLabel: "previous / next block",
+            }
+          : action,
+      );
+  }
   const limit = tierLimit(width);
   const fits = (next: readonly ActiveAction[]): boolean =>
     measure(next.map(actionSegment).join("  ")) <= Math.max(0, width - 2);

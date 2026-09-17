@@ -112,7 +112,7 @@ function appendValue(lines: string[], value: unknown, level: number, seen: WeakS
  * line.
  */
 export function formatStructuredWorkflowResult(value: object): string {
-  const lines = ["**Structured result**", ""];
+  const lines: string[] = [];
   appendValue(lines, value, 2, new WeakSet());
   return lines
     .join("\n")

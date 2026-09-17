@@ -2,6 +2,12 @@ import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import type { GoalControlAction, GoalRecord, GoalStewardReview } from "@clarvis/protocol";
 import type { ViewHost } from "../../keys/commands.ts";
+import {
+  detailCloseActions,
+  DetailColumn,
+  DetailTitle,
+  DetailHeading,
+} from "../../ui/patterns/detail-view.tsx";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { scrollbarOptions } from "../../theme/surfaces.ts";
@@ -132,15 +138,11 @@ export function GoalView(
       registerLevel(host.interaction.keymap, {
         enabled,
         scroll: () => scroll,
+        ...detailCloseActions("ctrl+o", () => host.close()),
         verbs: [
           {
-            key: "ctrl+o",
-            label: "close goal",
-            run: () => host.close(),
-          },
-          {
             key: "e",
-            label: "edit goal",
+            label: "edit",
             when: () => goals.available() && !goals.busy() && !physicallyBusy(),
             run: edit,
           },
@@ -168,7 +170,7 @@ export function GoalView(
           },
           {
             key: "c",
-            label: "cancel goal",
+            label: "cancel",
             when: () =>
               goal() !== undefined &&
               !["complete", "cancelled"].includes(goal()!.status) &&
@@ -177,7 +179,7 @@ export function GoalView(
           },
           {
             key: "d",
-            label: "archive goal",
+            label: "archive",
             when: () =>
               goal() !== undefined &&
               goal()?.status !== "active" &&
@@ -242,10 +244,8 @@ export function GoalView(
                 minHeight={0}
                 verticalScrollbarOptions={scrollbarOptions()}
               >
-                <box flexDirection="column" maxWidth={100}>
-                  <text fg={tokens.accent2} wrapMode="word">
-                    <b>{current().objective}</b>
-                  </text>
+                <DetailColumn>
+                  <DetailTitle>{current().objective}</DetailTitle>
                   <text marginTop={1} fg={goalStatusPresentation(current().status).color}>
                     {`${goalStatusPresentation(current().status).label} ${glyph("separator")} ${current().runs.length} stage${current().runs.length === 1 ? "" : "s"} ${glyph("separator")} ${current().origin.kind}`}
                   </text>
@@ -291,16 +291,12 @@ export function GoalView(
                   <Show when={goals.view()?.attention}>
                     <text fg={tokens.warn}>{goals.view()?.attention}</text>
                   </Show>
-                  <text marginTop={1} fg={tokens.accent}>
-                    Usage
-                  </text>
+                  <DetailHeading>Usage</DetailHeading>
                   <text fg={tokens.muted}>
                     {`Budget ${compactGoalCount(current().consumption.net_tokens)} / ${compactGoalCount(current().limits.max_net_tokens)} tokens ${glyph("separator")} ${current().auto_continuations} / ${current().limits.max_auto_continuations} continuations`}
                   </text>
                   <Show when={visibleCriteria(current()).length > 0}>
-                    <text fg={tokens.accent} marginTop={1}>
-                      Criteria
-                    </text>
+                    <DetailHeading>Criteria</DetailHeading>
                     <For each={visibleCriteria(current())}>
                       {(criterion) => (
                         <text fg={tokens.fg} wrapMode="word">
@@ -310,33 +306,25 @@ export function GoalView(
                     </For>
                   </Show>
                   <Show when={current().constraints.length > 0}>
-                    <text fg={tokens.accent} marginTop={1}>
-                      Constraints
-                    </text>
+                    <DetailHeading>Constraints</DetailHeading>
                     <For each={current().constraints}>
                       {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
                     </For>
                   </Show>
                   <Show when={current().exclusions.length > 0}>
-                    <text fg={tokens.accent} marginTop={1}>
-                      Exclusions
-                    </text>
+                    <DetailHeading>Exclusions</DetailHeading>
                     <For each={current().exclusions}>
                       {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
                     </For>
                   </Show>
                   <Show when={current().assumptions.length > 0}>
-                    <text fg={tokens.accent} marginTop={1}>
-                      Assumptions
-                    </text>
+                    <DetailHeading>Assumptions</DetailHeading>
                     <For each={current().assumptions}>
                       {(item) => <text fg={tokens.fg}>{`- ${item}`}</text>}
                     </For>
                   </Show>
                   <Show when={current().sources.length > 0}>
-                    <text fg={tokens.accent} marginTop={1}>
-                      Normative sources
-                    </text>
+                    <DetailHeading>Normative sources</DetailHeading>
                     <For each={current().sources}>
                       {(source) => (
                         <text fg={tokens.fg} wrapMode="word">
@@ -345,7 +333,7 @@ export function GoalView(
                       )}
                     </For>
                   </Show>
-                </box>
+                </DetailColumn>
               </scrollbox>
             )}
           </Show>

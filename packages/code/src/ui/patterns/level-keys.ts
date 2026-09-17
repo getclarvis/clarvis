@@ -87,7 +87,7 @@ export interface LevelSpec {
    */
   scroll?: () => ScrollBoxRenderable | undefined;
   verbs?: VerbSpec[];
-  escape?: { label: string; run?: () => void };
+  escape?: { label: string; run?: () => void; keys?: string[] };
   guards?: string[];
 }
 
@@ -214,7 +214,7 @@ export function registerLevel(
             run,
           }),
         ],
-        bindings: [{ key: "escape", cmd: "ui.level.escape" }],
+        bindings: (spec.escape.keys ?? ["escape"]).map((key) => ({ key, cmd: "ui.level.escape" })),
       }),
     );
   }

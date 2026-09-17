@@ -9,6 +9,7 @@ import type {
 } from "@clarvis/protocol";
 import { createCommands, type CommandUi } from "../../src/keys/commands.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
+import { createCommandCompletionProvider } from "../../src/views/input/command-completion.ts";
 import { registerGoalCommands } from "../../src/features/goal/commands.ts";
 import { createGoalController } from "../../src/features/goal/controller.ts";
 import { createGoalDraft } from "../../src/features/goal/draft.ts";
@@ -80,6 +81,9 @@ function fixture(initial: GoalViewDto = goalView()) {
   const { host, controls } = createViewHost({ interaction, close: () => {}, dispatch: () => {} });
   cleanup.push(() => controls.dispose());
   return {
+    setState(value: GoalViewDto) {
+      state = value;
+    },
     requests,
     formulations,
     opened,
@@ -618,4 +622,43 @@ test("Goal view exposes bounded Steward state without technical identifiers", as
   expect(frame).toContain("Verify the final artifact");
   expect(frame).not.toContain("private-work-id");
   expect(frame).not.toContain("private-steward-id");
+});
+
+test("goal completion follows current state without rebuilding the command catalog", async () => {
+  const empty: GoalViewDto = { state: { version: 1, revision: 0, archive: [], receipts: [] } };
+  const f = fixture(empty);
+  const commands = createCommands(
+    f.interaction,
+    { clearSession: () => {}, status: () => {}, exportSession: () => {} },
+    f.ui,
+  );
+  cleanup.push(() => commands.dispose());
+  registerGoalCommands(commands.scope(), f);
+  const provider = createCommandCompletionProvider({ commands });
+  const labels = async () => (await provider.query("goal")).map((item) => item.label);
+  await f.goals.refresh();
+  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
+  const catalog = commands.entries();
+  f.setState(goalView());
+  await f.goals.refresh();
+  expect(commands.entries()).toBe(catalog);
+  expect(await labels()).toEqual(["/goal", "/goal/edit", "/goal/pause", "/goal/cancel"]);
+  f.setState(goalView({ status: "paused" }));
+  await f.goals.refresh();
+  expect(await labels()).toEqual([
+    "/goal",
+    "/goal/edit",
+    "/goal/resume",
+    "/goal/cancel",
+    "/goal/clear",
+  ]);
+  f.setState(goalView({ status: "cancelled" }));
+  await f.goals.refresh();
+  expect(await labels()).toEqual(["/goal", "/goal/edit", "/goal/clear"]);
+  f.setState(goalView({ runs: [goalRun("physical")] }));
+  await f.goals.refresh();
+  expect(await labels()).toEqual(["/goal", "/goal/pause", "/goal/cancel"]);
+  f.setState(empty);
+  await f.goals.refresh();
+  expect(await labels()).toEqual(["/goal", "/goal/auto"]);
 });

@@ -278,6 +278,11 @@ instead. `ElicitBlock` passes `"none"` for `plan_review` and `workflow_review`; 
 confirmation therefore reports the required field as missing instead of accepting whichever enum
 member happens to be first. As a second fail-safe, `buildRunWorkflowHandler` authors the workflow
 decision enum as `["cancel", "run"]` and treats every non-`run`/no-response outcome as cancellation.
+The TUI presents the workflow decision as `[1] run workflow`, `[2] do not run`, independently
+of the wire enum order. This display ordering does not preselect or submit either option.
+Production: `parseElicitForm` in `packages/code/src/adapters/elicitation.ts`.
+Test: `packages/code/tests/integration/elicit-block-render.test.tsx` (workflow preflight numbered
+choices, untouched confirmation and explicit run/cancel selection).
 `missingRequired(fields, values)` names every required field that is blank, or, for a
 `number`-kind field, non-numeric. `buildContent(fields, values)` coerces raw string values
 into the typed `content` object a response carries: a blank value is omitted from `content` entirely

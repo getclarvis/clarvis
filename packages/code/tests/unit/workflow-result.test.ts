@@ -23,7 +23,7 @@ test("JSON workflow strings become scannable Markdown without dropping nested fi
 
   expect(parsed).toBeDefined();
   const result = formatStructuredWorkflowResult(parsed!);
-  expect(result).toContain("**Structured result**");
+  expect(result).not.toContain("**Structured result**");
   expect(result).toContain("- **Scope:** Full workspace audit");
   expect(result).toContain("## Findings");
   expect(result).toContain("### 1. Event triggers all valid");

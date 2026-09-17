@@ -166,6 +166,15 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
     for (const field of fields)
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
+  if (params.kind === "workflow_review") {
+    const decision = fields.find((field) => field.name === "decision");
+    const order = ["run", "cancel"];
+    decision?.options.sort(
+      (left, right) =>
+        (order.includes(left.value) ? order.indexOf(left.value) : order.length) -
+        (order.includes(right.value) ? order.indexOf(right.value) : order.length),
+    );
+  }
   const detail =
     params.detail !== undefined &&
     "command" in params.detail &&

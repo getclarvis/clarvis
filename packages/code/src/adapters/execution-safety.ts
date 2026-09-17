@@ -165,7 +165,7 @@ export function safetyDescription(state: RunControlsState): string[] {
         ? "Container network access is disabled."
         : "Outbound network access is enabled and may cause remote effects or expose workspace content.",
     );
-    lines.push("Commands run without Command Review.");
+    lines.push("Commands run without Guard.");
     lines.push("Git metadata is read-only; use Sandbox or Host for commits.");
     return lines;
   }

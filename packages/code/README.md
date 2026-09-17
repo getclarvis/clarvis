@@ -92,6 +92,8 @@ Steward status. The sidebar adds one short Steward line; the complete view shows
 intervention counts plus the latest summary and actionable guidance. Technical execution IDs remain
 hidden. `goal_steward_failed` and `goal_steward_inconclusive` appear as Goal-domain attention.
 Only post-closure Kernel settlement may show the Goal as complete.
+Goal command suggestions follow the current Goal and physical execution state. Without a current
+Goal, only `/goal` and `/goal/auto` appear.
 `/goal auto` explicitly asks the Goal agent to formulate
 from the existing trajectory. `/goal <seed>` asks it to treat the seed as primary and use trajectory
 and confined reads only to resolve and enrich that request. Neither mode opens the form or sends the
@@ -326,10 +328,17 @@ Leaving an install or preview returns immediately without cancelling its backgro
 has started, Escape closes Extensions while apply, reconnect, refresh and the final notification
 continue. Large catalogs use bounded retained rows, review bodies scroll independently from their
 decisions, and the optional splash disappears on compact terminals. Internal Extension Profiles, Plugins
-and MCP children remain available from that home and return to it with Escape; they are not nested
+and MCP children remain available through that home's footer and return to it with Escape. The home
+body omits the step preview and duplicate child-shortcut legend; they are not nested
 slash commands. `/tasks` remains a standalone workspace surface.
 Capability services display their effective argv and packaged per-skill Plans policy in the
 plugin/provider panels, and start only when selected.
+
+The Plugins browser uses the shared bounded detail layout and section styles. Its root shows
+compact counts and collections; the footer owns search/open hints, and detail pages retain
+installation consent and source/security information. Catalog rows contain only installable entries,
+omit repeated availability labels, and name their marketplace only when All mixes sources.
+Installed inventory remains manageable independently of catalog availability.
 
 The Plugins child includes `https://github.com/getclarvis/marketplace.git` as a built-in source
 before any configured or discovered catalog. Its retained collection bar moves with left/right
@@ -553,21 +562,25 @@ limited to 32 KiB and oversized guidance safely falls through to the next scope.
 
 Every interactive behavior is a named OpenTUI command. Its binding, enabled state, label and
 description are projected from that one registration into the current footer and full Help screen;
-screens must not maintain a second shortcut legend. `/help` is the sole Help entry route. It opens a
+screens must not maintain a second shortcut legend. Footer action labels are rendered in lowercase,
+independently of Help and screen titles. `/help` is the sole Help entry route. It opens a
 lazy full-page reference containing actions available here and elsewhere, destinations, input
 syntax, editing commands and the effective terminal path. F1 has no built-in action or reserved
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-Isolation and command review have separate persisted controls. `Ctrl+S` opens Host/Sandbox/Docker/Podman
-isolation and `Ctrl+G` opens Off/Approval/Auto review on every Keyboard Profile; under Container the
-review surface reads `Not applicable` and does not overwrite the stored native value. `Alt+S` and `Alt+G` are their
-enhanced-path accelerators. On macOS those enhanced bindings render as Option when the terminal
-delivers Option as Meta/Esc+, while the Ctrl routes remain portable. `Ctrl+E` expands or collapses
-the Task editor, so `Ctrl+G` has no editing behavior. Clarvis keeps the terminal's native text path
+Isolation and Guard have separate persisted controls. `Ctrl+I` opens Host/Sandbox/Docker/Podman
+isolation on every Keyboard Profile when the terminal delivers a distinct Ctrl+I event. Legacy
+terminals that encode Ctrl+I as Tab retain Tab navigation; Settings > Isolation remains available. `Ctrl+G` opens Off/Approval/Auto Guard on every
+Keyboard Profile; under Container the Guard surface reads `Not applicable` and does not overwrite
+the stored native value. `Alt+G` is the enhanced Guard accelerator.
+Transcript block shortcuts share one footer segment: `[^up / ^down] previous / next block`. On macOS, `Alt+G` renders as Option
+when the terminal delivers Option as Meta/Esc+. `Ctrl+E` expands or collapses
+the Task editor, so `Ctrl+G` has no editing behavior. Isolation, Guard and Agent pickers
+(`Ctrl+I`, `Ctrl+G`, Shift+Tab and their equivalent routes) are disabled while a run is active. Clarvis keeps the terminal's native text path
 instead of requesting all-key escape reports, preserving dead-key and IME composition; a literal
 `ß` remains ordinary text. Both pickers are loaded on first use and retained after their first
-mount. `Ctrl+L` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
+mount. `Ctrl+S` is the sole keyboard route for toggling the responsive activity Sidebar; it opens
 the first available Agents, Parallel work or Plan section when closed and closes the surface when open.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
@@ -606,16 +619,25 @@ The Workflows tree follows the same contextual-action contract. Rows show the pe
 title rather than the first line of the full prompt. `Enter` opens the selected node's result; `T`
 appears only for a leader whose complete task is available and opens that task on a separate detail
 page. The manager and legacy records without a persisted task do not advertise or bind `T`. Above
-the tree, the latest persisted sequence state names an `awaiting_manager` checkpoint, its revision
-and proposed next round. The live Parallel work section shows the same checkpoint even when no
+the tree, an `awaiting_manager` checkpoint appears as waiting for the next stage. The live Parallel work section shows the same checkpoint even when no
 leader remains live, so an Admiral decision cannot disappear with the last child. Its header and
 leader roster mirror the compact Plan/Agents grammar: settled/total plus active running count, then
 one plan-tone status glyph, handle and title per leader in an isolated bounded scroll. Lifecycle
 words, elapsed time, iteration counts and failure totals stay out of this summary surface.
 
-A `workflow_review` prompt begins with the safe `cancel` enum value and no preselected UI answer.
+A `workflow_review` prompt retains the `cancel`, `run` wire enum and displays `[1] run workflow`
+then `[2] do not run`, with no preselected UI answer.
 The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
 workflow by enum order.
+
+Goal, Plan and Workflow detail screens share a 100-cell reading column, title/section styling,
+spacing and lifecycle colors. Their footers use the same lowercase action labels and group Escape
+with the screen toggle as `close`; nested Workflow pages distinguish `back` from `close`. The
+global cancel/quit hint is omitted consistently, while Ctrl+C retains its behavior. Workflow detail omits technical identities, refresh timestamps and
+internal execution counters while retaining tasks, progress, actionable failures and results.
+Merging live activity preserves cancellation separately from failure.
+`Ctrl+W` opens the current workflow directly and closes the entire workflow view from its tree,
+task or result page. Without a current workflow, it keeps the composer's previous-word deletion.
 
 When a current plan is available, `Ctrl+P` is the portable route to its full detail and `Alt+P`
 remains an enhanced alternative. Retained completed, failed and canceled plans stay reachable as
@@ -625,7 +647,10 @@ open and cancels the active run (or enters quit when no run is active). The side
 plan title, lifecycle, task states, active task and last result with explicit labels and an
 active-row surface, so progress is not encoded by colour alone. The TUI has no retained-plan
 catalogue, filters, per-plan retention mutation or deletion; its backend seam reads only the live
-plan's document.
+plan's document. The detail uses the same bounded reading column as Goal, with spaced objective,
+context, tasks, validation and notes sections. It renders structured fields instead of the stored
+Markdown, omits empty fields, paths, IDs, revision counters and retention metadata, and shows
+approval guidance only when a decision is pending.
 
 `/plan` toggles this workspace's next-run policy between normal planning and required human review:
 `review` becomes `on`, while `on` or `off` becomes `review`. Repeated invocations serialize, so a
@@ -1050,9 +1075,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
   child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
-  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+L` reopens the first available
+  Sidebar closed, the aggregate transcript stays unobstructed. `Ctrl+S` reopens the first available
   Agents, Parallel work or Plan section and closes the surface when it is open. The footer never
-  duplicates agent, workflow or Plan status; `Ctrl+L` and automatic reveal own access to the
+  duplicates agent, workflow or Plan status; `Ctrl+S` and automatic reveal own access to the
   responsive surface. Plain Tab follows the active
   screen's focus order and, at shell level, returns transcript block focus to the composer without
   changing Lead/child selection; Return activates or submits the currently focused component.
@@ -1064,14 +1089,14 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
   Opening the Sidebar never replaces the shortcuts or run strip below the composer. A fixed
-  line inside the Sidebar names `Ctrl+L` for opening and closing it.
+  line inside the Sidebar names `Ctrl+S` for opening and closing it.
 - Plan activity has no lower pane between history and the composer and contributes no footer text.
   Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
   projection may reveal the Sidebar once for that execution. The Sidebar's compact task list shows
   only each status glyph and title, prioritizes running and next work above completed and failed work,
   omits the result-preview panel, and appends `[^p] full plan` to the progress line; assignee,
   exit-condition and result detail remain in the full plan surface. The fixed Lead activity line reuses the
-  same physical row for `thinking`, `working` and settled `ready`; during a run that row also owns
+  same physical row for `thinking` and `working`, leaving it blank when idle without meaningful detail; during a run that row also owns
   elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash autocomplete replaces the whole activity
   band while it is open. Transient activity therefore never enters history or changes transcript
   height, and run-local timing never competes with Context or cumulative Session usage in the
@@ -1280,6 +1305,14 @@ projection is covered by one integration smoke, while the exhaustive mapping mat
 `@clarvis/kernel`. Likewise, the ASCII matrix belongs to the glyph unit suite plus one static source
 guard and one renderer smoke. Markdown cut-point permutations belong to the pure segmenter suite;
 the renderer tier keeps only a small contract against the real `BlockView`, never a copied component.
+
+Settings > Agents uses the same compact detail styling as Plan, Goal and Workflow. Profile rows
+show name, role and source scope; the editor keeps stable one-line fields while moving selection.
+Description and Instructions show `view / edit` and open a scrollable reader, where `e` edits;
+empty fields open editing directly. `i` opens field provenance. Shared prompt follows the same
+reader flow, with its save path shown once in details and disable/restore actions on its overview.
+Errors and conflicts remain visible; routine runnable messages and repeated per-field origins are
+omitted. Draft saving, scope retargeting and inherited configuration retain their existing rules.
 
 Providers and Agents controller suites own state transitions, validation, persistence, reconnect,
 catalog mutation and reference handling over typed in-memory ports. Their renderer suites use fake

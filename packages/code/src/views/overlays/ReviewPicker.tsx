@@ -32,10 +32,7 @@ export function ReviewPicker(props: {
   const apply = async (choice: ReviewChoice): Promise<void> => {
     if (applying) return;
     if (isContainerIsolation(deriveIsolation(props.settings.effective()))) {
-      props.notify(
-        "Command Review is not applicable in Container. Use Isolation Sandbox or Host.",
-        "warn",
-      );
+      props.notify("Guard is not applicable in Container. Use Isolation Sandbox or Host.", "warn");
       return;
     }
     applying = true;
@@ -48,13 +45,13 @@ export function ReviewPicker(props: {
       });
       props.notify(
         result.degraded
-          ? `review: approval (${scope}) ${glyph("emDash")} Auto needs a usable default model`
-          : `review: ${choice.label.toLowerCase()} (${scope})${props.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
+          ? `Guard: approval (${scope}) ${glyph("emDash")} Auto needs a usable default model`
+          : `Guard: ${choice.label.toLowerCase()} (${scope})${props.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
         result.degraded ? "warn" : "success",
       );
       props.onApplied();
     } catch (error) {
-      props.notify(`review change failed: ${errorText(error)}`, "error");
+      props.notify(`Guard change failed: ${errorText(error)}`, "error");
     } finally {
       applying = false;
     }
@@ -65,19 +62,19 @@ export function ReviewPicker(props: {
       keymap={props.interaction.keymap}
       active={props.active}
       resetKey={props.active}
-      title="Select command review"
+      title="Select Guard"
       items={() => [...REVIEW_CHOICES]}
       initialIndex={Math.max(
         0,
         REVIEW_CHOICES.findIndex((choice) => choice.value === props.guard.mode()),
       )}
       idPrefix="review-"
-      confirmLabel="use review"
+      confirmLabel="use Guard"
       onConfirm={(choice) => detachObserved("review_apply", () => apply(choice))}
       onClose={props.onClose}
       footer={() =>
         isContainerIsolation(deriveIsolation(props.settings.effective()))
-          ? "saved Review unchanged"
+          ? "saved Guard unchanged"
           : `${props.scope()} setting ${glyph("separator")} isolation is unchanged`
       }
       cells={(choice, selected) => [
@@ -93,7 +90,7 @@ export function ReviewPicker(props: {
         <box flexDirection="column">
           <text fg={choice.value === "off" ? tokens.warn : tokens.fg}>
             {isContainerIsolation(deriveIsolation(props.settings.effective()))
-              ? "Not applicable in Container. Commands run without Command Review."
+              ? "Not applicable in Container. Commands run without Guard."
               : choice.value === "off"
                 ? `${glyph("warning")} Commands are not reviewed.`
                 : choice.value === "on"

@@ -256,7 +256,7 @@ verbatim on retry. `MAX_UNCERTAIN_MUTATIONS = 32`.
 
 ### 3.9 Workflow result Markdown
 
-`formatStructuredWorkflowResult` emits `**Structured result**` followed by a recursive projection
+`formatStructuredWorkflowResult` emits a recursive projection without a generic format heading
 (`packages/code/src/views/config/workflow-result.ts`): scalars become
 `- **Field Label:** value`, nested objects/arrays become `##`..`######` headings clamped between 2 and
 6, an empty object becomes `_(empty)_` and an empty array `_(none)_`. Array
@@ -284,10 +284,9 @@ output is always in canonical order (test at
 2. It declares `host.bindScope({ mode: "retarget" })` — the scope toggle changes the write
    target rather than reloading.
 3. `detachObserved("agents_reload", …)` kicks a background reload.
-4. L0 renders a 7-cell header (`role`, `name`, `grants`, `model`, `iters`, `ok`, `scope`) and one
-   `PickerRow` per agent. The `grants` cell appends a warning glyph when
-   `RANK[tier] > RANK[env.maxGrant]` — the host ceiling makes the configured tier inert.
-   The `scope` cell appends `" shadow"` when the name is in `ctrl.conflicts()`.
+4. L0 renders Shared prompt followed by compact profile rows with name, role and source scope.
+   The scope appends `" shadow"` for conflicts. Selected profiles show actionable diagnostics,
+   not a routine runnable message. `DetailColumn` bounds the reading width to 100 cells.
 5. `openSelected` resolves four cases in order: an `invalid` agent is refused with a notice
    telling the user to edit the `.md` directly; re-opening the agent whose *own* draft is
    unsaved resumes that draft rather than offering discard; a conflicted name opens a scope
@@ -298,7 +297,7 @@ output is always in canonical order (test at
    `default_spawn`, `iteration_limit`, `reasoning_effort`, `base_prompt`
    (`packages/code/src/views/config/AgentsPanel.tsx`). `editField` routes each to its editor
    : grants and `can_spawn` open multi-select pickers, `model` opens `modelPickerSpec`,
-   `base_prompt` opens the multiline editor bound to `ctrl.setBody`, `iteration_limit` a number
+   `description` and `base_prompt` reach multiline editors through `activateField`; the latter binds to `ctrl.setBody`, `iteration_limit` a number
    editor with `min: 1`, `reasoning_effort` an enum seeded from
    `supportedReasoningEfforts(deps.catalog, providers, fm.model ?? default_model)` with a leading
    "Use /effort default" empty option, `default_spawn` an enum over `can_spawn` plus "Choose when
@@ -307,10 +306,21 @@ output is always in canonical order (test at
    refs allowed)"); `spawnRows` synthesizes a row for any `can_spawn` entry that names an
    agent that does not exist yet, labelled `"not a known agent yet"`, so a spawn
    target may cite an agent not yet created.
-8. Verbs: L0 has `add`/`rename`/`delete` (keys `a`/`r`/`d` from `PANEL_VERBS`,
-   `packages/code/src/ui/patterns/level-keys.ts`); L1 has `rename`/`delete`
+8. Selection never expands a field. L1 uses stable one-line rows with effective values, an
+   inherited marker where relevant, and `view / edit` for populated Description and Instructions.
+   Empty prose says `not set` and Enter opens its multiline editor directly. Populated prose
+   opens L2 with independent scrolling and an `e` edit action. `i` opens the selected field's
+   provenance on L2: configured values appear separately only when different from effective values.
+   Returning through the host level stack preserves selection and the overview scroll position.
+   Source and applicability belong in details rather than every overview row. Validation issues
+   remain visible without a routine runnable indicator.
+   Production: `packages/code/src/views/config/AgentsPanel.tsx` (`agentSettings`, `activateField`,
+   `editorBody`, `detailBody`). Test: `packages/code/tests/integration/agents-panel-render.test.tsx`
+   (long prose, empty prose, host-limited permissions, conflict and dirty-draft cases).
+9. Verbs: L0 has `add`/`rename`/`delete` (keys `a`/`r`/`d` from `PANEL_VERBS`,
+   `packages/code/src/ui/patterns/level-keys.ts`); L1 has `details`/`rename`/`delete`
    (`packages/code/src/views/config/AgentsPanel.tsx`).
-9. `toggleSpawn` (`packages/code/src/features/agents/controller.ts`) has three rules no
+10. `toggleSpawn` (`packages/code/src/features/agents/controller.ts`) has three rules no
    other prose in this document states: it is a no-op on the draft's own name (`name === d.name` guard, pinned by `packages/code/tests/unit/agents-controller.test.ts`, "toggleSpawn ignores
    the draft's own name"); removing the last remaining name from `can_spawn` also clears
    `default_spawn`; and removing a non-default name from a
@@ -465,13 +475,27 @@ something is running** — the open node's status, else the open workflow's stat
 live `status` mapped `running→running`, `ok→completed`, anything else→`failed`, and the merged
 list is re-sorted by `started_at ?? 0`.
 
-**Sequence checkpoint.** When `WorkflowDetail.sequence` exists, the tree level renders one bounded
-line above the nodes. `awaiting_manager` is warning-toned and names `Awaiting Admiral`, the CAS
-revision and proposed next round; every other status names current round/session and cumulative
-`leaders_started/max_total_leaders`. Legacy/ad-hoc-only records omit the line. Production:
-`packages/code/src/views/config/WorkflowsHub.tsx` (the `detail()?.sequence` block). Test:
-`packages/code/tests/integration/workflows-hub-render.test.tsx` (`the persisted tree names an
-awaiting-Admiral checkpoint and proposed round`).
+**Workflow detail.** The tree, task and result screens share `DetailColumn`, `DetailTitle`,
+`DetailHeading` and `detailStatusColor` with Goal and Plan. The reading column is bounded to
+100 cells. The tree shows the workflow title, lifecycle, completed/total and running task counts,
+then task titles and their statuses. The manager is presented once as Coordinator. Internal node
+IDs, profiles, round/item/replica coordinates, revision and leader-budget counters, the Monitor
+badge, generic purpose text and last-refresh timestamps are not displayed. A pending manager
+decision reads "Waiting for the next stage"; a sequence reason remains visible.
+Production: `WorkflowsHub` in `packages/code/src/views/config/WorkflowsHub.tsx`.
+Test: `packages/code/tests/integration/workflows-hub-render.test.tsx` (live tree, pending stage,
+direct open and narrow layouts).
+
+`workflow.current` binds Ctrl+W while a current workflow projection exists. It opens that root
+execution directly through `initialExecutionId`, without loading history. Ctrl+W closes the entire
+workflow view from the tree, task or result page; it does not step back through its internal pages.
+Escape from a direct tree also closes it, while Escape from a node still returns to the tree.
+Without a current workflow, Ctrl+W retains the composer's previous-word deletion.
+Production: `registerAppCommands`, `WorkflowsHub`, and `DEFAULT_BINDING_CANDIDATES` in
+`packages/code/src/app/commands.tsx`, `packages/code/src/views/config/WorkflowsHub.tsx`, and
+`packages/code/src/keys/interaction.ts`. Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` (Ctrl+W with a retained draft),
+`packages/code/tests/integration/workflows-hub-render.test.tsx` (direct workflow detail).
 
 **Node page (`NodePage`).** `mode: "result"` carries a `RunDetail | null` fetched by
 `deps.getRun`; `mode: "task"` carries only the node meta and renders `meta.task` or the fallback "Task
@@ -484,9 +508,6 @@ line (status `running`) or "Run detail is not available yet."; `run.result.error
 if it parses; an object result with a string `text` field is treated the same way; any other object is
 formatted directly, falling back to "(unserializable result)" if `formatStructuredWorkflowResult`
 throws; `undefined` yields "(no result recorded)".
-
-**Short ids (`shortId`).** The manager is always `"Manager"`; every other node gets `A1`,
-`A2`, … assigned on first sight and memoized in a per-hub `Map`.
 
 **Delete.** Bound only when `deps.delete` exists *and* a row is selected; it confirms naming
 the workflow title or execution id, then deletes and reloads.
@@ -557,7 +578,7 @@ computation," not something specific to memory or an accidental one-off.
 
 ### 4.8 Run controls
 
-Four rows, fixed order: Isolation (0), Command review (1), Memory for this session (2),
+Four rows, fixed order: Isolation (0), Guard (1), Memory for this session (2),
 Completed plans (3). `[b] sandbox details` is offered only on row 0, and the host wires it to
 `openWithReturn("sandbox.config", "controls.open", host.scope())`. Production:
 `packages/code/src/views/config/RunControlsPanel.tsx` (`spec`, `body`) and
@@ -571,7 +592,7 @@ host-global placement choice and always writes global settings; memory remains s
 | Row | Choices | Write |
 | --- | --- | --- |
 | Isolation | `Host`, `Sandbox`, `Docker`, `Podman` | shared `applyIsolation`, global |
-| Command review | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
+| Guard | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
 | Memory | `on`, `off` | `applyMemory` — **session store only** |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
@@ -579,7 +600,7 @@ Run Controls, Settings > Isolation and the `Ctrl+S`/`Alt+S` quick picker share `
 danger confirmation; Sandbox enables a required native boundary; Docker and Podman write the minimal
 global runtime choice and connect a complete Kernel before the workspace client is returned. Both
 fail closed if the engine cannot start; neither invokes native Sandbox/Host. Container renders
-Command Review as not applicable while native Memory/Plans controls target the guest. Run Controls and the
+Guard as not applicable while native Memory/Plans controls target the guest. Run Controls and the
 `Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
 allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
 last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
@@ -794,7 +815,8 @@ specific to these files.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx` (list)
     (tree) (node); the initial-load failure case.
 
-33. **The live projection is merged only when it belongs to the workflow on screen.**
+33. **The live projection is merged only when it belongs to the workflow on screen.
+    Live cancelled nodes retain `cancelled`; only error nodes become `failed`.**
     Production: `packages/code/src/views/config/WorkflowsHub.tsx`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx`.
 
@@ -1034,24 +1056,9 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    constant reads as what it is. Its docstring now records why one, and why a read-only investigator
    is the right floor: every grant a new agent ends up with is then one the user added on purpose.
 
-4. ~~**`WorkflowsHub`'s `shortId` counter is never reset.**~~ **Resolved:** the reset boundary is the
-   view's mount/dispose lifecycle, not "session" in any looser sense. `nextShortId` and `shortIds`
-   (`packages/code/src/views/config/WorkflowsHub.tsx`) are closure state created exactly
-   once, when `WorkflowsHub(host, deps)` runs as the `view` factory of the `"workflows.open"`
-   registration (`packages/code/src/app/commands.tsx`, `workflows.open`); `backToList()`
-    only clears the `detail`/`node` **signals**, never touching the counter, because
-   navigating from a workflow's tree back to the list is internal `setDetail`/`setNode` state inside
-   the same still-mounted instance (`openWorkflow`, sets `detail` without remounting).
-   The counter is discarded only when the view itself is unmounted: `CommandUi.openView`
-   (`packages/code/src/views/overlay-host.ts`) no-ops when the requested view is already
-   the top frame (`current?.name === name`), so re-running `/workflow` while already inside it does
-   not remount either — the only way to get a fresh `WorkflowsHub` instance (and so a counter reset
-   back to `A1`) is to close the Workflows view entirely (pop it off the overlay stack, disposing its
-   Solid root) and reopen it. So: opening a second workflow's tree via "back to list" **without**
-   leaving the Workflows view continues numbering (`A2`, `A3`...); closing the view and reopening it
-   resets to `A1`. No test pins either half of this, and no comment states it is deliberate, but the
-   mechanism itself is fully determined by `openView`'s same-name no-op plus the view factory's
-   one-shot closure — there is no second reading of when the counter clears.
+4. **Workflow node identities are internal.** Detail screens present task titles and lifecycle
+   rather than per-mount short IDs. `WorkflowsHub` uses stable run IDs only for backend reads,
+   live merging and retained selection.
 
 5. **`AgentsController.openDraft` drops `invalid` and `overlay`** when copying the file into the draft
    (`packages/code/src/features/agents/controller.ts`). Since `openSelected` refuses `invalid`

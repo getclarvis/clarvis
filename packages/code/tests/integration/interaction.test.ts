@@ -210,9 +210,9 @@ test("Ctrl+P toggles the plan; enhanced terminals also retain Alt+P", () => {
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Isolation and review have portable Ctrl keys plus enhanced Alt keys", () => {
-  expect(portable()["isolation.picker"]).toBe("ctrl+s");
-  expect(enhanced()["isolation.picker"]).toEqual(["alt+s", "ctrl+s"]);
+test("Isolation and Guard retain Ctrl+I and Ctrl+G across profiles", () => {
+  expect(portable()["isolation.picker"]).toBe("ctrl+i");
+  expect(enhanced()["isolation.picker"]).toBe("ctrl+i");
   expect(portable()["review.picker"]).toBe("ctrl+g");
   expect(enhanced()["review.picker"]).toEqual(["alt+g", "ctrl+g"]);
   for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "isolation.picker"))
@@ -468,7 +468,7 @@ test("createInteraction: one Escape both clears an invisible pending sequence an
   t.renderer.destroy();
 });
 
-test("createInteraction: Ctrl+S and Alt+S dispatch the isolation picker", async () => {
+test("createInteraction: portable Ctrl+I opens isolation while Tab retains focus navigation", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
   const interaction = createInteraction(t.renderer, fakePlatform(), effects);
@@ -485,11 +485,17 @@ test("createInteraction: Ctrl+S and Alt+S dispatch the isolation picker", async 
     ],
   });
 
-  press(t.renderer, "s", { ctrl: true });
-  press(t.renderer, "s", { meta: true });
+  interaction.configureKeyboard({
+    version: 1,
+    environments: {
+      [interaction.keyboardEnvironmentId()]: { profile: "portable" },
+    },
+  });
+  press(t.renderer, "i", { ctrl: true });
+  press(t.renderer, "tab");
   await settle();
 
-  expect(effects.calls).toEqual(["openIsolationPicker", "openIsolationPicker"]);
+  expect(effects.calls).toEqual(["openIsolationPicker", "focusNext"]);
   off();
   interaction.dispose();
   t.renderer.destroy();

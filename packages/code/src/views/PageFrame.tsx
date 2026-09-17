@@ -1,3 +1,4 @@
+import type { ActiveAction } from "../ui/patterns/active-actions.ts";
 import type { JSX } from "solid-js";
 import { Show } from "solid-js";
 import { tokens } from "../theme/tokens.ts";
@@ -18,6 +19,7 @@ export function PageFrame(props: {
   subtitle?: string;
   interaction: Interaction;
   children: JSX.Element;
+  actionFilter?: (action: ActiveAction) => boolean;
 }): JSX.Element {
   return (
     <box
@@ -50,7 +52,10 @@ export function PageFrame(props: {
         {props.children}
       </box>
       <box flexShrink={0} backgroundColor={tokens.bg} zIndex={1}>
-        <InteractionNavigationBar interaction={props.interaction} />
+        <InteractionNavigationBar
+          interaction={props.interaction}
+          actionFilter={props.actionFilter}
+        />
       </box>
     </box>
   );

@@ -126,7 +126,7 @@ test("recovery presents the focused blocker and wires repair, Doctor and ready",
   expect(blocked).toContain("provider: no usable model");
   expect(blocked).toContain("Choose a provider and model.");
   expect(blocked).toContain("[↵] repair");
-  expect(blocked).toContain("[d] open Doctor");
+  expect(blocked).toContain("[d] open doctor");
   mounted.press("return");
   mounted.press("d");
   mounted.press("q");

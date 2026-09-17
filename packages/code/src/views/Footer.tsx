@@ -72,14 +72,7 @@ export function LeadActivityLine(props: {
       paddingRight={1}
       backgroundColor={tokens.bg}
     >
-      <Show
-        when={props.phase() !== "ready"}
-        fallback={
-          <text fg={tokens.muted} wrapMode="none" flexShrink={0} selectable={false}>
-            {`${glyph("bullet")} ready`}
-          </text>
-        }
-      >
+      <Show when={props.phase() !== "ready"}>
         <text fg={running().fg} flexShrink={0} wrapMode="none" selectable={false}>
           {running().glyph + " "}
         </text>
@@ -96,7 +89,7 @@ export function LeadActivityLine(props: {
           truncate
           selectable={false}
         >
-          {` ${glyph("separator")} ${props.detail?.() ?? ""}`}
+          {`${props.phase() === "ready" ? "" : ` ${glyph("separator")} `}${props.detail?.() ?? ""}`}
         </text>
       </Show>
     </box>

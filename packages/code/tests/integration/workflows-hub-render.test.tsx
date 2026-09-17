@@ -82,11 +82,13 @@ function mount(opts: {
   del?: (id: string) => Promise<void>;
   withDelete?: boolean;
   active?: Accessor<boolean>;
+  initialExecutionId?: string;
+  close?: () => void;
 }) {
   const { keymap, press } = fakeKeymap();
   const { host } = createViewHost({
     interaction: { keymap } as unknown as Interaction,
-    close: () => {},
+    close: opts.close ?? (() => {}),
     dispatch: () => {},
     ...(opts.active === undefined ? {} : { active: opts.active }),
   });
@@ -109,6 +111,7 @@ function mount(opts: {
     get: opts.get ?? ((id: string) => Promise.resolve(detail({ execution_id: id }))),
     getRun: opts.getRun ?? (() => Promise.resolve(runDetail())),
     now: () => 1_000_000,
+    ...(opts.initialExecutionId ? { initialExecutionId: opts.initialExecutionId } : {}),
     ...(opts.live ? { live: opts.live } : {}),
     ...(opts.openAgentPicker ? { openAgentPicker: opts.openAgentPicker } : {}),
     ...(opts.pollMs === undefined ? {} : { pollMs: opts.pollMs }),
@@ -202,7 +205,7 @@ test("a running workflow list polls until persisted state catches up", async () 
   await new Promise((resolve) => setTimeout(resolve, 20));
   const frame = await captureUntil(t, "Completed");
   expect(calls).toBeGreaterThan(1);
-  expect(frame).toContain("Updated 0s ago");
+  expect(frame).not.toContain("Updated 0s ago");
   t.renderer.destroy();
 });
 
@@ -345,7 +348,7 @@ test("activating the selected workflow opens its tree of nodes", async () => {
   press("return");
   const frame = await captureUntil(t, "Review authentication");
   expect(frame).toContain("Review authentication");
-  expect(frame).toContain("coder");
+  expect(frame).not.toContain("coder");
   expect(frame).toContain("Workflow");
   t.renderer.destroy();
 });
@@ -375,7 +378,7 @@ test("repeated activation keeps one physical workflow detail request", async () 
   t.renderer.destroy();
 });
 
-test("the tree merges live leaders and exposes their round, item, and replica context", async () => {
+test("the tree merges live leaders without internal round, item, or replica context", async () => {
   const live: WorkflowActivity = {
     root: "wf-1",
     nodes: new Map([
@@ -419,7 +422,8 @@ test("the tree merges live leaders and exposes their round, item, and replica co
   await t.renderOnce();
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("round verify · pass 1 · item 1 · replica 2/3");
+  expect(frame).not.toContain("replica 2/3");
+  expect(frame).not.toContain("Monitor");
   expect(frame).toContain("Running");
   t.renderer.destroy();
 });
@@ -451,8 +455,8 @@ test("the persisted tree names an awaiting-Admiral checkpoint and proposed round
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "Awaiting Admiral");
-  expect(t.captureCharFrame()).toContain("next verify");
+  await captureUntil(t, "Waiting for the next stage");
+  expect(t.captureCharFrame()).not.toContain("revision 3");
   t.renderer.destroy();
 });
 
@@ -466,7 +470,8 @@ test("the 80-column workflow tree stacks metadata and keeps Back visible", async
   await t.renderOnce();
   press("return");
   const frame = await captureUntil(t, "Review authentication");
-  expect(frame).toContain("manager · Completed");
+  expect(frame).toContain("Coordinator");
+  expect(frame).toContain("Completed");
   expect(frame).not.toContain("managerCompleted");
   expect(frame).toContain("[esc] back");
   t.renderer.destroy();
@@ -492,7 +497,7 @@ test("Escape backs out of the tree to the list and reloads it", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   expect(listCalls.length).toBe(1);
   press("escape");
   await tick();
@@ -521,10 +526,11 @@ test("opening a node shows loading, then the run's result and usage", async () =
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "all done");
-  expect(frame).toContain("Manager · manager · Completed");
+  expect(frame).toContain("Completed");
+  expect(frame).not.toContain("Manager · manager");
   expect(frame).toContain("3 iterations");
   expect(frame).toContain("100");
   expect(frame).toContain("50");
@@ -548,7 +554,7 @@ test("a node whose run has not resolved yet shows the loading placeholder", asyn
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   expect(await captureUntil(t, "Agent is running. This view refreshes automatically")).toContain(
     "Agent is running. This view refreshes automatically",
@@ -568,7 +574,7 @@ test("a run with no result recorded says so explicitly", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "(no result recorded)");
   expect(frame).toContain("(no result recorded)");
@@ -594,7 +600,7 @@ test("an errored run's result shows the error message", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "ran out of budget");
   expect(frame).toContain("error: ran out of budget");
@@ -619,7 +625,7 @@ test("a structured result with a text field renders that text", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "structured text body");
   expect(frame).toContain("structured text body");
@@ -644,9 +650,9 @@ test("a plain-object result with no text field renders as a structured card", as
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
-  const frame = await captureUntil(t, "Structured result");
+  const frame = await captureUntil(t, "Count:");
   expect(frame).toContain("Count:");
   expect(frame).toContain("7");
   expect(frame).not.toContain('{"count":7}');
@@ -683,10 +689,10 @@ test("a JSON-encoded workflow answer renders headings and wrapped fields instead
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "Event triggers all valid");
-  expect(frame).toContain("Structured result");
+  expect(frame).not.toContain("Structured result");
   expect(frame).toContain("Scope:");
   expect(frame).toContain("Findings");
   expect(frame).toContain("Claim:");
@@ -710,7 +716,7 @@ test("a result that cannot be JSON-stringified renders a fallback message", asyn
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "(unserializable result)");
   expect(frame).toContain("(unserializable result)");
@@ -736,7 +742,7 @@ test("usage with no token counts omits the token segment", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   const frame = await captureUntil(t, "5 iterations");
   expect(frame).toContain("5 iterations");
@@ -750,7 +756,7 @@ test("Escape from the node view returns to the tree", async () => {
   await tick();
   await t.renderOnce();
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   await captureUntil(t, "(no result recorded)");
   press("escape");
@@ -782,7 +788,7 @@ test("[t] opens the selected leader's complete task without fetching its result"
   press("t");
   const frame = await captureUntil(t, "Inspect the complete authentication flow.");
   expect(frame).toContain("Report concrete risks and file references.");
-  expect(frame).toContain("Task");
+  expect(frame).toContain("Workflow task");
   expect(runFetches).toBe(0);
   press("escape");
   await t.renderOnce();
@@ -949,11 +955,73 @@ test("a failed node refresh preserves the result and exposes the refresh error",
   });
   await captureUntil(t, "refactor the widgets");
   press("return");
-  await captureUntil(t, "manager");
+  await captureUntil(t, "Coordinator");
   press("return");
   await captureUntil(t, "stable result");
   press("r");
   const frame = await captureUntil(t, "Refresh failed: run detail temporarily unavailable");
   expect(frame).toContain("stable result");
+  t.renderer.destroy();
+});
+
+test("direct workflow detail skips history and closes with Ctrl+W", async () => {
+  let closed = 0;
+  const reads: string[] = [];
+  const { host, press, deps, listCalls } = mount({
+    initialExecutionId: "current-run",
+    close: () => closed++,
+    get: async (id) => {
+      reads.push(id);
+      return detail({ execution_id: id, title: "Current audit" });
+    },
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 140, height: 30 });
+  try {
+    const out = await captureUntil(t, "Current audit");
+    expect(reads).toEqual(["current-run"]);
+    expect(listCalls).toEqual([]);
+    expect(out).not.toContain("Monitor");
+    expect(out).not.toContain("Updated");
+    press("ctrl+w");
+    expect(closed).toBe(1);
+  } finally {
+    t.renderer.destroy();
+  }
+});
+
+test("live canceled leaders remain canceled while genuine failures remain failed", async () => {
+  const live: WorkflowActivity = {
+    root: "wf-1",
+    nodes: new Map([
+      [
+        "cancelled",
+        { runId: "cancelled", kind: "leader", title: "Interrupted review", status: "cancelled" },
+      ],
+      ["failed", { runId: "failed", kind: "leader", title: "Broken review", status: "error" }],
+    ]),
+  };
+  const { host, deps } = mount({
+    initialExecutionId: "wf-1",
+    live: () => live,
+    get: async () =>
+      detail({
+        execution_id: "wf-1",
+        nodes: [
+          node({
+            run_id: "cancelled",
+            kind: "leader",
+            title: "Interrupted review",
+            status: "running",
+          }),
+          node({ run_id: "failed", kind: "leader", title: "Broken review", status: "running" }),
+        ],
+      }),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 100, height: 24 });
+  await captureUntil(t, "Interrupted review");
+  const lines = t.captureCharFrame().split("\n");
+  expect(lines.find((line) => line.includes("Interrupted review"))).toContain("Canceled");
+  expect(lines.find((line) => line.includes("Interrupted review"))).not.toContain("Failed");
+  expect(lines.find((line) => line.includes("Broken review"))).toContain("Failed");
   t.renderer.destroy();
 });

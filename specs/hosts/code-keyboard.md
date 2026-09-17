@@ -82,6 +82,10 @@ prints a key routes through it, so one binding can never read `meta+r` in one pl
 `alt+r` in another (`packages/code/src/keys/keyspec.ts`, `compactKey`). It is idempotent (feeding an
 already-compact label back in returns it unchanged — pinned at
 `packages/code/tests/unit/keyspec.test.ts` (`compactKey: already-compact labels pass through unchanged`)).
+`compactKey` renders modified arrow names with the same caret prefix as other Ctrl keys:
+`ctrl+up` becomes `^up` and `ctrl+down` becomes `^down`, without changing their bindings.
+Production: `compactKey`; Test: `packages/code/tests/unit/keyspec.test.ts`.
+
 For the composer, unmodified Return/numpad Enter owns `prompt.send`, while Ctrl+J owns the portable
 `prompt.newline` chord. Enhanced keyboard profiles additionally register Shift+Return. Portable
 profiles do not register or advertise Shift+Return because a legacy terminal, SSH path or
@@ -165,7 +169,7 @@ command's current availability only while it is the active consumer; registratio
 subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEntryView.canAct`).
 
 The application composition adds one contextual navigation action after registry construction:
-`activity.toggle` has the portable `Ctrl+L` binding whenever any run-activity section exists. It
+`activity.toggle` has the portable `Ctrl+S` binding whenever any run-activity section exists. It
 closes the responsive Sidebar when open and otherwise reveals the first available Agents, Parallel
 work or Plan section. It has no slash-command surface, and Escape does not close the Sidebar
 (`packages/code/src/views/App.tsx`, `toggleActivitySidebar` and the `activity.toggle`
@@ -329,10 +333,11 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts` (a patch-v
 | `app.suspend` | `ctrl+z` | (none) |
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
-| `isolation.picker` | `alt+s` (enhanced, requires `meta`), `ctrl+s` | `overlay==none` |
+| `isolation.picker` | `ctrl+i` (enhanced) | `overlay==none` |
 | `review.picker` | `alt+g` (enhanced, requires `meta`), `ctrl+g` | `overlay==none` |
 | `controls.open` | `alt+r` (enhanced, requires `meta`) | `overlay==none` |
 | `plan.open` | `ctrl+p`, `alt+p` (enhanced, requires `meta`) | `overlay in (none, plan)` |
+| `workflow.current` | `ctrl+w` | `overlay==none`; current workflow required |
 | `goal.toggle` | `ctrl+o` | `overlay==none` |
 | `transcript.toggleCollapse` | `ctrl+k` | `overlay==none` |
 | `transcript.focusPrev` | `ctrl+up` | `overlay==none` |
@@ -373,7 +378,7 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 {
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
-  "isolation.picker": ["alt+s", "ctrl+s"],
+  "isolation.picker": ["ctrl+i"],
   "review.picker": ["alt+g", "ctrl+g"],
   "controls.open": "alt+r",
   "plan.open": ["alt+p", "ctrl+p"]
@@ -961,21 +966,28 @@ clear effect are wired at `packages/code/src/views/App.tsx`.
 Tests: `packages/code/tests/integration/interaction.test.ts`; full-shell paths are
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx`.
 
-**INV-D13.** `Ctrl+S` and `Ctrl+G` are the portable bindings for the internal `isolation.picker` and
-`review.picker` actions; `Alt+S` and `Alt+G` are their enhanced-path accelerators. All four are
-inactive while another overlay is open. On a macOS client the enhanced bindings are presented as
-Option and require the terminal to deliver Option as Meta/Esc+; the Ctrl routes require no terminal
-configuration. `Ctrl+E` belongs only to expanding or collapsing the Task editor, so `Ctrl+G` never
+**INV-D13.** `Ctrl+I` is registered for the internal `isolation.picker` on every keyboard profile and
+is projected as `^i isolation`. It requires a distinct Ctrl+I event; legacy Tab bytes retain Tab
+navigation rather than opening Isolation. Settings > Isolation remains available on those terminals. `Ctrl+G` opens
+`review.picker`, presented as Guard, on every profile; `Alt+G` is its enhanced accelerator. These are
+inactive while another overlay is open or a run is active. `agent.picker` (Shift+Tab and
+`/agent`) is also disabled during an active run. The App effect guards and the temporary
+`offRunConfiguration` key layer prevent opening those pickers or leaking their configured
+shortcuts into the editor; completion restores availability.
+Test: `packages/code/tests/integration/app-shell-render.test.tsx` (run configuration pickers).
+On a macOS client `Alt+G` is presented as Option
+and requires the terminal to deliver Option as Meta/Esc+; the Guard Ctrl route requires no
+terminal configuration. `Ctrl+E` belongs only to expanding or collapsing the Task editor, so `Ctrl+G` never
 changes editor state. The renderer keeps Kitty keyboard reporting in its conservative mode and
 never requests all-key escape reports, so terminal-native dead-key and IME text composition remains
 intact. A literal `ß` remains composer text.
-`Ctrl+L` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
+`Ctrl+S` is the sole keyboard binding for the responsive activity Sidebar. It closes an open
 surface or opens the first available Agents, Parallel work or Plan section. No `/activity` slash
 action exists. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
 reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
 later updates of the intent that opened it, while the first event for another section may still
-reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+L` performs
+reveal it. Escape does not close the Sidebar or suppress its automatic reveal; `Ctrl+S` performs
 the explicit toggle. The bounded agent/workflow footer strip remains a pointer reopen route,
 whose split or drawer presentation is determined by the viewport; Plan never contributes footer
 text.
@@ -1040,7 +1052,7 @@ live Lead frontier").
 | A press, release, or raw-input callback was queued before renderer teardown and runs after the host is destroyed | The lifecycle-safe OpenTUI host drops it before keymap dispatch; teardown emits no `Cannot use a keymap after its host was destroyed` error | `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`); test `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer destroys its keymap host") |
 | The workspace runtime is being replaced (`effects.interactionBlocked?.()===true`) | Every key except unmodified Escape is consumed at max intercept priority, including a modified Escape rebound to a modal-live command; a nearly transparent full-bleed portal consumes mouse and scroll input while the mounted page or picker stays visible, and plain Escape can still navigate the active view immediately | `offInteractionBlocker` in `packages/code/src/keys/interaction.ts`; `consumePointerEvent` and the switching `SurfacePortal` in `packages/code/src/views/App.tsx`; tests in `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | A pending elicitation modal (`setModalContext("elicitation")`) | Every vital binding **except** `MODAL_LIVE_COMMANDS` (`run.cancel`, `app.suspend`, the four `transcript.scroll*`) is inert; those six stay live (read-only navigation and escape hatches only) | `packages/code/src/keys/interaction.ts` (`MODAL_LIVE_COMMANDS`, `buildVitalBindings`); test `packages/code/tests/integration/interaction.test.ts` ("a pending modal keeps scrolling, suspend and cancel, and withholds the rest") |
-| An overlay is on the stack | The 11 `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut closes current-plan detail and returns to the transcript. There is no history-origin route. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx` (`plan.escape`); tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
+| An overlay is on the stack | The `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut closes current-plan detail and returns to the transcript. There is no history-origin route. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx` (`detailCloseActions`); tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | `normalizeKeyboardConfig` is handed malformed/future JSON (wrong version, non-object environments, junk verdicts) | Tolerantly degrades: unrecognized top-level shape → empty config; a malformed per-environment entry is skipped entirely; unrecognized verdict/binding entries inside an otherwise-valid entry are dropped individually | `packages/code/src/keys/keyboard-profile.ts`; test `packages/code/tests/unit/keyboard-profile.test.ts` (`normalizeKeyboardConfig tolerates future and malformed UI data`) |
 | `app.suspend` on `win32` | The command is not registered at all (no `SIGTSTP`/job control to return from), and its binding candidate is skipped by `resolvedVitalBindings` so the keymap's own dead-binding warning never fires on an orphaned key | `packages/code/src/keys/interaction.ts`; test `packages/code/tests/integration/interaction.test.ts` |
 
@@ -1154,3 +1166,13 @@ contract **by shape** without either module importing the other.
   `ViewHost` construction actually do** (beyond satisfying `MapFieldEditor` and
   `ViewHost`'s structural shapes) is out of this document's scope; only the shapes those
   modules must satisfy to compose with `ui/patterns/**` are covered here.
+
+
+The footer groups the available `transcript.focusPrev` and `transcript.focusNext` actions as
+`[^up / ^down] previous / next block`, using their resolved keys, before width budgeting. Both
+bindings remain independent in dispatch and full Help. If only one action is active, it retains its
+individual label. A grouped segment is admitted or omitted as a whole.
+Production: `budgetFooterActions` and `actionSegment` in
+[active-actions.ts](../../packages/code/src/ui/patterns/active-actions.ts).
+Test: [active-actions.test.ts](../../packages/code/tests/unit/active-actions.test.ts), atomic block
+navigation footer segment.

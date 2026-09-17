@@ -1,5 +1,5 @@
 import type { GoalRecord } from "@clarvis/protocol";
-import { tokens } from "../../theme/tokens.ts";
+import { detailStatusColor } from "../../ui/patterns/detail-view.tsx";
 
 /** Compact Steward state; technical audit identities stay out of the sidebar. */
 export function stewardStatusLabel(goal: GoalRecord): string | undefined {
@@ -18,18 +18,18 @@ export function goalStatusPresentation(status: GoalRecord["status"]): {
 } {
   switch (status) {
     case "active":
-      return { label: "Running", color: tokens.add };
+      return { label: "Running", color: detailStatusColor("running") };
     case "complete":
-      return { label: "Completed", color: tokens.add };
+      return { label: "Completed", color: detailStatusColor("completed") };
     case "paused":
-      return { label: "Paused", color: tokens.muted };
+      return { label: "Paused", color: detailStatusColor("paused") };
     case "blocked":
-      return { label: "Blocked", color: tokens.warn };
+      return { label: "Blocked", color: detailStatusColor("attention") };
     case "budget_limited":
     case "usage_limited":
-      return { label: "Limit reached", color: tokens.warn };
+      return { label: "Limit reached", color: detailStatusColor("attention") };
     case "cancelled":
-      return { label: "Canceled", color: tokens.del };
+      return { label: "Canceled", color: detailStatusColor("canceled") };
   }
 }
 

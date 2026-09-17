@@ -1,13 +1,4 @@
-import {
-  createEffect,
-  createMemo,
-  createSignal,
-  For,
-  on,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { detachObserved } from "../../core/tasks.ts";
 import type { Accessor, JSX } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
@@ -16,34 +7,99 @@ import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import type { PlanActivity, PlanTaskActivity } from "../../adapters/activity-store.ts";
-import { planRetentionLabel } from "../../adapters/execution-safety.ts";
 import { followSelection } from "../../ui/patterns/list-navigation.ts";
 import { LAYER, registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
-import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
 import type { ToneStyle } from "../../theme/tone.ts";
 import { taskTone } from "../blocks.tsx";
 import { PageFrame } from "../PageFrame.tsx";
-import { Prose, stripDocChrome } from "../Prose.tsx";
+import { Prose } from "../Prose.tsx";
 import { EmptyHint, LoadingHint } from "../config/view-host.tsx";
 import { scrollbarOptions, selectionBg, SCROLLBOX_TABLE_GUTTER } from "../../theme/surfaces.ts";
 import { lifecycleLabel, uiLifecycle } from "../../ui/presentation.ts";
-import { uiCommand } from "../../keys/actions.ts";
+import {
+  detailCloseActions,
+  DetailColumn,
+  DetailTitle,
+  DetailHeading,
+  detailStatusColor,
+} from "../../ui/patterns/detail-view.tsx";
 
-/**
- * Separates the human decision over a specification from the operational
- * revision that records task execution. The two counters intentionally never
- * share the ambiguous label "revision" in the UI.
- */
-function approvalLine(doc: PlanDocumentDto): string {
-  const approved = doc.approved_spec_revision;
-  if (doc.status === "awaiting_approval")
-    return approved === undefined
-      ? `Human approval needed for specification #${doc.spec_revision}`
-      : `Human approval needed again: specification #${doc.spec_revision} changed after approval of specification #${approved}`;
-  if (approved === undefined) return "Human review was not required";
-  return approved === doc.spec_revision
-    ? `Human-approved specification #${approved}`
-    : `Human approved specification #${approved}; current specification is #${doc.spec_revision}`;
+/** Surface pending approval without exposing persistence revisions or routine review metadata. */
+function approvalLine(doc: PlanDocumentDto): string | undefined {
+  if (doc.status !== "awaiting_approval") return undefined;
+  return doc.approved_spec_revision === undefined
+    ? "Approval needed before work can continue."
+    : "The plan changed. Review it again before work continues.";
+}
+
+/** A readable section omits absent content instead of showing empty document fields. */
+function detailSection(label: string, content: string, fg = tokens.fg): JSX.Element {
+  return (
+    <Show when={content.trim()}>
+      <box flexDirection="column">
+        <DetailHeading>{label}</DetailHeading>
+        <Prose block content={content} fg={fg} />
+      </box>
+    </Show>
+  );
+}
+
+/** Render the provider's structured plan using the same bounded reading column as Goal. */
+function PlanDetail(props: { document: PlanDocumentDto }): JSX.Element {
+  const doc = () => props.document;
+  return (
+    <DetailColumn>
+      <DetailTitle>{doc().title}</DetailTitle>
+      <text marginTop={1} fg={detailStatusColor(uiLifecycle(doc().status))} wrapMode="word">
+        {`${lifecycleLabel(uiLifecycle(doc().status))} ${glyph("separator")} ${taskProgressLabel(doc().tasks)}`}
+      </text>
+      <Show when={approvalLine(doc())}>
+        <text marginTop={1} fg={tokens.warn} wrapMode="word">
+          {approvalLine(doc())}
+        </text>
+      </Show>
+      <Show when={doc().objective.trim() !== doc().title.trim()}>
+        {detailSection("Objective", doc().objective)}
+      </Show>
+      {detailSection("Context", doc().context)}
+      <Show when={doc().tasks.length > 0}>
+        <DetailHeading>Tasks</DetailHeading>
+        <For each={doc().tasks}>
+          {(task) => (
+            <box flexDirection="column" marginTop={1}>
+              <text fg={detailStatusColor(uiLifecycle(task.status))} wrapMode="word">
+                {`${taskTone(task.status).glyph} ${task.title}`}
+              </text>
+              <box flexDirection="column" paddingLeft={2}>
+                <Show when={task.detail?.trim()}>
+                  <Prose block content={task.detail!} fg={tokens.muted} />
+                </Show>
+                <Show when={task.exit?.trim()}>
+                  <Prose block content={`Done when: ${task.exit}`} fg={tokens.muted} />
+                </Show>
+                <Show when={task.result?.trim()}>
+                  <Prose block content={task.result!} />
+                </Show>
+                <Show when={task.error?.trim()}>
+                  <Prose block content={task.error!} fg={tokens.del} />
+                </Show>
+                <Show when={task.reason?.trim()}>
+                  <Prose block content={task.reason!} fg={tokens.muted} />
+                </Show>
+              </box>
+            </box>
+          )}
+        </For>
+      </Show>
+      <Show when={doc().validation.some((item) => item.trim())}>
+        <DetailHeading>Validation</DetailHeading>
+        <For each={doc().validation.filter((item) => item.trim())}>
+          {(item) => <Prose block content={`- ${item}`} />}
+        </For>
+      </Show>
+      {detailSection("Notes", doc().notes)}
+    </DetailColumn>
+  );
 }
 
 /** A concise task outcome that remains accurate for every terminal status. */
@@ -154,6 +210,7 @@ export function PlanOverlay(props: {
 
   const scrollMode = createMemo(() => document() !== null);
   const spec = (): LevelSpec => ({
+    ...(props.onClose ? detailCloseActions("ctrl+p", props.onClose) : {}),
     ...(props.active ? { when: "overlay==plan", enabled: props.active } : {}),
     ...(scrollMode()
       ? { scroll: () => scrollEl }
@@ -169,42 +226,6 @@ export function PlanOverlay(props: {
         : {}),
   });
 
-  onMount(() => {
-    const offEscape = props.interaction.keymap.registerLayer({
-      ...(props.active ? { when: "overlay==plan" } : {}),
-      ...(props.active ? { enabled: reactiveMatcherFromSignal(props.active) } : {}),
-      priority: LAYER.OVERLAY + 1,
-      commands: [
-        uiCommand({
-          id: "plan.escape",
-          title: "Close plan",
-          description: "Return to the screen that opened this plan",
-          category: "escape",
-          surfaces: ["footer"],
-          footerLabel: "close",
-          hintPriority: 100,
-          hintGroup: "escape",
-          essential: true,
-          enabled: () => !!props.onClose,
-          run: () => props.onClose?.(),
-        }),
-        uiCommand({
-          id: "plan.close",
-          title: "Close plan",
-          description: "Close the plan screen without cancelling the run",
-          category: "escape",
-          surfaces: ["full-help"],
-          enabled: () => !!props.onClose,
-          run: () => props.onClose?.(),
-        }),
-      ],
-      bindings: [
-        { key: "escape", cmd: "plan.escape" },
-        { key: "ctrl+p", cmd: "plan.escape" },
-      ],
-    });
-    onCleanup(offEscape);
-  });
   createEffect(() => {
     const off = registerLevel(props.interaction.keymap, spec(), LAYER.OVERLAY);
     onCleanup(off);
@@ -217,7 +238,7 @@ export function PlanOverlay(props: {
 
   const title = (): string => {
     const doc = document();
-    if (doc) return `Plan ${glyph("chevronRight")} ${doc.title}`;
+    if (doc) return "Plan";
     const plan = activePlan();
     if (!plan) return "Plan";
     const progress =
@@ -295,7 +316,11 @@ export function PlanOverlay(props: {
   }
 
   return (
-    <PageFrame title={title()} interaction={props.interaction}>
+    <PageFrame
+      title={title()}
+      interaction={props.interaction}
+      actionFilter={(action) => action.id !== "run.cancel"}
+    >
       <scrollbox
         ref={(element: ScrollBoxRenderable) => (scrollEl = element)}
         flexGrow={1}
@@ -315,26 +340,7 @@ export function PlanOverlay(props: {
           {(plan: Accessor<PlanActivity>) => (
             <box flexDirection="column">
               <Show when={document()}>
-                {(doc: Accessor<PlanDocumentDto>) => (
-                  <box flexDirection="column" paddingBottom={1}>
-                    <text fg={tokens.muted} wrapMode="word">
-                      {`${lifecycleLabel(uiLifecycle(doc().status))} ${glyph("separator")} ${taskProgressLabel(doc().tasks)} ${glyph("separator")} ${planRetentionLabel(doc().retention)}`}
-                    </text>
-                    <text
-                      fg={doc().status === "awaiting_approval" ? tokens.accent : tokens.muted}
-                      wrapMode="word"
-                    >
-                      {approvalLine(doc())}
-                    </text>
-                    <text fg={tokens.muted} wrapMode="word">
-                      {`Execution update #${doc().revision} ${glyph("separator")} specification #${doc().spec_revision}`}
-                    </text>
-                    <text fg={tokens.muted} wrapMode="word">
-                      {doc().path ?? doc().id}
-                    </text>
-                    <Prose block content={stripDocChrome(doc().markdown)} />
-                  </box>
-                )}
+                {(doc: Accessor<PlanDocumentDto>) => <PlanDetail document={doc()} />}
               </Show>
               <Show when={loadingError()}>
                 <box flexDirection="column" paddingBottom={1}>
@@ -343,7 +349,9 @@ export function PlanOverlay(props: {
                   </text>
                 </box>
               </Show>
-              <Show when={plan().reviewOutcome}>
+              <Show
+                when={!document() && plan().reviewOutcome && plan().reviewOutcome !== "approved"}
+              >
                 <text fg={tokens.muted} wrapMode="word">
                   {glyph("separator") + " review: " + plan().reviewOutcome}
                 </text>

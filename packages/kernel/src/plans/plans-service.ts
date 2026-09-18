@@ -44,6 +44,7 @@ function dto(plan: PlanDocument): PlanDocumentDto {
     tasks: plan.tasks,
     validation: plan.validation,
     notes: plan.notes,
+    extra_sections: plan.extra_sections,
     markdown: renderPlan(plan),
   };
 }

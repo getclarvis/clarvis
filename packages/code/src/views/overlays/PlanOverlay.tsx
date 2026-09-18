@@ -98,6 +98,9 @@ function PlanDetail(props: { document: PlanDocumentDto }): JSX.Element {
         </For>
       </Show>
       {detailSection("Notes", doc().notes)}
+      <For each={Object.entries(doc().extra_sections)}>
+        {([heading, content]) => detailSection(heading, content)}
+      </For>
     </DetailColumn>
   );
 }

@@ -666,7 +666,7 @@ plan title, lifecycle, task states, active task and last result with explicit la
 active-row surface, so progress is not encoded by colour alone. The TUI has no retained-plan
 catalogue, filters, per-plan retention mutation or deletion; its backend seam reads only the live
 plan's document. The detail uses the same bounded reading column as Goal, with spaced objective,
-context, tasks, validation and notes sections. It renders structured fields instead of the stored
+context, tasks, validation, notes and preserved extra sections. It renders structured fields instead of the stored
 Markdown, omits empty fields, paths, IDs, revision counters and retention metadata, and shows
 approval guidance only when a decision is pending.
 

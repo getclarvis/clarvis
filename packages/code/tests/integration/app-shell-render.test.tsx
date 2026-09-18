@@ -2015,6 +2015,7 @@ test("Ctrl+X P toggles a run's plan detail, while Ctrl+C cancels without closing
     tasks: [],
     validation: [],
     notes: "",
+    extra_sections: {},
     markdown: "## Objective\n\nShip checkout safely.",
   };
   const plans: AppBackend["plans"] = {

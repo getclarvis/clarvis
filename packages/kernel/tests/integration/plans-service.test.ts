@@ -65,14 +65,18 @@ describe("createPlansService", () => {
         tasks: [{ title: "one" }],
         createdByRun: "run-1",
       });
+      const withExtra = await store.update(created.id, created, (plan) => {
+        plan.extra_sections.Risks = "Checkout totals may drift.";
+      });
 
-      const found = await service.read(created.id);
+      const found = await service.read(withExtra.id);
       expect(found.id).toBe(created.id);
       expect(found.title).toBe("My plan");
       expect(found.status).toBe("active");
       expect(found.path).toBeDefined();
       expect(found.markdown).toContain("My plan");
       expect(found.markdown).toContain("do the thing");
+      expect(found.extra_sections).toEqual({ Risks: "Checkout totals may drift." });
       expect(found.approved_spec_revision).toBeUndefined();
     });
 

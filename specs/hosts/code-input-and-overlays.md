@@ -727,6 +727,8 @@ detail as separate steps. Up/Down moves through visible tree rows without changi
 Enter expands/collapses a folder or explicitly opens the selected file. Tab/Escape returns from
 detail to the tree, where Escape closes the page. The local footer advertises that Escape route and
 filters the global Ctrl+C cancel/quit hint, matching the Plan and Goal detail-screen pattern.
+Tree rows retain each normalized file path as their selection identity, including a POSIX root or
+UNC prefix, while separately deriving folder and leaf labels for display.
 Mouse selection follows the same path. Each selected file shows its path, tool identity and all of
 its diffs in chronological order through the shared tool-result renderer (`resolveToolRenderer`) in
 `full`/`wrap` mode. A node without a native diff falls back to the renderer's args-reconstructed
@@ -753,7 +755,8 @@ are no list/filter/page verbs and no per-plan retention/delete mutations. Produc
 `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`, `loadActivePlan`, `spec`). Test:
 `packages/code/tests/integration/plan-overlay-render.test.tsx`.
 
-`PlanDetail` renders the parsed objective, context, tasks, validation and notes in a reading
+`PlanDetail` renders the parsed objective, context, tasks, validation, notes and preserved extra
+sections in a reading
 column bounded to 100 cells, matching Goal. Task status, meaningful detail, completion conditions
 and nonempty outcomes remain visible, while backend paths/IDs, revision counters, retention,
 assignees and empty fields are omitted. The stored Markdown is not rendered, so serialization

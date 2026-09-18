@@ -121,6 +121,43 @@ test("the changed-file tree expands folders and selects one complete file diff",
   t.renderer.destroy();
 });
 
+test("absolute paths retain their identity when a file is selected", async () => {
+  const { keymap, press } = createFakeKeymap();
+  const interaction = { keymap } as unknown as Interaction;
+  const nodes = [
+    toolNode({
+      args: { path: "/workspace/src/first.ts", old_string: "old first", new_string: "ABS FIRST" },
+      diff: undefined,
+    }),
+    toolNode({
+      args: {
+        path: "/workspace/src/second.ts",
+        old_string: "old second",
+        new_string: "ABS SECOND",
+      },
+      diff: undefined,
+    }),
+  ];
+  const t = await openRender(
+    (() => (
+      <DiffViewer interaction={interaction} nodes={() => nodes} onClose={() => undefined} />
+    )) as never,
+    { width: 100, height: 40 },
+  );
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("ABS FIRST");
+  press("down");
+  press("down");
+  press("down");
+  press("return");
+  await settleSyntaxSurfaces(t);
+  const out = t.captureCharFrame();
+  expect(out).toContain("/workspace/src/second.ts");
+  expect(out).toContain("ABS SECOND");
+  expect(out).not.toContain("ABS FIRST");
+  t.renderer.destroy();
+});
+
 test("all edits to the same file stay grouped and multi-file unified diffs split by path", () => {
   const samePath = [
     toolNode({ args: { path: "src/a.ts" }, diff: "--- src/a.ts\n+++ src/a.ts\n+one" }),

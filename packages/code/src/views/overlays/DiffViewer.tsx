@@ -31,6 +31,15 @@ export type DiffTreeRow =
   | { kind: "folder"; path: string; name: string; depth: number }
   | { kind: "file"; path: string; name: string; depth: number };
 
+function pathRoot(path: string): string {
+  return path.match(/^\/+/)?.[0] ?? "";
+}
+
+function appendPath(parent: string, part: string): string {
+  if (parent.length === 0) return part;
+  return `${parent}${parent.endsWith("/") ? "" : "/"}${part}`;
+}
+
 function pathArg(node: TranscriptToolNode): string | undefined {
   for (const key of ["path", "file", "to", "from", "source"]) {
     const value = node.args?.[key];
@@ -76,40 +85,54 @@ function projectDiffTreeRows(
   expanded: ReadonlySet<string>,
 ): DiffTreeRow[] {
   interface Directory {
+    path: string;
+    name: string;
     dirs: Map<string, Directory>;
-    files: string[];
+    files: Array<{ path: string; name: string }>;
   }
-  const root: Directory = { dirs: new Map(), files: [] };
+  const root: Directory = { path: "", name: "", dirs: new Map(), files: [] };
   for (const file of files) {
     const parts = file.path.split("/").filter(Boolean);
+    const rootPrefix = pathRoot(file.path);
     let current = root;
-    for (const part of parts.slice(0, -1)) {
-      let child = current.dirs.get(part);
+    let parentPath = rootPrefix;
+    for (const [index, part] of parts.slice(0, -1).entries()) {
+      const path = appendPath(parentPath, part);
+      let child = current.dirs.get(path);
       if (!child) {
-        child = { dirs: new Map(), files: [] };
-        current.dirs.set(part, child);
+        child = {
+          path,
+          name: index === 0 && rootPrefix.length > 0 ? `${rootPrefix}${part}` : part,
+          dirs: new Map(),
+          files: [],
+        };
+        current.dirs.set(path, child);
       }
       current = child;
+      parentPath = path;
     }
-    current.files.push(parts.at(-1) ?? file.path);
+    const leaf = parts.at(-1) ?? file.path;
+    current.files.push({
+      path: file.path,
+      name: parts.length === 1 && rootPrefix.length > 0 ? `${rootPrefix}${leaf}` : leaf,
+    });
   }
   const rows: DiffTreeRow[] = [];
-  const visit = (directory: Directory, parent: string, depth: number): void => {
-    for (const [name, child] of [...directory.dirs].sort(([a], [b]) => a.localeCompare(b))) {
-      const path = parent.length === 0 ? name : `${parent}/${name}`;
-      rows.push({ kind: "folder", path, name, depth });
-      if (expanded.has(path)) visit(child, path, depth + 1);
+  const visit = (directory: Directory, depth: number): void => {
+    for (const child of [...directory.dirs.values()].sort((a, b) => a.path.localeCompare(b.path))) {
+      rows.push({ kind: "folder", path: child.path, name: child.name, depth });
+      if (expanded.has(child.path)) visit(child, depth + 1);
     }
-    for (const name of directory.files.sort((a, b) => a.localeCompare(b))) {
+    for (const file of directory.files.sort((a, b) => a.path.localeCompare(b.path))) {
       rows.push({
         kind: "file",
-        path: parent.length === 0 ? name : `${parent}/${name}`,
-        name,
+        path: file.path,
+        name: file.name,
         depth,
       });
     }
   };
-  visit(root, "", 0);
+  visit(root, 0);
   return rows;
 }
 
@@ -151,8 +174,11 @@ export function DiffViewer(props: {
     const paths = new Set<string>();
     for (const file of files()) {
       const parts = file.path.split("/").filter(Boolean);
-      for (let index = 1; index < parts.length; index += 1)
-        paths.add(parts.slice(0, index).join("/"));
+      let parentPath = pathRoot(file.path);
+      for (const part of parts.slice(0, -1)) {
+        parentPath = appendPath(parentPath, part);
+        paths.add(parentPath);
+      }
     }
     return paths;
   });

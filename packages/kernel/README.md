@@ -191,6 +191,8 @@ list with canonical Tools; only its read-only surface and generic
 `submit_result` are reachable. There are no MCP, skill, hook, workflow, plan, memory, Goal control or
 delegation ports. The host supplies model/provider/runtime placement, stamps identities, verifies
 complete trace-backed normative reads, rereads confined files and computes their SHA-256 digests.
+Live trace events are reduced to bounded `thinking`, `reading` and `searching` activity notifications
+for the initiating Goal subscriber; model text, tool arguments and paths do not cross that projection.
 An explicit `read_file` range is accepted only when its trace rendering still equals the entire
 confined reread and has no continuation marker; genuinely partial ranges remain fail-closed.
 
@@ -722,8 +724,9 @@ without a client-side settings workaround.
 
 The goal facade validates availability, receipts and bounded conversation state on the wire,
 including the physical run's session/workspace binding. `goals.subscribe` installs a live
-subscription before its acknowledgement; its `goals.change` notification carries only the affected
-session ID. Consumers reread canonical state. Goal writes and physical lifecycle transitions emit
+subscription before its acknowledgement; its `goals.change` notification carries the affected
+session ID and may include bounded, non-authoritative formulation activity. Consumers reread
+canonical state for notifications without that transient activity. Goal writes and physical lifecycle transitions emit
 these invalidations without transferring execution authority. Registrations are bounded to eight
 per connection and 128 per host, and pending installations are released on disconnect.
 See [kernel transport](../../specs/hosts/kernel-transport.md) for response validation and disposal.

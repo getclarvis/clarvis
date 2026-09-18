@@ -253,10 +253,17 @@ export interface GoalView {
   attention?: string;
 }
 
-/** Display invalidation only; callers reread canonical state and cannot derive authority from it. */
+/** Ephemeral formulation activity; it is presentation only and never enters durable Goal state. */
+export interface GoalFormulationActivity {
+  phase: "thinking" | "reading" | "searching" | "idle";
+  iteration?: number;
+  last_workspace_activity?: "reading" | "searching";
+}
+
+/** Display invalidation or ephemeral activity; neither grants authority. */
 export interface GoalChange {
   session_id: string;
-  formulation_phase?: "preparing" | "reviewing_definition" | "idle";
+  formulation_activity?: GoalFormulationActivity;
 }
 
 /** Authenticated conversation controls; model calls cannot access this user-control surface. */

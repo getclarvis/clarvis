@@ -5,6 +5,7 @@ import type {
   GoalControlRequest,
   GoalFormulateRequest,
   GoalFormulateResult,
+  GoalFormulationActivity,
   GoalReceipt,
   GoalService,
   GoalView,
@@ -23,7 +24,7 @@ export interface GoalController {
   available: Accessor<boolean>;
   busy: Accessor<boolean>;
   formulating: Accessor<boolean>;
-  formulationPhase: Accessor<"preparing" | "reviewing_definition" | "idle">;
+  formulationActivity: Accessor<GoalFormulationActivity | undefined>;
   loading: Accessor<boolean>;
   failure: Accessor<string>;
   pendingOperation: Accessor<string | undefined>;
@@ -63,11 +64,8 @@ export function createGoalController(deps: {
   const [view, setView] = createSignal<GoalView>();
   const [available, setAvailable] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
-  const [localFormulating, setLocalFormulating] = createSignal(false);
-  const [formulationPhase, setFormulationPhase] = createSignal<
-    "preparing" | "reviewing_definition" | "idle"
-  >("idle");
-  const formulating = (): boolean => localFormulating() || formulationPhase() !== "idle";
+  const [formulating, setFormulating] = createSignal(false);
+  const [formulationActivity, setFormulationActivity] = createSignal<GoalFormulationActivity>();
   const [loading, setLoading] = createSignal(false);
   const [failure, setFailure] = createSignal("");
   const [pendingOperation, setPendingOperation] = createSignal<string>();
@@ -88,7 +86,7 @@ export function createGoalController(deps: {
     setView(undefined);
     setAvailable(false);
     setLoading(false);
-    setFormulationPhase("idle");
+    setFormulationActivity(undefined);
     setFailure("");
     setPendingOperation(pending.get(deps.binding()?.sessionId ?? "")?.operation_id);
   };
@@ -121,9 +119,13 @@ export function createGoalController(deps: {
         if (!entry.subscribed) {
           const off = await entry.service.subscribe(entry.binding.sessionId, (change) => {
             if (!current(entry)) return;
-            if (change.formulation_phase !== undefined) {
-              setFormulationPhase(change.formulation_phase);
-              if (change.formulation_phase !== "idle") return;
+            if (change.formulation_activity !== undefined) {
+              setFormulationActivity(
+                change.formulation_activity.phase === "idle"
+                  ? undefined
+                  : change.formulation_activity,
+              );
+              if (change.formulation_activity.phase !== "idle") return;
             }
             detachObserved("goal.refresh", () => refreshEntry(entry));
           });
@@ -203,7 +205,7 @@ export function createGoalController(deps: {
     available,
     busy,
     formulating,
-    formulationPhase,
+    formulationActivity,
     loading,
     failure,
     pendingOperation,
@@ -285,8 +287,8 @@ export function createGoalController(deps: {
       if (disposed || busy())
         throw new Error("A goal operation is already running or the interface is closed.");
       setBusy(true);
-      setLocalFormulating(true);
-      setFormulationPhase("preparing");
+      setFormulating(true);
+      setFormulationActivity({ phase: "thinking" });
       let entry: Observation | undefined;
       try {
         const binding = deps.binding() ?? (await deps.prepare());
@@ -340,8 +342,8 @@ export function createGoalController(deps: {
         if (entry === undefined || current(entry)) setFailure(message(error));
         throw error;
       } finally {
-        setLocalFormulating(false);
-        setFormulationPhase("idle");
+        setFormulationActivity(undefined);
+        setFormulating(false);
         setBusy(false);
       }
     },

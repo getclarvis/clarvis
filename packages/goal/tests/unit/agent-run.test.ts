@@ -131,6 +131,8 @@ describe("Goal semantic agent", () => {
     expect(guided.profiles[0]!.base_prompt).toBe(automatic.profiles[0]!.base_prompt);
     expect(guided.profiles[0]!.base_prompt).not.toContain(input.seed!);
     expect(guided.profiles[0]!.base_prompt).not.toContain(input.trajectory.projection);
+    expect(guided.profiles[0]!.base_prompt).toContain("First read the exact named path");
+    expect(guided.profiles[0]!.base_prompt).toContain("Formulation is not implementation research");
     expect(guided.messages).not.toEqual(automatic.messages);
     expect(guided.shared_prompt).toBe("");
     expect(automatic.shared_prompt).toBe("");
@@ -277,6 +279,7 @@ describe("Goal semantic agent", () => {
 
   it("executes with callPurpose goal and returns measured usage", async () => {
     let captured: ExecuteRunArgs | undefined;
+    const events: string[] = [];
     const runtime = {
       owner: "owner",
       model_ref: "fixture/model",
@@ -286,6 +289,13 @@ describe("Goal semantic agent", () => {
       } as GoalAgentRuntime["deps"],
       async execute_run(args: ExecuteRunArgs): Promise<ExecuteRunOutcome> {
         captured = args;
+        args.onEvent?.({
+          type: "subagent_iteration_started",
+          subagent_instance_id: "agent-1",
+          iteration: 1,
+          started_at: 1,
+          model: "fixture/model",
+        });
         return {
           executionId: "formulation-1",
           response: {
@@ -311,8 +321,12 @@ describe("Goal semantic agent", () => {
         };
       },
     } satisfies GoalAgentRuntime;
-    const result = await runGoalAgent(runtime, input);
+    const result = await runGoalAgent(runtime, {
+      ...input,
+      on_event: (event) => events.push(event.type),
+    });
     expect(captured).toMatchObject({ owner: "owner", callPurpose: "goal" });
+    expect(events).toEqual(["subagent_iteration_started"]);
     expect(result).toMatchObject({
       execution_id: "formulation-1",
       result: { status: "ready" },

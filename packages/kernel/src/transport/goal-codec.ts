@@ -15,7 +15,13 @@ const availability = z.strictObject({
 });
 const change = z.strictObject({
   session_id: id,
-  formulation_phase: z.enum(["preparing", "reviewing_definition", "idle"]).optional(),
+  formulation_activity: z
+    .strictObject({
+      phase: z.enum(["thinking", "reading", "searching", "idle"]),
+      iteration: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      last_workspace_activity: z.enum(["reading", "searching"]).optional(),
+    })
+    .optional(),
 });
 const view = z.strictObject({
   state: z.unknown(),

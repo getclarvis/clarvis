@@ -16,10 +16,13 @@ describe("goal display invalidations", () => {
     });
     changes.notify("session");
     expect(received).toEqual([{ session_id: "session" }]);
-    changes.notify("session", "reviewing_definition");
+    changes.notify("session", {
+      session_id: "session",
+      formulation_activity: { phase: "reading", iteration: 2 },
+    });
     expect(received.at(-1)).toEqual({
       session_id: "session",
-      formulation_phase: "reviewing_definition",
+      formulation_activity: { phase: "reading", iteration: 2 },
     });
     expect(logger.records).toHaveLength(2);
     expect(logger.events("goal.change.delivery_failed")).toEqual([

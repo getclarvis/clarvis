@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readOnlyTools } from "@clarvis/tools";
+import type { GoalChange } from "@clarvis/protocol";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
@@ -13,9 +14,10 @@ describe("Goal formulation through the real file host", () => {
   it("returns a rejected definition to the selected main agent before activation", async () => {
     const fixture = await createGoalFileHostFixture();
     cleanups.push(fixture.close);
-    const phases: string[] = [];
+    const activities: string[] = [];
     const unsubscribe = await fixture.client.goals.subscribe("conversation", (change) => {
-      if (change.formulation_phase !== undefined) phases.push(change.formulation_phase);
+      if (change.formulation_activity !== undefined)
+        activities.push(change.formulation_activity.phase);
     });
     cleanups.push(async () => unsubscribe());
     let reviews = 0;
@@ -76,13 +78,8 @@ describe("Goal formulation through the real file host", () => {
     });
     expect(receipt.formulation.outcome).toBe("created");
     expect(reviews).toBe(2);
-    expect(phases).toEqual([
-      "preparing",
-      "reviewing_definition",
-      "preparing",
-      "reviewing_definition",
-      "idle",
-    ]);
+    expect(activities[0]).toBe("thinking");
+    expect(activities.at(-1)).toBe("idle");
     expect(fixture.requests[1]!.messages.at(-1)!.content).toContain(
       "Preserve the requested exclusion",
     );
@@ -134,6 +131,11 @@ describe("Goal formulation through the real file host", () => {
         arguments: { update: { action: "blocked", reason: "Fixture work run is observable" } },
       };
     });
+
+    const changes: GoalChange[] = [];
+    const unsubscribe = await fixture.client.goals.subscribe("conversation", (change) =>
+      changes.push(change),
+    );
 
     const receipt = await fixture.client.goals.formulate({
       session_id: "conversation",
@@ -202,6 +204,20 @@ describe("Goal formulation through the real file host", () => {
         request.tools?.some((tool) => tool.function.name === "submit_result"),
       ),
     ).toHaveLength(2);
+    unsubscribe();
+    expect(changes.some((change) => change.formulation_activity?.phase === "thinking")).toBeTrue();
+    expect(changes.some((change) => change.formulation_activity?.phase === "reading")).toBeTrue();
+    expect(
+      changes.some((change) => change.formulation_activity?.phase === "searching"),
+    ).toBeFalse();
+    expect(
+      changes.some(
+        (change) =>
+          change.formulation_activity?.phase === "thinking" &&
+          change.formulation_activity.last_workspace_activity === "reading",
+      ),
+    ).toBeTrue();
+    expect(changes.at(-1)?.formulation_activity?.phase).toBe("idle");
   });
 
   it("returns deterministic insufficient context without inference for empty auto", async () => {

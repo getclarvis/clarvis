@@ -2,7 +2,7 @@ import { addGoalAuxiliaryUsage } from "./usage.ts";
 import type { ModelCost } from "@clarvis/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { isBuiltinTraceEvent, NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import {
   applyGoalControl,
   applyGoalFormulation,
@@ -28,7 +28,7 @@ import {
 import type { TraceEvent } from "@clarvis/capability";
 import type {
   GoalFormulateResult,
-  GoalChange,
+  GoalFormulationActivity,
   GoalService,
   RunDetail,
   Session,
@@ -106,7 +106,7 @@ export function createGoalService(options: {
   entryTokenLimit(params: StartRunParams): number | undefined;
   logger?: Logger;
   subscribe: GoalService["subscribe"];
-  formulationChanged(sessionId: string, phase: NonNullable<GoalChange["formulation_phase"]>): void;
+  publishFormulationActivity(sessionId: string, activity: GoalFormulationActivity): void;
   transactions: HostedSessionTransactions;
   readRun(executionId: string): Promise<RunDetail | null>;
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
@@ -132,6 +132,22 @@ export function createGoalService(options: {
     string,
     { fingerprint: string; promise: Promise<GoalFormulateResult> }
   >();
+  const readActivityTools = new Set(["read_file", "read_files", "read_image"]);
+  const searchActivityTools = new Set(["file_stat", "glob", "grep", "list_dir", "tree"]);
+  const activityFor = (event: TraceEvent): GoalFormulationActivity | undefined => {
+    if (!isBuiltinTraceEvent(event)) return undefined;
+    if (event.type === "subagent_iteration_started")
+      return { phase: "thinking", iteration: event.iteration };
+    if (event.type !== "tool_call_started") return undefined;
+    const name = event.tool_name || event.mcp_name;
+    const phase = readActivityTools.has(name)
+      ? "reading"
+      : searchActivityTools.has(name)
+        ? "searching"
+        : undefined;
+    if (phase === undefined) return undefined;
+    return { phase, iteration: event.iteration_ref };
+  };
   const assert = (authority: HostedConversationAuthority): void => {
     options.assertWritable();
     options.registry.assertController(authority);
@@ -279,7 +295,6 @@ export function createGoalService(options: {
         throw kernelError("conflict", "A running conversation cannot acquire a goal");
       const authority = options.registry.claimController(options.peerId, request.session_id);
       assert(authority);
-      options.formulationChanged(request.session_id, "preparing");
       const trajectory = await projectGoalTrajectory(
         captured,
         (executionId) => options.readRun(executionId),
@@ -350,9 +365,19 @@ export function createGoalService(options: {
       const accumulatedAccounting: NonNullable<GoalAgentRunResult["accounting"]> = [];
       let revisionGuidance: string | undefined;
       let previousDefinition: GoalAgentRunResult["result"] | undefined;
+      let latestActivity = "";
+      let lastWorkspaceActivity: "reading" | "searching" | undefined;
+      const publishActivity = (activity: GoalFormulationActivity): void => {
+        const fingerprint = `${activity.phase}:${activity.iteration ?? ""}:${activity.last_workspace_activity ?? ""}`;
+        if (fingerprint === latestActivity) return;
+        latestActivity = fingerprint;
+        options.publishFormulationActivity(request.session_id, activity);
+      };
+      publishActivity({ phase: "thinking" });
       try {
         for (let attempt = 0; attempt < 3; attempt++) {
-          if (attempt > 0) options.formulationChanged(request.session_id, "preparing");
+          if (attempt > 0)
+            publishActivity({ phase: "thinking", last_workspace_activity: lastWorkspaceActivity });
           formulationExecutionId = generateExecutionId();
           analyzed = await options.formulateRun({
             mode: request.mode,
@@ -366,6 +391,18 @@ export function createGoalService(options: {
               : { revision_guidance: revisionGuidance, previous_definition: previousDefinition }),
             session_id: request.session_id,
             signal: authority.signal,
+            on_event: (event) => {
+              const activity = activityFor(event);
+              if (activity === undefined) return;
+              if (activity.phase === "reading" || activity.phase === "searching")
+                lastWorkspaceActivity = activity.phase;
+              publishActivity({
+                ...activity,
+                ...(lastWorkspaceActivity === undefined
+                  ? {}
+                  : { last_workspace_activity: lastWorkspaceActivity }),
+              });
+            },
           });
           accumulatedUsage =
             accumulatedUsage === undefined
@@ -388,7 +425,12 @@ export function createGoalService(options: {
               accumulatedAccounting,
             );
           }
-          options.formulationChanged(request.session_id, "reviewing_definition");
+          publishActivity({
+            phase: "thinking",
+            ...(lastWorkspaceActivity === undefined
+              ? {}
+              : { last_workspace_activity: lastWorkspaceActivity }),
+          });
           const reviewed = await options.reviewDefinition({
             session_id: request.session_id,
             request:
@@ -590,7 +632,7 @@ export function createGoalService(options: {
       );
       return { ...receipt, formulation: receipt.formulation! };
     })().finally(() => {
-      options.formulationChanged(request.session_id, "idle");
+      options.publishFormulationActivity(request.session_id, { phase: "idle" });
       release();
     });
     formulations.set(formulationKey, { fingerprint, promise: task });

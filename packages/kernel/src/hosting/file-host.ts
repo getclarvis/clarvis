@@ -446,7 +446,11 @@ export async function createFileRunHost(options: FileRunHostOptions): Promise<Fi
             entryTokenLimit: (params) => kernel.prepareRun(params, owner).tokenLimit,
             logger,
             subscribe: async (sessionId, listener) => goalChanges.subscribe(sessionId, listener),
-            formulationChanged: (sessionId, phase) => goalChanges.notify(sessionId, phase),
+            publishFormulationActivity: (sessionId, activity) =>
+              goalChanges.notify(sessionId, {
+                session_id: sessionId,
+                formulation_activity: activity,
+              }),
             transactions: sessions,
             readRun: async (executionId) => {
               try {

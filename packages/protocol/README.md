@@ -97,10 +97,11 @@ conversation hosts expose these controls; headless hosts remain unavailable. The
 and host validate authority separately from the DTO. See [goals](../../specs/capabilities/goals.md).
 
 `goals.subscribe(sessionId, listener)` returns a promise for a disposer. Await it before reading
-the initial state. Notifications identify the session and normally request another canonical read;
-they do not grant execution authority or announce a completion commit independently of the state.
-Optional `formulation_phase` values are transient presentation hints for main-agent preparation and
-definition review; `idle` clears the hint and none are persisted as a Goal. The host bounds
+the initial state. Notifications contain the session ID and may carry bounded ephemeral Goal
+formulation activity (`thinking`, `reading`, `searching` or `idle`); activity is presentation-only
+and may retain the last workspace action while the model thinks. It is never durable Goal state.
+Notifications without activity request another canonical read. Neither form grants execution
+authority or announces a completion commit independently of the state. The host bounds
 subscriptions and releases them when the connection closes.
 
 `hosting.ts` additionally defines the hosted-run boundary: generation/sequence cursors, immutable

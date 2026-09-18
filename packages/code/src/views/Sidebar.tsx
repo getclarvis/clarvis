@@ -448,11 +448,33 @@ export function Sidebar(props: {
               </b>
             </text>
             <Show when={props.goals?.formulating()}>
-              <text fg={tokens.muted}>
-                {props.goals?.formulationPhase() === "reviewing_definition"
-                  ? "Reviewing definition…"
-                  : "Preparing with the selected agent…"}
-              </text>
+              <box flexDirection="column">
+                <Show
+                  when={
+                    props.goals?.formulationActivity()?.phase === "thinking"
+                      ? props.goals?.formulationActivity()?.last_workspace_activity
+                      : undefined
+                  }
+                >
+                  <text fg={tokens.muted}>
+                    {props.goals?.formulationActivity()?.last_workspace_activity === "reading"
+                      ? "Read referenced files · done"
+                      : "Searched workspace · done"}
+                  </text>
+                </Show>
+                <text fg={tokens.muted}>
+                  {(() => {
+                    const activity = props.goals?.formulationActivity();
+                    const label =
+                      activity?.phase === "reading"
+                        ? "Reading referenced files"
+                        : activity?.phase === "searching"
+                          ? "Searching workspace"
+                          : "Thinking about the Goal";
+                    return `${label}${activity?.iteration === undefined ? "" : ` · iteration ${activity.iteration}`}…`;
+                  })()}
+                </text>
+              </box>
             </Show>
             <Show when={!props.goals?.formulating() && props.goals?.view()?.state.current}>
               {(goal: Accessor<GoalRecord>) => {

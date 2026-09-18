@@ -301,7 +301,12 @@ describe("guard audit records", () => {
     expect(await resolution!.elicit!(bashReq("echo hi"))).toEqual({
       allowed: false,
       answerer: "unavailable",
-      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
+      review: {
+        effect_id: undefined,
+        failure_kind: undefined,
+        relation: "none",
+        reviewer_decision: "unsure",
+      },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")).toBeUndefined();
   });
@@ -338,7 +343,12 @@ describe("guard audit records", () => {
     expect(await resolution!.elicit!(bashReq("bun run test"))).toEqual({
       allowed: true,
       answerer: "human",
-      review: { effect_id: undefined, failure_kind: undefined, relation: "none" },
+      review: {
+        effect_id: undefined,
+        failure_kind: undefined,
+        relation: "none",
+        reviewer_decision: "unsure",
+      },
     });
     expect(records.find((r) => r.fields.event === "guard.elicit.answered")?.fields).toMatchObject({
       answerer: "human",

@@ -15,7 +15,9 @@ export function validateAuthorityEnvelope(
   if (!parsed.success || state.status !== "active" || parsed.data.revision !== state.revision)
     return undefined;
   const envelope = parsed.data;
-  const evidence = new Set(state.evidence.map((entry) => entry.id));
+  const evidence = new Set(
+    [...state.evidence, ...(state.instructions ?? [])].map((entry) => entry.id),
+  );
   const targets = new Set(
     batch.facts.flatMap((fact) => (fact.target === undefined ? [] : [fact.target.digest])),
   );

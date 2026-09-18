@@ -118,9 +118,10 @@ test.each([
       expect(answer).toEqual({
         allowed,
         answerer: humans === 0 ? "judge" : "human",
-        ...((outcome === "invalid_response" || outcome === "transport") && fallback === "deny"
-          ? { review: { failure_kind: outcome } }
-          : {}),
+        review:
+          outcome === "invalid_response" || outcome === "transport"
+            ? { failure_kind: outcome, reviewer_decision: "failed" }
+            : { reviewer_decision: outcome },
       });
     expect(reviews).toBe(1);
     expect(prompts).toBe(humans);

@@ -57,6 +57,24 @@ const evidenceList = z
       new Set(entries.map((entry) => entry.id)).size === entries.length,
   );
 const consumedSchema = z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(32);
+const instructionsSchema = z
+  .array(
+    z
+      .object({
+        id: identifier,
+        scope: z.enum(["global", "workspace"]),
+        source: z.string().min(1).max(256),
+        digest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        content: z.string().max(2 * 1024 * 1024),
+      })
+      .strict(),
+  )
+  .max(2)
+  .refine(
+    (entries) =>
+      new Set(entries.map((entry) => entry.scope)).size === entries.length &&
+      new Set(entries.map((entry) => entry.id)).size === entries.length,
+  );
 const reviewContextSchema = z
   .object({
     kind: z.enum(["goal", "plan"]),
@@ -78,6 +96,7 @@ const seedSchema = z
   .object({
     binding: bindingSchema,
     evidence: evidenceList,
+    instructions: instructionsSchema.optional(),
     review_context: reviewContextSchema.optional(),
     parent_run_id: identifier.optional(),
     ceiling: authorityEnvelopeSchema.optional(),
@@ -169,6 +188,14 @@ export function createOperatorAuthorityRuntime(input: {
     revision: 0,
     status: admitted ? "active" : "revoked",
     evidence: [],
+    ...(seed?.instructions === undefined
+      ? {}
+      : {
+          instructions: seed.instructions.map((entry) => ({
+            ...entry,
+            content: sanitizeText(entry.content),
+          })),
+        }),
     ...(seed?.review_context === undefined
       ? {}
       : {
@@ -246,6 +273,15 @@ export function createOperatorAuthorityRuntime(input: {
           : { envelope_context_revision: contextRevision.data }),
       };
     else revoke();
+  }
+  if (
+    prior !== undefined &&
+    state.status === "active" &&
+    JSON.stringify(prior.instructions ?? []) !== JSON.stringify(state.instructions ?? [])
+  ) {
+    state = { ...state, revision: state.revision + 1, denied_effects: [] };
+    delete state.envelope;
+    delete state.envelope_context_revision;
   }
   if (seed !== undefined) append(seed.evidence);
   const parentRevision = seed?.ceiling?.revision;

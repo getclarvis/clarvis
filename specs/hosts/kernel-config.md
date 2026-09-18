@@ -572,6 +572,14 @@ unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
 `packages/kernel/tests/integration/file-config-store.test.ts`.
 
+The same captured records, global then workspace, also supply Judge's persistent operator
+instructions; no second filesystem read can diverge from the assembled work-agent snapshot.
+Production: `captureRunInstructions` in
+[instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts) and
+`createSettingsRunAssembler` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).
+Test: `shares exact global and workspace contexts with Judge using per-scope filename precedence`
+in [settings-assembler.test.ts](../../packages/kernel/tests/component/settings-assembler.test.ts).
+
 ## 5. Invariants
 
 Each entry: **rule** — production anchor — test anchor.

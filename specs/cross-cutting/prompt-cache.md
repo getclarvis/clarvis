@@ -99,7 +99,8 @@ prove serialization, not remote cache hits or automatic host continuation.
 Goal formulation uses one byte-identical base prompt for auto and guided modes. Both precedence
 rules are fixed policy; mode, seed, trajectory, digest, truncation and workspace availability remain
 in the final volatile message. The call-local Auto reviewer uses Judge's fixed policy, fixed Goal
-and Plan slots, chronological per-entry operator evidence and a volatile authority/case tail. Empty
+and Plan slots, persistent global/workspace instructions in its fixed configuration, chronological
+per-entry operator evidence and a volatile authority/case tail. Empty
 semantic slots preserve their positions; new operator input extends the prefix; a changed Plan
 invalidates from its existing slot. The reviewer excludes the work run's operational Goal reminder,
 Plan CAS header and transcript, and does not duplicate evidence or semantic context inside its

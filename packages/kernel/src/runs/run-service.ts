@@ -23,6 +23,7 @@ import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { SteerQueue } from "./steer-queue.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
 import { randomUUID } from "node:crypto";
+import { seedRunInstructions } from "./instruction-snapshot.ts";
 import type {
   OperatorAuthoritySeed,
   OperatorAuthorityBinding,
@@ -263,9 +264,12 @@ export function createRunService(cfg: RunServiceConfig): KernelRunService {
           operatorAuthoritySignal: authorityAdmission?.signal,
           elicit: context.elicit,
         };
+        const rawBody =
+          prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request);
         const outcome = await executeRun({
           ...args,
-          rawBody: prepared?.kind === "ordinary" ? prepared.rawBody : assembleRunRequest(request),
+          operatorAuthoritySeed: seedRunInstructions(operatorAuthoritySeed, rawBody),
+          rawBody,
         });
         return engineResultToProto(outcome.executionId, outcome.response);
       },

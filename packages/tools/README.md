@@ -291,6 +291,9 @@ approve it; it does not repeat the static ask reason as though no reviewer ran.
 When the host's guard includes its effective mode, `DispatchResult.guard` also
 records the final allowed/denied outcome and whether policy, the judge, the user,
 the session allowlist, or an unavailable review channel answered it.
+Optional `reviewer_decision` separates the semantic result (`allow`, `deny`, `unsure`, `failed`)
+from the final outcome. Denied results label the static review trigger separately from that result;
+they do not invent a semantic explanation from the shell analyzer's reason.
 
 The exported POSIX and PowerShell starter allowlists cover routine inspection,
 build, test, lint and type-check commands across JavaScript/TypeScript, Python,

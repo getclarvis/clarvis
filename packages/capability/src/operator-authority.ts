@@ -33,6 +33,15 @@ export interface OperatorEvidence {
   agent?: "lead" | "subagent";
 }
 
+/** Host-captured persistent operator instructions, independent of model-authored messages. */
+export interface OperatorInstructions {
+  id: string;
+  scope: "global" | "workspace";
+  source: string;
+  digest: string;
+  content: string;
+}
+
 /** Accepted entry-agent answer admitted by the host elicitation channel. */
 export interface OperatorElicitationContext {
   question: string;
@@ -74,6 +83,7 @@ export const PLANS_REVIEW_CONTEXT_PORT: PortKey<OperatorReviewContextProvider> =
 export interface OperatorAuthoritySeed {
   binding: OperatorAuthorityBinding;
   evidence: readonly OperatorEvidence[];
+  instructions?: readonly OperatorInstructions[];
   review_context?: OperatorReviewContext;
   /** Independent child runs may only inherit an already compiled intersection. */
   parent_run_id?: string;
@@ -113,6 +123,7 @@ export interface OperatorAuthorityState {
   status: "active" | "settled" | "revoked";
   revision: number;
   evidence: OperatorEvidence[];
+  instructions?: OperatorInstructions[];
   review_context?: OperatorReviewContext;
   envelope?: AuthorityEnvelopeV1;
   /** Host-attested live review context used to compile the installed envelope. */
@@ -163,5 +174,8 @@ export function inheritOperatorAuthority(
       ? {}
       : { review_context: structuredClone(state.review_context) }),
     consumed_effects: state.consumed_effects ?? [],
+    ...(state.instructions === undefined
+      ? {}
+      : { instructions: structuredClone(state.instructions) }),
   };
 }

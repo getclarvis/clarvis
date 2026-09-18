@@ -1152,7 +1152,8 @@ on the engine" as one design, not two.
 
 `ElicitationCommandDetail` adds optional closed analysis, effect, authority and reviewer fields.
 Legacy command/cwd/reason details remain valid. `CommandGuardReview` carries optional effect ID,
-relation and failure kind for replay. `GuardJudge` accepts optional guidance and explicit retries;
+relation, failure kind and `reviewer_decision` (`allow`, `deny`, `unsure`, `failed`) for replay.
+The reviewer result is distinct from the final outcome after fallback. `GuardJudge` accepts optional guidance and explicit retries;
 guidance is data, never a system-policy replacement. Public run requests contain no
 operator evidence seed or controller binding. Production:
 [runs.ts](../../packages/protocol/src/runs.ts) and

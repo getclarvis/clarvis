@@ -410,6 +410,7 @@ export type {
   ReviewedEffectInference,
   ReviewedEffectTarget,
   OperatorEvidence,
+  OperatorInstructions,
   OperatorElicitationContext,
   OperatorAuthorityBinding,
   OperatorReviewContext,

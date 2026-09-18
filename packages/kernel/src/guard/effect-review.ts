@@ -206,6 +206,7 @@ export function createHostEffectReview(deps: {
               JSON.stringify({
                 authority: reviewerAuthoritySnapshot(authority.snapshot()),
                 operator_evidence: state.evidence,
+                operator_instructions: state.instructions ?? [],
                 review_context: context.payload,
                 review_context_revision: context.live_revision,
                 guidance: deps.options?.guidance,

@@ -27,6 +27,29 @@ import { createJsonTraceStore, createTraceVisibilityView } from "@clarvis/trace"
 import { createHostJudge, judgeRequiredFor } from "../../src/guard/judge-host.ts";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import { guardReviewerModelCallProjector } from "../../src/guard/reviewer-trace.ts";
+import {
+  captureRunInstructions,
+  seedRunInstructions,
+} from "../../src/runs/instruction-snapshot.ts";
+
+const instructionSeed = seedRunInstructions(
+  {
+    binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+    evidence: [{ id: "operator", source: "start", text: "Run checks", execution_id: "parent" }],
+  },
+  captureRunInstructions({}, [
+    {
+      scope: "global",
+      path: "/operator/AGENTS.md",
+      content: "Run routine validation autonomously.",
+    },
+    {
+      scope: "workspace",
+      path: "/repo/CLARVIS.md",
+      content: "Update develop by fast-forward before research.",
+    },
+  ]),
+);
 
 const request: RunRequest = {
   execution_id: "parent",
@@ -106,6 +129,9 @@ test.each([
           childCalls++;
           childId = params.executionId;
           expect(params.promptCacheKey).toBe("session_judge");
+          const configuration = params.messages[1]!.content as string;
+          expect(configuration).toContain("Run routine validation autonomously.");
+          expect(configuration).toContain("Update develop by fast-forward before research.");
           if (kind === "provider_failure" || (kind === "provider_retry" && childCalls === 1)) {
             const error = new ProviderError(secret, {
               kind: kind === "provider_retry" ? "transient" : "quota",
@@ -242,10 +268,18 @@ test.each([
                         Array.from({ length: 8 }, () => ({
                           allowed: true,
                           answerer: kind === "provider_failure" ? "human" : "judge",
+                          review:
+                            kind === "provider_failure"
+                              ? { failure_kind: "quota", reviewer_decision: "failed" }
+                              : { reviewer_decision: "allow" },
                         })),
                       );
                       if (kind === "provider_failure") return;
-                      expect(await review(input)).toEqual({ allowed: true, answerer: "judge" });
+                      expect(await review(input)).toEqual({
+                        allowed: true,
+                        answerer: "judge",
+                        review: { reviewer_decision: "allow" },
+                      });
                     },
                   },
                 };
@@ -260,16 +294,7 @@ test.each([
         (
           await executeRun({
             owner: "owner",
-            operatorAuthoritySeed: {
-              binding: {
-                owner_key_name: "owner",
-                session_id: "session",
-                controller_epoch: "epoch",
-              },
-              evidence: [
-                { id: "operator", source: "start", text: "Run checks", execution_id: "parent" },
-              ],
-            },
+            operatorAuthoritySeed: instructionSeed,
             rawBody: request,
             deps: { ...deps, capabilities: [consumer, host.capability] },
           })

@@ -1,4 +1,5 @@
 import type { OperatorAuthoritySeed } from "@clarvis/capability";
+import { seedRunInstructions } from "../runs/instruction-snapshot.ts";
 import {
   bind,
   isBuiltinTraceEvent,
@@ -596,7 +597,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           });
         });
         const managerArgs: RunExecutorArgs = {
-          operatorAuthoritySeed,
+          operatorAuthoritySeed: seedRunInstructions(operatorAuthoritySeed, managerBody),
           rawBody: managerBody,
           owner,
           deps,

@@ -7,6 +7,7 @@ import { createMemoryTraceStore } from "@clarvis/trace/testing";
 import { createOperatorAuthorityRuntime } from "../../src/guard/operator-authority.ts";
 import type { GoalExecutionPolicy } from "../../src/goals/hosted-turn.ts";
 import { createRunService } from "../../src/runs/run-service.ts";
+import { captureRunInstructions } from "../../src/runs/instruction-snapshot.ts";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;
@@ -136,10 +137,20 @@ describe("run-service lifecycle reservation", () => {
         binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
         signal: controller.signal,
       }),
-      assembleRunRequest: (params) => ({
-        ...params,
-        messages: [...params.messages, { role: "user", content: "synthetic skill seed" }],
-      }),
+      assembleRunRequest: (params) =>
+        captureRunInstructions(
+          {
+            ...params,
+            messages: [...params.messages, { role: "user", content: "synthetic skill seed" }],
+          },
+          [
+            {
+              scope: "global",
+              path: "/operator/AGENTS.md",
+              content: "Run validation before handoff.",
+            },
+          ],
+        ),
       executeRun: async (args) => {
         captured = args;
         return {
@@ -164,6 +175,9 @@ describe("run-service lifecycle reservation", () => {
       "Commit the changes",
     ]);
     expect(captured?.operatorAuthoritySeed?.binding.outcome_id).toBeString();
+    expect(captured?.operatorAuthoritySeed?.instructions).toMatchObject([
+      { scope: "global", source: "AGENTS.md", content: "Run validation before handoff." },
+    ]);
     expect(captured?.operatorAuthoritySignal).toBe(controller.signal);
     expect(captured?.externalSignal).not.toBe(controller.signal);
     expect(JSON.stringify(captured?.rawBody)).not.toContain("operatorAuthoritySeed");

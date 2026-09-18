@@ -508,6 +508,13 @@ describe("remote run codec", () => {
       guard: { mode: "auto", outcome: "allowed", answerer: "judge" },
     } as const;
     expect(decodeRunEvent(event)).toEqual(event);
+    for (const reviewer_decision of ["allow", "deny", "unsure", "failed"] as const) {
+      const reviewed = { ...event, guard: { ...event.guard, reviewer_decision } };
+      expect(decodeRunEvent(reviewed)).toEqual(reviewed);
+    }
+    expect(
+      decodeRunEvent({ ...event, guard: { ...event.guard, reviewer_decision: "invented" } }),
+    ).toBeNull();
   });
 
   it("preserves live shell interrupt control and rejects interruption with ok true", () => {

@@ -335,6 +335,9 @@ the alternative is a validation boundary failing open in silence.
 `ToolCallDetail.guard` is the durable final command-review fact for a guarded
 call. It records mode, allowed/denied outcome, and answerer on the terminal
 `tool_call`; progress events deliberately do not carry an interim verdict.
+Optional `reviewer_decision` preserves `allow`, `deny`, `unsure` or `failed` separately from the
+final Guard outcome. `OperatorInstructions` carries host-captured persistent instructions in the
+authority seed/state; child inheritance preserves them without widening the parent's ceiling.
 
 ### `frontmatter-fence.ts` splits; it does not parse
 
@@ -439,7 +442,6 @@ a host can attest complete bytes without retaining the omitted text. The owning 
 
 `ExecutionRecord.visibility` is the required neutral `ExecutionVisibility` discriminator (`public` or
 `internal`). The host supplies it explicitly; Trace owns storage, validation and query semantics.
-
 
 The authority ledger retains `envelope_context_revision` beside the installed envelope. This
 host-owned binding survives a validated checkpoint and is replaced atomically with compilation;

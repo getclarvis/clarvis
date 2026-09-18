@@ -12,6 +12,7 @@ import { snapshotRunConfiguration, type RunConfigurationSource } from "./configu
 import type { KernelRunService, RunRequestAssembler, PreparedRunExecution } from "./run-service.ts";
 import { createSettingsRunAssembler, type SettingsAssemblerOptions } from "./settings-assembler.ts";
 import type { GoalExecutionPolicy } from "../goals/hosted-turn.ts";
+import { transferRunInstructions } from "./instruction-snapshot.ts";
 
 /** Host-only admission result; start is single-use and preserves the prepared execution identity. */
 export interface PreparedKernelRun {
@@ -58,8 +59,10 @@ export function prepareKernelRun(
       ...options.assemblerOptions,
       ...(options.skills === undefined ? {} : { skills: options.skills }),
     });
-  const assembled = structuredClone(assemble(request));
+  const original = assemble(request);
+  const assembled = structuredClone(original);
   const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
+  transferRunInstructions(original, rawBody);
   if (rawBody === null || typeof rawBody !== "object")
     throw kernelError("invalid_request", "prepared run assembler returned no request object");
   const body = rawBody as {

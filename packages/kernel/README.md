@@ -89,6 +89,12 @@ scope; complete domain/engine qualification is separate from this primitive.
 
 ## Hosted observation infrastructure
 
+The settings assembler captures effective global and workspace context for both the work agent and
+Judge: `CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-only request identity
+preserves this snapshot through preparation and workflow admission. Persistent instructions inform
+authorization below direct operator restrictions; arbitrary request fields cannot supply them.
+See [operator authority](../../specs/execution/effect-review.md) for lifetime and inheritance.
+
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 revokes volatile consent scopes on disconnect, takeover or conversation close.
 Native Host/Sandbox guard decisions use the current interactive command allowlist. Container guests

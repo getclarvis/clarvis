@@ -539,6 +539,10 @@ function createGuardRuntimeResolver(
               )
                 result = { ...result, decision: "unsure", relation: "none" };
               const review = {
+                reviewer_decision:
+                  result?.failure_kind === undefined
+                    ? (result?.decision ?? "unsure")
+                    : ("failed" as const),
                 effect_id: req.effect?.id,
                 relation: result?.relation ?? "none",
                 failure_kind: result?.failure_kind,

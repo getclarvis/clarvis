@@ -85,11 +85,12 @@ export type GuardAnswerer = "human" | "judge" | "session_allowlist" | "unavailab
 export interface GuardElicitAnswer {
   allowed: boolean;
   answerer: GuardAnswerer;
-  review?: Pick<GuardReview, "effect_id" | "relation" | "failure_kind">;
+  review?: Pick<GuardReview, "effect_id" | "relation" | "failure_kind" | "reviewer_decision">;
 }
 
 /** Final command-review fact attached to a dispatched tool result. */
 export interface GuardReview {
+  reviewer_decision?: "allow" | "deny" | "unsure" | "failed";
   effect_id?: string;
   relation?: "direct" | "bounded_prerequisite" | "none";
   failure_kind?:

@@ -5,6 +5,13 @@
 
 ## 1. Purpose
 
+`OperatorInstructions` is neutral host-captured persistent instruction vocabulary, carried separately
+from direct evidence in `OperatorAuthoritySeed` and `OperatorAuthorityState`. Child projection keeps
+these records while retaining the parent's compiled ceiling; it cannot mint broader authority.
+Production: `OperatorInstructions` and `inheritOperatorAuthority` in
+[operator-authority.ts](../../packages/capability/src/operator-authority.ts).
+Test: [instruction-snapshot.test.ts](../../packages/kernel/tests/unit/instruction-snapshot.test.ts).
+
 `@clarvis/capability` is a package with one runtime dependency, `zod`
 (`packages/capability/package.json`), and no internal ones. It holds two things that the rest
 of the monorepo is written against.

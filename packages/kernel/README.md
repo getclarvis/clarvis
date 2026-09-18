@@ -94,6 +94,9 @@ Judge: `CLARVIS.md`, falling back to `AGENTS.md` independently per scope. Host-o
 preserves this snapshot through preparation and workflow admission. Persistent instructions inform
 authorization below direct operator restrictions; arbitrary request fields cannot supply them.
 See [operator authority](../../specs/execution/effect-review.md) for lifetime and inheritance.
+Hosted Goal preparation passes that same detached snapshot to the read-only Steward before applying
+the Goal budget. It does not reread context files during evaluation. The Steward fingerprints its
+sanitized configuration so changed instructions cannot reuse incompatible private history.
 
 `src/hosting/admission.ts` separates physical conversation occupancy from interactive control and
 revokes volatile consent scopes on disconnect, takeover or conversation close.

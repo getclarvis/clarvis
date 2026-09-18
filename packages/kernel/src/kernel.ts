@@ -10,6 +10,7 @@ import {
   levelEnabled,
   NOOP_LOGGER,
   type ProviderConfig,
+  type OperatorInstructions,
   type Logger,
   type TraceEvent,
 } from "@clarvis/capability";
@@ -205,6 +206,7 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
     workTokenLimit: number,
     ttl: "5m" | "1h",
     owner?: string,
+    instructions?: readonly OperatorInstructions[],
   ): StewardExecutionRuntime;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
@@ -1019,7 +1021,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       residentOwner(owner, false).prepareRun(params, goal),
     readRunTrace: (executionId, owner = defaultOwner) =>
       runDeps.traceStore.getById(residentOwner(owner, false).stateOwner, executionId)?.trace.events,
-    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner) {
+    goalStewardRuntime(workTokenLimit, ttl, owner = defaultOwner, instructions = []) {
       const merged = structuredClone(opts.configStore.readSettings().merged) as Record<
         string,
         unknown
@@ -1035,6 +1037,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       if (typeof model !== "string")
         throw kernelError("invalid_request", "Goal Steward requires a configured model");
       return createStewardExecutionRuntime({
+        instructions,
         owner: residentOwner(owner, false).stateOwner,
         model,
         providers:

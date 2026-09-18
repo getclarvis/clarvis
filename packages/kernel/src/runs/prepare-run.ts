@@ -61,6 +61,7 @@ export function prepareKernelRun(
     });
   const original = assemble(request);
   const assembled = structuredClone(original);
+  transferRunInstructions(original, assembled);
   const rawBody = goal === undefined ? assembled : goal.constrain(assembled as RunRequest);
   transferRunInstructions(original, rawBody);
   if (rawBody === null || typeof rawBody !== "object")

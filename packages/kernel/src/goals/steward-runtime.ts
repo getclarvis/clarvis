@@ -1,4 +1,10 @@
-import type { ModelExecutionInfo, ProviderConfig, TraceEvent } from "@clarvis/capability";
+import {
+  sanitizeText,
+  type ModelExecutionInfo,
+  type OperatorInstructions,
+  type ProviderConfig,
+  type TraceEvent,
+} from "@clarvis/capability";
 import { buildGoalStewardRequest, runGoalSteward, GoalStewardRunFailure } from "@clarvis/goal";
 import { goalAgentSettingsSchema } from "@clarvis/goal/settings";
 import type { ExecuteRunDeps } from "@clarvis/loop";
@@ -20,6 +26,7 @@ export function createStewardExecutionRuntime(options: {
   workTokenLimit: number;
   promptCacheTtl: "5m" | "1h";
   configurationGeneration: string;
+  instructions?: readonly OperatorInstructions[];
 }): StewardExecutionRuntime {
   const settings = goalAgentSettingsSchema.parse(options.settings).steward;
   const tools = (options.deps.capabilities ?? []).filter(
@@ -62,6 +69,11 @@ export function createStewardExecutionRuntime(options: {
       : undefined);
   if (!info) throw new Error("Goal Steward model is unavailable");
   const runtime = {
+    operator_instructions: (options.instructions ?? []).map(({ scope, source, content }) => ({
+      scope,
+      source,
+      content: sanitizeText(content),
+    })),
     owner: options.owner,
     model_ref: options.model,
     providers: options.providers,
@@ -81,6 +93,7 @@ export function createStewardExecutionRuntime(options: {
       generation: options.configurationGeneration,
       profiles: canonical.profiles,
       shared_prompt: canonical.shared_prompt,
+      operator_instructions: runtime.operator_instructions,
       output_schema: canonical.output_schema,
       ttl: options.promptCacheTtl,
       tools: tools.map((capability) => ({

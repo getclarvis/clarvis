@@ -4,6 +4,12 @@ import type { ContextRecord } from "../config/config-store.ts";
 
 const snapshots = new WeakMap<object, readonly OperatorInstructions[]>();
 
+/** Read a detached host snapshot without accepting instruction fields from request JSON. */
+export function readRunInstructions(body: unknown): readonly OperatorInstructions[] {
+  if (typeof body !== "object" || body === null) return [];
+  return structuredClone(snapshots.get(body) ?? []);
+}
+
 /** Bind the exact assembled context through an internal identity, never a public JSON field. */
 export function captureRunInstructions<T extends object>(
   body: T,

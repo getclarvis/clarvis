@@ -14,7 +14,7 @@ export const goalStewardOutputSchema: Record<string, unknown> = JSON.parse(
 
 /** Stable profile, catalog and identity; only a new frame and execution id vary. */
 export function buildGoalStewardRequest(
-  runtime: Pick<GoalStewardRuntime, "model_ref" | "providers">,
+  runtime: Pick<GoalStewardRuntime, "model_ref" | "providers" | "operator_instructions">,
   input: GoalStewardRunInput,
 ): RunRequest {
   if (
@@ -28,7 +28,23 @@ export function buildGoalStewardRequest(
     session_id: input.session_id,
     agent_instance_id: GOAL_STEWARD_INSTANCE,
     ...(input.continue_from === undefined ? {} : { continue_from: input.continue_from }),
-    messages: [{ role: "user", content: input.projection }],
+    messages: [
+      ...(input.continue_from === undefined
+        ? [
+            {
+              role: "user" as const,
+              content: JSON.stringify({
+                goal_steward_configuration_v1: {
+                  operator_instructions: (runtime.operator_instructions ?? []).map(
+                    ({ scope, source, content }) => ({ scope, source, content }),
+                  ),
+                },
+              }),
+            },
+          ]
+        : []),
+      { role: "user", content: input.projection },
+    ],
     servers: [],
     providers: runtime.providers,
     profiles: [

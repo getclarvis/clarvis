@@ -573,7 +573,8 @@ the assembled entry profile. The lower-level empty-scope and oversized-file case
 `packages/kernel/tests/integration/file-config-store.test.ts`.
 
 The same captured records, global then workspace, also supply Judge's persistent operator
-instructions; no second filesystem read can diverge from the assembled work-agent snapshot.
+instructions and the hosted Goal Steward's normative evaluation context; no second filesystem read
+can diverge from the assembled work-agent snapshot.
 Production: `captureRunInstructions` in
 [instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts) and
 `createSettingsRunAssembler` in [settings-assembler.ts](../../packages/kernel/src/runs/settings-assembler.ts).

@@ -34,7 +34,13 @@ describe("Goal Steward contract", () => {
         max_retries: 1,
       },
     };
-    const runtime = { model_ref: "fixture/model", providers: [] };
+    const runtime = {
+      model_ref: "fixture/model",
+      providers: [],
+      operator_instructions: [
+        { scope: "global" as const, source: "AGENTS.md", content: "Validate changes" },
+      ],
+    };
     const first = buildGoalStewardRequest(runtime, input);
     const next = buildGoalStewardRequest(runtime, {
       ...input,
@@ -55,6 +61,19 @@ describe("Goal Steward contract", () => {
     expect(first.budget.total_token_limit).toBe(12345);
     expect(next.continue_from).toBe("first");
     expect(next.messages).toEqual([{ role: "user", content: "new completion frame" }]);
+    expect(first.messages[0]!.content).toContain("Validate changes");
+    const fresh = buildGoalStewardRequest(
+      {
+        ...runtime,
+        operator_instructions: [
+          { content: "Validate changes", source: "AGENTS.md", scope: "global" },
+        ],
+      },
+      { ...input, execution_id: "fresh", projection: "different goal" },
+    );
+    expect(fresh.messages[0]).toEqual(first.messages[0]);
+    expect(fresh.profiles).toEqual(first.profiles);
+    expect(fresh.output_schema).toEqual(first.output_schema);
   });
 
   it("rejects authority fields, inconsistent verdicts and invented target references", () => {

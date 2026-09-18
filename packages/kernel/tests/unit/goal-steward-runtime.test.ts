@@ -4,6 +4,10 @@ import { createStewardResultGate } from "../../src/goals/steward-result-gate.ts"
 import { loadEnv } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import { createStewardExecutionRuntime } from "../../src/goals/steward-runtime.ts";
+import {
+  captureRunInstructions,
+  readRunInstructions,
+} from "../../src/runs/instruction-snapshot.ts";
 
 it("excludes required Judge from the Steward execution while retaining tools and its result gate", async () => {
   let executions = 0;
@@ -65,8 +69,14 @@ it("excludes required Judge from the Steward execution while retaining tools and
 });
 
 it("fingerprints resolved model metadata and opaque configuration generation without spending the work allowance", () => {
-  const make = (generation: string, contextWindowTokens = 32768, ttl: "5m" | "1h" = "5m") =>
+  const make = (
+    generation: string,
+    contextWindowTokens = 32768,
+    ttl: "5m" | "1h" = "5m",
+    content = "Verify changes",
+  ) =>
     createStewardExecutionRuntime({
+      instructions: readRunInstructions(captureRunInstructions({}, [{ scope: "global", content }])),
       owner: "fixture",
       model: "logical/model",
       providers: [],
@@ -99,6 +109,9 @@ it("fingerprints resolved model metadata and opaque configuration generation wit
   expect(first.fingerprint).not.toBe(make("generation-two").fingerprint);
   expect(first.fingerprint).not.toBe(make("generation-one", 65536).fingerprint);
   expect(first.fingerprint).not.toBe(make("generation-one", 32768, "1h").fingerprint);
+  expect(first.fingerprint).not.toBe(
+    make("generation-one", 32768, "5m", "Changed instructions").fingerprint,
+  );
   expect(first.budget.max_net_tokens).toBe(12345);
   expect(first.workspaceReadAvailable).toBe(false);
 });

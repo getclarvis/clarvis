@@ -1,4 +1,4 @@
-import type { PerAgentUsage } from "@clarvis/capability";
+import type { OperatorInstructions, PerAgentUsage } from "@clarvis/capability";
 import { z } from "zod";
 import type { GoalAgentBudget, GoalAgentRuntime } from "./types.ts";
 import type { GoalUsage } from "../schemas.ts";
@@ -51,7 +51,10 @@ export const goalStewardResultSchema = z.discriminatedUnion("decision", [
 ]);
 
 export type GoalStewardResult = z.infer<typeof goalStewardResultSchema>;
-export type GoalStewardRuntime = GoalAgentRuntime;
+export interface GoalStewardRuntime extends GoalAgentRuntime {
+  /** Host-captured operating context; never grants this reviewer additional permissions. */
+  operator_instructions?: readonly Pick<OperatorInstructions, "scope" | "source" | "content">[];
+}
 export type GoalStewardFinalizeAttempt =
   { mode: "text"; text: string } | { mode: "submit"; text?: string; submitted_value?: unknown };
 export type GoalStewardCompletionDecision =

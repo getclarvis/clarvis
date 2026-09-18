@@ -3,6 +3,7 @@ import type { AuthorityEnvelopeV1, OperatorAuthoritySeed } from "@clarvis/capabi
 import { inheritOperatorAuthority } from "@clarvis/capability";
 import {
   captureRunInstructions,
+  readRunInstructions,
   seedRunInstructions,
   transferRunInstructions,
 } from "../../src/runs/instruction-snapshot.ts";
@@ -47,6 +48,11 @@ test("instruction provenance survives host preparation but cannot be forged in p
   admitted.instructions![0]!.content = "changed";
   expect(seedRunInstructions(seed, clone)?.instructions?.[0]?.content).toBe(contexts[0]!.content);
   expect(seedRunInstructions(seed, { instructions: contexts })?.instructions).toBeUndefined();
+  expect(readRunInstructions(null)).toEqual([]);
+  expect(readRunInstructions({ instructions: contexts })).toEqual([]);
+  const captured = readRunInstructions(body);
+  captured[0]!.content = "caller mutation";
+  expect(readRunInstructions(body)[0]!.content).toBe(contexts[0]!.content);
   expect(seedRunInstructions(undefined, body)).toBeUndefined();
 });
 

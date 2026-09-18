@@ -350,6 +350,27 @@ append-only semantic frames. Runtime/configuration or definition incompatibility
 Plan and trajectory changes append frames. Normal work closure preserves the chain for checkpoint
 continuation. Completion, cancellation, clearing and substantive edits retire its predecessor.
 
+The Steward receives the same host-captured global/workspace context as the prepared work run, not
+a second filesystem read. `CLARVIS.md` takes precedence over `AGENTS.md` independently per scope.
+These documents are normative operating context for assessment, subordinate to direct operator
+restrictions, the persisted Goal and fixed read-only policy. They cannot grant tools or effects,
+invent unrelated objectives, or replace evidence that work actually ran. Other file/tool content
+cannot impersonate this host configuration.
+
+Its first user message contains `goal_steward_configuration_v1`, serialized in fixed field order
+with scope, source basename and sanitized content only. Compatible continuations retain this message
+once; only new evaluation frames append. Instruction changes between work stages alter the runtime
+fingerprint and start a fresh private history. Mid-stage edits do not change the captured snapshot.
+Production: `readRunInstructions` in
+[instruction-snapshot.ts](../../packages/kernel/src/runs/instruction-snapshot.ts),
+`prepareKernelRun` in [prepare-run.ts](../../packages/kernel/src/runs/prepare-run.ts),
+`prepareHostedGoalTurn` in [hosted-turn.ts](../../packages/kernel/src/goals/hosted-turn.ts),
+`createStewardExecutionRuntime` in [steward-runtime.ts](../../packages/kernel/src/goals/steward-runtime.ts),
+and `buildGoalStewardRequest` in [steward-request.ts](../../packages/goal/src/agent/steward-request.ts).
+Test: `observes completed dispatch and delivers an internal correction without human steering` and
+`a Steward checkpoint preserves its prefix unless captured instructions change` in
+[goal-steward-runtime.test.ts](../../packages/kernel/tests/integration/goal-steward-runtime.test.ts).
+
 `GoalRecord.steward` persists the predecessor, pending reservation, consumed sequence/digest, operator
 epoch, runtime fingerprint, status and separate measured usage. Each GoalRun retains at most eight
 reviews and bounded evaluation/intervention counters. Admission compares the predecessor and consumed

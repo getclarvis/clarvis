@@ -129,6 +129,11 @@ review prevents completion. The domain owns the fixed schema, request policy, se
 and idempotent usage reducer; the Kernel owns scheduling, reads, fencing and durable settlement.
 `goals.agent.steward` selects the optional model and finite allowance independently of the work budget.
 Private `continue_from` history preserves compatible prompt prefixes across evaluations and checkpoints.
+The host supplies the work run's captured global and workspace operating instructions (`CLARVIS.md`,
+falling back to `AGENTS.md` independently per scope) as normative evaluation context, never extra
+permissions. A canonical configuration message precedes the first evaluation frame and is retained
+without duplication on continuation. Changed instructions start a fresh private history; direct
+operator restrictions and the persisted Goal still constrain interpretation.
 The host checks semantic targets and current-evaluation artifact reads before accepting the Steward's
 output, with one bounded corrective nudge inside that same evaluation. Repeated invalid output fails
 closed; historical reads cannot establish current inspection. The host reserves review slots for

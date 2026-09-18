@@ -113,6 +113,14 @@ framing tests and the real-engine host case in
 [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 
 Goal Steward uses a fixed policy, read-only catalog and output schema for observation and completion.
+Its canonical host instruction configuration is the first user message of a fresh private history,
+before Goal-specific and volatile data. Global and workspace context use fixed field order; host
+metadata adds no execution IDs, timestamps or absolute paths (operator-authored content is preserved
+after sanitization). Independent fresh executions with the
+same instructions retain this identical head. Compatible continuations reuse the stored message,
+never insert another copy ahead of or after history. The configuration participates in the runtime
+fingerprint: instruction changes restart history and invalidate from that configuration message,
+not from the fixed system policy or catalog. Mid-stage filesystem changes wait for new preparation.
 Each evaluation appends a delimited user frame to its own persisted context using `continue_from`,
 a stable `goal-steward` instance and the real conversation ID. Host IDs, revisions and digests remain
 outside model frames. Command execution receipts belong only to the appended evidence frame; the
@@ -126,6 +134,16 @@ Test: `returns unfinished work to the same run and preserves the private seriali
 and `rejects historical artifact reads and repairs in the same evaluation` compare actual SDK
 messages, tools and composed cache keys. This proves prefix serialization,
 not a remote provider cache hit.
+
+Judge's canonical configuration likewise retains identical bytes when instruction object-key order
+or private execution identity changes. Changed commands and authority revisions stay in its tail;
+changed instructions invalidate from the existing configuration slot. Tests compare complete
+engine-bound messages, tool catalogs, cache breakpoints and stable `parent_judge` affinity across
+independent command/effect executions in
+[executor.test.ts](../../packages/judge/tests/integration/executor.test.ts). Steward tests compare
+actual SDK messages, catalog and conversation affinity across in-run reviews and checkpointed work
+runs, including changed-instruction restart. These are composition guarantees, not measured remote
+KV-cache hit rates; TTL, provider retention and deliberately changed input still affect reuse.
 
 Goal snapshot refreshes during tool handling defer reminder publication until dispatch has appended
 all tool results. A pause received during inference must not insert a user reminder inside the

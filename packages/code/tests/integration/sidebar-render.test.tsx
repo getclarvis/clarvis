@@ -4,6 +4,7 @@ import { rgbToHex, type RGBA } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
 import { createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
+import type { GoalChange } from "@clarvis/protocol";
 import {
   AGENT_SIDEBAR_ROW_LIMIT,
   PLAN_SIDEBAR_TASK_LIMIT,
@@ -159,6 +160,59 @@ test("Goal uses the same compact sidebar pattern and opens its complete screen f
     expect(opened).toBe(1);
     t.renderer.destroy();
   } finally {
+    goals.dispose();
+  }
+});
+
+test("Goal formulation shows live semantic activity instead of an undifferentiated loader", async () => {
+  const listeners = new Set<(change: GoalChange) => void>();
+  const gate = Promise.withResolvers<void>();
+  const goals = createGoalController({
+    binding: () => ({ sessionId: "goal-session", generation: 1 }),
+    prepare: async () => ({ sessionId: "goal-session", generation: 1 }),
+    service: () => ({
+      availability: async () => ({ available: true }),
+      get: async () => ({ state: { version: 1, revision: 0, archive: [], receipts: [] } }),
+      subscribe: async (_sessionId, listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      receipt: async () => null,
+      formulate: async (request) => {
+        await gate.promise;
+        return {
+          operation_id: request.operation_id,
+          fingerprint: "fixture",
+          revision: 1,
+          formulation: { mode: request.mode, outcome: "failed" },
+        };
+      },
+      control: async () => {
+        throw new Error("not used");
+      },
+    }),
+  });
+  try {
+    await goals.refresh();
+    const pending = goals.formulate("guided", "Implement the named proposal");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (const listener of listeners)
+      listener({
+        session_id: "goal-session",
+        formulation_activity: {
+          phase: "thinking",
+          iteration: 2,
+          last_workspace_activity: "searching",
+        },
+      });
+    const t = await mount(activity({}), { width: 44, goals });
+    expect(t.captureCharFrame()).toContain("Searched workspace · done");
+    expect(t.captureCharFrame()).toContain("Thinking about the Goal · iteration 2");
+    t.renderer.destroy();
+    gate.resolve();
+    await pending;
+  } finally {
+    gate.resolve();
     goals.dispose();
   }
 });

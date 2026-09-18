@@ -36,6 +36,7 @@ export async function runGoalAgent(
     deps: runtime.deps,
     callPurpose: "goal",
     externalSignal: input.signal,
+    onEvent: input.on_event,
   });
   const usage = measuredUsage(outcome.response.usage);
   if (outcome.response.status !== "completed")

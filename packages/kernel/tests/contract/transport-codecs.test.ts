@@ -239,12 +239,28 @@ describe("goal wire state and subscriptions", () => {
       if (method === M.goalsSubscribe)
         transport.emit(N.goalChange, {
           subscription_id: (params as { subscription_id: string }).subscription_id,
-          change: { session_id: "conversation" },
+          change: {
+            session_id: "conversation",
+            formulation_activity: {
+              phase: "thinking",
+              iteration: 3,
+              last_workspace_activity: "searching",
+            },
+          },
         });
       return {};
     };
     const off = await client.goals.subscribe("conversation", (change) => changes.push(change));
-    expect(changes).toEqual([{ session_id: "conversation" }]);
+    expect(changes).toEqual([
+      {
+        session_id: "conversation",
+        formulation_activity: {
+          phase: "thinking",
+          iteration: 3,
+          last_workspace_activity: "searching",
+        },
+      },
+    ]);
     const subscription = transport.requests.find((request) => request.method === M.goalsSubscribe)!
       .params as { subscription_id: string };
     off();

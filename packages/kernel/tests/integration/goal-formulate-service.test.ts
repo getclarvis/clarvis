@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readOnlyTools } from "@clarvis/tools";
+import type { GoalChange } from "@clarvis/protocol";
 import { createGoalFileHostFixture } from "../helpers/goal-file-host.ts";
 
 const cleanups: Array<() => Promise<unknown>> = [];
@@ -53,6 +54,11 @@ describe("Goal formulation through the real file host", () => {
       };
     });
 
+    const changes: GoalChange[] = [];
+    const unsubscribe = await fixture.client.goals.subscribe("conversation", (change) =>
+      changes.push(change),
+    );
+
     const receipt = await fixture.client.goals.formulate({
       session_id: "conversation",
       expected_revision: 0,
@@ -102,6 +108,20 @@ describe("Goal formulation through the real file host", () => {
         request.tools?.some((tool) => tool.function.name === "submit_result"),
       ),
     ).toHaveLength(2);
+    unsubscribe();
+    expect(changes.some((change) => change.formulation_activity?.phase === "thinking")).toBeTrue();
+    expect(changes.some((change) => change.formulation_activity?.phase === "reading")).toBeTrue();
+    expect(
+      changes.some((change) => change.formulation_activity?.phase === "searching"),
+    ).toBeFalse();
+    expect(
+      changes.some(
+        (change) =>
+          change.formulation_activity?.phase === "thinking" &&
+          change.formulation_activity.last_workspace_activity === "reading",
+      ),
+    ).toBeTrue();
+    expect(changes.at(-1)?.formulation_activity?.phase).toBe("idle");
   });
 
   it("returns deterministic insufficient context without inference for empty auto", async () => {

@@ -105,7 +105,11 @@ visible immediately in the Lead activity line and automatically reveals a compac
 the same activity sidebar used by Plans, parallel work and agents. The section remains after
 creation with objective, status and stage count, using the same title/status/key anatomy and lifecycle
 tones as Plan, with the `full goal` navigation label; `Ctrl+X O` toggles the complete Goal view while
-that section is revealed. Creation never switches screens automatically. Insufficient, stale or
+that section is revealed. While formulation runs, both surfaces show its current bounded activity as
+thinking, reading referenced files or searching the workspace, with the current iteration when known.
+The sidebar retains the latest completed workspace activity above the current thinking line so a
+short read or search remains observable after the next model iteration begins.
+Creation never switches screens automatically. Insufficient, stale or
 failed outcomes show their one question or actionable message and never retry analysis
 automatically. From the complete Goal view, `Ctrl+X O` returns to the transcript without requiring
 `Escape`. The full view uses a bounded reading column with spaced status, review and usage blocks;

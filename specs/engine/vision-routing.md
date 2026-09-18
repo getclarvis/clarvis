@@ -247,6 +247,9 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
 2. `entryStripsImages = !(entryResolved.capabilities?.has("vision") ?? true)` — true only when the
    entry agent's resolved model **declares** capabilities and `vision` is not among them; an
    undeclared/unknown capability set defaults to sighted (`packages/loop/src/runtime/entry-seed.ts`).
+   Subscription-backed Grok catalog rows must not persist a closed `tool_calling`-only tag when the
+   entitled payload omits image modalities; that projection is owned by
+   [subscription-providers.md](../hosts/subscription-providers.md).
 3. Restored continuation entries, including images, retain their exact contents and order.
    New-turn images are carried separately as `turnImages`; routing them does not rewrite the
    persisted history (`packages/loop/src/runtime/entry-seed.ts`).

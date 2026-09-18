@@ -388,9 +388,14 @@ never overwrites an already-set value (doc-comment `packages/kernel/src/models/m
 [cross-cutting/prompt-cache.md](../cross-cutting/prompt-cache.md).
 
 Authenticated ChatGPT and Grok catalogs deliberately carry entitlement and model-shape metadata
-rather than models.dev pricing. `cachePolicyModel` therefore resolves an exact model-id match from
-the owning public catalog family when, and only when, the configured endpoint is the matching
-subscription kind: native `openai` for `openai-codex`, or the `xai` provider for `xai-grok`.
+rather than models.dev pricing. ChatGPT copies `vision` when `input_modalities` includes `image`.
+Grok always tags `tool_calling` and copies `vision` from published image-input facts, or keeps
+`vision` when those facts are absent, so a closed `tool_calling`-only capability set cannot strip
+composer images. Capability projection is owned by
+[subscription-providers.md](subscription-providers.md). For prompt-cache policy, `cachePolicyModel`
+resolves an exact model-id match from the owning public catalog family when, and only when, the
+configured endpoint is the matching subscription kind: native `openai` for `openai-codex`, or the
+`xai` provider for `xai-grok`.
 `addModelFromCatalog` uses that cost only when the entitled hit has none, so future models follow the
 catalog without a model-name list. The same fallback is not available to arbitrary
 `openai-compatible`, Google, or Anthropic endpoints. Existing persisted `prompt_cache` values still

@@ -105,6 +105,11 @@ semantic slots preserve their positions; new operator input extends the prefix; 
 invalidates from its existing slot. The reviewer excludes the work run's operational Goal reminder,
 Plan CAS header and transcript, and does not duplicate evidence or semantic context inside its
 authority tail. Its breakpoint and full-key invalidation are specified by [Judge](../capabilities/judge.md).
+Judge correction retries append private tool results and subsequent assistant messages through the
+ordinary Loop. They never replace the fixed policy, configuration, evidence prefix or earlier history.
+Production: `createJudgeRunCapability` and `executeJudge` in `packages/judge/src`.
+Test: `ordinary Loop corrects %s with append-only feedback and bounded attempts` in
+`packages/judge/tests/integration/executor.test.ts`. This proves prefix preservation, not remote KV hits.
 The effect reviewer uses the same framing and authoritative compile transition. Plan
 lifecycle/progress fields never enter either review context. Production: `goalAgentPrompt`,
 `planReviewContext`, `createCommandReview` and `judgeCacheBreakpoints`. Test:

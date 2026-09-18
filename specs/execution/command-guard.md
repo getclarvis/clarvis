@@ -1043,13 +1043,14 @@ broken.
     `on_unsure: "ask"`. Production:
     `packages/kernel/src/guard/resolver.ts`. Test: `packages/kernel/tests/unit/guard.test.ts`.
 
-41. **A judge failure or malformed response is not memoized and denies under the default
-    `on_unsure: "deny"`; explicit `on_unsure: "ask"` may escalate it to a human.** The
-    final audit answerer is `human` when that fallback answers, never incorrectly `judge`.
-    in `createGuardResolver`. Tests: `packages/kernel/tests/unit/guard.test.ts` (`"routes call
-    failures and malformed responses to the human channel"`) and
-    `packages/kernel/tests/unit/guard-audit.test.ts` (`"attributes a judge failure fallback to the
-    human who answered it"`).
+41. **A technical Judge failure is not memoized and never invokes human fallback, even with
+    `on_unsure: "ask"`.** Invalid responses have up to three correction retries per stage inside
+    the ordinary Loop before denial. The calling run receives a technical failure message rather
+    than the static review trigger as an explanation. Production: `createCommandReview`,
+    `createGuardResolver` and `applyGuard` in `packages/tools/src/core.ts`.
+    Test: `packages/kernel/tests/unit/command-review.test.ts`,
+    `packages/kernel/tests/integration/judge-host.test.ts` and
+    `packages/tools/tests/integration/guard-dispatch.test.ts`.
 
 42. **A judge that cannot be constructed denies Auto asks by default; explicit `on_unsure: "ask"`
     falls back to `humanElicit` without disarming the guard.** `packages/kernel/src/guard/resolver.ts`. Pinned:
@@ -1226,7 +1227,7 @@ broken.
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 
 An unappealable static `deny` carries the guard's reason. When an `ask` reaches a reviewer but is not
-approved — whether declined, cancelled, timed out or denied by the model — the tool error instead
+approved by a valid semantic decision, the tool error instead
 prefixes that reason with `"command review did not approve"`, making the attempted review visible
 without claiming why it returned false (`packages/tools/src/core.ts`). Both reach the
 transcript as the tool call's `error`

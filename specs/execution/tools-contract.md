@@ -31,7 +31,9 @@ either name today gets the same `not_found` refusal as a typo
 
 `GuardReview.reviewer_decision` optionally preserves the semantic `allow`, `deny`, `unsure` or
 `failed` result separately from the final dispatch outcome. A denied reviewed command labels its
-static trigger separately; the static reason is not presented as the reviewer's rationale.
+static trigger separately for semantic decisions. Technical failures instead name the failure category
+and explain that repeated operator authorization does not repair the failure; their message omits the
+static trigger. Structured guard metadata retains the trigger for diagnostics.
 Production: `createAgentTools` in [core.ts](../../packages/tools/src/core.ts) and `GuardReview`
 in [types.ts](../../packages/tools/src/guard/types.ts).
 Test: [guard-dispatch.test.ts](../../packages/tools/tests/integration/guard-dispatch.test.ts).

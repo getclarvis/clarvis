@@ -10,6 +10,10 @@ dependency-free directory-vocabulary leaf — from which it also re-exports
 
 ## Contract
 
+Technical automatic-review failures report their failure category to the calling run, not the static
+reason that triggered review. The message explicitly distinguishes failure from missing operator
+authorization and does not ask the model to obtain repeated consent.
+
 The tool surface and dispatcher contract are specified in
 [`execution/tools-contract.md`](../../specs/execution/tools-contract.md), with focused contracts for
 [`reads and search`](../../specs/execution/tools-read-and-search.md),
@@ -292,7 +296,8 @@ When the host's guard includes its effective mode, `DispatchResult.guard` also
 records the final allowed/denied outcome and whether policy, the judge, the user,
 the session allowlist, or an unavailable review channel answered it.
 Optional `reviewer_decision` separates the semantic result (`allow`, `deny`, `unsure`, `failed`)
-from the final outcome. Denied results label the static review trigger separately from that result;
+from the final outcome. Semantic denials label the static review trigger separately from that result;
+technical failures instead report the failure category and explain that repeated consent is not a fix;
 they do not invent a semantic explanation from the shell analyzer's reason.
 
 The exported POSIX and PowerShell starter allowlists cover routine inspection,

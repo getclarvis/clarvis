@@ -236,7 +236,9 @@ operator settings. Workspace configuration may lower timeout/retry limits or req
 uncertainty. A plugin cannot contribute this block. Explicit run reviewer overrides remain supported.
 The fallback defaults to `deny`: `unsure`, missing authority coverage, an unavailable reviewer,
 provider failure, timeout, or malformed structured output returns a denial to the calling model so it
-can choose another command. `on_unsure: "ask"` is the explicit opt-in for human fallback; human-only
+can identify a technical review failure rather than missing consent. Technical failures never invoke
+human fallback, even with `on_unsure: "ask"`. That setting remains the explicit opt-in for semantic
+uncertainty; human-only
 policy decisions such as credential, dangerous-command, and explicit escalation asks remain human.
 `guard_judge.guidance` is bounded additional context and cannot replace the
 fixed policy. Both command and effect review use Judge-owned `JUDGE_POLICY`. Code composes operator-global guidance first and appends workspace guidance within the single bounded payload; absent guidance does not disable Auto.
@@ -270,6 +272,13 @@ Production: `executeJudge` in [executor.ts](../../packages/judge/src/executor.ts
 [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
 Timeout, auth, quota, rate limit, transport, admission, cancellation, invalid response and unknown
 failure are distinct receipts. Cancellation is enforced even if a provider ignores its signal.
+Malformed protocol responses receive up to three correction retries per stage through ordinary Loop
+tool-result continuation. Invalid authority candidates do not consume the host's single installation;
+every corrected candidate rechecks the captured revision and context. No operational effect executes
+during correction. Production: `createAuthorityReviewTransaction` in
+[authority-review-transaction.ts](../../packages/kernel/src/guard/authority-review-transaction.ts).
+Test: `invalid candidates can be corrected before the single installation` in
+[authority-review-transaction.test.ts](../../packages/kernel/tests/unit/authority-review-transaction.test.ts).
 Audit fields contain counts, timing, model identity, effect IDs and digests, never raw command,
 justification, operator evidence, reviewer prompt or probe output.
 

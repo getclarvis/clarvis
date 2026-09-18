@@ -5,10 +5,18 @@ import {
   type LLMToolCall,
   type NamespacedTool,
   type OutputTokenBudget,
+  type HandlerVerdict,
 } from "@clarvis/capability";
 import { z } from "zod";
-import { decideCommandStepSchema, judgeStepSchema } from "./private-protocol.ts";
+import {
+  decideCommandStepSchema,
+  judgeStepSchema,
+  type JudgeTerminalReceipt,
+} from "./private-protocol.ts";
 import { createJudgeStepMachine, type JudgeStepBinding } from "./step-machine.ts";
+
+/** Corrections use ordinary tool-result continuation, never a second inference loop. */
+export const JUDGE_CORRECTION_RETRIES = 3;
 
 const tool = (binding: JudgeStepBinding): NamespacedTool => ({
   fullName: "judge_step",
@@ -38,18 +46,40 @@ const invalidResult = (): AgentResult => ({
 export function createJudgeRunCapability(
   binding: JudgeStepBinding,
   outputBudget: OutputTokenBudget,
+  validateReceipt?: (receipt: JudgeTerminalReceipt) => boolean,
 ) {
-  const machine = createJudgeStepMachine(binding);
+  const machine = createJudgeStepMachine(binding, validateReceipt);
   const responseSchema = binding.kind === "command" ? decideCommandStepSchema : judgeStepSchema;
   const runTool = tool(binding);
   let admitted: LLMToolCall | undefined;
   let invalid = false;
+  let admissionError: string | undefined;
+  const corrections = new Map<string, number>();
   let hostFailure: { error: unknown } | undefined;
   const reject = (): AgentResult => {
     invalid = true;
     admitted = undefined;
     machine.close();
     return invalidResult();
+  };
+  const correct = (reason: string): HandlerVerdict => {
+    const stage = machine.stage();
+    const used = corrections.get(stage) ?? 0;
+    if (stage === "closed" || stage === "pending" || used >= JUDGE_CORRECTION_RETRIES)
+      return { kind: "terminal", result: reject() };
+    corrections.set(stage, used + 1);
+    return {
+      kind: "result",
+      progress: false,
+      text: JSON.stringify({
+        error: "judge_invalid_response",
+        reason,
+        stage,
+        retries_remaining: JUDGE_CORRECTION_RETRIES - used,
+        instruction:
+          "Correct the response for this stage using exactly one judge_step call and no prose. Follow its schema and the host authority evidence; do not request operator approval.",
+      }),
+    };
   };
   const capability: Capability = {
     name: "judge-private",
@@ -93,6 +123,11 @@ export function createJudgeRunCapability(
                       if (cancelled !== null) {
                         machine.close();
                         return { kind: "terminal", result: cancelled };
+                      }
+                      if (admissionError !== undefined) {
+                        const reason = admissionError;
+                        admissionError = undefined;
+                        return correct(reason);
                       }
                       if (
                         invalid ||
@@ -145,7 +180,7 @@ export function createJudgeRunCapability(
                       }
                       if (outcome.kind === "invalid_response") {
                         envelope.fail("Invalid private reviewer response.");
-                        return { kind: "terminal", result: reject() };
+                        return correct(outcome.reason ?? "invalid_step");
                       }
                       if (outcome.kind === "compiled")
                         return {
@@ -178,6 +213,11 @@ export function createJudgeRunCapability(
     hostFailure: () => hostFailure,
     stage: () => machine.stage(),
     admitResponse(calls: readonly LLMToolCall[] | undefined, text?: string): boolean {
+      const malformed = (reason: string): false => {
+        admitted = undefined;
+        admissionError = reason;
+        return false;
+      };
       if (
         invalid ||
         admitted !== undefined ||
@@ -185,8 +225,7 @@ export function createJudgeRunCapability(
         calls?.length !== 1 ||
         (text?.trim().length ?? 0) !== 0
       ) {
-        reject();
-        return false;
+        return malformed("expected_one_tool_call_without_prose");
       }
       const call = calls[0];
       if (
@@ -194,22 +233,26 @@ export function createJudgeRunCapability(
         call.name !== "judge_step" ||
         call.malformedArguments !== undefined
       ) {
-        reject();
-        return false;
+        return malformed("invalid_tool_name_or_arguments");
       }
       let raw: unknown = call.arguments;
       if (typeof raw === "string") {
         try {
           raw = JSON.parse(raw);
         } catch {
-          reject();
-          return false;
+          return malformed("invalid_arguments_json");
         }
       }
       const parsed = responseSchema.safeParse(raw);
       if (!parsed.success) {
-        reject();
-        return false;
+        return malformed(
+          JSON.stringify({
+            code: "invalid_step_schema",
+            issues: parsed.error.issues
+              .slice(0, 8)
+              .map((issue) => ({ code: issue.code, path: issue.path })),
+          }),
+        );
       }
       admitted = { id: call.id, name: "judge_step", arguments: parsed.data };
       return true;

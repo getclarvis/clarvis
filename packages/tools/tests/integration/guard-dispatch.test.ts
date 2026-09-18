@@ -159,7 +159,9 @@ describe("dispatch guard hook", () => {
       );
       expect(result.guard).toMatchObject({ outcome: "denied", reviewer_decision });
       expect(result.json.message).toBe(
-        `command review did not approve: reviewer ${reviewer_decision}; static review trigger: dynamic expansion`,
+        reviewer_decision === "failed"
+          ? "Command not executed: automatic review failed (unknown). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure."
+          : `command review did not approve: reviewer ${reviewer_decision}; static review trigger: dynamic expansion`,
       );
       expect(exists(root, "f.txt")).toBe(false);
     },

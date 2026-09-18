@@ -24,6 +24,119 @@ const answer = (args: unknown) => ({
   usage: { input_tokens: 10, output_tokens: 5, cached_tokens: 3, cache_write_tokens: 1 },
 });
 
+test.each([
+  "command_first",
+  "command_third",
+  "compile_and_decide",
+  "deny",
+  "empty",
+  "text",
+  "multiple",
+  "malformed",
+  "foreign",
+  "host_receipt",
+] as const)(
+  "ordinary Loop corrects %s with append-only feedback and bounded attempts",
+  async (scenario) => {
+    const root = mkdtempSync(join(tmpdir(), "judge-correction-"));
+    const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
+    const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
+    const requests: LLMCallParams["messages"][] = [];
+    let firstTools: LLMCallParams["tools"];
+    let validations = 0;
+    let installations = 0;
+    const effects = scenario === "compile_and_decide";
+    const retries = scenario === "command_first" ? 1 : 3;
+    const base = {
+      async call(params: LLMCallParams) {
+        if (requests.length === 0) firstTools = structuredClone(params.tools);
+        expect(params.tools).toEqual(firstTools);
+        expect(params.promptCacheKey).toBe("parent_judge");
+        requests.push(structuredClone(params.messages));
+        const index = requests.length;
+        if (index <= retries) {
+          if (scenario === "empty") return { text: "", usage: answer(command).usage };
+          if (scenario === "text") return { text: "allow", usage: answer(command).usage };
+          if (scenario === "multiple")
+            return {
+              ...answer(command),
+              toolCalls: [
+                { id: `a-${index}`, name: "judge_step", arguments: command },
+                { id: `b-${index}`, name: "judge_step", arguments: command },
+              ],
+            };
+          if (scenario === "foreign")
+            return {
+              ...answer(command),
+              toolCalls: [{ id: `a-${index}`, name: "other", arguments: command }],
+            };
+          if (scenario === "malformed")
+            return {
+              ...answer(command),
+              toolCalls: [{ id: `a-${index}`, name: "judge_step", arguments: "{" }],
+            };
+        }
+        const args =
+          scenario === "deny"
+            ? { ...command, decision: "deny" }
+            : effects
+              ? index <= 4
+                ? compile
+                : index < 8
+                  ? { ...decide, transition_token: "wrong" }
+                  : decide
+              : index <= retries && scenario !== "host_receipt"
+                ? { action: "decide_command", decision: "invalid" }
+                : command;
+        return {
+          ...answer(args),
+          toolCalls: [{ id: `call-${index}`, name: "judge_step", arguments: args }],
+        };
+      },
+    };
+    try {
+      const result = await executeJudge({
+        owner: "owner",
+        executionId: "correction",
+        sessionId: "parent",
+        executionBaseLlm: base,
+        promptCacheTtl: "1h",
+        model: "anthropic/test",
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        timeoutMs: 1000,
+        maxRetries: 0,
+        validateReceipt: () => scenario !== "host_receipt" || requests.length > retries,
+        snapshot: { operator_evidence: [{ text: "Open a pull request" }] },
+        currentCase: { command: "git commit" },
+        binding: effects
+          ? {
+              kind: "compile_effects",
+              async validateAndInstall() {
+                if (++validations < 4) return undefined;
+                installations++;
+                return transition;
+              },
+            }
+          : { kind: "command" },
+        createServices: () => ({ ...infrastructure, env, llm: base }),
+      });
+      expect(result.response.status).toBe("completed");
+      expect(result.attempts).toBe(scenario === "deny" ? 1 : effects ? 8 : retries + 1);
+      expect(installations).toBe(effects ? 1 : 0);
+      const messages = requests;
+      for (let index = 1; index < messages.length; index++) {
+        const previous = messages[index - 1]!;
+        expect(messages[index]!.slice(0, previous.length)).toEqual(previous);
+        expect(JSON.stringify(messages[index])).toContain("judge_invalid_response");
+      }
+      if (effects) expect(JSON.stringify(messages[1])).toContain("authority_candidate_rejected");
+    } finally {
+      await infrastructure.connections.closeAll();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
 test("concurrent command and effect executions retain independent observation cursors", async () => {
   const root = mkdtempSync(join(tmpdir(), "judge-concurrent-cursors-"));
   const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent" });
@@ -379,17 +492,17 @@ test.each(["client", "auth", "deadline", "host", "cancel", "late_cancel", "empty
         expect(outcome.receipt).toBeUndefined();
         if (failureKind === "empty") {
           expect(outcome.invalidResponse).toBe(true);
-          expect(outcome.response.usage.iterations_used).toBe(1);
+          expect(outcome.response.usage.iterations_used).toBe(4);
         } else expect(outcome.providerFailure?.error).toBeInstanceOf(ProviderError);
         expect(outcome.timedOut).toBe(failureKind === "deadline");
-        expect(outcome.attempts).toBe(1);
+        expect(outcome.attempts).toBe(failureKind === "empty" ? 4 : 1);
         if (failureKind === "deadline") {
           const record = infrastructure.traceStore.getById("owner", "failed")!;
           expect(record.total_input_tokens).toBe(10);
           expect(record.total_output_tokens).toBe(5);
         }
       }
-      expect(calls).toBe(1);
+      expect(calls).toBe(failureKind === "empty" ? 4 : 1);
     } finally {
       await infrastructure.connections.closeAll();
       rmSync(root, { recursive: true, force: true });

@@ -77,6 +77,10 @@ export function createConfigurationReview(
     let expectedRevision = state?.revision;
     if (mode !== "on" && settings.effect_review?.rollout !== "shadow") {
       const receipt = await reviewer.review(batch, sanitizeDeep(context), "configure_clarvis");
+      if (receipt.failure_kind !== undefined)
+        throw new Error(
+          `Configuration not changed: automatic review failed (${receipt.failure_kind}). This is a technical review failure, not missing operator authorization. Do not request authorization again to resolve it.`,
+        );
       if (
         receipt.decision === "deny" ||
         (receipt.decision === "unsure" &&
@@ -85,17 +89,10 @@ export function createConfigurationReview(
             JUDGE_DEFAULTS.onUnsure) !== "ask")
       )
         throw new Error("Configuration effect was denied by authority review.");
-      if (receipt.failure_kind === "cancelled")
-        throw new Error("Automatic configuration review was cancelled.");
       expectedRevision = state === undefined ? undefined : receipt.revision;
       allowed = receipt.decision === "allow";
       if (!allowed)
-        reviewReason =
-          receipt.failure_kind === "timeout"
-            ? "Automatic review timed out. The current policy requires a human decision."
-            : receipt.failure_kind === undefined
-              ? "Automatic review could not establish authorization for this effect."
-              : "Automatic review did not return a valid decision. The current policy requires human review.";
+        reviewReason = "Automatic review could not establish authorization for this effect.";
     }
     if (!allowed) {
       if (ctx.elicit === undefined)

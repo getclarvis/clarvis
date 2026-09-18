@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { JUDGE_PORT } from "@clarvis/judge";
+import { judgePort } from "../helpers/judge-port.ts";
 import {
   createCapabilityServices,
   loadEnv,
@@ -20,6 +22,57 @@ const mutation: ConfigurationMutationFacts = {
   fieldClass: "settings",
   surface: "operational",
 };
+
+test.each(["invalid_response", "timeout", "transport"] as const)(
+  "configuration %s failures never ask for repeated consent",
+  async (failureKind) => {
+    const services = createCapabilityServices();
+    const ledger = createOperatorAuthorityRuntime({
+      owner: "owner",
+      executionId: "run",
+      seed: {
+        binding: { owner_key_name: "owner", session_id: "session", controller_epoch: "epoch" },
+        evidence: [
+          { id: "operator", source: "start", text: "Update settings", execution_id: "run" },
+        ],
+      },
+    });
+    services.provide(OPERATOR_AUTHORITY_PORT, ledger.reader);
+    services.provide(
+      JUDGE_PORT,
+      judgePort(undefined, async () => ({
+        kind: "failed",
+        failureKind,
+        attempts: 4,
+        elapsedMs: 1,
+        cacheHit: false,
+      })),
+    );
+    let questions = 0;
+    const ctx = {
+      services,
+      env: loadEnv({}),
+      request: { guard_mode: "auto" },
+      requestParam: () => undefined,
+      elicit: async () => {
+        questions++;
+        return { action: "accept" };
+      },
+    } as unknown as RunCapabilityContext;
+    const store = {
+      readSettings: () => ({ merged: { effect_review: { on_unsure: "ask" } } }),
+    } as ConfigStore;
+    await expect(
+      createConfigurationReview(ctx, { store })(
+        [{ ...mutation, nextRevision: "a".repeat(64) }],
+        {},
+        "Apply settings?",
+      ),
+    ).rejects.toThrow(`automatic review failed (${failureKind})`);
+    expect(questions).toBe(0);
+    expect(ledger.reader.snapshot().envelope).toBeUndefined();
+  },
+);
 
 test("configuration consumers share pending identical questions but never retain human consent", async () => {
   const services = createCapabilityServices();

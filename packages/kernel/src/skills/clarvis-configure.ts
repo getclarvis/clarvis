@@ -71,12 +71,13 @@ prices, limits or entitlements. Adapt the example model/port without replacing u
 
 ${configurationExample("model")}
 
-Supported provider kinds are openai-compatible, openai, anthropic, google, openai-codex and xai-grok.
-api_key_env is a variable NAME, never its secret value. Keys/login remain operator-owned; configuring
-openai-codex or xai-grok neither signs in nor converts subscriptions to API credit. Container inference
-always uses the host broker: provider endpoints, credentials and their localhost stay on the host.
-Container commands have a separate localhost and no provider/MCP credentials. Diagnose the connection;
-change endpoint or credential bindings only within the user's intended scope.
+Provider kinds: openai-compatible, openai, anthropic, google, openai-codex and xai-grok. api_key_env
+names a variable, never its value. Keys/login are operator-owned; declaring a subscription kind
+neither signs in nor creates API credit. Entitled Grok Responses models always support tool calls;
+vision follows image input modalities, remains enabled when modality facts are absent and is disabled
+by explicit supports_vision: false. Refresh the account catalog instead of authoring its metadata.
+Container inference uses the host broker; its commands have separate localhost and no provider/MCP
+credentials. Change endpoints or credential bindings only within the requested scope.
 
 default_model/default_reasoning_effort override the entry agent; a child keeps explicit values or
 inherits resolved defaults. default_vision_model is a one-completion image reader, not a child or
@@ -261,10 +262,10 @@ with clarvis.tasks.v2 support; a fake server name cannot activate Tasks.
 
 ${configurationExample("capabilities")}
 
-goals configures /goal creation: max_net_tokens is the total cap, inheriting the finite entry budget
-once if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is
-optional absolute Unix milliseconds. Nearest whole block wins. Settings neither create nor edit goals;
-the operator uses /goal edit for existing limits. Resume keeps spend/counts.
+goals configures creation: max_net_tokens is the total cap, inheriting the finite entry budget once
+if omitted. Defaults: max_auto_continuations=8, max_no_progress_checkpoints=3; deadline_at is optional
+absolute Unix milliseconds. Nearest whole block wins. Settings do not create/edit goals; /goal edit
+changes existing limits, and resume retains spend/counts.
 
 Create only while idle with no current Goal: /goal auto uses conversation context; /goal <seed>
 prioritizes the seed; /goal -- <objective> is literal. Insufficient context creates nothing.
@@ -272,10 +273,12 @@ Pause does not stop physical work. /goal inspects. These are operator commands, 
 goals.agent.model selects formulation; steward.model overrides it for Steward. formulation and
 steward accept max_net_tokens, timeout_ms, max_iterations, call_timeout_ms, max_retries. Defaults:
 work-sized independent allowance, 120000 ms, 8 iterations, 60000 ms/call, one retry; host ceilings win.
-Steward also bounds reviews/interventions/completion attempts as in the example. It is read-only,
-not the Judge: work runs execute checks and retain receipts. Partial reads cannot attest completion.
-not_achieved returns work; failed/inconclusive completion needs attention. Auxiliary usage/costs
-settle once in session totals outside the work allowance; missing telemetry remains unknown.
+Steward bounds reviews/interventions/completion attempts as shown. It is read-only, not the Judge:
+work runs execute checks and retain receipts; partial reads cannot attest completion. not_achieved
+returns work; failed/inconclusive completion needs attention. Each prepared work stage captures the
+effective global/workspace CLARVIS.md (AGENTS.md fallback per scope) once for both work and Steward.
+Mid-stage edits do not change it; between-stage changes start fresh private Steward history. Auxiliary
+usage/costs settle once outside the work allowance; missing telemetry stays unknown.
 
 ## Author and configure workflows
 
@@ -330,15 +333,12 @@ current profile. Preview proves structure rather than provider health or future 
 
 --remote <destination> --remote-workspace <absolute-path> connects the local TUI to Clarvis on SSH.
 Both flags are required and conflict with --worktree. The remote owns files, state, credentials,
-tools and runtime; local configuration is not copied. Browser, host inspection and runtime controls
-are unavailable; /reconnect starts a new SSH Kernel. SSH stdio owns it, so /background cannot outlive
-the TUI; list, attach and cancel work only in that connection.
-
-OpenSSH protects the stdio stream; Clarvis opens no listener. Aliases, keys, certificates and local
-ssh-agent work, but forwarding is disabled. Clarvis stores no identity/password, leaves host-key
-policy to OpenSSH and forces BatchMode=yes. Test ssh -o BatchMode=yes <destination> true first and
-unlock protected keys in ssh-agent. Local and remote Code hosts default to an exec tool ceiling;
-CLARVIS_AGENT_TOOLS_MAX_GRANT can narrow it. The VPS sees plaintext and remains trusted.
+tools and runtime; local configuration is not copied. Browser/host inspection/runtime controls are
+unavailable. /reconnect starts a new SSH Kernel; /background cannot outlive that TUI connection.
+OpenSSH protects stdio without a Clarvis listener. It owns aliases, keys, host verification and
+BatchMode=yes; forwarding is disabled and Clarvis stores no identity/password. Test
+ssh -o BatchMode=yes <destination> true and unlock keys in ssh-agent. Tool ceilings remain host-owned;
+the trusted VPS sees plaintext.
 
 ## TUI loops, background runs and reload
 
@@ -349,28 +349,27 @@ create schedules, hand off runs or restart the host.
 - /loop 5m --max-runs 8 -- check the PR comments
 - /loop cron "0 9 * * 1-5" --tz America/Recife -- prepare the summary
 
-/loop requires a user prompt. Intervals accept positive integer m/h/d, minimum one minute; 90m means
-90 minutes. First due is one interval after creation; later intervals follow full run closure.
-Cron requires one quoted expression of five numeric fields with *, lists, ranges or steps; Sunday is
-0/7, restricted month-day/weekday use OR. The IANA timezone is captured at creation (--tz overrides local).
-DST skips missing times and
-uses the first repeated time. Cron keeps calendar deadlines and coalesces missed times into one
-pending occurrence. Options precede --; everything after it is literal prompt, even /quit, /loop or
-!command. Without options, the remaining text is the prompt; skill/workflow dispatch does not apply.
+/loop requires a prompt. Intervals use positive integer m/h/d, minimum one minute; first due is one
+interval after creation and later intervals follow full run closure.
+Cron uses one quoted five-field expression with *, lists, ranges or steps; Sunday is 0/7 and
+restricted month-day/weekday use OR. Creation captures the IANA timezone (--tz overrides local).
+DST skips missing times and uses the first repeated time; missed times coalesce into one occurrence.
+Options precede --; later text is literal prompt, including slash/bang text. Skill/workflow dispatch
+does not apply.
 
 /loop [list] lists jobs; show <id> details one. pause/cancel discard pending work but let a run finish;
 cancel <id> --running requests its cancellation. resume recalculates a future due; exhausted jobs
 cannot resume. Limits: 10 live/session and 20 attempts/job unless --max-runs. Busy deferrals do not
-count. Normal context, tools, approval and budgets apply. Drafts, attachments, dialogs and host work
-defer; timers never steer. Failure, exhausted budget, cancellation, relevant config/session change or
-disconnect pauses until resume. TUI closure forgets schedules; conversation resume restores none.
+count. Normal context, tools, approval and budgets apply. Drafts, dialogs and host work defer; timers
+never steer. Failure, exhausted budget, cancellation, relevant config/session change or disconnect
+pauses until resume. TUI closure forgets schedules; conversation resume restores none.
 
 /background hands off an eligible run only on local Host/Sandbox, after the host confirms durable
 continuation. Container and SSH refuse because their Kernels belong to the current client channel;
 list, attach and cancel remain available while that connection is alive.
-Reopen the same workspace to choose that run or a new conversation. /background list shows runs;
-/attach <execution-id> attaches exactly; another controller requires explicit takeover for control.
-/background cancel <execution-id> requests scoped cancellation.
+Reopen the workspace to choose that run or a new conversation. /background list shows runs;
+/attach <execution-id> attaches exactly; another controller needs explicit takeover.
+/background cancel <execution-id> requests cancellation.
 An ACK does not prove physical closure. Reattach observes the same execution/context and children
 without resubmitting the prompt. "continues after exit" also survives /quit; new turns use ordinary
 exit policy. Local !commands cannot detach. Questions still need a person
@@ -405,8 +404,8 @@ ${configurationExample("runtime")}
 
 sandbox uses type: native, enabled, availability (required|optional), filesystem
 (workspace-write|workspace-read-only), network (host|none) and optional toolchains/pass_env.
-Isolation and Review are independent: Ctrl+S persists global Host/Sandbox/Docker/Podman placement;
-Ctrl+G chooses current Off/Approval/Auto. Changing one never changes the other. Without a usable
+Isolation and Review are independent: Ctrl+X I persists global Host/Sandbox/Docker/Podman placement;
+Ctrl+X G chooses current Off/Approval/Auto. Changing one never changes the other. Without a usable
 review model, the picker saves Approval instead of Auto; authored Auto follows on_unsure. Container
 stores but does not apply Review.
 
@@ -419,12 +418,12 @@ has no general consent switch.
 
 ${configurationExample("review")}
 
-effect_review sets model, timeout_ms, max_retries and on_unsure. Only operator/global settings choose
-model or rollout (shadow|local|ci_retry); workspace may only tighten timeout/retries or require deny,
-and its guidance grants no authority. Auto needs no custom guidance. Fully attested effects and exact
-ordinary shell calls may be reviewed. Unsure, unavailable, timed-out or malformed review denies by
-default; only explicit global on_unsure: ask allows human fallback. Unknown registered effects and
-incomplete or mismatched attested targets never receive automatic allow.
+effect_review sets model, timeout_ms, max_retries and on_unsure. Only global settings choose model or
+rollout; workspace may tighten limits or require deny. Omitted limits inherit ordinary model-call
+defaults; Judge has no private timer/retry loop. Auto needs no custom guidance. Semantic unsure denies
+unless global on_unsure: ask enables human fallback. Invalid protocol gets three corrections
+per stage; unavailable, timed-out or still-invalid Judge always denies without asking. Unknown effects
+and incomplete or mismatched targets never receive automatic allow.
 Container configuration is projected once per generation. Host administration can save changes while
 connected, but the running projection stays unchanged and the UI reports reconnect pending.
 Environment flags and host builtins are startup inputs, not settings.json keys. Logging uses

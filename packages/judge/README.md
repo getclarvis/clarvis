@@ -18,6 +18,8 @@ and final consent remain governed by [effect review](../../specs/execution/effec
 
 ## Public entries
 
+- `@clarvis/judge/testing`: the production `createJudgeCoordinator` for integration fixtures;
+  production hosts compose `createJudgeCapability` instead.
 - `@clarvis/judge/settings`: `judgeSettingsSpec`, strict schemas, `EffectReviewConfig`,
   `GuardJudgeConfig`, operational defaults and the typed request-view accessor.
 - `@clarvis/judge`: configuration plus `createJudgeCapability`, `JUDGE_PORT`, typed cases/receipts,
@@ -46,7 +48,9 @@ validates each complete provider response before dispatch. Command/decide finish
 step; compile returns the validated host transition and requires decide to cite its revision/token.
 Command runs expose only the `decide_command` input schema to the provider, so the model cannot
 select an effect-compilation action that the command state machine must reject.
-Multiple calls, free text, malformed arguments and wrong ordering produce bounded correction feedback.
+Multiple calls, text without a tool call, malformed arguments and wrong ordering produce bounded
+correction feedback. Text accompanying one valid call is accepted but never interpreted as a
+decision, permission or host instruction; only the validated tool arguments carry the receipt.
 The host alone validates and installs authority; its operational faults propagate separately from
 semantic rejection. Closing the machine fences pending transaction results without rolling back an
 already installed envelope. These modules feed the private run capability; the native host composes the public capability with command, effect and configuration consumers integrated.
@@ -76,8 +80,12 @@ identity. Operational Goal state and Plan CAS/task-status headers remain owned b
 not enter the reviewer.
 
 Command output is capped at 1024 tokens per attempt; effects at 2048. The independent output budget
-covers one or two stages, four correction attempts per stage and configured transport retries. Each call has its own deadline; the run
-adds bounded overhead to the total wall ceiling. Provider fallback cannot invoke the same stage
+covers one or two stages, four correction attempts per stage and configured transport retries.
+Calls use the ordinary model inactivity timeout and transport retry machinery; there is no private
+wall-clock timer. The host default is `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden,
+and the ordinary Loop owns run inactivity and ceiling validation. Transport attempts inherit
+`CLARVIS_DEFAULT_MAX_RETRIES` and are bounded by `CLARVIS_RETRY_CEILING`; explicit reviewer overrides
+use the same machinery. Provider fallback cannot invoke the same stage
 again after a failed call; the original failure remains available to the host. Late known usage and
 retried usage are retained exactly once. Host transaction and framing faults propagate separately
 from semantic/provider outcomes. Real provider cache reuse remains unqualified until the live canary.

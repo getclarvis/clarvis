@@ -1,8 +1,13 @@
-import { expect, test } from "bun:test";
+import { expect, test, spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadEnv, ProviderError, type LLMCallParams } from "@clarvis/capability";
+import {
+  loadEnv,
+  ProviderError,
+  ModelCallInactivityError,
+  type LLMCallParams,
+} from "@clarvis/capability";
 import { createTestRunInfrastructure, MockLLM } from "@clarvis/loop/testing";
 import { executeJudge } from "../../src/executor.ts";
 import { JUDGE_POLICY } from "../../src/prompt.ts";
@@ -23,6 +28,96 @@ const answer = (args: unknown) => ({
   toolCalls: [{ name: "judge_step", arguments: args }],
   usage: { input_tokens: 10, output_tokens: 5, cached_tokens: 3, cache_write_tokens: 1 },
 });
+
+test("executor leaves call timing to the shared provider and run inactivity to the Loop", async () => {
+  const root = mkdtempSync(join(tmpdir(), "judge-shared-timeout-"));
+  const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_DEFAULT_TIMEOUT_MS: "234567" });
+  const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
+  const timer = spyOn(globalThis, "setTimeout");
+  const base = new MockLLM({ script: [answer(command)] });
+  try {
+    const result = await executeJudge({
+      owner: "owner",
+      executionId: "shared-timeout",
+      sessionId: "parent",
+      executionBaseLlm: base,
+      promptCacheTtl: "1h",
+      model: "anthropic/test",
+      providers: [{ name: "anthropic", kind: "anthropic" }],
+      timeoutMs: 180000,
+      maxRetries: 0,
+      binding: { kind: "command" },
+      snapshot: {},
+      currentCase: {},
+      createServices: () => ({
+        ...infrastructure,
+        env,
+        llm: {
+          async call(params) {
+            expect(params.timeoutMs).toBe(180000);
+            expect(timer.mock.calls.some((args) => args[1] === 180000)).toBe(false);
+            return base.call(params);
+          },
+        },
+      }),
+    });
+    expect(result.response.status).toBe("completed");
+    const record = infrastructure.traceStore.getById("owner", "shared-timeout")!;
+    expect(record.request.budget.timeout_ms).toBeUndefined();
+  } finally {
+    timer.mockRestore();
+    await infrastructure.connections.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test.each([0, 3, 5, 6])(
+  "executor delegates retry limit %s to the ordinary profile validator",
+  async (maxRetries) => {
+    const root = mkdtempSync(join(tmpdir(), "judge-retry-limit-"));
+    const env = loadEnv({ CLARVIS_LOG_LEVEL: "silent", CLARVIS_RETRY_CEILING: "5" });
+    const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
+    let calls = 0;
+    const base = new MockLLM({ script: [answer(command)] });
+    try {
+      const pending = executeJudge({
+        owner: "owner",
+        executionId: "retry-limit",
+        sessionId: "parent",
+        executionBaseLlm: base,
+        promptCacheTtl: "1h",
+        model: "anthropic/test",
+        providers: [{ name: "anthropic", kind: "anthropic" }],
+        timeoutMs: env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
+        maxRetries,
+        binding: { kind: "command" },
+        snapshot: {},
+        currentCase: {},
+        createServices: () => ({
+          ...infrastructure,
+          env,
+          llm: {
+            async call(params) {
+              calls++;
+              expect(params.maxRetries).toBe(maxRetries);
+              return base.call(params);
+            },
+          },
+        }),
+      });
+      if (maxRetries > 5) {
+        await expect(pending).rejects.toMatchObject({ code: "invalid_profile" });
+        expect(calls).toBe(0);
+      } else {
+        expect((await pending).receipt).toMatchObject(command);
+        expect(calls).toBe(1);
+      }
+    } finally {
+      await infrastructure.connections.closeAll();
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test.each([
   "command_first",
@@ -434,11 +529,15 @@ test.each(["client", "auth", "deadline", "host", "cancel", "late_cancel", "empty
         if (failureKind === "late_cancel") controller.abort();
         if (failureKind === "client" || failureKind === "auth")
           throw new ProviderError("private provider text", { kind: failureKind });
-        if (failureKind === "deadline")
-          await new Promise<void>((resolve) => {
-            if (params.signal?.aborted) resolve();
-            else params.signal?.addEventListener("abort", () => resolve(), { once: true });
-          });
+        if (failureKind === "deadline") {
+          const error = new ModelCallInactivityError(
+            params.timeoutMs!,
+            true,
+            answer(command).usage,
+          );
+          error.accumulatedUsage = error.partialUsage;
+          throw error;
+        }
         return {
           ...answer(failureKind === "host" || failureKind === "cancel" ? compile : command),
           toolCalls: [

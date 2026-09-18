@@ -83,8 +83,8 @@ human criterion. Production: `goalReviewContext` in
 [command-review.ts](../../packages/kernel/src/guard/command-review.ts) and
 [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts). Test:
 [goal-hosted-continuation.test.ts](../../packages/kernel/tests/integration/goal-hosted-continuation.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts) and
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts) and
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 `projectGoalTrajectory` reconstructs every persisted `continue_from` ancestor reachable from
 non-pending conversation turns, then orders sanitized user messages, final-answer assistant results,

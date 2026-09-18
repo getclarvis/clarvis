@@ -1,4 +1,8 @@
-import { ProviderError, type LLMCallParams, type LLMUsage } from "@clarvis/capability";
+import {
+  ModelCallInactivityError,
+  type ProviderError,
+  type LLMCallParams,
+} from "@clarvis/capability";
 
 const MODEL_CALL_TIMEOUT_BRIDGE = Symbol("clarvis.model-call-timeout-bridge");
 
@@ -15,21 +19,6 @@ export interface ModelCallTimeoutBridge {
   registerCleanup(cleanup: () => void): () => void;
   /** Release timer/listener resources when the admission boundary exits. */
   cleanup(): void;
-}
-
-/** A transient provider attempt that stopped producing stream activity. */
-export class ModelCallInactivityError extends ProviderError {
-  constructor(timeoutMs: number, streamStarted: boolean, partialUsage?: LLMUsage) {
-    super(
-      `Model call exceeded the per-call timeout after ${String(timeoutMs)}ms with no new stream activity.`,
-      {
-        kind: "transient",
-        streamStarted,
-        ...(partialUsage !== undefined ? { partialUsage } : {}),
-      },
-    );
-    this.name = "ModelCallInactivityError";
-  }
 }
 
 type BridgedCallParams = LLMCallParams & {

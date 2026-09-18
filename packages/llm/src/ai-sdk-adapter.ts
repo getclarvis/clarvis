@@ -21,7 +21,12 @@ import type {
   Logger,
   ResolvedProviderConfig,
 } from "@clarvis/capability";
-import { levelEnabled, NOOP_LOGGER, ProviderError } from "@clarvis/capability";
+import {
+  levelEnabled,
+  NOOP_LOGGER,
+  ProviderError,
+  ModelCallInactivityError,
+} from "@clarvis/capability";
 import { toModelMessages } from "./to-model-messages.ts";
 import { openAICompatibleSettings, resolveConfiguredHeaders } from "./openai-compatible-request.ts";
 import { makeDeltaBatcher, makeToolInputReporter } from "./ai-sdk/streaming.ts";
@@ -34,7 +39,6 @@ import {
   DEFAULT_PROVIDER_MAX_SSE_EVENT_BYTES,
 } from "./ai-sdk/bounded-fetch.ts";
 import {
-  ModelCallInactivityError,
   modelCallTimeoutBridgeOf,
   type ModelCallTimeoutBridge,
 } from "./model-call-timeout-bridge.ts";

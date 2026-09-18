@@ -3,8 +3,6 @@ import type { CapabilityRequestView, CapabilitySettingsSpec } from "@clarvis/cap
 
 /** Operational defaults shared by the isolated reviewer and host configuration resolution. */
 export const JUDGE_DEFAULTS = Object.freeze({
-  timeoutMs: 20_000,
-  maxRetries: 1,
   onUnsure: "deny" as const,
 });
 
@@ -12,8 +10,8 @@ export const JUDGE_DEFAULTS = Object.freeze({
 export const effectReviewSchema = z
   .object({
     model: z.string().min(1).max(256).optional(),
-    timeout_ms: z.number().int().positive().max(120_000).optional(),
-    max_retries: z.number().int().min(0).max(2).optional(),
+    timeout_ms: z.number().int().positive().max(2_147_483_647).optional(),
+    max_retries: z.number().int().nonnegative().optional(),
     on_unsure: z.enum(["ask", "deny"]).optional(),
     rollout: z.enum(["shadow", "local", "ci_retry"]).optional(),
   })
@@ -25,8 +23,8 @@ export const guardJudgeSchema = z
     guidance: z.string().min(1).max(32_768).optional(),
     model: z.string().min(1).optional(),
     on_unsure: z.enum(["ask", "deny"]).optional(),
-    timeout_ms: z.number().int().positive().max(120_000).optional(),
-    max_retries: z.number().int().min(0).max(2).optional(),
+    timeout_ms: z.number().int().positive().max(2_147_483_647).optional(),
+    max_retries: z.number().int().nonnegative().optional(),
   })
   .strict();
 

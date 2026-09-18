@@ -2,6 +2,13 @@
 
 Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
 Technical Judge failures never trigger operator questions, including when `on_unsure` is `ask`.
+Judge calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS` unless explicitly overridden. The shared
+provider owns inactivity timing and transport retries, without a separate Judge wall deadline.
+Workspace timeout overrides may only lower the operator limit or effective runtime default.
+Retries likewise inherit `CLARVIS_DEFAULT_MAX_RETRIES` under `CLARVIS_RETRY_CEILING`; workspace
+settings can only lower the operator or runtime value. Typed provider inactivity, not an inferred
+child abort, determines timeout classification. Review integration tests use the production Judge
+and Loop; no test-only reviewer implementation or policy is retained.
 Malformed candidates may be corrected before authority installation; installation remains single-use
 and fenced by the captured authority and context. Semantic uncertainty retains its configured policy.
 Command and configuration review read its typed overrides through the generic request view.

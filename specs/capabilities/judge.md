@@ -14,10 +14,19 @@ Test: [dependencies.test.ts](../../packages/judge/tests/architecture/dependencie
 
 ## Settings and request schema
 
-`effect_review` accepts optional model, positive timeout up to 120000 ms, zero to two retries,
+Cross-package integration fixtures access the production coordinator through `@clarvis/judge/testing`,
+not relative internal imports or a parallel reviewer implementation. Production hosts use the capability.
+Production: [testing.ts](../../packages/judge/src/testing.ts), `createJudgeCoordinator` export.
+Test: [review-runtime.ts](../../packages/kernel/tests/helpers/review-runtime.ts), `commandReviewFixture`
+and `effectReviewFixture`, exercised by the Kernel Judge and effect-review integration suites.
+
+`effect_review` accepts optional model, positive timeout up to the timer representation ceiling,
+validated against `CLARVIS_TIMEOUT_CEILING_MS` by the ordinary profile validator, nonnegative retries
+bounded by `CLARVIS_RETRY_CEILING`,
 `on_unsure` (`ask` or `deny`) and rollout (`shadow`, `local`, `ci_retry`). Its merge is last-wins,
-with global/workspace restrictions applied by Kernel. Operational defaults are 20000 ms, one retry
-and denial on uncertainty. The strict per-run `guard_judge` parameter accepts the same model,
+with global/workspace restrictions applied by Kernel. Calls inherit `CLARVIS_DEFAULT_CALL_TIMEOUT_MS`
+(180000 ms by default) and `CLARVIS_DEFAULT_MAX_RETRIES` (three retries by default), with denial on
+uncertainty. There is no private transport retry default or ceiling. The strict per-run `guard_judge` parameter accepts the same model,
 timeout, retry and uncertainty overrides plus nonempty guidance up to 32768 characters, but no
 rollout override. Additional guidance is optional and never replaces host policy or evidence.
 Unknown fields are rejected, not translated. `guard_mode` remains owned by tools policy.
@@ -25,6 +34,21 @@ Unknown fields are rejected, not translated. `guard_mode` remains owned by tools
 Production: `effectReviewSchema`, `guardJudgeSchema`, `JUDGE_DEFAULTS` and `judgeRequestConfig` in
 [settings.ts](../../packages/judge/src/settings.ts).
 Test: [settings.test.ts](../../packages/judge/tests/unit/settings.test.ts), `Judge settings ownership`.
+
+Absent runtime overrides remain absent through settings merging. Workspace configuration may only
+lower the effective runtime defaults or explicit operator limits. Protocol correction remains
+separate: three corrections per stage use ordinary tool feedback, not another transport retry loop.
+Production: `resolveEffectReviewSettings` in
+[effect-review-settings.ts](../../packages/kernel/src/config/effect-review-settings.ts) and
+`createHostJudge` in [judge-host.ts](../../packages/kernel/src/guard/judge-host.ts).
+Test: [effect-review-settings.test.ts](../../packages/kernel/tests/unit/effect-review-settings.test.ts)
+and [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) pin workspace
+narrowing and non-default environment timeout/retry inheritance.
+
+Provider timeouts are classified through the shared `ModelCallInactivityError`; an aborted child
+signal alone is not evidence of a provider timeout. Parent cancellation takes precedence.
+Production: `reviewerFailureKind` in [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts).
+Test: [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts).
 
 ## Host registration and model validation
 
@@ -97,12 +121,15 @@ not found; continuation reports unavailable before inference and leaves the priv
 
 `judge_step` has exactly three strict actions: `compile_authority`, `decide_effects` and
 `decide_command`. The internal state machine validates the complete response before admitting an
-action; multiple calls never partially install authority. Text, absent/foreign calls, malformed
+action; multiple calls never partially install authority. Text-only responses, absent/foreign calls, malformed
 arguments, repeated actions and wrong order produce classified correction feedback. Up to three
 correction retries per stage follow the initial attempt through ordinary Loop tool results, without
 operator questions. Exhaustion terminates as `invalid_response`. A command receipt completes directly. A compile transaction returns a validated
 envelope, revision and transition token; only a decide referencing that exact revision/token may
 complete the effects case. An existing host transition allows a direct decide.
+Accompanying text does not invalidate a single valid call and is never parsed as a decision or
+authority. Conflicting prose cannot override validated tool arguments. Text remains private context;
+the existing projected trace does not publish it. Schema, ordering and host validation remain mandatory.
 
 The host callback captures case identity and expected revisions. It owns semantic validation and
 installation; returning no transition rejects the candidate without installing it and permits correction.
@@ -161,7 +188,7 @@ private profile, no MCP servers or grants, no continuation, no compaction and on
 capability. Elicitation, steering, tool interruption, host metadata and authority substrate are not
 copied. The factory supplies empty connection machinery and the projected internal trace store.
 
-The sole system block is fixed versioned policy. Canonical object-key ordering applies within every
+The sole system block is fixed policy without a version label. Canonical object-key ordering applies within every
 user block and arrays retain their semantic order. Fixed configuration includes host-captured
 global and workspace persistent instructions, with source and content identity. The user sequence is fixed configuration,
 dedicated Goal slot, dedicated Plan slot, one chronological block per authenticated operator
@@ -202,8 +229,13 @@ policy contract, not probabilistic model compliance.
 Per-attempt output caps are 1024 for command and 2048 for effects. The aggregate output budget is
 cap times configured transport attempts times four correction attempts times the closed stage count. Its reservations cap each retry group
 independently. The child input/output token ceiling is the host environment ceiling, independent of
-the parent ledger. Per-call deadlines cover transport retries;
-the run wall ceiling covers four calls per stage plus 1000 ms overhead, bounded by the host ceiling.
+the parent ledger. Call timing belongs to the shared provider: streaming activity renews the
+inactivity window and transport retries receive the ordinary per-attempt window. No private
+wall timer or stage-derived run timeout is installed. The ordinary Loop resolves run inactivity
+from `CLARVIS_DEFAULT_TIMEOUT_MS` and validates profile timeout overrides against the host ceiling.
+The host resolves absent call overrides from its effective environment; workspace settings may
+only reduce that default or the explicit operator limit. `ModelCallInactivityError` is the shared
+Capability error subtype, preserving timeout classification and usage without inspecting error prose.
 The adapter permits four correction calls per stage but fences provider/framing failures so the
 engine's forced-tool rejection fallback cannot issue another external call after such a failure.
 The original provider failure remains available for host policy. Retries
@@ -224,6 +256,10 @@ Production: [executor.ts](../../packages/judge/src/executor.ts), `executeJudge`;
 `judgeCacheBreakpoints`.
 Test: [executor.test.ts](../../packages/judge/tests/integration/executor.test.ts) checks identity,
 TTL, caps, stages, exact usage, provider fault/cancellation and independent prefixes;
+`executor leaves call timing to the shared provider and run inactivity to the Loop` checks that
+no second call timer is installed. `host-owned inactivity_retry Judge links provider events to one
+projected private run` in [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts)
+checks shared inactivity retry and usage accounting with a non-default host timeout.
 `ordinary Loop corrects %s with append-only feedback and bounded attempts` verifies recovery,
 per-stage limits, a single installation and unchanged message prefixes across corrections.
 [execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts)

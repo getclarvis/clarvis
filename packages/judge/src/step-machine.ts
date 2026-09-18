@@ -57,18 +57,13 @@ export function createJudgeStepMachine(
     },
     async accept(
       calls: readonly LLMToolCall[] | undefined,
-      text?: string,
+      _text?: string,
     ): Promise<JudgeStepOutcome> {
       const invalid = (reason = "unexpected_action_or_transition"): JudgeStepOutcome => {
         if (stage === "pending") stage = "closed";
         return { kind: "invalid_response", reason };
       };
-      if (
-        stage === "closed" ||
-        stage === "pending" ||
-        calls?.length !== 1 ||
-        (text?.trim().length ?? 0) !== 0
-      )
+      if (stage === "closed" || stage === "pending" || calls?.length !== 1)
         return invalid("invalid_response_shape");
       const call = calls[0];
       if (call === undefined) return invalid();

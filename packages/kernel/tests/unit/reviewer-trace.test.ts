@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { ProviderError, type LLMCallParams, type LLMCallResult } from "@clarvis/capability";
+import {
+  ProviderError,
+  ModelCallInactivityError,
+  type LLMCallParams,
+  type LLMCallResult,
+} from "@clarvis/capability";
 import { createTrace, mapTrace } from "@clarvis/trace";
 import {
   callReviewerWithTrace,
@@ -28,7 +33,7 @@ const identity = {
   stage: "compile" as const,
   authority_revision: 3,
   effect_id: "clarvis.authoring.write",
-  failureKind: (error: unknown) => reviewerFailureKind(error, false),
+  failureKind: (error: unknown) => reviewerFailureKind(error),
 };
 
 function event(trace: ReturnType<typeof createTrace>) {
@@ -40,6 +45,14 @@ function event(trace: ReturnType<typeof createTrace>) {
 }
 
 describe("guard reviewer model-call trace", () => {
+  it("classifies the shared inactivity error without a Judge-specific abort signal", () => {
+    const error = new ModelCallInactivityError(180000, true);
+    expect(reviewerFailureKind(error)).toBe("timeout");
+    const controller = new AbortController();
+    controller.abort();
+    expect(reviewerFailureKind(error, controller.signal)).toBe("cancelled");
+    expect(reviewerFailureKind(new Error("reviewer call retired"))).toBe("unknown");
+  });
   it("projects complete usage, retry charges, cache ratio, and subscription billing", async () => {
     const trace = createTrace(0);
     await callReviewerWithTrace(
@@ -144,7 +157,7 @@ describe("guard reviewer model-call trace", () => {
       {
         ...identity,
         trace,
-        failureKind: (error) => reviewerFailureKind(error, false, controller.signal),
+        failureKind: (error) => reviewerFailureKind(error, controller.signal),
       },
     );
     controller.abort();

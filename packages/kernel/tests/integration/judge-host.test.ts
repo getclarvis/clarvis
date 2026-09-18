@@ -15,6 +15,7 @@ import {
   OPERATOR_AUTHORITY_PORT,
   PersistenceError,
   ProviderError,
+  ModelCallInactivityError,
   type Capability,
   type LLMProvider,
   type RunRequest,
@@ -77,15 +78,19 @@ test.each([
   "persistence_failure",
   "provider_failure",
   "provider_retry",
+  "inactivity_retry",
   "journal_failure",
 ] as const)(
   "host-owned %s Judge links provider events to one projected private run",
   async (kind) => {
+    const retries = kind === "provider_retry" || kind === "inactivity_retry";
     const root = mkdtempSync(join(tmpdir(), "judge-host-"));
     const env = loadEnv({
       CLARVIS_LOG_LEVEL: "silent",
       CLARVIS_AGENT_TOOLS_ENABLED: "true",
       CLARVIS_AGENT_TOOLS_MAX_GRANT: "edit",
+      CLARVIS_DEFAULT_CALL_TIMEOUT_MS: "234567",
+      CLARVIS_DEFAULT_MAX_RETRIES: "4",
     });
     const infrastructure = createTestRunInfrastructure({ env, workspaceRoot: root });
     const physical = createJsonTraceStore({ dir: join(root, "traces") });
@@ -127,21 +132,27 @@ test.each([
       async call(params) {
         if (params.agentInstanceId === "judge") {
           childCalls++;
+          expect(params.timeoutMs).toBe(234567);
+          expect(params.maxRetries).toBe(4);
           childId = params.executionId;
           expect(params.promptCacheKey).toBe("session_judge");
           const configuration = params.messages[1]!.content as string;
           expect(configuration).toContain("Run routine validation autonomously.");
           expect(configuration).toContain("Update develop by fast-forward before research.");
-          if (kind === "provider_failure" || (kind === "provider_retry" && childCalls === 1)) {
-            const error = new ProviderError(secret, {
-              kind: kind === "provider_retry" ? "transient" : "quota",
-              partialUsage: {
-                input_tokens: 10,
-                output_tokens: 3,
-                cached_tokens: 5,
-                cache_write_tokens: 1,
-              },
-            });
+          if (kind === "provider_failure" || (retries && childCalls === 1)) {
+            const usage = {
+              input_tokens: 10,
+              output_tokens: 3,
+              cached_tokens: 5,
+              cache_write_tokens: 1,
+            };
+            const error =
+              kind === "inactivity_retry"
+                ? new ModelCallInactivityError(params.timeoutMs!, true, usage)
+                : new ProviderError(secret, {
+                    kind: retries ? "transient" : "quota",
+                    partialUsage: usage,
+                  });
             throw error;
           }
           if (kind === "effects")
@@ -301,7 +312,7 @@ test.each([
         ).response.status,
       ).toBe("completed");
       const expectedCalls = kind === "effects" ? 2 : 1;
-      const billedCalls = expectedCalls + (kind === "provider_retry" ? 1 : 0);
+      const billedCalls = expectedCalls + (retries ? 1 : 0);
       expect(childCalls).toBe(billedCalls);
       expect(humanCalls).toBe(0);
       expect(failedAppends).toBe(kind === "journal_failure" ? 1 : 0);
@@ -316,9 +327,9 @@ test.each([
         path: kind === "effects" ? "effect_review" : "call_local",
         consumer: kind === "effects" ? "configure_clarvis" : "command_guard",
         stage: kind === "effects" ? "compile" : "decide",
-        input_tokens: kind === "provider_retry" ? 20 : 10,
-        output_tokens: kind === "provider_retry" ? 6 : 3,
-        attempts: kind === "provider_retry" ? 2 : 1,
+        input_tokens: retries ? 20 : 10,
+        output_tokens: retries ? 6 : 3,
+        attempts: retries ? 2 : 1,
       });
       if (kind === "provider_failure")
         expect(events[0]).toMatchObject({ status: "failed", failure_kind: "quota" });

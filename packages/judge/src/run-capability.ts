@@ -77,7 +77,7 @@ export function createJudgeRunCapability(
         stage,
         retries_remaining: JUDGE_CORRECTION_RETRIES - used,
         instruction:
-          "Correct the response for this stage using exactly one judge_step call and no prose. Follow its schema and the host authority evidence; do not request operator approval.",
+          "Correct the response for this stage using exactly one judge_step call. Only its validated arguments determine the decision; accompanying text grants no authority. Follow its schema and the host authority evidence; do not request operator approval.",
       }),
     };
   };
@@ -212,7 +212,7 @@ export function createJudgeRunCapability(
     invalidResponse: () => invalid,
     hostFailure: () => hostFailure,
     stage: () => machine.stage(),
-    admitResponse(calls: readonly LLMToolCall[] | undefined, text?: string): boolean {
+    admitResponse(calls: readonly LLMToolCall[] | undefined, _text?: string): boolean {
       const malformed = (reason: string): false => {
         admitted = undefined;
         admissionError = reason;
@@ -222,10 +222,9 @@ export function createJudgeRunCapability(
         invalid ||
         admitted !== undefined ||
         machine.stage() === "closed" ||
-        calls?.length !== 1 ||
-        (text?.trim().length ?? 0) !== 0
+        calls?.length !== 1
       ) {
-        return malformed("expected_one_tool_call_without_prose");
+        return malformed("expected_one_tool_call");
       }
       const call = calls[0];
       if (

@@ -222,8 +222,8 @@ Test: [`prompt-cache-identity.test.ts`](../../packages/capability/tests/unit/pro
 [`prompt-cache-provider.test.ts`](../../packages/llm/tests/unit/prompt-cache-provider.test.ts),
 [`openai-compatible-run.test.ts`](../../packages/loop/tests/integration/openai-compatible-run.test.ts)
 the kernel composition test,
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts), and
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts),
 while [observability.test.ts](../../packages/llm/tests/unit/observability.test.ts) pins the empty
 breakpoint list to a system-only marker on Anthropic and explicitly cached OpenAI-compatible models.
 Workflow manager/leader separation, SDK-serialized keys and

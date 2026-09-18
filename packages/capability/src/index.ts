@@ -250,7 +250,7 @@ export type {
 export type { TokenCounts, TokenAccumulator, SubagentAggregate } from "./usage.ts";
 export { EXECUTION_STATUSES } from "./execution-status.ts";
 export type { ExecutionStatus } from "./execution-status.ts";
-export { ProviderError } from "./llm-port.ts";
+export { ProviderError, ModelCallInactivityError } from "./llm-port.ts";
 export type {
   LLMToolCall,
   LLMUsage,

@@ -5,16 +5,14 @@ import { join } from "node:path";
 import {
   loadEnv,
   ProviderError,
+  ModelCallInactivityError,
   type LLMCallParams,
   type LLMCallResult,
 } from "@clarvis/capability";
 import { JudgeArchitectureError } from "../../src/errors.ts";
 import { createTestRunInfrastructure } from "@clarvis/loop/testing";
-import {
-  createJudgeCoordinator,
-  type JudgeCoordinator,
-  type JudgeCoordinatorOptions,
-} from "../../src/coordinator.ts";
+import { createJudgeCoordinator } from "../../src/testing.ts";
+import type { JudgeCoordinator, JudgeCoordinatorOptions } from "../../src/coordinator.ts";
 
 const answer = (args: unknown): LLMCallResult => ({
   toolCalls: [{ id: "call", name: "judge_step", arguments: args }],
@@ -330,10 +328,7 @@ test.each(["invalid", "rate_limit", "unknown", "timeout"] as const)(
       async (params) => {
         if (kind === "rate_limit") throw new ProviderError("private", { status: 429 });
         if (kind === "unknown") throw new Error("private provider error");
-        if (kind === "timeout")
-          await new Promise<void>((resolve) => {
-            params.signal?.addEventListener("abort", () => resolve(), { once: true });
-          });
+        if (kind === "timeout") throw new ModelCallInactivityError(params.timeoutMs!, true);
         return kind === "invalid" ? answer({ action: "wrong" }) : answer(command);
       },
       async (coordinator, options) => {

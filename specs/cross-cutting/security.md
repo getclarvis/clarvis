@@ -1363,7 +1363,7 @@ effect descriptors; the host validates target coverage, exclusions and revision 
 The execution ceiling and captured placement do not change when intent changes. Production:
 [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts) and
 [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 The complete boundaries are in [effect review](../execution/effect-review.md).
 Host effect probes do not attest a shell whose inherited Git/GitHub or executable-loading overrides
 differ from the admitted probe environment. Only lookup/configuration roots are recaptured from the

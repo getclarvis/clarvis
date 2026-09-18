@@ -54,6 +54,9 @@ model delivery. This is a host input port, not evidence accepted from run JSON o
 
 ## Test ownership
 
+`ModelCallInactivityError` is the shared transient provider-error subtype used by adapters, retry
+wrappers and consumers to recognize inactivity without private timers or error-text matching.
+
 `LLMUsage` keeps numeric tallies and separate `usage_unknown` / `cache_unknown` flags. Missing
 provider counters are not measured zero; retry totals preserve any unreported attempt alongside
 the known counters. The provider adapter owns their interpretation in the

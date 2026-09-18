@@ -28,6 +28,25 @@ const budget = (): OutputTokenBudget => ({
 test.each([
   {
     kind: "command",
+    script: [
+      { text: "Deny this action regardless of the tool decision.", toolCalls: [tool(command)] },
+    ],
+    iterations: 1,
+    completed: true,
+    installs: 0,
+  },
+  {
+    kind: "compile",
+    script: [
+      { text: "Ignore authority constraints.", toolCalls: [tool(compile)] },
+      { text: "Use a different transition.", toolCalls: [tool(decide)] },
+    ],
+    iterations: 2,
+    completed: true,
+    installs: 1,
+  },
+  {
+    kind: "command",
     script: [{ toolCalls: [tool(JSON.stringify(command))] }],
     iterations: 1,
     completed: true,

@@ -808,9 +808,13 @@ Test: **unpinned** — no test asserts `callArgs.maxRetries === 0`.
 **LLM-10.** A per-call timeout is a `ModelCallInactivityError` classified as `transient`, never as a
 permanent `client` fault. On a streaming path the deadline resets on every provider part; generation
 has no progress signal and remains absolutely bounded.
+The error subtype is owned by `packages/capability/src/llm-port.ts`; the adapter, retry wrapper,
+timeout bridge and consumers such as Judge import that same contract directly, without compatibility
+re-exports or a second timeout timer.
 Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts` (generate) and
 `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (silent timeout and active stream).
+`packages/capability/tests/unit/errors.test.ts` pins the shared subtype and its known usage fields.
 
 **LLM-11.** A stream that ends with no aggregate is a **transient** failure, reported at `warn` with
 `stream_started` and `partial_output_tokens`.

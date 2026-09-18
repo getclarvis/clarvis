@@ -1,5 +1,5 @@
 import { JudgeArchitectureError } from "./errors.ts";
-import { ProviderError } from "@clarvis/capability";
+import { ModelCallInactivityError } from "@clarvis/capability";
 import { executeRun, type ExecuteRunDeps } from "@clarvis/loop";
 import type {
   LLMCallParams,
@@ -73,10 +73,9 @@ export async function executeJudge(input: JudgeExecutionInput) {
   if (
     !Number.isInteger(input.timeoutMs) ||
     input.timeoutMs < 1 ||
-    input.timeoutMs > 120_000 ||
+    input.timeoutMs > 2_147_483_647 ||
     !Number.isInteger(input.maxRetries) ||
-    input.maxRetries < 0 ||
-    input.maxRetries > 2
+    input.maxRetries < 0
   )
     throw new JudgeArchitectureError();
   const stages = input.binding.kind === "compile_effects" ? 2 : 1;
@@ -136,22 +135,11 @@ export async function executeJudge(input: JudgeExecutionInput) {
         framingFailure = { error };
         throw error;
       }
-      const deadline = new AbortController();
-      const timer = setTimeout(() => {
-        timedOut = true;
-        deadline.abort();
-      }, input.timeoutMs);
-      const signal =
-        params.signal === undefined
-          ? deadline.signal
-          : AbortSignal.any([params.signal, deadline.signal]);
       attempts++;
       try {
         const response = await services.llm.call({
           ...params,
-          signal,
           cacheBreakpoints,
-          timeoutMs: input.timeoutMs,
           maxOutputTokens: Math.min(params.maxOutputTokens ?? cap, cap),
           onRetry(event) {
             attempts++;
@@ -162,39 +150,14 @@ export async function executeJudge(input: JudgeExecutionInput) {
           privateRun.admitResponse(undefined);
           return rejectedResponse(response);
         }
-        if (signal.aborted) {
-          const usage = response.usage;
-          const retried = response.retriedUsage;
-          const failure = new ProviderError("Private Judge call cancelled or timed out.", {
-            kind: "transient",
-            streamStarted: true,
-            partialUsage: {
-              input_tokens: usage.input_tokens + (retried?.input_tokens ?? 0),
-              output_tokens: usage.output_tokens + (retried?.output_tokens ?? 0),
-              cached_tokens: usage.cached_tokens + (retried?.cached_tokens ?? 0),
-              cache_write_tokens: usage.cache_write_tokens + (retried?.cache_write_tokens ?? 0),
-              ...(usage.usage_unknown === true || retried?.usage_unknown === true
-                ? { usage_unknown: true }
-                : {}),
-              ...(response.cacheUsageKnown === false ||
-              usage.cache_unknown === true ||
-              retried?.cache_unknown === true
-                ? { cache_unknown: true }
-                : {}),
-            },
-          });
-          failure.accumulatedUsage = failure.partialUsage;
-          throw failure;
-        }
         return privateRun.admitResponse(response.toolCalls, response.text)
           ? response
           : rejectedResponse(response);
       } catch (error) {
+        timedOut = error instanceof ModelCallInactivityError;
         if (error instanceof JudgeArchitectureError) framingFailure = { error };
         else providerFailure = { error };
         throw error;
-      } finally {
-        clearTimeout(timer);
       }
     },
   };
@@ -227,10 +190,6 @@ export async function executeJudge(input: JudgeExecutionInput) {
     budget: {
       on_exceed: "stop",
       total_token_limit: services.env.CLARVIS_TOKEN_CEILING,
-      timeout_ms: Math.min(
-        services.env.CLARVIS_TIMEOUT_CEILING_MS,
-        iterations * input.timeoutMs + 1000,
-      ),
     },
   };
   const outcome = await executeRun({
@@ -265,7 +224,9 @@ export async function executeJudge(input: JudgeExecutionInput) {
     ...outcome,
     receipt,
     attempts,
-    timedOut,
+    timedOut:
+      timedOut ||
+      (outcome.response.status === "error" && outcome.response.error.code === "timeout"),
     providerFailure,
     invalidResponse: privateRun.invalidResponse(),
   };

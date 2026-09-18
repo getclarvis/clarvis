@@ -103,8 +103,8 @@ function fixture() {
     state(next: GoalView) {
       current = next;
     },
-    notify() {
-      for (const listener of subscriptions) listener({ session_id: binding!.sessionId });
+    notify(change: Omit<GoalChange, "session_id"> = {}) {
+      for (const listener of subscriptions) listener({ session_id: binding!.sessionId, ...change });
     },
   };
 }
@@ -187,6 +187,7 @@ describe("goal presentation controller", () => {
 
   it("exposes formulation as live presentation state until its own run settles", async () => {
     const f = fixture();
+    await f.controller.refresh();
     const formulate = f.service.formulate.bind(f.service);
     const gate = Promise.withResolvers<void>();
     f.service.formulate = async (request) => {
@@ -195,9 +196,14 @@ describe("goal presentation controller", () => {
     };
     const pending = f.controller.formulate("auto");
     expect(f.controller.formulating()).toBe(true);
+    expect(f.controller.formulationActivity()).toEqual({ phase: "thinking" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    f.notify({ formulation_activity: { phase: "searching", iteration: 2 } });
+    expect(f.controller.formulationActivity()).toEqual({ phase: "searching", iteration: 2 });
     gate.resolve();
     await pending;
     expect(f.controller.formulating()).toBe(false);
+    expect(f.controller.formulationActivity()).toBeUndefined();
   });
 
   it("recovers a lost formulation reply without starting another analysis", async () => {

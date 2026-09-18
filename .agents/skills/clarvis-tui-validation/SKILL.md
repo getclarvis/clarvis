@@ -74,6 +74,9 @@ copy of its command catalog here.
   support semantic assertions; motion or flicker needs a short sequence of rendered frames.
 - For transcript changes, verify painted row/style continuity, history admission, explicit return
   to the Lead tail, retained reader state, and live-to-settled content without disappearance.
+- For auxiliary formulation or review work, capture the semantic activity sequence rather than only
+  its final iteration. Verify that a short read or search remains observable after the next thinking
+  transition, and do not expect an activity the agent did not actually perform.
 
 Reuse existing fixtures and tests before adding a harness. Add durable behavioral assertions when
 a fix needs regression protection; avoid encoding incidental timing or screen wording. Once the

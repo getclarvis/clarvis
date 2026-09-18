@@ -57,7 +57,10 @@ prompt is byte-identical across auto and guided runs: both precedence rules live
 policy, while mode, seed, trajectory, digest, truncation and workspace availability occur only in
 the final volatile user message. Auto mode
 treats the bounded trajectory as primary; guided mode treats the validated seed as primary and uses
-trajectory and workspace reads only to resolve it. Both require structured `submit_result`; invalid
+trajectory and workspace reads only to resolve it. The agent reads an exact user-named artifact
+first, may follow only a small number of essential direct references, and stops once it can describe
+the observable result. Repository auditing, feasibility research and broad architecture/source/test
+exploration belong to the execution agent. Both modes require structured `submit_result`; invalid
 output is a failed operation and never falls back to command text. `formulationCriteria` assigns
 deterministic host-owned IDs and accepts only qualitative or human criteria.
 Human criteria are reserved for decisions indispensable to the result currently requested. A later

@@ -34,6 +34,13 @@ exclusions and necessary assumptions. It never infers permission, publication, s
 external contact. Workspace and quoted content are untrusted data. When materially different readings
 remain plausible, or a required artifact cannot be read completely, the only valid result is
 `insufficient_context` with one short question and reason.
+For a named artifact, the agent first reads the exact path from the request. It may follow only a
+small number of directly referenced artifacts that are essential to formulate the observable result,
+and stops reading once that result and its constraints are clear. Repository auditing, feasibility
+research and broad exploration of architecture, source, tests or related documentation belong to the
+execution agent rather than formulation. Production: `goalAgentPrompt` in
+[prompt.ts](../../packages/goal/src/agent/prompt.ts). Test: the fixed prompt assertions in
+[agent-run.test.ts](../../packages/goal/tests/unit/agent-run.test.ts).
 
 The strict structured result is either ready or insufficient. Ready output contains objective,
 qualitative/human criteria, constraints, exclusions, assumptions and normative source paths. Unknown
@@ -148,7 +155,18 @@ an empty conversation when needed, never dispatches the slash command to the ord
 open a pre-creation form, and does not silently replace a current Goal. Created reveals the compact
 Goal sidebar section without navigating away from the transcript; insufficient, stale and failed
 outcomes show one question/message without automatic retry. The controller exposes the in-flight
-formulation state, so the Lead activity line and sidebar distinguish analysis from an idle TUI.
+formulation state and the host projects its live trace into bounded `thinking`, `reading` and
+`searching` activity plus the current iteration when known. Because local reads may complete between
+painted frames, a subsequent thinking state retains the last workspace activity and the sidebar
+renders that completed action above its current thinking line. The Lead activity line and sidebar
+thus distinguish concrete formulation work from an idle or stalled TUI without exposing model text, tool
+arguments or paths. This activity is non-authoritative and never persisted in Goal state. Production:
+`createGoalService` in [service.ts](../../packages/kernel/src/goals/service.ts),
+`createGoalController` in [controller.ts](../../packages/code/src/features/goal/controller.ts), and
+`Sidebar` in [Sidebar.tsx](../../packages/code/src/views/Sidebar.tsx). Test:
+[goal-formulate-service.test.ts](../../packages/kernel/tests/integration/goal-formulate-service.test.ts),
+[goal-controller.test.ts](../../packages/code/tests/unit/goal-controller.test.ts), and
+[sidebar-render.test.tsx](../../packages/code/tests/integration/sidebar-render.test.tsx).
 The sidebar follows the Plan pattern: objective/title emphasis, lifecycle tone, status metadata and
 the navigation key occupy the same visual roles, including the lowercase `full goal` label.
 Host-created start and resume transcript previews show `Work toward the persistent goal:` followed

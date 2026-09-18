@@ -1,5 +1,4 @@
-import type { PerAgentUsage } from "@clarvis/capability";
-import type { ProviderConfig } from "@clarvis/capability";
+import type { PerAgentUsage, ProviderConfig, TraceEvent } from "@clarvis/capability";
 import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { GoalUsage } from "../schemas.ts";
 
@@ -31,6 +30,7 @@ export interface GoalAgentRunInput {
   agent_instance_id: string;
   session_id: string;
   signal?: AbortSignal;
+  on_event?: (event: TraceEvent) => void;
   budget?: Partial<GoalAgentBudget>;
 }
 

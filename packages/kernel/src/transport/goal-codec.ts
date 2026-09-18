@@ -13,7 +13,16 @@ const availability = z.strictObject({
   available: z.boolean(),
   reason: z.string().max(4096).optional(),
 });
-const change = z.strictObject({ session_id: id });
+const change = z.strictObject({
+  session_id: id,
+  formulation_activity: z
+    .strictObject({
+      phase: z.enum(["thinking", "reading", "searching", "idle"]),
+      iteration: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      last_workspace_activity: z.enum(["reading", "searching"]).optional(),
+    })
+    .optional(),
+});
 const view = z.strictObject({
   state: z.unknown(),
   physical_run: z.unknown().optional(),

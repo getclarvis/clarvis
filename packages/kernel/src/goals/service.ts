@@ -2,7 +2,7 @@ import { addGoalAuxiliaryUsage } from "./usage.ts";
 import type { ModelCost } from "@clarvis/protocol";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { isBuiltinTraceEvent, NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import {
   applyGoalControl,
   applyGoalFormulation,
@@ -25,6 +25,7 @@ import {
 import type { TraceEvent } from "@clarvis/capability";
 import type {
   GoalFormulateResult,
+  GoalFormulationActivity,
   GoalService,
   RunDetail,
   Session,
@@ -61,6 +62,7 @@ export function createGoalService(options: {
   entryTokenLimit(params: StartRunParams): number | undefined;
   logger?: Logger;
   subscribe: GoalService["subscribe"];
+  publishFormulationActivity(sessionId: string, activity: GoalFormulationActivity): void;
   transactions: HostedSessionTransactions;
   readRun(executionId: string): Promise<RunDetail | null>;
   readTrace(executionId: string): readonly TraceEvent[] | undefined;
@@ -77,6 +79,25 @@ export function createGoalService(options: {
     string,
     { fingerprint: string; promise: Promise<GoalFormulateResult> }
   >();
+  const readActivityTools = new Set(["read_file", "read_files", "read_image"]);
+  const searchActivityTools = new Set(["file_stat", "glob", "grep", "list_dir", "tree"]);
+  const activityFor = (event: TraceEvent): GoalFormulationActivity | undefined => {
+    if (!isBuiltinTraceEvent(event)) return undefined;
+    if (event.type === "subagent_iteration_started")
+      return { phase: "thinking", iteration: event.iteration };
+    if (event.type !== "tool_call_started") return undefined;
+    const name = event.tool_name || event.mcp_name;
+    const phase = readActivityTools.has(name)
+      ? "reading"
+      : searchActivityTools.has(name)
+        ? "searching"
+        : undefined;
+    if (phase === undefined) return undefined;
+    return {
+      phase,
+      iteration: event.iteration_ref,
+    };
+  };
   const assert = (authority: HostedConversationAuthority): void => {
     options.assertWritable();
     options.registry.assertController(authority);
@@ -290,6 +311,15 @@ export function createGoalService(options: {
         });
 
       formulationExecutionId = generateExecutionId();
+      let latestActivity = "";
+      let lastWorkspaceActivity: "reading" | "searching" | undefined;
+      const publishActivity = (activity: GoalFormulationActivity): void => {
+        const fingerprint = `${activity.phase}:${activity.iteration ?? ""}:${activity.last_workspace_activity ?? ""}`;
+        if (fingerprint === latestActivity) return;
+        latestActivity = fingerprint;
+        options.publishFormulationActivity(request.session_id, activity);
+      };
+      publishActivity({ phase: "thinking" });
       let analyzed: GoalAgentRunResult;
       try {
         analyzed = await options.formulateRun({
@@ -300,6 +330,18 @@ export function createGoalService(options: {
           agent_instance_id: randomUUID(),
           session_id: request.session_id,
           signal: authority.signal,
+          on_event: (event) => {
+            const activity = activityFor(event);
+            if (activity === undefined) return;
+            if (activity.phase === "reading" || activity.phase === "searching")
+              lastWorkspaceActivity = activity.phase;
+            publishActivity({
+              ...activity,
+              ...(lastWorkspaceActivity === undefined
+                ? {}
+                : { last_workspace_activity: lastWorkspaceActivity }),
+            });
+          },
         });
       } catch (error) {
         logger.warn(
@@ -455,7 +497,10 @@ export function createGoalService(options: {
         "Goal formulation completed",
       );
       return { ...receipt, formulation: receipt.formulation! };
-    })().finally(release);
+    })().finally(() => {
+      options.publishFormulationActivity(request.session_id, { phase: "idle" });
+      release();
+    });
     formulations.set(formulationKey, { fingerprint, promise: task });
     try {
       return await task;

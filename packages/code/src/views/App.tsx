@@ -1364,7 +1364,20 @@ export function App(props: AppProps): JSX.Element {
     return "working";
   };
   const leadActivityDetail = (): string => {
-    if (props.run.goals?.formulating()) return "Goal formulation · reading context";
+    if (props.run.goals?.formulating()) {
+      const activity = props.run.goals.formulationActivity();
+      const label =
+        activity?.phase === "reading"
+          ? "reading referenced files"
+          : activity?.phase === "searching"
+            ? "searching workspace"
+            : activity?.last_workspace_activity === "reading"
+              ? "thinking after reading referenced files"
+              : activity?.last_workspace_activity === "searching"
+                ? "thinking after searching workspace"
+                : "thinking";
+      return `Goal formulation · ${label}${activity?.iteration === undefined ? "" : ` · iteration ${activity.iteration}`}`;
+    }
     const goal = props.run.goals?.view()?.state.current;
     const detail: string[] = goal === undefined ? [] : [`Goal ${goal.status}`];
     if (!props.run.active()) return detail.join(` ${glyph("separator")} `);

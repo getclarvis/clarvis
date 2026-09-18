@@ -146,7 +146,7 @@ a `z.undefined()` field that exists solely "so that trying it explains why".
 | Param | Schema |
 | --- | --- |
 | `guard_mode` | `z.enum(["off","on","auto"])` |
-| `guard_judge` | `.strict()` object : `guidance?` (1..32768 chars), `model?` (min 1), `max_retries?` (integer 0..2), `on_unsure?: "ask"\|"deny"`, default `"deny"` per its own `.describe()`, `timeout_ms?` (positive int ≤ 120000) |
+| `guard_judge` | `.strict()` object : `guidance?` (1..32768 chars), `model?` (min 1), `max_retries?` (nonnegative integer within `CLARVIS_RETRY_CEILING`), `on_unsure?: "ask"\|"deny"`, default `"deny"`, `timeout_ms?` (positive int within the ordinary host timeout ceiling; shared model inactivity semantics) |
 
 `guard_mode` is contributed by the built-in tools settings spec in
 `packages/loop/src/runtime/capabilities/tools-settings.ts`. `guard_judge` is contributed by
@@ -275,14 +275,14 @@ Test: [command-review.test.ts](../../packages/kernel/tests/unit/command-review.t
 concurrent callers, configured fallback counts, architecture faults and cancellation;
 [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts) runs the adapter
 through the real coordinator/engine and proves cache reuse and private accounting.
-The old direct-provider characterization in `judge.test.ts` uses a test-only baseline helper; it
-is not evidence for production private execution.
+The command and effect review integration fixtures compose the production coordinator, Loop and
+host consumers. They contain no alternate reviewer policy or direct-provider review implementation.
 Production: `createHostEffectReview` in
 [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts) and
 `createCommandReview` in [command-review.ts](../../packages/kernel/src/guard/command-review.ts), composed by
 `createGuardResolver` in [resolver.ts](../../packages/kernel/src/guard/resolver.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts),
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts),
 [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and
 [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
@@ -374,7 +374,7 @@ authority cases in
 and [run-service-lifecycle.test.ts](../../packages/kernel/tests/unit/run-service-lifecycle.test.ts).
 
 Production: `createHostEffectReview` and `createGuardResolver`.
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts)
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts)
 and [guard-judge-prompt.test.ts](../../packages/code/tests/integration/guard-judge-prompt.test.ts).
 
 ---
@@ -676,7 +676,7 @@ to the caller rather than being swallowed into a silent approval" (`packages/ker
 ### 4.6 Resolving a run's guard
 
 `createGuardResolver` resolves the effective mode and native Host/Sandbox placement, builds the
-immutable effect registry, creates the shared `EffectReviewService` over the run's authority reader,
+immutable effect registry, creates `createHostEffectReview` over the run's authority reader,
 and creates one call-local argv reviewer for generic shell asks. Review `off` returns no guard.
 Review `on` preserves the human channel. Review `auto` prefers complete effect attestation; a sole
 `external.unknown` from an ordinary shell miss goes to the argv reviewer. Known credential and
@@ -688,13 +688,13 @@ call-local Auto or human result.
 
 Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts), and
 [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts).
 
 ### 4.7 Answering an `ask`
 
 The composed elicit applies session coverage only to the exact analyzable non-host command. Auto
-uses `EffectReviewService.review` for a complete registered effect and `createCommandReview` for an
+uses `createHostEffectReview`'s `review` for a complete registered effect and `createCommandReview` for an
 ordinary unknown shell call. Effect allows require exact descriptor coverage. Call-local allows are
 keyed by the authority revision and complete guard request, including the raw command, and install no
 grant. `unsure` denies by default and goes to the human channel only when `on_unsure` is explicitly `ask`. Human
@@ -710,8 +710,8 @@ Production: [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
 [command-review.ts](../../packages/kernel/src/guard/command-review.ts),
 [human-approval.ts](../../packages/kernel/src/guard/human-approval.ts). Test:
 [guard.test.ts](../../packages/kernel/tests/unit/guard.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts),
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), and
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts),
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts), and
 [container-kernel-host.test.ts](../../packages/kernel/tests/integration/container-kernel-host.test.ts).
 
 ### 4.8 The engine's wiring
@@ -751,8 +751,8 @@ revision; a steer invalidates an in-flight result. Shadow mode records effect an
 preserving the existing call-local Auto or human outcome.
 
 Production: `createGuardResolver`, `createHostEffectReview` and `createCommandReview`. Test:
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts) and
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts) and
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
 
 ### 4.10 Prompt-cache TTL side effect
 
@@ -1393,7 +1393,7 @@ authority envelope. Syntax issues remain available for both review paths and do 
 confinement. The compiler, ledger, composition, target checks, exact grants and structured failures
 are owned by [effect review](effect-review.md). Production: `createGuardResolver`, `attestShell` and
 `createCommandReview`. Test: [effect-attestation.test.ts](../../packages/kernel/tests/unit/effect-attestation.test.ts)
-and [judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
+and [judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
 
 
 Native `createGuardHumanApproval` deduplicates identical in-flight requests per current allowlist

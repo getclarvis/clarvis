@@ -1,15 +1,19 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { AuthorityEnvelopeV1, LLMCallParams, LLMCallResult } from "@clarvis/capability";
-import { ProviderError } from "@clarvis/capability";
+import { ProviderError, ModelCallInactivityError } from "@clarvis/capability";
 import { withPromptCacheDefaults } from "@clarvis/llm";
 import { createTrace } from "@clarvis/trace";
 import { recordingLogger } from "../helpers/logger.ts";
 import { effectReviewAuditSchema } from "../../src/guard/review-audit-schema.ts";
 import {
-  createEffectReviewService,
-  effectReviewServiceFor,
-  validateAuthorityEnvelope,
-} from "../helpers/legacy-effect-review-baseline.ts";
+  effectReviewFixture,
+  closeReviewFixtures,
+  reviewFrame,
+  reviewEvidence,
+} from "../helpers/review-runtime.ts";
+import { effectReviewInput } from "../helpers/effect-review-llm.ts";
+import { validateAuthorityEnvelope } from "../../src/guard/authority-validation.ts";
+afterEach(closeReviewFixtures);
 import {
   createOperatorAuthorityRuntime,
   installAuthorityEnvelope,
@@ -76,19 +80,31 @@ function fixture() {
   const registry = createGuardEffectRegistry();
   return { ledger, batch, envelope, registry };
 }
-function response(name: string, args: unknown): LLMCallResult {
+function response(args: unknown): LLMCallResult {
   return {
-    toolCalls: [{ id: name, name, arguments: args }],
+    toolCalls: [{ id: crypto.randomUUID(), name: "judge_step", arguments: args }],
     usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
   };
 }
-describe("pre-migration effect reviewer characterization", () => {
+function compileResponse(candidate: unknown) {
+  return response({ action: "compile_authority", candidate });
+}
+function effectDecision(params: LLMCallParams, args: Record<string, unknown>) {
+  const { transition } = effectReviewInput(params);
+  return response({
+    action: "decide_effects",
+    ...args,
+    revision: transition?.revision,
+    transition_token: transition?.transition_token,
+  });
+}
+describe("effect review through the production Judge runtime", () => {
   test("reuses installed compile context across reviewers and recompiles when Plans disappears", async () => {
     const { ledger, registry, batch, envelope } = fixture();
     let live = true;
     const stages: string[] = [];
     const create = () =>
-      createEffectReviewService({
+      effectReviewFixture({
         authority: ledger.reader,
         registry,
         providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -97,18 +113,15 @@ describe("pre-migration effect reviewer characterization", () => {
           live ? { snapshot: () => ({ revision: "plan-1", contexts: [] }) } : undefined,
         llm: {
           async call(params) {
-            const stage = params.tools![0]!.fullName;
+            const stage = effectReviewInput(params).transition === undefined ? "compile" : "decide";
             stages.push(stage);
-            return response(
-              stage,
-              stage === "compile"
-                ? envelope
-                : {
-                    decision: "allow",
-                    relation: "direct",
-                    grant_ids: ["commit"],
-                  },
-            );
+            return stage === "compile"
+              ? compileResponse(envelope)
+              : effectDecision(params, {
+                  decision: "allow",
+                  relation: "direct",
+                  grant_ids: ["commit"],
+                });
           },
         },
       });
@@ -200,23 +213,26 @@ describe("pre-migration effect reviewer characterization", () => {
     const unchanged = { snapshot: () => ({ ...state, ceiling: envelope }) };
     expect(validateAuthorityEnvelope(envelope, unchanged, registry, batch)).toEqual(envelope);
   });
-  test("command and configuration consumers share one service per host ledger", () => {
-    const { ledger, registry } = fixture();
+  test("independent consumers share refusals through the host ledger", () => {
+    const { ledger, registry, batch } = fixture();
     const deps = {
       authority: ledger.reader,
       registry,
       providers: [],
-      llm: { call: () => Promise.reject(new Error("must not run")) },
+      llm: {
+        async call() {
+          throw new Error("Unexpected inference");
+        },
+      },
     };
-    expect(effectReviewServiceFor(deps)).toBe(
-      effectReviewServiceFor({ ...deps, options: { model: "other/model" } }),
-    );
-    expect(effectReviewServiceFor({ ...deps, authority: fixture().ledger.reader })).not.toBe(
-      effectReviewServiceFor(deps),
-    );
-    expect(effectReviewServiceFor({ ...deps, authority: undefined })).not.toBe(
-      effectReviewServiceFor({ ...deps, authority: undefined }),
-    );
+    const first = effectReviewFixture(deps);
+    const second = effectReviewFixture(deps);
+    expect(first).not.toBe(second);
+    first.refuse(batch, ledger.reader.snapshot().revision);
+    expect(second.wasRefused(batch)).toBe(true);
+    expect(
+      effectReviewFixture({ ...deps, authority: fixture().ledger.reader }).wasRefused(batch),
+    ).toBe(false);
   });
   test("composes direct effects with bounded prerequisites without widening either grant", async () => {
     const { ledger, registry, batch, envelope } = fixture();
@@ -233,16 +249,16 @@ describe("pre-migration effect reviewer characterization", () => {
       relation: "bounded_prerequisite",
       constraints: {},
     });
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       llm: {
         async call(params) {
-          return params.tools?.[0]?.wireName === "compile"
-            ? response("compile", envelope)
-            : response("decide", {
+          return effectReviewInput(params).transition === undefined
+            ? compileResponse(envelope)
+            : effectDecision(params, {
                 decision: "allow",
                 relation: "bounded_prerequisite",
                 grant_ids: ["commit", "inspect"],
@@ -263,18 +279,18 @@ describe("pre-migration effect reviewer characterization", () => {
     });
     envelope.revision = ledger.reader.snapshot().revision;
     let compilePayload: Record<string, unknown> | undefined;
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       llm: {
         async call(params) {
-          if (params.tools?.[0]?.wireName === "compile") {
-            compilePayload = JSON.parse(params.messages.at(-1)!.content as string);
-            return response("compile", envelope);
+          if (effectReviewInput(params).transition === undefined) {
+            compilePayload = { operator_evidence: reviewEvidence(params) };
+            return compileResponse(envelope);
           }
-          return response("decide", {
+          return effectDecision(params, {
             decision: "allow",
             relation: "direct",
             grant_ids: ["commit"],
@@ -300,16 +316,20 @@ describe("pre-migration effect reviewer characterization", () => {
       effect_id: "github.actions.rerun_failed",
       constraints: batch.facts[0]!.constraints,
     });
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       llm: {
         async call(params) {
-          return params.tools?.[0]?.wireName === "compile"
-            ? response("compile", envelope)
-            : response("decide", { decision: "allow", relation: "direct", grant_ids: ["commit"] });
+          return effectReviewInput(params).transition === undefined
+            ? compileResponse(envelope)
+            : effectDecision(params, {
+                decision: "allow",
+                relation: "direct",
+                grant_ids: ["commit"],
+              });
         },
       },
     });
@@ -335,7 +355,7 @@ describe("pre-migration effect reviewer characterization", () => {
     async (error, kind) => {
       const { ledger, registry, batch } = fixture();
       const audit = recordingLogger();
-      const service = createEffectReviewService({
+      const service = effectReviewFixture({
         authority: ledger.reader,
         registry,
         audit,
@@ -365,13 +385,13 @@ describe("pre-migration effect reviewer characterization", () => {
     async (output) => {
       const { ledger, registry, batch } = fixture();
       const audit = recordingLogger();
-      const service = createEffectReviewService({
+      const service = effectReviewFixture({
         authority: ledger.reader,
         registry,
         audit,
         providers: [{ name: "anthropic", kind: "anthropic" }],
         defaultModel: "anthropic/test",
-        llm: { call: () => Promise.resolve(response("compile", output)) },
+        llm: { call: () => Promise.resolve(compileResponse(output)) },
       });
       expect((await service.review(batch, {}, "command_guard")).failure_kind).toBe(
         "invalid_response",
@@ -402,7 +422,7 @@ describe("pre-migration effect reviewer characterization", () => {
     const { envelope, ledger, registry, batch } = fixture();
     const calls: LLMCallParams[] = [];
     const trace = createTrace();
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -414,8 +434,8 @@ describe("pre-migration effect reviewer characterization", () => {
           async call(params) {
             calls.push(params);
             return calls.length === 1
-              ? response("compile", envelope)
-              : response("decide", {
+              ? compileResponse(envelope)
+              : effectDecision(params, {
                   decision: "allow",
                   grant_ids: ["commit"],
                   relation: "direct",
@@ -456,42 +476,36 @@ describe("pre-migration effect reviewer characterization", () => {
       agentInstanceId: "judge",
       promptCacheKey: "session%5Fwith%5Funderscore_judge",
       promptCacheTtl: "1h",
-      cacheBreakpoints: [],
+      cacheBreakpoints: expect.arrayContaining([4]),
     });
     expect(calls[1]).toMatchObject({
       sessionId: "session_with_underscore",
       agentInstanceId: "judge",
       promptCacheKey: "session%5Fwith%5Funderscore_judge",
       promptCacheTtl: "1h",
-      cacheBreakpoints: [],
+      cacheBreakpoints: expect.arrayContaining([4]),
     });
     expect(calls[0]!.messages[0]!.content).not.toContain("ignore safety");
-    expect(JSON.parse(calls[0]!.messages[1]!.content as string).operator_evidence).toEqual(
-      ledger.reader.snapshot().evidence,
-    );
+    expect(reviewEvidence(calls[0]!)).toEqual(ledger.reader.snapshot().evidence);
     const expectedContext = [
       { kind: "goal", definition: { objective: "Finish the current implementation" } },
     ];
-    expect(JSON.parse(calls[0]!.messages[1]!.content as string).review_context).toEqual(
-      expectedContext,
-    );
-    expect(JSON.parse(calls[1]!.messages[1]!.content as string).review_context).toEqual(
-      expectedContext,
-    );
+    expect([reviewFrame(calls[0]!, "judge_goal_v1")]).toEqual(expectedContext);
+    expect([reviewFrame(calls[1]!, "judge_goal_v1")]).toEqual(expectedContext);
   });
   test("model allow without coverage is unsure and is never memoized", async () => {
     const { envelope, ledger, registry, batch } = fixture();
     let calls = 0;
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       llm: {
-        async call() {
+        async call(params) {
           return ++calls === 1
-            ? response("compile", envelope)
-            : response("decide", {
+            ? compileResponse(envelope)
+            : effectDecision(params, {
                 decision: "allow",
                 grant_ids: ["invented"],
                 relation: "direct",
@@ -504,11 +518,11 @@ describe("pre-migration effect reviewer characterization", () => {
       failure_kind: "invalid_response",
     });
     await service.review(batch, {}, "command_guard");
-    expect(calls).toBe(3);
+    expect(calls).toBe(9);
   });
   test("a concurrent steer invalidates the model's previous revision", async () => {
     const { envelope, ledger, registry, batch } = fixture();
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
@@ -516,7 +530,7 @@ describe("pre-migration effect reviewer characterization", () => {
       llm: {
         async call() {
           ledger.onSteer({ agent: "lead", iteration: 1, message: "Do not commit" });
-          return response("compile", envelope);
+          return compileResponse(envelope);
         },
       },
     });
@@ -528,7 +542,7 @@ describe("pre-migration effect reviewer characterization", () => {
     const entered = Promise.withResolvers<void>();
     const release = Promise.withResolvers<void>();
     let planRevision = "plan:1";
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       reviewContext: {
         snapshot: () => ({
@@ -548,7 +562,7 @@ describe("pre-migration effect reviewer characterization", () => {
         async call() {
           entered.resolve();
           await release.promise;
-          return response("compile", envelope);
+          return compileResponse(envelope);
         },
       },
     });
@@ -559,15 +573,19 @@ describe("pre-migration effect reviewer characterization", () => {
     await expect(decision).resolves.toMatchObject({ decision: "unsure" });
     expect(ledger.reader.snapshot().envelope).toBeUndefined();
   });
-  test("times out even when the provider ignores cancellation", async () => {
+  test("classifies shared provider inactivity without a private timer", async () => {
     const { ledger, registry, batch } = fixture();
-    const service = createEffectReviewService({
+    const service = effectReviewFixture({
       authority: ledger.reader,
       registry,
       providers: [{ name: "anthropic", kind: "anthropic" }],
       defaultModel: "anthropic/test",
       options: { timeout_ms: 5 },
-      llm: { call: () => new Promise(() => {}) },
+      llm: {
+        call: async () => {
+          throw new ModelCallInactivityError(5, true);
+        },
+      },
     });
     expect(await service.review(batch, {}, "command_guard")).toMatchObject({
       decision: "unsure",
@@ -580,7 +598,7 @@ describe("pre-migration effect reviewer characterization", () => {
 test("a refused exact revision is shared across consumers but not across corrected bytes or fresh intent", async () => {
   const { ledger, registry } = fixture();
   let calls = 0;
-  const service = createEffectReviewService({
+  const service = effectReviewFixture({
     authority: ledger.reader,
     registry,
     providers: [],
@@ -629,7 +647,7 @@ test("a refused exact revision is shared across consumers but not across correct
     prior: state,
     seed: { binding: state.binding, evidence: state.evidence },
   });
-  const next = createEffectReviewService({
+  const next = effectReviewFixture({
     authority: resumed.reader,
     registry,
     providers: [],
@@ -651,15 +669,19 @@ test("a refused exact revision is shared across consumers but not across correct
 test("a late automatic decision cannot override a concurrent refusal of the same batch", async () => {
   const { ledger, registry, batch, envelope } = fixture();
   expect(installAuthorityEnvelope(ledger.reader, envelope)).toBe(true);
-  const service = createEffectReviewService({
+  const service = effectReviewFixture({
     authority: ledger.reader,
     registry,
     providers: [{ name: "test", kind: "anthropic" }],
     defaultModel: "test/model",
     llm: {
-      async call() {
+      async call(params) {
         service.refuse(batch, ledger.reader.snapshot().revision);
-        return response("decide", { decision: "allow", grant_ids: ["commit"], relation: "direct" });
+        return effectDecision(params, {
+          decision: "allow",
+          grant_ids: ["commit"],
+          relation: "direct",
+        });
       },
     },
   });

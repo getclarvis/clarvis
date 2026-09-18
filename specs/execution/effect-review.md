@@ -19,7 +19,7 @@ Production: `OperatorAuthorityReader` in
 `createGuardEffectRegistry` in [registry.ts](../../packages/kernel/src/guard/effects/registry.ts),
 and `validateAuthorityEnvelope` in
 [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 ## Evidence and lifetime
 
@@ -179,7 +179,7 @@ An unchanged exclusion already present in the ledger or inherited ceiling may re
 an earlier call. New exclusions and all new grants still require current-call targets; retaining an
 exclusion never admits a historical target for a grant. Production: `validateAuthorityEnvelope`.
 Test: `retains historical target exclusions without admitting historical target grants` in
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 `OperatorAuthorityState.envelope_context_revision` binds the installed envelope to its live review
 context. Only the host installation seam supplies this nonempty identifier (at most 2048 characters); it is absent from the
@@ -193,7 +193,7 @@ Production: `installAuthorityEnvelope` and `createOperatorAuthorityRuntime` in
 Test: `keeps compile context with its envelope across continuation and clears it on replacement` in
 [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and
 `reuses installed compile context across reviewers and recompiles when Plans disappears` in
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 Cache identity includes authority revision and exact facts. Failures, invalid responses, uncertainty
 and human fallback do not become clean cached verdicts. Failed-only rerun identity is reserved once
@@ -226,7 +226,7 @@ while Judge owns semantic receipt caches and in-flight inference. The restricted
 additional model decision.
 
 Production: `createHostEffectReview`, `validateAuthorityEnvelope`, `consumeAuthorityEffects`.
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 ## Reviewer configuration and rollout
 
@@ -260,9 +260,11 @@ consent is not operator evidence. Production: `createGuardResolver` in
 [resolver.ts](../../packages/kernel/src/guard/resolver.ts) and `createCommandReview` in
 [command-review.ts](../../packages/kernel/src/guard/command-review.ts). Test:
 [guard-session-auto.test.ts](../../packages/kernel/tests/integration/guard-session-auto.test.ts) and
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts).
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts).
 
-Compiler and decision stages retain explicit timeout, retries, output cap and reasoning effort
+Compiler and decision stages use the shared model-call inactivity timeout and transport retries,
+with no private wall-clock deadline. Absent timeout overrides inherit the host environment default;
+the ordinary Loop validates ceilings and owns run inactivity. Stages retain output cap and reasoning effort
 inside the private Judge run. Its effective base provider, session and resolved TTL preserve normal
 provider composition. Fixed policy and a canonical host snapshot form the stable prefix; exact case
 facts and any case-specific transition token follow in a volatile message.
@@ -293,8 +295,8 @@ verdict or receipt cache hit produces no event because it made no provider call.
 [reviewer-trace.ts](../../packages/kernel/src/guard/reviewer-trace.ts), plus `createCommandReview` and
 `createHostEffectReview`. Test:
 [reviewer-trace.test.ts](../../packages/kernel/tests/unit/reviewer-trace.test.ts),
-[judge.test.ts](../../packages/kernel/tests/unit/judge.test.ts), and
-[effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+[judge.test.ts](../../packages/kernel/tests/integration/judge.test.ts), and
+[effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 The event records no prompt, messages, tools, commands, arguments, operator evidence, model response,
 reasoning, justification or opaque provider metadata. Instrumentation observes the existing
@@ -311,7 +313,7 @@ Production: [prompt.ts](../../packages/judge/src/prompt.ts),
 [resolver.ts](../../packages/kernel/src/guard/resolver.ts),
 [settings.ts](../../packages/judge/src/settings.ts),
 and [review-audit-schema.ts](../../packages/kernel/src/guard/review-audit-schema.ts).
-Test: [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts).
+Test: [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts).
 
 ## Wire and presentation
 

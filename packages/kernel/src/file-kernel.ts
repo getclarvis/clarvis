@@ -486,7 +486,12 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     const operatorReview = snapshot.scopes.global?.effect_review ?? {};
     const workspaceReview = snapshot.scopes.workspace?.effect_review;
     return {
-      effect_review: resolveEffectReviewSettings(operatorReview, workspaceReview),
+      effect_review: resolveEffectReviewSettings(
+        operatorReview,
+        workspaceReview,
+        env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
+        env.CLARVIS_DEFAULT_MAX_RETRIES,
+      ),
       ...(merged.guard !== undefined ? { guard: merged.guard as GuardConfig } : {}),
       ...(merged.runtime !== undefined
         ? { runtime: merged.runtime as GuardSettings["runtime"] }

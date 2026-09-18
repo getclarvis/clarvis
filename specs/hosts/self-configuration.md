@@ -29,8 +29,8 @@ and pre-inference container rejection in
 
 ## Authority and review
 
-The writer consumes the run's `OPERATOR_AUTHORITY_PORT` and the same `EffectReviewService` as the
-command guard. Skill text, tool arguments and model justification cannot manufacture operator
+The writer consumes the run's `OPERATOR_AUTHORITY_PORT` and shared `JUDGE_PORT` through
+`createHostEffectReview`, as does the command guard. Skill text, tool arguments and model justification cannot manufacture operator
 evidence. A missing authority seed does not fall back to user-role transcript scraping: automatic
 review cannot authorize that operation. The host owns evidence, binding and revocation as specified
 by [command guard](../execution/command-guard.md).
@@ -48,7 +48,7 @@ message, authority revision and controller binding. Settlement or channel failur
 pending entry, so a later attempt asks again and human consent is never cached. A distinct proposal
 gets its own question, and cancellation fences every caller sharing a late answer.
 
-Production: `denyAuthorityEffect` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts), `createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts), and `createConfigurationReview` in [review.ts](../../packages/kernel/src/configuration/review.ts). Test: exact refusal, equivalent edit/write, corrected bytes, continuation and fresh intent in [effect-review-service.test.ts](../../packages/kernel/tests/unit/effect-review-service.test.ts), bounded and revision-fenced storage in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and pending-question identity, retirement and cancellation in [configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts).
+Production: `denyAuthorityEffect` in [operator-authority.ts](../../packages/kernel/src/guard/operator-authority.ts), `createHostEffectReview` in [effect-review.ts](../../packages/kernel/src/guard/effect-review.ts), and `createConfigurationReview` in [review.ts](../../packages/kernel/src/configuration/review.ts). Test: exact refusal, equivalent edit/write, corrected bytes, continuation and fresh intent in [effect-review-service.test.ts](../../packages/kernel/tests/integration/effect-review-service.test.ts), bounded and revision-fenced storage in [operator-authority.test.ts](../../packages/kernel/tests/unit/operator-authority.test.ts), and pending-question identity, retirement and cancellation in [configuration-review.test.ts](../../packages/kernel/tests/unit/configuration-review.test.ts).
 
 Host-admitted steer arrival updates authority while a review is open, without prematurely
 acknowledging model delivery. After asynchronous review, cancellation and authority revision are
@@ -187,7 +187,7 @@ packages remain protected. Tools whose mutations reach the callback defer their 
 review. The host validates each canonical authored document, captures every batch target and any
 new-skill membership, then reviews the complete batch once. Operational or private configuration
 destinations cannot enter this path. Review uses the same authority reader and
-`EffectReviewService` as the restricted writer. Captured revisions are rechecked before staging;
+shared Judge coordinator through `createHostEffectReview` as the restricted writer. Captured revisions are rechecked before staging;
 drift, invalid content, denial, or cancellation leaves the batch unapplied. The existing portable
 parent-directory TOCTOU limitation remains.
 

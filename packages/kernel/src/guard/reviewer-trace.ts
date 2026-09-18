@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   ProviderError,
+  ModelCallInactivityError,
   type LLMCallParams,
   type LLMCallResult,
   type LLMProvider,
@@ -136,13 +137,9 @@ export interface ReviewerTraceIdentity {
 }
 
 /** Classify a reviewer failure without retaining provider error prose. */
-export function reviewerFailureKind(
-  error: unknown,
-  timedOut: boolean,
-  signal?: AbortSignal,
-): ReviewerFailureKind {
+export function reviewerFailureKind(error: unknown, signal?: AbortSignal): ReviewerFailureKind {
   if (signal?.aborted) return "cancelled";
-  if (timedOut) return "timeout";
+  if (error instanceof ModelCallInactivityError) return "timeout";
   if (error instanceof ProviderError) {
     if (error.kind === "auth" || error.kind === "quota") return error.kind;
     if (error.status === 429) return "rate_limit";

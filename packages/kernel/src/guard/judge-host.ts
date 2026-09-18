@@ -1,6 +1,6 @@
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
 import { createJudgeCapability, JudgeArchitectureError } from "@clarvis/judge";
-import { JUDGE_DEFAULTS, judgeRequestConfig } from "@clarvis/judge/settings";
+import { judgeRequestConfig } from "@clarvis/judge/settings";
 import {
   NOOP_LOGGER,
   OPERATOR_AUTHORITY_PORT,
@@ -62,8 +62,8 @@ export function createHostJudge(options: {
             options.deps.modelExecutionResolver === undefined
               ? (settings.providers ?? ctx.request.providers)
               : [],
-          timeoutMs: config.timeout_ms ?? JUDGE_DEFAULTS.timeoutMs,
-          maxRetries: config.max_retries ?? JUDGE_DEFAULTS.maxRetries,
+          timeoutMs: config.timeout_ms ?? ctx.env.CLARVIS_DEFAULT_CALL_TIMEOUT_MS,
+          maxRetries: config.max_retries ?? ctx.env.CLARVIS_DEFAULT_MAX_RETRIES,
           createServices(descriptor) {
             const observation = descriptor.observation;
             if (observation === undefined) throw new JudgeArchitectureError();
@@ -98,12 +98,7 @@ export function createHostJudge(options: {
                     judge_execution_id: descriptor.executionId,
                     authority_revision: authority?.snapshot().revision,
                     effect_id: observation.effectId,
-                    failureKind: (error) =>
-                      reviewerFailureKind(
-                        error,
-                        params.signal?.aborted === true && descriptor.signal?.aborted !== true,
-                        descriptor.signal,
-                      ),
+                    failureKind: (error) => reviewerFailureKind(error, descriptor.signal),
                   });
                 },
               },

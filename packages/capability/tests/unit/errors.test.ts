@@ -6,8 +6,21 @@ import {
   ContinuationUnavailableError,
   executionIdConflict,
   PersistenceError,
+  ModelCallInactivityError,
+  ProviderError,
   ValidationError,
 } from "../../src/index.ts";
+
+test("model inactivity shares the provider error contract and preserves known usage", () => {
+  const usage = { input_tokens: 10, output_tokens: 2, cached_tokens: 0, cache_write_tokens: 0 };
+  const error = new ModelCallInactivityError(180000, true, usage);
+  expect(error).toBeInstanceOf(ProviderError);
+  expect(error.kind).toBe("transient");
+  expect(error.streamStarted).toBe(true);
+  expect(error.partialUsage).toBe(usage);
+  expect(error.name).toBe("ModelCallInactivityError");
+  expect(new ModelCallInactivityError(180000, false).partialUsage).toBeUndefined();
+});
 
 describe("CodedError", () => {
   test("reports the concrete subclass's own name, not the base's", () => {

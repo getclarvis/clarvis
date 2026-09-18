@@ -100,7 +100,10 @@ host no longer controls. The adapter's own per-call/default timeout reports thro
 admission boundary: even when a transport ignores its timeout signal, the permit is quarantined
 rather than remaining silently active and filling the queue behind it.
 
-For a streaming call, that per-call timeout is an **inactivity** window. Every provider part resets
+For a streaming call, that per-call timeout is an **inactivity** window.
+The typed `ModelCallInactivityError` belongs to `@clarvis/capability`, so auxiliary
+consumers such as Judge classify the same failure without depending on SDK implementation details.
+Every provider part resets
 the window, so a large `write_file` argument may take longer than the configured timeout in total as
 long as deltas continue arriving. The hot path updates one timestamp; one timer checks it and re-arms
 at most once per timeout window, so progress does not allocate a timer or log record per delta.

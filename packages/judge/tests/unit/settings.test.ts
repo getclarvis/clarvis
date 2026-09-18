@@ -24,7 +24,7 @@ function view(value: unknown): CapabilityRequestView {
 
 describe("Judge settings ownership", () => {
   test("keeps defaults explicit without materializing request overrides", () => {
-    expect(JUDGE_DEFAULTS).toEqual({ timeoutMs: 20_000, maxRetries: 1, onUnsure: "deny" });
+    expect(JUDGE_DEFAULTS).toEqual({ onUnsure: "deny" });
     expect(guardJudgeSchema.parse({})).toEqual({});
     expect(effectReviewSchema.parse({})).toEqual({});
     expect(judgeRequestConfig(view(undefined))).toBeUndefined();
@@ -50,10 +50,9 @@ describe("Judge settings ownership", () => {
     { guidance: "x".repeat(32_769) },
     { model: "" },
     { timeout_ms: 0 },
-    { timeout_ms: 120_001 },
+    { timeout_ms: 2_147_483_648 },
     { timeout_ms: 1.5 },
     { max_retries: -1 },
-    { max_retries: 3 },
     { max_retries: 0.5 },
     { on_unsure: "allow" },
     { rollout: "ci_retry" },
@@ -74,7 +73,7 @@ describe("Judge settings ownership", () => {
     for (const value of [
       { model: "" },
       { model: "x".repeat(257) },
-      { max_retries: 3 },
+      { max_retries: -1 },
       { timeout_ms: 0 },
       { rollout: "unknown" },
       { guidance: "not a settings field" },
@@ -83,11 +82,11 @@ describe("Judge settings ownership", () => {
     expect(
       guardJudgeSchema.parse({
         guidance: "x".repeat(32_768),
-        timeout_ms: 120_000,
-        max_retries: 2,
+        timeout_ms: 180_000,
+        max_retries: 3,
         on_unsure: "ask",
       }),
-    ).toMatchObject({ timeout_ms: 120_000, max_retries: 2 });
+    ).toMatchObject({ timeout_ms: 180_000, max_retries: 3 });
     expect(judgeSettingsSpec.key).toBe("effect_review");
     expect(judgeSettingsSpec.pluginContributable).toBe(false);
     expect(judgeSettingsSpec.pluginForbiddenReason).toContain("operator");

@@ -379,3 +379,14 @@ export class ProviderError extends Error {
     this.streamStarted = init.streamStarted ?? false;
   }
 }
+
+/** A provider attempt that stopped producing activity within the configured call window. */
+export class ModelCallInactivityError extends ProviderError {
+  constructor(timeoutMs: number, streamStarted: boolean, partialUsage?: LLMUsage) {
+    super(
+      `Model call exceeded the per-call timeout after ${String(timeoutMs)}ms with no new stream activity.`,
+      { kind: "transient", streamStarted, ...(partialUsage === undefined ? {} : { partialUsage }) },
+    );
+    this.name = "ModelCallInactivityError";
+  }
+}

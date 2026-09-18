@@ -1,8 +1,7 @@
 import type { Logger } from "@clarvis/capability";
 import type { LLMCallParams, LLMCallResult, LLMProvider, LLMUsage } from "@clarvis/capability";
-import { ProviderError } from "@clarvis/capability";
+import { ProviderError, ModelCallInactivityError } from "@clarvis/capability";
 import { unref } from "@clarvis/capability";
-import { ModelCallInactivityError } from "./model-call-timeout-bridge.ts";
 
 /** Sums two token tallies field by field, without mutating either. */
 function addUsage(a: LLMUsage, b: LLMUsage): LLMUsage {

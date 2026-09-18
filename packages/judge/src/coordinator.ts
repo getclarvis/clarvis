@@ -178,6 +178,8 @@ export function createJudgeCoordinator(bound: JudgeCoordinatorOptions): JudgeCoo
         maxRetries: options.maxRetries,
         signal,
         binding,
+        validateReceipt: (receipt) =>
+          !context.isCurrent(receipt as T) || context.validateReceipt(receipt as T),
         snapshot,
         currentCase,
         createServices: options.createServices,

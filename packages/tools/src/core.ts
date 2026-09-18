@@ -234,9 +234,11 @@ async function applyGuard(
           denied: errorResult(
             new ToolError(
               "denied",
-              finalReview?.reviewer_decision === undefined
-                ? `command review did not approve: ${reason}`
-                : `command review did not approve: reviewer ${finalReview.reviewer_decision}; static review trigger: ${reason}`,
+              finalReview?.reviewer_decision === "failed"
+                ? `Command not executed: automatic review failed (${finalReview.failure_kind ?? "unknown"}). This is a technical review failure, not a decision that operator authorization is missing. Do not request authorization again to resolve this failure.`
+                : finalReview?.reviewer_decision === undefined
+                  ? `command review did not approve: ${reason}`
+                  : `command review did not approve: reviewer ${finalReview.reviewer_decision}; static review trigger: ${reason}`,
             ),
           ),
           review: finalReview,

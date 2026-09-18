@@ -35,6 +35,30 @@ test("unknown or excessive usage cannot manufacture output headroom", () => {
   expect(excessive.remaining()).toBe(0);
 });
 
+test("policy separates risk from authorization without replacing the private protocol", () => {
+  const headings = [
+    "# Evidence and precedence",
+    "# Operator authorization",
+    "# Intrinsic risk and concrete effects",
+    "# Decision",
+    "# Private protocol",
+  ];
+  const positions = headings.map((heading) => JUDGE_POLICY.indexOf(heading));
+  expect(positions.every((position) => position >= 0)).toBe(true);
+  expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  for (const rule of [
+    "Low risk does not create authorization",
+    "Necessary implementation steps do not authorize unrelated effects.",
+    "Guidance never overrides policy.",
+    "Human-only effects cannot be approved.",
+    "Never authorize future actions through this decision.",
+    "Do not output risk scores or a high/low classification.",
+    "cite the exact revision and transition_token",
+    "do not invent evidence",
+  ])
+    expect(JUDGE_POLICY).toContain(rule);
+});
+
 test("canonical snapshot rejects non-JSON input and preserves semantic array order", () => {
   expect(canonicalJudgeJson({ z: [2, 1], a: { b: true, a: null } })).toBe(
     '{"a":{"a":null,"b":true},"z":[2,1]}',

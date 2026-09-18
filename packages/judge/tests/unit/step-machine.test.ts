@@ -55,7 +55,7 @@ test("command terminates on the first valid call and cannot be reused", async ()
     kind: "completed",
     receipt: args,
   });
-  expect(await machine.accept([call(args)])).toEqual({ kind: "invalid_response" });
+  expect(await machine.accept([call(args)])).toMatchObject({ kind: "invalid_response" });
 });
 
 test("compile installs exactly once and only its host transition enables decide", async () => {
@@ -91,8 +91,8 @@ test.each(
   ].map((calls) => ({ calls })),
 )("effects reject malformed, foreign, duplicated and out-of-order calls %#", async ({ calls }) => {
   const machine = createJudgeStepMachine({ kind: "effects", transition });
-  expect(await machine.accept(calls)).toEqual({ kind: "invalid_response" });
-  expect(machine.stage()).toBe("closed");
+  expect(await machine.accept(calls)).toMatchObject({ kind: "invalid_response" });
+  expect(machine.stage()).toBe("effects");
 });
 
 test("free text cannot accompany a valid command", async () => {
@@ -102,7 +102,7 @@ test("free text cannot accompany a valid command", async () => {
       [call({ action: "decide_command", decision: "allow" })],
       "extra conclusion",
     ),
-  ).toEqual({ kind: "invalid_response" });
+  ).toMatchObject({ kind: "invalid_response" });
 });
 
 test("multiple compile calls do not partially install authority", async () => {
@@ -115,7 +115,7 @@ test("multiple compile calls do not partially install authority", async () => {
     },
   });
   const compile = call({ action: "compile_authority", candidate: envelope });
-  expect(await machine.accept([compile, compile])).toEqual({ kind: "invalid_response" });
+  expect(await machine.accept([compile, compile])).toMatchObject({ kind: "invalid_response" });
   expect(installs).toBe(0);
 });
 
@@ -138,9 +138,9 @@ test.each(["close", "duplicate"] as const)(
     const pending = machine.accept([compile]);
     expect(machine.stage()).toBe("pending");
     if (operation === "close") machine.close();
-    else expect(await machine.accept([compile])).toEqual({ kind: "invalid_response" });
+    else expect(await machine.accept([compile])).toMatchObject({ kind: "invalid_response" });
     release(transition);
-    expect(await pending).toEqual({ kind: "invalid_response" });
+    expect(await pending).toMatchObject({ kind: "invalid_response" });
     expect(installs).toBe(1);
   },
 );
@@ -175,7 +175,7 @@ test("inconsistent host transition fails structurally instead of becoming uncert
   expect(machine.stage()).toBe("closed");
 });
 
-test("host semantic rejection ends the case without a receipt", async () => {
+test("host semantic rejection leaves compilation available for correction", async () => {
   const machine = createJudgeStepMachine({
     kind: "compile_effects",
     async validateAndInstall() {
@@ -184,7 +184,19 @@ test("host semantic rejection ends the case without a receipt", async () => {
   });
   expect(
     await machine.accept([call({ action: "compile_authority", candidate: envelope })]),
-  ).toEqual({ kind: "invalid_response" });
+  ).toMatchObject({ kind: "invalid_response" });
+  expect(machine.stage()).toBe("compile");
+});
+
+test("host receipt validation faults close the machine without correction", async () => {
+  const fault = new Error("host validator fault");
+  const machine = createJudgeStepMachine({ kind: "command" }, () => {
+    throw fault;
+  });
+  await expect(
+    machine.accept([call({ action: "decide_command", decision: "allow" })]),
+  ).rejects.toBe(fault);
+  expect(machine.stage()).toBe("closed");
 });
 
 test("provider-marked malformed arguments never dispatch", async () => {
@@ -193,5 +205,5 @@ test("provider-marked malformed arguments never dispatch", async () => {
     await machine.accept([
       { ...call({ action: "decide_command", decision: "allow" }), malformedArguments: "truncated" },
     ]),
-  ).toEqual({ kind: "invalid_response" });
+  ).toMatchObject({ kind: "invalid_response" });
 });

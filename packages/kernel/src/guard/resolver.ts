@@ -551,7 +551,7 @@ function createGuardRuntimeResolver(
                 recordAnswer(audit, "judge", result.decision === "allow", false);
                 return { allowed: result.decision === "allow", answerer: "judge", review };
               }
-              if (onUnsure !== "ask" || result?.failure_kind === "cancelled")
+              if (onUnsure !== "ask" || result?.failure_kind !== undefined)
                 return { allowed: false, answerer: "judge", review };
               const answer =
                 humanElicit === undefined

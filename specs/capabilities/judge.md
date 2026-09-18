@@ -98,13 +98,18 @@ not found; continuation reports unavailable before inference and leaves the priv
 `judge_step` has exactly three strict actions: `compile_authority`, `decide_effects` and
 `decide_command`. The internal state machine validates the complete response before admitting an
 action; multiple calls never partially install authority. Text, absent/foreign calls, malformed
-arguments, repeated actions and wrong order terminate the case as `invalid_response`, with no
-semantic retry. A command receipt completes directly. A compile transaction returns a validated
+arguments, repeated actions and wrong order produce classified correction feedback. Up to three
+correction retries per stage follow the initial attempt through ordinary Loop tool results, without
+operator questions. Exhaustion terminates as `invalid_response`. A command receipt completes directly. A compile transaction returns a validated
 envelope, revision and transition token; only a decide referencing that exact revision/token may
 complete the effects case. An existing host transition allows a direct decide.
 
 The host callback captures case identity and expected revisions. It owns semantic validation and
-installation; returning no transition rejects the candidate. A thrown host failure propagates
+installation; returning no transition rejects the candidate without installing it and permits correction.
+Host-rejected terminal receipts also receive correction before completion. A stale context is returned
+to the coordinator's existing stale fence rather than being treated as a correctable authorization.
+The host transaction is consumed only when installation is attempted, not by an invalid candidate.
+A thrown host failure propagates
 unchanged instead of becoming uncertainty. Closing a pending case discards its late receipt but
 does not roll back a completed host installation. These protocol modules serve the private capability and executor; the native host integrates them through the public coordinator.
 
@@ -125,7 +130,10 @@ admission applies that same schema, the state machine still enforces its stage, 
 retain their staged protocol.
 A handler without admission fails closed. Compile invokes the host transaction in the handler and
 returns a tool result; decide returns a terminal completed structured receipt in that same iteration.
-A text finalization is terminal `judge_invalid_response`, never a nudge. Host transaction exceptions
+A raw text finalization without response admission is terminal `judge_invalid_response`.
+The executor routes invalid complete responses through a synthetic private tool call; its handler
+returns classified correction feedback via the ordinary Loop dispatch contract. No new inference
+loop or general engine retry mechanism is introduced. Host transaction exceptions
 terminate with `internal_error` and remain separately available to the executor so they cannot be
 mistaken for semantic uncertainty. Teardown and run-end close the state machine. No human tool or
 channel is contributed. The native host composes the public capability.
@@ -140,7 +148,7 @@ Production: [run-capability.ts](../../packages/judge/src/run-capability.ts),
 Test: [run-capability.test.ts](../../packages/judge/tests/integration/run-capability.test.ts)
 runs the ordinary engine and asserts the command-only provider schema, one iteration for command,
 two for compile/decide, terminal
-errors without extra inference, a single tool catalog and no partial compile on multiple calls.
+errors after bounded correction, a single tool catalog and no partial compile on multiple calls.
 
 
 ## Isolated execution and cache prefix
@@ -174,26 +182,39 @@ the operator to repeat each command. An allowlist miss or static dynamic-expansi
 a review trigger, not evidence of prohibition. The reviewer evaluates every segment and side effect;
 `unsure` is reserved for material missing facts. This does not widen publication authorization,
 descriptor ceilings, human-only boundaries or the configured fallback.
+Policy separates evidence precedence, operator authorization, intrinsic risk, decision and protocol.
+Low risk cannot create authority; explicit authorization does not make dangerous effects low risk.
+Necessary implementation steps remain bounded by trusted scope, prerequisites, targets and restrictions;
+they do not authorize unrelated effects. The policy uses general principles rather than workflow or
+command examples or a catalog of command-specific rules. Concrete operations come from the current
+case and host-provided descriptors, not hardcoded workflow vocabulary in the policy.
+Trajectory interprets only the concrete current case, never hypothetical future grants or
+denials. Correction feedback repairs protocol output without changing authority or replaying an installation.
+The output remains `judge_step`, never a high/low classifier. Changing the fixed policy invalidates
+the old system prefix once; message positions and subsequent append-only cache framing are unchanged.
 
 Production: `JUDGE_POLICY` and `judgePrompt` in [prompt.ts](../../packages/judge/src/prompt.ts).
 Test: [execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts)
 and [judge-host.test.ts](../../packages/kernel/tests/integration/judge-host.test.ts).
+`policy separates risk from authorization without replacing the private protocol` checks the shipped
+policy contract, not probabilistic model compliance.
 
 Per-attempt output caps are 1024 for command and 2048 for effects. The aggregate output budget is
-cap times configured attempts times the closed stage count. Its reservations cap each retry group
+cap times configured transport attempts times four correction attempts times the closed stage count. Its reservations cap each retry group
 independently. The child input/output token ceiling is the host environment ceiling, independent of
-the parent ledger; no cumulative Judge budget is introduced. Per-stage deadlines cover retries;
-the run wall ceiling covers stages plus 1000 ms overhead, bounded by the host ceiling. The adapter
-allows one external invocation per stage; the engine's forced-tool rejection fallback cannot issue
-another external call. The original provider failure remains available for host policy. Retries
+the parent ledger. Per-call deadlines cover transport retries;
+the run wall ceiling covers four calls per stage plus 1000 ms overhead, bounded by the host ceiling.
+The adapter permits four correction calls per stage but fences provider/framing failures so the
+engine's forced-tool rejection fallback cannot issue another external call after such a failure.
+The original provider failure remains available for host policy. Retries
 inside the existing provider wrapper retain their configured limits and accounting.
 
 A response received after cancellation/deadline never yields a receipt; known usage, including
 retried usage, is attributed once. Host transaction and prompt-framing failures are rethrown after
 engine settlement and cannot become semantic uncertainty. Completed receipts are validated again
 before being returned. Provider errors, timeout and invalid response remain distinct outcomes. Invalid complete responses
-are routed to a synthetic rejected private tool call while preserving their usage; the handler ends
-that same iteration. Thus empty or reasoning-only responses cannot trigger the engine's ordinary
+are routed to a synthetic rejected private tool call while preserving their usage; the handler returns
+bounded correction feedback or terminates on exhaustion. Empty or reasoning-only responses cannot trigger the engine's ordinary
 empty-response nudge. A successful packet arriving after parent cancellation retains its usage but
 cannot install authority or yield a receipt.
 
@@ -203,6 +224,8 @@ Production: [executor.ts](../../packages/judge/src/executor.ts), `executeJudge`;
 `judgeCacheBreakpoints`.
 Test: [executor.test.ts](../../packages/judge/tests/integration/executor.test.ts) checks identity,
 TTL, caps, stages, exact usage, provider fault/cancellation and independent prefixes;
+`ordinary Loop corrects %s with append-only feedback and bounded attempts` verifies recovery,
+per-stage limits, a single installation and unchanged message prefixes across corrections.
 [execution-boundaries.test.ts](../../packages/judge/tests/unit/execution-boundaries.test.ts)
 checks reservations, canonical JSON and framing rejection. These deterministic tests do not prove
 provider KV-cache hits; that requires the live canary before final qualification.

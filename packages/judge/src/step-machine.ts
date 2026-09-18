@@ -20,23 +20,34 @@ export type JudgeStepBinding =
     };
 
 export type JudgeStepOutcome =
-  | { kind: "invalid_response" }
+  | { kind: "invalid_response"; reason?: string }
   | { kind: "compiled"; transition: CompiledAuthorityTransition }
   | { kind: "completed"; receipt: JudgeTerminalReceipt };
 
 /**
- * One case, at most one compile transaction and one terminal receipt. A provider
+ * One case, at most one authority installation and one terminal receipt. A provider
  * response is admitted atomically before any tool dispatch: multiple, missing,
  * foreign or out-of-order calls cannot partially install authority. Host faults
  * propagate unchanged and can never become semantic uncertainty or human fallback.
  */
-export function createJudgeStepMachine(binding: JudgeStepBinding) {
+export function createJudgeStepMachine(
+  binding: JudgeStepBinding,
+  validateReceipt?: (receipt: JudgeTerminalReceipt) => boolean,
+) {
   let stage: "command" | "compile" | "effects" | "pending" | "closed" =
     binding.kind === "command" ? "command" : binding.kind === "effects" ? "effects" : "compile";
   let transition =
     binding.kind === "effects"
       ? compiledAuthorityTransitionSchema.parse(binding.transition)
       : undefined;
+  const validReceipt = (receipt: JudgeTerminalReceipt): boolean => {
+    try {
+      return validateReceipt?.(receipt) !== false;
+    } catch (error) {
+      stage = "closed";
+      throw error;
+    }
+  };
   return {
     close(): void {
       stage = "closed";
@@ -48,9 +59,9 @@ export function createJudgeStepMachine(binding: JudgeStepBinding) {
       calls: readonly LLMToolCall[] | undefined,
       text?: string,
     ): Promise<JudgeStepOutcome> {
-      const invalid = (): JudgeStepOutcome => {
-        stage = "closed";
-        return { kind: "invalid_response" };
+      const invalid = (reason = "unexpected_action_or_transition"): JudgeStepOutcome => {
+        if (stage === "pending") stage = "closed";
+        return { kind: "invalid_response", reason };
       };
       if (
         stage === "closed" ||
@@ -58,7 +69,7 @@ export function createJudgeStepMachine(binding: JudgeStepBinding) {
         calls?.length !== 1 ||
         (text?.trim().length ?? 0) !== 0
       )
-        return invalid();
+        return invalid("invalid_response_shape");
       const call = calls[0];
       if (call === undefined) return invalid();
       if (call.name !== "judge_step" || call.malformedArguments !== undefined) return invalid();
@@ -71,9 +82,10 @@ export function createJudgeStepMachine(binding: JudgeStepBinding) {
         }
       }
       const parsed = judgeStepSchema.safeParse(raw);
-      if (!parsed.success) return invalid();
+      if (!parsed.success) return invalid("invalid_step_schema");
       const step = parsed.data;
       if (stage === "command" && step.action === "decide_command") {
+        if (!validReceipt(step)) return invalid("host_receipt_rejected");
         stage = "closed";
         return { kind: "completed", receipt: step };
       }
@@ -84,6 +96,7 @@ export function createJudgeStepMachine(binding: JudgeStepBinding) {
         step.revision === transition.revision &&
         step.transition_token === transition.transition_token
       ) {
+        if (!validReceipt(step)) return invalid("host_receipt_rejected");
         stage = "closed";
         return { kind: "completed", receipt: step };
       }
@@ -96,7 +109,10 @@ export function createJudgeStepMachine(binding: JudgeStepBinding) {
       stage = "pending";
       try {
         const candidate = await binding.validateAndInstall(step.candidate);
-        if (candidate === undefined) return invalid();
+        if (candidate === undefined) {
+          if (stage === "pending") stage = "compile";
+          return invalid("authority_candidate_rejected");
+        }
         const installed = compiledAuthorityTransitionSchema.parse(candidate);
         if (stage !== "pending") return invalid();
         transition = installed;

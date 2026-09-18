@@ -1,6 +1,9 @@
 # `@clarvis/kernel`
 
 Reviewer configuration is owned by `@clarvis/judge/settings` and registered before host parsing.
+Technical Judge failures never trigger operator questions, including when `on_unsure` is `ask`.
+Malformed candidates may be corrected before authority installation; installation remains single-use
+and fenced by the captured authority and context. Semantic uncertainty retains its configured policy.
 Command and configuration review read its typed overrides through the generic request view.
 The host manifest parser enforces the same registered operator-only prohibition for plugins.
 

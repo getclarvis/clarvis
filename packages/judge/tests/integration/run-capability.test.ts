@@ -111,7 +111,10 @@ test.each([
     budget(),
   );
   const llm = new MockLLM({
-    script: fixture.script.map((entry) => ({
+    script: (fixture.completed || "hostFailure" in fixture
+      ? fixture.script
+      : Array.from({ length: 4 }, () => fixture.script[0]!)
+    ).map((entry) => ({
       ...entry,
       toolCalls: "toolCalls" in entry ? entry.toolCalls.map((call) => ({ ...call })) : undefined,
     })),
@@ -129,7 +132,7 @@ test.each([
         name: "judge",
         model: "anthropic/test",
         tools: [],
-        iteration_limit: fixture.kind === "command" ? 1 : 2,
+        iteration_limit: 8,
         compaction: { enabled: false },
       },
     ],
@@ -165,14 +168,21 @@ test.each([
               expect(schema.oneOf).toBeArray();
             }
             const result = await llm.call(params);
-            privateRun.admitResponse(result.toolCalls, result.text);
-            return result;
+            return privateRun.admitResponse(result.toolCalls, result.text)
+              ? result
+              : {
+                  ...result,
+                  text: "",
+                  toolCalls: [{ id: "rejected", name: "judge_step", arguments: {} }],
+                };
           },
         },
       },
     });
     expect(result.response.status).toBe(fixture.completed ? "completed" : "error");
-    expect(result.response.usage.iterations_used).toBe(fixture.iterations);
+    expect(result.response.usage.iterations_used).toBe(
+      fixture.completed || "hostFailure" in fixture ? fixture.iterations : 4,
+    );
     expect(installs).toBe(fixture.installs);
     if (result.response.status === "completed")
       expect(result.response.result).toEqual(fixture.kind === "command" ? command : decide);

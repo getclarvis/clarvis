@@ -85,29 +85,18 @@ export function createCommandReview(
         { currentCase, consumer: "command_guard" },
         { snapshot: () => snapshot, isCurrent, validateReceipt: () => isCurrent() },
       );
-      if (result.kind === "failed" && result.failureKind === "cancelled")
-        return { allowed: false, answerer: "judge" };
+      if (result.kind === "failed") {
+        return {
+          allowed: false,
+          answerer: "judge",
+          review: { failure_kind: result.failureKind, reviewer_decision: "failed" },
+        };
+      }
       if (!isCurrent() || result.kind === "stale")
         return fallback(
           req,
           "Operator authority or Plan context changed during automatic command review.",
         );
-      if (result.kind === "failed") {
-        if (config.on_unsure !== "ask" || human === undefined)
-          return {
-            allowed: false,
-            answerer: "judge",
-            review: { failure_kind: result.failureKind, reviewer_decision: "failed" },
-          };
-        const answer = await fallback(
-          req,
-          "The automatic command reviewer did not return a valid decision.",
-        );
-        return {
-          ...answer,
-          review: { failure_kind: result.failureKind, reviewer_decision: "failed" },
-        };
-      }
       if (result.receipt.decision !== "unsure")
         return {
           allowed: result.receipt.decision === "allow",

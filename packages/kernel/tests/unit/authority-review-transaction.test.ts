@@ -74,6 +74,15 @@ test("compile returns one ledger-bound transition and another case cannot reuse 
   expect(f.ledger.reader.snapshot().envelope?.exclusions).toEqual([]);
 });
 
+test("invalid candidates can be corrected before the single installation", () => {
+  const f = fixture();
+  const transaction = f.make();
+  expect(transaction.validateAndInstall({ ...f.envelope, version: 2 })).toBeUndefined();
+  expect(f.ledger.reader.snapshot().envelope).toBeUndefined();
+  expect(transaction.validateAndInstall(f.envelope)).toBeDefined();
+  expect(transaction.validateAndInstall(f.envelope)).toBeUndefined();
+});
+
 test("authority or Plans changes fence compilation before installation", () => {
   for (const change of ["authority", "plan"] as const) {
     const f = fixture();

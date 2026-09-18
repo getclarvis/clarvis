@@ -34,7 +34,11 @@ test("retiring the coordinator never creates a human question", async () => {
       return true;
     },
   );
-  expect(await review(request)).toEqual({ allowed: false, answerer: "judge" });
+  expect(await review(request)).toEqual({
+    allowed: false,
+    answerer: "judge",
+    review: { failure_kind: "cancelled", reviewer_decision: "failed" },
+  });
   expect(prompts).toBe(0);
 });
 
@@ -69,8 +73,8 @@ test.each([
   ["allow", "ask", true, 0],
   ["deny", "ask", false, 0],
   ["unsure", "ask", true, 1],
-  ["invalid_response", "ask", true, 1],
-  ["transport", "ask", true, 1],
+  ["invalid_response", "ask", false, 0],
+  ["transport", "ask", false, 0],
   ["unsure", "deny", false, 0],
   ["invalid_response", "deny", false, 0],
   ["transport", "deny", false, 0],

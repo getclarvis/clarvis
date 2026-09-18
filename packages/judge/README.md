@@ -7,6 +7,10 @@ its declared model references without knowing the reviewer domain.
 Judge receives the host-captured global and workspace `CLARVIS.md` (fallback `AGENTS.md` per scope)
 as persistent operator instructions. Direct operator restrictions take precedence. Routine necessary
 commands do not require repeated consent merely because static analysis deferred their review.
+The fixed policy separates evidence, authorization, intrinsic risk, decision and private protocol.
+It is command-agnostic; concrete operations and their constraints come from the case and host descriptors.
+Trajectory informs the current case only; it neither denies hypothetical future actions nor grants
+future authority. The Judge remains a blocking reviewer, not a high/low trajectory classifier.
 
 The owning contract is [Judge](../../specs/capabilities/judge.md). Host authority, effect validation
 and final consent remain governed by [effect review](../../specs/execution/effect-review.md) and
@@ -42,7 +46,7 @@ validates each complete provider response before dispatch. Command/decide finish
 step; compile returns the validated host transition and requires decide to cite its revision/token.
 Command runs expose only the `decide_command` input schema to the provider, so the model cannot
 select an effect-compilation action that the command state machine must reject.
-Multiple calls, free text, malformed arguments and wrong ordering close the case without a nudge.
+Multiple calls, free text, malformed arguments and wrong ordering produce bounded correction feedback.
 The host alone validates and installs authority; its operational faults propagate separately from
 semantic rejection. Closing the machine fences pending transaction results without rolling back an
 already installed envelope. These modules feed the private run capability; the native host composes the public capability with command, effect and configuration consumers integrated.
@@ -50,11 +54,13 @@ already installed envelope. These modules feed the private run capability; the n
 The private `createJudgeRunCapability` uses the ordinary Loop contribution contract: one forced
 `judge_step` tool, a shared output budget, a terminal finalize gate and lifecycle cleanup. A complete
 provider response must pass admission before dispatch; admission performs no host transaction.
-Compile returns the authoritative tool result and permits one further iteration; decisions return a
+Compile returns the authoritative tool result and advances to the decision stage; valid decisions return a
 completed structured receipt immediately. Host transaction faults terminate with `internal_error`
 and remain separately available to the executor. Invalid output terminates with the fixed private
-`judge_invalid_response` code. No human channel is contributed. Real Loop integration tests pin
-one/two iterations, exact tool catalog and absence of partial installation on multiple calls.
+`judge_invalid_response` code only after three correction retries per stage are exhausted.
+Corrections return ordinary tool results to the existing Loop; there is no additional inference loop.
+No human channel is contributed. Real Loop integration tests pin stage limits, append-only feedback,
+exact tool catalog and absence of partial installation on multiple calls.
 The package depends on Loop for this execution boundary; the native host uses it for command review.
 
 ## Isolated executor
@@ -70,7 +76,7 @@ identity. Operational Goal state and Plan CAS/task-status headers remain owned b
 not enter the reviewer.
 
 Command output is capped at 1024 tokens per attempt; effects at 2048. The independent output budget
-covers exactly one or two stages and configured retries. Each stage has its own deadline; the run
+covers one or two stages, four correction attempts per stage and configured transport retries. Each call has its own deadline; the run
 adds bounded overhead to the total wall ceiling. Provider fallback cannot invoke the same stage
 again after a failed call; the original failure remains available to the host. Late known usage and
 retried usage are retained exactly once. Host transaction and framing faults propagate separately

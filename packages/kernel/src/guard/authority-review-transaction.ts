@@ -65,7 +65,6 @@ export function createAuthorityReviewTransaction(input: {
   return {
     validateAndInstall(candidate: unknown): CompiledAuthorityTransition | undefined {
       if (attempted) return undefined;
-      attempted = true;
       if (
         !contextCurrent() ||
         options.authority.snapshot().revision !== options.expectedAuthorityRevision ||
@@ -84,6 +83,7 @@ export function createAuthorityReviewTransaction(input: {
         authorityIdentity(options.authority) !== initialIdentity
       )
         return undefined;
+      attempted = true;
       if (
         !installAuthorityEnvelope(
           options.authority,

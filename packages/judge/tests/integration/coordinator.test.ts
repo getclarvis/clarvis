@@ -108,7 +108,7 @@ test("uncertainty and host-rejected receipts are not cached", async () => {
             validateReceipt: () => false,
           }),
         ).toMatchObject({ kind: "failed", failureKind: "invalid_response" });
-      expect(calls).toBe(4);
+      expect(calls).toBe(10);
     },
   );
 });

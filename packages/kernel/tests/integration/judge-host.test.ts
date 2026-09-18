@@ -266,8 +266,8 @@ test.each([
                         await Promise.all(Array.from({ length: 8 }, () => review(input))),
                       ).toEqual(
                         Array.from({ length: 8 }, () => ({
-                          allowed: true,
-                          answerer: kind === "provider_failure" ? "human" : "judge",
+                          allowed: kind !== "provider_failure",
+                          answerer: "judge",
                           review:
                             kind === "provider_failure"
                               ? { failure_kind: "quota", reviewer_decision: "failed" }
@@ -303,7 +303,7 @@ test.each([
       const expectedCalls = kind === "effects" ? 2 : 1;
       const billedCalls = expectedCalls + (kind === "provider_retry" ? 1 : 0);
       expect(childCalls).toBe(billedCalls);
-      expect(humanCalls).toBe(kind === "provider_failure" ? 1 : 0);
+      expect(humanCalls).toBe(0);
       expect(failedAppends).toBe(kind === "journal_failure" ? 1 : 0);
       expect(childId).toBeDefined();
       const parent = physical.getById("owner", "parent")!;

@@ -9,7 +9,7 @@ import type {
   RunRequest,
 } from "@clarvis/capability";
 import { judgeStepSchema, type JudgeTerminalReceipt } from "./private-protocol.ts";
-import { createJudgeRunCapability } from "./run-capability.ts";
+import { createJudgeRunCapability, JUDGE_CORRECTION_RETRIES } from "./run-capability.ts";
 import { createJudgeOutputBudget } from "./execution-budget.ts";
 import type { JudgeStepBinding } from "./step-machine.ts";
 import { JUDGE_POLICY, judgeCacheBreakpoints, judgePrompt, type JudgeJson } from "./prompt.ts";
@@ -45,6 +45,7 @@ export interface JudgeExecutionInput {
   timeoutMs: number;
   maxRetries: number;
   binding: JudgeStepBinding;
+  validateReceipt?: (receipt: JudgeTerminalReceipt) => boolean;
   snapshot: JudgeJson;
   currentCase: JudgeJson;
   signal?: AbortSignal;
@@ -58,12 +59,12 @@ export interface JudgeExecutionInput {
   }): JudgeExecutionServices;
 }
 
-/** Preserve accounting while routing invalid output to the terminal private handler, without engine nudges. */
+/** Preserve accounting while routing invalid output through ordinary private tool-result recovery. */
 function rejectedResponse(response: LLMCallResult): LLMCallResult {
   return {
     ...response,
     text: "",
-    toolCalls: [{ id: "judge-invalid-response", name: "judge_step", arguments: {} }],
+    toolCalls: [{ id: `judge-invalid-${crypto.randomUUID()}`, name: "judge_step", arguments: {} }],
   };
 }
 
@@ -79,10 +80,12 @@ export async function executeJudge(input: JudgeExecutionInput) {
   )
     throw new JudgeArchitectureError();
   const stages = input.binding.kind === "compile_effects" ? 2 : 1;
+  const iterations = stages * (JUDGE_CORRECTION_RETRIES + 1);
   const cap = input.binding.kind === "command" ? 1024 : 2048;
   const privateRun = createJudgeRunCapability(
     input.binding,
-    createJudgeOutputBudget(cap, input.maxRetries + 1, stages),
+    createJudgeOutputBudget(cap, input.maxRetries + 1, iterations),
+    input.validateReceipt,
   );
   const services = input.createServices({
     executionBaseLlm: input.executionBaseLlm,
@@ -111,16 +114,21 @@ export async function executeJudge(input: JudgeExecutionInput) {
   let timedOut = false;
   let attempts = 0;
   let providerFailure: { error: unknown } | undefined;
-  const calledStages = new Set<string>();
+  const calledStages = new Map<string, number>();
   const llm: LLMProvider = {
     async call(params) {
       const stage = privateRun.stage();
-      if (calledStages.has(stage)) {
+      const stageCalls = calledStages.get(stage) ?? 0;
+      if (
+        providerFailure !== undefined ||
+        framingFailure !== undefined ||
+        stageCalls > JUDGE_CORRECTION_RETRIES
+      ) {
         const error = new Error("Private Judge stage cannot repeat inference.");
         if (providerFailure === undefined) framingFailure = { error };
         throw error;
       }
-      calledStages.add(stage);
+      calledStages.set(stage, stageCalls + 1);
       let cacheBreakpoints: readonly number[];
       try {
         cacheBreakpoints = judgeCacheBreakpoints(params, prompt);
@@ -209,7 +217,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
         tools: [],
         grants: [],
         can_spawn: [],
-        iteration_limit: stages,
+        iteration_limit: iterations,
         reasoning_effort: "low",
         call_timeout_ms: input.timeoutMs,
         retry: { max_retries: input.maxRetries },
@@ -221,7 +229,7 @@ export async function executeJudge(input: JudgeExecutionInput) {
       total_token_limit: services.env.CLARVIS_TOKEN_CEILING,
       timeout_ms: Math.min(
         services.env.CLARVIS_TIMEOUT_CEILING_MS,
-        stages * input.timeoutMs + 1000,
+        iterations * input.timeoutMs + 1000,
       ),
     },
   };
